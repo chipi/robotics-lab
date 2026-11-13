@@ -122,9 +122,15 @@ simulator (sockets) and the real duck (whichever option) are the same code above
 
 ## 6. Models (agreed with homelab, 2026-11-13)
 
-- **Phase 1 (operator approved):** LiteLLM on the mini, two aliases of our own, `robot-vlm` and
-  `robot-planner`, pointing at a cloud vision model, with our own key and budget. Model and
-  budget: not chosen yet.
+- **Phase 1 (operator approved, live 2026-11-13):** LiteLLM on the mini, two aliases of our own,
+  `robot-vlm` and `robot-planner`, both routed to **Qwen3-VL-30B-A3B-Instruct** on OpenRouter
+  (open weights, 3B active parameters, vision and tool calling, runs on the GB10). Our key is
+  in `~/robotics-brain-litellm.env` (mode 600, never committed; `set -a; . ~/robotics-brain-litellm.env;
+  set +a` gives `LITELLM_API_KEY` and `LITELLM_API_BASE`). It reaches those two aliases only.
+  Hard cap $10 per 30 days (homelab's setting; the operator's direction is "whatever we need",
+  raised on request). Checked: one text call to each alias, HTTP 200 in 1.7 s and 1.5 s;
+  another alias with the same key, 403. A second open-weight candidate to compare
+  (homelab suggests Gemma 4 26B-A4B) needs the operator's yes.
 - **Phase 2:** once eval-harness picks a model, a local vLLM on the DGX (`:8006`, homelab
   `infra/robotics/`), inside the `robotics` GPU mode; the aliases move, the brain's code does
   not. One vision model can serve both aliases. Any robotics window takes prod down; prod must
