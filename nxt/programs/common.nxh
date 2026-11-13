@@ -1,0 +1,75 @@
+// Shared by the dog-game programs: ports, the ultrasonic sensor, a CSV log on the brick,
+// and a status line on the brick's screen.
+//
+// Ports are a guess until checked on the robot: tracks on B and C (Shooterbot), and the
+// ultrasonic sensor on 4 (the photos show sensor cables in ports 3 and 4).
+
+#define LEFT   OUT_B
+#define RIGHT  OUT_C
+#define TRACKS OUT_BC
+#define US     IN_4
+#define NO_ECHO 255          // what the ultrasonic sensor reports when nothing is in range
+
+#define LOG_PERIOD_MS 200    // one row every 200 ms, plus one row per event
+#define LOG_BYTES     16000  // the file size is fixed when it is created; logging stops when full
+
+// Every log has the same columns, so runs of both games plot the same way:
+// ms since start, state number, distance in cm, event number (0 = none), both tacho counts.
+#define LOG_HEADER "ms,state,dist,event,left,right"
+
+byte log_fh;
+bool log_open_ok;
+bool log_ok;
+unsigned int log_written;
+unsigned long log_t0;
+unsigned long log_next;
+
+void log_open(string name)
+{
+  DeleteFile(name);
+  log_open_ok = (CreateFile(name, LOG_BYTES, log_fh) == LDR_SUCCESS);
+  log_ok = log_open_ok;
+  if (log_ok) {
+    WriteLnString(log_fh, LOG_HEADER, log_written);
+  } else {
+    PlayTone(200, 600);  // low tone: no log this run (flash full?), the game still runs
+    Wait(700);
+  }
+  log_t0 = CurrentTick();
+  log_next = log_t0;
+}
+
+void log_row(int state, int dist, int event)
+{
+  if (!log_ok) return;
+  string row = StrCat(NumToStr(CurrentTick() - log_t0), ",", NumToStr(state), ",", NumToStr(dist), ",");
+  row = StrCat(row, NumToStr(event), ",", NumToStr(MotorRotationCount(LEFT)), ",", NumToStr(MotorRotationCount(RIGHT)));
+  if (WriteLnString(log_fh, row, log_written) != LDR_SUCCESS) log_ok = false;
+}
+
+// Called every loop: writes a row on events right away, otherwise every LOG_PERIOD_MS.
+void log_tick(int state, int dist, int event)
+{
+  if (event != 0 || CurrentTick() >= log_next) {
+    log_row(state, dist, event);
+    log_next = CurrentTick() + LOG_PERIOD_MS;
+  }
+}
+
+void log_close()
+{
+  if (log_open_ok) CloseFile(log_fh);
+}
+
+unsigned long elapsed()
+{
+  return CurrentTick() - log_t0;
+}
+
+void show(string title, string state, int dist)
+{
+  TextOut(0, LCD_LINE1, title, true);
+  TextOut(0, LCD_LINE3, state);
+  TextOut(0, LCD_LINE5, StrCat("dist ", NumToStr(dist), " cm"));
+  TextOut(0, LCD_LINE7, StrCat(NumToStr(elapsed() / 1000), " s"));
+}

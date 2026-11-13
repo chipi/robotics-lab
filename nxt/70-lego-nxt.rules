@@ -1,0 +1,2 @@
+# LEGO Mindstorms NXT (stock firmware): let the logged-in desktop user open it over USB.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0694", ATTRS{idProduct}=="0002", TAG+="uaccess"

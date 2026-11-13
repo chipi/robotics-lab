@@ -1,0 +1,105 @@
+// Patrol: the robot wanders, turning away from obstacles. Every DRIVE_MS it stops and
+// watches: it learns the distance in front of it for a second, then if that distance
+// changes by more than MOTION_CM (something moved in front of it) it plays an alert and
+// watches again. If nothing moves for WATCH_MS it drives on.
+// Runs for RUN_MS, then stops by itself. The dark grey button stops it at any time.
+//
+// It can only notice movement while standing still, and only in front of the sensor.
+//
+// Log: patrol.csv on the brick (columns in common.nxh).
+//   state: 0 drive, 1 turn, 2 watch, 3 alert
+//   event: 1 obstacle, turning, 2 stopped to watch, 3 movement seen, 4 nothing moved, driving on
+
+#include "common.nxh"
+
+#define DRIVE_POWER 40
+#define TURN_POWER  45
+#define OBSTACLE    25      // cm: closer than this while driving and it turns away
+#define DRIVE_MS    15000   // drive this long between watches
+#define LEARN_MS    1000    // first part of a watch: learn the normal distance
+#define WATCH_MS    6000
+#define MOTION_CM   15
+#define ALERT_MS    1500
+#define RUN_MS      180000
+
+#define DRIVE 0
+#define TURN  1
+#define WATCH 2
+#define ALERT 3
+
+task main()
+{
+  SetSensorLowspeed(US);
+  ResetRotationCount(TRACKS);
+  log_open("patrol.csv");
+
+  int state = DRIVE;
+  int dist;
+  int event;
+  int turn_dir = 1;
+  unsigned long turn_ms = 0;
+  unsigned long since = elapsed();
+  unsigned long drive_since = elapsed();
+  long base_sum = 0;
+  int base_n = 0;
+  int baseline = 0;
+  int alerts = 0;
+  string names[] = {"drive ", "turn  ", "watch ", "ALERT "};
+
+  PlayTone(880, 150);
+  Wait(1000);
+
+  while (elapsed() < RUN_MS) {
+    dist = SensorUS(US);
+    event = 0;
+    unsigned long in_state = elapsed() - since;
+
+    if (state == DRIVE) {
+      OnFwd(TRACKS, DRIVE_POWER);
+      if (dist < OBSTACLE) {
+        state = TURN; event = 1;
+        turn_dir = Random(2) == 0 ? 1 : -1;
+        turn_ms = 400 + Random(800);
+      } else if (elapsed() - drive_since > DRIVE_MS) {
+        state = WATCH; event = 2;
+      }
+    } else if (state == TURN) {
+      OnFwd(LEFT, turn_dir * TURN_POWER);
+      OnFwd(RIGHT, -turn_dir * TURN_POWER);
+      if (in_state > turn_ms) state = DRIVE;
+    } else if (state == WATCH) {
+      Off(TRACKS);
+      if (in_state < LEARN_MS) {
+        if (dist != NO_ECHO) { base_sum += dist; base_n++; }
+      } else {
+        if (base_n > 0) baseline = base_sum / base_n;
+        else baseline = NO_ECHO;
+        if (dist != NO_ECHO && abs(dist - baseline) > MOTION_CM) {
+          state = ALERT; event = 3; alerts++;
+          PlayTone(1500, 120); Wait(150); PlayTone(1500, 120);
+        } else if (in_state > WATCH_MS) {
+          state = DRIVE; event = 4;
+          drive_since = elapsed();
+        }
+      }
+    } else if (state == ALERT) {
+      Off(TRACKS);
+      if (in_state > ALERT_MS) { state = WATCH; event = 2; }
+    }
+
+    if (event != 0) {
+      since = elapsed();
+      if (state == WATCH) { base_sum = 0; base_n = 0; }
+    }
+    log_tick(state, dist, event);
+    show("PATROL", names[state], dist);
+    TextOut(0, LCD_LINE6, StrCat("alerts ", NumToStr(alerts)));
+    Wait(50);
+  }
+
+  Off(TRACKS);
+  log_row(state, dist, 0);
+  log_close();
+  PlayTone(440, 200);
+  Wait(300);
+}

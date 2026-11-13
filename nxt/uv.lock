@@ -1,0 +1,35 @@
+version = 1
+revision = 3
+requires-python = ">=3.10"
+
+[[package]]
+name = "nxt-lab"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "nxt-python" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nxt-python", specifier = ">=3.5.1" }]
+
+[[package]]
+name = "nxt-python"
+version = "3.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyusb" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/02/42642a2c790fa9db3e1bc930bdd11476539b0c5825f66f17db6764a5e3e4/nxt_python-3.5.1.tar.gz", hash = "sha256:e02ae20a61ee23125c8429bf7f3547a0ada0f904c83cfaaea884947c09399279", size = 106697, upload-time = "2025-01-12T10:22:37.785Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/f5/dcc406b0db81a7deb026cae0003653b8ea00280ac494d737852f390eeada/nxt_python-3.5.1-py3-none-any.whl", hash = "sha256:8f8737e61039380b47e28b295b8bc0a01233ef2a3dad473b60e9a6e4056bf2c2", size = 76591, upload-time = "2025-01-12T10:22:34.769Z" },
+]
+
+[[package]]
+name = "pyusb"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/6b/ce3727395e52b7b76dfcf0c665e37d223b680b9becc60710d4bc08b7b7cb/pyusb-1.3.1.tar.gz", hash = "sha256:3af070b607467c1c164f49d5b0caabe8ac78dbed9298d703a8dbf9df4052d17e", size = 77281, upload-time = "2025-01-08T23:45:01.866Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/b8/27e6312e86408a44fe16bd28ee12dd98608b39f7e7e57884a24e8f29b573/pyusb-1.3.1-py3-none-any.whl", hash = "sha256:bf9b754557af4717fe80c2b07cc2b923a9151f5c08d17bdb5345dac09d6a0430", size = 58465, upload-time = "2025-01-08T23:45:00.029Z" },
+]

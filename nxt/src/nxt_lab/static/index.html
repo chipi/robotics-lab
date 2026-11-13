@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NXT Lab</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --fg: #1d1d1b; --muted: #5f5f5a; --card: #ffffff; --edge: #d6d6d0;
+    --accent: #f29100; --on-accent: #1d1d1b; --bad: #b3261e; --ok: #2e7d32; --grid: #e6e6e1;
+    --s1: #1f6fd1; --s2: #d1491f; --s3: #2e8b57; --s4: #8a4fd1; --s5: #c79100; --s6: #0f8f9a; --s7: #c2185b; --s8: #5d6d7e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --fg: #ececea; --muted: #a3a39d; --card: #222220; --edge: #3a3a37;
+      --bad: #ef7a6c; --ok: #7bc47f; --grid: #2e2e2b;
+      --s1: #6aa8ff; --s2: #ff8a65; --s3: #6fd39b; --s4: #b996ff; --s5: #f2c14e; --s6: #4fd1dc; --s7: #f48fb1; --s8: #b0bec5;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--edge); }
+  .bar { max-width: 960px; margin: 0 auto; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  h1 { font-size: 20px; margin: 0; }
+  .status { font-size: 13px; color: var(--muted); flex: 1; min-width: 200px; }
+  .status b { color: var(--fg); font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  nav { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+  nav button { border: none; background: none; padding: 8px 12px; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); }
+  nav button.on { color: var(--fg); border-bottom-color: var(--accent); }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  section { display: none; gap: 16px; }
+  section.on { display: grid; }
+  .card { background: var(--card); border: 1px solid var(--edge); border-radius: 12px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+  .card h2 { font-size: 15px; margin: 0; }
+  .cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  button { font: inherit; border: 1px solid var(--edge); background: var(--card); color: var(--fg); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button.estop { background: #b3261e; color: #fff; border-color: #b3261e; font-weight: 700; }
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; touch-action: none; user-select: none; -webkit-user-select: none; max-width: 320px; }
+  .pad button { aspect-ratio: 1; font-size: 26px; padding: 0; }
+  .pad button.held { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .pad .stop { font-size: 14px; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  input, select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--edge); border-radius: 8px; padding: 6px 8px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 0; }
+  .readings { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .reading { border: 1px solid var(--edge); border-radius: 10px; padding: 8px 10px; }
+  .reading .k { font-size: 12px; color: var(--muted); }
+  .reading .v { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  canvas { width: 100%; height: 260px; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+  .legend label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--edge); }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions button { padding: 4px 8px; font-size: 13px; }
+  pre { margin: 0; max-height: 240px; overflow: auto; font-size: 12px; background: var(--bg); border-radius: 8px; padding: 8px; }
+  .grid2 { display: grid; grid-template-columns: max-content 1fr; gap: 8px 12px; align-items: center; }
+  .grid2 input[type=checkbox] { justify-self: start; width: 18px; height: 18px; }
+  .rec { color: var(--bad); font-weight: 600; }
+  .toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); display: none; z-index: 5; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>NXT Lab</h1>
+    <div class="status" id="status">Loading…</div>
+    <button id="connect" hidden>Connect</button>
+    <button class="estop" id="estop" title="Stops the drive motors and any program running on the brick">STOP ALL</button>
+  </div>
+  <nav>
+    <button data-tab="drive" class="on">Drive</button>
+    <button data-tab="sensors">Sensors &amp; log</button>
+    <button data-tab="programs">Programs</button>
+    <button data-tab="setup">Setup</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-drive" class="on">
+    <div class="cols">
+      <div class="card">
+        <h2>Drive</h2>
+        <div class="pad">
+          <span></span><button data-dir="fwd" aria-label="forward">▲</button><span></span>
+          <button data-dir="left" aria-label="spin left">◀</button>
+          <button class="stop" id="stop">STOP</button>
+          <button data-dir="right" aria-label="spin right">▶</button>
+          <span></span><button data-dir="back" aria-label="back">▼</button><span></span>
+        </div>
+        <div class="row">
+          <label for="power">Power</label>
+          <input type="range" id="power" min="10" max="100" step="5" value="50">
+          <span id="powerval">50</span>
+        </div>
+        <div class="row"><button class="primary" id="fire">Fire</button></div>
+        <p class="hint">Hold a direction to drive; let go to stop. Keys: arrows / WASD, space fires, Esc stops.</p>
+      </div>
+      <div class="card">
+        <h2>Live</h2>
+        <div class="readings" id="drive-readings"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-sensors">
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Live readings</h2>
+        <span class="hint" id="sample-note"></span>
+      </div>
+      <div class="readings" id="readings"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2 id="chart-title">Live chart</h2>
+        <div class="row">
+          <select id="window">
+            <option value="15">15 s</option><option value="30" selected>30 s</option>
+            <option value="60">60 s</option><option value="180">3 min</option>
+          </select>
+          <button id="back-live" hidden>Back to live</button>
+        </div>
+      </div>
+      <canvas id="chart"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Recording</h2>
+        <div class="row">
+          <span id="rec-state" class="hint">Not recording</span>
+          <button class="primary" id="rec">Start recording</button>
+        </div>
+      </div>
+      <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>nxt/runs/</code>.</p>
+      <table><thead><tr><th>Run</th><th>Size</th><th></th></tr></thead><tbody id="runs"></tbody></table>
+    </div>
+  </section>
+
+  <section id="tab-programs">
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Running on the brick</h2>
+        <button class="danger" id="prog-stop">Stop program</button>
+      </div>
+      <div id="prog-state" class="hint">Nothing running.</div>
+      <p class="hint">While a program runs, the PC does not read sensors (that could change their mode under the program) and driving from here is disabled. Motor tacho counts are still logged.</p>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Files on the brick</h2>
+        <div class="row">
+          <span class="hint" id="flash"></span>
+          <button id="files-refresh">Refresh</button>
+        </div>
+      </div>
+      <table><thead><tr><th>Name</th><th>Size</th><th></th></tr></thead><tbody id="files"></tbody></table>
+      <div class="row">
+        <input type="file" id="upload-file">
+        <button class="primary" id="upload">Upload</button>
+      </div>
+      <p class="hint">Compiled programs are <code>.rxe</code>. NXT names: up to 15 characters, then <code>.ext</code>.</p>
+    </div>
+    <div class="card" id="viewer" hidden>
+      <div class="row" style="justify-content: space-between">
+        <h2 id="viewer-title"></h2>
+        <div class="row"><button id="viewer-plot">Plot</button><button id="viewer-close">Close</button></div>
+      </div>
+      <pre id="viewer-text"></pre>
+    </div>
+  </section>
+
+  <section id="tab-setup">
+    <div class="cols">
+      <div class="card">
+        <h2>Motors</h2>
+        <div class="grid2">
+          <label for="cfg-left">Left track</label><select id="cfg-left"></select>
+          <label for="cfg-right">Right track</label><select id="cfg-right"></select>
+          <label for="cfg-shooter">Shooter</label><select id="cfg-shooter"></select>
+          <label for="cfg-invert_left">Invert left</label><input type="checkbox" id="cfg-invert_left">
+          <label for="cfg-invert_right">Invert right</label><input type="checkbox" id="cfg-invert_right">
+          <label for="cfg-fire_power">Fire power</label><input type="number" id="cfg-fire_power" min="1" max="100">
+          <label for="cfg-fire_degrees">Fire degrees</label><input type="number" id="cfg-fire_degrees" step="10">
+        </div>
+      </div>
+      <div class="card">
+        <h2>Sensors</h2>
+        <div class="grid2" id="cfg-sensors"></div>
+        <div class="grid2">
+          <label for="cfg-sample_hz">Samples / s</label><input type="number" id="cfg-sample_hz" min="0.5" max="20" step="0.5">
+        </div>
+        <p class="hint">NXT analog sensors (touch, light, sound) cannot be detected automatically, so set what is plugged in.</p>
+      </div>
+    </div>
+    <div class="row"><button class="primary" id="cfg-save">Save setup</button><span class="hint">Saving stops any recording in progress.</span></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const kb = (n) => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 4000);
+}
+async function api(path, body, raw) {
+  const opts = body === undefined ? {} : { method: "POST", body: raw ? body : JSON.stringify(body), headers: raw ? {} : { "Content-Type": "application/json" } };
+  try {
+    const r = await fetch(path, opts);
+    const data = await r.json();
+    if (!r.ok || data.ok === false) { toast(data.error || `HTTP ${r.status}`); return null; }
+    return data;
+  } catch (e) { toast(String(e)); return null; }
+}
+
+// ---- tabs
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("on", s.id === `tab-${b.dataset.tab}`));
+  history.replaceState(null, "", `#${b.dataset.tab}`);
+  try { localStorage.setItem("nxt-tab", b.dataset.tab); } catch (e) {}
+  if (b.dataset.tab === "programs") loadFiles();
+  if (b.dataset.tab === "sensors") { loadRuns(); drawChart(); }
+  if (b.dataset.tab === "setup") loadConfig();
+}));
+
+// ---- status
+let status = {};
+async function refreshStatus() {
+  let s;
+  try { s = await (await fetch("/api/status")).json(); } catch (e) { s = { connected: false, error: "server unreachable" }; }
+  status = s;
+  const parts = [];
+  if (s.connected) {
+    parts.push(`<span class="ok">●</span> <b>${esc(s.name)}</b>${s.fake ? " (simulated)" : ""}`);
+    if (s.battery_mv != null) parts.push(`battery <b>${(s.battery_mv / 1000).toFixed(2)} V</b>`);
+    if (s.program) parts.push(`running <b>${esc(s.program)}</b>`);
+    if (s.recording) parts.push(`<span class="rec">● REC</span> ${s.recording.rows} rows`);
+  } else {
+    parts.push(`<span class="bad">● Not connected</span>`);
+  }
+  if (s.error) parts.push(`<span class="bad">${esc(s.error)}</span>`);
+  $("status").innerHTML = parts.join(" · ");
+  $("connect").hidden = !!s.connected;
+  $("flash").textContent = s.free_flash != null ? `${kb(s.free_flash)} free` : "";
+  $("prog-state").innerHTML = s.program ? `Running <b>${esc(s.program)}</b>` : "Nothing running.";
+  $("prog-stop").disabled = !s.program;
+  document.querySelectorAll(".pad button, #fire").forEach((b) => (b.disabled = !!s.program));
+  $("rec").textContent = s.recording ? "Stop recording" : "Start recording";
+  $("rec-state").innerHTML = s.recording ? `<span class="rec">● ${esc(s.recording.name)}</span> · ${s.recording.rows} rows` : "Not recording";
+  if (recordingWas && !s.recording) loadRuns();
+  recordingWas = !!s.recording;
+}
+let recordingWas = false;
+$("connect").addEventListener("click", async () => { await api("/api/connect", {}); refreshStatus(); });
+$("estop").addEventListener("click", async () => {
+  release(false);
+  await api("/api/stop", {});
+  if (status.program) await api("/api/program/stop", {});
+  refreshStatus();
+});
+
+// ---- drive
+const MIX = { fwd: [1, 1], back: [-1, -1], left: [-1, 1], right: [1, -1] };
+let held = null, timer = null;
+const power = () => Number($("power").value);
+function sendDrive() { const [l, r] = MIX[held]; api("/api/drive", { left: l * power(), right: r * power() }).then((res) => { if (!res) release(false); }); }
+function press(dir) {
+  if (held === dir) return;
+  release(false);
+  held = dir;
+  document.querySelector(`[data-dir=${dir}]`).classList.add("held");
+  sendDrive();
+  timer = setInterval(sendDrive, 200);
+}
+function release(sendStop = true) {
+  if (timer) clearInterval(timer);
+  timer = null;
+  document.querySelectorAll(".held").forEach((b) => b.classList.remove("held"));
+  if (held && sendStop) api("/api/stop", {});
+  held = null;
+}
+document.querySelectorAll("[data-dir]").forEach((b) => {
+  b.addEventListener("pointerdown", (e) => { if (b.disabled) return; e.preventDefault(); b.setPointerCapture(e.pointerId); press(b.dataset.dir); });
+  b.addEventListener("pointerup", () => release());
+  b.addEventListener("pointercancel", () => release());
+});
+$("stop").addEventListener("click", () => { release(false); api("/api/stop", {}); });
+$("fire").addEventListener("click", () => api("/api/fire", {}));
+$("power").addEventListener("input", () => ($("powerval").textContent = power()));
+const KEYS = { ArrowUp: "fwd", w: "fwd", ArrowDown: "back", s: "back", ArrowLeft: "left", a: "left", ArrowRight: "right", d: "right" };
+addEventListener("keydown", (e) => {
+  if (e.repeat || e.target.matches("input, select") || !$("tab-drive").classList.contains("on")) return;
+  if (KEYS[e.key]) { e.preventDefault(); press(KEYS[e.key]); }
+  else if (e.key === " ") { e.preventDefault(); $("fire").click(); }
+  else if (e.key === "Escape") $("stop").click();
+});
+addEventListener("keyup", (e) => { if (KEYS[e.key] && KEYS[e.key] === held) release(); });
+addEventListener("blur", () => release());
+document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
+
+// ---- live samples
+let samples = [], lastSeq = 0, config = null;
+const COLORS = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6", "--s7", "--s8"].map((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+// Tacho counts run into the thousands and would flatten 0-100 sensor lines, so they start unticked.
+const hidden = new Set(["power_left", "power_right", "tacho_A", "tacho_B", "tacho_C"]);
+
+function seriesFromSample(s) {
+  const out = { power_left: s.left, power_right: s.right };
+  for (const [p, v] of Object.entries(s.tacho || {})) out[`tacho_${p}`] = v;
+  for (const [p, r] of Object.entries(s.sensors || {})) if (config) out[`s${p}_${config.sensors[p]}`] = r.value;
+  return out;
+}
+
+async function pollLive() {
+  const data = await fetch(`/api/live?since=${lastSeq}`).then((r) => r.json()).catch(() => null);
+  if (data && data.samples.length) {
+    if (data.samples[0].seq <= lastSeq) samples = [];
+    samples.push(...data.samples);
+    lastSeq = data.samples[data.samples.length - 1].seq;
+    const keep = 180 * 25;
+    if (samples.length > keep) samples = samples.slice(-keep);
+    renderReadings(samples[samples.length - 1]);
+    if (!frozen) drawChart();
+  }
+}
+
+function renderReadings(s) {
+  const cells = [];
+  for (const [p, v] of Object.entries(s.tacho || {})) cells.push([`Motor ${p} tacho`, `${v}°`]);
+  cells.push(["Power L / R", `${s.left} / ${s.right}`]);
+  const sensorCells = [];
+  if (config) for (const [p, kind] of Object.entries(config.sensors)) {
+    if (kind === "none") continue;
+    const r = (s.sensors || {})[p];
+    const v = s.program ? "paused" : !r ? "–" : r.error ? "error" : r.label ? `${r.label} (${r.value})` : r.value;
+    sensorCells.push([`Port ${p} · ${kind}`, v, r && r.error]);
+  }
+  const html = (list) => list.map(([k, v, err]) => `<div class="reading" ${err ? `title="${esc(err)}"` : ""}><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+  $("drive-readings").innerHTML = html(cells);
+  $("readings").innerHTML = html([...sensorCells, ...cells]) || `<p class="hint">No sensors configured — set them in Setup.</p>`;
+  $("sample-note").textContent = config ? `${config.sample_hz} samples/s${s.program ? " · sensors paused while a program runs" : ""}` : "";
+}
+
+// ---- chart (no library: a small canvas line plot)
+let frozen = null; // {title, points: [{t, ...series}]} when showing a saved run
+function chartData() {
+  if (frozen) return frozen.points;
+  const win = Number($("window").value);
+  if (!samples.length) return [];
+  const tEnd = samples[samples.length - 1].t;
+  return samples.filter((s) => s.t >= tEnd - win).map((s) => ({ t: s.t, ...seriesFromSample(s) }));
+}
+function drawChart() {
+  const canvas = $("chart");
+  if (!canvas.offsetWidth) return;
+  const dpr = devicePixelRatio || 1, W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, H);
+  const pts = chartData();
+  const keys = [...new Set(pts.flatMap((p) => Object.keys(p).filter((k) => k !== "t" && typeof p[k] === "number")))];
+  renderLegend(keys);
+  const css = getComputedStyle(document.documentElement);
+  ctx.font = "11px system-ui"; ctx.fillStyle = css.getPropertyValue("--muted");
+  const shown = keys.filter((k) => !hidden.has(k));
+  if (pts.length < 2 || !shown.length) { ctx.fillText(pts.length < 2 ? "Waiting for data…" : "Pick a series below", 12, 20); return; }
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) for (const k of shown) if (typeof p[k] === "number") { lo = Math.min(lo, p[k]); hi = Math.max(hi, p[k]); }
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
+  const L = 48, R = 8, T = 8, B = 22;
+  const x = (t) => L + (t - t0) / (t1 - t0 || 1) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  ctx.strokeStyle = css.getPropertyValue("--grid"); ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi - lo) * i / 4, yy = y(v);
+    ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke();
+    ctx.fillText(Number(v.toPrecision(4)).toString(), 4, yy + 4);
+  }
+  ctx.fillText(`${(t1 - t0).toFixed(1)} s`, W - R - 40, H - 6);
+  ctx.lineWidth = 2;
+  for (const k of shown) {
+    ctx.strokeStyle = COLORS[keys.indexOf(k) % COLORS.length];
+    ctx.beginPath(); let started = false;
+    for (const p of pts) {
+      if (typeof p[k] !== "number") { started = false; continue; }
+      started ? ctx.lineTo(x(p.t), y(p[k])) : ctx.moveTo(x(p.t), y(p[k]));
+      started = true;
+    }
+    ctx.stroke();
+  }
+}
+function renderLegend(keys) {
+  const sig = keys.join("|") + [...hidden].join("|");
+  if (renderLegend.sig === sig) return;
+  renderLegend.sig = sig;
+  $("legend").innerHTML = keys.map((k, i) => `<label><input type="checkbox" data-k="${esc(k)}" ${hidden.has(k) ? "" : "checked"}><span class="swatch" style="background:${COLORS[i % COLORS.length]}"></span>${esc(k)}</label>`).join("");
+  $("legend").querySelectorAll("input").forEach((c) => c.addEventListener("change", () => { c.checked ? hidden.delete(c.dataset.k) : hidden.add(c.dataset.k); drawChart(); }));
+}
+$("window").addEventListener("change", drawChart);
+addEventListener("resize", drawChart);
+$("back-live").addEventListener("click", () => { frozen = null; $("chart-title").textContent = "Live chart"; $("back-live").hidden = true; drawChart(); });
+
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return null;
+  const head = lines[0].split(",").map((h) => h.trim());
+  const rows = lines.slice(1).map((l) => l.split(","));
+  const tCol = head.findIndex((h) => /^(t|time|ms|tick)$/i.test(h));
+  const scale = tCol >= 0 && /ms|tick/i.test(head[tCol]) ? 1000 : 1;
+  const points = rows.map((r, i) => {
+    const p = { t: tCol >= 0 ? Number(r[tCol]) / scale : i };
+    head.forEach((h, j) => { if (j !== tCol && r[j] !== "" && !isNaN(Number(r[j]))) p[h] = Number(r[j]); });
+    return p;
+  });
+  return points.some((p) => Object.keys(p).length > 1) ? points : null;
+}
+function showFrozen(title, text) {
+  const points = parseCsv(text);
+  if (!points) { toast("No numeric columns to plot"); return; }
+  frozen = { title, points };
+  $("chart-title").textContent = title;
+  $("back-live").hidden = false;
+  document.querySelector("nav [data-tab=sensors]").click();
+}
+
+// ---- recording + runs
+$("rec").addEventListener("click", async () => {
+  await api(status.recording ? "/api/record/stop" : "/api/record/start", {});
+  refreshStatus(); loadRuns();
+});
+async function loadRuns() {
+  const data = await api("/api/runs");
+  if (!data) return;
+  $("runs").innerHTML = data.runs.length ? data.runs.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${kb(r.size)}</td><td class="actions">
+    <button data-plot="${esc(r.name)}">Plot</button> <a href="/api/runs/download?name=${encodeURIComponent(r.name)}"><button>CSV</button></a></td></tr>`).join("")
+    : `<tr><td colspan="3" class="hint">No runs yet.</td></tr>`;
+  $("runs").querySelectorAll("[data-plot]").forEach((b) => b.addEventListener("click", async () => {
+    const text = await fetch(`/api/runs/download?name=${encodeURIComponent(b.dataset.plot)}`).then((r) => r.text());
+    showFrozen(b.dataset.plot, text);
+  }));
+}
+
+// ---- programs + files
+async function loadFiles() {
+  const data = await api("/api/files");
+  if (!data) { $("files").innerHTML = `<tr><td colspan="3" class="hint">Not connected.</td></tr>`; return; }
+  const rows = data.files.sort((a, b) => a.name.localeCompare(b.name)).map((f) => {
+    const n = esc(f.name), isProg = /\.rxe$/i.test(f.name), isText = /\.(txt|csv|log|dat)$/i.test(f.name);
+    return `<tr><td>${n}</td><td class="num">${kb(f.size)}</td><td class="actions">
+      ${isProg ? `<button class="primary" data-run="${n}">Run</button>` : ""}
+      ${isText ? `<button data-view="${n}">View</button>` : ""}
+      <a href="/api/files/download?name=${encodeURIComponent(f.name)}"><button>Download</button></a>
+      <button class="danger" data-del="${n}">Delete</button></td></tr>`;
+  });
+  $("files").innerHTML = rows.join("") || `<tr><td colspan="3" class="hint">No files.</td></tr>`;
+  $("files").querySelectorAll("[data-run]").forEach((b) => b.addEventListener("click", async () => { if (await api("/api/program/start", { name: b.dataset.run })) toast(`Started ${b.dataset.run}`); refreshStatus(); }));
+  $("files").querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Delete ${b.dataset.del} from the brick?`)) return;
+    await api("/api/files/delete", { name: b.dataset.del }); loadFiles();
+  }));
+  $("files").querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", async () => {
+    const d = await api(`/api/files/view?name=${encodeURIComponent(b.dataset.view)}`);
+    if (!d) return;
+    $("viewer").hidden = false; $("viewer-title").textContent = d.name; $("viewer-text").textContent = d.text;
+  }));
+}
+$("files-refresh").addEventListener("click", loadFiles);
+$("viewer-close").addEventListener("click", () => ($("viewer").hidden = true));
+$("viewer-plot").addEventListener("click", () => showFrozen($("viewer-title").textContent, $("viewer-text").textContent));
+$("prog-stop").addEventListener("click", async () => { await api("/api/program/stop", {}); refreshStatus(); });
+$("upload").addEventListener("click", async () => {
+  const f = $("upload-file").files[0];
+  if (!f) { toast("Choose a file first"); return; }
+  const buf = await f.arrayBuffer();
+  if (await api(`/api/files/upload?name=${encodeURIComponent(f.name)}`, buf, true)) { toast(`Uploaded ${f.name}`); loadFiles(); refreshStatus(); }
+});
+
+// ---- setup
+const FIELDS = ["left", "right", "shooter", "invert_left", "invert_right", "fire_power", "fire_degrees", "sample_hz"];
+async function loadConfig() {
+  const data = await api("/api/config");
+  if (!data) return;
+  config = data.config;
+  for (const id of ["left", "right", "shooter"]) $(`cfg-${id}`).innerHTML = ["A", "B", "C"].map((p) => `<option>${p}</option>`).join("");
+  $("cfg-sensors").innerHTML = Object.keys(config.sensors).sort().map((p) => `<label for="cfg-s${p}">Port ${p}</label><select id="cfg-s${p}">${data.sensor_types.map((t) => `<option>${t}</option>`).join("")}</select>`).join("");
+  for (const k of FIELDS) { const el = $(`cfg-${k}`); el.type === "checkbox" ? (el.checked = config[k]) : (el.value = config[k]); }
+  for (const [p, kind] of Object.entries(config.sensors)) $(`cfg-s${p}`).value = kind;
+}
+$("cfg-save").addEventListener("click", async () => {
+  const body = { sensors: {} };
+  for (const k of FIELDS) { const el = $(`cfg-${k}`); body[k] = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value; }
+  for (const p of Object.keys(config.sensors)) body.sensors[p] = $(`cfg-s${p}`).value;
+  const res = await api("/api/config", body);
+  if (res) { config = res.config; renderLegend.sig = null; toast("Setup saved"); refreshStatus(); }
+});
+
+loadConfig().then(() => {
+  let t = location.hash.slice(1);
+  try { t = t || localStorage.getItem("nxt-tab"); } catch (e) {}
+  if (/^\w+$/.test(t || "")) document.querySelector(`nav [data-tab=${t}]`)?.click();
+  refreshStatus(); pollLive(); loadRuns();
+});
+setInterval(refreshStatus, 2000);
+setInterval(pollLive, 300);
+</script>
+</body>
+</html>
