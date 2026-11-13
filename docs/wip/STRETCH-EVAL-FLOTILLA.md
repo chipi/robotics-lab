@@ -46,6 +46,9 @@ eval-harness: success / time / safety over many runs, sim and real
 shadow records a plan and does nothing. For a robot it can execute the plan on the simulated
 twin and score it — a measured rehearsal instead of a dry run.
 
+**Direction (operator, 2026-11-13): the combined mission loop, with shadow = running the plan
+on the simulated duck, is the way forward.** The rest of this note stays ideas.
+
 ## eval-harness: capabilities robotics would push
 
 | # | Capability | Why for robots | Today |
