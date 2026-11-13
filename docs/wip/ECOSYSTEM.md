@@ -39,9 +39,12 @@ workstation rules); whether robot telemetry and models should use them is open.
 
 1. **NXT on its own.** Hardware check, first programs, logs. (Most of the code exists.)
 2. **Microduck on its own.** Its SDK and simulator, its preset behaviours, our first trained one.
-3. **A shared robot contract.** Only once both robots work: pull out what their services have
-   in common (status, actions, telemetry, run-record format). Extracting it from one robot would
-   be guessing.
+3. **A shared robot contract.** The Microduck already has one: every client talks to its
+   daemons through one JSON-RPC contract (`microduck/docs/design/architecture.md`). Operator's
+   direction (2026-11-13): align the NXT with it — when `nxt-web` next changes, give it a
+   JSON-RPC interface shaped like the duck's (status/health, actions, "do a skill", live
+   telemetry), so every robot speaks one interface. Not started; the duck's method list has not
+   been read yet.
 4. **Run records into eval-harness.** Controllers and trained policies as arms, repeated
    physical trials, simulator vs real.
 5. **Robots as flotilla hosts.** Allowed actions per robot, autonomy earned per action, safety

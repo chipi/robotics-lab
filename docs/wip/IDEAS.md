@@ -114,6 +114,31 @@ and behaviours trained in simulation with reinforcement learning.
 5. **Dog games, round two.** Fetch with the beak, chosen with the dog's safety in mind (what it
    carries must not be swallowable).
 
+### Goal project: "tour the home, then hide under the kitchen table"
+
+Operator's goal (2026-11-13): tell the duck to walk into every room, roughly size each one,
+then find the kitchen table and stop under it. Layers, fastest first:
+
+1. **Walking, on the duck, 50 Hz:** the walking policy turns a velocity command into joint
+   targets. Exists.
+2. **Map, obstacles, exploring, on the duck:** `mapd` builds a floor plan (2.5 cm cells) from the
+   depth sensor and leg/gyro odometry, mapping at stops; `autod` avoids obstacles and explores
+   (`microduck/docs/design/mapping-design.md`, `autonomous.md`). Exist upstream, off by default;
+   real-robot drift not yet measured upstream. The depth sensor is "a cane, not a lidar": median
+   valid range about 0.5 m, 90 % under 1 m.
+3. **Meaning, off the duck, every few seconds:** a vision-language model on the DGX reads camera
+   frames (streamed over Wi-Fi, WebRTC): which room is this, is that the kitchen table, are we
+   under it. Upstream's mapper does not use the camera yet.
+4. **Plan, off the duck:** an LLM agent turns the instruction into steps and calls tools (explore,
+   go to, look around, describe view, stop), reading the map for room sizes.
+
+The LLM is not in the walking loop: the duck keeps balance and stops on its own (its deadman
+stops it if commands stop arriving), so seconds of model latency are fine at walking speed.
+Open: how a program off the duck reaches `map.*` / `robot.*` (ssh, or the WebRTC control
+lane); which DGX GPU mode serves a vision model (robotics mode stops all vLLMs); the
+`apartment` sim scene needs the backlash robot before the duck walks in it. Test bed: the
+simulated apartment; measured with eval-harness over many start positions (success, time).
+
 ## AI loop
 
 AI suggests a change to a controller → eval-harness says whether it is really better over

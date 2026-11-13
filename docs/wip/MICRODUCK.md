@@ -79,8 +79,29 @@ Run it (window): `PATH=$HOME/.cargo/bin:$PATH DUCK_SIM_RL=/work/pollen/microduck
 /work/pollen/microduck/scripts/duck-sim`, then `scripts/duck-sim drive 0.3 0`, and
 `scripts/duck-sim down` when done. Add `DUCK_SIM_VIEWER=0` for no window.
 
-Still open: training (step 4) goes on the operator's DGX; not started, and needs the GPU
-coordinated first (`gpu-mode`).
+### Training on the DGX (homelab, 2026-11-13)
+
+The homelab added a `robotics` GPU mode (agentic-ai-homelab `7bae371`; recipe
+`docs/recipes/robotics-training.md`, stack `infra/robotics/microduck/`). `gpu-mode-swap.sh
+robotics` stops every vLLM and Ollama and starts the `robotics-train` container (uv image pinned
+by digest, nvidia runtime, as `ops`, memory capped at 64g, under a timeout). Training code is
+`/opt/robotics/microduck_rl` at `0daab160d3fb`; results land in
+`/opt/robotics/microduck_rl/logs/rsl_rl/velocity/<run>/`. Settings in the ops checkout's
+`infra/robotics/microduck/.env` (`ROBOTICS_TRAIN_ARGS`, `ROBOTICS_MAX_RUNTIME`,
+`ROBOTICS_NUM_ENVS`, `ROBOTICS_MEM_LIMIT`).
+
+First measured run (homelab's numbers, 21:33Z–21:44Z, 4096 envs): GPU memory 5.1 GB, container
+memory 2.6 GiB, 90 % GPU utilisation, 2.78 s per iteration, mean reward 77 at iteration 100.
+torch 2.9.1+cu129 warns that GB10 (capability 12.1) is newer than it supports, and trained anyway.
+Switching to `robotics` took about 1 min, back to `prod` 6 min 18 s.
+
+Lessons: mjlab logs to Weights & Biases by default and stops without a key (use
+`--agent.logger tensorboard`); rsl_rl does **not** save when stopped, so the measured run kept
+only `model_0.pt` (iteration 0, not a usable policy). Always set `--agent.save_interval`.
+
+Full run (planned): `--agent.max_iterations 4000 --agent.save_interval 100`, about 3 h 5 min,
+`ROBOTICS_MAX_RUNTIME=3h30m`, after the nightly (infra keeps 23:45Z–03:00Z clear). Leaving
+`prod` is the operator's call each time.
 
 ## How it connects to the rest
 
