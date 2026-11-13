@@ -129,8 +129,11 @@ simulator (sockets) and the real duck (whichever option) are the same code above
   set +a` gives `LITELLM_API_KEY` and `LITELLM_API_BASE`). It reaches those two aliases only.
   Hard cap $10 per 30 days (homelab's setting; the operator's direction is "whatever we need",
   raised on request). Checked: one text call to each alias, HTTP 200 in 1.7 s and 1.5 s;
-  another alias with the same key, 403. A second open-weight candidate to compare
-  (homelab suggests Gemma 4 26B-A4B) needs the operator's yes.
+  another alias with the same key, 403. A second candidate to compare, `robot-vlm-gemma` →
+  **Gemma 4 26B-A4B** (open weights, 4B active, vision and tools, fits the GB10), on the same key
+  and cap; checked: one call, HTTP 200 in 0.4 s. Aliases live in agentic-ai-homelab
+  `infra/litellm/config.yaml`; changing one or the cap needs the operator's go and the mini's
+  master key.
 - **Phase 2:** once eval-harness picks a model, a local vLLM on the DGX (`:8006`, homelab
   `infra/robotics/`), inside the `robotics` GPU mode; the aliases move, the brain's code does
   not. One vision model can serve both aliases. Any robotics window takes prod down; prod must
