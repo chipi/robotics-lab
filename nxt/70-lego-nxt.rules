@@ -1,2 +1,5 @@
 # LEGO Mindstorms NXT (stock firmware): let the logged-in desktop user open it over USB.
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0694", ATTRS{idProduct}=="0002", TAG+="uaccess"
+# NXT over Bluetooth: `rfcomm bind` creates /dev/rfcommN as root:uucp. Let the logged-in user open
+# it (this covers every rfcomm serial device, not only the NXT's).
+KERNEL=="rfcomm[0-9]*", TAG+="uaccess"

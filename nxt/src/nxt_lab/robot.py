@@ -56,7 +56,7 @@ class NxtRobot:
 
     def __init__(self, config: Config):
         self._lock = threading.RLock()
-        self._brick = nxt.locator.find(backends=["usb"])
+        self._brick = nxt.locator.find(backends=["usb", "devfile"])
         self.left = 0
         self.right = 0
         self.configure(config)

@@ -1,4 +1,4 @@
-"""Find the NXT over USB, print its name and battery, optionally turn one motor.
+"""Find the NXT (USB, or Bluetooth via /dev/rfcomm*), print its name and battery, optionally turn one motor.
 
     uv run scripts/hello.py                      # info only, nothing moves
     uv run scripts/hello.py --motor A            # turn motor A 180 degrees at power 30
@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument("--power", type=int, default=30, help="-100..100, negative = reverse")
     args = parser.parse_args()
 
-    with nxt.locator.find(backends=["usb"]) as brick:
+    with nxt.locator.find(backends=["usb", "devfile"]) as brick:
         name, address, _, free_flash = brick.get_device_info()
         print(f"brick: {name}  address: {address}  free flash: {free_flash} bytes")
         print(f"battery: {brick.get_battery_level()} mV")

@@ -14,6 +14,18 @@ Drives an NXT brick (stock LEGO firmware) from Python using
 
 2. Python env (already done if `.venv/` exists): `uv sync`
 
+3. Bluetooth instead of USB (optional). Needs `rfcomm` (Arch: `bluez-deprecated-tools`).
+   On the brick: Bluetooth → On, and Visibility → Visible. Then pair once (the NXT's default
+   PIN is `1234`; confirm it on the brick too) and bind the serial port:
+
+   ```sh
+   bluetoothctl            # then: scan on / pair 00:16:53:0F:4C:2A / trust 00:16:53:0F:4C:2A
+   sudo rfcomm bind 0 00:16:53:0F:4C:2A
+   ```
+
+   The code tries USB first, then any `/dev/rfcomm*`. The udev rule above also lets the
+   logged-in user open `/dev/rfcomm*`. A bind does not survive a reboot.
+
 ## Run
 
 Plug the brick in by USB and switch it on, then:
