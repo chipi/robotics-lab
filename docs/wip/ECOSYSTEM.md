@@ -10,7 +10,7 @@ not a plan; each step gets its own plan when it starts.
 | Piece | Role | Exists today |
 |---|---|---|
 | **NXT** (`nxt/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC toolchain; never run on hardware yet |
-| **Microduck** | Walking robot with camera, LiDAR, gripper; behaviours trained in simulation | Not arrived; nothing in this repo |
+| **Microduck** | Walking robot with camera, 8×8 depth sensor, beak gripper; behaviours trained in simulation | Not arrived; nothing in this repo |
 | **Robot service** | One small HTTP API per robot: status, actions, live telemetry, run logs | The NXT web server is the first one |
 | **eval-harness** | Decides whether a behaviour or model change is really better | Exists, not connected to robots |
 | **flotilla** | Decides what AI may make a robot do; approvals; timeline per case | Exists; cases, policy, host agents not built yet |

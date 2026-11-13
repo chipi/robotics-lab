@@ -6,10 +6,11 @@ planned. "Untested" means it has never run on the real robot.
 Hardware: a LEGO Mindstorms NXT 2.0 (stock firmware 1.31) built as a tracked Shooterbot. The
 NXT 2.0 set comes with 2 touch sensors, 1 ultrasonic distance sensor and 1 colour sensor, and
 every motor counts its rotation. Also arriving: Hugging Face's **Microduck** (Pollen Robotics),
-which press coverage from August 2026 describes as a $399, 25 cm walking biped with a camera,
-LiDAR, 15 motors, a beak that works as a gripper, and an open-source SDK, simulator and
-reinforcement-learning training stack (Apache 2.0). Not yet checked against the official docs
-or the robot itself.
+which its official repo (`pollen-robotics/microduck`) describes as about 25 cm and 800 g, run by
+a Rockchip RK3566: fifteen servos driven at 50 Hz by neural policies, a camera, an 8×8
+time-of-flight depth sensor (press coverage said LiDAR; the repo does not), a beak that works
+as a gripper, and an Apache-2.0 software stack. Details in [MICRODUCK.md](MICRODUCK.md). Not
+yet checked on the robot itself.
 
 Ground rule: the NXT has 64 KB of RAM, so it runs the fast, simple control loops. AI
 (perception, planning, language) runs on the PC or the duck.
@@ -34,6 +35,26 @@ Expect the dog to knock the robot over or chew cables, and fur may not reflect u
 well, so readings on the dog itself may be poor.
 
 Suggested order: explorer → line follower → follow me → map. Chase and patrol can run any time.
+
+## Wireless NXT
+
+The NXT speaks classic Bluetooth (serial port profile). Plan: start with the PC's own
+Bluetooth, then a small board riding on the robot for house-level range.
+
+1. **PC Bluetooth (start).** Pair, `rfcomm bind` (package `bluez-deprecated-tools`), and
+   nxt-python's device-file backend. One-line change in `robot.py`. Room range.
+2. **ESP32 bridge on the robot (house level).** Bluetooth to the NXT, Wi-Fi to the house.
+   nxt-python already has a network backend for its own `nxt-server`, whose protocol is tiny
+   (`0x98` asks the link type, `0x99` closes, anything else is a command forwarded to the brick
+   and its reply sent back; `nxt/backend/socket.py`, `nxt/command/server.py`). If the ESP32
+   firmware speaks that protocol, `nxt-web` works over Wi-Fi with no change beyond choosing the
+   backend.
+   - Needs an **original ESP32** (classic Bluetooth). ESP32-S2/S3/C3/C6 have Bluetooth LE only.
+   - Off the shelf and small: M5Stack **Atom Lite** (ESP32-PICO-D4: "Bluetooth v4.2 BR/EDR and
+     Bluetooth LE" per Espressif's datasheet; the PICO series is marked not recommended for new
+     designs, so stock may thin out). Avoid AtomS3 / CoreS3 / StampS3 (ESP32-S3).
+3. **Raspberry Pi Zero 2 W on the robot (alternative).** USB to the NXT, runs `nxt-web`
+   itself; heavier and needs more power, but no firmware to write and room for a camera.
 
 ## With eval-harness
 
@@ -76,14 +97,15 @@ not built in flotilla yet, so these wait for those parts or drive them.
 
 ## With the Microduck
 
-What it adds over the NXT (per the press description above): a camera and LiDAR, so it can
-tell a person from a chair and measure a room far better than one ultrasonic sensor; a gripper;
+What it adds over the NXT: a camera and an 8×8 depth sensor, so it can tell a person from a
+chair and see a room better than one ultrasonic sensor; a beak gripper;
 and behaviours trained in simulation with reinforcement learning.
 
 1. **Simulation first.** Set up its open-source simulator and training stack before it
    arrives, so the first day is running, not installing.
 2. **The NXT's weak spots, done properly.** Follow me (camera recognises you) and mapping
-   (LiDAR) are the ideas the NXT can only do roughly.
+   (camera and depth sensor; the simulator ships a six-room `apartment` scene) are the ideas
+   the NXT can only do roughly.
 3. **Trained behaviours as arms in eval-harness.** Policies from different training runs or
    settings, compared on repeated real trials (walking distance before a fall, success at a
    pick-up), and on how far the simulator's result differs from the real robot.
