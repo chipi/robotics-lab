@@ -18,6 +18,7 @@ import threading
 import time
 from pathlib import Path
 
+from duck_lab.nav.cliff import drop_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
@@ -26,6 +27,12 @@ from duck_lab.nav.grid import CostGrid, EmptyMap, plan, thin
 TICK_S = 0.1
 REPLAN_S = 3.0
 STOP_MM = 250            # depth reflex distance, central columns
+CLIFF_STOP_M = 0.45      # a drop this close ahead (horizontal) stops the duck
+# Turning on the spot drifts sideways (run 3 fell while turning beside the stairs), and the duck does
+# not walk backwards reliably (-0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So: no turn on
+# the spot with a remembered drop closer than this; refuse instead.
+TURN_CLEAR_M = 0.35
+BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
 
@@ -36,6 +43,7 @@ class TofStream:
     def __init__(self, path: Path):
         self.nearest_mm = None
         self.frames = 0
+        self.last = None
         self._sock = socket.socket(socket.AF_UNIX)
         self._sock.connect(str(path))
         self._sock.settimeout(1.0)
@@ -57,6 +65,7 @@ class TofStream:
             if msg.get("method") != "tof.frame":
                 continue
             fr = msg["params"]
+            self.last = fr
             rows, cols = fr["rows"], fr["cols"]
             central = range(cols // 2 - 2, cols // 2 + 2)
             near = [fr["distance_mm"][r * cols + c] for r in range(rows) for c in central
@@ -98,6 +107,8 @@ class Navigator:
         self._log = open(log, "a") if log else None
         self._t0 = time.monotonic()
         self.blocked = []    # what the depth reflex saw, in map metres
+        self.drops = []      # where the cliff check found no floor, in map metres
+        self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
     def move(self, tw: Twist) -> None:
         self.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
@@ -143,6 +154,10 @@ class Navigator:
         path, planned_at, st = None, 0.0, FollowState()
         reflex_stops = 0
         while time.monotonic() - start < timeout_s:
+            if self.abort:
+                self.move(Twist())
+                self.record(event="aborted", why=self.abort)
+                return {"status": "aborted", "why": self.abort}
             now = time.monotonic()
             pose = self.loc.pose()
             if path is None or now - planned_at > REPLAN_S:
@@ -151,7 +166,7 @@ class Navigator:
                 except EmptyMap:
                     self.survey()
                     continue
-                grid = grid.covering([pose[:2], goal] + self.blocked).with_blocked(self.blocked)
+                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_blocked(self.blocked + self.drops)
                 raw = plan(grid, pose[:2], goal)
                 if raw is None:
                     self.move(Twist())
@@ -166,6 +181,26 @@ class Navigator:
                 return {"status": "reached", "time_s": round(now - start, 1), "reflex_stops": reflex_stops,
 
                         "pose": [round(v, 3) for v in pose]}
+            pts = []
+            if self.tof.last is not None and self.state.latest is not None:
+                pts = drop_points(self.tof.last, self.state.latest)
+            if tw.vx > 0 and pts and min(p[2] for p in pts) < CLIFF_STOP_M:
+                self.move(Twist())
+                c, s_ = math.cos(pose[2]), math.sin(pose[2])
+                for ax, ay, h in pts:
+                    for extra in (0.0,) + BEYOND_M:
+                        k = (h + extra) / h if h > 0 else 1.0
+                        self.drops.append((pose[0] + k * (c * ax - s_ * ay), pose[1] + k * (s_ * ax + c * ay)))
+                self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose)
+                self.survey()
+                path = None
+                continue
+            nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
+            if st.turning and nearest_drop < TURN_CLEAR_M:
+                self.move(Twist())
+                self.record(event="refused", why="a turn would be too close to a drop", pose=pose)
+                return {"status": "refused", "why": f"a turn {nearest_drop:.2f} m from a drop",
+                        "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm
             if tw.vx > 0 and near is not None and near < STOP_MM:
                 reflex_stops += 1
