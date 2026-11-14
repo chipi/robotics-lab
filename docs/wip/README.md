@@ -13,6 +13,7 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 ## Open notes
 
 - [Status and open decisions](STATUS.md) — start here.
+- [Roadmap](ROADMAP.md) — the order of work.
 - [Ideas](IDEAS.md) — NXT programs, wireless NXT, bigger NXT robots and the arm robot, goal
   projects, eval-harness and flotilla ideas.
 - [Long-term direction](ECOSYSTEM.md) — the robotics ecosystem.
@@ -22,6 +23,7 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
   [RFC-0005](../rfc/RFC-0005-missions.md).
 - [NXT parts to look for](NXT-PARTS.md).
 - [Review of the duck RFCs, 2026-11-14](REVIEW-2026-11-14-duck-rfcs.md) — findings and what was done.
+- [Review of all RFCs, round 2](REVIEW-2026-11-14-round2.md) — findings and what was done.
 - [What robotics asks of flotilla](FLOTILLA-ASKS.md) — for the flotilla session to assess.
 - [What robotics asks of eval-harness (for 0.9)](EVAL-HARNESS-ASKS.md) — for the eval-harness
   session to assess.

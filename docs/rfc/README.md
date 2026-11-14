@@ -34,4 +34,6 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0004 — Missions in words, perception and planning: the brain's models and
   tools](RFC-0004-perception-and-planning.md) (Proposed, revision 2; phase-1 models live)
 - [RFC-0005 — Missions: flotilla decides, the simulated duck rehearses, eval-harness
-  measures](RFC-0005-missions.md) (Proposed, revision 2; the form agreed)
+  measures](RFC-0005-missions.md) (Proposed, revision 3; the form agreed)
+- [RFC-0006 — Mission control: the robotics product, and where it ends and flotilla
+  begins](RFC-0006-mission-control.md) (Proposed; a vision)

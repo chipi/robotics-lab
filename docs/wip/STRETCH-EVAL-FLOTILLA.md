@@ -1,6 +1,10 @@
 # Stretching eval-harness and flotilla into robotics
 
-Status: ideas, 2026-11-13. The operator wants to see how far their two projects can be stretched
+Status: ideas, 2026-11-13. **Superseded in part:** "shadow = run the plan on the simulator" below is
+the first version of the idea; the agreed form (RFC-0005 revision 2) keeps flotilla's shadow and
+makes the simulated duck a second host at `auto` that rehearses every mission. The asks are now in
+[FLOTILLA-ASKS.md](FLOTILLA-ASKS.md) and [EVAL-HARNESS-ASKS.md](EVAL-HARNESS-ASKS.md). The operator
+wants to see how far their two projects can be stretched
 to be useful in robotics. Nothing here is decided in either project: each item would go through
 that project's own RFC/ADR process, and its Non-Goals are read first.
 

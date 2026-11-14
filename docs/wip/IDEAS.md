@@ -230,5 +230,5 @@ repeated runs → the operator approves promoting it.
   type "Sonar", read 73–83 cm).
 - ~~Which motor ports drive which track~~ Checked 2026-11-14: A shooter, B right, C left,
   positive power forward on both.
-- Microduck's actual SDK, simulator and hardware, from the official repository once it is
-  in hand (the description above is from press coverage).
+- Microduck: the official repositories are read and the simulator runs here (MICRODUCK.md); the
+  real robot is not in hand yet.

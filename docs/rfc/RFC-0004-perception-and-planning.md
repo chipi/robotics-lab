@@ -61,7 +61,9 @@ key (`~/robotics-brain-litellm.env`, mode 600, never committed) that reaches onl
 
 ### 2.3 Perception
 
-- **Frames:** `GET /frame` from the duck's console, on the robot and in the simulator alike.
+- **Frames:** `GET /frame` from the duck's console: in the simulator at `127.0.0.1:8080`; on the
+  robot it is on the robot's loopback only (since daemon 0.19), so through the ssh tunnel
+  (`-L 8080:127.0.0.1:8080`) or `duckctl open`.
 - **Questions, not control:** "which room type is this?", "is there a coat rack? where in the
   image?", "how big does this room look?".
 - **From image to map:** the model's bounding box plus the camera intrinsics (`media.video`) give a
@@ -133,3 +135,5 @@ latency, cost, and whether the difference is real.
   this is a playground and prod only matters at night, so daytime robotics windows are fine.
 - 2026-11-14 — Operator: missions in plain words, with end options A (landmark), B (start) and C
   (largest room) passed with the mission; A first. Revision 2 adds §2.1 and the tools for them.
+- 2026-11-14 — Review round 2: corrected where frames come from on the real duck (the session had
+  written "on the LAN", which is false since the duck's daemon 0.19).

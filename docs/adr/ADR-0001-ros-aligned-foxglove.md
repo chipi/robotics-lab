@@ -21,8 +21,9 @@ Neither robot speaks it:
   It can join through a bridge (`/cmd_vel` → `robot.move`, `robot.state` → `/odom` and frames,
   `map.grid` → `/map`, depth and camera frames → their messages).
 
-Nav2, ROS's main navigation attraction, assumes a lidar; the duck has a 45° depth sensor seeing
-about half a metre. ROS 2 targets Ubuntu; this workstation runs Arch.
+Nav2, ROS's main navigation attraction, has defaults built around a 360° range sensor (a lidar);
+the duck has a 45° depth sensor seeing about half a metre. ROS 2 targets Ubuntu; this workstation
+runs Arch.
 
 ## Decision
 
@@ -66,8 +67,8 @@ Neutral:
 
 ## Alternatives considered
 
-- **ROS 2 as the foundation now:** install (a container on Arch), a bridge per robot, and Nav2 not
-  fitting the duck's sensors; the benefits arrive only with the triggers in decision 4.
+- **ROS 2 as the foundation now:** install (a container on Arch), a bridge per robot, and Nav2's
+  defaults not fitting the duck's sensors; the benefits arrive only with the triggers in decision 4.
 - **ROS 2 on the duck itself:** means building ROS into Pollen's OS image and maintaining it;
   against upstream's design.
 - **Our own viewer (the NXT web UI grown up):** fine for one robot's live view, a large project

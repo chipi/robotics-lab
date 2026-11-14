@@ -9,9 +9,9 @@ not a plan; each step gets its own plan when it starts.
 
 | Piece | Role | Exists today |
 | --- | --- | --- |
-| **NXT** (`nxt/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC toolchain; never run on hardware yet |
+| **NXT** (`nxt/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC programs, diagnostics, Docker image; running on the robot over USB and Bluetooth since 2026-11-14 |
 | **Microduck** | Walking robot with camera, 8×8 depth sensor, beak gripper; behaviours trained in simulation | Not arrived; nothing in this repo |
-| **Robot service** | One small HTTP API per robot: status, actions, live telemetry, run logs | The NXT web server is the first one |
+| **Robot interface** | One JSON-RPC interface for every robot (RFC-0003): status, actions, live telemetry, run logs | The NXT web server is the first robot service; mission control ([RFC-0006](../rfc/RFC-0006-mission-control.md)) grows from it |
 | **eval-harness** | Decides whether a behaviour or model change is really better | Exists, not connected to robots |
 | **flotilla** | Decides what AI may make a robot do; approvals; timeline per case | Exists; cases, policy, host agents not built yet |
 | **AI** | Perception, planning, language; runs on the PC, the duck, or the homelab | Not started |

@@ -25,6 +25,8 @@ class Config:
     invert_right: bool = False
     fire_power: int = 75
     fire_degrees: int = 360
+    # The shooter fires 2 cm balls a dog can swallow: off unless switched on in Setup.
+    shooter_enabled: bool = False
     sensors: dict = field(default_factory=lambda: {"1": "none", "2": "none", "3": "color", "4": "ultrasonic"})
     sample_hz: float = 5.0
 

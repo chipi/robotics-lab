@@ -58,7 +58,7 @@ lint: ## Byte-compile every Python file
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
 	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
-	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; tail -20 /tmp/robotics-lab-test_web_smoke.log; exit 1; }
+	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
 	@echo "test-unit PASS"
 
 .PHONY: nxt-programs
@@ -116,6 +116,7 @@ test-hardware: nxt-sync ## Checks on the real NXT: sensors, link speed, and stop
 	$(NXT_PY) $(NXT_DIR)/tests/hw_read_sensors.py
 	@test -e /dev/rfcomm0 && $(NXT_PY) $(NXT_DIR)/tests/hw_link_speed.py || echo "SKIP hw_link_speed.py: no /dev/rfcomm0"
 	$(NXT_PY) $(NXT_DIR)/tests/hw_stop_on_sigterm.py
+	$(NXT_PY) $(NXT_DIR)/tests/hw_stop_on_connect.py
 	@echo "test-hardware PASS"
 
 # ---- Docs --------------------------------------------------------------------

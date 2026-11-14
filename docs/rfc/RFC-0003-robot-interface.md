@@ -1,6 +1,7 @@
 # RFC-0003 — One robot interface: JSON-RPC for every robot, and a deadman on the NXT
 
-**Status:** Proposed (2026-11-14). Direction agreed by the operator ("align the next LEGO on one
+**Status:** Proposed, revision 2 (2026-11-14) after [review round 2](../wip/REVIEW-2026-11-14-round2.md).
+Direction agreed by the operator ("align the next LEGO on one
 JSON-RPC interface for everything"); where the NXT's interface lives is the operator's decision
 once the current pieces work.
 **Builds on:** [RFC-0001](RFC-0001-nxt-web-ui.md), [RFC-0002](RFC-0002-robot-brain.md),
@@ -27,11 +28,12 @@ and give the NXT the subset that makes sense, with the same names:
 | Method | Duck | NXT |
 | --- | --- | --- |
 | `hello {client}` | names the caller | same |
-| `robot.subscribe` → `robot.state` | odometry, twist, source, safety | motor powers and tachos, sensors, running program, link |
-| `robot.move {vx, vyaw}` | walk | tracks (differential drive: speed and turn → left/right power) |
+| `robot.subscribe` → `robot.state` | odometry, twist (requested, applied), source, `limited_by`, safety | odometry from the track counts (pose in an `odom` frame), requested and measured track speeds, sensors, link, `limited_by: deadman` when robotd-lite stopped it |
+| `robot.move {vx, vyaw}` | walk | tracks (differential drive: speed and turn → left/right power, through a per-robot m/s → power calibration; the navigator still closes on measured odometry) |
 | `robot.stop` | stop | stop all motors |
 | `robot.do {skill}` | kicks, roll, emotions | fire, run an on-brick program |
-| `robot.health` | battery, temperatures | battery, firmware, link, free flash |
+| `robot.health` | battery, temperatures | battery, firmware, link, free flash — per brick (§2.5) |
+| `robot.autonomous` | the duck's own `autod` drives | "an on-brick program drives" (a game such as chase), as distinct from robotd-lite |
 | `tof.frame` / sensors | 8×8 depth | ultrasonic, colour (as their own stream) |
 
 The web UI then becomes one client of this interface instead of having its own API.
@@ -79,7 +81,43 @@ A small NXC program running on the brick:
 - reports state back through a message box.
 
 With it, a crashed server, a hung link or a dropped Bluetooth connection stops the robot within
-half a second, whatever the link.
+half a second, whatever the link. **It is the first thing to build on the NXT**, before more
+features: today every STOP path runs on the PC.
+
+Throughput: `message_write` asks for a reply (a round trip, like the 41 ms measured per read over
+Bluetooth), unlike today's no-reply motor command; a no-reply variant is a few lines. Reads are
+round trips too, and `message_read` raises when the box is empty. A move every 200 ms with a 0.5 s
+deadman (two misses tolerated) uses about 40 % of the Bluetooth link; every 100 ms, about 80 %.
+Firing is irreversible: `robot.do fire` is always `propose` in a mission
+([RFC-0005](RFC-0005-missions.md)) and refused unless the shooter is enabled.
+
+### 2.4 Coexisting with the web UI's program interlock
+
+Today the NXT service refuses driving and firing while any program runs on the brick, and stops
+reading sensors then ([RFC-0001](RFC-0001-nxt-web-ui.md) §3.3). robotd-lite is itself a program,
+so:
+
+- **robotd-lite is the one program under which `robot.move` is allowed**: the service sends motion
+  only through its message boxes, and direct motor commands only as `robot.stop`'s belt and braces;
+- sensors and odometry then come from robotd-lite's state box, not from direct reads;
+- any other running program (a game) keeps today's interlock;
+- presence check: `message_read` fails with "no active program" when nothing runs; the service
+  shows "deadman program present" and, without it, refuses to move — or, if the operator chooses,
+  drives directly with the PC watchdog, visibly flagged.
+
+### 2.5 Two bricks, one robot
+
+The arm robot ([IDEAS.md](../wip/IDEAS.md)) uses two bricks, `BODY` and `ARM`, behind one NXT
+service. The interface gains:
+
+- `bricks[]` in `robot.health` and `robot.state` (each brick's battery, link, firmware);
+- an `arm.*` namespace (our extension; the duck has no arm): joint targets, gripper open/close,
+  `arm.state`;
+- **a robotd-lite on both bricks**, and if either brick drops off or its deadman trips, the whole
+  robot stops; `robot.stop` stops both.
+
+nxt-python supports this: bricks are renamed (`set_brick_name`) and found by name; the Bluetooth
+device-file backend walks every `/dev/rfcomm*`.
 
 ## 3. Non-goals
 

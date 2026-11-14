@@ -46,10 +46,18 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 - [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md) (2026-11-14): ROS 2 not the foundation now;
   terms and data shapes aligned with ROS; Foxglove (MCAP run records, live streaming) from the start.
+- 2026-11-14: the navigator moves onto the robot mid-term; the brain oversees several missions;
+  robots working together is a later phase ([RFC-0002](../rfc/RFC-0002-robot-brain.md) §3.10).
+- 2026-11-14: the brain's UI from the start is a mission control page, an MCP server and a Slack
+  app; everything robot-specific goes into mission control, a future open-source product; the line
+  to Foxglove, eval-harness and flotilla in [RFC-0006](../rfc/RFC-0006-mission-control.md).
+- 2026-11-14: NXT stops its motors on every connect; the shooter is off unless enabled
+  ([RFC-0001](../rfc/RFC-0001-nxt-web-ui.md) §3.3).
 
-## Next
+## Next (full order: [roadmap](ROADMAP.md))
 
 - Robot brain phase 0, the spike: turning in the backlash scene, the backlash robot in the
   apartment, `mapd` mapping with autonomy off.
-- The NXT on-brick deadman ("robotd-lite"): write and compile; test on the brick at home.
+- The NXT on-brick deadman ("robotd-lite"), with the coexistence rule of RFC-0003 §2.4: write and
+  compile; test on the brick at home, with `make test-hardware` (now including stop on connect).
 - At home: chase and patrol on the floor; touch sensors as bumpers.

@@ -76,12 +76,14 @@ nav:
     - RFC-0003 — One robot interface: rfc/RFC-0003-robot-interface.md
     - RFC-0004 — Missions in words, perception, planning: rfc/RFC-0004-perception-and-planning.md
     - RFC-0005 — Missions: rfc/RFC-0005-missions.md
+    - RFC-0006 — Mission control: rfc/RFC-0006-mission-control.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md
+    - Roadmap: wip/ROADMAP.md
     - Ideas: wip/IDEAS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md
@@ -89,6 +91,7 @@ nav:
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md
     - NXT parts to look for: wip/NXT-PARTS.md
     - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
+    - Review of all RFCs, round 2: wip/REVIEW-2026-11-14-round2.md
     - What robotics asks of flotilla: wip/FLOTILLA-ASKS.md
     - What robotics asks of eval-harness: wip/EVAL-HARNESS-ASKS.md
   - History:

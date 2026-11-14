@@ -155,7 +155,16 @@ try:
     check("link test", code == 200 and r["linktest"]["n"] == 20, r)
     code, r = call(base, "/api/connect", {"link": "bogus"})
     check("connect refuses an unknown link", code == 409, (code, r))
-    call(base, "/api/fire", {})
+    code, r = call(base, "/api/fire", {})
+    check("fire refused while the shooter is switched off (default)", code == 409 and "switched off" in r["error"], r)
+    call(base, "/api/config", {"shooter_enabled": True})
+    code, r = call(base, "/api/fire", {})
+    check("fire works once the shooter is enabled", code == 200, (code, r))
+    call(base, "/api/config", {"shooter_enabled": False})
+    code, r = call(base, "/api/live?since=abc")
+    check("bad since= is a 400, not a crash", code == 400, (code, r))
+    code, r = call(base, "/api/events?since=-1")
+    check("negative since= is a 400", code == 400, (code, r))
     for _ in range(3):
         call(base, "/api/drive", {"left": 20, "right": 20}); time.sleep(0.2)
     call(base, "/api/stop", {})
@@ -168,6 +177,8 @@ try:
     check("log: a held drive is logged once, not per keepalive", len(drives) == 1, len(drives))
     check("log: watchdog stop is logged", "watchdog stop" in kinds, kinds[-8:])
     check("log: failed commands are logged as not ok", any(not e["ok"] for e in ev), [e for e in ev if not e["ok"]][:2])
+    soc = [e for e in ev if e["kind"] == "stop on connect"]
+    check("log: stop on connect is logged", len(soc) == 1 and soc[0]["were_running"] == [], soc)
     newer = call(base, f"/api/events?since={ev[-1]['seq']}")[1]["events"]
     check("log: since= returns only newer", all(e["seq"] > ev[-1]["seq"] for e in newer), len(newer))
     code, raw = call(base, "/api/events/download")

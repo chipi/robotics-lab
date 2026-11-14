@@ -85,6 +85,10 @@ later.
 
 ## 6. Not verified
 
+- **eval-harness 0.8 changed names** (its session, 2026-11-14): "configs" are now "systems", runs
+  live in `data/runs/<run_id>/`, and `import-run` takes `--system-id`. The references above are
+  from 0.6.0; the eval-harness session maps them when assessing.
+
 - The minimum number of items eval-harness needs for a confidence interval: the first read reported
   "more than 5"; the second review did not find that threshold in `stats.py`.
 - Code references are from 0.6.0 at `bc2286392`; 0.7 and 0.8 may have changed them.

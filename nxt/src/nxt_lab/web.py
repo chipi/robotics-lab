@@ -91,6 +91,8 @@ class Controller:
                 self.connected_at = time.monotonic()
                 self.connects += 1
                 self.event("connect", link=self.robot.link, detail=self.robot.link_detail, asked=self.link_pref)
+                self.event("stop on connect", ok=not self.robot.running_on_connect,
+                           were_running=self.robot.running_on_connect)
             except Exception as exc:
                 self.error = f"{type(exc).__name__}: {exc}"
                 self.event("connect", ok=False, asked=self.link_pref, error=self.error)
@@ -263,9 +265,14 @@ def make_handler(controller: Controller):
                 self._send(200, INDEX_HTML, "text/html; charset=utf-8")
             elif path == "/api/status":
                 self._handle(lambda: self._json(200, c.status()))
-            elif path == "/api/live":
-                since = int(q.get("since", 0))
-                self._json(200, {"samples": c.recorder.since(since)})
+            elif path in ("/api/live", "/api/events"):
+                since = q.get("since", "0")
+                if not since.isdigit():
+                    self._json(400, {"ok": False, "error": f"since must be a whole number, not {since!r}"})
+                elif path == "/api/live":
+                    self._json(200, {"samples": c.recorder.since(int(since))})
+                else:
+                    self._json(200, {"events": [e for e in list(c.events) if e["seq"] > int(since)]})
             elif path == "/api/config":
                 self._json(200, {"config": c.config.to_dict(), "sensor_types": SENSOR_TYPES})
             elif path == "/api/runs":
@@ -278,9 +285,6 @@ def make_handler(controller: Controller):
                 self._handle(lambda: self._attachment(q["name"], c.call(lambda r: r.download(q["name"])), "application/octet-stream"))
             elif path == "/api/diagnostics":
                 self._handle(lambda: self._json(200, c.diagnostics()))
-            elif path == "/api/events":
-                since = int(q.get("since", 0))
-                self._json(200, {"events": [e for e in list(c.events) if e["seq"] > since]})
             elif path == "/api/events/download":
                 data = c.events_path.read_bytes() if c.events_path.exists() else b""
                 self._attachment("events.jsonl", data, "application/x-ndjson")
@@ -322,6 +326,8 @@ def make_handler(controller: Controller):
                     c.call(lambda r: r.stop())
                     c._last_drive_logged = (0, 0)
                 elif path == "/api/fire":
+                    if not c.config.shooter_enabled:
+                        raise RuntimeError("the shooter is switched off (Setup → Shooter enabled); its balls are small enough for a dog to swallow")
                     if c.recorder.program:
                         raise RuntimeError("a program is running on the brick; stop it first")
                     c.call(lambda r: r.fire())

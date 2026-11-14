@@ -68,10 +68,23 @@ The NXT's stock firmware has **no deadman**: a motor keeps its last command. So:
 3. **A program on the brick has the robot.** While one runs, driving and fire are refused, and the
    server stops reading sensors (reading can change a sensor's mode under the program); motor
    counters are still logged.
-4. **Power is clamped** to ±100 and upload names are checked against the brick's file-name rules.
+4. **Power is clamped** to ±100, upload names are checked against the brick's file-name rules, and
+   every request body is limited to 256 KB.
+5. **Motors are stopped on every connect** (server start, reconnect, link switch), and the command
+   log records "stop on connect" with the ports that still had power: after a lost link or a crash
+   the brick keeps its last power while a fresh connection believes it stopped (review 2, MAJ-3).
+6. **The shooter is off unless switched on in Setup** (`shooter_enabled`, default off; Fire is
+   disabled until then): its 2 cm balls are small enough for a dog to swallow.
 
-What it cannot cover: a hard crash of the server, or a lost link, leaves the motors running. That
-needs a deadman on the brick itself ([RFC-0003](RFC-0003-robot-interface.md) §4).
+What it cannot cover:
+
+- a hard crash of the server, or a lost link, leaves the motors running until the next connect;
+  that needs a deadman on the brick itself ([RFC-0003](RFC-0003-robot-interface.md) §2.3);
+- **no obstacle stop while driven from the PC:** the ultrasonic is sampled for display only (2–5
+  times a second); robotd-lite will stop on it locally;
+- the program check is up to 1 s stale, so a program started from the brick's own menu can be
+  driven over for up to a second;
+- `fire()` holds the robot's lock for the whole turn, so a watchdog stop waits behind it.
 
 ### 3.4 Data
 
@@ -104,8 +117,13 @@ needed to upload and to read their logs.
 
 - **Smoke test** against the simulated brick: every endpoint, the watchdog, clamping, recording,
   path-traversal refusal, programs, the command log, diagnostics, and SIGTERM taking the stop path
-  (that check fails on the code before the fix). It skips its real-hardware checks whenever a
-  brick may be reachable (USB or any `/dev/rfcomm*`).
+  (that check fails on the code before the fix), stop on connect, the shooter lockout, and a bad
+  `since=` answered with 400. It skips its real-hardware checks whenever a brick may be reachable
+  (USB or any `/dev/rfcomm*`). `make test-unit`.
+- **Image:** `make test-integration` builds the Docker image and checks it answers with the
+  simulated brick.
+- **Hardware checks** (`make test-hardware`, manual, moves the tracks briefly): sensors, link
+  speed, stop on SIGTERM, stop on connect.
 - **On the robot (2026-11-14):** each motor turned and identified (A shooter, B right, C left,
   positive power forward), sensors read (colour on 3, ultrasonic on 4, which reports "Sonar"), the
   operator drove and recorded over USB, then over Bluetooth; `first.rxe` ran and its log was read
@@ -113,6 +131,11 @@ needed to upload and to read their logs.
 - Measured: about 41 ms per command over Bluetooth with nothing else running; about 170–190 ms
   median while live sampling shares the link; the sampler reaches 1.96 of 2 samples/s over
   Bluetooth.
+
+**Not covered by any test:** switching link on a real brick (the simulated brick ignores it); the
+lost-link path; fire refused while a program runs; the watchdog's failure branch; SIGTERM while a
+Bluetooth read is stalled; the image passing USB or rfcomm devices through (it is only tested with
+the simulated brick); `hw_stop_on_connect.py` has not yet been run on the brick.
 
 ## 5. Alternatives considered
 
@@ -135,15 +158,17 @@ needed to upload and to read their logs.
 ## 7. Open questions
 
 1. **A deadman on the brick** — the only fix for a crashed server or a lost link
-   ([RFC-0003](RFC-0003-robot-interface.md) §4).
+   ([RFC-0003](RFC-0003-robot-interface.md) §2.3). First priority on the NXT.
 2. **One connection at a time.** A second program on the same link scrambles replies, and
    Bluetooth reads have no timeout, so a stalled link hangs the server and its watchdog. Needs a
    read timeout and, ideally, the NXT service as the only owner of the link.
-3. **Access from other devices.** Today: an ssh tunnel over the tailnet. Opening the port needs a
+3. **The Docker image** has no `rfcomm` or `bluetoothctl`, so the Bluetooth part of Diagnostics is
+   empty inside it, and it runs as root (to reach the device nodes).
+4. **Access from other devices.** Today: an ssh tunnel over the tailnet. Opening the port needs a
    firewall rule and, before that, some form of login — the UI can drive a robot.
-4. **The JSON-RPC interface** of [RFC-0003](RFC-0003-robot-interface.md): the UI would become one
+5. **The JSON-RPC interface** of [RFC-0003](RFC-0003-robot-interface.md): the UI would become one
    client of it rather than having its own HTTP API.
-5. **More sensors and motors** (multiplexers, a second brick; [NXT-PARTS.md](../wip/NXT-PARTS.md)):
+6. **More sensors and motors** (multiplexers, a second brick; [NXT-PARTS.md](../wip/NXT-PARTS.md)):
    the Setup tab offers LEGO's six sensor types only.
 
 ## 8. Discussion

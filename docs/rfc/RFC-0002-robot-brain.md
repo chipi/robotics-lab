@@ -1,7 +1,8 @@
 # RFC-0002 — The robot brain: modes, navigator, safety and phases
 
-**Status:** Proposed, revision 2 (2026-11-14): the [review](../wip/REVIEW-2026-11-14-duck-rfcs.md)
-and the operator's decisions taken in. Phase 0 approved by the operator.
+**Status:** Proposed, revision 3 (2026-11-14): two reviews ([round 1](../wip/REVIEW-2026-11-14-duck-rfcs.md),
+[round 2](../wip/REVIEW-2026-11-14-round2.md)) and the operator's decisions taken in. Phase 0
+approved by the operator.
 **Builds on:** [ECOSYSTEM.md](../wip/ECOSYSTEM.md), [MICRODUCK.md](../wip/MICRODUCK.md),
 [RFC-0001](RFC-0001-nxt-web-ui.md) (the NXT's safety lessons).
 **Part of a set:** [RFC-0003](RFC-0003-robot-interface.md) (the robot interface),
@@ -20,7 +21,7 @@ A mission is **explore + report + an end**. The end is one of three options (ope
 
 | End | In words | In the simulated apartment |
 | --- | --- | --- |
-| **A. Landmark** (first) | "…then go to the front door" | stop 1 m from the coat rack in the corridor (the hall) |
+| **A. Landmark** (first) | "…then go to the front door" | stop 1 m from the coat rack at the corridor's north end |
 | **B. Start** | "…then come back" | return to where the mission began |
 | **C. Largest room** | "…then wait in the biggest room" | stop in the doorway of the room it measured largest |
 
@@ -39,7 +40,8 @@ Gives:
 - **One interface:** JSON-RPC 2.0, one object per line, over Unix sockets, one socket per daemon; a
   subscription owns its connection.
 - **Moving:** `robot.move {vx, vy, vyaw}` (m/s, rad/s), sent repeatedly; `robot.head`, `robot.look`,
-  `robot.do {skill}`, `robot.stop`, `robot.flashlight` (an RGB light any client may set).
+  `robot.do {skill}`, `robot.stop`, `robot.flashlight` (an RGB light any client may set; refused in
+  the simulator, which has none).
 - **State:** `robot.subscribe` streams odometry, the applied twist and who sent it, what limited it
   (e.g. `deadman`), fall and pick-up flags, whether the duck's own autonomy is on.
 - **Depth:** a VL53L8CX, 8×8 zones over 45°, about 15 times a second — "a cane, not a lidar": the
@@ -48,8 +50,10 @@ Gives:
   has no go-to; it has `map.wipe`, which the brain never calls. **It maps only while the duck's
   autonomy is on, unless `[map] enabled = true`** (off by default upstream because its standing CPU
   cost on the board has not been measured).
-- **Camera:** `GET /frame` on the duck's own console, on the robot and in the simulator alike;
-  `media.stream` for pushing video to a remote receiver.
+- **Camera:** `GET /frame` on the duck's console — in the simulator at `127.0.0.1:8080`; on the
+  robot only on its own loopback (since daemon 0.19 the console is not on the LAN; a laptop
+  reaches it
+  through `duckctl open` or an ssh tunnel); `media.stream` for pushing video to a remote receiver.
 - **A 500 ms deadman:** the twist goes to zero if move commands stop. Stop is not limp.
 
 Does not give, and what that forces:
@@ -73,11 +77,13 @@ Does not give, and what that forces:
 
 | Mode | Who drives | Mapping | The brain |
 | --- | --- | --- | --- |
-| **auto** (explore) | the duck's own `autod`: wanders, avoids obstacles, ends each wander in a 4–6 s survey | on by itself | **watches**: copies the map, labels rooms from the camera, collects data |
+| **auto** (explore) | the duck's own `autod`: wanders, avoids obstacles, ends each wander in a 4–6 s survey (with mapping on, as it is in this mode) | on by itself | **watches**: copies the map, labels rooms from the camera, collects data |
 | **brain** | our navigator | on (`[map] enabled = true`) | drives to goals and to the mission's end |
 
-The switch is `robot.autonomous` on/off, flipped by the brain (or the operator). The duck's
-flashlight shows the mode: green auto, blue brain, red stopped or waiting for the operator.
+The switch is `robot.autonomous` on/off, flipped by the brain (or the operator). On the real duck
+the flashlight shows the mode (green auto, blue brain, red stopped or waiting for the operator); the
+simulator refuses `robot.flashlight`, so the brain logs the refusal and carries on, and the lamp is
+checked in phase 5.
 
 A mission can use both: explore in **auto** while the brain watches, then switch to **brain** to
 finish (end A/B/C) — reusing upstream's tested explorer and obstacle handling. Whether `autod`'s
@@ -125,7 +131,8 @@ Our software connects to the local socket files exactly as if it were on the duc
 simulator they are local files in `~/.cache/duck-sim/`, so **the same code drives both**; only the
 paths change. This is upstream's documented developer path (running the gamepad program from a
 laptop: `docs/robot/cheatsheet-dev.md`). ssh on Wi-Fi is opened with the face button (30 min), over
-USB until reboot, or kept open by the developer image. Frames come from `/frame` on the LAN.
+USB until reboot, or kept open by the developer image. Frames come through the same ssh session
+(`-L 8080:127.0.0.1:8080`, then `/frame`), since the console is on the robot's loopback only.
 
 | | Simulator (phases 0–4) | Real duck (phase 5) |
 | --- | --- | --- |
@@ -141,25 +148,32 @@ minute, no pixels) is for a brain away from home, not for the navigator.
 | # | Phase | Done when |
 | --- | --- | --- |
 | 0 | **Spike: is the simulator a usable stand-in?** Turning in the backlash scene; the backlash robot in the apartment; `mapd` with `[map] enabled = true` beside `duck-sim` | Turning on the spot within 20 % of upstream's ~50°/s; the duck walks in the apartment; the map gains keyframes with autonomy off. If not, phases 1–4 are blocked and RFC-0005's rehearsal is revisited |
-| 1 | **Groundwork + navigator.** Project (uv), JSON-RPC client, modes, flashlight, navigator | 20 go-to goals from fixed starts: each reached or refused; zero contacts between the duck and walls or furniture in MuJoCo's contact list; all logged |
+| 1 | **Groundwork + navigator.** Project (uv), JSON-RPC client, modes, navigator | 20 go-to goals from fixed starts: each reached or refused; zero contacts between the duck and walls or furniture in MuJoCo's contact list; all logged |
 | 2 | **Explore, map, rooms** (both ways: `autod` exploring with the brain watching, and the brain exploring) | All six rooms visited; each room's area within ±25 % of `apartment.xml`'s floor boxes; time per way compared |
 | 3 | **Perception** ([RFC-0004](RFC-0004-perception-and-planning.md)) | Room type right at most survey stops; the coat rack found from every start |
-| 4 | **Missions in words** | End A from ≥ 10 start poses, then B and C, scored by eval-harness; mission specs from sentences checked offline |
+| 4 | **Missions in words** | End A from ≥ 10 start poses, then B and C, scored by eval-harness; mission specs from sentences checked offline. End A is judged from the camera bearing and odometry (the coat rack is a 4 cm pole the map will not hold), and graded against simulator ground truth: the trunk's distance to the coat-rack geom |
 | 5 | **Real duck** | `mapd`'s CPU cost on the board measured; the same score sheet, simulator vs real, with the commanded/measured speed gain as the first comparison |
 
 ### 3.5 Prerequisites in the simulator
 
-- `mapd` is not started by `duck-sim`: phase 0 starts it with the sim's `robotd.toml` plus
-  `[map] enabled = true`.
+- `mapd` is not started by `duck-sim`: phase 0 adds `[map] enabled = true` to the sim's
+  `robotd.toml` and starts it against the sim's sockets and a map file of its own:
+  `mapd --config ~/.cache/duck-sim/robotd-duck-a.toml --robot-socket ~/.cache/duck-sim/duck-a.sock
+  --tof-socket ~/.cache/duck-sim/duck-a-tof.sock --socket ~/.cache/duck-sim/duck-a-map.sock
+  --map ~/.cache/duck-sim/duck-a-map.json` (its defaults are the robot's `/run/…` paths).
 - The `apartment` scene carries the robot without backlash, on which the walking policy does not
   step: phase 0 makes a backlash variant. Scene changes are offered to Pollen, not forked silently.
-- The corridor has a **staircase hole** on the way to the hall: the cliff check is tested there.
+- The corridor has a **staircase hole** (mid-south; the coat rack is at the north end), on the way
+  when approaching from the south: the cliff check is tested there.
 
 ### 3.6 Safety
 
 Limits: §2.1 speeds, a depth stop distance, a maximum mission time, a geofence (cells mapped free,
 plus the frontier). An operator STOP sends `robot.stop` directly, never through the planner. The
-planner's tools are an allowlist; every model call has a timeout.
+planner's tools are an allowlist; every model call has a timeout. Every STOP path runs on the
+workstation today; the robot's own deadman is the backstop. **Real-duck missions need the operator in
+the room with a STOP at hand** (phase 5 precondition): the depth sensor sees only a 45° wedge ahead,
+so a dog arriving from the side or behind is not seen.
 
 | Situation | Rule |
 | --- | --- |
@@ -198,12 +212,14 @@ tested on recorded state and replayed offline before it drives:
    start; speed and turn corrected from measured odometry.
 4. **Reflexes, every depth frame:** something close ahead → stop; floor gone → stop.
 5. **Deadman:** a move command every 100 ms while walking.
-6. **Surveys:** no twist, head sweep, wait for `collecting`.
+6. **Surveys:** a zero twist (or none), head sweep, wait for `collecting`. `mapd` counts a twist
+   under 0.02 m/s and 0.05 rad/s as "not commanded" (`maploc/src/input.rs`), so the navigator may
+   keep sending zeros.
 7. **Exploring:** the nearest worthwhile frontier (free cells next to unknown).
 
 The concepts and frame names follow ROS 2 Nav2, the standard navigation stack, so moving to Nav2
-later stays possible. Not now: it means installing ROS 2 and bridging the duck's JSON-RPC, and Nav2
-assumes a lidar, not a 45° short-range depth sensor.
+later stays possible. Not now: it means installing ROS 2 and bridging the duck's JSON-RPC, and Nav2's
+defaults assume a 360° range sensor, not a 45° short-range depth sensor.
 
 ### 3.9 How the link evolves
 
@@ -219,26 +235,53 @@ MQTT for fleets).
    no new code. A developer tool, not the end state.
 3. **Grown up:** the navigator runs **on the duck** beside `autod` (it is a Linux computer); the
    brain stays off-board and talks to it through the relay, the WebRTC channel, or our own JSON-RPC
-   ([RFC-0003](RFC-0003-robot-interface.md)). The reflex loop no longer crosses Wi-Fi. This
-   reverses the v1 non-goal "no code of ours on the duck", so it is an open decision (§5).
+   ([RFC-0003](RFC-0003-robot-interface.md)). The reflex loop no longer crosses Wi-Fi. **Decided
+   by the operator (2026-11-14): the navigator moves onto the robot mid-term** (on the NXT, onto a Pi
+   riding on the brick). The v1 non-goal "no code of ours on the duck" holds until then.
+
+### 3.10 Several robots, the brain's API and its UIs
+
+**Several missions at once:** the brain holds several robots and oversees one mission per robot in
+parallel — a navigator per robot (near it), a lock per robot, a mission case per robot.
+
+**Robots working together** (the duck watches, the NXT drives) is a later phase (operator,
+2026-11-14), because it needs new concepts: a **shared map** with a common frame (markers on the
+floor both can see, or the duck's camera locating the NXT), shared objects, and a mission that
+spans robots. Phase 6 below; also on the [roadmap](../wip/ROADMAP.md).
+
+**The UI into the brain:** the brain has an API (JSON-RPC: `mission.start`, `mission.stop`,
+`status`, an events stream) and every UI is a client of it:
+
+| Client | For |
+| --- | --- |
+| **Mission control** page (grown from `nxt-web`, [RFC-0006](RFC-0006-mission-control.md)) | from the start: type a mission, see the spec read back, confirm; robots and modes; a big STOP |
+| A **Slack app** | from the start: notifications and simple commands; approvals move to flotilla when connected |
+| flotilla's operator UI | later: missions as cases, approvals with evidence, history |
+| Foxglove ([ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md)) | watching: map, path, pose, camera, decisions on one timeline |
+| The command line | scripts and tests |
+| An **MCP server** | from the start: talking to the robots from Claude or any agent |
+
+| # | Phase (after 5) | Done when |
+| --- | --- | --- |
+| 6 | **Robots working together**: shared map and common frame, shared objects, missions across robots | The duck and the NXT localise in one frame and complete one joint mission in simulation and at home |
 
 ## 4. Non-goals (v1)
 
 - Training walking policies (separate work, [MICRODUCK.md](../wip/MICRODUCK.md)).
 - The LLM controlling motion, or anything in the 50 Hz loop.
 - Changing the duck's own daemons; our code on the duck.
-- Several robots at once; the NXT joins after phase 4.
+- Robots working together in one mission (a shared map and more; §3.10, phase 6); the NXT joins
+  after phase 4.
 
 ## 5. Open questions
 
 1. `autod`'s coverage in auto mode — measured in phase 2.
 2. `mapd`'s CPU cost on the real board with `[map] enabled = true` — measured in phase 5.
 3. Room segmentation on a coarse grid from a short-range sensor — phase 2.
-4. Whether `mapd` treats a zero twist as "no twist asked for" when deciding a stop, or the
-   navigator must stop sending — checked in phase 0.
+4. ~~Whether `mapd` treats a zero twist as "no twist asked for"~~ Answered from source: yes, a
+   deadband (§3.8); confirmed empirically in phase 0.
 5. Where the brain runs long-term (workstation, DGX, an always-on box).
-6. **Whether the navigator moves onto the duck** (§3.9, step 3) — the operator decides; it reverses
-   a v1 non-goal.
+6. ~~Whether the navigator moves onto the duck~~ Decided: yes, mid-term (§3.9).
 
 ## 6. Alternatives considered
 
@@ -266,5 +309,10 @@ MQTT for fleets).
 - 2026-11-14 — Operator asked how the navigator is built and why an ssh tunnel; added §3.7 frames
   (dead reckoning with fixes — the operator's sailing analogy), §3.8 the navigator build, §3.9 how
   the link evolves (navigator on the duck as an open decision).
+- 2026-11-14 — Second review ([round 2](../wip/REVIEW-2026-11-14-round2.md)): `/frame` is loopback
+  only on the robot (the session's own error in revision 2); the flashlight is refused in the
+  simulator; the exact `mapd` command; the stop deadband; the end-A oracle; operator in the room for
+  real-duck missions. Operator: the navigator moves onto the robot mid-term; the brain oversees
+  several missions; robots working together is phase 6 (§3.10). Revision 3.
 - 2026-11-14 — Operator: ROS 2 not the foundation now, terms aligned with ROS, Foxglove from the
   start — recorded as [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md).

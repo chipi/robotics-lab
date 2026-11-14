@@ -68,6 +68,19 @@ class NxtRobot:
         self.left = 0
         self.right = 0
         self.configure(config)
+        # The brick has no deadman: after a lost link or a crashed server its motors keep their last
+        # power, while a fresh connection believes them stopped. Stop everything on connect.
+        self.running_on_connect = self.idle_all()
+
+    def idle_all(self) -> list:
+        """Idle every motor; return the ports that still had power."""
+        running = []
+        with self._lock:
+            for port, motor in self._motors.items():
+                if self._brick.get_output_state(nxt.motor.Port[port])[1] != 0:
+                    running.append(port)
+                motor.idle()
+        return running
 
     def configure(self, config: Config) -> None:
         with self._lock:
@@ -197,6 +210,7 @@ class FakeRobot:
             ),
         }
         self._program = None
+        self.running_on_connect = []
         self.configure(config)
 
     def configure(self, config: Config) -> None:

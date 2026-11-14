@@ -1,6 +1,6 @@
 # RFC-0005 — Missions: flotilla decides, the simulated duck rehearses, eval-harness measures
 
-**Status:** Proposed, revision 2 (2026-11-14). The combined mission loop is the operator's
+**Status:** Proposed, revision 3 (2026-11-14). The combined mission loop is the operator's
 direction (2026-11-13); after the [review](../wip/REVIEW-2026-11-14-duck-rfcs.md) the operator
 agreed its form: **the simulated duck is a second host at `auto`, and every mission rehearses there
 before it runs on the real duck** — flotilla's "shadow" keeps its meaning. Changes to flotilla and
@@ -72,7 +72,7 @@ So a rehearsal is necessary, not sufficient: it can stop a bad plan, not prove a
 | Robot need | flotilla concept |
 | --- | --- |
 | A mission | a case, one per instruction, with its spec |
-| What the brain may do | capabilities with risk and reversibility; moving mostly reversible, grabbing or pulling not |
+| What the brain may do | actions with risk and reversibility (flotilla ADR-0011); moving mostly reversible; firing, grabbing or pulling not — always `propose` |
 | The robots | hosts with autonomy caps: `duck-sim` at `auto`, `duck` earned step by step |
 | E-stop for all robots | the freeze, alongside the UI's STOP and each robot's own deadman |
 | "No missions at night", "dog in the room" | holds |
@@ -82,6 +82,13 @@ So a rehearsal is necessary, not sufficient: it can stop a bad plan, not prove a
 | Closing a mission | the check step, from sensors and the vision model |
 
 ### 2.4 What eval-harness measures
+
+The key use case is whether the simulator predicts the real robot: the gap per metric, rank
+agreement across versions, coverage of real results by the simulator's distribution, and the
+rehearsal's false-pass rate. The full list of what this needs from eval-harness (E1–E14, for its
+0.9) is in [EVAL-HARNESS-ASKS.md](../wip/EVAL-HARNESS-ASKS.md); what it needs from flotilla
+(F1–F16) is in [FLOTILLA-ASKS.md](../wip/FLOTILLA-ASKS.md). Both were sent to those projects'
+sessions for assessment on 2026-11-14.
 
 - **Items:** scenarios (start pose, scene, instruction), frozen as files; at least 10 per arm for
   intervals to mean anything (eval-harness needs more than 5 items for a confidence interval).
@@ -136,3 +143,5 @@ So a rehearsal is necessary, not sufficient: it can stop a bad plan, not prove a
   duck is a second host at `auto`, rehearsal before every real run. Revision 2. Also: the example
   mission is now "…then wait by the front door" (the kitchen table was dropped, RFC-0002 §1); build
   identity format; host-agent status corrected; ADR-0006 friction recorded.
+- 2026-11-14 — Review round 2: firing is irreversible (always `propose`); flotilla's current term is
+  "actions" (ADR-0011). The asks to eval-harness and flotilla written and sent. Revision 3.
