@@ -156,6 +156,7 @@ minute, no pixels) is for a brain away from home, not for the navigator.
 
 ### 3.5 Prerequisites in the simulator
 
+- Phase 0 was run on 2026-11-14: [PHASE0-SPIKE.md](../wip/PHASE0-SPIKE.md).
 - `mapd` is not started by `duck-sim`: phase 0 adds `[map] enabled = true` to the sim's
   `robotd.toml` and starts it against the sim's sockets and a map file of its own:
   `mapd --config ~/.cache/duck-sim/robotd-duck-a.toml --robot-socket ~/.cache/duck-sim/duck-a.sock

@@ -88,6 +88,7 @@ nav:
     - Ideas: wip/IDEAS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md
+    - Robot brain phase 0, the spike: wip/PHASE0-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md
     - NXT parts to look for: wip/NXT-PARTS.md

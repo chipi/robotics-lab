@@ -5,10 +5,12 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 ## Now
 
 1. **NXT safety:** stop on connect and the shooter lockout (done 2026-11-14); **robotd-lite**, the
-   deadman on the brick ([RFC-0003](../rfc/RFC-0003-robot-interface.md) §2.3–2.4) — next on the NXT.
-2. **Robot brain phase 0, the spike** ([RFC-0002](../rfc/RFC-0002-robot-brain.md) §3.4): turning in
+   deadman on the brick ([RFC-0003](../rfc/RFC-0003-robot-interface.md) §2.3–2.4) — built
+   2026-11-14, checked against the simulated brick; next: `make test-hardware` on the brick.
+2. **Robot brain phase 0, the spike** — run 2026-11-14 ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)): turning
+   misses its bar, the rest passes; the operator decides how phase 1 goes on. Was: turning in
    the backlash scene, the backlash robot in the apartment, `mapd` mapping with autonomy off.
-3. **DGX full training run** (a window to pick).
+3. **DGX full training run** — started 2026-11-14 12:36Z (4000 iterations, 210 min cap).
 
 ## Next
 
