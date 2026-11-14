@@ -147,7 +147,7 @@ minute, no pixels) is for a brain away from home, not for the navigator.
 
 | # | Phase | Done when |
 | --- | --- | --- |
-| 0 | **Spike: is the simulator a usable stand-in?** Turning in the backlash scene; the backlash robot in the apartment; `mapd` with `[map] enabled = true` beside `duck-sim` | Turning on the spot within 20 % of upstream's ~50°/s; the duck walks in the apartment; the map gains keyframes with autonomy off. If not, phases 1–4 are blocked and RFC-0005's rehearsal is revisited |
+| 0 | **Spike: is the simulator a usable stand-in?** Turning in the backlash scene; the backlash robot in the apartment; `mapd` with `[map] enabled = true` beside `duck-sim` | ~~Turning on the spot within 20 % of upstream's ~50°/s~~ turning that is repeatable, with a navigator that compensates (operator, 2026-11-14, after the [spike](../wip/PHASE0-SPIKE.md)); the duck walks in the apartment; the map gains keyframes with autonomy off. **Done 2026-11-14** |
 | 1 | **Groundwork + navigator.** Project (uv), JSON-RPC client, modes, navigator | 20 go-to goals from fixed starts: each reached or refused; zero contacts between the duck and walls or furniture in MuJoCo's contact list; all logged |
 | 2 | **Explore, map, rooms** (both ways: `autod` exploring with the brain watching, and the brain exploring) | All six rooms visited; each room's area within ±25 % of `apartment.xml`'s floor boxes; time per way compared |
 | 3 | **Perception** ([RFC-0004](RFC-0004-perception-and-planning.md)) | Room type right at most survey stops; the coat rack found from every start |
@@ -317,3 +317,7 @@ spans robots. Phase 6 below; also on the [roadmap](../wip/ROADMAP.md).
   several missions; robots working together is phase 6 (§3.10). Revision 3.
 - 2026-11-14 — Operator: ROS 2 not the foundation now, terms aligned with ROS, Foxglove from the
   start — recorded as [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md).
+- 2026-11-14 — Phase 0 run ([PHASE0-SPIKE.md](../wip/PHASE0-SPIKE.md)): the apartment and
+  mapping pass; turning misses upstream's 50°/s (no start below ~1.1 rad/s from a stand, about half
+  the asked rate once stepping). Operator chose option 2: the bar becomes repeatable turning and a
+  navigator that compensates (kick-start, closed loop on heading), measured in phase 1's go-to goals.

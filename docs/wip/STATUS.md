@@ -16,7 +16,7 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 | Microduck arena | Runs here: reference policy 9.392 s on the 2 m sprint | [MICRODUCK.md](MICRODUCK.md) |
 | DGX training | `robotics` GPU mode exists; first measured run done (no usable policy kept); full run planned | [MICRODUCK.md](MICRODUCK.md) |
 | Brain models | Live: `robot-vlm`, `robot-planner` (Qwen3-VL-30B-A3B), `robot-vlm-gemma` (Gemma 4 26B-A4B), $10/30 days | [RFC-0004](../rfc/RFC-0004-perception-and-planning.md) |
-| Robot brain | Designed, revision 2 after an independent review; not built; phase 0 spike run 2026-11-14: the apartment and mapping pass, turning misses its bar — **a decision for the operator** ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)) | [RFC-0002](../rfc/RFC-0002-robot-brain.md), [review](REVIEW-2026-11-14-duck-rfcs.md) |
+| Robot brain | Designed, revision 2 after an independent review; not built; phase 0 done 2026-11-14 ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)): turning's bar changed to repeatable turning with a compensating navigator (operator) | [RFC-0002](../rfc/RFC-0002-robot-brain.md), [review](REVIEW-2026-11-14-duck-rfcs.md) |
 | eval-harness / flotilla for robots | The mission loop agreed: the simulated duck is a second host at `auto`, every mission rehearses there first | [RFC-0005](../rfc/RFC-0005-missions.md) |
 
 ## Incidents (2026-11-14, both caused by our own test, both fixed)
@@ -59,8 +59,8 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 ## Next (full order: [roadmap](ROADMAP.md))
 
-- Robot brain phase 0: run ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)); the operator chooses between
-  finding why upstream's turning differs and changing the bar to what phase 1 needs.
+- Robot brain phase 1: the navigator, with a kick-start and a closed loop on heading
+  ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)), measured on 20 go-to goals.
 - The NXT on-brick deadman ("robotd-lite"): built (RFC-0003 §2.3, "As built"); check it on the
   brick with `make test-hardware`, which now uploads and tests it (`hw_deadman.py`).
 - At home: chase and patrol on the floor; touch sensors as bumpers.

@@ -78,7 +78,7 @@ a config copy of our own (`duck-sim` rewrites its own on every start) and the co
   the loop on heading and position (RFC-0002 §3.8) does not need the gain to be right, only
   stable; a planner that times moves open-loop does.
 - **The bar was written against upstream's 50°/s**, which this stack does not reproduce. Two ways
-  on, for the operator to choose:
+  on; **the operator chose 2** (2026-11-14):
   1. Keep the bar; first find why upstream's run differs (policy set, body server, BAM actuators —
      upstream's own first suspect for the forward shortfall).
   2. Change the bar to what phase 1 needs: turning that is repeatable (it is: two runs agree within
