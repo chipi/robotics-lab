@@ -51,12 +51,20 @@ def read_sensor(kind: str, sensor) -> dict:
     raise ValueError(kind)
 
 
+# Which nxt-python backends each link choice tries. "devfile" is Bluetooth through /dev/rfcomm*.
+LINK_BACKENDS = {"auto": ["usb", "devfile"], "usb": ["usb"], "bluetooth": ["devfile"]}
+
+
 class NxtRobot:
     fake = False
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, link: str = "auto"):
         self._lock = threading.RLock()
-        self._brick = nxt.locator.find(backends=["usb", "devfile"])
+        self._brick = nxt.locator.find(backends=LINK_BACKENDS[link])
+        self.link = self._brick._sock.type
+        self.link_detail = str(self._brick._sock)
+        protocol, firmware = self._brick.get_firmware_version()
+        self.firmware = f"{firmware[0]}.{firmware[1]:02d} (protocol {protocol[0]}.{protocol[1]})"
         self.left = 0
         self.right = 0
         self.configure(config)
@@ -76,6 +84,11 @@ class NxtRobot:
             name, _, _, free_flash = self._brick.get_device_info()
             battery = self._brick.get_battery_level()
         return {"name": name, "battery_mv": battery, "free_flash": free_flash}
+
+    def ping(self) -> None:
+        """One cheap read-only round trip, for timing the link."""
+        with self._lock:
+            self._brick.get_output_state(nxt.motor.Port.A)
 
     def drive(self, left: int, right: int) -> None:
         left, right = clamp(left), clamp(right)
@@ -167,8 +180,11 @@ class FakeRobot:
     """Simulates the brick so the UI can be used with nothing plugged in. Values are made up."""
 
     fake = True
+    link = "fake"
+    link_detail = "simulated brick"
+    firmware = "simulated"
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, link: str = "auto"):
         self.left = 0
         self.right = 0
         self.shots = 0
@@ -189,6 +205,9 @@ class FakeRobot:
     def info(self) -> dict:
         used = sum(len(d) for d in self._files.values())
         return {"name": "fake", "battery_mv": 7800, "free_flash": 100_000 - used}
+
+    def ping(self) -> None:
+        pass
 
     def drive(self, left: int, right: int) -> None:
         self._advance()

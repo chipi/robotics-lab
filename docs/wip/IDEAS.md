@@ -3,7 +3,7 @@
 Ideas for robotics-lab, collected 2026-11-13. Status is what exists in this repo, not what is
 planned. "Untested" means it has never run on the real robot.
 
-Hardware: a LEGO Mindstorms NXT 2.0 (stock firmware 1.31) built as a tracked Shooterbot. The
+Hardware: a LEGO Mindstorms NXT 2.0 (stock firmware 1.28, read from the brick; the photo of its screen was read as 1.31) built as a tracked Shooterbot. The
 NXT 2.0 set comes with 2 touch sensors, 1 ultrasonic distance sensor and 1 colour sensor, and
 every motor counts its rotation. Also arriving: Hugging Face's **Microduck** (Pollen Robotics),
 which its official repo (`pollen-robotics/microduck`) describes as about 25 cm and 800 g, run by

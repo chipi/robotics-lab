@@ -144,6 +144,16 @@
       <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>nxt/runs/</code>.</p>
       <table><thead><tr><th>Run</th><th>Size</th><th></th></tr></thead><tbody id="runs"></tbody></table>
     </div>
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Command log</h2>
+        <a href="/api/events/download"><button>Download log</button></a>
+      </div>
+      <p class="hint">Every command sent to the robot, newest first: drive changes, stops, safety stops, fire, programs, uploads, setup and connection changes, errors. Saved to <code>nxt/runs/events.jsonl</code>.</p>
+      <div style="max-height: 320px; overflow: auto">
+        <table><thead><tr><th>Time</th><th>Command</th><th>Details</th></tr></thead><tbody id="events"></tbody></table>
+      </div>
+    </div>
   </section>
 
   <section id="tab-programs">
@@ -180,6 +190,20 @@
   </section>
 
   <section id="tab-setup">
+    <div class="card">
+      <div class="row" style="justify-content: space-between">
+        <h2>Connection &amp; diagnostics</h2>
+        <button id="linktest">Test link speed</button>
+      </div>
+      <div class="row">
+        <span class="hint">Connect via</span>
+        <button data-link="auto" title="USB if plugged in, otherwise Bluetooth">Auto</button>
+        <button data-link="usb">USB</button>
+        <button data-link="bluetooth">Bluetooth</button>
+      </div>
+      <table><tbody id="diag"></tbody></table>
+      <p class="hint">Switching link stops the motors first. Bluetooth needs the brick paired and <code>sudo rfcomm bind 0 &lt;address&gt;</code> after every reboot.</p>
+    </div>
     <div class="cols">
       <div class="card">
         <h2>Motors</h2>
@@ -234,10 +258,11 @@ document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click
   try { localStorage.setItem("nxt-tab", b.dataset.tab); } catch (e) {}
   if (b.dataset.tab === "programs") loadFiles();
   if (b.dataset.tab === "sensors") { loadRuns(); drawChart(); }
-  if (b.dataset.tab === "setup") loadConfig();
+  if (b.dataset.tab === "setup") { loadConfig(); loadDiagnostics(); }
 }));
 
 // ---- status
+const LINK_NAMES = { usb: "USB", bluetooth: "Bluetooth", fake: "simulated" };
 let status = {};
 async function refreshStatus() {
   let s;
@@ -247,6 +272,7 @@ async function refreshStatus() {
   if (s.connected) {
     parts.push(`<span class="ok">●</span> <b>${esc(s.name)}</b>${s.fake ? " (simulated)" : ""}`);
     if (s.battery_mv != null) parts.push(`battery <b>${(s.battery_mv / 1000).toFixed(2)} V</b>`);
+    if (s.link) parts.push(`<span title="${esc(s.link_detail || "")}">via <b>${LINK_NAMES[s.link] || esc(s.link)}</b>${s.link_ms != null ? ` · ${Math.round(s.link_ms)} ms` : ""}</span>`);
     if (s.program) parts.push(`running <b>${esc(s.program)}</b>`);
     if (s.recording) parts.push(`<span class="rec">● REC</span> ${s.recording.rows} rows`);
   } else {
@@ -508,6 +534,58 @@ $("cfg-save").addEventListener("click", async () => {
   if (res) { config = res.config; renderLegend.sig = null; toast("Setup saved"); refreshStatus(); }
 });
 
+// ---- command log
+let events = [], lastEventSeq = 0;
+async function pollEvents() {
+  const data = await fetch(`/api/events?since=${lastEventSeq}`).then((r) => r.json()).catch(() => null);
+  if (!data || !data.events.length) return;
+  if (data.events[0].seq <= lastEventSeq) events = [];
+  events.push(...data.events);
+  events = events.slice(-300);
+  lastEventSeq = events[events.length - 1].seq;
+  $("events").innerHTML = events.slice().reverse().map((e) => {
+    const { seq, at, kind, ok, ...rest } = e;
+    const details = Object.entries(rest).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ");
+    return `<tr><td class="num">${esc(at.slice(11, 23))}</td><td class="${ok ? "" : "bad"}">${esc(kind)}${ok ? "" : " ✗"}</td><td>${esc(details)}</td></tr>`;
+  }).join("");
+}
+
+// ---- connection + diagnostics
+const yesNo = (v) => (v ? `<span class="ok">yes</span>` : `<span class="bad">no</span>`);
+async function loadDiagnostics() {
+  const d = await fetch("/api/diagnostics").then((r) => r.json()).catch(() => null);
+  if (!d) return;
+  document.querySelectorAll("[data-link]").forEach((b) => b.classList.toggle("primary", b.dataset.link === d.link_pref));
+  const bt = d.host.bluetooth;
+  const bind = bt.bindings[0];
+  const c = d.calls;
+  const rows = [
+    ["Current link", d.connected ? `<b>${LINK_NAMES[d.link] || esc(d.link)}</b> · ${esc(d.link_detail)}` : `<span class="bad">not connected</span>${d.error ? ` · ${esc(d.error)}` : ""}`],
+    ["Link preference", esc(d.link_pref)],
+    ["Command time", c.n ? `median ${c.median_ms} ms · 90% under ${c.p90_ms} ms · max ${c.max_ms} ms (last ${c.n})` : "–"],
+    ["Command errors", c.errors ? `<span class="bad">${c.errors}</span> · last: ${esc(c.last_error || "")}` : "0"],
+    ["Samples per second", `${d.samples_per_s.actual ?? "–"} actual · ${d.samples_per_s.configured} set`],
+    ["Firmware", esc(d.firmware || "–")],
+    ["Connected for", d.connected_for_s != null ? `${d.connected_for_s} s (connects since server start: ${d.connects})` : "–"],
+    ["USB: NXT plugged in", yesNo(d.host.usb_nxt_present)],
+    ["Bluetooth: serial port", bind ? `${esc(bind.device)} → ${esc(bind.address)} (${esc(bind.rfcomm_state)})` : bt.rfcomm_tool ? `<span class="bad">none bound</span>` : `<span class="bad">rfcomm tool missing</span>`],
+    ["Bluetooth: paired / connected", bind ? `${yesNo(bind.paired)} / ${yesNo(bind.connected)}${bind.name ? ` · ${esc(bind.name)}` : ""}` : "–"],
+    ["Server up", `${d.server_up_s} s`],
+  ];
+  $("diag").innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+}
+document.querySelectorAll("[data-link]").forEach((b) => b.addEventListener("click", async () => {
+  b.disabled = true;
+  if (await api("/api/connect", { link: b.dataset.link })) toast(`Connected via ${b.dataset.link}`);
+  b.disabled = false;
+  refreshStatus(); loadDiagnostics();
+}));
+$("linktest").addEventListener("click", async () => {
+  const r = await api("/api/linktest", {});
+  if (r) toast(`Link: median ${r.linktest.median_ms} ms (min ${r.linktest.min_ms}, max ${r.linktest.max_ms}) over ${r.linktest.n} reads`);
+  loadDiagnostics();
+});
+
 loadConfig().then(() => {
   let t = location.hash.slice(1);
   try { t = t || localStorage.getItem("nxt-tab"); } catch (e) {}
@@ -516,6 +594,9 @@ loadConfig().then(() => {
 });
 setInterval(refreshStatus, 2000);
 setInterval(pollLive, 300);
+setInterval(pollEvents, 1000);
+setInterval(() => { if ($("tab-setup").classList.contains("on")) loadDiagnostics(); }, 3000);
+pollEvents();
 </script>
 </body>
 </html>

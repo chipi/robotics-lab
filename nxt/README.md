@@ -75,3 +75,16 @@ scripts/nxc.sh programs/first.nxc     # -> build/first.rxe
 
 Then upload and run `build/first.rxe` from the web UI's Programs tab. Compile errors
 name the file as `build/<name>.nxc` (an nbc quirk); the line numbers are right.
+
+## Known issues
+
+- **The brick has no deadman.** Stock firmware keeps a motor's last command. `nxt-web` stops the
+  motors on Ctrl-C and SIGTERM, and its watchdog stops them 0.6 s after the last drive command,
+  but a hard crash or a dropped link leaves them running. Fix planned: a small program on the
+  brick that stops the motors when commands stop arriving.
+- **Only one program at a time may talk to the brick.** A second connection on the same
+  `/dev/rfcomm0` (or USB) scrambles replies; on 2026-11-14 it hung the running `nxt-web`, whose
+  Bluetooth reads have no timeout. Stop `nxt-web` before running scripts against the brick.
+- **"Command time" in the diagnostics includes waiting for other commands** (live sampling shares
+  the link), so it reads higher than one command alone: over Bluetooth about 170–190 ms median
+  while sampling, against 41 ms measured with nothing else running.
