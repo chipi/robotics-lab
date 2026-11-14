@@ -39,8 +39,9 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
     across robots. The brain already oversees several missions at once; working together needs these
     new concepts first ([RFC-0002](../rfc/RFC-0002-robot-brain.md) §3.10).
 3. flotilla integration: missions as cases, robot hosts, rehearsal on `duck-sim`
-    ([FLOTILLA-ASKS.md](FLOTILLA-ASKS.md), awaiting the flotilla session's assessment).
+    ([FLOTILLA-ASKS.md](FLOTILLA-ASKS.md), assessment deferred by the operator until flotilla's
+    planned work is done, 2026-11-14).
 4. eval-harness 0.9 capabilities for sim vs real ([EVAL-HARNESS-ASKS.md](EVAL-HARNESS-ASKS.md),
-    awaiting the eval-harness session's assessment).
+    assessment after eval-harness 0.8.0 is finished, by the operator's decision, 2026-11-14).
 5. Bigger NXT robots: the arm robot on two bricks ([IDEAS.md](IDEAS.md), RFC-0003 §2.5).
 6. Mission control split out as its own open-source product ([RFC-0006](../rfc/RFC-0006-mission-control.md)).
