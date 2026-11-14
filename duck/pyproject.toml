@@ -11,6 +11,7 @@ dependencies = [
 duck-record = "duck_lab.record:main"
 duck-to-rerun = "duck_lab.to_rerun:main"
 duck-go = "duck_lab.nav.run:main"
+duck-eval = "duck_lab.nav.evaluate:main"
 
 [build-system]
 requires = ["hatchling"]

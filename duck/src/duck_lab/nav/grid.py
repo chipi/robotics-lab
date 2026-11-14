@@ -8,10 +8,31 @@ import heapq
 import math
 from dataclasses import dataclass
 
-# Obstacles grow by the clearance upstream's autod keeps (15 cm) plus about the duck's half-width.
-INFLATE_M = 0.20
+# Two layers around every obstacle, as Nav2 does. Within LETHAL_M (about the duck's half-width plus
+# a little) the duck must not go. Out to INFLATE_M — the clearance upstream's autod keeps, plus a
+# margin for what mapd has not seen of an obstacle and for odometry error (phase 1, run 1) — cells
+# are expensive, not forbidden: plans keep off walls, and a duck that drifted into the margin can
+# still get out (run 2, all impassable, stranded it).
+LETHAL_M = 0.12
+INFLATE_M = 0.28
+MARGIN_COST = 25.0
 UNKNOWN_COST = 5.0   # unknown cells are expensive, not forbidden
 FREE_COST = 1.0
+
+
+def _grow(cost: list, w: int, h: int, centres: list, res: float) -> None:
+    """Mark the lethal disc and the margin ring around each obstacle cell, in place."""
+    lethal = math.ceil(LETHAL_M / res)
+    margin = math.ceil(INFLATE_M / res)
+    rings = [(dx, dy, dx * dx + dy * dy <= lethal * lethal)
+             for dx in range(-margin, margin + 1) for dy in range(-margin, margin + 1)
+             if dx * dx + dy * dy <= margin * margin]
+    for cx, cy in centres:
+        for dx, dy, is_lethal in rings:
+            x, y = cx + dx, cy + dy
+            if 0 <= x < w and 0 <= y < h:
+                i = y * w + x
+                cost[i] = math.inf if is_lethal else max(cost[i], MARGIN_COST)
 
 
 class EmptyMap(ValueError):
@@ -27,7 +48,7 @@ class CostGrid:
     cost: list   # row-major from the lowest y; math.inf where the duck must not go
 
     @classmethod
-    def from_map_grid(cls, grid: dict, inflate_m: float = INFLATE_M) -> "CostGrid":
+    def from_map_grid(cls, grid: dict) -> "CostGrid":
         res, (ox, oy) = grid["res_m"], grid["origin"]
         w, h, cells = grid["width"], grid["height"], grid["cells"]
         if res <= 0 or w == 0 or h == 0:
@@ -35,16 +56,7 @@ class CostGrid:
         if len(cells) != w * h:
             raise ValueError(f"map.grid has {len(cells)} cells for {w}x{h}")
         cost = [UNKNOWN_COST if c == "?" else FREE_COST for c in cells]
-        r = math.ceil(inflate_m / res)
-        offsets = [(dx, dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1) if dx * dx + dy * dy <= r * r]
-        for i, c in enumerate(cells):
-            if c != "#":
-                continue
-            cx, cy = i % w, i // w
-            for dx, dy in offsets:
-                x, y = cx + dx, cy + dy
-                if 0 <= x < w and 0 <= y < h:
-                    cost[y * w + x] = math.inf
+        _grow(cost, w, h, [(i % w, i // w) for i, c in enumerate(cells) if c == "#"], res)
         return cls(res, (ox, oy), w, h, cost)
 
     def cell(self, x: float, y: float) -> tuple:
@@ -61,11 +73,46 @@ class CostGrid:
     def at(self, cx: int, cy: int) -> float:
         return self.cost[cy * self.width + cx] if self.inside(cx, cy) else math.inf
 
+    def with_blocked(self, points: list) -> "CostGrid":
+        """This grid with obstacles the depth reflex saw added (map metres), grown like walls. The
+        reflex's memory: mapd may not hold what the sensor saw (something above the floor, or seen
+        between stops), and without it the next plan walks back into it."""
+        if not points:
+            return self
+        cost = list(self.cost)
+        _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res)
+        return CostGrid(self.res, self.origin, self.width, self.height, cost)
+
+    def covering(self, points: list, margin_m: float = 0.5) -> "CostGrid":
+        """This grid grown with unknown cells until it covers every point (plus a margin): a goal
+        beyond what mapd has seen is unknown ground, expensive but not forbidden."""
+        m = math.ceil(margin_m / self.res)
+        cells = [self.cell(*p) for p in points]
+        left = max(0, -min(c[0] for c in cells) + m)
+        down = max(0, -min(c[1] for c in cells) + m)
+        right = max(0, max(c[0] for c in cells) - self.width + 1 + m)
+        up = max(0, max(c[1] for c in cells) - self.height + 1 + m)
+        if not (left or down or right or up):
+            return self
+        w, h = self.width + left + right, self.height + down + up
+        cost = [UNKNOWN_COST] * (w * h)
+        for cy in range(self.height):
+            row = self.cost[cy * self.width:(cy + 1) * self.width]
+            start = (cy + down) * w + left
+            cost[start:start + self.width] = row
+        origin = (self.origin[0] - left * self.res, self.origin[1] - down * self.res)
+        return CostGrid(self.res, origin, w, h, cost)
+
+
+ESCAPE = 2
+ESCAPE_COST = 100.0
+
 
 def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
     """A* from start to goal (map metres), 8-connected. The path as cell centres in metres, from the
-    start's cell to the goal's, or None when the goal cannot be reached. The start may sit inside an
-    inflated obstacle (the duck is already there); the goal may not."""
+    start's cell to the goal's, or None when the goal cannot be reached. The goal may not be lethal;
+    the start may (the duck is already there), and lethal cells within ESCAPE cells of it may be
+    crossed, at a high cost, to get out."""
     s, g = grid.cell(*start), grid.cell(*goal)
     if not grid.inside(*g) or math.isinf(grid.at(*g)):
         return None
@@ -90,7 +137,9 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
             n = (c[0] + dx, c[1] + dy)
             here = grid.at(*n)
             if math.isinf(here):
-                continue
+                if not grid.inside(*n) or max(abs(n[0] - s[0]), abs(n[1] - s[1])) > ESCAPE:
+                    continue
+                here = ESCAPE_COST
             nd = d + step * here
             if nd < best.get(n, math.inf):
                 best[n] = nd

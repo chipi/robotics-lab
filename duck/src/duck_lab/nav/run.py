@@ -97,6 +97,7 @@ class Navigator:
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
         self._t0 = time.monotonic()
+        self.blocked = []    # what the depth reflex saw, in map metres
 
     def move(self, tw: Twist) -> None:
         self.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
@@ -150,6 +151,7 @@ class Navigator:
                 except EmptyMap:
                     self.survey()
                     continue
+                grid = grid.covering([pose[:2], goal] + self.blocked).with_blocked(self.blocked)
                 raw = plan(grid, pose[:2], goal)
                 if raw is None:
                     self.move(Twist())
@@ -168,6 +170,8 @@ class Navigator:
             if tw.vx > 0 and near is not None and near < STOP_MM:
                 reflex_stops += 1
                 self.move(Twist())
+                ahead = near / 1000.0
+                self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
                 self.record(event="reflex_stop", nearest_mm=near, pose=pose)
                 self.survey()
                 path = None

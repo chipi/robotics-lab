@@ -148,7 +148,7 @@ minute, no pixels) is for a brain away from home, not for the navigator.
 | # | Phase | Done when |
 | --- | --- | --- |
 | 0 | **Spike: is the simulator a usable stand-in?** Turning in the backlash scene; the backlash robot in the apartment; `mapd` with `[map] enabled = true` beside `duck-sim` | ~~Turning on the spot within 20 % of upstream's ~50°/s~~ turning that is repeatable, with a navigator that compensates (operator, 2026-11-14, after the [spike](../wip/PHASE0-SPIKE.md)); the duck walks in the apartment; the map gains keyframes with autonomy off. **Done 2026-11-14** |
-| 1 | **Groundwork + navigator.** Project (uv), JSON-RPC client, modes, navigator | 20 go-to goals from fixed starts: each reached or refused; zero contacts between the duck and walls or furniture in MuJoCo's contact list; all logged |
+| 1 | **Groundwork + navigator.** Project (uv), JSON-RPC client, modes, navigator | **Bar revised by the operator, 2026-11-14** (the first runs showed refusals passing, no definition of reached, no falls): 20 go-to goals from the dock with a fixed seed, within reach of what the duck has seen or sees on the way (office, corridor, through open doorways; rooms behind unseen walls are phase 2). **Safe:** zero falls, zero contacts (trunk centre within 8.3 cm of an obstacle's outline: the duck's measured size), upright throughout. **Finishes:** every goal reached or refused with a reason, no timeouts. **Accurate:** ≥ 18 reached within 25 cm of the goal by simulator truth. **Logged:** every run viewable in Rerun. Odometry is calibrated per robot (operator: option a) — the simulated duck now, the real one in phase 5 |
 | 2 | **Explore, map, rooms** (both ways: `autod` exploring with the brain watching, and the brain exploring) | All six rooms visited; each room's area within ±25 % of `apartment.xml`'s floor boxes; time per way compared |
 | 3 | **Perception** ([RFC-0004](RFC-0004-perception-and-planning.md)) | Room type right at most survey stops; the coat rack found from every start |
 | 4 | **Missions in words** | End A from ≥ 10 start poses, then B and C, scored by eval-harness; mission specs from sentences checked offline. End A is judged from the camera bearing and odometry (the coat rack is a 4 cm pole the map will not hold), and graded against simulator ground truth: the trunk's distance to the coat-rack geom |
@@ -321,3 +321,9 @@ spans robots. Phase 6 below; also on the [roadmap](../wip/ROADMAP.md).
   mapping pass; turning misses upstream's 50°/s (no start below ~1.1 rad/s from a stand, about half
   the asked rate once stepping). Operator chose option 2: the bar becomes repeatable turning and a
   navigator that compensates (kick-start, closed loop on heading), measured in phase 1's go-to goals.
+- 2026-11-14 — Phase 1, first three evaluation runs (`duck/runs/phase1-run*`): goals beyond the
+  map were refused, a stranding wall margin, routes past half-seen furniture, the duck's odometry
+  ~11 % long against truth, and a fall down the staircase while turning on the spot beside it (no
+  cliff check). The operator revised phase 1's bar (§3.4), approved the order — cliff check, no
+  turning near a drop or a wall, odometry calibration (per robot), the test rescoped and rescored
+  with the duck's measured size — and chose calibration for odometry.
