@@ -44,6 +44,9 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 ## Decided
 
+- 2026-11-14 (vision, [RFC-0007](../rfc/RFC-0007-platform.md)): the operator's tools plus a few
+  open-source projects and a few new ones form one platform covering command, record and store, see,
+  judge and govern — an open, local-first alternative to Foxglove.
 - [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md) (2026-11-14): ROS 2 not the foundation now;
   terms and data shapes aligned with ROS; Foxglove (MCAP run records, live streaming) from the start.
 - 2026-11-14: the navigator moves onto the robot mid-term; the brain oversees several missions;

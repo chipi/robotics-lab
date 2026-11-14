@@ -24,6 +24,13 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 1. Phase 5: the real duck over ssh-forwarded sockets; `mapd`'s CPU cost; the first simulator-vs-real
    comparison (the 2 m sprint) ([RFC-0005](../rfc/RFC-0005-missions.md)).
 
+## The platform (RFC-0007)
+
+1. MCAP recording from mission control (`nxt-web` first).
+2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run.
+3. A minimal logbook: a folder, an index, search, events.
+4. eval-harness reads runs from the logbook; flotilla cases reference recordings.
+
 ## Later
 
 1. **The navigator moves onto the robot** (operator, 2026-11-14): onto the duck; for the NXT, onto a

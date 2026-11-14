@@ -60,6 +60,11 @@ Grown from `nxt-web` and the robot brain; ROS-aligned terms ([ADR-0001](../adr/A
 
 ### 3.3 What Foxglove already does, and mission control does not rebuild
 
+> **Amended by [RFC-0007](RFC-0007-platform.md)** (the operator's platform vision, 2026-11-14): "show
+> and store" is owned by the platform's logbook and an open-source viewer (Rerun or Lichtblick), with
+> Foxglove as what we learn from and an interim viewer. The rest of this section — mission control
+> does not grow its own plots and history views, and recordings stay local — still holds.
+
 Foxglove (foxglove.dev, read 2026-11-14) is an observability and data platform for robotics:
 visualising recordings and live robots (MCAP, ROS bags), teleoperation, multi-run comparison,
 recording through its SDK and an on-robot upload agent, indexing and search of recordings by

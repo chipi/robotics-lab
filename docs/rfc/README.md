@@ -37,3 +37,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   measures](RFC-0005-missions.md) (Proposed, revision 3; the form agreed)
 - [RFC-0006 — Mission control: the robotics product, and where it ends and flotilla
   begins](RFC-0006-mission-control.md) (Proposed; a vision)
+- [RFC-0007 — The platform: an open alternative to Foxglove, assembled from our
+  tools](RFC-0007-platform.md) (Proposed; the operator's vision)

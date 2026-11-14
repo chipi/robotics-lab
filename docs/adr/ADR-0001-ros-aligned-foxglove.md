@@ -1,6 +1,8 @@
 # ADR-0001 — ROS-aligned terms, no ROS foundation yet, Foxglove from the start
 
-**Status:** Accepted (operator, 2026-11-14)
+**Status:** Accepted (operator, 2026-11-14); decision 3 amended by
+[RFC-0007](../rfc/RFC-0007-platform.md) (proposed): the Foxglove app is an interim viewer; the target
+is an open-source viewer within our own platform.
 **Date:** 2026-11-14
 **Context from:** [RFC-0002](../rfc/RFC-0002-robot-brain.md) §3.7–3.9 (frames, navigator, link),
 [RFC-0003](../rfc/RFC-0003-robot-interface.md) (one robot interface).

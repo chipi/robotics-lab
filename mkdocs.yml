@@ -77,6 +77,7 @@ nav:
     - RFC-0004 — Missions in words, perception, planning: rfc/RFC-0004-perception-and-planning.md
     - RFC-0005 — Missions: rfc/RFC-0005-missions.md
     - RFC-0006 — Mission control: rfc/RFC-0006-mission-control.md
+    - RFC-0007 — The platform: rfc/RFC-0007-platform.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
