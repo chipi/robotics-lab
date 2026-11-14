@@ -20,28 +20,47 @@ INFLATE_M = 0.28
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a
 # long detour through unmapped corridor toward the stairs rather than pass the office cabinet.
 MARGIN_COST = 10.0
+# An obstacle's own cell is infinite: never crossed. The lethal zone grown round it is LETHAL_COST:
+# not planned through, except to escape from where the duck already stands (ESCAPE_M) - which must not
+# let a path through the obstacle itself (a 50 cm escape walked through a wall in a test).
+LETHAL_COST = 1e9
 UNKNOWN_COST = 15.0  # unknown cells are expensive, not forbidden
 FREE_COST = 1.0
 
 
-def _grow(cost: list, w: int, h: int, centres: list, res: float) -> None:
+# Drops get more room than walls: as much as the cliff check's stop distance (45 cm), so a plan never
+# walks into stopping range of a drop it already knows - which is what made trial 2 stop, replan and
+# stop again. (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the
+# cliff check over the unremembered part of the same staircase, and the duck fell. Never again: the
+# cliff check stops for every drop it sees.)
+DROP_LETHAL_M = 0.45
+DROP_INFLATE_M = 0.65
+
+
+def _grow(cost: list, w: int, h: int, centres: list, res: float,
+          lethal_m: float = None, inflate_m: float = None) -> None:
     """Mark the lethal disc and the margin ring around each obstacle cell, in place. By distance from
     a cell's centre to the obstacle cell's edge (centre distance minus half a cell), not by whole
     cells: rounding up to whole 10 cm cells closed the office doorway (a 42 cm gap the 14 cm duck
     walks through) in phase 1's run 4."""
-    reach = math.ceil(INFLATE_M / res) + 1
+    lethal_m = LETHAL_M if lethal_m is None else lethal_m
+    inflate_m = INFLATE_M if inflate_m is None else inflate_m
+    reach = math.ceil(inflate_m / res) + 1
     rings = []
     for dx in range(-reach, reach + 1):
         for dy in range(-reach, reach + 1):
             gap = math.hypot(dx, dy) * res - res / 2
-            if gap < INFLATE_M:
-                rings.append((dx, dy, gap < LETHAL_M))
+            if gap < inflate_m:
+                rings.append((dx, dy, gap < lethal_m))
     for cx, cy in centres:
         for dx, dy, is_lethal in rings:
             x, y = cx + dx, cy + dy
             if 0 <= x < w and 0 <= y < h:
                 i = y * w + x
-                cost[i] = math.inf if is_lethal else max(cost[i], MARGIN_COST)
+                if dx == 0 and dy == 0:
+                    cost[i] = math.inf
+                else:
+                    cost[i] = max(cost[i], LETHAL_COST if is_lethal else MARGIN_COST)
 
 
 class EmptyMap(ValueError):
@@ -54,7 +73,7 @@ class CostGrid:
     origin: tuple
     width: int
     height: int
-    cost: list   # row-major from the lowest y; math.inf where the duck must not go
+    cost: list   # row-major from the lowest y; inf on obstacles, LETHAL_COST round them
 
     @classmethod
     def from_map_grid(cls, grid: dict) -> "CostGrid":
@@ -82,14 +101,14 @@ class CostGrid:
     def at(self, cx: int, cy: int) -> float:
         return self.cost[cy * self.width + cx] if self.inside(cx, cy) else math.inf
 
-    def with_blocked(self, points: list) -> "CostGrid":
+    def with_blocked(self, points: list, lethal_m: float = None, inflate_m: float = None) -> "CostGrid":
         """This grid with obstacles the depth reflex saw added (map metres), grown like walls. The
         reflex's memory: mapd may not hold what the sensor saw (something above the floor, or seen
         between stops), and without it the next plan walks back into it."""
         if not points:
             return self
         cost = list(self.cost)
-        _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res)
+        _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res, lethal_m, inflate_m)
         return CostGrid(self.res, self.origin, self.width, self.height, cost)
 
     def covering(self, points: list, margin_m: float = 0.5) -> "CostGrid":
@@ -113,7 +132,7 @@ class CostGrid:
         return CostGrid(self.res, origin, w, h, cost)
 
 
-ESCAPE = 2
+ESCAPE_M = 0.5          # a duck stopped at the cliff-stop distance (45 cm) is inside a drop's lethal zone
 ESCAPE_COST = 100.0
 
 
@@ -123,7 +142,7 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
     the start may (the duck is already there), and lethal cells within ESCAPE cells of it may be
     crossed, at a high cost, to get out."""
     s, g = grid.cell(*start), grid.cell(*goal)
-    if not grid.inside(*g) or math.isinf(grid.at(*g)):
+    if not grid.inside(*g) or grid.at(*g) >= LETHAL_COST:
         return None
     if not grid.inside(*s):
         return None
@@ -146,7 +165,9 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
             n = (c[0] + dx, c[1] + dy)
             here = grid.at(*n)
             if math.isinf(here):
-                if not grid.inside(*n) or max(abs(n[0] - s[0]), abs(n[1] - s[1])) > ESCAPE:
+                continue
+            if here >= LETHAL_COST:
+                if math.hypot(n[0] - s[0], n[1] - s[1]) * grid.res > ESCAPE_M:
                     continue
                 here = ESCAPE_COST
             nd = d + step * here

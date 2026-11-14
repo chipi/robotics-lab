@@ -22,7 +22,7 @@ from duck_lab.nav.cliff import drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.grid import LETHAL_M, CostGrid, EmptyMap, plan, thin
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, plan, thin
 
 TICK_S = 0.1
 REPLAN_S = 3.0
@@ -187,6 +187,15 @@ class Navigator:
                 new.append(q)
         return new
 
+    def forget_blocked_near(self, pose: tuple, radius_m: float) -> int:
+        """Nav2's "clear around the robot" recovery, for the obstacle memory only: mapd's map stays, and
+        drops are never forgotten (trial 3 fell when drop memory was switched off)."""
+        keep = [b for b in self.blocked if math.dist(b, pose[:2]) >= radius_m]
+        gone = len(self.blocked) - len(keep)
+        self.blocked = keep
+        self._seen = {(round(b[0] / LAYER_SPACING_M), round(b[1] / LAYER_SPACING_M)) for b in keep}
+        return gone
+
     def record(self, **row) -> None:
         if self._log:
             row["t"] = round(time.monotonic() - self._t0, 3)
@@ -217,13 +226,21 @@ class Navigator:
                 except EmptyMap:
                     self.survey()
                     continue
-                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_blocked(self.blocked + self.drops)
+                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_blocked(self.blocked)
+                grid = grid.with_blocked(self.drops, DROP_LETHAL_M, DROP_INFLATE_M)
                 raw = plan(grid, pose[:2], goal)
                 if raw is None:
                     self.move(Twist())
-                    self.record(event="refused", goal=goal, pose=pose)
-                    return {"status": "refused", "why": "no path on the map", "time_s": round(now - start, 1)}
+                    start_cost, goal_cost = grid.at(*grid.cell(*pose[:2])), grid.at(*grid.cell(*goal))
+                    self.record(event="refused", goal=goal, pose=pose,
+                                start_cost=start_cost, goal_cost=goal_cost,
+                                drops=[[round(v, 2) for v in d] for d in self.drops],
+                                blocked=[[round(v, 2) for v in b] for b in self.blocked])
+                    boxed = start_cost >= LETHAL_COST and goal_cost < LETHAL_COST
+                    why = "start boxed in" if boxed else "no path on the map"
+                    return {"status": "refused", "why": why, "time_s": round(now - start, 1)}
                 path, planned_at = thin(raw), now
+                self.record(event="plan", pose=pose, goal=goal, path=[[round(v, 2) for v in q] for q in path[:8]])
                 st.target_index = 0
             tw, done = step(path, pose, now, st)
             if done:
@@ -254,14 +271,17 @@ class Navigator:
                     for extra in (0.0,) + BEYOND_M:
                         k = (h + extra) / h if h > 0 else 1.0
                         self.drops.append((pose[0] + k * (c * ax - s_ * ay), pose[1] + k * (s_ * ax + c * ay)))
-                self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose)
+                self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose,
+                            drops=[[round(v, 2) for v in d] for d in self.drops])
                 self.survey()
                 path = None
                 continue
             nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
             if st.turning and nearest_drop < TURN_CLEAR_M:
                 self.move(Twist())
-                self.record(event="refused", why="a turn would be too close to a drop", pose=pose)
+                self.record(event="refused", why="a turn would be too close to a drop", pose=pose,
+                            drops=[[round(v, 2) for v in d] for d in self.drops],
+                            path=[[round(v, 2) for v in q] for q in (path or [])[:8]])
                 return {"status": "refused", "why": f"a turn {nearest_drop:.2f} m from a drop",
                         "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm

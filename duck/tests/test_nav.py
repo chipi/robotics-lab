@@ -4,7 +4,7 @@ import math
 import sys
 
 from duck_lab.nav.follow import FollowState, step
-from duck_lab.nav.grid import MARGIN_COST, CostGrid, plan, thin
+from duck_lab.nav.grid import LETHAL_COST, MARGIN_COST, CostGrid, plan, thin
 
 failures = []
 
@@ -35,7 +35,7 @@ def room(w=30, h=20, wall_x=None, door=None, unknown=()):
 
 
 g = CostGrid.from_map_grid(room())
-check("walls at 10 cm cells, by edge distance: cell 1 lethal (5 cm), 2-3 margin (15, 25 cm), 4 free (35 cm)", math.isinf(g.at(1, 10)) and g.at(2, 10) == MARGIN_COST and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
+check("walls at 10 cm cells, by edge distance: cell 1 lethal (5 cm), 2-3 margin (15, 25 cm), 4 free (35 cm)", g.at(1, 10) >= LETHAL_COST and g.at(2, 10) == MARGIN_COST and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
       (g.at(1, 10), g.at(2, 10), g.at(3, 10), g.at(4, 10)))
 p = plan(g, (0.5, 0.5), (2.5, 1.5))
 check("open room: a path, start cell to goal cell", p and g.cell(*p[0]) == (5, 5) and g.cell(*p[-1]) == (25, 15),
@@ -44,7 +44,7 @@ check("goal inside a wall's clearance is refused", plan(g, (0.5, 0.5), (0.1, 1.0
 
 walled = CostGrid.from_map_grid(room(wall_x=15, door=(11, 18)))  # 0.8 m, as the apartment's doors
 p = plan(walled, (0.5, 0.5), (2.5, 0.5))
-door_ok = p and all(not math.isinf(walled.at(*walled.cell(*q))) for q in p)
+door_ok = p and all(walled.at(*walled.cell(*q)) < LETHAL_COST for q in p)
 through = p and any(abs(q[0] - 1.55) < 0.1 for q in p) and all(
     q[1] >= 1.1 for q in p if abs(q[0] - 1.55) < 0.1)
 check("through the door, never through the wall", door_ok and through, p and [q for q in p if abs(q[0] - 1.55) < 0.1])
@@ -109,10 +109,28 @@ check("start in the lethal zone: a path out", pe is not None and g.cell(*pe[-1])
 open_room = CostGrid.from_map_grid(room())
 blocked = open_room.with_blocked([(1.5, 1.0)])
 check("a blocked point is grown like a wall", math.isinf(blocked.at(*blocked.cell(1.5, 1.0)))
-      and math.isinf(blocked.at(*blocked.cell(1.65, 1.0))) and not math.isinf(open_room.at(*open_room.cell(1.5, 1.0))))
+      and blocked.at(*blocked.cell(1.65, 1.0)) >= LETHAL_COST and not math.isinf(open_room.at(*open_room.cell(1.5, 1.0))))
 pb = plan(blocked, (0.5, 1.0), (2.5, 1.0))
 check("the path goes around the blocked point", pb and min(math.dist(q, (1.5, 1.0)) for q in pb) > 0.2,
       pb and round(min(math.dist(q, (1.5, 1.0)) for q in pb), 2))
+
+# Drops (exploration trials 2 and 3): plans keep out of the cliff check's stop range of a known drop,
+# a duck stopped inside that range can leave, and no path ever crosses the drop itself.
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M  # noqa: E402
+
+fine = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 60, "height": 40, "cells": "." * 2400})
+drop = (1.5, 1.0)
+dg = fine.with_blocked([drop], DROP_LETHAL_M, DROP_INFLATE_M)
+pd = plan(dg, (0.3, 1.0), (2.7, 1.0))
+check("a path past a known drop keeps 45 cm (the cliff-stop distance) from it",
+      pd is not None and min(math.dist(q, drop) for q in pd) >= 0.45 - 0.03,
+      pd and round(min(math.dist(q, drop) for q in pd), 3))
+pe2 = plan(dg, (1.5, 1.42), (1.5, 1.9))
+check("a duck stopped 42 cm from a drop (inside its zone) can leave, away from it",
+      pe2 is not None and all(math.dist(q, drop) > 0.4 for q in pe2), pe2 and pe2[:2])
+pthru = plan(dg, (1.5, 1.42), (1.5, 0.58))
+check("no path crosses the drop itself, even escaping", pthru is None or all(math.dist(q, drop) > 0.05 for q in pthru),
+      pthru and min(math.dist(q, drop) for q in pthru))
 
 # Frames: map <- odom from one fix, then odometry carries the pose.
 from duck_lab.nav.frames import Localizer, compose, inverse  # noqa: E402

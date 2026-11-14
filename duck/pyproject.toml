@@ -12,6 +12,8 @@ duck-record = "duck_lab.record:main"
 duck-to-rerun = "duck_lab.to_rerun:main"
 duck-go = "duck_lab.nav.run:main"
 duck-eval = "duck_lab.nav.evaluate:main"
+duck-explore = "duck_lab.nav.explore_run:main"
+duck-rooms = "duck_lab.nav.rooms:main"
 
 [build-system]
 requires = ["hatchling"]
