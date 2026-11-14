@@ -29,7 +29,8 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 
 1. MCAP recording from mission control (`nxt-web` first) — done for `nxt-web` 2026-11-14: a
    `.mcap` beside each run's CSV, topics `/nxt/state` and `/nxt/events`.
-2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run.
+2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run — started
+   2026-11-14 ([VIEWER-SPIKE.md](VIEWER-SPIKE.md)); waiting for the operator's look.
 3. A minimal logbook: a folder, an index, search, events.
 4. eval-harness reads runs from the logbook; flotilla cases reference recordings.
 
