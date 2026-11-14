@@ -23,6 +23,8 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 - [NXT parts to look for](NXT-PARTS.md).
 - [Review of the duck RFCs, 2026-11-14](REVIEW-2026-11-14-duck-rfcs.md) — findings and what was done.
 - [What robotics asks of flotilla](FLOTILLA-ASKS.md) — for the flotilla session to assess.
+- [What robotics asks of eval-harness (for 0.9)](EVAL-HARNESS-ASKS.md) — for the eval-harness
+  session to assess.
 
 Promoted: the robot brain draft became [RFC-0002](../rfc/RFC-0002-robot-brain.md) and
 [RFC-0004](../rfc/RFC-0004-perception-and-planning.md) (2026-11-14).

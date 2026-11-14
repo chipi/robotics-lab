@@ -90,6 +90,7 @@ nav:
     - NXT parts to look for: wip/NXT-PARTS.md
     - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
     - What robotics asks of flotilla: wip/FLOTILLA-ASKS.md
+    - What robotics asks of eval-harness: wip/EVAL-HARNESS-ASKS.md
   - History:
     - Overview: history/README.md
     - 0001 — Genesis: history/0001-genesis.md
