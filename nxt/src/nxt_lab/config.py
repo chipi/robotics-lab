@@ -13,15 +13,15 @@ SENSOR_PORTS = ("1", "2", "3", "4")
 
 @dataclass
 class Config:
-    # Unverified on the real robot: the Shooterbot instructions put the tracks on B/C and the shooter on A.
-    left: str = "B"
-    right: str = "C"
+    # Checked on the robot 2026-11-14: A shooter, B right track, C left track; positive power drives both forward.
+    left: str = "C"
+    right: str = "B"
     shooter: str = "A"
     invert_left: bool = False
     invert_right: bool = False
     fire_power: int = 75
     fire_degrees: int = 360
-    sensors: dict = field(default_factory=lambda: {p: "none" for p in SENSOR_PORTS})
+    sensors: dict = field(default_factory=lambda: {"1": "none", "2": "none", "3": "color", "4": "ultrasonic"})
     sample_hz: float = 5.0
 
     def validate(self) -> None:

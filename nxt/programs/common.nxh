@@ -1,11 +1,11 @@
 // Shared by the dog-game programs: ports, the ultrasonic sensor, a CSV log on the brick,
 // and a status line on the brick's screen.
 //
-// Ports are a guess until checked on the robot: tracks on B and C (Shooterbot), and the
-// ultrasonic sensor on 4 (the photos show sensor cables in ports 3 and 4).
+// Motor ports checked on the robot (2026-11-14): B right track, C left track, positive power
+// drives both forward. Sensors: colour on 3, ultrasonic on 4 (checked: it reports type "Sonar").
 
-#define LEFT   OUT_B
-#define RIGHT  OUT_C
+#define LEFT   OUT_C
+#define RIGHT  OUT_B
 #define TRACKS OUT_BC
 #define US     IN_4
 #define NO_ECHO 255          // what the ultrasonic sensor reports when nothing is in range

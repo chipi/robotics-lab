@@ -146,8 +146,7 @@ repeated runs → the operator approves promoting it.
 
 ## Open questions
 
-- Which ports the ultrasonic and colour sensors are on (photos show cables in 3 and 4; the
-  programs assume ultrasonic on 4).
-- Which motor ports drive which track, and in which direction (assumed B left, C right).
+- ~~Which ports the sensors are on~~ Checked 2026-11-14: colour on 3, ultrasonic on 4 (reports type "Sonar", read 73–83 cm).
+- ~~Which motor ports drive which track~~ Checked 2026-11-14: A shooter, B right, C left, positive power forward on both.
 - Microduck's actual SDK, simulator and hardware, from the official repository once it is
   in hand (the description above is from press coverage).

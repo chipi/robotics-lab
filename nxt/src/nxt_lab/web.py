@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import signal
 import threading
 import time
 import urllib.parse
@@ -226,6 +227,10 @@ def make_handler(controller: Controller):
     return Handler
 
 
+def _raise_keyboard_interrupt(signum, frame):
+    raise KeyboardInterrupt
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to reach it from a phone on the LAN")
@@ -239,6 +244,10 @@ def main() -> None:
     threading.Thread(target=controller.watchdog, daemon=True).start()
     threading.Thread(target=controller.recorder.run_forever, daemon=True).start()
 
+    # The NXT's stock firmware has no deadman: a motor keeps its last command after this process
+    # dies. SIGTERM (kill, systemd, a test harness) must take the same stop-the-motors path as Ctrl-C.
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+
     server = ThreadingHTTPServer((args.host, args.port), make_handler(controller))
     mode = "FAKE robot" if args.fake else "NXT over USB"
     print(f"{mode}: http://{args.host}:{args.port}  (connect: {controller.error or 'ok'})", flush=True)
@@ -250,6 +259,7 @@ def main() -> None:
         controller.recorder.stop()
         if controller.robot is not None:
             controller.robot.close()
+        print("stopped: motors idled", flush=True)
 
 
 if __name__ == "__main__":

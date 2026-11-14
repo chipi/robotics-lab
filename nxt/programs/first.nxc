@@ -3,11 +3,11 @@
 // Every 100 ms it writes time and both motors' rotation counts to first.csv on the
 // brick; download or plot that file from the web UI's Programs tab afterwards.
 //
-// Ports are a guess (Shooterbot: tracks on B and C) until checked on the robot.
+// Ports checked on the robot (2026-11-14): C left track, B right track.
 // Lift the car before the first run.
 
-#define LEFT   OUT_B
-#define RIGHT  OUT_C
+#define LEFT   OUT_C
+#define RIGHT  OUT_B
 #define TRACKS OUT_BC
 #define POWER  50
 #define LOG    "first.csv"
