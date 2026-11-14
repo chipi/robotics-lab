@@ -13,7 +13,7 @@ from dataclasses import dataclass
 # margin for what mapd has not seen of an obstacle and for odometry error (phase 1, run 1) — cells
 # are expensive, not forbidden: plans keep off walls, and a duck that drifted into the margin can
 # still get out (run 2, all impassable, stranded it).
-LETHAL_M = 0.12
+LETHAL_M = 0.15   # run 5: 12 cm left 4 touches at the doorway (cabinet corner, wall end), 5.5-8.2 cm
 INFLATE_M = 0.28
 # Unknown ground can hide a drop (the staircase reads as nothing until the cliff check sees it), so it
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a
@@ -24,12 +24,17 @@ FREE_COST = 1.0
 
 
 def _grow(cost: list, w: int, h: int, centres: list, res: float) -> None:
-    """Mark the lethal disc and the margin ring around each obstacle cell, in place."""
-    lethal = math.ceil(LETHAL_M / res)
-    margin = math.ceil(INFLATE_M / res)
-    rings = [(dx, dy, dx * dx + dy * dy <= lethal * lethal)
-             for dx in range(-margin, margin + 1) for dy in range(-margin, margin + 1)
-             if dx * dx + dy * dy <= margin * margin]
+    """Mark the lethal disc and the margin ring around each obstacle cell, in place. By distance from
+    a cell's centre to the obstacle cell's edge (centre distance minus half a cell), not by whole
+    cells: rounding up to whole 10 cm cells closed the office doorway (a 42 cm gap the 14 cm duck
+    walks through) in phase 1's run 4."""
+    reach = math.ceil(INFLATE_M / res) + 1
+    rings = []
+    for dx in range(-reach, reach + 1):
+        for dy in range(-reach, reach + 1):
+            gap = math.hypot(dx, dy) * res - res / 2
+            if gap < INFLATE_M:
+                rings.append((dx, dy, gap < LETHAL_M))
     for cx, cy in centres:
         for dx, dy, is_lethal in rings:
             x, y = cx + dx, cy + dy

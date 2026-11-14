@@ -35,8 +35,8 @@ def room(w=30, h=20, wall_x=None, door=None, unknown=()):
 
 
 g = CostGrid.from_map_grid(room())
-check("walls: lethal 2 cells (12 cm), expensive to 3 (28 cm), free after", math.isinf(g.at(2, 10)) and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
-      (g.at(2, 10), g.at(3, 10), g.at(4, 10)))
+check("walls at 10 cm cells, by edge distance: cell 1 lethal (5 cm), 2-3 margin (15, 25 cm), 4 free (35 cm)", math.isinf(g.at(1, 10)) and g.at(2, 10) == MARGIN_COST and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
+      (g.at(1, 10), g.at(2, 10), g.at(3, 10), g.at(4, 10)))
 p = plan(g, (0.5, 0.5), (2.5, 1.5))
 check("open room: a path, start cell to goal cell", p and g.cell(*p[0]) == (5, 5) and g.cell(*p[-1]) == (25, 15),
       p and (p[0], p[-1]))
@@ -86,6 +86,20 @@ check("covering: a path to the goal, but never through the known wall",
       pg is None or all(not math.isinf(grown.at(*grown.cell(*q))) for q in pg), pg and pg[-1])
 grown2 = small.covering([(0.5, 0.5), (0.5, -1.0)])
 check("covering grows downward too, origin moves", grown2.origin[1] < small.origin[1], grown2.origin)
+
+# Doorways at mapd's 5 cm cells (run 4: the office doorway closed on 10 cm cells).
+def gap_grid(gap_cells):
+    w, h, res = 40, 30, 0.05
+    rows = []
+    for cy in range(h):
+        lo = 15 - gap_cells // 2
+        rows.append("".join("#" if cx == 20 and not (lo <= cy < lo + gap_cells) else "." for cx in range(w)))
+    return CostGrid.from_map_grid({"res_m": res, "origin": [0.0, 0.0], "width": w, "height": h, "cells": "".join(rows)})
+
+
+check("a 45 cm gap (the office doorway has 42 cm free) is passable at 5 cm cells",
+      plan(gap_grid(9), (0.3, 0.75), (1.7, 0.75)) is not None)
+check("a 15 cm gap is not", plan(gap_grid(3), (0.3, 0.75), (1.7, 0.75)) is None)
 
 # A duck that drifted into a wall's lethal zone can still get out (run 2 stranded it).
 pe = plan(g, (0.25, 1.0), (1.5, 1.0))

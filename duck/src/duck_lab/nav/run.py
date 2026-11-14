@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.cliff import drop_points
+from duck_lab.nav.cliff import drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
@@ -155,7 +155,7 @@ class Navigator:
         return collecting_since is not None
 
     def grid(self) -> CostGrid:
-        g = self.mapd.call("map.grid", {"res_m": 0.1})
+        g = self.mapd.call("map.grid", {"res_m": 0.05})   # mapd's finest: doorways stay open
         if g.get("res_m"):
             g["res_m"] *= self.scale
             g["origin"] = [v * self.scale for v in g["origin"]]
@@ -230,8 +230,13 @@ class Navigator:
             if tw.vx > 0 and near is not None and near < STOP_MM:
                 reflex_stops += 1
                 self.move(Twist())
-                ahead = near / 1000.0
-                self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
+                seen = obstacle_points(self.tof.last, self.state.latest) if self.state.latest else []
+                c, s_ = math.cos(pose[2]), math.sin(pose[2])
+                for ax, ay in seen:
+                    self.blocked.append((pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay))
+                if not seen:   # no geometry (no state yet): the nearest return straight ahead
+                    ahead = near / 1000.0
+                    self.blocked.append((pose[0] + ahead * c, pose[1] + ahead * s_))
                 self.record(event="reflex_stop", nearest_mm=near, pose=pose)
                 self.survey()
                 path = None

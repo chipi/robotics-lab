@@ -62,6 +62,36 @@ def sensor_pose(state: dict) -> tuple:
     return height, q
 
 
+# Higher than mapd's 3 cm: over flat floor with the head turned, returns read up to 6.5 cm above the
+# predicted floor at 0.4 m (pose error); real obstacles (walls, the cabinet) read a median 14 cm.
+FLOOR_MARGIN_M = 0.08      # a return lower than this (+3 cm per metre of range) is floor
+FLOOR_MARGIN_PER_M = 0.03
+OVERHEAD_M = 0.30          # above the duck's head (27.2 cm): passes over it
+
+
+def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
+    """(ahead, left) of every valid return that is an obstacle — above the floor, below the duck's
+    head, within within_m — relative to the sensor and turned to the trunk's heading. The reflex's
+    memory takes all of them, not one point: a wall seen once is a wall, not a dot."""
+    height, q = sensor_pose(state)
+    w, x, y, z = state["imu"]["quat"]
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    c, s_ = math.cos(-yaw), math.sin(-yaw)
+    out = []
+    for i, beam in enumerate(BEAMS):
+        if frame["status"][i] not in VALID or frame["distance_mm"][i] <= 0:
+            continue
+        r = frame["distance_mm"][i] / 1000.0 / beam[0]
+        d = rotate(q, beam)
+        hx, hy = r * d[0], r * d[1]
+        h = math.hypot(hx, hy)
+        z = height + r * d[2]
+        if h > within_m or z < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h or z > OVERHEAD_M:
+            continue
+        out.append((c * hx - s_ * hy, s_ * hx + c * hy))
+    return out
+
+
 def drop_ahead(frame: dict, state: dict) -> float | None:
     """Horizontal distance to the nearest place ahead where the floor should be and is not."""
     pts = drop_points(frame, state)

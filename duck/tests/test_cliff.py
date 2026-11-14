@@ -65,5 +65,22 @@ for path in sorted((Path(__file__).resolve().parents[1] / "runs").glob("tof-flat
     check(f"recorded flat floor ({path.name}, {len(frames)} frames): no drop",
           all(h is None for h in hits), [h for h in hits if h is not None][:5])
 
+# Obstacle points for the reflex's memory, on the same recordings: floor is not an obstacle; the
+# doorway walls and the cabinet are (tof-flat-0 faces them from the dock, tof-flat-180 faces open
+# corridor floor).
+from duck_lab.nav.cliff import obstacle_points  # noqa: E402
+
+runs = Path(__file__).resolve().parents[1] / "runs"
+if (runs / "tof-flat-180.json").exists():
+    frames = json.loads((runs / "tof-flat-180.json").read_text())["frames"]
+    n = sum(len(obstacle_points(f, f["state"])) for f in frames)
+    check("open corridor floor: no obstacle points", n == 0, n)
+if (runs / "tof-flat-0.json").exists():
+    frames = json.loads((runs / "tof-flat-0.json").read_text())["frames"]
+    pts = [p for f in frames for p in obstacle_points(f, f["state"])]
+    ahead = sorted(p[0] for p in pts)
+    check("facing the doorway and the cabinet: obstacles 0.3-0.7 m ahead",
+          len(pts) > 100 and 0.3 <= ahead[len(ahead) // 2] <= 0.7, (len(pts), ahead[len(ahead) // 2] if ahead else None))
+
 print("CLIFF", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

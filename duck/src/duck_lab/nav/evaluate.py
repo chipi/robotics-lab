@@ -3,8 +3,10 @@
     uv run duck-eval --goals 20 --out runs/phase1     # simulator with mapd running
 
 Goals are drawn once, with a fixed seed, from free floor in the apartment layout (sim/apartment_layout.json,
-from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom, and the duck starts at its dock
-and goes from goal to goal (a fixed sequence of starts). Each goal is given in world coordinates
+from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom and the staircase. Every goal starts
+from the dock with an empty map (simreset.reset: the simulator restarted, mapd fresh), as the bar
+says; --chain runs them one after another instead (run 4 did, by mistake: drift and failures carried
+from goal to goal). Each goal is given in world coordinates
 and converted to the map with the map ← world transform measured at the first fix.
 
 Scored against the simulator's truth (the body server's trunk pose), not the navigator's belief:
@@ -22,6 +24,7 @@ import time
 from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
+from duck_lab.nav import simreset
 from duck_lab.nav.run import Navigator
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
@@ -103,19 +106,30 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=90.0)
     ap.add_argument("--out", type=Path, default=Path("runs/phase1"))
+    ap.add_argument("--chain", action="store_true", help="goal after goal, no reset (not the bar)")
     args = ap.parse_args()
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)
     goals = draw_goals(layout, args.goals, args.seed)
     args.out.mkdir(parents=True, exist_ok=True)
-    nav = Navigator(log=args.out / "ticks.jsonl")
     results = []
+    nav = None
+
+    def start():
+        n_ = Navigator(log=args.out / "ticks.jsonl")
+        if n_.loc.pose() is None and not n_.fix():
+            n_.survey()
+        return n_, compose(n_.loc.pose(), inverse(n_.body.pose()))
+
     try:
-        if nav.loc.pose() is None and not nav.fix():
-            nav.survey()
-        map_pose, truth = nav.loc.pose(), nav.body.pose()
-        map_from_world = compose(map_pose, inverse(truth))
+        if args.chain:
+            nav, map_from_world = start()
         for i, (gx, gy, room) in enumerate(goals, 1):
+            if not args.chain:
+                if nav is not None:
+                    nav.close()
+                simreset.reset()
+                nav, map_from_world = start()
             goal_map = compose(map_from_world, (gx, gy, 0.0))[:2]
             started = time.monotonic()
             ticks_before = sum(1 for _ in open(args.out / "ticks.jsonl")) if (args.out / "ticks.jsonl").exists() else 0
@@ -140,7 +154,8 @@ def main() -> None:
                 print("ABORT: the duck fell (or left the apartment); the run stops here", flush=True)
                 break
     finally:
-        nav.close()
+        if nav is not None:
+            nav.close()
         (args.out / "results.json").write_text(json.dumps(results, indent=1))
     n = len(results)
     said = sum(r["status"] == "reached" for r in results)
