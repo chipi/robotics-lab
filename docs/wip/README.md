@@ -1,0 +1,26 @@
+# WIP — work in progress
+
+Notes in progress: plans, ideas, analyses. Promotion targets:
+
+| Promote to | When |
+| --- | --- |
+| `docs/adr/` | The decision is structural and final |
+| `docs/rfc/` | The decision needs a proposal-and-review process before adoption |
+| A reference doc | The content is stable enough to be a reference |
+| `docs/history/0NNN-...md` | The session that produced it has wrapped |
+| *delete* | Turned out not to matter |
+
+## Open notes
+
+- [Status and open decisions](STATUS.md) — start here.
+- [Ideas](IDEAS.md) — NXT programs, wireless NXT, bigger NXT robots and the arm robot, goal
+  projects, eval-harness and flotilla ideas.
+- [Long-term direction](ECOSYSTEM.md) — the robotics ecosystem.
+- [Microduck](MICRODUCK.md) — upstream repos, simulator, arena, DGX training, policies and skills.
+- [eval-harness for robot trials](EVAL-HARNESS-ROBOTS.md) — what fits, the friction.
+- [Stretching eval-harness and flotilla](STRETCH-EVAL-FLOTILLA.md) — the full idea list behind
+  [RFC-0005](../rfc/RFC-0005-missions.md).
+- [NXT parts to look for](NXT-PARTS.md).
+
+Promoted: the robot brain draft became [RFC-0002](../rfc/RFC-0002-robot-brain.md) and
+[RFC-0004](../rfc/RFC-0004-perception-and-planning.md) (2026-11-14).

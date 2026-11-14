@@ -1,0 +1,97 @@
+site_name: robotics-lab
+site_description: "A lab for a LEGO Mindstorms NXT and a Microduck, and the software around them: a web UI, a robot brain, eval-harness and flotilla for robots."
+site_url: https://chipi.github.io/robotics-lab/
+site_author: Marko Dragoljevic
+
+repo_name: chipi/robotics-lab
+repo_url: https://github.com/chipi/robotics-lab
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Proposals (RFC):
+    - Overview: rfc/README.md
+    - RFC-0001 — The NXT web UI: rfc/RFC-0001-nxt-web-ui.md
+    - RFC-0002 — The robot brain: rfc/RFC-0002-robot-brain.md
+    - RFC-0003 — One robot interface: rfc/RFC-0003-robot-interface.md
+    - RFC-0004 — Perception and planning: rfc/RFC-0004-perception-and-planning.md
+    - RFC-0005 — Missions: rfc/RFC-0005-missions.md
+  - Decisions (ADR):
+    - Overview: adr/README.md
+  - In progress:
+    - Overview: wip/README.md
+    - Status and open decisions: wip/STATUS.md
+    - Ideas: wip/IDEAS.md
+    - Long-term direction: wip/ECOSYSTEM.md
+    - Microduck: wip/MICRODUCK.md
+    - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
+    - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md
+    - NXT parts to look for: wip/NXT-PARTS.md
+  - History:
+    - Overview: history/README.md
+    - 0001 — Genesis: history/0001-genesis.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/chipi/robotics-lab

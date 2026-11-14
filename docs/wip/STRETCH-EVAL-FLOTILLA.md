@@ -7,7 +7,7 @@ that project's own RFC/ADR process, and its Non-Goals are read first.
 Sources: eval-harness `/work/eval-harness/main` (harness 0.6.0, `bc2286392`; details in
 [EVAL-HARNESS-ROBOTS.md](EVAL-HARNESS-ROBOTS.md)); flotilla `/work/flotilla/main` (README,
 ADR-0005 agent pipeline, ADR-0006 node agent, ADR-0008 autonomy). The robot side is
-[ROBOT-BRAIN.md](ROBOT-BRAIN.md).
+[RFC-0002](../rfc/RFC-0002-robot-brain.md).
 
 ## The two projects at their core
 
@@ -25,7 +25,7 @@ and actions happen in the physical world ("may it act?" matters more). And they 
 
 ## The combined loop
 
-```
+```text
 instruction ("tour the rooms, hide under the kitchen table")
    │
    ▼  flotilla: a MISSION CASE
@@ -52,7 +52,7 @@ on the simulated duck, is the way forward.** The rest of this note stays ideas.
 ## eval-harness: capabilities robotics would push
 
 | # | Capability | Why for robots | Today |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 1 | **Side-effect-safe adapters**: a "moves hardware" flag, no automatic retries, own timeout, a pause for "reset the robot" | A retried trial is a second physical run | Core retries up to 8 times on "timeout"/"connection" errors (`_retry.py`) |
 | 2 | **Structured scenario items**: the adapter gets the item id and fields (start pose, scene, instruction) | Scenarios are data, not text | Adapter gets item text and params only (`run.py`) |
 | 3 | **Trajectories as outputs** + scorers over them (success, time, path length, collisions, closest approach) | A run is a time series, not one answer | Output is a string; numbers via `Result.extra` |
@@ -72,7 +72,7 @@ changed on purpose.
 ## flotilla: capabilities robotics would push
 
 | # | Capability | Maps onto |
-|---|---|---|
+| --- | --- | --- |
 | 1 | **A robot host type**: a host agent near (later on) the robot; allowed actions are robot actions with risk and reversibility (moving: mostly reversible; grabbing, firing: not) | ADR-0006 host agent: allowlist, autonomy cap, signed executions |
 | 2 | **Missions as cases** at the right timescale: flotilla decides whether and which mission and approves risky steps; the brain and navigator own seconds and milliseconds. flotilla is never in the motion loop | ADR-0005 case lifecycle |
 | 3 | **Guardrails**: the freeze as an e-stop for every robot; holds ("no missions at night", "dog in the living room"); per-target lock (one mission per robot); circuit breaker (three falls → stop); caps (missions per hour) | ADR-0005 §7 guardrails |

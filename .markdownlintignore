@@ -1,0 +1,6 @@
+site/
+.venv/
+node_modules/
+nxt/.venv/
+nxt/build/
+nxt/runs/

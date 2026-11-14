@@ -5,18 +5,18 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 ## Where things stand
 
 | Area | State | Details |
-|---|---|---|
-| NXT over USB | Works: info, motors, sensors, web UI, recording, programs on the brick | [nxt/README.md](../../nxt/README.md) |
-| NXT over Bluetooth | Works: paired, `/dev/rfcomm0`, web UI drives over it | [nxt/README.md](../../nxt/README.md) |
-| NXT ports | Checked on the robot: A shooter, B right, C left; colour 3, ultrasonic 4 | [nxt/README.md](../../nxt/README.md) |
+| --- | --- | --- |
+| NXT over USB | Works: info, motors, sensors, web UI, recording, programs on the brick | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
+| NXT over Bluetooth | Works: paired, `/dev/rfcomm0`, web UI drives over it | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
+| NXT ports | Checked on the robot: A shooter, B right, C left; colour 3, ultrasonic 4 | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
 | Programs on the brick | `first` ran and logged correctly; `chase` and `patrol` compiled, not yet run | [IDEAS.md](IDEAS.md) |
-| NXT web UI | Drive, live sensors and charts, recording, programs, setup, link choice and diagnostics, command log | [nxt/README.md](../../nxt/README.md) |
-| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; **no deadman on the brick yet** | [nxt/README.md](../../nxt/README.md) Known issues |
+| NXT web UI | Drive, live sensors and charts, recording, programs, setup, link choice and diagnostics, command log | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
+| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; **no deadman on the brick yet** | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) Known issues |
 | Microduck simulator | Runs here: stands, walks at 0.3 m/s asked (0.13 m/s got); turning did not match upstream | [MICRODUCK.md](MICRODUCK.md) |
 | Microduck arena | Runs here: reference policy 9.392 s on the 2 m sprint | [MICRODUCK.md](MICRODUCK.md) |
 | DGX training | `robotics` GPU mode exists; first measured run done (no usable policy kept); full run planned | [MICRODUCK.md](MICRODUCK.md) |
-| Brain models | Live: `robot-vlm`, `robot-planner` (Qwen3-VL-30B-A3B), `robot-vlm-gemma` (Gemma 4 26B-A4B), $10/30 days | [ROBOT-BRAIN.md](ROBOT-BRAIN.md) |
-| Robot brain | Designed, not built; phase 0 approved | [ROBOT-BRAIN.md](ROBOT-BRAIN.md) |
+| Brain models | Live: `robot-vlm`, `robot-planner` (Qwen3-VL-30B-A3B), `robot-vlm-gemma` (Gemma 4 26B-A4B), $10/30 days | [RFC-0004](../rfc/RFC-0004-perception-and-planning.md) |
+| Robot brain | Designed, not built; phase 0 approved | [RFC-0002](../rfc/RFC-0002-robot-brain.md) |
 | eval-harness / flotilla for robots | Ideas; the combined mission loop (shadow = run in the simulator) is the agreed direction | [STRETCH-EVAL-FLOTILLA.md](STRETCH-EVAL-FLOTILLA.md) |
 
 ## Incidents (2026-11-14, both caused by our own test, both fixed)

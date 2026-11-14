@@ -33,6 +33,7 @@ through the robot's API (`nxt-web` for the NXT, `robotctl` for the duck), waits,
 back, returns the metrics in `extra`. A person resets the robot between trials.
 
 Friction:
+
 - No per-call timeout in the core, and up to 8 automatic retries on errors mentioning
   "timeout" or "connection" (`_retry.py:44-79`). A physical trial must not be repeated
   automatically: the adapter enforces its own timeout and the run sets `EVAL_MAX_RETRIES=1`.
@@ -58,6 +59,7 @@ replacement (`run.py:348`), so logs must be text.
 
 Items: commands plus a scene description. Arms: models. Output: a plan in the robot's actions,
 as JSON text. Two ways to score:
+
 - **Rule-based `score()`**: the plan parses, uses only allowed actions, respects limits.
 - **LLM judges** in `grade` mode on declared dimensions (`RUNBOOK.md:695-780`). A judge
   "reads no reference" (`judge_score.py:1333`), so "compare to the ideal plan" needs custom

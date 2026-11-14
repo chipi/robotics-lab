@@ -6,7 +6,7 @@ Everything is Apache-2.0 except the 3D meshes in `microduck_rl` (CC BY-NC-SA 4.0
 ## The official repos (github.com/pollen-robotics)
 
 | Repo | What it is |
-|---|---|
+| --- | --- |
 | `microduck` | The robot's software: Rust daemons on a Rockchip RK3566. `robotd` (50 Hz control loop, 15 servos, neural policies), `updaterd` (signed, health-gated, reversible updates), `configd`, `btd`, `padd` (gamepad), `autod` ("the duck's own brain"), `mediad` (camera over WebRTC), `tofd` (8×8 time-of-flight depth). All talk one **JSON-RPC contract over Unix sockets**; app, console, gamepad and scripts send the same calls. CLI: `robotctl`; `duckctl` drives it from a laptop over Bluetooth. |
 | `microduck_rl` | Training: MuJoCo (mjlab / MuJoCo Warp) + PPO, actuator model (BAM), domain randomisation, export to ONNX, `publish` to the Hugging Face Hub. 13 task families (walk, fall recovery, stand up, sit/stand, ground pick, ball kick, roll, roller skating …). **Training needs a CUDA GPU** or Hugging Face Jobs (`--hf-jobs`). |
 | `microduck-arena` | Hugging Face Space and local CLI: races a policy on a fixed course **over five perturbed seeds**, scores the mean finish time (a fall counts as the time limit). Runs locally with no account and no network. Events: `sprint-2m`, `roller-sprint-2m`, `hill-climb-1m5`; also "Got a Talent", tug of war, sock heist. |
@@ -55,6 +55,7 @@ enough for 50 runs a second on the RK3566. Training also uses a second network o
 the config, not traced in code — which is not shipped.
 
 **Making your own skills**, easiest first:
+
 1. **Emotions:** a keyframes JSON (head, body, beak over time) plus a `.wav`; no training. 13 ship.
 2. **Choreography:** the arena's "Got a Talent" timelines string existing moves, sounds and up to
    8 ducks together; try it in simulation.
@@ -72,7 +73,7 @@ Node/npm, 32 cores, 124 GB RAM, about 1 TB free disk. Missing: a **Rust toolchai
 **NVIDIA GPU** (`nvidia-smi` not found).
 
 | Step | Needs | Gives |
-|---|---|---|
+| --- | --- | --- |
 | 1. Clone `microduck`, `microduck_rl`, `microduck-arena`, `microduck-challenges` | Nothing installed | The code to read and run |
 | 2. `uv sync` in `microduck-arena`, race the vendored reference policy (`arena score … --event sprint-2m`) | Its own venv | First sim results on CPU, no account |
 | 3. Install Rust (rustup), `uv sync` in `microduck_rl`, run `scripts/duck-sim` | Rust; `microduck_rl`'s venv pulls about 2 GB of CUDA wheels | A simulated duck in a window, driven with `robotctl` |
@@ -96,7 +97,7 @@ Node/npm, 32 cores, 124 GB RAM, about 1 TB free disk. Missing: a **Rust toolchai
   `scripts/duck-sim drive`:
 
   | Asked | Got |
-  |---|---|
+  | --- | --- |
   | 0.15 m/s forward, 8 s | 1 cm (0.001 m/s): "it did not walk" |
   | 0.3 m/s forward, 8 s | 104 cm (0.130 m/s), drifted −25° |
   | 0.8 rad/s on the spot, 8 s | +6° (upstream measured about 50°/s) |

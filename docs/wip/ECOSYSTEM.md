@@ -8,7 +8,7 @@ not a plan; each step gets its own plan when it starts.
 ## The pieces
 
 | Piece | Role | Exists today |
-|---|---|---|
+| --- | --- | --- |
 | **NXT** (`nxt/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC toolchain; never run on hardware yet |
 | **Microduck** | Walking robot with camera, 8×8 depth sensor, beak gripper; behaviours trained in simulation | Not arrived; nothing in this repo |
 | **Robot service** | One small HTTP API per robot: status, actions, live telemetry, run logs | The NXT web server is the first one |
@@ -21,7 +21,7 @@ workstation rules); whether robot telemetry and models should use them is open.
 
 ## How it fits together
 
-```
+```text
  operator ── approvals ──► flotilla (policy, cases, timeline)
                                │ signed, allowed actions
                                ▼
@@ -58,14 +58,16 @@ Robot scenarios differ from the text tasks both projects were built around. Thes
 requirements they would push back into them; each needs checking against the projects' own
 design docs (especially their Non-Goals) before it becomes work there.
 
-**eval-harness**
+### eval-harness
+
 - Trials that cost time and need a person to reset the robot, so very few items and repeats;
   sample-size questions dominate.
 - Items that are scenarios (a track layout, a start pose), not frozen text.
 - Scores computed from time-series logs (lap time, wobble, collisions, falls), not one output.
 - Simulator vs real as a first-class comparison.
 
-**flotilla**
+### flotilla
+
 - Actions that move things in the physical world and cannot be undone.
 - A safety stop that works whatever the policy, the agent or the network is doing.
 - Time limits measured in seconds, not minutes.

@@ -9,7 +9,7 @@ confirmed, check the listing's photo and description.
 ## Must-haves for the arm robot
 
 | What | Search for | Why | Code |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Extra NXT motors (3+) | "LEGO 9842 NXT motor" | Arm: shoulder, elbow, gripper | 9842, checked |
 | A second NXT brick | "LEGO 9841 NXT intelligent brick" | 3 more motor and 4 more sensor ports, no new drivers | 9841, checked |
 | NXT cables | "LEGO NXT cable pack 8528", "NXT cables 6 wire" | Every extra motor and sensor needs one; long ones for an arm | 8528 from memory |
@@ -18,7 +18,7 @@ confirmed, check the listing's photo and description.
 ## Sensors (all supported by our software library, nxt-python)
 
 | What | Search for | Why | Code |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Touch sensors | "LEGO 9843 NXT touch sensor" | Bumpers, gripper contact (2 may already be in the NXT 2.0 box) | 9843 from memory |
 | Second ultrasonic | "LEGO 9846 NXT ultrasonic sensor" | Look forward and down / to the side | 9846 from memory |
 | Second colour sensor | "LEGO 9694 NXT color sensor" | One on the gripper for pin colours | 9694, checked |
@@ -33,7 +33,7 @@ confirmed, check the listing's photo and description.
 ## Multiplexers and controllers
 
 | What | Search for | Supported by nxt-python? | Code |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Mindsensors NXTMMX** (motor multiplexer for NXT motors) | "mindsensors NXTMMX" | Yes (`mindsensors.MMX`) | from memory |
 | HiTechnic Sensor Multiplexer (4 sensors on 1 port) | "HiTechnic sensor multiplexer NSX2020", "HiTechnic SMUX" | **No**, we would write the driver | NSX2020, checked |
 | HiTechnic DC motor / servo controller | "HiTechnic motor controller", "HiTechnic servo controller", "TETRIX" | Yes (`hitechnic.MotorCon`, `ServoCon`) | — |
@@ -41,7 +41,7 @@ confirmed, check the listing's photo and description.
 ## Power
 
 | What | Search for | Why | Code |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | NXT rechargeable battery | "LEGO 9798 NXT rechargeable battery" | Long sessions; note a second brick needs its own | 9798, checked |
 | NXT battery charger / transformer | "LEGO 9833 transformer" | Charges the 9798 | 9833 from memory |
 

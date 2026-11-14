@@ -3,7 +3,8 @@
 Ideas for robotics-lab, collected 2026-11-13. Status is what exists in this repo, not what is
 planned. "Untested" means it has never run on the real robot.
 
-Hardware: a LEGO Mindstorms NXT 2.0 (stock firmware 1.28, read from the brick; the photo of its screen was read as 1.31) built as a tracked Shooterbot. The
+Hardware: a LEGO Mindstorms NXT 2.0 (stock firmware 1.28, read from the brick; the photo of its
+screen was read as 1.31) built as a tracked Shooterbot. The
 NXT 2.0 set comes with 2 touch sensors, 1 ultrasonic distance sensor and 1 colour sensor, and
 every motor counts its rotation. Also arriving: Hugging Face's **Microduck** (Pollen Robotics),
 which its official repo (`pollen-robotics/microduck`) describes as about 25 cm and 800 g, run by
@@ -21,7 +22,7 @@ Written in NXC under `nxt/programs/`, compiled with `nxt/scripts/nxc.sh`, upload
 started from the web UI. Each writes a CSV log on the brick that the UI can plot.
 
 | Idea | What it does | Status |
-|---|---|---|
+| --- | --- | --- |
 | First drive | Beep, forward 1 s, back 1 s, log rotation counts | `first.nxc` written, compiles, untested |
 | **Chase** (dog game) | Waits; backs away when something comes within 30 cm, stops at 60 cm; wiggles and chirps to invite a chase when left alone | `chase.nxc` written, compiles, untested |
 | **Patrol** (dog game) | Wanders, turns away from obstacles; every 15 s stops and watches, alerts with a tone when the distance in front changes (something moved) | `patrol.nxc` written, compiles, untested |
@@ -203,7 +204,9 @@ repeated runs → the operator approves promoting it.
 
 ## Open questions
 
-- ~~Which ports the sensors are on~~ Checked 2026-11-14: colour on 3, ultrasonic on 4 (reports type "Sonar", read 73–83 cm).
-- ~~Which motor ports drive which track~~ Checked 2026-11-14: A shooter, B right, C left, positive power forward on both.
+- ~~Which ports the sensors are on~~ Checked 2026-11-14: colour on 3, ultrasonic on 4 (reports
+  type "Sonar", read 73–83 cm).
+- ~~Which motor ports drive which track~~ Checked 2026-11-14: A shooter, B right, C left,
+  positive power forward on both.
 - Microduck's actual SDK, simulator and hardware, from the official repository once it is
   in hand (the description above is from press coverage).
