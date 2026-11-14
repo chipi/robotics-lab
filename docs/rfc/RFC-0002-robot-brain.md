@@ -169,6 +169,58 @@ planner's tools are an allowlist; every model call has a timeout.
 | Fall, pick-up or bump | The duck stands itself up; the mission drops out of `auto` and resuming needs the operator's OK (never walk back into the dog) |
 | The floor disappears ahead (stairs) | Stop, treat as an obstacle, never cross |
 
+### 3.7 Frames of reference: dead reckoning with fixes
+
+| Frame | What it is | Source |
+| --- | --- | --- |
+| **trunk** | the duck's body: x forward, y left, z up; move commands are in it | `robot.move` |
+| **odom** | position from legs and gyro since boot; 50 Hz and smooth, but it **drifts** | `robot.state.odom` |
+| **map** | `mapd`'s floor plan, origin at its first stop, "no north"; it **jumps** when corrected, does not drift | `map.stream`, `map.grid` |
+
+The standard arrangement (ROS: `map → odom → base_link`), and what `autod` does. It is a
+navigator's dead reckoning: odometry is the log and compass, a survey stop is taking a fix, the
+map→odom offset is the fix plotted, and "lost" is fog. The navigator keeps one offset: at each
+`mapd` pose, offset = map pose − odom pose at the same `t_ns`; between fixes, position on the map =
+latest odometry + offset. Upstream measured the simulator's drift at about 0.3 % per metre; the real
+robot's is not measured.
+
+### 3.8 Building the navigator
+
+Python, as pure functions (state in, command out, no sockets inside, like `autod`'s brain), unit
+tested on recorded state and replayed offline before it drives:
+
+1. **Cost map:** `map.grid` at 10 cm every few seconds; obstacles grown by about 15 cm plus the
+   duck's half-width; unknown cells expensive, not forbidden.
+2. **Path:** A* to the goal; replan when the map changes or the path is blocked.
+3. **Following:** pure pursuit to a point about 30 cm ahead → forward speed 0.15–0.3 m/s and turn
+   ≤ 1.0 rad/s; turn on the spot first when the heading is over about 45° off; a short full-speed
+   start; speed and turn corrected from measured odometry.
+4. **Reflexes, every depth frame:** something close ahead → stop; floor gone → stop.
+5. **Deadman:** a move command every 100 ms while walking.
+6. **Surveys:** no twist, head sweep, wait for `collecting`.
+7. **Exploring:** the nearest worthwhile frontier (free cells next to unknown).
+
+The concepts and frame names follow ROS 2 Nav2, the standard navigation stack, so moving to Nav2
+later stays possible. Not now: it means installing ROS 2 and bridging the duck's JSON-RPC, and Nav2
+assumes a lidar, not a 45° short-range depth sensor.
+
+### 3.9 How the link evolves
+
+The duck's daemons listen only on files inside the duck, on purpose: nothing on the network drives
+it without an authenticated door. Upstream's doors: the WebRTC control channel (browser and app; the
+same JSON-RPC), the Hugging Face relay (programs anywhere; rate-limited, no pixels), Bluetooth
+(setup only), and ssh (developers). Across robotics the pattern is the same: **fast loops on the
+robot, slow thinking off it** (ROS 2 topics, vendor APIs such as Spot's gRPC SDK, WebRTC or DDS,
+MQTT for fleets).
+
+1. **Now:** the simulator's local sockets.
+2. **First real-duck runs:** ssh-forwarded sockets — the real duck looks exactly like the simulator,
+   no new code. A developer tool, not the end state.
+3. **Grown up:** the navigator runs **on the duck** beside `autod` (it is a Linux computer); the
+   brain stays off-board and talks to it through the relay, the WebRTC channel, or our own JSON-RPC
+   ([RFC-0003](RFC-0003-robot-interface.md)). The reflex loop no longer crosses Wi-Fi. This
+   reverses the v1 non-goal "no code of ours on the duck", so it is an open decision (§5).
+
 ## 4. Non-goals (v1)
 
 - Training walking policies (separate work, [MICRODUCK.md](../wip/MICRODUCK.md)).
@@ -184,6 +236,8 @@ planner's tools are an allowlist; every model call has a timeout.
 4. Whether `mapd` treats a zero twist as "no twist asked for" when deciding a stop, or the
    navigator must stop sending — checked in phase 0.
 5. Where the brain runs long-term (workstation, DGX, an always-on box).
+6. **Whether the navigator moves onto the duck** (§3.9, step 3) — the operator decides; it reverses
+   a v1 non-goal.
 
 ## 6. Alternatives considered
 
@@ -205,3 +259,6 @@ planner's tools are an allowlist; every model call has a timeout.
   the kitchen table; missions take end options A/B/C, A first, described in plain words; two modes
   (auto / brain) with a switch, watching and collecting data during auto; the navigator is ours;
   ssh-forwarded sockets for the real duck. Revision 2 applies all of it, plus the stairs check.
+- 2026-11-14 — Operator asked how the navigator is built and why an ssh tunnel; added §3.7 frames
+  (dead reckoning with fixes — the operator's sailing analogy), §3.8 the navigator build, §3.9 how
+  the link evolves (navigator on the duck as an open decision).

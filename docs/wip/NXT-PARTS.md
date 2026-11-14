@@ -45,6 +45,33 @@ confirmed, check the listing's photo and description.
 | NXT rechargeable battery | "LEGO 9798 NXT rechargeable battery" | Long sessions; note a second brick needs its own | 9798, checked |
 | NXT battery charger / transformer | "LEGO 9833 transformer" | Charges the 9798 | 9833 from memory |
 
+## Dead reckoning for the NXT
+
+Dead reckoning = an odometer and a heading between fixes, plus fixes from known landmarks to
+correct the drift (as on a boat). The NXT already has the odometer: each motor counts rotation to
+1° (the tacho counts in the logs). Tracks skid when turning, so heading from track counts is poor.
+
+| What | Role | Notes |
+| --- | --- | --- |
+| HiTechnic Gyro (NGY1044, checked) | Heading: integrate the turn rate | Drifts slowly; corrected by fixes or the compass. Supported by nxt-python |
+| HiTechnic Compass (NMC1034, checked) | Absolute heading, no drift | Disturbed indoors by motors and steel: mount it high, use it to correct the gyro |
+| An unpowered odometry wheel | Distance that does not slip | A free-rolling wheel turning an encoder: a spare NXT motor (its rotation sensor works unpowered) or a HiTechnic Angle sensor (from memory). Costs a port |
+| HiTechnic Accelerometer | Bumps, lifted, tilted: "the dead reckoning is now wrong" | Supported |
+| Touch sensors as bumpers | A collision is a position error and a stop | Probably in the NXT 2.0 box |
+
+Fixes (landmarks):
+
+| What | Fix |
+| --- | --- |
+| Coloured tape on the floor + the colour sensor (have it) | Crossing a mark at a known spot = an exact position; the cheapest fix |
+| Ultrasonic (have it), a second one | Distance to known walls; with front + side, wall following and squaring up |
+| HiTechnic IR Seeker V2 (NSK1042, checked) + IR beacons or an IR ball | Bearings to known beacons; two beacons triangulate |
+| Later: a camera (a Pi on the robot, or the duck watching) | Recognising landmarks |
+
+Build choice: two driven wheels and a caster slip far less than tracks, so the motor counts alone
+give usable heading. Minimum kit: the gyro + an odometry wheel (or wheels instead of tracks) +
+colour-tape fixes.
+
 ## Do not buy for the NXT
 
 - **EV3 sensors and motors' sensors** (EV3 uses a different sensor protocol the NXT firmware does
