@@ -16,8 +16,8 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 | Microduck arena | Runs here: reference policy 9.392 s on the 2 m sprint | [MICRODUCK.md](MICRODUCK.md) |
 | DGX training | `robotics` GPU mode exists; first measured run done (no usable policy kept); full run planned | [MICRODUCK.md](MICRODUCK.md) |
 | Brain models | Live: `robot-vlm`, `robot-planner` (Qwen3-VL-30B-A3B), `robot-vlm-gemma` (Gemma 4 26B-A4B), $10/30 days | [RFC-0004](../rfc/RFC-0004-perception-and-planning.md) |
-| Robot brain | Designed, not built; phase 0 approved | [RFC-0002](../rfc/RFC-0002-robot-brain.md) |
-| eval-harness / flotilla for robots | Ideas; the combined mission loop (shadow = run in the simulator) is the agreed direction | [STRETCH-EVAL-FLOTILLA.md](STRETCH-EVAL-FLOTILLA.md) |
+| Robot brain | Designed, revision 2 after an independent review; not built; phase 0 (a spike: is the simulator a usable stand-in?) approved | [RFC-0002](../rfc/RFC-0002-robot-brain.md), [review](REVIEW-2026-11-14-duck-rfcs.md) |
+| eval-harness / flotilla for robots | The mission loop agreed: the simulated duck is a second host at `auto`, every mission rehearses there first | [RFC-0005](../rfc/RFC-0005-missions.md) |
 
 ## Incidents (2026-11-14, both caused by our own test, both fixed)
 
@@ -30,8 +30,8 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 ## Open decisions (operator)
 
-1. **DGX full training run:** now (prod down about 3 h 15 min in the daytime) or in the evening
-   (back in prod by 23:30 UTC).
+1. **DGX full training run:** daytime is fine (operator, 2026-11-14: prod only matters at night);
+   which day and hour is open (back in prod by 23:30 UTC).
 2. **Where the NXT's JSON-RPC lives:** Python service + dumb ESP32 bridge (proposed) or JSON-RPC
    on the ESP32 — after things work. See [IDEAS.md](IDEAS.md), "Wireless NXT".
 3. **Robot-brain model budget:** $10 / 30 days now; the operator's direction is "whatever we need";
@@ -42,6 +42,7 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 ## Next
 
-- Robot brain phase 0 against the simulated duck (approved).
+- Robot brain phase 0, the spike: turning in the backlash scene, the backlash robot in the
+  apartment, `mapd` mapping with autonomy off.
 - The NXT on-brick deadman ("robotd-lite"): write and compile; test on the brick at home.
 - At home: chase and patrol on the floor; touch sensors as bumpers.

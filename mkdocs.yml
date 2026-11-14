@@ -74,7 +74,7 @@ nav:
     - RFC-0001 — The NXT web UI: rfc/RFC-0001-nxt-web-ui.md
     - RFC-0002 — The robot brain: rfc/RFC-0002-robot-brain.md
     - RFC-0003 — One robot interface: rfc/RFC-0003-robot-interface.md
-    - RFC-0004 — Perception and planning: rfc/RFC-0004-perception-and-planning.md
+    - RFC-0004 — Missions in words, perception, planning: rfc/RFC-0004-perception-and-planning.md
     - RFC-0005 — Missions: rfc/RFC-0005-missions.md
   - Decisions (ADR):
     - Overview: adr/README.md
@@ -87,6 +87,7 @@ nav:
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md
     - NXT parts to look for: wip/NXT-PARTS.md
+    - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
   - History:
     - Overview: history/README.md
     - 0001 — Genesis: history/0001-genesis.md

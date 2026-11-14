@@ -26,7 +26,7 @@ and actions happen in the physical world ("may it act?" matters more). And they 
 ## The combined loop
 
 ```text
-instruction ("tour the rooms, hide under the kitchen table")
+instruction ("visit every room, report their sizes, then wait by the front door")
    │
    ▼  flotilla: a MISSION CASE
 planned by the robot brain (LLM) ─► policy: autonomy level of each action

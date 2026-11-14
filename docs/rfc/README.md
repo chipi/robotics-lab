@@ -27,11 +27,11 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 
 - [RFC-0001 — The NXT web UI](RFC-0001-nxt-web-ui.md) (Proposed; describes what was built,
   2026-11-14)
-- [RFC-0002 — The robot brain: layers, navigator, safety and phases](RFC-0002-robot-brain.md)
-  (Proposed; phase 0 approved)
+- [RFC-0002 — The robot brain: modes, navigator, safety and phases](RFC-0002-robot-brain.md)
+  (Proposed, revision 2 after review; phase 0 approved)
 - [RFC-0003 — One robot interface: JSON-RPC for every robot, and a deadman on the
   NXT](RFC-0003-robot-interface.md) (Proposed; direction agreed)
-- [RFC-0004 — Perception and planning: the brain's models, tools and world
-  model](RFC-0004-perception-and-planning.md) (Proposed; phase-1 models live)
-- [RFC-0005 — Missions: flotilla decides, the simulator rehearses, eval-harness
-  measures](RFC-0005-missions.md) (Proposed; core idea agreed)
+- [RFC-0004 — Missions in words, perception and planning: the brain's models and
+  tools](RFC-0004-perception-and-planning.md) (Proposed, revision 2; phase-1 models live)
+- [RFC-0005 — Missions: flotilla decides, the simulated duck rehearses, eval-harness
+  measures](RFC-0005-missions.md) (Proposed, revision 2; the form agreed)

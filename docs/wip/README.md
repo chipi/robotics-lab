@@ -21,6 +21,7 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 - [Stretching eval-harness and flotilla](STRETCH-EVAL-FLOTILLA.md) — the full idea list behind
   [RFC-0005](../rfc/RFC-0005-missions.md).
 - [NXT parts to look for](NXT-PARTS.md).
+- [Review of the duck RFCs, 2026-11-14](REVIEW-2026-11-14-duck-rfcs.md) — findings and what was done.
 
 Promoted: the robot brain draft became [RFC-0002](../rfc/RFC-0002-robot-brain.md) and
 [RFC-0004](../rfc/RFC-0004-perception-and-planning.md) (2026-11-14).
