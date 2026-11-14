@@ -22,12 +22,17 @@ from duck_lab.nav.cliff import drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.grid import CostGrid, EmptyMap, plan, thin
+from duck_lab.nav.grid import LETHAL_M, CostGrid, EmptyMap, plan, thin
 
 TICK_S = 0.1
 REPLAN_S = 3.0
 STOP_MM = 250            # depth reflex distance, central columns
 CLIFF_STOP_M = 0.45      # a drop this close ahead (horizontal) stops the duck
+# The obstacle layer: what the depth sensor sees this close, every tick, joins the memory, and a new
+# point near the remaining path replans at once. mapd maps only at stops, so a face first seen while
+# walking (the cabinet's side, passed while turning into the office: run 6's touches) was not on the map.
+LAYER_M = 0.6
+LAYER_SPACING_M = 0.03
 # A turn on the spot shifts the duck about 8 cm (phase 0: 8 cm over a full turn at 1.2 rad/s), and the
 # duck does not walk backwards reliably (-0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So no
 # turn on the spot with a remembered drop closer than this; refuse instead. (Run 3's fall was not a
@@ -123,7 +128,8 @@ class Navigator:
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
         self._t0 = time.monotonic()
-        self.blocked = []    # what the depth reflex saw, in map metres
+        self.blocked = []    # what the depth sensor saw as obstacles, in map metres
+        self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
@@ -160,6 +166,20 @@ class Navigator:
             g["res_m"] *= self.scale
             g["origin"] = [v * self.scale for v in g["origin"]]
         return CostGrid.from_map_grid(g)
+
+    def _remember(self, pts: list, pose: tuple) -> list:
+        """Add obstacle points (relative to the sensor, trunk-heading frame) to the memory, a few cm
+        apart; return the ones that were new, in map metres."""
+        c, s_ = math.cos(pose[2]), math.sin(pose[2])
+        new = []
+        for ax, ay in pts:
+            q = (pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay)
+            key = (round(q[0] / LAYER_SPACING_M), round(q[1] / LAYER_SPACING_M))
+            if key not in self._seen:
+                self._seen.add(key)
+                self.blocked.append(q)
+                new.append(q)
+        return new
 
     def record(self, **row) -> None:
         if self._log:
@@ -209,6 +229,13 @@ class Navigator:
             pts = []
             if self.tof.last is not None and self.state.latest is not None:
                 pts = drop_points(self.tof.last, self.state.latest)
+                seen = obstacle_points(self.tof.last, self.state.latest, within_m=LAYER_M)
+                new = self._remember(seen, pose)
+                ahead = path[st.target_index:] if path else []
+                if new and any(math.dist(q, w) < LETHAL_M + 0.05 for q in new for w in ahead):
+                    self.record(event="replan_new_obstacle", points=len(new), pose=pose)
+                    path = None
+                    continue
             if tw.vx > 0 and pts and min(p[2] for p in pts) < CLIFF_STOP_M:
                 self.move(Twist())
                 c, s_ = math.cos(pose[2]), math.sin(pose[2])
@@ -231,12 +258,10 @@ class Navigator:
                 reflex_stops += 1
                 self.move(Twist())
                 seen = obstacle_points(self.tof.last, self.state.latest) if self.state.latest else []
-                c, s_ = math.cos(pose[2]), math.sin(pose[2])
-                for ax, ay in seen:
-                    self.blocked.append((pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay))
+                self._remember(seen, pose)
                 if not seen:   # no geometry (no state yet): the nearest return straight ahead
                     ahead = near / 1000.0
-                    self.blocked.append((pose[0] + ahead * c, pose[1] + ahead * s_))
+                    self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
                 self.record(event="reflex_stop", nearest_mm=near, pose=pose)
                 self.survey()
                 path = None

@@ -90,6 +90,7 @@ nav:
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md
     - Robot brain phase 0, the spike: wip/PHASE0-SPIKE.md
+    - Robot brain phase 1, the navigator: wip/PHASE1-RESULTS.md
     - Viewer spike: wip/VIEWER-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md
