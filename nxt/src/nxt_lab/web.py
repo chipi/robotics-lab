@@ -60,6 +60,7 @@ class Controller:
             entry = {"seq": self.event_seq, "at": datetime.now().isoformat(timespec="milliseconds"),
                      "kind": kind, "ok": ok, **detail}
             self.events.append(entry)
+            self.recorder.log_event(entry)
             try:
                 self.events_path.parent.mkdir(parents=True, exist_ok=True)
                 with self.events_path.open("a") as f:
@@ -319,7 +320,8 @@ def make_handler(controller: Controller):
             elif path == "/api/runs":
                 self._json(200, {"runs": c.recorder.list_runs()})
             elif path == "/api/runs/download":
-                self._handle(lambda: self._attachment(q["name"], c.recorder.run_path(q["name"]).read_bytes(), "text/csv"))
+                ctype = "application/octet-stream" if q.get("name", "").endswith(".mcap") else "text/csv"
+                self._handle(lambda: self._attachment(q["name"], c.recorder.run_path(q["name"]).read_bytes(), ctype))
             elif path == "/api/files":
                 self._handle(lambda: self._json(200, {"files": c.call(lambda r: r.list_files())}))
             elif path == "/api/files/download":

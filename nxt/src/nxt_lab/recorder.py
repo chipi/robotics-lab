@@ -1,7 +1,9 @@
-"""Samples motors and sensors at a fixed rate: a live ring buffer for the UI, and CSV files while recording."""
+"""Samples motors and sensors at a fixed rate: a live ring buffer for the UI, and a CSV and an MCAP
+file per recording."""
 
 import collections
 import csv
+import json
 import threading
 import time
 from datetime import datetime
@@ -9,6 +11,7 @@ from pathlib import Path
 
 from nxt_lab import deadman
 from nxt_lab.config import DATA_DIR
+from nxt_lab.mcap_log import McapLog
 
 RUNS_DIR = DATA_DIR / "runs"
 PROGRAM_CHECK_SECONDS = 1.0
@@ -24,6 +27,7 @@ class Recorder:
         self.recording = None
         self._file = None
         self._writer = None
+        self._mcap = None
         self._columns = []
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
@@ -66,6 +70,7 @@ class Recorder:
                 "tacho": tachos,
                 "sensors": sensors,
                 "program": self.program,
+                "deadman": robot.deadman_state,
             }
             self.samples.append(sample)
             if self.recording is not None:
@@ -92,6 +97,13 @@ class Recorder:
             self._file = open(self.runs_dir / name, "w", newline="")
             self._writer = csv.writer(self._file)
             self._writer.writerow(header)
+            robot = self.controller.robot
+            self._mcap = McapLog(self.runs_dir / name.replace(".csv", ".mcap"), {
+                "robot": "nxt", "link": robot.link if robot else None,
+                "firmware": robot.firmware if robot else None,
+                "drive_mode": self.controller.config.drive_mode,
+                "config": json.dumps(self.controller.config.to_dict()),
+            })
             self.recording = {"name": name, "rows": 0, "started": time.monotonic()}
             return self.recording
 
@@ -100,7 +112,9 @@ class Recorder:
             done = self.recording
             if self._file is not None:
                 self._file.close()
-            self._file = self._writer = None
+            if self._mcap is not None:
+                self._mcap.close()
+            self._file = self._writer = self._mcap = None
             self.recording = None
             return done
 
@@ -122,18 +136,30 @@ class Recorder:
         row.append(sample["program"] or "")
         self._writer.writerow(row)
         self._file.flush()
+        self._mcap.write("/nxt/state", {
+            "t": row[0], "power_left": sample["left"], "power_right": sample["right"],
+            "tacho": tacho, "sensors": sample["sensors"], "program": sample["program"],
+            "deadman": sample["deadman"],
+        })
         self.recording["rows"] += 1
+
+    def log_event(self, entry: dict) -> None:
+        """A command-log entry, into the recording's MCAP file while recording."""
+        with self._lock:
+            if self._mcap is not None:
+                self._mcap.write("/nxt/events", entry)
 
     def list_runs(self) -> list:
         if not self.runs_dir.exists():
             return []
         return [
-            {"name": p.name, "size": p.stat().st_size}
+            {"name": p.name, "size": p.stat().st_size,
+             "mcap": p.with_suffix(".mcap").name if p.with_suffix(".mcap").exists() else None}
             for p in sorted(self.runs_dir.glob("run-*.csv"), reverse=True)
         ]
 
     def run_path(self, name: str) -> Path:
         path = (self.runs_dir / name).resolve()
-        if path.parent != self.runs_dir.resolve() or not path.name.endswith(".csv") or not path.exists():
+        if path.parent != self.runs_dir.resolve() or path.suffix not in (".csv", ".mcap") or not path.exists():
             raise FileNotFoundError(name)
         return path

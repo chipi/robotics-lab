@@ -115,6 +115,27 @@ try:
     lines = csv_bytes.decode().splitlines()
     check("run CSV header", lines[0] == "t,power_left,power_right,tacho_A,tacho_B,tacho_C,s1_touch,s3_color,s3_color_name,s4_ultrasonic,program", lines[0])
     check("run CSV rows", len(lines) >= 6, len(lines))
+    mcap_name = run_name.replace(".csv", ".mcap")
+    check("run lists its MCAP file", any(x["name"] == run_name and x["mcap"] == mcap_name for x in runs), runs)
+    code, mcap_bytes = call(base, f"/api/runs/download?name={mcap_name}")
+    check("MCAP download", code == 200 and mcap_bytes[:8] == b"\x89MCAP0\r\n", mcap_bytes[:8])
+    from mcap.reader import make_reader
+    import io
+    reader = make_reader(io.BytesIO(mcap_bytes))
+    topics = {}
+    for _schema, channel, message in reader.iter_messages():
+        topics.setdefault(channel.topic, []).append(json.loads(message.data))
+    states = topics.get("/nxt/state", [])
+    check("MCAP has one state per CSV row", len(states) == len(lines) - 1, (len(states), len(lines) - 1))
+    check("MCAP state carries tachos, sensors and robotd's answer",
+          states and set(states[-1]["tacho"]) == {"A", "B", "C"} and "4" in states[-1]["sensors"]
+          and "deadman" in states[-1], states[-1] if states else None)
+    # "record start" is logged once the file is open; "record stop" after it is closed.
+    check("MCAP has the command log while recording",
+          [e["kind"] for e in topics.get("/nxt/events", [])] == ["record start"], topics.get("/nxt/events"))
+    meta = {m.name: m.metadata for m in reader.iter_metadata()}
+    check("MCAP metadata names the robot and drive mode",
+          meta.get("nxt_lab.run", {}).get("robot") == "nxt" and meta["nxt_lab.run"].get("drive_mode") == "deadman", meta)
     code, r = call(base, "/api/runs/download?name=../config.json")
     check("run download refuses path traversal", code == 404, (code, r))
 

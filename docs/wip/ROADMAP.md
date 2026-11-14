@@ -7,9 +7,8 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 1. **NXT safety:** stop on connect and the shooter lockout (done 2026-11-14); **robotd-lite**, the
    deadman on the brick ([RFC-0003](../rfc/RFC-0003-robot-interface.md) §2.3–2.4) — built
    2026-11-14, checked against the simulated brick; next: `make test-hardware` on the brick.
-2. **Robot brain phase 0, the spike** — run 2026-11-14 ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)): turning
-   misses its bar, the rest passes; the operator decides how phase 1 goes on. Was: turning in
-   the backlash scene, the backlash robot in the apartment, `mapd` mapping with autonomy off.
+2. **Robot brain phase 0, the spike** — run 2026-11-14 ([PHASE0-SPIKE.md](PHASE0-SPIKE.md)): done; the
+   operator changed turning's bar to repeatable turning with a navigator that compensates.
 3. **DGX full training run** — started 2026-11-14 12:36Z (4000 iterations, 210 min cap).
 
 ## Next
@@ -28,7 +27,8 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 
 ## The platform (RFC-0007)
 
-1. MCAP recording from mission control (`nxt-web` first).
+1. MCAP recording from mission control (`nxt-web` first) — done for `nxt-web` 2026-11-14: a
+   `.mcap` beside each run's CSV, topics `/nxt/state` and `/nxt/events`.
 2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run.
 3. A minimal logbook: a folder, an index, search, events.
 4. eval-harness reads runs from the logbook; flotilla cases reference recordings.

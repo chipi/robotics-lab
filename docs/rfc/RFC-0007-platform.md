@@ -101,7 +101,11 @@ stays usable for MCAP in the meantime.
 
 ## 7. Order
 
-1. MCAP recording from mission control (`nxt-web` first).
+1. MCAP recording from mission control (`nxt-web` first). Done for `nxt-web` (2026-11-14): every
+   recording also writes `runs/run-*.mcap` (zstd chunks; JSON messages with JSON Schemas):
+   `/nxt/state` per sample (powers, tachos, sensors, program, robotd-lite's answer) and
+   `/nxt/events` (the command log while recording), with the robot, link, firmware, drive mode and
+   setup as metadata (`nxt_lab/mcap_log.py`).
 2. The viewer spike (Rerun vs Lichtblick).
 3. A minimal logbook: a folder, an index, search, events.
 4. eval-harness reads runs from the logbook (with its 0.9 asks).

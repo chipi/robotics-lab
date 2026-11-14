@@ -141,7 +141,7 @@
           <button class="primary" id="rec">Start recording</button>
         </div>
       </div>
-      <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>nxt/runs/</code>.</p>
+      <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>nxt/runs/</code>, and the same samples plus the command log to an MCAP file beside it, for Foxglove, Lichtblick or Rerun.</p>
       <table><thead><tr><th>Run</th><th>Size</th><th></th></tr></thead><tbody id="runs"></tbody></table>
     </div>
     <div class="card">
@@ -482,7 +482,7 @@ async function loadRuns() {
   const data = await api("/api/runs");
   if (!data) return;
   $("runs").innerHTML = data.runs.length ? data.runs.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${kb(r.size)}</td><td class="actions">
-    <button data-plot="${esc(r.name)}">Plot</button> <a href="/api/runs/download?name=${encodeURIComponent(r.name)}"><button>CSV</button></a></td></tr>`).join("")
+    <button data-plot="${esc(r.name)}">Plot</button> <a href="/api/runs/download?name=${encodeURIComponent(r.name)}"><button>CSV</button></a>${r.mcap ? ` <a href="/api/runs/download?name=${encodeURIComponent(r.mcap)}" title="Open in Foxglove, Lichtblick or Rerun"><button>MCAP</button></a>` : ""}</td></tr>`).join("")
     : `<tr><td colspan="3" class="hint">No runs yet.</td></tr>`;
   $("runs").querySelectorAll("[data-plot]").forEach((b) => b.addEventListener("click", async () => {
     const text = await fetch(`/api/runs/download?name=${encodeURIComponent(b.dataset.plot)}`).then((r) => r.text());
