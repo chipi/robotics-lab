@@ -59,8 +59,8 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 ## Next (full order: [roadmap](ROADMAP.md))
 
-- Robot brain phase 1: the bar met in run 7, at its edge ([PHASE1-RESULTS.md](PHASE1-RESULTS.md));
-  run 8 checks the two fixes after it. Then phase 2: exploring, rooms behind unseen walls.
+- Robot brain phase 1: done — run 8, 20 of 20, no contacts, no falls
+  ([PHASE1-RESULTS.md](PHASE1-RESULTS.md)). Next, phase 2: exploring, rooms behind unseen walls.
 - The NXT on-brick deadman ("robotd-lite"): built (RFC-0003 §2.3, "As built"); check it on the
   brick with `make test-hardware`, which now uploads and tests it (`hw_deadman.py`).
 - At home: chase and patrol on the floor; touch sensors as bumpers.

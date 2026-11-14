@@ -13,7 +13,8 @@ from dataclasses import dataclass
 # margin for what mapd has not seen of an obstacle and for odometry error (phase 1, run 1) — cells
 # are expensive, not forbidden: plans keep off walls, and a duck that drifted into the margin can
 # still get out (run 2, all impassable, stranded it).
-LETHAL_M = 0.15   # run 5: 12 cm left 4 touches at the doorway (cabinet corner, wall end), 5.5-8.2 cm
+LETHAL_M = 0.12   # 15 cm (run 7) closed the doorway once the obstacle layer added the cabinet and wall;
+                  # run 5's touches at 12 cm came from the cabinet's unmapped side, which the layer now sees
 INFLATE_M = 0.28
 # Unknown ground can hide a drop (the staircase reads as nothing until the cliff check sees it), so it
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a

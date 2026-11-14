@@ -28,6 +28,10 @@ TICK_S = 0.1
 REPLAN_S = 3.0
 STOP_MM = 250            # depth reflex distance, central columns
 CLIFF_STOP_M = 0.45      # a drop this close ahead (horizontal) stops the duck
+# ... once seen in this many consecutive depth frames (15 Hz): a single frame read against a state a
+# few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
+# does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
+DROP_FRAMES = 3
 # The obstacle layer: what the depth sensor sees this close, every tick, joins the memory, and a new
 # point near the remaining path replans at once. mapd maps only at stops, so a face first seen while
 # walking (the cabinet's side, passed while turning into the office: run 6's touches) was not on the map.
@@ -130,6 +134,8 @@ class Navigator:
         self._t0 = time.monotonic()
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
+        self._drop_streak = 0
+        self._drop_frame = None
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
@@ -229,6 +235,11 @@ class Navigator:
             pts = []
             if self.tof.last is not None and self.state.latest is not None:
                 pts = drop_points(self.tof.last, self.state.latest)
+                if self.tof.last is not self._drop_frame:      # count frames, not ticks
+                    self._drop_frame = self.tof.last
+                    self._drop_streak = self._drop_streak + 1 if pts else 0
+                if self._drop_streak < DROP_FRAMES:
+                    pts = []
                 seen = obstacle_points(self.tof.last, self.state.latest, within_m=LAYER_M)
                 new = self._remember(seen, pose)
                 ahead = path[st.target_index:] if path else []
