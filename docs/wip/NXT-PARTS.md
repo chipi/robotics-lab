@@ -72,6 +72,17 @@ Build choice: two driven wheels and a caster slip far less than tracks, so the m
 give usable heading. Minimum kit: the gyro + an odometry wheel (or wheels instead of tracks) +
 colour-tape fixes.
 
+## A computer on board the NXT
+
+The brick (48 MHz, 64 KB RAM) cannot run Linux or ROS. Three ways to give the robot one
+([ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md)); not yet decided:
+
+| Option | What it is | Gives | Costs |
+| --- | --- | --- | --- |
+| **Raspberry Pi on the brick, by USB** (recommended first) | The brick keeps motors and sensors; the Pi is the on-board computer, on Wi-Fi | Runs `nxt-web`, the NXT service, a ROS 2 node if wanted, the navigator on board; a Pi camera | Its own power bank; a Pi Zero 2 W (512 MB) is tight for ROS 2 (from memory), a Pi 4/5 comfortable |
+| **ESP32 on the brick** | A microcontroller: a Wi-Fi↔Bluetooth bridge, or a micro-ROS node (micro-ROS officially supports the ESP32, with an agent on a PC) | Small, light, wireless | No Linux, no camera worth having, no navigator on board; must be an original ESP32 for classic Bluetooth |
+| **BrickPi3** (Dexter Industries) replacing the brick | A Raspberry Pi board driving NXT and EV3 motors and sensors directly (4 motor, 4 sensor ports; NXT ultrasonic, colour, light, touch; custom I2C sensors) | The robot becomes a Linux computer: more ports, camera, ROS/MoveIt-ready — a strong fit for the arm robot | NXC programs and the brick's screen go; code moves from nxt-python to BrickPi3's library; availability not checked |
+
 ## Do not buy for the NXT
 
 - **EV3 sensors and motors' sensors** (EV3 uses a different sensor protocol the NXT firmware does

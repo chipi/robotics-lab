@@ -23,4 +23,7 @@ Required sections:
 
 ## Index
 
-None yet. Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.
+- [ADR-0001 — ROS-aligned terms, no ROS foundation yet, Foxglove from the start](ADR-0001-ros-aligned-foxglove.md)
+  (Accepted, 2026-11-14)
+
+Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

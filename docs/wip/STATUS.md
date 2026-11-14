@@ -39,6 +39,13 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 4. **What to buy** for bigger NXT robots / the arm robot: [NXT-PARTS.md](NXT-PARTS.md).
 5. **Homelab pushes** waiting for the operator's go in that session: `ed61aab` (brain key and
    aliases), `d3f82e3` (the Gemma alias).
+6. **A computer on board the NXT:** a Raspberry Pi on the brick (recommended first), an ESP32, or
+   a BrickPi3 replacing the brick — [NXT-PARTS.md](NXT-PARTS.md).
+
+## Decided
+
+- [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md) (2026-11-14): ROS 2 not the foundation now;
+  terms and data shapes aligned with ROS; Foxglove (MCAP run records, live streaming) from the start.
 
 ## Next
 

@@ -104,7 +104,8 @@ brain explores itself.
   (send no twist, sweep the head, wait until `mapd` reports `collecting`); a depth stop distance and
   a cliff check every frame. It **closes its loop on measured odometry, never on commanded speed**,
   and logs commanded vs measured per run — the simulator walks at about 44 % of what is asked.
-- **Run record:** every run writes JSONL — the instruction, the mission spec, every tool and model
+- **Run record** (written as MCAP for Foxglove, [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md)):
+  every run records the instruction, the mission spec, every tool and model
   call with latency and cost, poses, mode switches, map snapshots, the outcome — the input to
   eval-harness ([RFC-0005](RFC-0005-missions.md)).
 
@@ -246,6 +247,9 @@ MQTT for fleets).
   must not wait for a model.
 - **Run `autod` and our navigator together:** rejected — no arbitration; they would alternate.
 - **Everything over the relay:** rejected for the navigator (rate limits, no pixels).
+- **ROS 2 as the foundation:** not now ([ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md)): no
+  install or bridges yet, and Nav2 assumes a lidar. Terms and data shapes follow ROS so joining
+  later is a bridge; reconsidered for the arm robot (MoveIt), ready-made SLAM, or several robots.
 - **The navigator as a daemon on the robot:** not needed; ssh-forwarded sockets give the same
   interface on the LAN.
 
@@ -262,3 +266,5 @@ MQTT for fleets).
 - 2026-11-14 — Operator asked how the navigator is built and why an ssh tunnel; added §3.7 frames
   (dead reckoning with fixes — the operator's sailing analogy), §3.8 the navigator build, §3.9 how
   the link evolves (navigator on the duck as an open decision).
+- 2026-11-14 — Operator: ROS 2 not the foundation now, terms aligned with ROS, Foxglove from the
+  start — recorded as [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md).
