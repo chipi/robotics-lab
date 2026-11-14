@@ -78,10 +78,11 @@ The NXT's stock firmware has **no deadman**: a motor keeps its last command. So:
 
 What it cannot cover:
 
-- a hard crash of the server, or a lost link, leaves the motors running until the next connect;
-  that needs a deadman on the brick itself ([RFC-0003](RFC-0003-robot-interface.md) §2.3);
-- **no obstacle stop while driven from the PC:** the ultrasonic is sampled for display only (2–5
-  times a second); robotd-lite will stop on it locally;
+- a hard crash of the server, or a lost link, leaves the motors running until the next connect —
+  unless robotd-lite drives them: the deadman on the brick ([RFC-0003](RFC-0003-robot-interface.md)
+  §2.3), the default drive mode since 2026-11-14 (not yet checked on the real brick);
+- **no obstacle stop in direct drive mode:** the ultrasonic is sampled for display only (2–5
+  times a second); under robotd-lite forward motion stops closer than 15 cm, on the brick;
 - the program check is up to 1 s stale, so a program started from the brick's own menu can be
   driven over for up to a second;
 - `fire()` holds the robot's lock for the whole turn, so a watchdog stop waits behind it.
@@ -158,7 +159,8 @@ the simulated brick); `hw_stop_on_connect.py` has not yet been run on the brick.
 ## 7. Open questions
 
 1. **A deadman on the brick** — the only fix for a crashed server or a lost link
-   ([RFC-0003](RFC-0003-robot-interface.md) §2.3). First priority on the NXT.
+   ([RFC-0003](RFC-0003-robot-interface.md) §2.3). Built as robotd-lite (2026-11-14); open until it
+   passes `hw_deadman.py` on the brick.
 2. **One connection at a time.** A second program on the same link scrambles replies, and
    Bluetooth reads have no timeout, so a stalled link hangs the server and its watchdog. Needs a
    read timeout and, ideally, the NXT service as the only owner of the link.

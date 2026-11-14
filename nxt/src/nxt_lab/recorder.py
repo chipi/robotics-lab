@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from nxt_lab import deadman
 from nxt_lab.config import DATA_DIR
 
 RUNS_DIR = DATA_DIR / "runs"
@@ -45,11 +46,16 @@ class Recorder:
             return
         now = time.monotonic()
         if now - self._last_program_check >= PROGRAM_CHECK_SECONDS:
-            self.program = self.controller.call(lambda r: r.current_program())
+            program = self.controller.call(lambda r: r.current_program())
+            changed, self.program = program != self.program, program
             self._last_program_check = now
+            if changed:
+                self.controller.sync_deadman()
         tachos = self.controller.call(lambda r: r.read_tachos())
         # Reading a sensor can change its mode, which would disturb a program running on the brick.
-        sensors = {} if self.program else self.controller.call(lambda r: r.read_sensors())
+        # robotd-lite is the exception: it leaves the other ports alone and reports its distance.
+        paused = self.program and self.program != deadman.PROGRAM
+        sensors = {} if paused else self.controller.call(lambda r: r.read_sensors())
         with self._lock:
             self.seq += 1
             sample = {

@@ -12,6 +12,7 @@ import nxt.motor
 import nxt.sensor
 import nxt.sensor.generic as generic
 
+from nxt_lab import deadman
 from nxt_lab.config import MOTOR_PORTS, Config
 
 SENSOR_CLASSES = {
@@ -55,7 +56,54 @@ def read_sensor(kind: str, sensor) -> dict:
 LINK_BACKENDS = {"auto": ["usb", "devfile"], "usb": ["usb"], "bluetooth": ["devfile"]}
 
 
-class NxtRobot:
+def deadman_ports_problem(config: Config) -> str | None:
+    """Why robotd-lite cannot drive this setup, or None."""
+    if (config.left, config.right) != (deadman.PORTS["left"], deadman.PORTS["right"]):
+        return (f"the deadman program drives left {deadman.PORTS['left']} and right {deadman.PORTS['right']}; "
+                f"Setup has left {config.left} and right {config.right}")
+    return None
+
+
+def deadman_powers(config: Config, left: int, right: int) -> tuple:
+    """Port powers and the forward flag for robotd-lite, with Setup's inversions applied."""
+    left, right = clamp(left), clamp(right)
+    sign_l = -1 if config.invert_left else 1
+    sign_r = -1 if config.invert_right else 1
+    return sign_l * left, sign_r * right, left + right > 0
+
+
+class DeadmanMixin:
+    """Driving through robotd-lite while it runs (RFC-0003 §2.3-2.4). `deadman` is set by the
+    controller from the running program; `_exchange` sends one command and returns its answer."""
+
+    deadman = False
+    deadman_state = None
+    _seq = 0
+
+    def _next_seq(self) -> int:
+        self._seq = (self._seq + 1) % 10000
+        return self._seq
+
+    def _deadman_drive(self, left: int, right: int) -> None:
+        problem = deadman_ports_problem(self.config)
+        if problem:
+            raise RuntimeError(problem)
+        port_l, port_r, forward = deadman_powers(self.config, left, right)
+        self.deadman_state = self._exchange(deadman.drive(self._next_seq(), port_l, port_r, forward))
+        self.left, self.right = clamp(left), clamp(right)
+
+    def _deadman_stop(self) -> None:
+        try:
+            self.deadman_state = self._exchange(deadman.stop(self._next_seq()))
+        finally:
+            self.left = self.right = 0
+
+    def deadman_query(self) -> dict | None:
+        self.deadman_state = self._exchange(deadman.query(self._next_seq()))
+        return self.deadman_state
+
+
+class NxtRobot(DeadmanMixin):
     fake = False
 
     def __init__(self, config: Config, link: str = "auto"):
@@ -83,14 +131,45 @@ class NxtRobot:
         return running
 
     def configure(self, config: Config) -> None:
+        # Under robotd-lite the program owns the ultrasonic port (an I2C sensor: two masters would
+        # collide); its distance comes from the program's answers instead.
         with self._lock:
             self.config = config
             self._motors = {p: self._brick.get_motor(nxt.motor.Port[p]) for p in MOTOR_PORTS}
             self._sensors = {
                 port: self._brick.get_sensor(nxt.sensor.Port[f"S{port}"], SENSOR_CLASSES[kind])
                 for port, kind in config.sensors.items()
-                if kind != "none"
+                if kind != "none" and not (self.deadman and port == deadman.US_PORT)
             }
+
+    def set_deadman(self, on: bool) -> None:
+        """Called when robotd-lite starts or stops. Starting a program resets the brick's sensor
+        modes, so the sensors are set up again either way."""
+        if on == self.deadman:
+            return
+        self.deadman = on
+        self.deadman_state = None
+        self.configure(self.config)
+
+    def _exchange(self, message: bytes) -> dict | None:
+        """One command to robotd-lite, and its answer. The program answers within one loop
+        (about 20-40 ms); if the answer is not there yet the command still counts."""
+        seq = int(message[1:5])
+        with self._lock:
+            self._brick.message_write(deadman.COMMAND_INBOX, message)
+            waits = 0
+            while waits < 4:
+                try:
+                    _, reply = self._brick.message_read(deadman.STATE_INBOX, 0, True)
+                except nxt.error.EmptyMailboxError:
+                    waits += 1
+                    time.sleep(0.015)
+                    continue
+                state = deadman.parse_state(reply)
+                if state["seq"] == seq:
+                    return state
+                # A late answer to an earlier command: drop it and read on.
+        return None
 
     def info(self) -> dict:
         with self._lock:
@@ -104,6 +183,9 @@ class NxtRobot:
             self._brick.get_output_state(nxt.motor.Port.A)
 
     def drive(self, left: int, right: int) -> None:
+        if self.deadman:
+            self._deadman_drive(left, right)
+            return
         left, right = clamp(left), clamp(right)
         sign_l = -1 if self.config.invert_left else 1
         sign_r = -1 if self.config.invert_right else 1
@@ -116,7 +198,16 @@ class NxtRobot:
         self.left, self.right = left, right
 
     def stop(self) -> None:
-        self.drive(0, 0)
+        if not self.deadman:
+            self.drive(0, 0)
+            return
+        # Belt and braces: the program's stop, then the motors directly, even if the first failed.
+        try:
+            self._deadman_stop()
+        finally:
+            with self._lock:
+                for port in (self.config.left, self.config.right):
+                    self._motors[port].brake()
 
     def fire(self) -> None:
         with self._lock:
@@ -134,6 +225,9 @@ class NxtRobot:
                     out[port] = read_sensor(self.config.sensors[port], sensor)
                 except Exception as exc:
                     out[port] = {"value": None, "error": f"{type(exc).__name__}: {exc}"}
+        if self.deadman and self.config.sensors.get(deadman.US_PORT) == "ultrasonic":
+            state = self.deadman_query()
+            out[deadman.US_PORT] = {"value": state["dist"]} if state else {"value": None, "error": "no answer from robotd"}
         return out
 
     def list_files(self) -> list:
@@ -182,6 +276,12 @@ class NxtRobot:
 
     def close(self) -> None:
         try:
+            # robotd-lite would otherwise keep its last command until its own deadman fires.
+            if self.deadman:
+                try:
+                    self._deadman_stop()
+                except Exception:
+                    pass
             with self._lock:
                 for motor in self._motors.values():
                     motor.idle()
@@ -189,8 +289,9 @@ class NxtRobot:
             self._brick.close()
 
 
-class FakeRobot:
-    """Simulates the brick so the UI can be used with nothing plugged in. Values are made up."""
+class FakeRobot(DeadmanMixin):
+    """Simulates the brick so the UI can be used with nothing plugged in. Values are made up.
+    robotd.rxe is on its flash; started, it behaves like the real program (deadman.FakeDeadman)."""
 
     fake = True
     link = "fake"
@@ -203,8 +304,10 @@ class FakeRobot:
         self.shots = 0
         self._tacho = {p: 0.0 for p in MOTOR_PORTS}
         self._last = time.monotonic()
+        self._brick_program = None
         self._files = {
             "demo.rxe": b"\x00" * 1200,
+            deadman.PROGRAM: b"\x00" * 3522,
             "runlog.txt": b"t,light,dist\n" + b"".join(
                 f"{i * 100},{40 + int(10 * math.sin(i / 5))},{max(5, 80 - i)}\n".encode() for i in range(60)
             ),
@@ -223,12 +326,30 @@ class FakeRobot:
     def ping(self) -> None:
         pass
 
+    def set_deadman(self, on: bool) -> None:
+        if on == self.deadman:
+            return
+        self.deadman = on
+        self.deadman_state = None
+        self._brick_program = deadman.FakeDeadman() if on else None
+
+    def _exchange(self, message: bytes) -> dict:
+        self._brick_program.dist = self._fake_distance()
+        self._brick_program.receive(message)
+        return deadman.parse_state(self._brick_program.reply)
+
     def drive(self, left: int, right: int) -> None:
         self._advance()
-        self.left, self.right = clamp(left), clamp(right)
+        if self.deadman:
+            self._deadman_drive(left, right)
+        else:
+            self.left, self.right = clamp(left), clamp(right)
 
     def stop(self) -> None:
-        self.drive(0, 0)
+        self._advance()
+        if self.deadman:
+            self._deadman_stop()
+        self.left = self.right = 0
 
     def fire(self) -> None:
         self.shots += 1
@@ -237,9 +358,16 @@ class FakeRobot:
     def _advance(self) -> None:
         now = time.monotonic()
         dt, self._last = now - self._last, now
+        left, right = self.left, self.right
+        if self._brick_program is not None:
+            # The motors follow the simulated program, with its own deadman; like the real brick,
+            # that does not change what the server last commanded (self.left, self.right).
+            self._brick_program.dist = self._fake_distance()
+            self._brick_program.tick()
+            left, right = self._brick_program.left, self._brick_program.right
         # Roughly 9 degrees/s per unit of power, about what an NXT motor does unloaded.
-        self._tacho[self.config.left] += self.left * 9 * dt
-        self._tacho[self.config.right] += self.right * 9 * dt
+        self._tacho[self.config.left] += left * 9 * dt
+        self._tacho[self.config.right] += right * 9 * dt
 
     def read_tachos(self) -> dict:
         self._advance()
@@ -255,12 +383,18 @@ class FakeRobot:
                 out[port] = {"value": int(45 + 15 * math.sin(t) + random.uniform(-2, 2))}
             elif kind == "sound":
                 out[port] = {"value": int(abs(random.gauss(10, 8)))}
+            elif kind == "ultrasonic" and self.deadman and port == deadman.US_PORT:
+                out[port] = {"value": self.deadman_query()["dist"]}
             elif kind == "ultrasonic":
-                out[port] = {"value": int(60 + 40 * math.sin(t / 4))}
+                out[port] = {"value": self._fake_distance()}
             elif kind == "color":
                 c = generic.Color.DetectedColor(1 + int(t / 2) % 6)
                 out[port] = {"value": c.value, "label": c.name.lower()}
         return out
+
+    @staticmethod
+    def _fake_distance() -> int:
+        return int(60 + 40 * math.sin(time.monotonic() / 4))
 
     def list_files(self) -> list:
         return [{"name": n, "size": len(d)} for n, d in self._files.items()]
@@ -284,6 +418,7 @@ class FakeRobot:
 
     def stop_program(self) -> None:
         self._program = None
+        self.left = self.right = 0
 
     def current_program(self):
         return self._program

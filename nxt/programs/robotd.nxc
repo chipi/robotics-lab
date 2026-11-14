@@ -1,0 +1,96 @@
+// robotd-lite: the deadman on the brick (RFC-0003 §2.3). The NXT service drives the tracks
+// only through this program's mailbox; if no move arrives for DEADMAN_MS the tracks stop,
+// whatever happened to the server or the link. It also stops forward motion when the
+// ultrasonic sensor sees something closer than MIN_CM.
+//
+// Commands, in mailbox 1 (nxt-python inbox 0), fixed width:
+//   "D" seq(4) left(3) right(3) fwd(1)   drive; powers sent as power+100 (000..200),
+//                                        fwd 1 = the robot is moving forward
+//   "S" seq(4)                           stop
+//   "Q" seq(4)                           query: answers, changes nothing, does not feed the deadman
+// Every command is answered, after it is applied, with one state line in response mailbox 1
+// (nxt-python inbox 10):
+//   "seq,left,right,dist,flags,ms"   flags: 1 deadman stop, 2 obstacle stop, 4 bad command
+//
+// The dark grey button ends it; ending it stops the tracks (the firmware resets the motors).
+
+#include "common.nxh"
+
+#define DEADMAN_MS 500
+#define MIN_CM     15
+#define INBOX      MAILBOX1
+
+#define F_DEADMAN  1
+#define F_OBSTACLE 2
+#define F_BAD      4
+
+int field(string msg, int at, int width)
+{
+  return StrToNum(SubStr(msg, at, width));
+}
+
+task main()
+{
+  SetSensorLowspeed(US);
+  ResetRotationCount(TRACKS);
+  log_t0 = CurrentTick();
+
+  string msg;
+  string kind;
+  int seq = 0;
+  int left = 0;
+  int right = 0;
+  bool fwd = false;
+  bool answer;
+  int flags = 0;
+  int dist = NO_ECHO;
+  unsigned long last_move = CurrentTick();
+
+  PlayTone(1200, 80);
+
+  while (true) {
+    dist = SensorUS(US);
+    answer = false;
+
+    if (ReceiveRemoteString(INBOX, true, msg) == NO_ERR) {
+      answer = true;
+      kind = SubStr(msg, 0, 1);
+      seq = field(msg, 1, 4);
+      if (kind == "D" && StrLen(msg) == 12) {
+        left = field(msg, 5, 3) - 100;
+        right = field(msg, 8, 3) - 100;
+        fwd = field(msg, 11, 1) == 1;
+        last_move = CurrentTick();
+        flags = 0;
+      } else if (kind == "S") {
+        left = 0; right = 0; fwd = false; flags = 0;
+      } else if (kind != "Q") {
+        left = 0; right = 0; fwd = false; flags = F_BAD;
+      }
+    }
+
+    if ((left != 0 || right != 0) && CurrentTick() - last_move > DEADMAN_MS) {
+      left = 0; right = 0; fwd = false; flags |= F_DEADMAN;
+      PlayTone(300, 100);
+    }
+    if (fwd && dist < MIN_CM) {
+      left = 0; right = 0; fwd = false; flags |= F_OBSTACLE;
+      PlayTone(1500, 60);
+    }
+
+    if (left == 0 && right == 0) Off(TRACKS);
+    else { OnFwd(LEFT, left); OnFwd(RIGHT, right); }
+
+    if (answer) {
+      string state = StrCat(NumToStr(seq), ",", NumToStr(left), ",", NumToStr(right), ",");
+      state = StrCat(state, NumToStr(dist), ",", NumToStr(flags), ",", NumToStr(elapsed()));
+      SendResponseString(INBOX, state);
+    }
+
+    TextOut(0, LCD_LINE1, "ROBOTD", true);
+    TextOut(0, LCD_LINE3, StrCat("L ", NumToStr(left), " R ", NumToStr(right)));
+    TextOut(0, LCD_LINE5, StrCat("dist ", NumToStr(dist), " cm"));
+    TextOut(0, LCD_LINE7, StrCat("flags ", NumToStr(flags)));
+    Wait(20);
+  }
+}

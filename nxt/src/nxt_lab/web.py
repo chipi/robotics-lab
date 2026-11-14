@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from nxt_lab import config as config_mod
-from nxt_lab import diag
+from nxt_lab import deadman, diag
 from nxt_lab.config import SENSOR_TYPES, Config
 from nxt_lab.recorder import RUNS_DIR, Recorder
 from nxt_lab.robot import LINK_BACKENDS, FakeRobot, NxtRobot
@@ -96,6 +96,36 @@ class Controller:
             except Exception as exc:
                 self.error = f"{type(exc).__name__}: {exc}"
                 self.event("connect", ok=False, asked=self.link_pref, error=self.error)
+                return
+        self.ensure_deadman()
+
+    def sync_deadman(self) -> None:
+        """Tell the robot whether robotd-lite is the running program."""
+        robot = self.robot
+        if robot is not None:
+            self.call(lambda r: r.set_deadman(self.recorder.program == deadman.PROGRAM))
+
+    def ensure_deadman(self) -> None:
+        """In deadman drive mode, keep robotd-lite running whenever no other program runs: after
+        connecting, and after a program stops."""
+        if self.robot is None or self.config.drive_mode != "deadman":
+            self.sync_deadman()
+            return
+        try:
+            program = self.call(lambda r: r.current_program())
+            if program is None:
+                if deadman.PROGRAM not in {f["name"] for f in self.call(lambda r: r.list_files())}:
+                    self.event("deadman start", ok=False,
+                               error=f"{deadman.PROGRAM} is not on the brick: make nxt-programs, "
+                                     "then upload nxt/build/robotd.rxe in Programs")
+                else:
+                    self.call(lambda r: r.start_program(deadman.PROGRAM))
+                    program = deadman.PROGRAM
+                    self.event("deadman start", program=program)
+            self.recorder.program = program
+            self.sync_deadman()
+        except Exception as exc:
+            self.event("deadman start", ok=False, error=f"{type(exc).__name__}: {exc}")
 
     def call(self, action):
         robot = self.robot
@@ -175,11 +205,21 @@ class Controller:
                 link_detail=robot.link_detail,
                 link_ms=round(calls[len(calls) // 2], 1) if calls else None,
             )
+        out["deadman"] = {
+            "mode": self.config.drive_mode,
+            "running": self.recorder.program == deadman.PROGRAM,
+            "state": robot.deadman_state if robot is not None else None,
+        }
         return out
 
     def drive(self, left: int, right: int) -> None:
-        if self.recorder.program:
-            raise RuntimeError(f"program {self.recorder.program} is running on the brick; stop it first")
+        program = self.recorder.program
+        if program and program != deadman.PROGRAM:
+            raise RuntimeError(f"program {program} is running on the brick; stop it first")
+        if not program and self.config.drive_mode == "deadman":
+            raise RuntimeError(f"the deadman program {deadman.PROGRAM} is not running on the brick: "
+                               "start it in Programs (upload nxt/build/robotd.rxe first if it is not "
+                               "listed), or choose direct drive in Setup")
         self.last_drive = time.monotonic()
         self.call(lambda r: r.drive(left, right))
         # The page resends a held drive every 200 ms; log only changes, not every keepalive.
@@ -194,6 +234,7 @@ class Controller:
         self.config = new
         if self.robot is not None:
             self.call(lambda r: r.configure(new))
+            self.ensure_deadman()
         return new
 
     def watchdog(self) -> None:
@@ -328,7 +369,8 @@ def make_handler(controller: Controller):
                 elif path == "/api/fire":
                     if not c.config.shooter_enabled:
                         raise RuntimeError("the shooter is switched off (Setup → Shooter enabled); its balls are small enough for a dog to swallow")
-                    if c.recorder.program:
+                    # robotd-lite drives only the tracks, so the shooter may fire under it.
+                    if c.recorder.program and c.recorder.program != deadman.PROGRAM:
                         raise RuntimeError("a program is running on the brick; stop it first")
                     c.call(lambda r: r.fire())
                 elif path == "/api/record/start":
@@ -344,12 +386,17 @@ def make_handler(controller: Controller):
                     c.call(lambda r: r.delete(data["name"]))
                 elif path == "/api/program/start":
                     c.call(lambda r: r.stop())
+                    if c.recorder.program:
+                        c.call(lambda r: r.stop_program())
                     c.call(lambda r: r.start_program(data["name"]))
                     c.recorder.program = data["name"]
+                    c.sync_deadman()
                 elif path == "/api/program/stop":
                     c.call(lambda r: r.stop_program())
                     c.recorder.program = None
+                    c.sync_deadman()
                     c.call(lambda r: r.stop())
+                    c.ensure_deadman()
                 else:
                     self._json(404, {"error": "not found"})
                     return

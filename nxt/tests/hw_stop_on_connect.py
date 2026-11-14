@@ -11,6 +11,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+import nxt.error
 import nxt.locator
 import nxt.motor
 
@@ -18,6 +19,10 @@ PORT = 8764
 NXT_WEB = Path(__file__).resolve().parents[1] / ".venv" / "bin" / "nxt-web"
 
 with nxt.locator.find(backends=["usb", "devfile"]) as brick:
+    try:
+        brick.stop_program()  # a running robotd-lite would stop the tracks itself, hiding the check
+    except nxt.error.NoActiveProgramError:
+        pass
     for port in (nxt.motor.Port.B, nxt.motor.Port.C):
         brick.get_motor(port).run(25)
     print("tracks started at 25 and the connection dropped")

@@ -58,6 +58,8 @@ try:
     check("GET / serves page", code == 200 and b"NXT Lab" in html, code)
     s = call(base, "/api/status")[1]
     check("fake status connected", s["connected"] and s["fake"] and s["battery_mv"] == 7800, s)
+    check("deadman mode by default, robotd started on connect",
+          s["deadman"]["mode"] == "deadman" and s["deadman"]["running"] and s["program"] == "robotd.rxe", s)
 
     # drive + watchdog
     call(base, "/api/drive", {"left": 50, "right": -50})
@@ -139,7 +141,38 @@ try:
     check("sensor reads paused while program runs", last["sensors"] == {} and last["program"] == "mine.rxe", last)
     code, r = call(base, "/api/program/stop", {})
     s = call(base, "/api/status")[1]
-    check("program stop", code == 200 and s["program"] is None, s)
+    check("program stop, then robotd starts again (deadman mode)", code == 200 and s["program"] == "robotd.rxe", s)
+
+    # deadman: driving goes through robotd, which also reports the ultrasonic distance
+    code, r = call(base, "/api/drive", {"left": 35, "right": 35})
+    s = call(base, "/api/status")[1]
+    st = s["deadman"]["state"] or {}
+    check("drive goes through robotd", code == 200 and (st.get("left"), st.get("right")) == (35, 35), s["deadman"])
+    call(base, "/api/stop", {})
+    time.sleep(0.5)
+    last = call(base, "/api/live?since=0")[1]["samples"][-1]
+    check("sensors read under robotd; ultrasonic from robotd", "4" in last["sensors"] and "3" in last["sensors"]
+          and isinstance(last["sensors"]["4"].get("value"), int), last["sensors"])
+    # direct drive: robotd stops and is not restarted
+    call(base, "/api/config", {"drive_mode": "direct"})
+    call(base, "/api/program/stop", {})
+    s = call(base, "/api/status")[1]
+    check("direct mode: robotd not restarted", s["program"] is None and not s["deadman"]["running"], s)
+    code, r = call(base, "/api/drive", {"left": 30, "right": 30})
+    check("direct mode drives without robotd", code == 200, (code, r))
+    call(base, "/api/stop", {})
+    # deadman mode without robotd on the brick refuses to drive
+    call(base, "/api/files/delete", {"name": "robotd.rxe"})
+    call(base, "/api/config", {"drive_mode": "deadman"})
+    code, r = call(base, "/api/drive", {"left": 30, "right": 30})
+    check("deadman mode refuses to drive without robotd", code == 409 and "deadman program" in r["error"], r)
+    ev = call(base, "/api/events?since=0")[1]["events"]
+    check("missing robotd is logged", any(e["kind"] == "deadman start" and not e["ok"] for e in ev), ev[-3:])
+    call(base, "/api/files/upload?name=robotd.rxe", b"\x00" * 10, raw=True)
+    call(base, "/api/program/start", {"name": "robotd.rxe"})
+    code, r = call(base, "/api/drive", {"left": 30, "right": 30})
+    check("robotd started from Programs: drive works again", code == 200, (code, r))
+    call(base, "/api/stop", {})
     code, r = call(base, "/api/files/delete", {"name": "mine.rxe"})
     files = call(base, "/api/files")[1]["files"]
     check("delete", code == 200 and "mine.rxe" not in {f["name"] for f in files}, files)

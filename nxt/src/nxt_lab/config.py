@@ -13,6 +13,7 @@ CONFIG_PATH = DATA_DIR / "config.json"
 SENSOR_TYPES = ("none", "touch", "light", "sound", "color", "ultrasonic")
 MOTOR_PORTS = ("A", "B", "C")
 SENSOR_PORTS = ("1", "2", "3", "4")
+DRIVE_MODES = ("deadman", "direct")
 
 
 @dataclass
@@ -29,6 +30,10 @@ class Config:
     shooter_enabled: bool = False
     sensors: dict = field(default_factory=lambda: {"1": "none", "2": "none", "3": "color", "4": "ultrasonic"})
     sample_hz: float = 5.0
+    # "deadman": drive only through robotd-lite on the brick, which stops the tracks on its own
+    # when commands stop (RFC-0003 §2.3). "direct": motor commands from the PC, stopped only by
+    # the server's watchdog — a crashed server or a lost link leaves the tracks running.
+    drive_mode: str = "deadman"
 
     def validate(self) -> None:
         roles = (self.left, self.right, self.shooter)
@@ -45,6 +50,8 @@ class Config:
             raise ValueError("fire_power must be 1..100")
         if not 0.5 <= self.sample_hz <= 20:
             raise ValueError("sample_hz must be 0.5..20")
+        if self.drive_mode not in DRIVE_MODES:
+            raise ValueError(f"drive_mode must be one of {DRIVE_MODES}")
 
     def to_dict(self) -> dict:
         return asdict(self)

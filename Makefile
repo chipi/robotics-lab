@@ -56,6 +56,9 @@ lint: ## Byte-compile every Python file
 
 .PHONY: test-unit
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
+	@$(NXT_PY) $(NXT_DIR)/tests/test_deadman.py >/tmp/robotics-lab-test_deadman.log 2>&1 \
+	  && echo "PASS nxt/tests/test_deadman.py" \
+	  || { echo "FAIL nxt/tests/test_deadman.py"; cat /tmp/robotics-lab-test_deadman.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
 	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
 	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
@@ -111,10 +114,12 @@ nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/B
 # ---- Hardware (manual, needs the robot; never in CI) -------------------------
 
 .PHONY: test-hardware
-test-hardware: nxt-sync ## Checks on the real NXT: sensors, link speed, and stop-on-SIGTERM (MOVES the tracks briefly: lift the robot; stop nxt-web first)
+test-hardware: nxt-sync ## Checks on the real NXT: sensors, link speed, the robotd deadman, stop-on-SIGTERM, stop-on-connect (MOVES the tracks briefly: lift the robot; stop nxt-web first)
 	@read -r -p "Robot lifted and nxt-web stopped? [y/N] " ok; test "$$ok" = y || { echo "test-hardware SKIPPED"; exit 1; }
+	$(NXT_DIR)/scripts/nxc.sh $(NXT_DIR)/programs/robotd.nxc
 	$(NXT_PY) $(NXT_DIR)/tests/hw_read_sensors.py
 	@test -e /dev/rfcomm0 && $(NXT_PY) $(NXT_DIR)/tests/hw_link_speed.py || echo "SKIP hw_link_speed.py: no /dev/rfcomm0"
+	$(NXT_PY) $(NXT_DIR)/tests/hw_deadman.py
 	$(NXT_PY) $(NXT_DIR)/tests/hw_stop_on_sigterm.py
 	$(NXT_PY) $(NXT_DIR)/tests/hw_stop_on_connect.py
 	@echo "test-hardware PASS"

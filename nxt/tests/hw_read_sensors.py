@@ -3,11 +3,16 @@ Stop any running nxt-web first (one connection to the brick at a time)."""
 
 import time
 
+import nxt.error
 import nxt.locator
 import nxt.sensor
 import nxt.sensor.generic as g
 
 with nxt.locator.find(backends=["usb", "devfile"]) as brick:
+    try:
+        brick.stop_program()  # robotd-lite may be running; it owns the ultrasonic port
+    except nxt.error.NoActiveProgramError:
+        pass
     us = brick.get_sensor(nxt.sensor.Port.S4, g.Ultrasonic)
     col = brick.get_sensor(nxt.sensor.Port.S3, g.Color)
     try:

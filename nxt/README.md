@@ -99,8 +99,9 @@ name the file as `build/<name>.nxc` (an nbc quirk); the line numbers are right.
   time: USB, or PC Bluetooth (`/dev/rfcomm0`; about one room of range). Measured on 2026-11-14:
   about 41 ms per command over Bluetooth with nothing else running; set the sample rate to 2/s
   for Bluetooth (5/s is fine on USB).
-- **Until the brick has its own deadman, drive live over Bluetooth gently and in range:** if the
-  link drops, the motors keep their last command.
+- **Drive through the deadman program** (Setup → Drive through: deadman, the default). It needs
+  `robotd.rxe` on the brick: `make nxt-programs`, then upload `nxt/build/robotd.rxe` in Programs;
+  Connect starts it. In direct mode, if the link drops, the motors keep their last command.
 
 ## The robot as checked (2026-11-14)
 
@@ -111,10 +112,10 @@ Brick: stock firmware 1.28 (protocol 1.124), Bluetooth address `00:16:53:0F:4C:2
 
 ## Known issues
 
-- **The brick has no deadman.** Stock firmware keeps a motor's last command. `nxt-web` stops the
-  motors on Ctrl-C and SIGTERM, and its watchdog stops them 0.6 s after the last drive command,
-  but a hard crash or a dropped link leaves them running. Fix planned: a small program on the
-  brick that stops the motors when commands stop arriving.
+- **The deadman program is not yet checked on the real brick.** Stock firmware keeps a motor's
+  last command; `robotd.rxe` (RFC-0003 §2.3) stops the tracks 0.5 s after commands stop, and
+  passes against the simulated brick. Until `hw_deadman.py` passes on the brick, treat a dropped
+  link as leaving the motors running. In direct mode that is always so.
 - **Only one program at a time may talk to the brick.** A second connection on the same
   `/dev/rfcomm0` (or USB) scrambles replies; on 2026-11-14 it hung the running `nxt-web`, whose
   Bluetooth reads have no timeout. Stop `nxt-web` before running scripts against the brick.

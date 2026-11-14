@@ -91,6 +91,25 @@ deadman (two misses tolerated) uses about 40 % of the Bluetooth link; every 100 
 Firing is irreversible: `robot.do fire` is always `propose` in a mission
 ([RFC-0005](RFC-0005-missions.md)) and refused unless the shooter is enabled.
 
+**As built (2026-11-14):** `nxt/programs/robotd.nxc` and `nxt_lab/deadman.py`.
+
+- Commands in mailbox 1, fixed width: `D` seq, left+100, right+100, forward flag (12 bytes);
+  `S` stop; `Q` query, which answers but does not feed the deadman.
+- Every command is answered after it is applied, in response mailbox 1:
+  `seq,left,right,dist,flags,ms`; flags 1 deadman stop, 2 obstacle stop, 4 bad command.
+- Deadman 0.5 s; forward motion stops closer than 15 cm (the PC sends whether the robot is moving
+  forward, after Setup's inversions). The tracks are the program's ports C and B; the service
+  refuses deadman driving with any other Setup.
+- The service's **drive mode** (Setup) is `deadman` by default: it starts `robotd.rxe` on connect
+  and whenever no other program runs, and refuses to drive without it. `direct` is today's motor
+  commands with the PC watchdog only, flagged in the header.
+- Stop is belt and braces: robotd's `S`, then the motors directly. Closing the service (SIGTERM)
+  sends `S` first, or robotd would keep its last command until its own deadman.
+- The shooter (port A) is not robotd's: firing stays a direct command, allowed under robotd.
+- Checked against the simulated brick (`nxt/tests/test_deadman.py`, the smoke test); the real
+  brick check is `nxt/tests/hw_deadman.py` in `make test-hardware`. Not yet built: touch-sensor
+  bumpers, odometry in the state box.
+
 ### 2.4 Coexisting with the web UI's program interlock
 
 Today the NXT service refuses driving and firing while any program runs on the brick, and stops

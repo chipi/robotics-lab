@@ -11,7 +11,7 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 | NXT ports | Checked on the robot: A shooter, B right, C left; colour 3, ultrasonic 4 | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
 | Programs on the brick | `first` ran and logged correctly; `chase` and `patrol` compiled, not yet run | [IDEAS.md](IDEAS.md) |
 | NXT web UI | Drive, live sensors and charts, recording, programs, setup, link choice and diagnostics, command log | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
-| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; **no deadman on the brick yet** | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) Known issues |
+| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; the on-brick deadman **robotd-lite is built and passes against the simulated brick, not yet checked on the real one** (RFC-0003 §2.3) | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) Known issues |
 | Microduck simulator | Runs here: stands, walks at 0.3 m/s asked (0.13 m/s got); turning did not match upstream | [MICRODUCK.md](MICRODUCK.md) |
 | Microduck arena | Runs here: reference policy 9.392 s on the 2 m sprint | [MICRODUCK.md](MICRODUCK.md) |
 | DGX training | `robotics` GPU mode exists; first measured run done (no usable policy kept); full run planned | [MICRODUCK.md](MICRODUCK.md) |
@@ -61,6 +61,6 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 - Robot brain phase 0, the spike: turning in the backlash scene, the backlash robot in the
   apartment, `mapd` mapping with autonomy off.
-- The NXT on-brick deadman ("robotd-lite"), with the coexistence rule of RFC-0003 §2.4: write and
-  compile; test on the brick at home, with `make test-hardware` (now including stop on connect).
+- The NXT on-brick deadman ("robotd-lite"): built (RFC-0003 §2.3, "As built"); check it on the
+  brick with `make test-hardware`, which now uploads and tests it (`hw_deadman.py`).
 - At home: chase and patrol on the floor; touch sensors as bumpers.

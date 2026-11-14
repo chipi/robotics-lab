@@ -163,7 +163,7 @@
         <button class="danger" id="prog-stop">Stop program</button>
       </div>
       <div id="prog-state" class="hint">Nothing running.</div>
-      <p class="hint">While a program runs, the PC does not read sensors (that could change their mode under the program) and driving from here is disabled. Motor tacho counts are still logged.</p>
+      <p class="hint">While a program runs, the PC does not read sensors (that could change their mode under the program) and driving from here is disabled. Motor tacho counts are still logged. The exception is the deadman program <code>robotd.rxe</code>: driving goes through it and it reports the ultrasonic distance; in deadman mode it starts again whenever nothing else runs.</p>
     </div>
     <div class="card">
       <div class="row" style="justify-content: space-between">
@@ -216,7 +216,9 @@
           <label for="cfg-fire_power">Fire power</label><input type="number" id="cfg-fire_power" min="1" max="100">
           <label for="cfg-fire_degrees">Fire degrees</label><input type="number" id="cfg-fire_degrees" step="10">
           <label for="cfg-shooter_enabled">Shooter enabled</label><input type="checkbox" id="cfg-shooter_enabled">
+          <label for="cfg-drive_mode">Drive through</label><select id="cfg-drive_mode"><option value="deadman">deadman program (robotd)</option><option value="direct">direct motor commands</option></select>
         </div>
+        <p class="hint">Deadman: the brick runs <code>robotd.rxe</code>, which stops the tracks by itself 0.5 s after commands stop, and stops forward motion closer than 15 cm. Direct: only this server's watchdog stops them; a crash or a lost link leaves them running.</p>
       </div>
       <div class="card">
         <h2>Sensors</h2>
@@ -274,7 +276,11 @@ async function refreshStatus() {
     parts.push(`<span class="ok">●</span> <b>${esc(s.name)}</b>${s.fake ? " (simulated)" : ""}`);
     if (s.battery_mv != null) parts.push(`battery <b>${(s.battery_mv / 1000).toFixed(2)} V</b>`);
     if (s.link) parts.push(`<span title="${esc(s.link_detail || "")}">via <b>${LINK_NAMES[s.link] || esc(s.link)}</b>${s.link_ms != null ? ` · ${Math.round(s.link_ms)} ms` : ""}</span>`);
-    if (s.program) parts.push(`running <b>${esc(s.program)}</b>`);
+    const dm = s.deadman || {};
+    if (dm.running) parts.push(`<span class="ok" title="robotd.rxe stops the tracks 0.5 s after commands stop">deadman on</span>${dm.state && dm.state.deadman_stop ? " · <b>deadman stopped it</b>" : ""}${dm.state && dm.state.obstacle_stop ? " · <b>obstacle stop</b>" : ""}`);
+    else if (dm.mode === "direct") parts.push(`<span class="bad" title="Setup → Drive through">direct drive, no deadman</span>`);
+    else parts.push(`<span class="bad" title="start robotd.rxe in Programs (upload nxt/build/robotd.rxe first if it is not listed)">deadman program not running</span>`);
+    if (s.program && !dm.running) parts.push(`running <b>${esc(s.program)}</b>`);
     if (s.recording) parts.push(`<span class="rec">● REC</span> ${s.recording.rows} rows`);
   } else {
     parts.push(`<span class="bad">● Not connected</span>`);
@@ -285,8 +291,9 @@ async function refreshStatus() {
   $("flash").textContent = s.free_flash != null ? `${kb(s.free_flash)} free` : "";
   $("prog-state").innerHTML = s.program ? `Running <b>${esc(s.program)}</b>` : "Nothing running.";
   $("prog-stop").disabled = !s.program;
-  document.querySelectorAll(".pad button").forEach((b) => (b.disabled = !!s.program));
-  $("fire").disabled = !!s.program || !(config && config.shooter_enabled);
+  const otherProgram = s.program && !(s.deadman && s.deadman.running);
+  document.querySelectorAll(".pad button").forEach((b) => (b.disabled = !!otherProgram));
+  $("fire").disabled = !!otherProgram || !(config && config.shooter_enabled);
   $("fire").title = config && !config.shooter_enabled ? "Shooter switched off in Setup" : "";
   $("rec").textContent = s.recording ? "Stop recording" : "Start recording";
   $("rec-state").innerHTML = s.recording ? `<span class="rec">● ${esc(s.recording.name)}</span> · ${s.recording.rows} rows` : "Not recording";
@@ -298,7 +305,7 @@ $("connect").addEventListener("click", async () => { await api("/api/connect", {
 $("estop").addEventListener("click", async () => {
   release(false);
   await api("/api/stop", {});
-  if (status.program) await api("/api/program/stop", {});
+  if (status.program && !(status.deadman && status.deadman.running)) await api("/api/program/stop", {});
   refreshStatus();
 });
 
@@ -375,13 +382,13 @@ function renderReadings(s) {
   if (config) for (const [p, kind] of Object.entries(config.sensors)) {
     if (kind === "none") continue;
     const r = (s.sensors || {})[p];
-    const v = s.program ? "paused" : !r ? "–" : r.error ? "error" : r.label ? `${r.label} (${r.value})` : r.value;
+    const v = s.program && s.program !== "robotd.rxe" ? "paused" : !r ? "–" : r.error ? "error" : r.label ? `${r.label} (${r.value})` : r.value;
     sensorCells.push([`Port ${p} · ${kind}`, v, r && r.error]);
   }
   const html = (list) => list.map(([k, v, err]) => `<div class="reading" ${err ? `title="${esc(err)}"` : ""}><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
   $("drive-readings").innerHTML = html(cells);
   $("readings").innerHTML = html([...sensorCells, ...cells]) || `<p class="hint">No sensors configured — set them in Setup.</p>`;
-  $("sample-note").textContent = config ? `${config.sample_hz} samples/s${s.program ? " · sensors paused while a program runs" : ""}` : "";
+  $("sample-note").textContent = config ? `${config.sample_hz} samples/s${s.program && s.program !== "robotd.rxe" ? " · sensors paused while a program runs" : ""}` : "";
 }
 
 // ---- chart (no library: a small canvas line plot)
@@ -519,7 +526,7 @@ $("upload").addEventListener("click", async () => {
 });
 
 // ---- setup
-const FIELDS = ["left", "right", "shooter", "invert_left", "invert_right", "fire_power", "fire_degrees", "shooter_enabled", "sample_hz"];
+const FIELDS = ["left", "right", "shooter", "invert_left", "invert_right", "fire_power", "fire_degrees", "shooter_enabled", "sample_hz", "drive_mode"];
 async function loadConfig() {
   const data = await api("/api/config");
   if (!data) return;
