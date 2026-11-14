@@ -28,10 +28,11 @@ TICK_S = 0.1
 REPLAN_S = 3.0
 STOP_MM = 250            # depth reflex distance, central columns
 CLIFF_STOP_M = 0.45      # a drop this close ahead (horizontal) stops the duck
-# Turning on the spot drifts sideways (run 3 fell while turning beside the stairs), and the duck does
-# not walk backwards reliably (-0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So: no turn on
-# the spot with a remembered drop closer than this; refuse instead.
-TURN_CLEAR_M = 0.35
+# A turn on the spot shifts the duck about 8 cm (phase 0: 8 cm over a full turn at 1.2 rad/s), and the
+# duck does not walk backwards reliably (-0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So no
+# turn on the spot with a remembered drop closer than this; refuse instead. (Run 3's fall was not a
+# turn: the duck walked onto the opening along a route 3 cm from its edge, with no cliff check.)
+TURN_CLEAR_M = 0.2
 BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
@@ -92,16 +93,32 @@ class Body:
         self._f.flush()
         r = json.loads(self._f.readline())
         w, x, y, z = r["imu"]["quat"]
+        self.height = r["trunk"][2]
         return r["trunk"][0], r["trunk"][1], math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
 
+CALIBRATION = Path(__file__).resolve().parents[3] / "calibration"
+
+
+def load_scale(robot: str | None) -> float:
+    """The robot's odometry scale (calibration/<robot>.json), 1.0 when none is given."""
+    if not robot:
+        return 1.0
+    return float(json.loads((CALIBRATION / f"{robot}.json").read_text())["odom_scale"])
+
+
 class Navigator:
-    def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None):
+    def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
+                 calibration: str | None = "sim"):
+        # Odometry, mapd's poses and mapd's grid all come from robotd's odometry; one scale corrects
+        # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
+        # first stop, so scaling about it keeps the duck where it is.
+        self.scale = load_scale(calibration)
         self.loc = Localizer()
         self.robot = Rpc(sim_dir / "duck-a.sock")
         self.mapd = Rpc(sim_dir / "duck-a-map.sock")
         self.state = StateStream(sim_dir / "duck-a.sock", hz=20,
-                                 on_state=lambda s: self.loc.on_odom(s["t_ns"], odom_pose(s)))
+                                 on_state=lambda s: self.loc.on_odom(s["t_ns"], self._scaled(odom_pose(s))))
         self.tof = TofStream(sim_dir / "duck-a-tof.sock")
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
@@ -110,6 +127,9 @@ class Navigator:
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
+    def _scaled(self, pose: tuple) -> tuple:
+        return pose[0] * self.scale, pose[1] * self.scale, pose[2]
+
     def move(self, tw: Twist) -> None:
         self.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
 
@@ -117,7 +137,7 @@ class Navigator:
         st = self.mapd.call("map.status")
         pose = (st.get("state") or {}).get("pose")
         t_ns = (st.get("state") or {}).get("t_ns")
-        return bool(pose and t_ns and self.loc.on_fix(t_ns, (pose["x"], pose["y"], pose["yaw"])))
+        return bool(pose and t_ns and self.loc.on_fix(t_ns, self._scaled((pose["x"], pose["y"], pose["yaw"]))))
 
     def survey(self) -> bool:
         """Stand still with explicit zeros until mapd is collecting this stop, then a little longer."""
@@ -135,13 +155,18 @@ class Navigator:
         return collecting_since is not None
 
     def grid(self) -> CostGrid:
-        return CostGrid.from_map_grid(self.mapd.call("map.grid", {"res_m": 0.1}))
+        g = self.mapd.call("map.grid", {"res_m": 0.1})
+        if g.get("res_m"):
+            g["res_m"] *= self.scale
+            g["origin"] = [v * self.scale for v in g["origin"]]
+        return CostGrid.from_map_grid(g)
 
     def record(self, **row) -> None:
         if self._log:
             row["t"] = round(time.monotonic() - self._t0, 3)
             if self.body:
                 row["truth"] = [round(v, 4) for v in self.body.pose()]
+                row["truth_z"] = round(self.body.height, 4)
             self._log.write(json.dumps(row) + "\n")
             self._log.flush()
 

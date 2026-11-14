@@ -4,7 +4,7 @@ import math
 import sys
 
 from duck_lab.nav.follow import FollowState, step
-from duck_lab.nav.grid import CostGrid, plan, thin
+from duck_lab.nav.grid import MARGIN_COST, CostGrid, plan, thin
 
 failures = []
 
@@ -35,7 +35,7 @@ def room(w=30, h=20, wall_x=None, door=None, unknown=()):
 
 
 g = CostGrid.from_map_grid(room())
-check("walls: lethal 2 cells (12 cm), expensive to 3 (28 cm), free after", math.isinf(g.at(2, 10)) and g.at(3, 10) == 25.0 and g.at(4, 10) == 1.0,
+check("walls: lethal 2 cells (12 cm), expensive to 3 (28 cm), free after", math.isinf(g.at(2, 10)) and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
       (g.at(2, 10), g.at(3, 10), g.at(4, 10)))
 p = plan(g, (0.5, 0.5), (2.5, 1.5))
 check("open room: a path, start cell to goal cell", p and g.cell(*p[0]) == (5, 5) and g.cell(*p[-1]) == (25, 15),

@@ -323,7 +323,11 @@ spans robots. Phase 6 below; also on the [roadmap](../wip/ROADMAP.md).
   navigator that compensates (kick-start, closed loop on heading), measured in phase 1's go-to goals.
 - 2026-11-14 — Phase 1, first three evaluation runs (`duck/runs/phase1-run*`): goals beyond the
   map were refused, a stranding wall margin, routes past half-seen furniture, the duck's odometry
-  ~11 % long against truth, and a fall down the staircase while turning on the spot beside it (no
-  cliff check). The operator revised phase 1's bar (§3.4), approved the order — cliff check, no
-  turning near a drop or a wall, odometry calibration (per robot), the test rescoped and rescored
-  with the duck's measured size — and chose calibration for odometry.
+  ~11 % long against truth, and a fall down the staircase: the duck walked onto the opening along a
+  route 3 cm from its edge, with no cliff check (first written here as "while turning on the spot";
+  the log shows it was walking). The operator revised phase 1's bar (§3.4), approved the order —
+  cliff check, no turning near a drop or a wall, odometry calibration (per robot), the test
+  rescoped and rescored with the duck's measured size — and chose calibration for odometry; then
+  options 2 and 3 together
+  (scale odometry, mapd's poses and its grid by the measured factor, per robot:
+  `duck/calibration/sim.json`, 0.91 at 0.3 m/s), with the finding drafted for Pollen.

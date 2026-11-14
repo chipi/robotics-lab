@@ -30,6 +30,8 @@ LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 # 14 cm wide, under 800 g; the model's extra 2 cm is the head in the standing pose.
 DUCK_HEIGHT_M = 0.272
 FOOTPRINT_M = 0.083       # the trunk centre closer than this to an obstacle's outline: a part can touch
+FALLEN_Z_M = 0.06         # trunk height below this (standing: 0.116) is a fall; so is leaving the flat
+APARTMENT = (-4.0, 4.0, -3.0, 3.0)
 OVERHEAD_CLEAR_M = 0.30   # obstacles whose underside is higher than this pass over the duck's head
 GOAL_CLEARANCE_M = 0.35
 REACHED_M = 0.25          # truth within this of the goal counts as reached
@@ -78,8 +80,9 @@ def clearance(p: tuple, obs: list) -> tuple:
 
 
 def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
-    floors = [g for g in layout["geoms"] if g["name"] in
-              ("floor_office", "floor_bedroom", "floor_bath", "floor_cor_n")]
+    # Phase 1's scope (RFC-0002 §3.4, revised): what the duck sees from the dock or on the way — the
+    # office and the north corridor. Rooms behind walls it has not seen are phase 2's (exploring).
+    floors = [g for g in layout["geoms"] if g["name"] in ("floor_office", "floor_cor_n")]
     obs = obstacles(layout)
     rng = random.Random(seed)
     goals = []
@@ -87,7 +90,9 @@ def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
         f = rng.choices(floors, weights=[g["size"][0] * g["size"][1] for g in floors])[0]
         p = (f["pos"][0] + rng.uniform(-f["size"][0], f["size"][0]),
              f["pos"][1] + rng.uniform(-f["size"][1], f["size"][1]))
-        if clearance(p, obs)[0] >= GOAL_CLEARANCE_M:
+        stairs = [g for g in layout["geoms"] if g["name"].startswith("stair")]
+        near_stairs = min((footprint_distance(p, s) for s in stairs), default=math.inf)
+        if clearance(p, obs)[0] >= GOAL_CLEARANCE_M and near_stairs >= GOAL_CLEARANCE_M:
             goals.append((round(p[0], 2), round(p[1], 2), f["name"].removeprefix("floor_")))
     return goals
 
@@ -117,16 +122,23 @@ def main() -> None:
             out = nav.go_to(goal_map, args.timeout)
             ticks = [json.loads(l) for l in list(open(args.out / "ticks.jsonl"))[ticks_before:]]
             tr = [t["truth"] for t in ticks if "truth" in t]
+            low = min((t["truth_z"] for t in ticks if "truth_z" in t), default=1.0)
+            outside = any(not (APARTMENT[0] < p[0] < APARTMENT[1] and APARTMENT[2] < p[1] < APARTMENT[3])
+                          for p in tr)
             near = min((clearance(p, obs) for p in tr), default=(math.inf, None))
             end = nav.body.pose()
             row = {"goal": i, "room": room, "world": [gx, gy], "map": [round(v, 3) for v in goal_map],
                    **out, "truth_end": [round(v, 3) for v in end[:2]],
                    "error_m": round(math.dist(end[:2], (gx, gy)), 3),
                    "min_clearance_m": round(near[0], 3), "nearest": near[1],
-                   "contact": near[0] < FOOTPRINT_M, "wall_s": round(time.monotonic() - started, 1)}
+                   "contact": near[0] < FOOTPRINT_M, "wall_s": round(time.monotonic() - started, 1),
+                   "lowest_trunk_m": round(low, 3), "fell": low < FALLEN_Z_M or outside}
             row["reached_truth"] = out["status"] == "reached" and row["error_m"] <= REACHED_M
             results.append(row)
             print(json.dumps(row), flush=True)
+            if row["fell"]:
+                print("ABORT: the duck fell (or left the apartment); the run stops here", flush=True)
+                break
     finally:
         nav.close()
         (args.out / "results.json").write_text(json.dumps(results, indent=1))
@@ -135,8 +147,12 @@ def main() -> None:
     true_ok = sum(r["reached_truth"] for r in results)
     refused = sum(r["status"] == "refused" for r in results)
     contacts = sum(r["contact"] for r in results)
+    falls = sum(r["fell"] for r in results)
+    timeouts = sum(r["status"] == "timeout" for r in results)
+    bar = (n == args.goals and falls == 0 and contacts == 0 and timeouts == 0 and true_ok >= 18)
     print(f"PHASE1 goals {n}: navigator reached {said}, within {REACHED_M} m by truth {true_ok}, "
-          f"refused {refused}, timeouts {n - said - refused}, goals with a contact {contacts}")
+          f"refused {refused}, timeouts {timeouts}, goals with a contact {contacts}, falls {falls} — "
+          f"bar {'MET' if bar else 'NOT MET'} (20 goals, 0 falls, 0 contacts, 0 timeouts, >= 18 within {REACHED_M} m)")
 
 
 if __name__ == "__main__":

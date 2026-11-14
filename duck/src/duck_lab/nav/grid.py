@@ -15,8 +15,11 @@ from dataclasses import dataclass
 # still get out (run 2, all impassable, stranded it).
 LETHAL_M = 0.12
 INFLATE_M = 0.28
-MARGIN_COST = 25.0
-UNKNOWN_COST = 5.0   # unknown cells are expensive, not forbidden
+# Unknown ground can hide a drop (the staircase reads as nothing until the cliff check sees it), so it
+# costs more than the margin round something already seen: with unknown cheaper, the planner took a
+# long detour through unmapped corridor toward the stairs rather than pass the office cabinet.
+MARGIN_COST = 10.0
+UNKNOWN_COST = 15.0  # unknown cells are expensive, not forbidden
 FREE_COST = 1.0
 
 

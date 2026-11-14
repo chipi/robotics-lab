@@ -1,0 +1,8 @@
+{
+  "robot": "duck-sim (backlash scene, set v10, microduck 094d4bb4, microduck_rl 0daab160)",
+  "odom_scale": 0.91,
+  "at_speed_mps": 0.3,
+  "by_speed": {"0.2": 0.849, "0.3": 0.911, "0.4": 0.930},
+  "measured": "2026-11-14, duck/sim/probes/odom_vs_truth.py (straight walks, 3 x 8 s per speed, truth = body server trunk) and duck/sim/odom_scale.py over ~41 m of navigation logs (0.909)",
+  "why": "robotd's odometry reads ~10 % long in the simulator and mapd builds its map from it; the navigator scales odometry, mapd's poses and mapd's grid by this factor (operator, 2026-11-14: options 2 and 3). A real duck gets its own measurement (phase 5). Remove when robotd or mapd corrects it upstream."
+}
