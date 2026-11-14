@@ -77,6 +77,30 @@ Two layers: the **JSON-RPC interface** (`robot.move`, `robot.state`, `robot.do` 
   its message boxes and stops the motors when none arrive for 0.5 s, and stops on the ultrasonic
   locally. Planned next; to be tested on the brick.
 
+### An ESP32 with a screen riding on the brick
+
+The rule: a **Bluetooth link to the NXT needs an original ESP32** (classic Bluetooth); S2, S3, C3
+and C6 chips are Bluetooth LE only. Among display boards, prefer one with a battery and an IMU: the
+bridge then doubles as the robot's gyro for dead reckoning and a status screen.
+
+- **Pick: M5Stack Core2 v1.3** — ESP32-D0WDQ6-V3 (original ESP32), BMI270 6-axis IMU, 500 mAh
+  battery, 2.0" touch screen; €47.19 at [RobotShop NL](https://eu.robotshop.com/nl/products/m5stack-core2-esp32-iot-ontwikkelingskit-v13),
+  on backorder (2026-11-14). Not the CoreS3 (an S3 chip).
+- Also fine (from memory, check the exact model): M5StickC Plus / Plus2 (small, IMU, battery),
+  M5Stack Basic / Gray, the original TTGO T-Display, the "Cheap Yellow Display" ESP32-2432S028.
+- Not for Bluetooth: T-Display-S3, CoreS3, AtomS3, Cardputer, any S3/C3/C6 board.
+- **Later experiment:** an S3 board plugged into the NXT's USB port (the S3 has USB host): no
+  Bluetooth at all, but a small NXT USB driver on the ESP32 to write; not verified.
+- **What runs on it:** the dumb Wi-Fi↔Bluetooth bridge in nxt-python's `nxt-server` protocol (so
+  `nxt-web` and the NXT service work over Wi-Fi unchanged), the IMU heading, and a status screen:
+  link, mode, last command and deadman countdown, both batteries, the UI's address.
+
+### A Raspberry Pi riding on the brick
+
+The alternative with Linux on board: camera, the navigator on the robot, ROS 2 if ever wanted. The
+shopping list (Raspberry Pi 4 4 GB, Camera Module 3 Wide, microSD, power bank, mounting) with Dutch
+shops is in [NXT-PARTS.md](NXT-PARTS.md), "A computer on board the NXT".
+
 ## Bigger NXT robots
 
 Operator's interest (2026-11-14): sensor and motor multiplexers, to build bigger robots with more
@@ -88,8 +112,17 @@ capabilities. The brick has 3 motor ports and 4 sensor ports; ports 1 and 2 are 
   servos), and Mindsensors' RCX motor multiplexer (`MTRMUX`, old RCX motors).
 - **More sensors** — a sensor multiplexer (e.g. HiTechnic's) puts several sensors on one port, but
   nxt-python has **no class for one** (searched the installed library): we would write it.
-- **A second NXT brick** — another way to "bigger": two bricks on one robot, each with 3 motors and
-  4 sensors, coordinated by the NXT service / robot brain (or by the bricks over Bluetooth).
+- **Two bricks, one robot (recommended route for the arm robot):** brick `BODY` (tracks,
+  ultrasonic, colour, bumpers) and brick `ARM` (shoulder, elbow, gripper, gripper colour and touch):
+  6 motors and 8 sensors, no multiplexers, no new drivers. One NXT service owns both (bricks
+  renamed and found by name) and presents one robot: `robot.move` to BODY, arm commands to ARM.
+  Links: a Pi on the robot with two USB cables (best), the PC over Bluetooth to both
+  (`/dev/rfcomm0`, `/dev/rfcomm1`), or brick-to-brick Bluetooth with NXC programs (no computer; a
+  brick probably cannot be master to the other and connected to the PC at once — not checked).
+  Timing: not synchronised to the millisecond — fine for drive, stop, reach. Safety: a deadman on
+  both bricks; STOP ALL stops both; if either drops off, the whole robot stops; both batteries
+  shown. Frames: `base_link → arm_base → … → gripper`, the shape MoveIt expects. Code changes: a
+  bricks section in the setup, connect by name, an arm panel, the brick named in the command log.
 - Costs to expect: every multiplexed device is an I2C conversation, so each sample takes longer
   (already about 41 ms per command over Bluetooth), and more motors draw more power; check each
   device's power requirements before buying.

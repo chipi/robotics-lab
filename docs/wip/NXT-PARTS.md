@@ -83,6 +83,25 @@ The brick (48 MHz, 64 KB RAM) cannot run Linux or ROS. Three ways to give the ro
 | **ESP32 on the brick** | A microcontroller: a Wi-Fi↔Bluetooth bridge, or a micro-ROS node (micro-ROS officially supports the ESP32, with an agent on a PC) | Small, light, wireless | No Linux, no camera worth having, no navigator on board; must be an original ESP32 for classic Bluetooth |
 | **BrickPi3** (Dexter Industries) replacing the brick | A Raspberry Pi board driving NXT and EV3 motors and sensors directly (4 motor, 4 sensor ports; NXT ultrasonic, colour, light, touch; custom I2C sensors) | The robot becomes a Linux computer: more ports, camera, ROS/MoveIt-ready — a strong fit for the arm robot | NXC programs and the brick's screen go; code moves from nxt-python to BrickPi3's library; availability not checked |
 
+### Shopping: a Raspberry Pi on the brick (NL shops, prices and stock as seen 2026-11-14)
+
+A **Pi 4 (4 GB)** over a Pi 5 here: it runs on an ordinary 5 V / 3 A USB-C power bank (a Pi 5 wants
+5 A, which power banks do not really give; on 3 A it works with its USB ports limited), the camera
+connects with its own cable, and it was in stock. The Pi Zero 2 W was sold out at most retailers
+and has 512 MB.
+
+| Item | Where | Seen |
+| --- | --- | --- |
+| Raspberry Pi 4 Model B 4 GB | [Tinytronics](https://www.tinytronics.nl/en/development-boards/single-board-computers/raspberry-pi-4-model-b-4gb) | €125, in stock |
+| (or) Raspberry Pi 5 4 GB | [Kiwi Electronics](https://www.kiwi-electronics.com/en/raspberry-pi-5-4gb-11579) | €118.99, out of stock |
+| Camera Module 3 Wide (12 MP) — sees more of the room | [Tinytronics](https://www.tinytronics.nl/en/sensors/optical/cameras-and-scanners/raspberry-pi-camera-module-3-wide-12mp) | €44 |
+| (or) Camera Module 3 (12 MP) | [Tinytronics](https://www.tinytronics.nl/en/sensors/optical/cameras-and-scanners/raspberry-pi-camera-module-3-12mp) | €35 |
+| Pi 5 only: camera cable Standard–Mini 200 mm | [Kiwi Electronics](https://www.kiwi-electronics.com/en/raspberry-pi-camera-cable-standard-mini-200mm-11588) | €1.13 |
+| microSD 32 GB, A1/A2 | [Amazon.nl search](https://www.amazon.nl/s?k=microsd+32gb+a2) | no listing picked |
+| USB-C PD power bank, ~10,000 mAh, steady 5 V / 3 A, no auto-off at low current | [Amazon.nl search](https://www.amazon.nl/s?k=powerbank+usb-c+pd+10000mah) | no model verified |
+| Mounting | a normal Pi 4 case on Technic beams (velcro, zip ties) or a 3D-printed adapter; the [Pi-Blox LEGO case](https://elektronicavoorjou.nl/product/pi-blox-raspberry-pi-lego-behuizing-wit/) is for Pi 2/3 and was out of stock | — |
+| USB-A to USB-B cable | the NXT's own | have it |
+
 ## Do not buy for the NXT
 
 - **EV3 sensors and motors' sensors** (EV3 uses a different sensor protocol the NXT firmware does
