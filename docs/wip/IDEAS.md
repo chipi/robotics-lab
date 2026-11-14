@@ -56,6 +56,43 @@ Bluetooth, then a small board riding on the robot for house-level range.
 3. **Raspberry Pi Zero 2 W on the robot (alternative).** USB to the NXT, runs `nxt-web`
    itself; heavier and needs more power, but no firmware to write and room for a camera.
 
+## Bigger NXT robots
+
+Operator's interest (2026-11-14): sensor and motor multiplexers, to build bigger robots with more
+capabilities. The brick has 3 motor ports and 4 sensor ports; ports 1 and 2 are free today.
+
+- **More motors** — supported by nxt-python already (checked in the installed library):
+  Mindsensors **NXTMMX** (`mindsensors.MMX`, more NXT motors on one sensor port), HiTechnic
+  **FIRST motor and servo controllers** (`hitechnic.MotorCon`, `ServoCon`; DC motors and hobby
+  servos), and Mindsensors' RCX motor multiplexer (`MTRMUX`, old RCX motors).
+- **More sensors** — a sensor multiplexer (e.g. HiTechnic's) puts several sensors on one port, but
+  nxt-python has **no class for one** (searched the installed library): we would write it.
+- **A second NXT brick** — another way to "bigger": two bricks on one robot, each with 3 motors and
+  4 sensors, coordinated by the NXT service / robot brain (or by the bricks over Bluetooth).
+- Costs to expect: every multiplexed device is an I2C conversation, so each sample takes longer
+  (already about 41 ms per command over Bluetooth), and more motors draw more power; check each
+  device's power requirements before buying.
+- Availability: these are NXT-era parts, as far as known mostly second-hand now; not checked.
+
+### Goal project: a "bomb-disposal" style robot with an arm
+
+Operator's idea (2026-11-14): a bigger NXT robot with an arm, like the movie robots that find a
+suspicious device and disarm it. A toy version: a LEGO "device" (a box with coloured pins or
+wires); the robot drives up, looks, and pulls the right pin; a touch sensor inside the box says
+whether it was the right one.
+
+- **Body:** tracked base (2 motors) + arm: shoulder, elbow, gripper (3 motors at least), so more
+  motors than the set's 3 — a second NXT brick or an NXTMMX, plus motors. Worm gears in the arm
+  joints hold position with the power off.
+- **Sensors:** ultrasonic to approach, colour sensor on the gripper to check a pin's colour, touch
+  sensor in the gripper; a camera for the operator (a webcam/phone, or a Pi Zero on the robot),
+  later the duck as a spotter.
+- **How it is run:** like real ones — teleoperated first (drive + arm from the UI with video),
+  then steps automated one by one: approach, look, reach.
+- **Fits the mission loop exactly:** a flotilla case per "device"; "pull the red pin" is an
+  irreversible action → always `propose` with the camera frame for approval; the plan rehearsed
+  in simulation where possible; eval-harness scores success rate over many set-ups.
+
 ## With eval-harness
 
 eval-harness asks "is this ranking real, or a lucky sample?". Robot trials are noisy and few,
