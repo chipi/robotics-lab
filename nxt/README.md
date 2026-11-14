@@ -38,9 +38,23 @@ uv run scripts/hello.py --motor A    # turn motor A 180 degrees at low power
 ## Web UI
 
 ```sh
-uv run nxt-web            # real brick, http://127.0.0.1:8000
-uv run nxt-web --fake     # simulated brick with made-up readings, nothing moves
+make nxt-web                       # real brick, http://127.0.0.1:8000 (from the repo root)
+make nxt-web NXT_LINK=bluetooth    # or usb / auto; NXT_HOST, NXT_PORT too
+make nxt-web-fake                  # simulated brick with made-up readings, nothing moves
+uv run nxt-web --help              # the same, from nxt/
 ```
+
+**Anywhere, in Docker** (`nxt/Dockerfile`; config and recordings in the `nxt-web-data` volume):
+
+```sh
+make nxt-image                     # build robotics-lab/nxt-web:dev
+make nxt-image-run                 # run it with this machine's USB and /dev/rfcomm* devices
+```
+
+The image runs as root inside the container, because it needs the robot's device nodes, and
+publishes the port on `127.0.0.1` only: the UI has no login, so reach it through an ssh tunnel.
+On another machine, that machine needs the udev rule, and for Bluetooth the pairing and
+`rfcomm bind`, as below.
 
 Tabs (also reachable as `#drive`, `#sensors`, `#programs`, `#setup` in the URL):
 

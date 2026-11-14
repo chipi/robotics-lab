@@ -153,3 +153,8 @@ needed to upload and to read their logs.
 - 2026-11-14 — First run on the robot over USB; ports checked; incident 1 and the SIGTERM fix;
   Bluetooth paired and used; the operator asked for the link next to the battery, diagnostics, and
   a command log; incident 2. The operator asked for this RFC.
+- 2026-11-14 — The operator asked for flotilla-style make targets, a target to serve the UI, and
+  a Docker image "so we can deploy it anywhere": `make nxt-web` / `nxt-web-fake`, `nxt/Dockerfile`
+  (`make nxt-image`, `nxt-image-run`; `NXT_LAB_DATA` points config and recordings at a volume),
+  the smoke test as `make test-unit`, the image checked by `make test-integration`, and the
+  hardware checks as `make test-hardware` (manual; it moves the tracks briefly).

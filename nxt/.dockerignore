@@ -1,0 +1,9 @@
+.venv/
+runs/
+build/
+config.json
+**/__pycache__/
+tests/
+programs/
+toolchain/
+scripts/

@@ -1,10 +1,14 @@
 """Port setup, saved as JSON next to the project so the web UI can edit it."""
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
+# Where config.json and runs/ live: the nxt/ project folder when run from a checkout, or
+# $NXT_LAB_DATA (the Docker image sets /data).
+DATA_DIR = Path(os.environ.get("NXT_LAB_DATA") or Path(__file__).resolve().parents[2])
+CONFIG_PATH = DATA_DIR / "config.json"
 
 SENSOR_TYPES = ("none", "touch", "light", "sound", "color", "ultrasonic")
 MOTOR_PORTS = ("A", "B", "C")

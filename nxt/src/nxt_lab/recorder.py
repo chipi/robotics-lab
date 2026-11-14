@@ -7,7 +7,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
+from nxt_lab.config import DATA_DIR
+
+RUNS_DIR = DATA_DIR / "runs"
 PROGRAM_CHECK_SECONDS = 1.0
 
 
