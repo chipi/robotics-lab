@@ -76,6 +76,25 @@ scripts/nxc.sh programs/first.nxc     # -> build/first.rxe
 Then upload and run `build/first.rxe` from the web UI's Programs tab. Compile errors
 name the file as `build/<name>.nxc` (an nbc quirk); the line numbers are right.
 
+## Working without a cable
+
+- **Programs on the brick** (`first`, `chase`, `patrol`) need no link while they run: upload,
+  unplug, start them from the brick's menu (My Files → Software files), reconnect later to read
+  their CSV log. The link is only for uploading before and reading the log after.
+- **Live control from the PC** (the UI's drive pad, live charts, recording) needs a link the whole
+  time: USB, or PC Bluetooth (`/dev/rfcomm0`; about one room of range). Measured on 2026-11-14:
+  about 41 ms per command over Bluetooth with nothing else running; set the sample rate to 2/s
+  for Bluetooth (5/s is fine on USB).
+- **Until the brick has its own deadman, drive live over Bluetooth gently and in range:** if the
+  link drops, the motors keep their last command.
+
+## The robot as checked (2026-11-14)
+
+Shooterbot build. Motors: A shooter, B right track, C left track; positive power drives both
+tracks forward. Sensors: colour on 3, ultrasonic on 4 (reports type "Sonar"); 1 and 2 free.
+Brick: stock firmware 1.28 (protocol 1.124), Bluetooth address `00:16:53:0F:4C:2A`, about
+55–59 KB free flash.
+
 ## Known issues
 
 - **The brick has no deadman.** Stock firmware keeps a motor's last command. `nxt-web` stops the

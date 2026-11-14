@@ -33,6 +33,37 @@ several hardware replicas.
 - **Times are only reproducible on the same hardware** (the servo model is chaotic): the
   arena says a local time is "indicative, not the board's".
 
+## Policies, slots and skills
+
+In the duck's own terms (`microduck/docs/robot/cheatsheet.md`, "Policies and skills"):
+
+- **Policy:** a trained neural network in one ONNX file that the robot runs 50 times a second:
+  61 numbers in (48 about the body's own state, plus the command: speed and turn 3, head pose 4,
+  body pose 6), 14 joint targets out. Every policy has the same shape, so the robot can swap them
+  at any moment.
+- **Slot:** what the robot runs **by default** (seven slots, e.g. the walking gait). Loading a
+  policy into the walk slot changes how it walks.
+- **Skill:** what it runs **when asked** (`robotctl robot do <name>`, or a gamepad button). Backed
+  by a policy (kicks, the roll, a community "polite bow"), by a policy the robot drives itself
+  (ground pick, sit/stand), or by an **emotion** — keyframes plus a sound, no network at all.
+
+**The network**, read from the actual files (`velstand.onnx`, `roulade.onnx`, the arena's
+reference walker; all the same): a plain fully connected network (MLP), 61 → 512 → 256 → 128 →
+14, ELU activations, an input normaliser baked in; **197,896 parameters, about 790 KB**. Small
+enough for 50 runs a second on the RK3566. Training also uses a second network of the same size
+(`hidden_dims=(512, 256, 128)` appears twice in the task configs) — PPO's critic, by my reading of
+the config, not traced in code — which is not shipped.
+
+**Making your own skills**, easiest first:
+1. **Emotions:** a keyframes JSON (head, body, beak over time) plus a `.wav`; no training. 13 ship.
+2. **Choreography:** the arena's "Got a Talent" timelines string existing moves, sounds and up to
+   8 ducks together; try it in simulation.
+3. **A new trained policy:** a new environment and reward in `microduck_rl`, trained on the DGX
+   (about 3 h), checked in `duck-sim` and the arena, published, installed as a skill. Only an
+   "episodic, constant command" policy can be a generic one-shot skill. Jumping: unknown — the
+   roll and stand-up show dynamic moves work; whether jumps do, and what they do to the gears,
+   would show in simulation first.
+
 ## Getting our environment ready
 
 What this machine has (checked 2026-11-13): `uv`, `git-lfs`, GStreamer, `systemd-nspawn`,

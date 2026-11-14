@@ -56,6 +56,26 @@ Bluetooth, then a small board riding on the robot for house-level range.
 3. **Raspberry Pi Zero 2 W on the robot (alternative).** USB to the NXT, runs `nxt-web`
    itself; heavier and needs more power, but no firmware to write and room for a camera.
 
+Status 2026-11-14: option 1 works (paired, `/dev/rfcomm0`, `nxt-web` drives over it; about
+41 ms per command alone, about 170–190 ms while live sampling shares the link).
+
+### Where the NXT's JSON-RPC lives (operator to decide once everything works)
+
+The duck speaks JSON-RPC; the NXT should too, so the robot brain drives both the same way.
+Two layers: the **JSON-RPC interface** (`robot.move`, `robot.state`, `robot.do` …) and the
+**link to the brick** (LEGO's direct commands over USB, PC Bluetooth, or an ESP32 bridge).
+
+- **Proposed:** JSON-RPC in a Python NXT service (today's `nxt-web` grown up) on the PC, or a Pi
+  later; the ESP32 only a dumb Wi-Fi↔Bluetooth byte bridge (nxt-python's `nxt-server`
+  protocol). All logic stays in Python; the firmware stays tiny.
+- **Alternative:** JSON-RPC on the ESP32 itself: a self-contained Wi-Fi robot with no PC, at the
+  cost of C++ firmware for every change.
+- **Either way, a deadman on the brick ("robotd-lite"):** stock firmware keeps a motor's last
+  command, so a dropped link or a crashed server leaves motors running (it happened twice on
+  2026-11-14, see `nxt/README.md`). A small NXC program on the brick takes move commands through
+  its message boxes and stops the motors when none arrive for 0.5 s, and stops on the ultrasonic
+  locally. Planned next; to be tested on the brick.
+
 ## Bigger NXT robots
 
 Operator's interest (2026-11-14): sensor and motor multiplexers, to build bigger robots with more

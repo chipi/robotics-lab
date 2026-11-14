@@ -6,4 +6,4 @@ Robot projects, one folder each. Every project is its own uv project with its ow
 |---|---|
 | [nxt/](nxt/) | LEGO Mindstorms NXT 2.0 driven from our own Python code over USB |
 
-Notes in `docs/wip/`: [ideas](docs/wip/IDEAS.md), [long-term direction](docs/wip/ECOSYSTEM.md), [Microduck](docs/wip/MICRODUCK.md), [eval-harness for robots](docs/wip/EVAL-HARNESS-ROBOTS.md), [robot brain design](docs/wip/ROBOT-BRAIN.md), [stretching eval-harness and flotilla](docs/wip/STRETCH-EVAL-FLOTILLA.md), [NXT parts to look for](docs/wip/NXT-PARTS.md).
+Notes in `docs/wip/` — start with [status and open decisions](docs/wip/STATUS.md): [ideas](docs/wip/IDEAS.md), [long-term direction](docs/wip/ECOSYSTEM.md), [Microduck](docs/wip/MICRODUCK.md), [eval-harness for robots](docs/wip/EVAL-HARNESS-ROBOTS.md), [robot brain design](docs/wip/ROBOT-BRAIN.md), [stretching eval-harness and flotilla](docs/wip/STRETCH-EVAL-FLOTILLA.md), [NXT parts to look for](docs/wip/NXT-PARTS.md).
