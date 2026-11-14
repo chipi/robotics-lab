@@ -106,7 +106,8 @@ stays usable for MCAP in the meantime.
    `/nxt/state` per sample (powers, tachos, sensors, program, robotd-lite's answer) and
    `/nxt/events` (the command log while recording), with the robot, link, firmware, drive mode and
    setup as metadata (`nxt_lab/mcap_log.py`).
-2. The viewer spike (Rerun vs Lichtblick).
+2. The viewer spike (Rerun vs Lichtblick). Done 2026-11-14:
+   [ADR-0002](../adr/ADR-0002-viewers-rerun-and-lichtblick.md) — Rerun first, Lichtblick kept usable.
 3. A minimal logbook: a folder, an index, search, events.
 4. eval-harness reads runs from the logbook (with its 0.9 asks).
 5. flotilla cases reference logbook recordings.

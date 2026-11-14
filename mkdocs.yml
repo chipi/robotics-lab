@@ -81,6 +81,7 @@ nav:
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
+    - ADR-0002 — Viewers, Rerun first: adr/ADR-0002-viewers-rerun-and-lichtblick.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

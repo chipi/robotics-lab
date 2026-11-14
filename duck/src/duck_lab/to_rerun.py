@@ -37,7 +37,8 @@ def convert(src: Path, dst: Path) -> dict:
     counts = {}
     with open(src, "rb") as f:
         for _schema, channel, message in make_reader(f).iter_messages(log_time_order=True):
-            rr.set_time("log_time", timestamp=message.log_time * 1e-9)
+            # Not "log_time": that is Rerun's own timeline, stamped with the moment of logging.
+            rr.set_time("recorded", timestamp=message.log_time * 1e-9)
             data = json.loads(message.data)
             topic = channel.topic
             counts[topic] = counts.get(topic, 0) + 1

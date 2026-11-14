@@ -104,6 +104,13 @@ nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot 
 nxt-image: ## Build the NXT web UI image (NXT_IMAGE)
 	docker build -t $(NXT_IMAGE) $(NXT_DIR)
 
+.PHONY: viewers viewers-down
+viewers: ## Both viewers on loopback with every recorded run: Rerun (:9090) and Lichtblick (:8090) (ADR-0002)
+	@scripts/viewers.sh up
+
+viewers-down: ## Stop the viewers started by make viewers
+	@scripts/viewers.sh down
+
 .PHONY: nxt-image-run
 nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only
 	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data \

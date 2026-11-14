@@ -25,5 +25,7 @@ Required sections:
 
 - [ADR-0001 — ROS-aligned terms, no ROS foundation yet, Foxglove from the start](ADR-0001-ros-aligned-foxglove.md)
   (Accepted, 2026-11-14)
+- [ADR-0002 — Viewers: Rerun first, Lichtblick kept usable, MCAP the record](ADR-0002-viewers-rerun-and-lichtblick.md)
+  (Accepted, 2026-11-14)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.
