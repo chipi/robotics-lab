@@ -124,19 +124,33 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	@echo "test-integration PASS"
 
 .PHONY: test-viewer-image
-test-viewer-image: ## miniview's image: build it, start it on an empty data folder, check its API and pages answer
+test-viewer-image: ## miniview's image: build it, run it with the data read only and the index on its own volume, check what it serves and that it cannot write the data (ADR-0012)
 	@docker build -q -t $(VIEWER_IMAGE) $(VIEWER_DIR) >/dev/null
-	@data=$$(mktemp -d); \
-	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data:/data --user $$(id -u):$$(id -g) $(VIEWER_IMAGE)); \
-	  trap 'docker stop $$cid >/dev/null; rm -rf $$data' EXIT; \
+	@data=$$(mktemp -d); idx=$$(mktemp -d); vol=miniview-test-index-$$$$; mkdir -p $$data/runs $$data/scenes; \
+	  (cd $(VIEWER_DIR) && MINIVIEW_INDEX=$$idx/host.sqlite uv run --frozen miniview --data $$data import tests/fixtures/explore9 --scene apartment >/dev/null) \
+	    || { echo "FAIL could not import the fixture run on the host"; rm -rf $$data $$idx; exit 1; }; \
+	  docker volume create $$vol >/dev/null; \
+	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data/runs:/data/runs:ro -v $$data/scenes:/data/scenes:ro -v $$vol:/index \
+	    --user $$(id -u):$$(id -g) $(VIEWER_IMAGE)); \
+	  trap 'docker stop $$cid >/dev/null; for i in 1 2 3 4 5 6 7 8 9 10; do docker volume rm $$vol >/dev/null 2>&1 && break; sleep 0.5; done; rm -rf $$data $$idx' EXIT; \
 	  port=$$(docker port $$cid 8070/tcp | head -1 | sed 's/.*://'); \
 	  for i in $$(seq 1 60); do curl -fs -m 2 http://127.0.0.1:$$port/api/v1/health >/tmp/robotics-lab-miniview-health.json && break; sleep 0.25; done; \
 	  grep -q '"ok":true' /tmp/robotics-lab-miniview-health.json \
-	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/scenes | grep -q '"format":1' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/scenes | grep -q '"format":2' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/runs | grep -q 'duck/apartment/explore9' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/runs/duck/apartment/explore9 | grep -q '"ticks":116' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/three/ | grep -qi '<html' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/shell/shell.js >/dev/null \
-	    && test -f $$data/index.sqlite \
-	    && echo "PASS miniview image answers: $$(cat /tmp/robotics-lab-miniview-health.json)" \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/web/fonts/fonts.css | grep -q 'woff2' \
+	    && docker exec $$cid test -f /index/index.sqlite \
+	    && mounts=$$(docker inspect -f '{{range .Mounts}}{{.Destination}}={{.RW}} {{end}}' $$cid) \
+	    && echo "$$mounts" | grep -q '/data/runs=false' && echo "$$mounts" | grep -q '/data/scenes=false' && echo "$$mounts" | grep -q '/index=true' \
+	    && ! docker exec $$cid sh -c 'touch /data/runs/x' 2>/dev/null \
+	    && ! docker exec $$cid sh -c 'touch /data/scenes/x' 2>/dev/null \
+	    && ! docker exec $$cid sh -c 'rm -rf /data/runs/duck' 2>/dev/null \
+	    && test -d $$data/runs/duck \
+	    && docker exec $$cid sh -c 'touch /index/probe && rm /index/probe' \
+	    && echo "PASS miniview image answers; the data mount is read only, the index volume is writable: $$(cat /tmp/robotics-lab-miniview-health.json)" \
 	    || { echo "FAIL miniview image"; cat /tmp/robotics-lab-miniview-health.json 2>/dev/null; docker logs $$cid; exit 1; }
 	@echo "test-viewer-image PASS"
 
@@ -177,7 +191,7 @@ MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) M
 
 .PHONY: viewer-up viewer-down
 viewer-up: ## miniview's service in Docker on 127.0.0.1:$(MINIVIEW_PORT), data from $(MINIVIEW_DATA) (RFC-0009)
-	@mkdir -p $(MINIVIEW_DATA)
+	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes
 	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml up -d --build --wait \
 	  && echo "miniview at http://127.0.0.1:$(MINIVIEW_PORT)/" \
 	  || { echo "viewer-up FAIL"; $(MINIVIEW_ENV) docker compose -f viewer/compose.yml logs --tail 40; exit 1; }

@@ -1,5 +1,8 @@
-# miniview's service: `make viewer-up` / `make viewer-down` (RFC-0009 "Running in Docker").
-# Published on loopback only; the data folder stays on the host and is written as the host user.
+# miniview's service: `make viewer-up` / `make viewer-down` (RFC-0009 "Running in Docker", ADR-0012).
+# Published on loopback only. The lab's runs and scenes are mounted READ ONLY: the viewer cannot change a
+# record. The index is the service's own, on the named volume miniview-index (`docker volume inspect miniview_miniview-index`
+# says where). Imports and writers run on the host, never in this container.
+# MINIVIEW_DATA is the host's data folder; the workstation's path is the default here and in the Makefile only.
 name: miniview
 services:
   miniview:
@@ -8,6 +11,19 @@ services:
     user: "${MINIVIEW_UID:-1000}:${MINIVIEW_GID:-1000}"
     ports:
       - "127.0.0.1:${MINIVIEW_PORT:-8070}:8070"
+    environment:
+      MINIVIEW_DATA: /data
+      MINIVIEW_INDEX: /index/index.sqlite
     volumes:
-      - "${MINIVIEW_DATA:-/work/robotics-lab/data}:/data"
+      - type: bind
+        source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/runs"
+        target: /data/runs
+        read_only: true
+      - type: bind
+        source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/scenes"
+        target: /data/scenes
+        read_only: true
+      - miniview-index:/index
     restart: unless-stopped
+volumes:
+  miniview-index:

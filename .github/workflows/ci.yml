@@ -61,7 +61,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: make test-integration (the NXT web UI image)
         run: make test-integration
-      - name: make test-viewer-image (miniview's image)
-        run: make test-viewer-image
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install uv (the image test imports a fixture run on the host, as production does)
+        run: pip install "uv==${UV_VERSION}"
+      - name: make test-viewer-image (miniview's image: data read only, index on its own volume)
+        run: make viewer-sync && make test-viewer-image
       - name: make nxt-programs
         run: make nxt-programs
