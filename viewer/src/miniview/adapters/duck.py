@@ -154,6 +154,6 @@ def prepare(run_dir: Path, scene_id: str) -> tuple:
     from miniview.mcapio import new_run
 
     log = DuckLog(run_dir, scene_id)
-    run = new_run(f"duck/{scene_id}/{Path(run_dir).name}", log.robot, scene_id, log.kind, 0, "file_mtime")
+    run = new_run(f"duck/{scene_id}/{Path(run_dir).name}", log.robot, scene_id, log.kind, 1, "file_mtime")
     d = build([(0.0, "run", run)] + records(run_dir, scene_id))
     return d.run, d.frames

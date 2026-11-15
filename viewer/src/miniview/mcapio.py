@@ -211,6 +211,20 @@ class Follower:
         self.taken = 0            # messages read from the live file
         self.done = False         # run.mcap was read: the run is complete
         self.partials = 0
+        self.ino = None           # the live file's identity: a different one, or a shorter one, was rewritten
+        self.generation = 0       # counts the starts over (a rewritten file is read again from its first byte)
+        self.rewrites = 0
+        self.errors = []          # messages that were not what they said, not yet taken
+
+    def take_errors(self) -> list:
+        out, self.errors = self.errors, []
+        return out
+
+    def _start_over(self) -> None:
+        self.asm = wire.Assembler(self.keep_raw)
+        self.offset, self.topics, self.taken, self.partials = 0, {}, 0, 0
+        self.generation += 1
+        self.rewrites += 1
 
     def poll(self) -> list:
         if self.done:
@@ -220,6 +234,10 @@ class Follower:
             return self._read_final(final)
         if not live.exists():
             return []
+        st = live.stat()
+        if self.ino is not None and (st.st_ino != self.ino or st.st_size < self.offset):
+            self._start_over()
+        self.ino = st.st_ino
         with open(live, "rb") as fh:
             fh.seek(self.offset)
             buf = fh.read()
@@ -262,7 +280,11 @@ class Follower:
                 seen += 1
                 if seen <= skip:
                     continue
-                out += self.asm.feed(topics[rec.channel_id], rec.log_time, rec.data)
+                try:
+                    out += self.asm.feed(topics[rec.channel_id], rec.log_time, rec.data)
+                except Exception as e:      # one message that is not what its channel says costs that record only
+                    self.asm.pending = None
+                    self.errors.append(f"{topics.get(rec.channel_id)} at {rec.log_time}: {type(e).__name__}: {e}")
         if not fresh:
             self.taken += seen
         self.partials = self.asm.partials

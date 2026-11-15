@@ -8,6 +8,9 @@ applies them one by one, so a finished run and a live one are built the same way
 
 import threading
 
+from miniview import validate
+from miniview.validate import BrokenRun
+
 END_KINDS = ("trapped", "aborted", "no_frontier_left")
 
 
@@ -16,15 +19,41 @@ class RunData:
     record. `seq` counts applied records; `changed` is notified after every batch."""
 
     def __init__(self):
+        self.changed = threading.Condition()
+        self._init()
+
+    def reset(self) -> None:
+        """Start over (the file was replaced); the condition, and so the readers waiting on it, stay."""
+        self._init()
+
+    def _init(self):
         self.run = {"id": None, "key": None, "uuid": None, "scene": None, "kind": "run", "robot": {}, "status": "live",
                     "started_at_ns": None, "started_at_source": None, "t0": 0.0, "t1": 0.0, "ticks": 0,
-                    "verdict": "live", "epochs": [], "events": [], "segments": [], "streams": []}
+                    "verdict": "live", "epochs": [], "events": [], "segments": [], "streams": [],
+                    "rejects": 0, "first_error": None, "error": None, "rewritten": 0}
         self.frames = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
         self.log = []                 # (seq, t, kind, payload): what live followers send
         self.seq = 0
+        self.last_t = 0.0
         self._spanned = False
-        self.changed = threading.Condition()
+
+    def feed(self, t, kind: str, p) -> bool:
+        """Check a record, then apply it. False for a bad one: skipped, counted, the first one's reason kept.
+        BrokenRun when the run's own record is missing, first or invalid: the run cannot be read."""
+        if self.run["key"] is None and kind != "run":
+            raise BrokenRun(f"the first record is {kind!r}, not the run record")
+        err = validate.check(t, kind, p, self.last_t)
+        if err:
+            if kind == "run":
+                raise BrokenRun(f"run record: {err}")
+            self.run["rejects"] += 1
+            if self.run["first_error"] is None:
+                self.run["first_error"] = f"{kind} at t={t}: {err}"
+            return False
+        self.last_t = max(self.last_t, t)
+        self.apply(t, kind, p)
+        return True
 
     def apply(self, t: float, kind: str, p: dict) -> None:
         r, f = self.run, self.frames
@@ -74,7 +103,7 @@ class RunData:
 def build(records) -> RunData:
     d = RunData()
     for t, kind, p in records:
-        d.apply(t, kind, p)
+        d.feed(t, kind, p)
     d.finish_batch()
     return d
 
