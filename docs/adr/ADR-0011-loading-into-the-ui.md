@@ -18,7 +18,8 @@ load.
 
 - **A run store in the page**, shared by both renderers: the run's summary first; then the ticks of
   the window around the playhead (±30 s) so the page draws at once; then the rest of the run in
-  windows in the background. Plans and maps are fetched by index as ticks refer to them.
+  windows in the background. Plans and maps arrive inside the window answer, by index, those the
+  window's ticks refer to (there is no separate fetch for them).
 - **Live by record:** the page applies the records of the live stream in order. It checks `seq`; a
   gap reloads from the last seq it has. Renderers take appends (`append(records)`) instead of
   rebuilding; an epoch change redraws what depends on it.

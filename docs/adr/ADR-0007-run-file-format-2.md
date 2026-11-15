@@ -38,8 +38,51 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
   (`raw`); an import copies the source log to `source/` beside the run and records its SHA-256.
 - **Closed when done.** The writer writes `end` (the verdict) and compacts the file into `run.mcap`
   (zstd chunks, message indexes, summary), then removes `run.live.mcap` and the lock. A writer that
-  died leaves the live file; `miniview repair <run>` compacts it with the verdict `stopped`.
+  died leaves the live file; `miniview repair <run>` compacts it with the verdict `stopped`, and
+  `miniview compact <run>` closes a finished run (it has its `end`) whose writer did not. Compaction
+  streams the file record by record (memory does not grow with the file) and runs wherever the file
+  is, so a small robot computer never compacts.
 - Format 1 files are not read any more; the three existing runs are imported again.
+
+## The tick protocol
+
+A tick is written by these rules, which the recorder enforces (`begin_tick`, `tick_truth`,
+`tick_depth`, `tick_command`, `tick_tilt`, `end_tick`, or `add(t, "tick", ...)` in one call) and the
+reader checks:
+
+1. The first message of a tick is `/belief/pose`.
+2. Then at most one each of `/truth/pose`, `/depth`, `/miniview/command`, `/miniview/tilt`, in that
+   order.
+3. The last message of a tick is `/miniview/tick_extra` (always written, even with nothing in `raw`).
+4. Nothing else is written between the first and the last message of a tick.
+5. A world is `/map` then `/miniview/memory`, with nothing between them.
+6. The writer flushes once per tick (and once per world or other record): a crash loses at most the
+   tick being written.
+
+A reader emits a tick only when its last message has arrived. A tick or world that another message
+interrupts is dropped and counted as a reject with its reason. Frames are checked: `/belief/pose`,
+`/depth` and `/map` are in `map`, `/truth/pose` in `world`, and `/tf` is `world` ← `map` (parent
+`world`, child `map`); anything else is rejected.
+
+## Clocks and kinds
+
+- `t` (the run's time, `log_time - started_at_ns`) only grows. `t_src` is the source's own clock for
+  that record, in seconds: the navigator's monotonic clock or the simulator's, whichever stamped it.
+  It can restart (a new navigator for the next goal) or differ between sources; it is kept for
+  provenance and as the messages' `publish_time`, never used to order records.
+- Depth kinds are one ASCII character each: `f` floor, `o` obstacle, `v` overhead, `b` below the
+  floor (a hole). A kind that is not one of these is written and read as it is, and drawn as `o`.
+
+## Remote robots
+
+A robot's computer does not write the run file over a network file system: the lock is a local PID,
+the inode semantics and `flush` are local, and a half-synced file would look like a crash. The decided
+design is **a receiver process on the workstation** that owns the file: the robot streams its records
+to it (the tick protocol is the unit of the stream) and the receiver writes the file with the recorder,
+flushes per tick and compacts at the end, on the workstation. The lock then names a process on the
+workstation. Until a receiver exists, a robot that writes elsewhere leaves a lock from another host,
+which the service treats as unknown: the file's growth decides whether the run is live (ADR-0009), and
+`repair` and `compact` refuse a file that grew in the last two minutes.
 
 ## Consequences
 
@@ -69,7 +112,15 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
 ## Compatibility
 
 A run opens fully in **Rerun, in Foxglove/Lichtblick and in miniview**, and stays so: we may drop one
-of them later, not now. `make test-run-compat` (in `make ci`, and a CI job) imports the explore9
+of them later, not now.
+
+The Lichtblick image is **pinned by digest** in `scripts/viewers.sh` and in
+`viewer/tests/test_run_compat.py` (`ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f…`, checked
+2026-11-16), so a new Lichtblick cannot turn the test red unannounced. To bump it: `docker pull
+ghcr.io/lichtblick-suite/lichtblick:latest`, read the digest with `docker image inspect --format
+'{{index .RepoDigests 0}}'`, put it in both files, run `make test-run-compat`, and note the date here.
+The Rerun side is whatever `duck/.venv` pins (`make duck-sync`). `make test-run-compat` (in `make
+ci`, and a CI job) imports the explore9
 fixture and checks each: Rerun's `mcap check` and `mcap convert -d protobuf` decode the poses, the
 transform, the map and the depth with the run's counts; Lichtblick's image loads it with no alert
 but the transforms note, the run's real start date and its topics, which draw when switched on; the

@@ -31,6 +31,10 @@ the live stream's `since` works but `Last-Event-ID` is ignored.
   libraries and fonts are cached for a day.
 - Request sockets have a timeout (30 s), except live streams.
 
+**Not goals:** a thread per connection is unbounded (the service is for one operator on loopback; a
+stalled live client is dropped after 60 s, an idle request after 30 s); the pages carry a same-origin
+Content-Security-Policy and answers say `nosniff`, but there is no authentication (loopback only).
+
 ## Consequences
 
 - **Positive:** a window costs its own size; the follower is never blocked by a reader for long;

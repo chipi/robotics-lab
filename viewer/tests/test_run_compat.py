@@ -22,7 +22,8 @@ from miniview.shots import launch
 check = Checks("RUN COMPAT")
 REPO = Path(__file__).resolve().parents[2]
 RERUN = REPO / "duck" / ".venv" / "bin" / "rerun"
-LICHTBLICK = os.environ.get("LICHTBLICK_IMAGE", "ghcr.io/lichtblick-suite/lichtblick:latest")
+# Pinned by digest (the version this was written against: it checked 2026-11-16); how to bump it is in ADR-0007 "Compatibility".
+LICHTBLICK = os.environ.get("LICHTBLICK_IMAGE", "ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f57737c8c5866abf75670b8dcf2ed6c2cb5ce3d64f3c63f210a5177e9")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 FOXGLOVE_TOPICS = ["/belief/pose", "/truth/pose", "/tf", "/map", "/depth"]
 
@@ -54,9 +55,6 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
     got = entities(out)
     check("Rerun: `mcap convert -d protobuf --disable-raw-fallback` decodes an entity for each Foxglove topic",
           rc == 0 and set(FOXGLOVE_TOPICS) <= got, sorted(got))
-    rc, out = run([RERUN, "mcap", "convert", "-d", "foxglove", "--disable-raw-fallback", mcap, "-o", tmp / "f.rrd"])
-    check("(recorded, not required) `-d foxglove` alone decodes no entity in this Rerun, for these channels or any protobuf ones",
-          rc == 0 and not (set(FOXGLOVE_TOPICS) & entities(out)), sorted(entities(out)))
     rc, out = run([RERUN, "rrd", "print", rrd])
     rows = {m.group(2): int(m.group(1)) for m in re.finditer(r"with (\d+) rows .*? - (/\S+) - data columns: \[foxglove", out)}
     check("Rerun: the decoded rows are the run's (116 ticks of poses and depth, 16 maps, 1 transform)",
@@ -108,7 +106,8 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             pg.wait_for_function("document.querySelectorAll('[data-testid=VisibilityToggle]').length === 4", timeout=30000)
             panel = pg.locator("[data-testid=settings-tree-editor]").inner_text()
             check("Lichtblick: the 3D panel's topic list has the four topics", all(t in panel for t in ("/belief/pose", "/truth/pose", "/map", "/depth")), panel[:300])
-            pg.mouse.click(1300, 891)                                   # into the run, where the data is (it starts 31 s in)
+            bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()      # the timeline; 87% of the way in is where the data is
+            pg.mouse.click(bar["x"] + 0.87 * bar["width"], bar["y"] + bar["height"] / 2)
 
             def stage():
                 prev = pg.locator("canvas").first.screenshot()

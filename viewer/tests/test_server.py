@@ -14,8 +14,10 @@ from pathlib import Path
 
 from helpers import Checks, catalog, get, import_fixture, make_run, scene, serve, tick, wait_until
 from miniview import query, server
+from miniview.catalog import FOLLOW_EVERY_S
 
 check = Checks("SERVER")
+MARGIN = 3 * FOLLOW_EVERY_S          # what a record may take to reach a stream: three rounds of the follower
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
 
 
@@ -198,7 +200,7 @@ with tempfile.TemporaryDirectory() as tmp:
     rec.add(*tick(1.1, 0.03))
     wait_until(lambda: all(any(k == "tick" for k, *_ in s.events) for s in (a, b)), 5, what="both viewers to get the tick")
     latency = max(next(e[3] for e in s.events if e[0] == "tick") for s in (a, b)) - t_write
-    check("two viewers each get the new tick within a second", latency < 1.0, f"{latency:.2f} s")
+    check(f"two viewers each get the new tick within three follower rounds ({MARGIN:.2f} s)", latency < MARGIN, f"{latency:.2f} s")
     rec.add(1.2, "event", {"kind": "cliff_stop", "text": "cliff_stop"})
     rec.add(*tick(1.3, 0.09))
     wait_until(lambda: len(a.records()) >= 3 and len(b.records()) >= 3, 5, what="three records on both streams")
@@ -220,7 +222,7 @@ with tempfile.TemporaryDirectory() as tmp:
         stamps[i] = time.monotonic()
         wait_until(lambda: len([r for r in burst.records() if r[0] == "tick"]) > i, 3, every=0.001, what=f"burst record {i}")
     lat = [e[3] - stamps[i] for i, e in enumerate([e for e in burst.events if e[0] == "tick"])]
-    check("40 records written one after another: each reaches the stream well inside the 1 s wait", max(lat) < 0.6, f"max {max(lat):.3f} s")
+    check(f"40 records written one after another: each reaches the stream within three follower rounds ({MARGIN:.2f} s)", max(lat) < MARGIN, f"max {max(lat):.3f} s")
     check("a stream pins its run in the cache while it is open", cat.get("duck/room/live1").pins >= 4 and not a.closed.is_set())
     # a heartbeat
     server.HEARTBEAT_S = 0.2

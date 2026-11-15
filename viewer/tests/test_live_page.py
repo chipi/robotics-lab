@@ -122,7 +122,6 @@ with tempfile.TemporaryDirectory() as tmp:
                   and q.evaluate("window.miniview.state().status") == "ended", info)
         for lib, q in pages.items():
             q.wait_for_function("window.miniview.internals.M.pres.t1 === window.miniview.internals.M.run.t1", timeout=20000)
-            check(f"{lib}: after the end the timeline's data rows (presence) reach the run's last time", True)
         check("a run that is not live is not followed: the pages asked for no frames after the first windows",
               {lib: len(r) for lib, r in frames_requests.items()} == initial)
         b.close()

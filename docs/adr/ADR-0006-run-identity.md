@@ -21,7 +21,9 @@ scenario, so collisions are expected, not rare.
 - **The first record says who the run is** (`run`, format 2): the key, a `uuid` (new for every
   run, kept on re-import of the same source), the robot (name, radius, height), the scene, the kind,
   `started_at_ns` (UTC wall clock; for an import from a log without one, the source file's
-  modification time, with `started_at_source: "file_mtime"`), the `writer` (program and version),
+  modification time, with `started_at_source: "file_mtime"`; the values are `writer` (the writer's own
+  clock), `file_mtime`, `importer_clock` (a live import: the importer's clock at its start) and
+  `given` (stated by the caller)), the `writer` (program and version),
   and for an import the source file's name and SHA-256.
 - A run whose `run` record disagrees with its folder is **broken** (ADR-0008), never listed under
   a second name.

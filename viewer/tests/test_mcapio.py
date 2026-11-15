@@ -264,6 +264,10 @@ with tempfile.TemporaryDirectory() as tmp:
           raises(SystemExit, cli.cmd_repair, argparse.Namespace(data=str(data), run=key2)) is not False
           and (d2 / "run.live.mcap").exists())
     (d2 / "writer.lock").write_text(json.dumps({"pid": gone.pid, "host": lock["host"], "started_at_ns": 1}))
+    check("repair refuses a file that grew in the last two minutes (its writer may be on another host)",
+          raises(SystemExit, cli.cmd_repair, argparse.Namespace(data=str(data), run=key2)) is not False and (d2 / "run.live.mcap").exists())
+    t_old = (d2 / "run.live.mcap").stat().st_mtime - 1000
+    os.utime(d2 / "run.live.mcap", (t_old, t_old))
     cli.cmd_repair(argparse.Namespace(data=str(data), run=key2))
     recs = Follower(d2).poll()
     check("repair compacts a dead writer's file with the verdict stopped; live file and lock gone",

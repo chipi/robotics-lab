@@ -434,4 +434,72 @@ if want('G1', 'G4', 'G5'):
             got += asm.feed(topic, ns, dat)
         check("G5: an unknown depth kind (not f, o, v, b) is kept as written, one character: the renderers draw it as `o`", got and got[0][2]["depth"][0][3] == "z", got)
 
+# ---- B3: one index: the commands read it while a service holds it ---------------------------------------------------------------
+if want("B3"):
+    import argparse
+    import contextlib
+    import io
+
+    from miniview import cli
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data = Path(tmp) / "data"
+        service = catalog(data)                       # the service: it holds the index
+        service.put_scene(scene("room"))
+        make_run(data, "duck/room/b3a", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": "ended"})])
+        service.scan()
+        service.index.hold()
+        make_run(data, "duck/room/b3b", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": "ended"})])        # not scanned by the service yet
+        os.environ["MINIVIEW_INDEX"] = str(service.index.path)
+        before = service.index.db.execute("select count(*), max(rowid) from events").fetchone(), service.index.row("duck/room/b3a")
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            cli.cmd_runs(argparse.Namespace(data=str(data), scene="room", json=False))
+            cli.cmd_scenes(argparse.Namespace(data=str(data), json=False))
+            cli.cmd_events(argparse.Namespace(data=str(data), run=None, all=True, kinds=None, json=False))
+        after = service.index.db.execute("select count(*), max(rowid) from events").fetchone(), service.index.row("duck/room/b3a")
+        check("B3: while a service holds the index, `runs`, `scenes` and `events --all` answer from it, say so, and do not scan or write",
+              "duck/room/b3a" in out.getvalue() and "duck/room/b3b" not in out.getvalue() and "a service holds the index" in err.getvalue()
+              and before == after and service.index.row("duck/room/b3b") is None, (out.getvalue()[:120], err.getvalue()[:80]))
+        out2 = io.StringIO()
+        with contextlib.redirect_stdout(out2), contextlib.redirect_stderr(io.StringIO()):
+            cli.cmd_state(argparse.Namespace(data=str(data), run="b3b", at=1.0, json=True))
+        check("B3: `state` still loads a run the service has not indexed yet, without writing it to the index",
+              json.loads(out2.getvalue())["run"] == "b3b" and service.index.row("duck/room/b3b") is None)
+
+# ---- G3: compaction anywhere, by the commands ------------------------------------------------------------------------------------
+if want("G3"):
+    import argparse
+
+    from miniview import cli
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data = Path(tmp) / "data"
+        os.environ["MINIVIEW_INDEX"] = str(Path(tmp) / "i.sqlite")
+        rec = make_run(data, "duck/room/g3", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": "ended"})], close=False)
+        d = data / "runs/duck/room/g3"
+        rec._fh.close()
+        (d / "writer.lock").write_text(json.dumps({"pid": dead_pid(), "host": "the-robot", "started_at_ns": 1}))
+        refused_fresh = False
+        try:
+            cli.cmd_compact(argparse.Namespace(data=str(data), run="g3"))
+        except SystemExit:
+            refused_fresh = True
+        check("G3: `compact` refuses a file that grew lately (a writer on another host may be alive)", refused_fresh and (d / "run.live.mcap").exists())
+        age(d / "run.live.mcap", 1000)
+        cli.cmd_compact(argparse.Namespace(data=str(data), run="g3"))
+        check("G3: ... and compacts a finished run on the workstation, whoever wrote it: run.mcap, no live file, no lock",
+              sorted(p_.name for p_ in d.iterdir()) == ["run.mcap"] and [k for _, k, _ in Follower(d).poll()][-1] == "end")
+        rec2 = make_run(data, "duck/room/g3b", HEAD + [tick(1.0, 0.0)], close=False)
+        d2 = data / "runs/duck/room/g3b"
+        rec2._fh.close()
+        (d2 / "writer.lock").write_text(json.dumps({"pid": dead_pid(), "host": "the-robot", "started_at_ns": 1}))
+        age(d2 / "run.live.mcap", 1000)
+        try:
+            cli.cmd_compact(argparse.Namespace(data=str(data), run="g3b"))
+            refused = False
+        except SystemExit as e:
+            refused = "no end record" in str(e)
+        check("G3: a file with no end record is not compacted as ended (`repair` closes it as stopped)", refused and (d2 / "run.live.mcap").exists())
+
 check.done()

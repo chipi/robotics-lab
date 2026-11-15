@@ -135,15 +135,14 @@ perf-viewer: viewer-sync ## NOT in CI: replay duck/runs/phase1-run18 at 20 Hz th
 	@cd $(VIEWER_DIR) && uv run --frozen python perf/perf_viewer.py $(PERF_ARGS)
 
 .PHONY: test-viewer-image
-test-viewer-image: ## miniview's image: build it, run it with the data read only and the index on its own volume, check what it serves and that it cannot write the data (ADR-0012)
+test-viewer-image: ## miniview's image: build it, run it with the data read only and the host's state folder (the one index) mounted writable, check what it serves and that it cannot write the data (ADR-0012)
 	@docker build -q -t $(VIEWER_IMAGE) $(VIEWER_DIR) >/dev/null
-	@data=$$(mktemp -d); idx=$$(mktemp -d); vol=miniview-test-index-$$$$; mkdir -p $$data/runs $$data/scenes; \
+	@data=$$(mktemp -d); idx=$$(mktemp -d); state=$$(mktemp -d); mkdir -p $$data/runs $$data/scenes; \
 	  (cd $(VIEWER_DIR) && MINIVIEW_INDEX=$$idx/host.sqlite uv run --frozen miniview --data $$data import tests/fixtures/explore9 --scene apartment >/dev/null) \
 	    || { echo "FAIL could not import the fixture run on the host"; rm -rf $$data $$idx; exit 1; }; \
-	  docker volume create $$vol >/dev/null; \
-	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data/runs:/data/runs:ro -v $$data/scenes:/data/scenes:ro -v $$vol:/index \
+	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data/runs:/data/runs:ro -v $$data/scenes:/data/scenes:ro -v $$state:/index \
 	    --user $$(id -u):$$(id -g) $(VIEWER_IMAGE)); \
-	  trap 'docker stop $$cid >/dev/null; for i in 1 2 3 4 5 6 7 8 9 10; do docker volume rm $$vol >/dev/null 2>&1 && break; sleep 0.5; done; rm -rf $$data $$idx' EXIT; \
+	  trap 'docker stop $$cid >/dev/null; rm -rf $$data $$idx $$state' EXIT; \
 	  port=$$(docker port $$cid 8070/tcp | head -1 | sed 's/.*://'); \
 	  for i in $$(seq 1 60); do curl -fs -m 2 http://127.0.0.1:$$port/api/v1/health >/tmp/robotics-lab-miniview-health.json && break; sleep 0.25; done; \
 	  grep -q '"ok":true' /tmp/robotics-lab-miniview-health.json \
@@ -161,7 +160,8 @@ test-viewer-image: ## miniview's image: build it, run it with the data read only
 	    && ! docker exec $$cid sh -c 'rm -rf /data/runs/duck' 2>/dev/null \
 	    && test -d $$data/runs/duck \
 	    && docker exec $$cid sh -c 'touch /index/probe && rm /index/probe' \
-	    && echo "PASS miniview image answers; the data mount is read only, the index volume is writable: $$(cat /tmp/robotics-lab-miniview-health.json)" \
+	    && test -f $$state/index.sqlite \
+	    && echo "PASS miniview image answers; the data mount is read only, the state folder (the index) is writable and shows on the host: $$(cat /tmp/robotics-lab-miniview-health.json)" \
 	    || { echo "FAIL miniview image"; cat /tmp/robotics-lab-miniview-health.json 2>/dev/null; docker logs $$cid; exit 1; }
 	@echo "test-viewer-image PASS"
 
@@ -198,11 +198,12 @@ viewers-down: viewer-down ## Stop the viewers started by make viewers
 
 MINIVIEW_PORT ?= 8070
 MINIVIEW_DATA ?= /work/robotics-lab/data
-MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g)
+MINIVIEW_STATE ?= /work/robotics-lab/state/miniview
+MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(MINIVIEW_STATE) MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g)
 
 .PHONY: viewer-up viewer-down
 viewer-up: ## miniview's service in Docker on 127.0.0.1:$(MINIVIEW_PORT), data from $(MINIVIEW_DATA) (RFC-0009)
-	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes
+	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes $(MINIVIEW_STATE)
 	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml up -d --build --wait \
 	  && echo "miniview at http://127.0.0.1:$(MINIVIEW_PORT)/" \
 	  || { echo "viewer-up FAIL"; $(MINIVIEW_ENV) docker compose -f viewer/compose.yml logs --tail 40; exit 1; }

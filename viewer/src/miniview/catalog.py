@@ -27,6 +27,7 @@ from miniview.validate import BrokenRun
 log = logging.getLogger("miniview")
 
 STOPPED_AFTER_S = 120.0     # a live file with no writer that has not grown for this long lost its writer
+FOLLOW_EVERY_S = 0.25      # how often the follower looks at the live runs: the latency of a live page is about this
 FINAL = ("ended", "stopped", "broken")
 
 
@@ -189,6 +190,7 @@ class Catalog:
         self.paths = {}               # run key -> the run's folder
         self.evictions = 0
         self._keylocks = {}
+        self.read_only = False     # a service holds the index: this catalog reads it and writes nothing to it (ADR-0009)
         self._missed = {}          # keys looked for and not found, and when: a bad key does not rescan the folder every time
 
     # ---- scenes ----------------------------------------------------------------------------------
@@ -331,6 +333,8 @@ class Catalog:
         with self.lock:
             self.scan_paths()
             paths = dict(self.paths)
+        if self.read_only:
+            return
         rows = self.index.rows()
         for key, d in sorted(paths.items()):
             try:
@@ -390,7 +394,7 @@ class Catalog:
                 log.exception("following run %s failed", ld.key)
         return grew
 
-    def follow_forever(self, every_s: float = 0.25, rescan_s: float = 2.0) -> None:
+    def follow_forever(self, every_s: float = FOLLOW_EVERY_S, rescan_s: float = 2.0) -> None:
         last_scan = 0.0
         while True:
             try:
@@ -405,6 +409,8 @@ class Catalog:
     # ---- the index ----------------------------------------------------------------------------------
     def _index(self, ld: Loaded, status: str | None = None) -> None:
         """Write the run's row, streams and new events and segments in one transaction."""
+        if self.read_only:
+            return
         status = status or self.status(ld)
         with ld.data.changed:                           # a consistent copy; the write happens outside
             r = ld.data.run

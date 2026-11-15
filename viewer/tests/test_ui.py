@@ -284,7 +284,10 @@ def run_page(b, base, rid, other):
     page.click("#playBtn")
     t_b = state()["t"]
     check("play advances t", t_b > t_a + 0.5, (t_a, t_b))
-    check("pause stops it", abs(state()["t"] - t_b) < 0.05)
+    page.wait_for_function("window.miniview.config().play.on === false", timeout=5000)
+    t_p = state()["t"]
+    page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))))")
+    check("pause stops it (the time is the same three frames later)", state()["t"] == t_p and t_p >= t_b, (t_b, t_p, state()["t"]))
     page.keyboard.press("Space")
     page.wait_for_function(f"window.miniview.state().t > {t_b + 0.05}", timeout=15000)
     page.keyboard.press("Space")
@@ -315,10 +318,7 @@ def run_page(b, base, rid, other):
     page.click(".pop [data-speed='1']")
     call(f"window.miniview.setTime({t1 - 0.3})")
     page.click("#playBtn")
-    try:
-        page.wait_for_function("window.miniview.config().play.on === false", timeout=8000)
-    except Exception:  # noqa: BLE001
-        pass
+    page.wait_for_function("window.miniview.config().play.on === false", timeout=8000)
     check("without loop, play stops at the end (waited for the stop, not a fixed sleep)", ev("window.miniview.config().play.on") is False and state()["t"] == t1, (state()["t"], t1))
     sp = ev("(() => { const r = document.getElementById('split').getBoundingClientRect(); return [r.left + r.width / 2, r.top + 2]; })()")
     h0 = ev("document.getElementById('tree').getBoundingClientRect().height")

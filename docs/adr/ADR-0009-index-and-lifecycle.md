@@ -25,7 +25,9 @@ first epoch and events are lost from them.
   --kind cliff_stop`). The per-tick table is dropped: the moment comes from the loaded run.
 - **Written in one transaction per change**, with its counters reset together (the lost-epoch bug
   cannot recur).
-- **States:** `live` (a lock whose PID is alive, or a file that grew in the last 120 s), `ended`
+- **States:** `live` (a lock whose PID is alive on this host, or a file that grew in the last 120 s;
+  a lock from another host is unknown, not alive, so the growth decides, and a stopped run whose file
+  grows again is followed again), `ended`
   (an `end` record), `stopped` (a live file with no live writer and no growth for 120 s), `broken`
   (ADR-0008). `ended`, `stopped` and `broken` are final until the file changes.
 - **Start-up reads the index**; only runs whose file changed (size, mtime, inode) are opened, to

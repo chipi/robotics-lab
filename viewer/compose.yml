@@ -1,8 +1,9 @@
 # miniview's service: `make viewer-up` / `make viewer-down` (RFC-0009 "Running in Docker", ADR-0012).
 # Published on loopback only. The lab's runs and scenes are mounted READ ONLY: the viewer cannot change a
-# record. The index is the service's own, on the named volume miniview-index (`docker volume inspect miniview_miniview-index`
-# says where). Imports and writers run on the host, never in this container.
-# MINIVIEW_DATA is the host's data folder; the workstation's path is the default here and in the Makefile only.
+# record. The index is ONE: the host's state folder (MINIVIEW_STATE, the folder of the commands' MINIVIEW_INDEX) is
+# mounted writable at /index, so the service and the commands share it; while the service holds it, the commands
+# only read it. Imports and writers run on the host, never in this container.
+# MINIVIEW_DATA and MINIVIEW_STATE are the host's folders; the workstation's paths are the defaults here and in the Makefile only.
 name: miniview
 services:
   miniview:
@@ -23,7 +24,7 @@ services:
         source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/scenes"
         target: /data/scenes
         read_only: true
-      - miniview-index:/index
+      - type: bind
+        source: "${MINIVIEW_STATE:-/work/robotics-lab/state/miniview}"
+        target: /index
     restart: unless-stopped
-volumes:
-  miniview-index:

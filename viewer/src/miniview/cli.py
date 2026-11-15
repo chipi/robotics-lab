@@ -1,11 +1,13 @@
 """miniview — runs into the lab's data folder, the service for the pages, answers for the agent
-(RFC-0009, ADR-0004, ADR-0005). The data folder is MINIVIEW_DATA or --data (default
-/work/robotics-lab/data).
+(RFC-0009, ADR-0004, ADR-0005). The data folder is MINIVIEW_DATA or --data: there is no default in the code
+(the compose file and the Makefile default to /work/robotics-lab/data). The index is MINIVIEW_INDEX (default
+/work/robotics-lab/state/miniview/index.sqlite); while a service holds it, the commands read it and write nothing.
 
     uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
     uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
     uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
     uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
+    uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run miniview index                  # rebuild index.sqlite from the run files
     uv run miniview serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
 
@@ -22,6 +24,7 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
 import argparse
 import json
 import logging
+import sys
 import tempfile
 from pathlib import Path
 
@@ -31,8 +34,14 @@ from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
 
 
-def _cat(args) -> Catalog:
-    return Catalog(args.data)
+def _cat(args, owner: bool = False) -> Catalog:
+    """The catalog the command works on. While a service holds the index the catalog reads it and writes nothing to it:
+    one index, the service's (ADR-0012). `owner`: the command is the one that holds or rebuilds the index."""
+    cat = Catalog(args.data)
+    if not owner and cat.index.held_elsewhere():
+        cat.read_only = True
+        print("note: a service holds the index; reading it, writing nothing to it", file=sys.stderr)
+    return cat
 
 
 def cmd_scene(args) -> None:
@@ -56,16 +65,42 @@ def cmd_repair(args) -> None:
     if key is None:
         cands = [k for k in cat.paths if k.rsplit("/", 1)[-1] == args.run]
         raise SystemExit(f"no run {args.run!r}" + (f"; which of {', '.join(cands)}?" if cands else ""))
-    d = keys.run_dir(cat.data, key)
-    if not (d / mcapio.LIVE).exists():
-        raise SystemExit(f"{key}: no live file, nothing to repair")
-    if mcapio.writer_alive(d):
-        raise SystemExit(f"{key}: its writer is alive ({d / mcapio.LOCK}); not repairing")
+    d = _live_run_dir(cat, key)
     print(f"{key}: closed as stopped -> {mcapio.compact(d, stopped=True)}")
 
 
+def _live_run_dir(cat: Catalog, key: str) -> Path:
+    """The run's folder, once its live file has no writer: not alive here, and not grown lately (a lock from another host
+    cannot be checked, so a file that grew in the last STOPPED_AFTER_S seconds is taken as written)."""
+    import time
+
+    from miniview.catalog import STOPPED_AFTER_S
+
+    d = keys.run_dir(cat.data, key)
+    if not (d / mcapio.LIVE).exists():
+        raise SystemExit(f"{key}: no live file, nothing to close")
+    if mcapio.writer_alive(d):
+        raise SystemExit(f"{key}: its writer is alive ({d / mcapio.LOCK}); not touching it")
+    if time.time() - (d / mcapio.LIVE).stat().st_mtime < STOPPED_AFTER_S:
+        raise SystemExit(f"{key}: its file grew in the last {STOPPED_AFTER_S:.0f} s; its writer may be alive (on another host?)")
+    return d
+
+
+def cmd_compact(args) -> None:
+    cat = _cat(args, owner=True)
+    cat.scan_paths()
+    key = cat.resolve(args.run)
+    if key is None:
+        raise SystemExit(f"no run {args.run!r}")
+    d = _live_run_dir(cat, key)
+    try:
+        print(f"{key}: compacted -> {mcapio.compact(d, require_end=True)}")
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
+
+
 def cmd_index(args) -> None:
-    cat = _cat(args)
+    cat = _cat(args, owner=True)
     pid = cat.index.held_elsewhere()
     if pid:
         raise SystemExit(f"a service holds the index {cat.index.path} (pid {pid}); not rebuilding it under the service")
@@ -176,7 +211,7 @@ def cmd_serve(args) -> None:
     from miniview.server import make_server
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    cat = _cat(args)
+    cat = _cat(args, owner=True)
     httpd = make_server(cat, args.host, args.port)
     print(f"miniview at http://{args.host}:{args.port}/ (API /api/v1), data {cat.data}, index {cat.index.path}", flush=True)
     httpd.serve_forever()
@@ -200,6 +235,9 @@ def main() -> None:
     p = sub.add_parser("repair", help="close a run whose writer died: compact it, verdict stopped")
     p.add_argument("run", help="the run's key (robot/scene/run), or its name when only one run has it")
     p.set_defaults(fn=cmd_repair)
+    p = sub.add_parser("compact", help="close a finished run whose live file was not compacted (it has its end record)")
+    p.add_argument("run", help="the run's key, or its name when only one run has it")
+    p.set_defaults(fn=cmd_compact)
     p = sub.add_parser("index", help="rebuild index.sqlite from the run files")
     p.set_defaults(fn=cmd_index)
     p = sub.add_parser("scenes", help="the scenes and their runs")

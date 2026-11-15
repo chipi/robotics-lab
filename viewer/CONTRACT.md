@@ -40,7 +40,20 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   `FileDescriptorSet` schema (the `foxglove-schemas-protobuf` package); ours (`miniview.*`) are JSON
   with JSON schemas.
   Foxglove's published JSON schemas stay copied in `src/miniview/schemas/` as the reference tests
-  check against:
+  check against.
+  **The tick protocol** (the recorder enforces it, the reader checks it): (1) a tick's first message
+  is
+  `/belief/pose`; (2) then at most one each of `/truth/pose`, `/depth`, `/miniview/command`,
+  `/miniview/tilt`, in that order; (3) its last message is `/miniview/tick_extra`; (4) nothing else
+  between the first and the last; (5) a world is `/map` then `/miniview/memory`; (6) one flush per
+  tick. A tick another message interrupts is dropped and counted as a reject. Frames: `/belief/pose`,
+  `/depth`, `/map` in `map`; `/truth/pose` in `world`; `/tf` is `world` <- `map` (parent `world`,
+  child `map`). The recorder: `begin_tick`, `tick_truth`, `tick_depth`, `tick_command`, `tick_tilt`,
+  `end_tick`, or `add(t, "tick", ...)`. **Clocks:** `t` only grows; `t_src` is the source's own clock
+  (monotonic or wall, whichever stamped the record), may restart between goals, and is kept for
+  provenance (it is the messages' `publish_time`), never used to order records. **Depth kinds:** one
+  ASCII character, `f` floor, `o` obstacle, `v` overhead, `b` below the floor; any other is written
+  as it is and drawn as `o`. The messages:
 
   | Topic | Schema | Holds |
   | --- | --- | --- |
@@ -105,13 +118,13 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   vendored libraries and fonts are cached for a day; request sockets time out after 30 s except live
   streams.
 - **Live.** `live` sends one event per record, named by its kind (`tick`, `plan`, `world`, `event`,
-  `epoch`, `segment`,
-  `end`), the record (with its `t`) as data and its `seq` as the event id; then `status`
-  (`{"status", "seq", "t1"}`, with `"done": true` last, and `error` for a broken run). It resumes
-  after `since`, or
-  after `Last-Event-ID` when `since` is absent. A heartbeat comment every 15 s. A run whose file was
-  rewritten sends
-  `rewritten` and ends: the client starts over. `HEAD` answers with the headers only.
+  `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq` as the event id; then
+  `status` (`{"status", "seq", "t1", "generation"}`, with `"done": true` last, and `error` for a broken
+  run). It resumes after `Last-Event-ID` (what a reconnecting client has just seen), or after `since`
+  when there is no such header. A heartbeat comment every 15 s; a client that stops reading is dropped
+  after 60 s. A run whose file was rewritten has a new `generation` (in its summary and in every
+  status): the stream sends `rewritten` and ends, and the client starts over. `HEAD` answers with the
+  headers only.
 
 ### `GET /api/v1/scenes/{id}` — what is really there (world frame)
 
@@ -181,7 +194,8 @@ as boxes with equal half sizes.
 - `i0` is the first tick's index in the run, `ticks` the run's tick count at the time of the answer.
   `t` is the run's time,
   increasing (evaluation runs are laid end to end). Without `from` and `to` the window is the whole
-  run.
+  run. The frames of a run with no ticks yet are a
+  200 with empty lists (`state` and `presence` are a 409).
 - Depth kinds: `f` floor, `o` obstacle, `v` overhead, `b` below the floor (a hole).
 - Grid cells are row-major from the lowest y: `?` unknown, `.` free, `#` occupied; cell (i, j) has
   its
@@ -291,8 +305,13 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 
 `miniview scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
 <run> --at t |
-frame | film | import | repair <key> | index | serve`. A run is named by its key or by a name only
-one run has;
+frame | film | import | repair <key> | compact <key> | index | serve`. While a service holds the
+index the
+commands read it and write nothing (one index, ADR-0012); `compact` closes a finished run whose
+writer did
+not, `repair` a run whose writer died, both only for a file that has not grown in the last two
+minutes. A run
+is named by its key or by a name only one run has;
 otherwise the command lists the candidates. `--data` or `MINIVIEW_DATA` names the data folder.
 
 ## Colours (UXS-001)
