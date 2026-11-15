@@ -25,6 +25,11 @@ MARGIN_COST = 10.0
 # let a path through the obstacle itself (a 50 cm escape walked through a wall in a test).
 LETHAL_COST = 1e9
 UNKNOWN_COST = 15.0  # unknown cells are expensive, not forbidden
+# Unknown floor next to something known is likely more of it - the unseen side of a cabinet. Exploration
+# trial 7 planned 5-9 cm past the cabinet's unseen east face and wedged the duck there. Such cells cost
+# more, so a path takes the unseen side of furniture only when no seen way exists.
+SHADOW_M = 0.30
+SHADOW_COST = 60.0
 FREE_COST = 1.0
 
 
@@ -84,7 +89,16 @@ class CostGrid:
         if len(cells) != w * h:
             raise ValueError(f"map.grid has {len(cells)} cells for {w}x{h}")
         cost = [UNKNOWN_COST if c == "?" else FREE_COST for c in cells]
-        _grow(cost, w, h, [(i % w, i // w) for i, c in enumerate(cells) if c == "#"], res)
+        walls = [(i % w, i // w) for i, c in enumerate(cells) if c == "#"]
+        _grow(cost, w, h, walls, res)
+        reach = math.ceil(SHADOW_M / res) + 1
+        ring = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1)
+                if math.hypot(dx, dy) * res - res / 2 < SHADOW_M]
+        for cx, cy in walls:
+            for dx, dy in ring:
+                x, y = cx + dx, cy + dy
+                if 0 <= x < w and 0 <= y < h and cells[y * w + x] == "?":
+                    cost[y * w + x] = max(cost[y * w + x], SHADOW_COST)
         return cls(res, (ox, oy), w, h, cost)
 
     def cell(self, x: float, y: float) -> tuple:
@@ -139,8 +153,8 @@ ESCAPE_COST = 100.0
 def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
     """A* from start to goal (map metres), 8-connected. The path as cell centres in metres, from the
     start's cell to the goal's, or None when the goal cannot be reached. The goal may not be lethal;
-    the start may (the duck is already there), and lethal cells within ESCAPE cells of it may be
-    crossed, at a high cost, to get out."""
+    the start may (the duck is already there), and then lethal cells within ESCAPE_M of it may be
+    crossed, at a high cost, to get out - never re-entered once the path is out."""
     s, g = grid.cell(*start), grid.cell(*goal)
     if not grid.inside(*g) or grid.at(*g) >= LETHAL_COST:
         return None
@@ -167,7 +181,9 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
             if math.isinf(here):
                 continue
             if here >= LETHAL_COST:
-                if math.hypot(n[0] - s[0], n[1] - s[1]) * grid.res > ESCAPE_M:
+                # Only an escape: from a lethal cell (the start's, or one reached from it) to the next,
+                # within ESCAPE_M of the start. A path on free floor never enters a lethal zone.
+                if grid.at(*c) < LETHAL_COST or math.hypot(n[0] - s[0], n[1] - s[1]) * grid.res > ESCAPE_M:
                     continue
                 here = ESCAPE_COST
             nd = d + step * here
@@ -176,6 +192,35 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
                 came[n] = c
                 heapq.heappush(frontier, (nd + math.dist(n, g), nd, n))
     return None
+
+
+def clearance(grid: CostGrid, xy: tuple, max_m: float) -> float:
+    """Distance (m) from xy to the nearest obstacle cell's edge (an infinite cell: mapd's walls and
+    the remembered obstacle points), searching max_m around it; max_m when none is that close."""
+    cx, cy = grid.cell(*xy)
+    r = math.ceil(max_m / grid.res) + 1
+    best = max_m
+    for dx in range(-r, r + 1):
+        for dy in range(-r, r + 1):
+            n = (cx + dx, cy + dy)
+            if grid.inside(*n) and math.isinf(grid.at(*n)):
+                best = min(best, max(0.0, math.hypot(dx, dy) * grid.res - grid.res / 2))
+    return best
+
+
+def path_length(points: list) -> float:
+    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+
+
+def keep_current(grid: CostGrid, current: list, pose: tuple, new: list, switch_m: float = 0.3) -> bool:
+    """Hysteresis for replanning: keep following `current` (the path still ahead) while none of it is
+    lethal on the new grid and the new path is not at least switch_m shorter. Phase 1 run 11, goal 20:
+    obstacle-layer replans flipped between two routes for 12 s at the office doorway."""
+    if not current:
+        return False
+    if any(grid.inside(*grid.cell(*q)) and grid.at(*grid.cell(*q)) >= LETHAL_COST for q in current):
+        return False
+    return path_length([pose[:2]] + list(current)) < path_length(new) + switch_m
 
 
 def thin(path: list, spacing: float = 0.3) -> list:

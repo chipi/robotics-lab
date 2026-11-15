@@ -48,6 +48,14 @@ check("pick returns the nearest acceptable goal", only_far is not None and only_
 far = pick(cl, (0.15, 0.15, 0.0), avoid=[(0.15, 0.35), (0.25, 0.35), (0.35, 0.35), (0.45, 0.35), (0.55, 0.35)])
 check("pick skips frontiers near something to avoid", far is None or far[0] > 0.55 or far[1] < 0.2, far)
 check("pick with everything avoided: None", pick(cl, (0.15, 0.15, 0.0), avoid=[p for c in cl for p in c]) is None)
+sliver = [(0.8, y / 10) for y in range(-1, 3)]            # 0.3 m of frontier, 0.8 m away
+opening = [(1.5, y / 10) for y in range(-10, 11)]          # 2 m of frontier, 1.5 m away
+chosen = pick([sliver, opening], (0.0, 0.0, 0.0), avoid=[])
+check("pick prefers a wide opening a little further on to a sliver nearby",
+      chosen is not None and chosen[0] > 1.0, chosen)
+near_only = pick([sliver, [(4.0, 0.0), (4.0, 0.1), (4.0, 0.2)]], (0.0, 0.0, 0.0), avoid=[])
+check("but not a small frontier far away over a near one of the same size", near_only is not None and near_only[0] < 1.0,
+      near_only)
 scaled = frontiers(g, scale=0.9)
 check("scale applies to the frontier points like the navigator's grid", max(p[0] for p in scaled[0]) < max(p[0] for p in cl[0]))
 

@@ -32,8 +32,13 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run — done
    2026-11-14: Rerun first, Lichtblick kept usable ([ADR-0002](../adr/ADR-0002-viewers-rerun-and-lichtblick.md));
    `make viewers` starts both.
-3. A minimal logbook: a folder, an index, search, events.
-4. eval-harness reads runs from the logbook; flotilla cases reference recordings.
+3. **The world model in the viewer** (operator, 2026-11-15; next, after the phase 2 turning fixes):
+   every duck run shows what the brain believed against what happened — mapd's grid, the depth
+   points, the remembered obstacles and drops, each planned path, the belief pose against the
+   simulator's truth — in Rerun first and in MCAP for Lichtblick. Aim: a good grip on the world model
+   and how the robot moves against it, so runs can be reviewed by watching them.
+4. A minimal logbook: a folder, an index, search, events.
+5. eval-harness reads runs from the logbook; flotilla cases reference recordings.
 
 ## Later
 
@@ -49,3 +54,5 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
     assessment after eval-harness 0.8.0 is finished, by the operator's decision, 2026-11-14).
 5. Bigger NXT robots: the arm robot on two bricks ([IDEAS.md](IDEAS.md), RFC-0003 §2.5).
 6. Mission control split out as its own open-source product ([RFC-0006](../rfc/RFC-0006-mission-control.md)).
+7. **The duck maps, the LEGO robot uses the map** (operator idea, 2026-11-15): the duck explores and
+   builds the world model; the NXT robot plans in it. Needs item 2's shared map and common frame.

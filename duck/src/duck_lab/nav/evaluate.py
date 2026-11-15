@@ -163,11 +163,13 @@ def main() -> None:
     refused = sum(r["status"] == "refused" for r in results)
     contacts = sum(r["contact"] for r in results)
     falls = sum(r["fell"] for r in results)
-    timeouts = sum(r["status"] == "timeout" for r in results)
+    # A stall (no progress for NO_PROGRESS_S) is a timeout found sooner: run 11's goal 20 stalled and was
+    # not counted, so the bar read MET.
+    timeouts = sum(r["status"] in ("timeout", "stalled") for r in results)
     bar = (n == args.goals and falls == 0 and contacts == 0 and timeouts == 0 and true_ok >= 18)
     print(f"PHASE1 goals {n}: navigator reached {said}, within {REACHED_M} m by truth {true_ok}, "
-          f"refused {refused}, timeouts {timeouts}, goals with a contact {contacts}, falls {falls} — "
-          f"bar {'MET' if bar else 'NOT MET'} (20 goals, 0 falls, 0 contacts, 0 timeouts, >= 18 within {REACHED_M} m)")
+          f"refused {refused}, timeouts or stalls {timeouts}, goals with a contact {contacts}, falls {falls} — "
+          f"bar {'MET' if bar else 'NOT MET'} (20 goals, 0 falls, 0 contacts, 0 timeouts or stalls, >= 18 within {REACHED_M} m)")
 
 
 if __name__ == "__main__":

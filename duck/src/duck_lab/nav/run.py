@@ -22,12 +22,20 @@ from duck_lab.nav.cliff import drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, plan, thin
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, path_length, plan, thin
 
 TICK_S = 0.1
 REPLAN_S = 3.0
+# A leg whose planned path has not got PROGRESS_M shorter in NO_PROGRESS_S ends as "stalled": trial 6
+# spent three 60 s timeouts following an unseen wall in search of a door that was not there. Path
+# length, not straight-line distance, so a detour that first leads away is still progress.
+PROGRESS_M = 0.10
+NO_PROGRESS_S = 15.0
+FOLLOW_SPACING_M = 0.10
 STOP_MM = 250            # depth reflex distance, central columns
-CLIFF_STOP_M = 0.45      # a drop this close ahead (horizontal) stops the duck
+# A drop this close ahead (horizontal) stops the duck. 0.60, not 0.45: the duck then has to turn round
+# where it stopped, and a turn on the spot drifts (exploration trial 5: 26 cm over 4.3 rad).
+CLIFF_STOP_M = 0.60
 # ... once seen in this many consecutive depth frames (15 Hz): a single frame read against a state a
 # few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
 # does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
@@ -37,11 +45,20 @@ DROP_FRAMES = 3
 # walking (the cabinet's side, passed while turning into the office: run 6's touches) was not on the map.
 LAYER_M = 0.6
 LAYER_SPACING_M = 0.03
-# A turn on the spot shifts the duck about 8 cm (phase 0: 8 cm over a full turn at 1.2 rad/s), and the
-# duck does not walk backwards reliably (-0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So no
-# turn on the spot with a remembered drop closer than this; refuse instead. (Run 3's fall was not a
-# turn: the duck walked onto the opening along a route 3 cm from its edge, with no cliff check.)
-TURN_CLEAR_M = 0.2
+# A turn on the spot shifts the duck (phase 0: 8 cm over a full turn; exploration trial 5: 26 cm over
+# 4.3 rad, toward the stairs; phase 1 run 12: a contact beside the office cabinet), and the duck does
+# not walk backwards (-0.15 and -0.3 m/s: no motion; -0.4: 87 cm with a 51 deg swing). So it turns on
+# the spot only with room for that drift: PIVOT_DROP_M from any remembered drop and PIVOT_OBSTACLE_M
+# from any obstacle (the 12 cm lethal zone and 5 cm). Otherwise it turns while walking slowly (an arc),
+# and only onto clear floor: ARC_CLEAR_MM by the depth sensor, no lethal cell ARC_AHEAD_M ahead and no
+# remembered drop within CLIFF_STOP_M in front. No room for either: the leg is refused.
+PIVOT_DROP_M = 0.30
+PIVOT_OBSTACLE_M = LETHAL_M + 0.05
+ARC_CLEAR_MM = 300      # a 0.2 m radius arc (0.2 m/s at 1 rad/s) reaches ~0.2 m ahead, + the 8.3 cm footprint
+ARC_AHEAD_M = 0.25
+# No room for either: a pivot is still allowed while the clearance stays above this, rechecked every tick
+# - 2.5 cm more than the 8.3 cm footprint radius. Below it the duck stands and the leg is refused.
+TIGHT_PIVOT_M = 0.11
 BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
@@ -187,6 +204,22 @@ class Navigator:
                 new.append(q)
         return new
 
+    def _arc_clear(self, costs: CostGrid, pose: tuple) -> bool:
+        """Clear floor for a slow turn while walking: the depth sensor, the grid and the drop memory."""
+        near = self.tof.nearest_mm
+        if near is None or near < ARC_CLEAR_MM:
+            return False
+        ahead = (pose[0] + ARC_AHEAD_M * math.cos(pose[2]), pose[1] + ARC_AHEAD_M * math.sin(pose[2]))
+        c = costs.cell(*ahead)
+        if costs.inside(*c) and costs.at(*c) >= LETHAL_COST:
+            return False
+        for d in self.drops:
+            dist = math.dist(pose[:2], d)
+            bearing = math.atan2(d[1] - pose[1], d[0] - pose[0]) - pose[2]
+            if dist < CLIFF_STOP_M and math.cos(bearing) > math.cos(math.radians(60)):
+                return False
+        return True
+
     def forget_blocked_near(self, pose: tuple, radius_m: float) -> int:
         """Nav2's "clear around the robot" recovery, for the obstacle memory only: mapd's map stays, and
         drops are never forgotten (trial 3 fell when drop memory was switched off)."""
@@ -212,7 +245,10 @@ class Navigator:
         if self.loc.pose() is None:
             return {"status": "refused", "why": "no pose on the map yet"}
         path, planned_at, st = None, 0.0, FollowState()
+        following = None     # the path being followed; a replan keeps it unless it is blocked or much longer
+        tight = False        # a tight pivot was logged this leg
         reflex_stops = 0
+        best_left, best_at = math.inf, start
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
@@ -239,10 +275,30 @@ class Navigator:
                     boxed = start_cost >= LETHAL_COST and goal_cost < LETHAL_COST
                     why = "start boxed in" if boxed else "no path on the map"
                     return {"status": "refused", "why": why, "time_s": round(now - start, 1)}
-                path, planned_at = thin(raw), now
-                self.record(event="plan", pose=pose, goal=goal, path=[[round(v, 2) for v in q] for q in path[:8]])
+                ahead = following[st.target_index:] if following else []
+                if keep_current(grid, ahead, pose, raw):
+                    path = ahead
+                    self.record(event="plan_kept", pose=pose, goal=goal)
+                else:
+                    # 10 cm waypoints: at the old 30 cm the lookahead landed 0.3-0.6 m ahead and cut bends.
+                    path = thin(raw, FOLLOW_SPACING_M)
+                    self.record(event="plan", pose=pose, goal=goal, path=[[round(v, 2) for v in q] for q in path[:24:3]])
+                following, planned_at, costs = path, now, grid
+                left = path_length([pose[:2]] + path)
+                if left < best_left - PROGRESS_M:
+                    best_left, best_at = left, now
+                elif now - best_at > NO_PROGRESS_S:
+                    self.move(Twist())
+                    self.record(event="stalled", goal=goal, pose=pose, path_left_m=round(left, 2),
+                                best_left_m=round(best_left, 2))
+                    return {"status": "stalled", "why": f"{NO_PROGRESS_S:.0f} s without getting closer",
+                            "time_s": round(now - start, 1), "reflex_stops": reflex_stops}
                 st.target_index = 0
-            tw, done = step(path, pose, now, st)
+            near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) >= MARGIN_COST
+            nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
+            room = clearance(costs, pose[:2], PIVOT_OBSTACLE_M)
+            pivot_ok = room >= PIVOT_OBSTACLE_M and nearest_drop >= PIVOT_DROP_M
+            tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok)
             if done:
                 self.move(Twist())
                 self.record(event="reached", goal=goal, pose=pose)
@@ -276,14 +332,23 @@ class Navigator:
                 self.survey()
                 path = None
                 continue
-            nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
-            if st.turning and nearest_drop < TURN_CLEAR_M:
+            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose) and \
+                    room >= TIGHT_PIVOT_M and nearest_drop >= PIVOT_DROP_M:
+                # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
+                # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
+                tw, done = step(path, pose, now, st, near=near, pivot_ok=True)
+                if not tight:
+                    tight = True
+                    self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm)
+            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose):
                 self.move(Twist())
-                self.record(event="refused", why="a turn would be too close to a drop", pose=pose,
+                self.record(event="refused", why="no room to turn", pose=pose, room_m=round(room, 3),
+                            nearest_drop_m=round(nearest_drop, 3), nearest_mm=self.tof.nearest_mm,
+                            blocked=[[round(v, 2) for v in b] for b in self.blocked if math.dist(b, pose[:2]) < 0.5],
                             drops=[[round(v, 2) for v in d] for d in self.drops],
                             path=[[round(v, 2) for v in q] for q in (path or [])[:8]])
-                return {"status": "refused", "why": f"a turn {nearest_drop:.2f} m from a drop",
-                        "time_s": round(now - start, 1)}
+                return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
+                        f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm
             if tw.vx > 0 and near is not None and near < STOP_MM:
                 reflex_stops += 1

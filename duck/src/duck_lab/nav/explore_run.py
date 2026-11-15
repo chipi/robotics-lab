@@ -13,8 +13,8 @@ from pathlib import Path
 
 from duck_lab.nav.explore import frontiers, pick
 from duck_lab.nav.follow import Twist
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap
-from duck_lab.nav.run import TURN_CLEAR_M, Navigator
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
+from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
 SURVEY_STEP_RAD = math.pi / 2
@@ -57,9 +57,17 @@ class Explorer:
     def turn(self, angle: float) -> bool:
         """Turn on the spot by about angle (odometry yaw), unless a remembered drop is too close."""
         pose = self.nav.loc.pose()
-        if pose and any(math.dist(pose[:2], d) < TURN_CLEAR_M for d in self.nav.drops):
+        if pose and any(math.dist(pose[:2], d) < PIVOT_DROP_M for d in self.nav.drops):
             self.note(event="no_survey_turn", why="drop within turn clearance")
             return False
+        if pose:
+            try:
+                room = clearance(self.nav.grid().with_blocked(self.nav.blocked), pose[:2], PIVOT_OBSTACLE_M)
+            except EmptyMap:
+                room = PIVOT_OBSTACLE_M
+            if room < PIVOT_OBSTACLE_M:
+                self.note(event="no_survey_turn", why=f"obstacle {room:.2f} m away")
+                return False
         start, began = self.yaw(), time.monotonic()
         while time.monotonic() - began < 8.0:
             done = wrap(self.yaw() - start)

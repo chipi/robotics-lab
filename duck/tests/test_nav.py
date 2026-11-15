@@ -75,6 +75,32 @@ check("within 15 deg: walk again, steering", tw.vx == 0.3 and -1.0 <= tw.vyaw < 
 tw, _ = step(path, (0.0, 0.0, math.radians(30)), 12.5, st)
 check("30 deg off while walking: steer, do not stop to turn", tw.vx == 0.3 and tw.vyaw < 0, tw)
 
+# A bend next to an obstacle (phase 1 runs 9/10: the office doorway cut 7-8 cm from the cabinet).
+bend = [(0.1 * i, 0.0) for i in range(6)] + [(0.5, 0.1 * j) for j in range(1, 6)]   # east 0.5 m, then north
+pre = (0.35, 0.0, 0.0)                                                                # 15 cm before the corner
+tw_far, _ = step(bend, pre, 20.0, FollowState())
+tw_near, _ = step(bend, pre, 20.0, FollowState(), near=True)
+check("near an obstacle the lookahead stays on the leg before the bend (no early cut)",
+      abs(tw_near.vyaw) < abs(tw_far.vyaw) and tw_near.vyaw < 0.6, (round(tw_far.vyaw, 2), round(tw_near.vyaw, 2)))
+
+# No room to pivot (phase 1 run 12: a contact while turning on the spot by the cabinet): turn while
+# walking slowly instead.
+st_arc = FollowState()
+tw_arc, _ = step(path, (0.0, 0.0, math.radians(120)), 30.0, st_arc, pivot_ok=False)
+check("no room to pivot: the turn is an arc at the slowest walk", st_arc.turning and tw_arc.vx == 0.2 and tw_arc.vyaw < 0,
+      tw_arc)
+st_k = FollowState()                       # a pivot whose kick did not start the stepping
+for t in (40.0, 40.5, 41.0, 41.5, 42.0, 42.5):
+    tw_k, _ = step(path, (0.0, 0.0, math.radians(120)), t, st_k)
+check("a pivot that gains no yaw for a second kicks again (1.2 rad/s), not 0.8 for ever",
+      abs(tw_k.vyaw) == 1.2, tw_k)
+st_m = FollowState()                       # one that turns: kick once, then hold
+for i, t in enumerate((50.0, 50.5, 51.0, 51.5, 52.0, 52.5)):
+    tw_m, _ = step(path, (0.0, 0.0, math.radians(170 - 10 * i)), t, st_m)
+check("a pivot that turns holds at 0.8 after its kick", abs(tw_m.vyaw) == 0.8, tw_m)
+tw_piv, _ = step(path, (0.0, 0.0, math.radians(120)), 30.0, FollowState())
+check("room to pivot: the turn stays on the spot", tw_piv.vx == 0.0, tw_piv)
+
 # A goal beyond what mapd has seen: unknown ground, not refused.
 small = CostGrid.from_map_grid(room(w=10, h=10))
 check("goal outside the grid: plan refuses on the bare grid", plan(small, (0.5, 0.5), (2.0, 0.5)) is None)
@@ -131,6 +157,48 @@ check("a duck stopped 42 cm from a drop (inside its zone) can leave, away from i
 pthru = plan(dg, (1.5, 1.42), (1.5, 0.58))
 check("no path crosses the drop itself, even escaping", pthru is None or all(math.dist(q, drop) > 0.05 for q in pthru),
       pthru and min(math.dist(q, drop) for q in pthru))
+
+# Phase 1 run 9: the 0.5 m escape let a duck on free floor cut through a cabinet's lethal zone (truth
+# 7.8 cm from it). The escape is for a duck already in a lethal zone, and a path that leaves one never
+# goes back in.
+narrow = gap_grid(4)                                   # a 20 cm gap: lethal all across (12 cm from each side)
+s_free = (0.7, 0.75)                                   # free floor, 0.30 m from the wall: not lethal
+check("start on free floor: no lethal-zone shortcut through a gap 0.5 m away",
+      narrow.at(*narrow.cell(*s_free)) < LETHAL_COST and plan(narrow, s_free, (1.7, 0.75)) is None,
+      plan(narrow, s_free, (1.7, 0.75)) and len(plan(narrow, s_free, (1.7, 0.75))))
+pe3 = plan(g, (0.25, 1.0), (1.5, 1.0))
+check("a path that escapes a lethal zone never re-enters one",
+      pe3 is not None and not any(g.at(*g.cell(*q)) >= LETHAL_COST for q in pe3[next(i for i, q in enumerate(pe3) if g.at(*g.cell(*q)) < LETHAL_COST):]),
+      pe3 and pe3[:4])
+
+# Unknown beside a known obstacle (exploration trial 7: a path along a cabinet's unseen face wedged
+# the duck): costs more than open unknown, so the plan goes round on seen floor when it can.
+from duck_lab.nav.grid import SHADOW_COST, UNKNOWN_COST  # noqa: E402
+
+rows_sh = []
+for cy in range(20):
+    rows_sh.append("".join("#" if cx == 15 and 8 <= cy <= 11 else "?" if 16 <= cx <= 22 and 5 <= cy <= 14 else "."
+                           for cx in range(30)))
+sh = CostGrid.from_map_grid({"res_m": 0.1, "origin": [0.0, 0.0], "width": 30, "height": 20, "cells": "".join(rows_sh)})
+check("unknown next to a known obstacle costs more than open unknown",
+      sh.at(17, 10) == SHADOW_COST and sh.at(21, 6) == UNKNOWN_COST, (sh.at(17, 10), sh.at(21, 6)))
+
+# Replan hysteresis (phase 1 run 11, goal 20: two routes flipped for 12 s at the office doorway).
+from duck_lab.nav.grid import keep_current  # noqa: E402
+
+here = (0.5, 1.0, 0.0)
+north = [(0.5 + 0.1 * i, 1.0 + 0.02 * i) for i in range(1, 21)]      # ~2.0 m, clear
+south = [(0.5 + 0.1 * i, 1.0 - 0.02 * i) for i in range(1, 21)]      # the same length the other way
+check("a clear current path is kept against an equally long new one", keep_current(open_room, north, here, south))
+check("a current path that became lethal is dropped",
+      not keep_current(open_room.with_blocked([north[5]]), north, here, south))
+check("a much shorter new path wins", not keep_current(open_room, north + [(2.5, 2.5), (2.5, 1.4)], here, south))
+
+from duck_lab.nav.grid import clearance  # noqa: E402
+
+check("clearance: 5 cm cells, a point 5 cells from a wall cell is 0.225 m from its edge; open floor reads the search radius",
+      abs(clearance(gap_grid(9), (0.775, 0.1), 0.3) - 0.225) < 0.03 and clearance(fine, (1.5, 1.0), 0.3) == 0.3,
+      (clearance(gap_grid(9), (0.775, 0.1), 0.3), clearance(fine, (1.5, 1.0), 0.3)))
 
 # Frames: map <- odom from one fix, then odometry carries the pose.
 from duck_lab.nav.frames import Localizer, compose, inverse  # noqa: E402

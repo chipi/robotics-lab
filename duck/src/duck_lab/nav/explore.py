@@ -12,6 +12,7 @@ STANDOFF_M = 0.15          # stop this far back from the frontier, on the seen s
 # The floor right round the duck stays unknown (the depth sensor does not see its own feet), so the
 # nearest "frontier" is always underfoot: the first trial's first leg went 5 cm.
 MIN_DIST_M = 0.6
+GAIN_PER_M = 1.0           # a metre of frontier is worth a metre of walking (explore_lite's gain/potential)
 
 
 def frontiers(grid: dict, scale: float = 1.0) -> list:
@@ -52,19 +53,28 @@ def frontiers(grid: dict, scale: float = 1.0) -> list:
 
 
 def pick(clusters: list, pose: tuple, avoid: list, ok=None) -> tuple | None:
-    """The nearest frontier point (straight-line), at least MIN_DIST_M away and not within AVOID_M of
-    anything in avoid, pulled STANDOFF_M back toward the duck so the goal sits on seen floor; ok(goal),
-    when given, must accept the goal (the navigator: not inside an obstacle's lethal zone)."""
-    candidates = []
+    """A frontier point to go to. Clusters are ranked as explore_lite ranks them: distance to their
+    nearest usable point minus GAIN_PER_M x their size (the extent of the cluster), so a wide opening
+    into a room beats a sliver next to the duck (trial 6 went back and forth between corridor slivers).
+    A usable point is at least MIN_DIST_M away and not within AVOID_M of anything in avoid; the goal is
+    pulled STANDOFF_M back toward the duck so it sits on seen floor, and ok(goal), when given, must
+    accept it (the navigator: not inside a lethal zone)."""
+    ranked = []
     for cluster in clusters:
+        usable = []
         for p in cluster:
             d = math.dist(p, pose[:2])
             if d < MIN_DIST_M or any(math.dist(p, a) < AVOID_M for a in avoid):
                 continue
-            candidates.append((d, p))
-    for d, p in sorted(candidates):
-        k = (d - STANDOFF_M) / d
-        goal = (pose[0] + k * (p[0] - pose[0]), pose[1] + k * (p[1] - pose[1]))
-        if ok is None or ok(goal):
-            return goal
+            usable.append((d, p))
+        if usable:
+            xs, ys = [p[0] for p in cluster], [p[1] for p in cluster]
+            extent = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            ranked.append((min(usable)[0] - GAIN_PER_M * extent, sorted(usable)))
+    for _, usable in sorted(ranked, key=lambda r: r[0]):
+        for d, p in usable:
+            k = (d - STANDOFF_M) / d
+            goal = (pose[0] + k * (p[0] - pose[0]), pose[1] + k * (p[1] - pose[1]))
+            if ok is None or ok(goal):
+                return goal
     return None
