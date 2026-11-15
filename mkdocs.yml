@@ -78,6 +78,7 @@ nav:
     - RFC-0005 — Missions: rfc/RFC-0005-missions.md
     - RFC-0006 — Mission control: rfc/RFC-0006-mission-control.md
     - RFC-0007 — The platform: rfc/RFC-0007-platform.md
+    - RFC-0008 — The challenge course: rfc/RFC-0008-challenge-course.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
@@ -98,6 +99,7 @@ nav:
     - NXT parts to look for: wip/NXT-PARTS.md
     - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
     - Review of all RFCs, round 2: wip/REVIEW-2026-11-14-round2.md
+    - Review of the navigator, 2026-11-15: wip/REVIEW-2026-11-15-navigator.md
     - What robotics asks of flotilla: wip/FLOTILLA-ASKS.md
     - What robotics asks of eval-harness: wip/EVAL-HARNESS-ASKS.md
   - History:

@@ -24,6 +24,8 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 - [NXT parts to look for](NXT-PARTS.md).
 - [Review of the duck RFCs, 2026-11-14](REVIEW-2026-11-14-duck-rfcs.md) — findings and what was done.
 - [Review of all RFCs, round 2](REVIEW-2026-11-14-round2.md) — findings and what was done.
+- [Review of the navigator, 2026-11-15](REVIEW-2026-11-15-navigator.md) — rules in conflict,
+  blind spots, next steps (led to RFC-0008).
 - [What robotics asks of flotilla](FLOTILLA-ASKS.md) — for the flotilla session to assess.
 - [What robotics asks of eval-harness (for 0.9)](EVAL-HARNESS-ASKS.md) — for the eval-harness
   session to assess.

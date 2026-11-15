@@ -39,3 +39,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   begins](RFC-0006-mission-control.md) (Proposed; a vision)
 - [RFC-0007 — The platform: an open alternative to Foxglove, assembled from our
   tools](RFC-0007-platform.md) (Proposed; the operator's vision)
+- [RFC-0008 — The challenge course: one difficulty at a time, then all of
+  them](RFC-0008-challenge-course.md) (Proposed; phase 2's bar, by the operator's decision)
