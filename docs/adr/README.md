@@ -31,5 +31,7 @@ Required sections:
   agent](ADR-0003-miniview-drawing-three-js.md) (Accepted for this step, 2026-11-15; reviewed mid-term)
 - [ADR-0004 — Runs: MCAP the record of truth; a SQLite index and prepared frames derived from
   it](ADR-0004-runs-in-mcap-with-derived-index.md) (Accepted, 2026-11-15)
+- [ADR-0005 — miniview: one API over the run store, live from the
+  start](ADR-0005-miniview-api-live-from-the-start.md) (Accepted, 2026-11-15)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

@@ -92,6 +92,7 @@ nav:
     - ADR-0002 — Viewers, Rerun first: adr/ADR-0002-viewers-rerun-and-lichtblick.md
     - ADR-0003 — miniview draws with three.js: adr/ADR-0003-miniview-drawing-three-js.md
     - ADR-0004 — Runs in MCAP, a derived index: adr/ADR-0004-runs-in-mcap-with-derived-index.md
+    - ADR-0005 — miniview API, live from the start: adr/ADR-0005-miniview-api-live-from-the-start.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

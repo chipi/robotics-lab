@@ -54,7 +54,10 @@ by the hundred; the viewer should be shaped before the logs that feed it.
 7. **One API over one database, two pages** (operator, 2026-11-15): the three.js and deck.gl pages
    read the same API, and the API reads one database (the index of ADR-0004 over the runs). The
    pages hold no data logic of their own. This replaces the "files in, files out, no server"
-   principle below; the API's shape is still to be written.
+   principle below. **Streaming is supported from the start** (operator, 2026-11-15): a live run is
+   a run that has not ended; the robot appends to its MCAP, the service follows the file and sends new
+   data to the pages as Server-Sent Events. The data model, the endpoints and the live design are
+   [ADR-0005](../adr/ADR-0005-miniview-api-live-from-the-start.md).
 
 ## 3. Where it lives
 
