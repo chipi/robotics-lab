@@ -87,8 +87,9 @@ on the homelab, and needs nothing installed on the host but Docker.
 - **Later, on the homelab:** the same image behind the tailnet, so the page opens on a phone; it
   follows the homelab's rules for its Docker engine.
 
-**To decide before building:** the base image (a new dependency: `python:3.12-slim` with `uv`
-copied in is the smallest), and the port.
+**Decided (operator, 2026-11-15):** the base image is `python:3.12-slim` with `uv` copied in (the
+smallest); the port is **8070**, published on `127.0.0.1` only like the repo's other containers
+(8000 is nxt-web, 8090 Lichtblick, 9090 Rerun, 8765 the docs).
 
 ## 4. Versions
 
