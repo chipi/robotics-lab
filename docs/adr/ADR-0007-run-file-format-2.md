@@ -23,7 +23,10 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
 - **Segments instead of stitching.** An evaluation's goals are `segment` records (index, goal,
   the source clock's origin). A new segment starts at the event that ended the last goal
   (`reached`, `refused`, `timeout`, `stalled`, `aborted` with a `goal`), never at a clock jump.
-  Each tick keeps its source time as `t_src`.
+  Each tick keeps its source time as `t_src`. A segment whose source clock restarted keeps that
+  clock: its zero is placed 1 s after the previous record (the gap between goals is not in the
+  log), so the time a new navigator spends before its first record stays in the run (phase 1:
+  about 12 s a goal; dropping it shortened phase1-run18 from about 588 s to 341 s, 2026-11-16).
 - **Standard shapes where they exist**, as protobuf messages (message encoding `protobuf`, the
   schema a
   `FileDescriptorSet` from the `foxglove-schemas-protobuf` package; changed from JSON on 2026-11-15

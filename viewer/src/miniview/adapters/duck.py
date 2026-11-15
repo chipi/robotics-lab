@@ -48,10 +48,12 @@ class DuckLog:
             self.header.append((0.0, "epoch", {"map_to_world": [_r(v, 5) for v in m2w]}))
 
     def _time(self, ts: float) -> float:
-        """Run time for a source time: never back; a new segment whose clock restarted goes after the last, 1 s on."""
+        """Run time for a source time: never back. A new segment whose clock restarted keeps that clock: its
+        zero goes 1 s after the last record (the gap between goals is not in the log), so the time the new
+        navigator spent before its first record (a survey, about 12 s a goal in phase 1) stays in the run."""
         if self.boundary:
             if ts + self.offset < self.last_t:
-                self.offset = self.last_t + 1.0 - ts
+                self.offset = self.last_t + 1.0
             self.seg.update(origin_src=ts, t_start=None)
             self.boundary = False
         t = max(_r(ts + self.offset), self.last_t)

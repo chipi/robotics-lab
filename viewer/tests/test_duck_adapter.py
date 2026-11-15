@@ -36,6 +36,10 @@ with tempfile.TemporaryDirectory() as tmp:
     (run / "ticks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     meta, frames = prepare(run, "apartment")
     check("ticks laid end to end in time", frames["t"] == sorted(frames["t"]) and len(frames["t"]) == 3, frames["t"])
+    # Goal 2's navigator clock reads 1.0 at its first tick: that second of setup happened, so goal 2
+    # starts 1 s after goal 1's last record (2.5) and its first tick is at 2.5 + 1 + 1.0. Format 2
+    # had dropped each goal's setup (phase1-run18: 340.8 s instead of ~588 s; 2026-11-16).
+    check("a new goal keeps its own clock: its setup time is not dropped", frames["t"][2] == 4.5, frames["t"])
     check("one epoch per goal (the simulator reset each time)", len(meta["epochs"]) == 2, meta["epochs"])
     e0 = meta["epochs"][0]["map_to_world"]
     check("epoch 1: map to world from the first tick's truth and belief", abs(e0[0] - 0.1) < 1e-6 and abs(e0[1] - 0.2) < 1e-6, e0)
