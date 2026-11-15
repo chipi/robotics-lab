@@ -27,5 +27,9 @@ Required sections:
   (Accepted, 2026-11-14)
 - [ADR-0002 — Viewers: Rerun first, Lichtblick kept usable, MCAP the record](ADR-0002-viewers-rerun-and-lichtblick.md)
   (Accepted, 2026-11-14)
+- [ADR-0003 — miniview draws with three.js, the same page for the operator and the
+  agent](ADR-0003-miniview-drawing-three-js.md) (Accepted for this step, 2026-11-15; reviewed mid-term)
+- [ADR-0004 — Runs: MCAP the record of truth; a SQLite index and prepared frames derived from
+  it](ADR-0004-runs-in-mcap-with-derived-index.md) (Accepted, 2026-11-15)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

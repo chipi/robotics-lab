@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>miniview — deck.gl</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="head">
+  <b>miniview</b><span class="lib">deck.gl v0.2</span>
+  <a href="#" id="scenes-link">scenes</a>
+  <label>scene <select id="scene"></select></label>
+  <label>run <select id="run"></select></label>
+  <label>view <select id="view">
+    <option value="top">top (2D)</option><option value="front">front</option><option value="back">back</option>
+    <option value="left">left</option><option value="right">right</option>
+    <option value="three">three-view</option><option value="3d">3D orbit</option></select></label>
+  <button id="fit">fit</button>
+  <span id="runinfo"></span>
+</header>
+<aside id="layers"></aside>
+<section id="stage"><div id="deck"></div><div id="tags"></div></section>
+<aside id="moment"><h4>the moment</h4><div id="momentbody"></div><h4>selection</h4><div id="selbody"></div></aside>
+<footer id="timebar"><span id="tl"></span><div id="track"><div id="cursor"></div></div><span id="tr"></span></footer>
+<section id="scenespage"></section>
+<script src="vendor/deck.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -79,10 +79,19 @@ nav:
     - RFC-0006 — Mission control: rfc/RFC-0006-mission-control.md
     - RFC-0007 — The platform: rfc/RFC-0007-platform.md
     - RFC-0008 — The challenge course: rfc/RFC-0008-challenge-course.md
+    - RFC-0009 — miniview: rfc/RFC-0009-miniview.md
+  - Product (PRD):
+    - Overview: prd/README.md
+    - PRD-001 — miniview: prd/PRD-001-miniview.md
+  - UX specs (UXS):
+    - Overview: uxs/README.md
+    - UXS-001 — miniview: uxs/UXS-001-miniview.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
     - ADR-0002 — Viewers, Rerun first: adr/ADR-0002-viewers-rerun-and-lichtblick.md
+    - ADR-0003 — miniview draws with three.js: adr/ADR-0003-miniview-drawing-three-js.md
+    - ADR-0004 — Runs in MCAP, a derived index: adr/ADR-0004-runs-in-mcap-with-derived-index.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

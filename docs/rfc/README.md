@@ -41,3 +41,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   tools](RFC-0007-platform.md) (Proposed; the operator's vision)
 - [RFC-0008 — The challenge course: one difficulty at a time, then all of
   them](RFC-0008-challenge-course.md) (Proposed; phase 2's bar, by the operator's decision)
+- [RFC-0009 — miniview: one run format, two faces, any
+  robot](RFC-0009-miniview.md) (Proposed; with PRD-001 and UXS-001)

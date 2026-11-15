@@ -1,0 +1,61 @@
+"""The duck adapter on synthetic runs (CONTRACT.md). Run: cd viewer && uv run python tests/test_duck_adapter.py"""
+
+import json
+import math
+import sys
+import tempfile
+from pathlib import Path
+
+from miniview.adapters.duck import prepare
+
+failures = []
+
+
+def check(name, cond, detail=""):
+    print(("PASS " if cond else "FAIL ") + name + (f"  [{detail}]" if detail else ""))
+    if not cond:
+        failures.append(name)
+
+
+def tick(t, pose, truth, **kw):
+    return dict({"t": t, "pose": pose, "truth": truth, "vx": 0.3, "vyaw": 0.0, "nearest_mm": 500, "turning": False}, **kw)
+
+
+with tempfile.TemporaryDirectory() as tmp:
+    # An evaluation run: two goals, the navigator (and its clock) new for each, the simulator reset.
+    run = Path(tmp) / "phase1-runX"
+    run.mkdir()
+    rows = [
+        {"event": "plan", "path": [[0.0, 0.0], [1.0, 0.0]], "t": 0.5},
+        tick(1.0, [0.0, 0.0, 0.0], [0.1, 0.2, 0.0], depth=[[0.4, 0.0, 0.01, "f"]]),
+        tick(2.0, [0.5, 0.0, 0.0], [0.6, 0.2, 0.0]),
+        {"event": "reached", "goal": [1.0, 0.0], "t": 2.5},
+        tick(1.0, [0.0, 0.0, math.pi / 2], [0.0, 0.0, 0.0]),        # goal 2: clock restarts, new map
+        {"event": "refused", "why": "no path on the map", "goal": [3.0, 0.0], "t": 1.5},
+    ]
+    (run / "ticks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    meta, frames = prepare(run, "apartment")
+    check("ticks laid end to end in time", frames["t"] == sorted(frames["t"]) and len(frames["t"]) == 3, frames["t"])
+    check("one epoch per goal (the simulator reset each time)", len(meta["epochs"]) == 2, meta["epochs"])
+    e0 = meta["epochs"][0]["map_to_world"]
+    check("epoch 1: map to world from the first tick's truth and belief", abs(e0[0] - 0.1) < 1e-6 and abs(e0[1] - 0.2) < 1e-6, e0)
+    e1 = meta["epochs"][1]["map_to_world"]
+    check("epoch 2: a quarter turn back (stored to 5 decimals)", abs(e1[2] + math.pi / 2) < 1e-4, e1)
+    check("plan in force from its time", frames["plan_at"][0] == 0, frames["plan_at"])
+    check("depth only where a frame came", frames["depth"][0] is not None and frames["depth"][1] is None)
+    check("notable events kept, with their kind", [e["kind"] for e in meta["events"]] == ["reached", "refused"], meta["events"])
+    check("kind of run from its name", meta["kind"] == "go-to evaluation", meta["kind"])
+
+    # An exploration run: one epoch from start.json.
+    ex = Path(tmp) / "explore1"
+    ex.mkdir()
+    (ex / "start.json").write_text(json.dumps({"map": [0.0, 0.0, 0.0], "truth": [1.0, 0.0, 0.0], "scale": 0.91}))
+    (ex / "ticks.jsonl").write_text(json.dumps(tick(0.5, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0])) + "\n"
+                                    + json.dumps({"event": "trapped", "legs": 3, "t": 0.9}) + "\n")
+    meta2, _ = prepare(ex, "apartment")
+    check("exploration: one epoch from start.json, verdict from its last event",
+          len(meta2["epochs"]) == 1 and meta2["epochs"][0]["map_to_world"][0] == 1.0 and meta2["verdict"] == "trapped",
+          (meta2["epochs"], meta2["verdict"]))
+
+print("ADAPTER", "FAIL " + ", ".join(failures) if failures else "PASS")
+sys.exit(1 if failures else 0)
