@@ -61,6 +61,7 @@ class Loaded:
         self.error = None
         self.stopped = False
         self.sig = None
+        self.io = threading.RLock()     # one reader of the file at a time (the follower, a scan, a request)
         self.pins = 0
         self.indexed_events = 0
         self.indexed_segments = 0
@@ -95,13 +96,14 @@ class Loaded:
 
     def poll(self) -> bool:
         """Read what the file gained; True when the run changed. Never raises."""
-        if self.error or self.stopped:
-            return False
-        try:
-            return self._poll()
-        except Exception as e:      # whatever this one run holds, it is this run's failure
-            self.mark_broken(f"{type(e).__name__}: {e}")
-            return True
+        with self.io:
+            if self.error or self.stopped:
+                return False
+            try:
+                return self._poll()
+            except Exception as e:      # whatever this one run holds, it is this run's failure
+                self.mark_broken(f"{type(e).__name__}: {e}")
+                return True
 
     def _poll(self) -> bool:
         gen = self.follower.generation
@@ -128,19 +130,25 @@ class Loaded:
                 self.data.finish_batch()
         if self.data.run["key"] is None and (recs or bad):
             raise BrokenRun("no valid run record: " + (bad[0] if bad else "the first message is not the run record"))
-        self.sig = signature(self.dir)
+        # The signature says which file the records came from: only a poll that read the file may
+        # take the file's signature. A poll of a finished run reads nothing, and taking the signature
+        # then would hide a replaced file from check_changed (CI, 2026-11-15).
+        if recs or bad or self.sig is None or self.follower.generation != gen:
+            self.sig = signature(self.dir)
         return bool(recs or bad)
 
     def check_changed(self) -> bool:
         """A run that was final (finished, stopped, broken) and whose file changed: read again. True when it was."""
-        sig = signature(self.dir)
-        if sig is None or self.sig is None or sig == self.sig or not (self.follower.done or self.error or self.stopped):
-            return False
-        repaired = self.stopped and self.sig[0] == mcapio.LIVE and sig[0] == mcapio.FINAL
-        self.rebuild()
-        self.poll()
-        if not repaired:
-            self.data.run["rewritten"] += 1
+        with self.io:
+            sig = signature(self.dir)
+            if sig is None or self.sig is None or sig == self.sig or not (self.follower.done or self.error or self.stopped):
+                return False
+            repaired = self.stopped and self.sig[0] == mcapio.LIVE and sig[0] == mcapio.FINAL
+            with self.data.changed:     # readers wait for the new content; they never see the run empty
+                self.rebuild()
+                self.poll()
+                if not repaired:
+                    self.data.run["rewritten"] += 1
         log.warning("run %s: its file changed; read again from the start", self.key)
         return True
 

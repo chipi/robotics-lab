@@ -139,6 +139,23 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a finished run replaced by another file is read again: new content, rewritten counted",
           r["ticks"] == 3 and r["t0"] == 5.0 and r["rewritten"] == 1, {k: r[k] for k in ("ticks", "t0", "rewritten")})
 
+    # ---- a poll of a finished run between the replace and the scan must not hide the replace -----------------------
+    # CI 2026-11-15 (22be841): the check above failed when the follower thread left running polled the
+    # finished run first: its poll stored the new file's signature without reading it.
+    make_run(other, "duck/room/fine2", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": "ended"})])
+    os.replace(other / "runs/duck/room/fine2/run.mcap", (data / "runs/duck/room/fine2").mkdir(parents=True) or
+               data / "runs/duck/room/fine2/run.mcap")
+    cat.scan()
+    ld = cat.get("duck/room/fine2")
+    other2 = Path(tmp) / "other2"                          # the same key, written elsewhere
+    make_run(other2, "duck/room/fine2", HEAD + [tick(7.0, 0.5), tick(7.1, 0.6), (8.0, "end", {"verdict": "ended"})])
+    os.replace(other2 / "runs/duck/room/fine2/run.mcap", data / "runs/duck/room/fine2/run.mcap")
+    ld.poll()                                              # what a follower round does to a finished run
+    cat.scan()
+    r = cat.get("duck/room/fine2").data.run
+    check("a poll between the replace and the scan does not hide the replace",
+          r["ticks"] == 2 and r["t0"] == 7.0 and r["rewritten"] == 1, {k: r[k] for k in ("ticks", "t0", "rewritten")})
+
     # ---- a live file cut and rewritten under the reader -------------------------------------------------------------
     rec = make_run(data, "duck/room/cut", HEAD + [tick(1.0, 0.0), tick(1.1, 0.1), tick(1.2, 0.2)], close=False)
     ld = cat.get("duck/room/cut")
