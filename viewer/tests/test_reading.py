@@ -9,9 +9,8 @@ import tempfile
 import threading
 from pathlib import Path
 
-from helpers import T0_NS, Checks, make_run, run_record, scene, tick, wait_until
+from helpers import catalog, T0_NS, Checks, make_run, run_record, scene, tick, wait_until
 from miniview import keys, mcapio, validate, wire
-from miniview.catalog import Catalog
 
 check = Checks("READING")
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
@@ -51,7 +50,7 @@ check("plans, worlds, events, epochs and ends are checked too",
 
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp)
-    cat = Catalog(data)
+    cat = catalog(data)
     cat.put_scene(scene())
     make_run(data, "duck/room/fine", HEAD + [tick(1.0, 0.0), tick(1.1, 0.03), (2.0, "end", {"verdict": "ended"})])
 

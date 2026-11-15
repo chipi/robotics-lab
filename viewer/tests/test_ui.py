@@ -16,7 +16,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from miniview.catalog import Catalog
+from helpers import catalog
+
 from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
 from miniview.server import make_server
@@ -645,7 +646,7 @@ def run_page(b, base, rid, other):
 
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp) / "data"
-    cat = Catalog(data)
+    cat = catalog(data)
     cat.put_scene(from_mujoco_layout(LAYOUT, "apartment", "The simulated apartment"))
     for rid, a, b_, gap in (("explore12", T0, T1, GAP), ("explore9", 5.0, 12.0, None)):
         write_log(Path(tmp) / "logs" / rid, rid, a, b_, gap)

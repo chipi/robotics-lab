@@ -36,6 +36,7 @@ class RunData:
         self.log = []                 # (seq, t, kind, payload): what live followers send
         self.seq = 0
         self.last_t = 0.0
+        self.mem = 0                  # an estimate of the bytes this run holds in memory (the cache's measure)
         self._spanned = False
 
     def feed(self, t, kind: str, p) -> bool:
@@ -83,9 +84,10 @@ class RunData:
         elif kind == "segment":
             r["segments"].append(dict(p))
         elif kind == "end":
-            r["status"], r["verdict"] = "ended", p["verdict"]
+            r["status"], r["verdict"] = ("stopped" if p["verdict"] == "stopped" else "ended"), p["verdict"]
         self.seq += 1
         self.log.append((self.seq, t, kind, p))
+        self.mem += _cost(kind, p)
 
     def finish_batch(self) -> None:
         self.run["streams"] = streams(self.frames, self.run["events"])
@@ -98,6 +100,17 @@ class RunData:
         while lo < len(self.log) and self.log[lo][0] <= seq:
             lo += 1
         return self.log[lo:]
+
+
+def _cost(kind: str, p: dict) -> int:
+    """Bytes a record costs in memory, measured on explore9 and phase1-run18 with tracemalloc (tests/test_index.py)."""
+    if kind == "tick":
+        return 1000 + 165 * len(p.get("depth") or ())
+    if kind == "plan":
+        return 380 + 165 * len(p["path"])
+    if kind == "world":
+        return 750 + len(p["grid"]["cells"]) + 165 * (len(p["obstacles"]) + len(p["drops"]))
+    return 600
 
 
 def build(records) -> RunData:

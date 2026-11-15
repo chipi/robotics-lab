@@ -21,17 +21,18 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
 
 import argparse
 import json
+import logging
 import tempfile
 from pathlib import Path
 
 from miniview import keys, mcapio, query
-from miniview.catalog import DEFAULT_DATA, Catalog
+from miniview.catalog import Catalog, default_data
 from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
 
 
 def _cat(args) -> Catalog:
-    return Catalog(Path(args.data))
+    return Catalog(args.data)
 
 
 def cmd_scene(args) -> None:
@@ -41,8 +42,9 @@ def cmd_scene(args) -> None:
 
 
 def cmd_import(args) -> None:
+    data = _cat(args).data
     for log_dir in args.logs:
-        import_duck(Path(log_dir), args.scene, Path(args.data), follow=args.follow, idle_s=args.idle)
+        import_duck(Path(log_dir), args.scene, data, follow=args.follow, idle_s=args.idle)
     if not args.follow:
         _cat(args).scan()
 
@@ -64,13 +66,13 @@ def cmd_repair(args) -> None:
 
 def cmd_index(args) -> None:
     cat = _cat(args)
-    for table in ("runs", "streams", "epochs", "events", "ticks"):
-        cat.db.execute(f"delete from {table}")
-    cat.db.commit()
+    pid = cat.index.held_elsewhere()
+    if pid:
+        raise SystemExit(f"a service holds the index {cat.index.path} (pid {pid}); not rebuilding it under the service")
+    cat.index.clear()
     cat.scan()
     idx = cat.scenes_with_runs()
-    print(f"index: {len(idx['scenes'])} scenes, {sum(len(s['runs']) for s in idx['scenes'])} runs -> "
-          f"{cat.data / 'index.sqlite'}")
+    print(f"index: {len(idx['scenes'])} scenes, {sum(len(s['runs']) for s in idx['scenes'])} runs -> {cat.index.path}")
 
 
 def cmd_scenes(args) -> None:
@@ -94,13 +96,26 @@ def cmd_runs(args) -> None:
         print(json.dumps(sc["runs"], indent=1))
         return
     for r in sc["runs"]:
-        print(f"{r['id']:<16} {r['kind']:<18} {r['length_s']:>7.1f} s  {r['status']:<8} {r['verdict']:<16} "
-              f"{r['events']} events")
+        print(f"{r['key']:<34} {r['kind']:<16} {r['length_s']:>7.1f} s  {r['status']:<8} {r['verdict']:<14} "
+              f"{r['events']} events" + (f"  ERROR {r['error']}" if r["error"] else ""))
 
 
 def cmd_events(args) -> None:
+    kinds = set(args.kinds.split(",")) if args.kinds else None
+    if args.all:
+        cat = _cat(args)
+        cat.scan()
+        rows = cat.index.events_across(kinds)
+        if args.json:
+            print(json.dumps([{"run": k, "t": t, "kind": kd, "text": x} for k, t, kd, x in rows], indent=1))
+            return
+        for k, t, _kd, x in rows:
+            print(f"{k:<34} {t:8.2f}  {x}")
+        return
+    if not args.run:
+        raise SystemExit("name a run, or --all for every run")
     run, _ = query.load_run(_cat(args), args.run)
-    evs = query.events(run, set(args.kinds.split(",")) if args.kinds else None)
+    evs = query.events(run, kinds)
     if args.json:
         print(json.dumps(evs, indent=1))
         return
@@ -160,14 +175,16 @@ def cmd_sensor(args) -> None:
 def cmd_serve(args) -> None:
     from miniview.server import make_server
 
-    httpd = make_server(_cat(args), args.host, args.port)
-    print(f"miniview at http://{args.host}:{args.port}/ (API /api/v1), data {args.data}", flush=True)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    cat = _cat(args)
+    httpd = make_server(cat, args.host, args.port)
+    print(f"miniview at http://{args.host}:{args.port}/ (API /api/v1), data {cat.data}, index {cat.index.path}", flush=True)
     httpd.serve_forever()
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--data", default=str(DEFAULT_DATA), help="the lab's data folder")
+    ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (MINIVIEW_DATA)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("scene", help="write a scene from a simulator layout")
     p.add_argument("id")
@@ -193,8 +210,9 @@ def main() -> None:
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_runs)
     p = sub.add_parser("events", help="what happened in a run, when")
-    p.add_argument("run")
-    p.add_argument("--kinds", help="comma-separated event kinds")
+    p.add_argument("run", nargs="?")
+    p.add_argument("--all", action="store_true", help="every run (from the index), not one")
+    p.add_argument("--kinds", "--kind", dest="kinds", help="comma-separated event kinds")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_events)
     p = sub.add_parser("state", help="the state of a run at a moment")

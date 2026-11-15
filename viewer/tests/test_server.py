@@ -9,8 +9,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from helpers import make_run
-from miniview.catalog import Catalog
+from helpers import catalog, make_run
 from miniview.server import make_server
 
 failures = []
@@ -28,7 +27,7 @@ HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
 
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp)
-    cat = Catalog(data)
+    cat = catalog(data)
     cat.put_scene({"id": "room", "name": "A room", "kind": "test", "bounds": [-1, 1, -1, 1], "boxes": [], "hazards": []})
     make_run(data, "duck/room/done1",
              HEAD + [tick(1.0, 0.0), tick(1.1, 0.03), (1.2, "plan", {"path": [[0, 0], [1, 0]]}), tick(1.2, 0.06),
@@ -58,8 +57,9 @@ with tempfile.TemporaryDirectory() as tmp:
     check("presence: spans and times", pr["belief.pose"]["spans"] == [[1.0, 1.2]] and pr["plan.path"]["times"] == [1.2], pr["belief.pose"])
     page = urllib.request.urlopen(base + "/web/three/", timeout=10)
     check("the pages are served", page.status == 200 and b"<html" in page.read().lower())
-    rows = cat.db.execute("select count(*) from ticks where run = 'duck/room/done1'").fetchone()[0]
-    check("the database has a row per tick", rows == 3, rows)
+    row = cat.index.row("duck/room/done1")
+    check("the index has the run: its row and its events", row["ticks"] == 3 and row["status"] == "ended"
+          and [e["kind"] for e in cat.index.event_rows("duck/room/done1")] == ["trapped"], row)
 
     # A live run: written while the service runs; a page's live stream sees each record.
     rec = make_run(data, "duck/room/live1", [tick(1.0, 0.0)], close=False)

@@ -213,6 +213,8 @@ def _num(q: dict, k: str):
 
 
 def make_server(catalog: Catalog, host: str = "127.0.0.1", port: int = 8070, follow: bool = True):
+    if follow:
+        catalog.index.hold()
     catalog.scan()
     handler = type("BoundHandler", (Handler,), {"catalog": catalog})
     httpd = http.server.ThreadingHTTPServer((host, port), handler)

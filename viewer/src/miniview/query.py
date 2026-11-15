@@ -7,9 +7,13 @@ from miniview.se2 import compose
 
 
 def load_run(catalog, run_id: str) -> tuple:
-    ld = catalog.get(run_id)
-    if ld is None:
+    catalog.scan_paths()
+    if catalog.resolve(run_id) is None:
+        named = catalog.candidates(run_id)
+        if len(named) > 1:
+            raise SystemExit(f"{len(named)} runs are called {run_id!r}; which of: " + ", ".join(sorted(named)))
         raise SystemExit(f"no run {run_id!r} under {catalog.data / 'runs'} (miniview import it first)")
+    ld = catalog.get(run_id)
     return ld.data.run, ld.data.frames
 
 

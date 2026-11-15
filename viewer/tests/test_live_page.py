@@ -12,7 +12,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from miniview.catalog import Catalog
+from helpers import catalog
+
 from miniview.importer import import_duck
 from miniview.server import make_server
 from miniview.shots import launch
@@ -48,7 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
     data, log = Path(tmp) / "data", Path(tmp) / "logs" / "explore99"
     log.mkdir(parents=True)
     (log / "start.json").write_text(json.dumps({"map": [0, 0, 0], "truth": [0, 0, 0], "scale": 1.0}))
-    cat = Catalog(data)
+    cat = catalog(data)
     cat.put_scene({"id": "room", "name": "A room", "kind": "test", "bounds": [-2, 2, -2, 2], "boxes": [], "hazards": []})
     httpd = make_server(cat, "127.0.0.1", 0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

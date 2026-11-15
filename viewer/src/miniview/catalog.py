@@ -1,54 +1,57 @@
-"""The lab's data folder and its database (ADR-0004, ADR-0005).
+"""The lab's data folder, the index over it, and the runs in memory (ADR-0004, ADR-0006, ADR-0008, ADR-0009).
 
     data/scenes/<scene>/scene.json
-    data/runs/<robot>/<scene>/<run>/run.mcap      the record of truth
-    data/index.sqlite                             derived: rebuilt from the files at any time
+    data/runs/<robot>/<scene>/<run>/run.mcap       the record of truth (run.live.mcap + writer.lock while written)
+    $MINIVIEW_INDEX                                the service's own index (miniview.index), outside the data
 
-`Catalog` knows the runs, loads a run's records into memory when asked, and follows the runs that
-are still being written (a live run is a run whose file has not ended). Every run it loads or
-follows is written to the database: runs, streams, epochs, events and one row per tick.
+`Catalog` knows every run from the index, opens a run's records into memory when asked, and follows the
+runs that are still being written. A run is `live`, `ended`, `stopped` (its writer died) or `broken`;
+the last three are final until the file changes. Loaded runs live in a cache bounded by memory
+(`MINIVIEW_CACHE_MB`): the least recently used go first; live runs and runs with an open stream stay.
+Nothing that goes wrong inside one run leaves it (ADR-0008).
 """
 
 import json
 import logging
 import os
-import sqlite3
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 from miniview import keys, mcapio
+from miniview.index import Index
 from miniview.store import RunData
 from miniview.validate import BrokenRun
 
 log = logging.getLogger("miniview")
 
-DEFAULT_DATA = Path(os.environ.get("MINIVIEW_DATA", "/work/robotics-lab/data"))
-STOPPED_AFTER_S = 120.0     # a live file that has not grown for this long lost its writer
-
-SCHEMA = """
-create table if not exists scenes (id text primary key, name text, kind text, json text);
-create table if not exists runs (id text primary key, scene text, robot text, kind text, status text,
-  t0 real, t1 real, ticks integer, verdict text, events integer, path text, size integer, mtime real);
-create table if not exists streams (run text, id text, json text, primary key (run, id));
-create table if not exists epochs (run text, from_t real, map_to_world text);
-create table if not exists events (run text, t real, kind text, text text);
-create table if not exists ticks (run text, i integer, t real, bx real, by real, byaw real,
-  tx real, ty real, tyaw real, vx real, vyaw real, pitch real, roll real, primary key (run, i));
-"""
+STOPPED_AFTER_S = 120.0     # a live file with no writer that has not grown for this long lost its writer
+FINAL = ("ended", "stopped", "broken")
 
 
-def run_dir(data: Path, robot: str, scene: str, run_id: str) -> Path:
-    return data / "runs" / robot / scene / run_id
+def default_data() -> Path | None:
+    v = os.environ.get("MINIVIEW_DATA", "").strip()
+    return Path(v) if v else None
 
 
 def _file_of(d: Path) -> Path:
     return d / mcapio.FINAL if (d / mcapio.FINAL).exists() else d / mcapio.LIVE
 
 
+def signature(d: Path):
+    """(file name, inode, size, mtime_ns) of a run's current file; None when it has none."""
+    f = _file_of(d)
+    try:
+        st = f.stat()
+    except OSError:
+        return None
+    return (f.name, st.st_ino, st.st_size, st.st_mtime_ns)
+
+
 class Loaded:
-    """One run: its follower, its records so far. Nothing that goes wrong in here leaves it: a failure
-    marks this run broken (with the reason) and is logged with its key (ADR-0008)."""
+    """One run: its follower, its records so far. A failure in here marks this run broken (with the
+    reason) and is logged with its key."""
 
     def __init__(self, key: str, path: Path):
         self.key = key
@@ -56,21 +59,16 @@ class Loaded:
         self.follower = mcapio.Follower(path)
         self.data = RunData()
         self.error = None
+        self.stopped = False
         self.sig = None
-        self.indexed_ticks = 0
+        self.pins = 0
         self.indexed_events = 0
-        self.indexed_epochs = 0
-
-    def _signature(self):
-        try:
-            st = _file_of(self.dir).stat()
-        except OSError:
-            return None
-        return (st.st_ino, st.st_size, st.st_mtime_ns)
+        self.indexed_segments = 0
+        self.indexed_status = None
 
     def mark_broken(self, msg: str) -> None:
         self.error = msg
-        self.sig = self._signature()
+        self.sig = signature(self.dir)
         r = self.data.run
         robot, scene, name = self.key.split("/")
         r.update(key=self.key, id=name, scene=r["scene"] or scene, status="broken", verdict="broken", error=msg)
@@ -79,18 +77,25 @@ class Loaded:
         with self.data.changed:
             self.data.changed.notify_all()
 
+    def mark_stopped(self) -> None:
+        """Its writer died: the run ends here, as `stopped`, until its file changes."""
+        self.stopped = True
+        with self.data.changed:
+            self.data.run.update(status="stopped", verdict="stopped")
+            self.data.changed.notify_all()
+        log.warning("run %s: its writer is gone and the file stopped growing; stopped", self.key)
+
     def rebuild(self) -> None:
-        """The file was replaced or cut: read it again from the start; the run says so (`rewritten`)."""
+        """Read the file again from the start (it was replaced, or repaired)."""
         with self.data.changed:
             self.data.reset()
             self.follower = mcapio.Follower(self.dir)
-            self.error = None
-            self.indexed_ticks = self.indexed_events = self.indexed_epochs = 0
-        log.warning("run %s was rewritten: read again from the start", self.key)
+            self.error, self.stopped = None, False
+            self.indexed_events = self.indexed_segments = 0
 
     def poll(self) -> bool:
         """Read what the file gained; True when the run changed. Never raises."""
-        if self.error:
+        if self.error or self.stopped:
             return False
         try:
             return self._poll()
@@ -104,7 +109,7 @@ class Loaded:
         with self.data.changed:                         # readers serialize under the same lock
             if self.follower.generation != gen:
                 self.data.reset()
-                self.indexed_ticks = self.indexed_events = self.indexed_epochs = 0
+                self.indexed_events = self.indexed_segments = 0
             for t, kind, p in recs:
                 self.data.feed(t, kind, p)
                 if kind == "run" and self.data.run["key"] != self.key:
@@ -123,22 +128,25 @@ class Loaded:
                 self.data.finish_batch()
         if self.data.run["key"] is None and (recs or bad):
             raise BrokenRun("no valid run record: " + (bad[0] if bad else "the first message is not the run record"))
-        self.sig = self._signature()
+        self.sig = signature(self.dir)
         return bool(recs or bad)
 
     def check_changed(self) -> bool:
-        """A file that was finished or broken, and then replaced: read it again. True when it was."""
-        sig = self._signature()
-        if sig is not None and self.sig is not None and sig != self.sig and (self.follower.done or self.error):
-            self.rebuild()
+        """A run that was final (finished, stopped, broken) and whose file changed: read again. True when it was."""
+        sig = signature(self.dir)
+        if sig is None or self.sig is None or sig == self.sig or not (self.follower.done or self.error or self.stopped):
+            return False
+        repaired = self.stopped and self.sig[0] == mcapio.LIVE and sig[0] == mcapio.FINAL
+        self.rebuild()
+        self.poll()
+        if not repaired:
             self.data.run["rewritten"] += 1
-            self.poll()
-            return True
-        return False
+        log.warning("run %s: its file changed; read again from the start", self.key)
+        return True
 
     @property
     def live(self) -> bool:
-        return not self.follower.done and not self.error
+        return not self.follower.done and not self.error and not self.stopped
 
     @property
     def path(self) -> Path:
@@ -146,20 +154,32 @@ class Loaded:
 
 
 class Catalog:
-    def __init__(self, data: Path = DEFAULT_DATA):
-        self.data = Path(data)
-        (self.data / "runs").mkdir(parents=True, exist_ok=True)
-        (self.data / "scenes").mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.data / "index.sqlite", check_same_thread=False)
-        self.db.executescript(SCHEMA)
+    def __init__(self, data: Path | None = None, index: Path | None = None, cache_mb: float | None = None):
+        data = Path(data) if data else default_data()
+        if data is None:
+            raise SystemExit("no data folder: set MINIVIEW_DATA or pass --data")
+        self.data = data
+        for sub in ("runs", "scenes"):
+            try:
+                (self.data / sub).mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass                                    # a read-only mount that lacks it: nothing there
+        self.index = Index(index)
+        self.cache_bytes = int(float(cache_mb if cache_mb is not None else os.environ.get("MINIVIEW_CACHE_MB", 1024))
+                               * 1024 * 1024)
         self.lock = threading.RLock()
-        self.loaded = {}         # run id -> Loaded
-        self.paths = {}          # run key -> the run's folder
+        self.loaded = OrderedDict()   # run key -> Loaded, least recently used first
+        self.paths = {}               # run key -> the run's folder
+        self.evictions = 0
+        self._keylocks = {}
 
     # ---- scenes ----------------------------------------------------------------------------------
     def scene(self, scene_id: str) -> dict | None:
         p = self.data / "scenes" / scene_id / "scene.json"
-        return json.loads(p.read_text()) if p.exists() else None
+        try:
+            return json.loads(p.read_text())
+        except (OSError, ValueError):
+            return None
 
     def put_scene(self, scene: dict) -> Path:
         p = self.data / "scenes" / scene["id"] / "scene.json"
@@ -167,84 +187,156 @@ class Catalog:
         p.write_text(json.dumps(scene, separators=(",", ":")))
         return p
 
-    # ---- runs ------------------------------------------------------------------------------------
-    def scan(self) -> None:
-        """Find run files; load the new or changed ones into the database."""
-        with self.lock:
-            self.scan_paths()
-            for rid, d in sorted(self.paths.items()):
-                try:
-                    if rid in self.loaded:
-                        if self.loaded[rid].check_changed():
-                            self._index(self.loaded[rid])
-                        continue
-                    st = _file_of(d).stat()
-                    row = self.db.execute("select size, mtime, status from runs where id = ?", (rid,)).fetchone()
-                    if row and row[0] == st.st_size and row[1] == st.st_mtime and row[2] == "ended":
-                        continue
-                    self.get(rid)
-                except Exception:
-                    log.exception("scanning run %s failed", rid)
-            for s in sorted((self.data / "scenes").glob("*/scene.json")):
-                try:
-                    sc = json.loads(s.read_text())
-                    self.db.execute("insert or replace into scenes values (?, ?, ?, ?)",
-                                    (sc["id"], sc.get("name", sc["id"]), sc.get("kind", ""), json.dumps(sc)))
-                except Exception:
-                    log.exception("scene %s cannot be read", s)
-            self.db.commit()
+    # ---- finding runs ------------------------------------------------------------------------------
+    def scan_paths(self) -> None:
+        found = {}
+        for p in sorted((self.data / "runs").glob("*/*/*")):
+            if not ((p / mcapio.FINAL).exists() or (p / mcapio.LIVE).exists()):
+                continue
+            try:
+                found[keys.key_of(self.data, p)] = p
+            except ValueError as e:
+                log.warning("not a run: %s (%s)", p, e)
+        self.paths = found
+
+    def candidates(self, name: str) -> list:
+        return [k for k in self.paths if k.rsplit("/", 1)[-1] == name]
 
     def resolve(self, run_id: str) -> str | None:
-        """A key, or a short name when exactly one run has it."""
+        """A key, or a short name when exactly one run has it; None otherwise (see `candidates`)."""
         if run_id in self.paths:
             return run_id
-        named = [k for k in self.paths if k.rsplit("/", 1)[-1] == run_id]
-        return named[0] if len(named) == 1 else None
+        c = self.candidates(run_id)
+        return c[0] if len(c) == 1 else None
+
+    # ---- the cache ----------------------------------------------------------------------------------
+    def _pinned(self, ld: Loaded) -> bool:
+        return ld.pins > 0 or self.status(ld) == "live"
+
+    def cache_used(self) -> int:
+        with self.lock:
+            return sum(ld.data.mem for ld in self.loaded.values())
+
+    def _evict(self, keep: str | None = None) -> None:
+        """Drop the least recently used runs until the estimate fits; live runs, runs with an open stream and `keep` stay."""
+        with self.lock:
+            total = sum(ld.data.mem for ld in self.loaded.values())
+            for key in list(self.loaded):
+                if total <= self.cache_bytes:
+                    break
+                ld = self.loaded[key]
+                if key == keep or self._pinned(ld):
+                    continue
+                del self.loaded[key]
+                total -= ld.data.mem
+                self.evictions += 1
 
     def get(self, run_id: str) -> Loaded | None:
+        """The run in memory, loading it (and keeping it in the cache) when it is not there."""
         with self.lock:
-            run_id = self.resolve(run_id) or run_id
-            if run_id in self.loaded:
-                return self.loaded[run_id]
-            p = self.paths.get(run_id)
-            if p is None:
+            key = self.resolve(run_id)
+            if key is None:
                 self.scan_paths()
-                run_id = self.resolve(run_id) or run_id
-                p = self.paths.get(run_id)
-            if p is None:
+                key = self.resolve(run_id)
+            if key is None:
                 return None
-            ld = Loaded(run_id, p)
-            ld.poll()
-            if not ld.data.log:
-                ld.data.finish_batch()
-            self.loaded[run_id] = ld
+            ld = self.loaded.get(key)
+            if ld:
+                self.loaded.move_to_end(key)
+                return ld
+            kl = self._keylocks.setdefault(key, threading.Lock())
+            path = self.paths[key]
+        with kl:                                        # one load per run at a time, without holding the catalog
+            with self.lock:
+                ld = self.loaded.get(key)
+                if ld:
+                    return ld
+            ld = self._open(key, path)
+            with self.lock:
+                self.loaded[key] = ld
             self._index(ld)
+            self._evict(keep=key)
             return ld
 
-    def scan_paths(self) -> None:
-        for p in sorted((self.data / "runs").glob("*/*/*")):
-            if (p / mcapio.FINAL).exists() or (p / mcapio.LIVE).exists():
-                self.paths[keys.key_of(self.data, p)] = p
+    def _open(self, key: str, path: Path) -> Loaded:
+        ld = Loaded(key, path)
+        ld.poll()
+        if not ld.data.log:
+            ld.data.finish_batch()
+        return ld
 
+    # ---- states -------------------------------------------------------------------------------------
     def status(self, ld: Loaded) -> str:
+        """live, ended, stopped or broken. A live file is live while its writer's PID is alive or it grew
+        in the last STOPPED_AFTER_S seconds; after that it is stopped, for good."""
         if ld.error:
             return "broken"
-        if not ld.live:
+        if ld.stopped:
+            return "stopped"
+        if ld.data.run["status"] in ("ended", "stopped"):      # an end record (a repaired run's says stopped)
             return ld.data.run["status"]
-        idle = time.time() - ld.path.stat().st_mtime
-        return "stopped" if idle > STOPPED_AFTER_S else "live"
+        if ld.follower.done:
+            return "ended"
+        try:
+            idle = time.time() - (ld.dir / mcapio.LIVE).stat().st_mtime
+        except OSError:
+            return "live"                               # being compacted this instant
+        if mcapio.writer_alive(ld.dir) or idle < STOPPED_AFTER_S:
+            return "live"
+        ld.mark_stopped()
+        return "stopped"
+
+    # ---- scanning and following ----------------------------------------------------------------------
+    def scan(self) -> None:
+        """Bring the index up to date with the folder. A run whose file is as the index remembers it, and
+        is final, is not opened. Any other is opened and summarized: kept in memory only if it is live."""
+        with self.lock:
+            self.scan_paths()
+            paths = dict(self.paths)
+        for key, d in sorted(paths.items()):
+            try:
+                self._scan_one(key, d)
+            except Exception:
+                log.exception("scanning run %s failed", key)
+        for key in set(self.index.keys()) - set(paths):
+            self.index.drop(key)
+            with self.lock:
+                self.loaded.pop(key, None)
+        for s in sorted((self.data / "scenes").glob("*/scene.json")):
+            try:
+                self.index.put_scene(json.loads(s.read_text()))
+            except Exception:
+                log.exception("scene %s cannot be read", s)
+
+    def _scan_one(self, key: str, d: Path) -> None:
+        with self.lock:
+            ld = self.loaded.get(key)
+        if ld:
+            if ld.check_changed():
+                self._index(ld)
+            return
+        sig, row = signature(d), self.index.row(key)
+        if row and sig and (row["inode"], row["size"], row["mtime_ns"]) == sig[1:] and row["status"] in FINAL:
+            return
+        ld = self._open(key, d)
+        self._index(ld)
+        if self.status(ld) == "live":
+            with self.lock:
+                self.loaded[key] = ld
+                self.loaded.move_to_end(key)
 
     def follow_once(self) -> list:
-        """Poll every live run once; return the ids that grew."""
+        """Poll every live run once, bring the index along; the keys of the runs that changed."""
         grew = []
         with self.lock:
-            live = [ld for ld in self.loaded.values() if ld.live]
-        for ld in live:
+            runs = list(self.loaded.values())
+        for ld in runs:
             try:
-                if ld.poll():
+                changed = ld.poll()
+                status = self.status(ld)
+                if changed or status != ld.indexed_status:
+                    self._index(ld, status)
                     grew.append(ld.key)
-                    with self.lock:
-                        self._index(ld)
             except Exception:
                 log.exception("following run %s failed", ld.key)
         return grew
@@ -261,49 +353,40 @@ class Catalog:
                 log.exception("the follower's round failed; going on")
             time.sleep(every_s)
 
-    # ---- the database ----------------------------------------------------------------------------
-    def _index(self, ld: Loaded) -> None:
-        r, f, db = ld.data.run, ld.data.frames, self.db
-        if not r.get("key"):
-            return
-        if ld.error:
-            r["scene"] = r["scene"] or ld.key.split("/")[1]
-        st = ld.path.stat()
-        robot = (r.get("robot") or {}).get("name", "")
-        db.execute("insert or replace into runs values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                   (r["key"], r["scene"], robot, r.get("kind", ""), self.status(ld), r["t0"], r["t1"], r["ticks"],
-                    r["verdict"], len(r["events"]), str(ld.path), st.st_size, st.st_mtime))
-        db.execute("delete from streams where run = ?", (r["key"],))
-        db.executemany("insert into streams values (?, ?, ?)", [(r["key"], s["id"], json.dumps(s)) for s in r["streams"]])
-        if ld.indexed_ticks == 0:
-            for table in ("epochs", "events", "ticks"):
-                db.execute(f"delete from {table} where run = ?", (r["key"],))
-        db.executemany("insert into epochs values (?, ?, ?)",
-                       [(r["key"], e["from_t"], json.dumps(e["map_to_world"])) for e in r["epochs"][ld.indexed_epochs:]])
-        db.executemany("insert into events values (?, ?, ?, ?)",
-                       [(r["key"], e["t"], e["kind"], e["text"]) for e in r["events"][ld.indexed_events:]])
-        rows = []
-        for i in range(ld.indexed_ticks, len(f["t"])):
-            b, tr, cmd, tilt = f["belief"][i], f["truth"][i] or [None] * 3, f["cmd"][i] or [None, None], f["tilt"][i]
-            rows.append((r["key"], i, f["t"][i], *b[:3], *tr[:3], *cmd[:2], *(tilt or [None, None])[:2]))
-        db.executemany("insert or replace into ticks values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
-        ld.indexed_ticks, ld.indexed_events, ld.indexed_epochs = len(f["t"]), len(r["events"]), len(r["epochs"])
-        db.commit()
+    # ---- the index ----------------------------------------------------------------------------------
+    def _index(self, ld: Loaded, status: str | None = None) -> None:
+        """Write the run's row, streams and new events and segments in one transaction."""
+        status = status or self.status(ld)
+        with ld.data.changed:                           # a consistent copy; the write happens outside
+            r = ld.data.run
+            sig = ld.sig or (None, None, None, None)
+            row = {"key": ld.key, "uuid": r["uuid"], "robot": (r["robot"] or {}).get("name"), "scene": r["scene"],
+                   "kind": r["kind"], "status": status, "verdict": r["verdict"], "started_at_ns": r["started_at_ns"],
+                   "t0": r["t0"], "t1": r["t1"], "ticks": r["ticks"], "events": len(r["events"]),
+                   "rejects": r["rejects"], "first_error": r["first_error"], "error": r["error"],
+                   "rewritten": r["rewritten"], "epochs": json.dumps(r["epochs"]), "size": sig[2], "mtime_ns": sig[3],
+                   "inode": sig[1]}
+            events, segments, streams = list(r["events"]), list(r["segments"]), list(r["streams"])
+            from_event, from_segment = ld.indexed_events, ld.indexed_segments
+            if from_event > len(events) or from_segment > len(segments):
+                from_event = from_segment = 0
+        self.index.write(row, streams, events, segments, from_event, from_segment)
+        ld.indexed_events, ld.indexed_segments, ld.indexed_status = len(events), len(segments), status
+
+    # ---- listing, from the index ---------------------------------------------------------------------
+    def list_runs(self, robot=None, scene=None, status=None) -> list:
+        out = []
+        for r in self.index.runs(robot, scene, status):
+            out.append({"id": r["key"].rsplit("/", 1)[-1], "key": r["key"], "robot": r["robot"], "scene": r["scene"],
+                        "kind": r["kind"], "status": r["status"], "length_s": round((r["t1"] or 0) - (r["t0"] or 0), 1),
+                        "verdict": r["verdict"], "events": r["events"], "started_at_ns": r["started_at_ns"],
+                        "rejects": r["rejects"], "first_error": r["first_error"], "error": r["error"],
+                        "rewritten": r["rewritten"]})
+        return out
 
     def scenes_with_runs(self) -> dict:
         """index.json's shape (CONTRACT.md): the scenes, each with its runs, newest first."""
-        with self.lock:
-            out = {}
-            for sid, name, kind in self.db.execute("select id, name, kind from scenes order by id"):
-                out[sid] = {"id": sid, "name": name, "kind": kind, "runs": []}
-            for rid, scene, robot, kind, status, t0, t1, verdict, events in self.db.execute(
-                    "select id, scene, robot, kind, status, t0, t1, verdict, events from runs order by mtime desc"):
-                extra = {}
-                if rid in self.loaded:
-                    ld = self.loaded[rid]
-                    status = self.status(ld)
-                    extra = {k: ld.data.run[k] for k in ("error", "rejects", "first_error", "rewritten")}
-                out.setdefault(scene, {"id": scene, "name": scene, "kind": "", "runs": []})["runs"].append(
-                    dict({"id": rid.rsplit("/", 1)[-1], "key": rid, "robot": robot, "kind": kind, "status": status,
-                          "length_s": round(t1 - t0, 1), "verdict": verdict, "events": events}, **extra))
-            return {"format": 1, "scenes": list(out.values())}
+        out = {s["id"]: dict(s, runs=[]) for s in self.index.scenes()}
+        for r in self.list_runs():
+            out.setdefault(r["scene"], {"id": r["scene"], "name": r["scene"], "kind": "", "runs": []})["runs"].append(r)
+        return {"format": 2, "scenes": list(out.values())}

@@ -1,8 +1,11 @@
 """Shared by the tests: checks, waiting for a condition (never a fixed sleep), the explore9 fixture, a service."""
 
+import atexit
 import json
+import os
 import shutil
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -12,6 +15,9 @@ from pathlib import Path
 from miniview import keys, mcapio
 from miniview.importer import import_duck
 
+_INDEX_DIR = Path(tempfile.mkdtemp(prefix="miniview-test-index-"))
+atexit.register(shutil.rmtree, _INDEX_DIR, ignore_errors=True)
+os.environ["MINIVIEW_INDEX"] = str(_INDEX_DIR / "default.sqlite")     # a test that forgets its own index never touches the real one
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "explore9"
 T0_NS = 1_700_000_000 * 10**9
 
@@ -49,6 +55,14 @@ def import_fixture(data: Path, name: str = "explore9", robot: str = "duck", scen
         shutil.copytree(FIXTURE, src)
     import_duck(src, scene, data, say=lambda *_: None, started_at_ns=T0_NS, robot=robot)
     return keys.run_dir(data, keys.make_key(robot, scene, name))
+
+
+def catalog(data: Path, index: Path | None = None, **kw):
+    """A catalog over `data` with an index of its own (outside the data, as in production); pass `index` to reuse one."""
+    from miniview.catalog import Catalog
+
+    n = len(list(_INDEX_DIR.glob("*.sqlite")))
+    return Catalog(data, index=index or _INDEX_DIR / f"index-{n}.sqlite", **kw)
 
 
 def tick(t, x, **kw):
