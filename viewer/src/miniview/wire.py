@@ -48,6 +48,15 @@ def _raw(v):
     return v
 
 
+def _xy(points) -> list:
+    """[[x, y], ...] as [{"x", "y"}, ...]: Lichtblick's JSON-schema reader takes no arrays of arrays."""
+    return [{"x": p[0], "y": p[1]} for p in points]
+
+
+def _unxy(points) -> list:
+    return [[p["x"], p["y"]] for p in points]
+
+
 def _stamp(ns: int) -> dict:
     return {"sec": ns // 10**9, "nsec": ns % 10**9}
 
@@ -97,11 +106,11 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
         if p.get("cmd") is not None:
             out.append(m("/miniview/command", {"vx": p["cmd"][0], "vyaw": p["cmd"][1]}))
         if p.get("tilt") is not None:
-            out.append(m("/miniview/tilt", {"tilt": p["tilt"]}))
+            out.append(m("/miniview/tilt", {"pitch_deg": p["tilt"][0], "roll_deg": p["tilt"][1]}))
         out.append(m("/miniview/tick_extra", {"t_src": src, "raw": _raw(p.get("raw", {}))}))
         return out
     if kind == "plan":
-        return [m("/miniview/plan", {"path": p["path"], "t_src": src, "raw": _raw(p.get("raw", {}))})]
+        return [m("/miniview/plan", {"path": _xy(p["path"]), "t_src": src, "raw": _raw(p.get("raw", {}))})]
     if kind == "world":
         g = p["grid"]
         cells = g["cells"].encode("ascii")
@@ -114,7 +123,8 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
                            "row_stride": g["w"], "cell_stride": 1,
                            "fields": [{"name": "cell", "offset": 0, "type": UINT8}],
                            "data": base64.b64encode(cells).decode()}),
-                m("/miniview/memory", {"obstacles": p["obstacles"], "drops": p["drops"], "raw": _raw(p.get("raw", {}))})]
+                m("/miniview/memory", {"obstacles": _xy(p["obstacles"]), "drops": _xy(p["drops"]),
+                                       "raw": _raw(p.get("raw", {}))})]
     if kind == "event":
         return [m("/miniview/event", {"kind": p["kind"], "text": p["text"], "notable": p.get("notable", True),
                                       "t_src": src, "raw": _raw(p.get("raw", {}))})]
@@ -185,7 +195,7 @@ class Assembler:
             elif topic == "/miniview/command":
                 d["cmd"] = [o["vx"], o["vyaw"]]
             else:
-                d["tilt"] = o["tilt"]
+                d["tilt"] = [o["pitch_deg"], o["roll_deg"]]
             return []
         if topic == "/miniview/tick_extra":
             if not self.pending or self.pending[1] != "tick":
@@ -200,12 +210,12 @@ class Assembler:
                 raise ValueError("memory outside a world")
             pt, kind, d = self.pending
             self.pending = None
-            d.update(obstacles=o["obstacles"], drops=o["drops"])
+            d.update(obstacles=_unxy(o["obstacles"]), drops=_unxy(o["drops"]))
             if self.keep_raw:
                 d["raw"] = o["raw"]
             return [(pt, kind, d)]
         if topic == "/miniview/plan":
-            d = {"path": o["path"]}
+            d = {"path": _unxy(o["path"])}
             if self.keep_raw:
                 d.update(t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "plan", d)]

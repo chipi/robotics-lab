@@ -40,10 +40,22 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
 ## Consequences
 
 - **Positive:** two writers cannot corrupt a run; crashes lose at most one tick; time is real;
-  goals are explicit; Foxglove, Lichtblick and Rerun's MCAP reader show poses, the map and depth;
-  finished files are compressed and indexed.
+  goals are explicit; finished files are compressed and indexed.
 - **Negative:** more to write and read; the reader maps Foxglove messages back to our records;
   three runs must be imported again.
+
+**As checked (2026-11-15, explore9 in format 2):**
+
+- **Rerun 0.43.2 does not show them.** `rerun mcap check` passes every channel and `rerun mcap
+  info` reads the real start time and the Foxglove schemas, but `rerun mcap convert -d foxglove`
+  decodes no entity: Rerun's Foxglove decoder reads protobuf, not JSON. Showing runs in Rerun needs
+  protobuf (the alternative below) or our own converter.
+- **Lichtblick loads them** with the right start time, the transforms, and `/belief/pose`,
+  `/truth/pose`, `/depth` and `/map` classed as pose, point cloud and grid in its 3D panel. It
+  rejected three of our own schemas at first (an array without an item type, an array of arrays);
+  points are now `{x, y}` objects and a test keeps the schemas inside what Lichtblick reads. That
+  the poses, map and depth draw in its 3D panel is not verified: switching the topics on was not
+  scripted successfully.
 
 ## Alternatives considered
 

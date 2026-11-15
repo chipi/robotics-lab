@@ -261,4 +261,28 @@ with tempfile.TemporaryDirectory() as tmp:
           and sorted(p.name for p in d2.iterdir()) == ["run.mcap"], [k for _, k, _ in recs])
     check("repair of a run with nothing to repair says so", raises(SystemExit, cli.cmd_repair, argparse.Namespace(data=str(data), run=key2)) is not False)
 
+
+# Lichtblick's reader of JSON schemas rejects an array without an item type and an array of arrays
+# (2026-11-15: /miniview/tilt, /miniview/plan and /miniview/memory failed to load there).
+def lichtblick_problems(node, path="$"):
+    out = []
+    if isinstance(node, dict):
+        if node.get("type") == "array":
+            items = node.get("items")
+            if not isinstance(items, dict) or "type" not in items:
+                out.append(f"{path}: array without an item type")
+            elif items.get("type") == "array":
+                out.append(f"{path}: array of arrays")
+        for k, v in node.items():
+            out += lichtblick_problems(v, f"{path}.{k}")
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            out += lichtblick_problems(v, f"{path}[{i}]")
+    return out
+
+
+bad = {name: lichtblick_problems(json.loads(schemas.schema_bytes(f"miniview.{name}"))) for name in schemas.MINIVIEW}
+check("our schemas use only what Lichtblick reads (no untyped arrays, no arrays of arrays)",
+      not any(bad.values()), {k: v for k, v in bad.items() if v})
+
 check.done()
