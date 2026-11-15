@@ -43,3 +43,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   them](RFC-0008-challenge-course.md) (Proposed; phase 2's bar, by the operator's decision)
 - [RFC-0009 — miniview: one run format, two faces, any
   robot](RFC-0009-miniview.md) (Proposed; with PRD-001 and UXS-001)
+- [RFC-0010 — Runs, version 2: how they are stored, read, served and
+  loaded](RFC-0010-run-store-v2.md) (Accepted, 2026-11-15; ADR-0006 to ADR-0012)

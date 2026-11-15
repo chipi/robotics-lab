@@ -33,5 +33,13 @@ Required sections:
   it](ADR-0004-runs-in-mcap-with-derived-index.md) (Accepted, 2026-11-15)
 - [ADR-0005 — miniview: one API over the run store, live from the
   start](ADR-0005-miniview-api-live-from-the-start.md) (Accepted, 2026-11-15)
+- With [RFC-0010](../rfc/RFC-0010-run-store-v2.md), all Accepted 2026-11-15:
+  - [ADR-0006 — A run is robot/scene/run, and says who it is](ADR-0006-run-identity.md)
+  - [ADR-0007 — The run file, format 2](ADR-0007-run-file-format-2.md)
+  - [ADR-0008 — Reading runs: validated, isolated, aware of rewrites](ADR-0008-reading-runs.md)
+  - [ADR-0009 — The index, run states and a bounded cache](ADR-0009-index-and-lifecycle.md)
+  - [ADR-0010 — The API, version 2](ADR-0010-api-2.md)
+  - [ADR-0011 — Loading a run into the UI: by window, then by record](ADR-0011-loading-into-the-ui.md)
+  - [ADR-0012 — Docker: the data read only, the index on its own volume](ADR-0012-docker-read-only-data.md)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

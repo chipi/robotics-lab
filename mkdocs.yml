@@ -80,6 +80,7 @@ nav:
     - RFC-0007 — The platform: rfc/RFC-0007-platform.md
     - RFC-0008 — The challenge course: rfc/RFC-0008-challenge-course.md
     - RFC-0009 — miniview: rfc/RFC-0009-miniview.md
+    - RFC-0010 — Runs, version 2: rfc/RFC-0010-run-store-v2.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md
@@ -93,6 +94,13 @@ nav:
     - ADR-0003 — miniview draws with three.js: adr/ADR-0003-miniview-drawing-three-js.md
     - ADR-0004 — Runs in MCAP, a derived index: adr/ADR-0004-runs-in-mcap-with-derived-index.md
     - ADR-0005 — miniview API, live from the start: adr/ADR-0005-miniview-api-live-from-the-start.md
+    - ADR-0006 — A run is robot/scene/run: adr/ADR-0006-run-identity.md
+    - ADR-0007 — The run file, format 2: adr/ADR-0007-run-file-format-2.md
+    - ADR-0008 — Reading runs: adr/ADR-0008-reading-runs.md
+    - ADR-0009 — Index, run states, cache: adr/ADR-0009-index-and-lifecycle.md
+    - ADR-0010 — The API, version 2: adr/ADR-0010-api-2.md
+    - ADR-0011 — Loading a run into the UI: adr/ADR-0011-loading-into-the-ui.md
+    - ADR-0012 — Docker, data read only: adr/ADR-0012-docker-read-only-data.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md
@@ -110,6 +118,7 @@ nav:
     - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
     - Review of all RFCs, round 2: wip/REVIEW-2026-11-14-round2.md
     - Review of the navigator, 2026-11-15: wip/REVIEW-2026-11-15-navigator.md
+    - Review of miniview, 2026-11-15: wip/REVIEW-2026-11-15-miniview.md
     - What robotics asks of flotilla: wip/FLOTILLA-ASKS.md
     - What robotics asks of eval-harness: wip/EVAL-HARNESS-ASKS.md
   - History:
