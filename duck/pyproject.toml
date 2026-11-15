@@ -15,6 +15,7 @@ duck-eval = "duck_lab.nav.evaluate:main"
 duck-explore = "duck_lab.nav.explore_run:main"
 duck-rooms = "duck_lab.nav.rooms:main"
 duck-world = "duck_lab.world:main"
+miniview = "duck_lab.miniview:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -25,5 +26,6 @@ packages = ["src/duck_lab"]
 
 [dependency-groups]
 dev = [
+    "playwright>=1.65.2",
     "rerun-sdk>=0.39.0",
 ]
