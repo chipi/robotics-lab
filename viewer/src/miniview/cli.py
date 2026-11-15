@@ -5,6 +5,7 @@
     uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
     uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
     uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
+    uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
     uv run miniview index                  # rebuild index.sqlite from the run files
     uv run miniview serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
 
@@ -23,7 +24,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from miniview import query
+from miniview import keys, mcapio, query
 from miniview.catalog import DEFAULT_DATA, Catalog
 from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
@@ -44,6 +45,21 @@ def cmd_import(args) -> None:
         import_duck(Path(log_dir), args.scene, Path(args.data), follow=args.follow, idle_s=args.idle)
     if not args.follow:
         _cat(args).scan()
+
+
+def cmd_repair(args) -> None:
+    cat = _cat(args)
+    cat.scan_paths()
+    key = cat.resolve(args.run)
+    if key is None:
+        cands = [k for k in cat.paths if k.rsplit("/", 1)[-1] == args.run]
+        raise SystemExit(f"no run {args.run!r}" + (f"; which of {', '.join(cands)}?" if cands else ""))
+    d = keys.run_dir(cat.data, key)
+    if not (d / mcapio.LIVE).exists():
+        raise SystemExit(f"{key}: no live file, nothing to repair")
+    if mcapio.writer_alive(d):
+        raise SystemExit(f"{key}: its writer is alive ({d / mcapio.LOCK}); not repairing")
+    print(f"{key}: closed as stopped -> {mcapio.compact(d, stopped=True)}")
 
 
 def cmd_index(args) -> None:
@@ -164,6 +180,9 @@ def main() -> None:
     p.add_argument("--follow", action="store_true", help="follow a log still being written (a live run)")
     p.add_argument("--idle", type=float, default=60.0, help="with --follow: end after this many quiet seconds")
     p.set_defaults(fn=cmd_import)
+    p = sub.add_parser("repair", help="close a run whose writer died: compact it, verdict stopped")
+    p.add_argument("run", help="the run's key (robot/scene/run), or its name when only one run has it")
+    p.set_defaults(fn=cmd_repair)
     p = sub.add_parser("index", help="rebuild index.sqlite from the run files")
     p.set_defaults(fn=cmd_index)
     p = sub.add_parser("scenes", help="the scenes and their runs")

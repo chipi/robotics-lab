@@ -23,7 +23,7 @@ def tick(t, pose, truth, **kw):
 
 with tempfile.TemporaryDirectory() as tmp:
     # An evaluation run: two goals, the navigator (and its clock) new for each, the simulator reset.
-    run = Path(tmp) / "phase1-runX"
+    run = Path(tmp) / "phase1-runx"
     run.mkdir()
     rows = [
         {"event": "plan", "path": [[0.0, 0.0], [1.0, 0.0]], "t": 0.5},

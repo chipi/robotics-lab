@@ -1,8 +1,8 @@
 """A run as records, and the run as the pages and the queries see it (ADR-0005).
 
 A record is (t, kind, payload). Kinds: `run` (who and where, once), `epoch` (the map -> world
-transform from t on), `tick` (belief, truth, command, tilt, depth), `plan`, `world`, `event`, `end`
-(the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
+transform from t on), `tick` (belief, truth, command, tilt, depth), `plan`, `world`, `event`, `segment`
+(a goal's span, ADR-0007), `end` (the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
 applies them one by one, so a finished run and a live one are built the same way.
 """
 
@@ -16,8 +16,9 @@ class RunData:
     record. `seq` counts applied records; `changed` is notified after every batch."""
 
     def __init__(self):
-        self.run = {"id": None, "scene": None, "kind": "run", "robot": {}, "status": "live", "t0": 0.0, "t1": 0.0,
-                    "ticks": 0, "verdict": "live", "epochs": [], "events": [], "streams": []}
+        self.run = {"id": None, "key": None, "uuid": None, "scene": None, "kind": "run", "robot": {}, "status": "live",
+                    "started_at_ns": None, "started_at_source": None, "t0": 0.0, "t1": 0.0, "ticks": 0,
+                    "verdict": "live", "epochs": [], "events": [], "segments": [], "streams": []}
         self.frames = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
         self.log = []                 # (seq, t, kind, payload): what live followers send
@@ -28,7 +29,9 @@ class RunData:
     def apply(self, t: float, kind: str, p: dict) -> None:
         r, f = self.run, self.frames
         if kind == "run":
-            r.update({k: p[k] for k in ("id", "scene", "kind", "robot") if k in p})
+            r.update({k: p[k] for k in ("key", "uuid", "scene", "kind", "robot", "started_at_ns", "started_at_source",
+                                        "writer", "source") if k in p})
+            r["id"] = p["key"].rsplit("/", 1)[-1]
         elif kind in ("tick", "plan", "world", "event"):     # the span: what happened, not bookkeeping
             r["t0"] = min(r["t0"], t) if self._spanned else t
             r["t1"] = max(r["t1"], t) if self._spanned else t
@@ -48,6 +51,8 @@ class RunData:
             f["worlds"].append(dict(p, t=t))
         elif kind == "event":
             r["events"].append({"t": t, "kind": p["kind"], "text": p["text"]})
+        elif kind == "segment":
+            r["segments"].append(dict(p))
         elif kind == "end":
             r["status"], r["verdict"] = "ended", p["verdict"]
         self.seq += 1

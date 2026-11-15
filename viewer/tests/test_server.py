@@ -9,8 +9,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-from miniview.catalog import Catalog, run_dir
-from miniview.mcapio import Recorder, write
+from helpers import make_run
+from miniview.catalog import Catalog
 from miniview.server import make_server
 
 failures = []
@@ -22,20 +22,16 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-def tick(t, x):
-    return (t, "tick", {"belief": [x, 0.0, 0.0], "truth": [x + 1.0, 0.0, 0.0], "tilt": None, "cmd": [0.3, 0.0],
-                        "depth": [[x + 0.4, 0.0, 0.0, "o"]]})
+from helpers import tick
 
-
-HEAD = [(0.0, "run", {"id": "done1", "scene": "room", "kind": "exploration", "robot": {"name": "duck"}}),
-        (0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
+HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
 
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp)
     cat = Catalog(data)
     cat.put_scene({"id": "room", "name": "A room", "kind": "test", "bounds": [-1, 1, -1, 1], "boxes": [], "hazards": []})
-    write(run_dir(data, "duck", "room", "done1") / "run.mcap",
-          HEAD + [tick(1.0, 0.0), tick(1.1, 0.03), (1.2, "plan", {"path": [[0, 0], [1, 0]]}), tick(1.2, 0.06),
+    make_run(data, "duck/room/done1",
+             HEAD + [tick(1.0, 0.0), tick(1.1, 0.03), (1.2, "plan", {"path": [[0, 0], [1, 0]]}), tick(1.2, 0.06),
                   (2.5, "event", {"kind": "trapped", "text": "trapped"}), (2.5, "end", {"verdict": "trapped"})])
     httpd = make_server(cat, "127.0.0.1", 0)
     port = httpd.server_address[1]
@@ -62,14 +58,11 @@ with tempfile.TemporaryDirectory() as tmp:
     check("presence: spans and times", pr["belief.pose"]["spans"] == [[1.0, 1.2]] and pr["plan.path"]["times"] == [1.2], pr["belief.pose"])
     page = urllib.request.urlopen(base + "/web/three/", timeout=10)
     check("the pages are served", page.status == 200 and b"<html" in page.read().lower())
-    rows = cat.db.execute("select count(*) from ticks where run = 'done1'").fetchone()[0]
+    rows = cat.db.execute("select count(*) from ticks where run = 'duck/room/done1'").fetchone()[0]
     check("the database has a row per tick", rows == 3, rows)
 
     # A live run: written while the service runs; a page's live stream sees each record.
-    rec = Recorder(run_dir(data, "duck", "room", "live1") / "run.mcap")
-    rec.add(0.0, "run", {"id": "live1", "scene": "room", "kind": "exploration", "robot": {"name": "duck"}})
-    rec.add(*tick(1.0, 0.0))
-    rec.flush()
+    rec = make_run(data, "duck/room/live1", [tick(1.0, 0.0)], close=False)
     t_end = time.monotonic() + 10
     while time.monotonic() < t_end and not any(r["id"] == "live1" for r in get("/api/v1/runs")):
         time.sleep(0.2)
@@ -95,7 +88,6 @@ with tempfile.TemporaryDirectory() as tmp:
     time.sleep(0.5)
     t_write = time.monotonic()
     rec.add(*tick(1.1, 0.03))
-    rec.flush()
     while time.monotonic() - t_write < 5 and not any(k == "tick" for k, _ in got):
         time.sleep(0.02)
     latency = time.monotonic() - t_write
