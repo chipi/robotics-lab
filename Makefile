@@ -123,6 +123,11 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	    || { echo "FAIL image did not answer as expected"; cat /tmp/robotics-lab-image-status.json 2>/dev/null; docker logs $$cid; exit 1; }
 	@echo "test-integration PASS"
 
+.PHONY: test-run-compat
+test-run-compat: viewer-sync duck-sync ## A run opens fully in Rerun, Lichtblick and miniview (ADR-0007 Compatibility): explore9 imported, checked in each
+	$(call run_tests,$(VIEWER_DIR),tests/test_run_compat.py,)
+	@echo "test-run-compat PASS"
+
 .PHONY: perf-viewer
 perf-viewer: viewer-sync ## NOT in CI: replay duck/runs/phase1-run18 at 20 Hz through the writer with both pages open; prints latency, bytes per page, lock hold time
 	@cd $(VIEWER_DIR) && uv run --frozen python perf/perf_viewer.py $(PERF_ARGS)
@@ -165,7 +170,7 @@ ci-fast: lint test-unit test-duck test-viewer ## What every push must pass (fast
 	@echo "ci-fast PASS"
 
 .PHONY: ci
-ci: ci-fast test-viewer-pages test-integration test-viewer-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
+ci: ci-fast test-viewer-pages test-run-compat test-integration test-viewer-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
 	@echo "ci PASS"
 
 # ---- NXT: run and package ----------------------------------------------------

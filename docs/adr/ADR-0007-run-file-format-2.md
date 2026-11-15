@@ -66,6 +66,15 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
   the poses, map and depth draw in its 3D panel is not verified: switching the topics on was not
   scripted successfully.
 
+## Compatibility
+
+A run opens fully in **Rerun, in Foxglove/Lichtblick and in miniview**, and stays so: we may drop one
+of them later, not now. `make test-run-compat` (in `make ci`, and a CI job) imports the explore9
+fixture and checks each: Rerun's `mcap check` and `mcap convert -d protobuf` decode the poses, the
+transform, the map and the depth with the run's counts; Lichtblick's image loads it with no alert
+but the transforms note, the run's real start date and its topics, which draw when switched on; the
+service loads and serves it. A change to the file that breaks one of them fails that test.
+
 ## Alternatives considered
 
 - **Chunked while live.** A reader sees a chunk only when it closes, so live latency would depend
