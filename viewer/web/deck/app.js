@@ -78,7 +78,7 @@ const f3 = (n) => (n == null ? null : +n.toFixed(4));
 const pose = (p) => (p ? p.map(f3) : null);
 function current() {
   const { D, i } = S, f = D.f, b = D.beliefW[i], tr = f.truth[i], mb = f.belief[i];
-  const ev = D.run.events.filter((e) => e.t <= f.t[i]).pop() || null;
+  const ev = D.run.events.filter((e) => e.t <= Math.max(S.t, f.t[i])).pop() || null;
   return { b, tr, mb, ev, dist: tr ? Math.hypot(b[0] - tr[0], b[1] - tr[1]) : null };
 }
 

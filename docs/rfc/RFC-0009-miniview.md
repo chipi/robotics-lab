@@ -66,6 +66,30 @@ CLI `miniview`), not inside the duck
 — the duck and the NXT both depend on it for their adapters; it depends on neither. Playwright stays
 a development dependency of the viewer, for checking the page the way a person sees it.
 
+### Running in Docker (plan; operator, 2026-11-15)
+
+The service (ADR-0005) runs in a container, so it starts the same way on the workstation and later
+on the homelab, and needs nothing installed on the host but Docker.
+
+- **One image, `miniview`:** the viewer package and its two pages; the command is `miniview serve`
+  on `0.0.0.0`, the port from `MINIVIEW_PORT`. A health route, `GET /api/v1/health`, for Docker's
+  health check.
+- **The data stays on the host:** `/work/robotics-lab/data/` (ADR-0004) is mounted into the
+  container. The robot or the simulator writes runs there from outside, and the service follows the
+  growing files (ADR-0005), by polling every quarter second rather than file events, which are
+  unreliable across mounts. The index (`index.sqlite`) is written by the service, so the mount is
+  read-write.
+- **Pictures for the agent stay outside the image:** they need Chromium and Playwright, which would
+  make the image several times larger. The `miniview` commands keep running from the viewer's own
+  environment on the host; they read the same data folder.
+- **Started by** a compose file in `viewer/` and `make viewer-up` / `make viewer-down`; `make
+  viewers` starts it with Rerun and Lichtblick.
+- **Later, on the homelab:** the same image behind the tailnet, so the page opens on a phone; it
+  follows the homelab's rules for its Docker engine.
+
+**To decide before building:** the base image (a new dependency: `python:3.12-slim` with `uv`
+copied in is the smallest), and the port.
+
 ## 4. Versions
 
 - **v0.1 — what RFC-0008's steps 1–2 need, and the operator's page** (operator, 2026-11-15): the

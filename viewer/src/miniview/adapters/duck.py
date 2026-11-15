@@ -31,6 +31,7 @@ def prepare(run_dir: Path, scene_id: str) -> tuple:
          "plans": [], "worlds": []}
     events, offset, last_t = [], 0.0, 0.0
     plan_i, world_i = -1, -1
+    span = None      # every record's time: events can fall outside the poses (explore12)
     for line in open(run_dir / "ticks.jsonl"):
         try:
             r = json.loads(line)
@@ -42,6 +43,7 @@ def prepare(run_dir: Path, scene_id: str) -> tuple:
             offset += last_t + 1.0
         last_t = r["t"]
         t = _r(offset + r["t"])
+        span = (min(span[0], t), max(span[1], t)) if span else (t, t)
         ev = r.get("event")
         if ev == "plan" and r.get("path"):
             f["plans"].append({"t": t, "path": [[_r(p[0]), _r(p[1])] for p in r["path"]]})
@@ -84,7 +86,7 @@ def prepare(run_dir: Path, scene_id: str) -> tuple:
     kind = next((k for prefix, k in KIND_OF_RUN if run_dir.name.startswith(prefix)), "run")
     run = {"id": run_dir.name, "scene": scene_id, "kind": kind,
            "robot": {"name": "duck", "radius": 0.083, "height": 0.272},
-           "t0": f["t"][0] if f["t"] else 0.0, "t1": f["t"][-1] if f["t"] else 0.0, "ticks": len(f["t"]),
+           "t0": span[0] if span else 0.0, "t1": span[1] if span else 0.0, "ticks": len(f["t"]),
            "verdict": verdict, "epochs": epochs, "events": events, "streams": streams(f, events)}
     return run, f
 

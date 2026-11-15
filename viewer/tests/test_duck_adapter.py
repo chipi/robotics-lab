@@ -57,5 +57,20 @@ with tempfile.TemporaryDirectory() as tmp:
           len(meta2["epochs"]) == 1 and meta2["epochs"][0]["map_to_world"][0] == 1.0 and meta2["verdict"] == "trapped",
           (meta2["epochs"], meta2["verdict"]))
 
+    # explore12: events before the first pose and after the last (the navigator logged no poses
+    # during surveys and stops); the run's span covers them, so the timeline shows "trapped".
+    gap = Path(tmp) / "explore2"
+    gap.mkdir()
+    (gap / "start.json").write_text(json.dumps({"map": [0.0, 0.0, 0.0], "truth": [0.0, 0.0, 0.0], "scale": 0.91}))
+    (gap / "ticks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in [
+        {"event": "no_survey_turn", "why": "obstacle 0.16 m away", "t": 24.962},
+        tick(26.992, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),
+        tick(79.655, [0.5, 0.0, 0.0], [0.5, 0.0, 0.0]),
+        {"event": "cliff_stop", "drop_m": 0.475, "t": 79.755},
+        {"event": "trapped", "t": 83.44}]))
+    meta3, frames3 = prepare(gap, "apartment")
+    check("the run's span covers every event, not only the poses",
+          meta3["t0"] == 24.962 and meta3["t1"] == 83.44 and frames3["t"] == [26.992, 79.655], (meta3["t0"], meta3["t1"]))
+
 print("ADAPTER", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

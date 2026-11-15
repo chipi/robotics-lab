@@ -162,10 +162,10 @@ function moment() {
 
 function setTime(t, sync) {
   if (!fr) return;
-  t = Math.min(Math.max(t, fr.t[0]), fr.t[fr.t.length - 1]);
+  t = Math.min(Math.max(t, run.t0), run.t1);
   st.t = t; st.i = tickAt(t);
   RW.update(st.i, t, cfg); RM.update(st.i, t, cfg);
-  $('cursor').style.left = ((t - fr.t[0]) / (fr.t[fr.t.length - 1] - fr.t[0]) * 100) + '%';
+  $('cursor').style.left = ((t - run.t0) / (run.t1 - run.t0) * 100) + '%';
   moment();
   draw();
   if (sync) { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); }
@@ -174,7 +174,7 @@ function setTime(t, sync) {
 function timebar() {
   const tr = $('track');
   tr.querySelectorAll('.ev').forEach((e) => e.remove());
-  const t0 = fr.t[0], t1 = fr.t[fr.t.length - 1];
+  const t0 = run.t0, t1 = run.t1;
   for (const e of run.events) {
     const d = document.createElement('div');
     d.className = 'ev'; d.title = `${e.t.toFixed(1)} s ${e.text}`;
@@ -286,7 +286,7 @@ async function loadRun(id) {
   panel(); timebar();
   $('runinfo').textContent = `${run.robot.name} · ${run.verdict} · ${(run.t1 - run.t0).toFixed(1)} s · ${fr.t.length} ticks`;
   hashWrite();
-  setTime(fr.t[0]);
+  setTime(run.t0);
 }
 
 function showScenes() {
@@ -369,7 +369,7 @@ const api = {
     t: st.t, tick: st.i, frame: st.frame, view: st.view,
     belief: [...RW.pose.slice(st.i * 3, st.i * 3 + 3)], belief_map: fr.belief[st.i],
     truth: fr.truth[st.i], distance: dist(), last_event: lastEvent(), selection: describe(st.sel),
-    t_range: [fr.t[0], fr.t[fr.t.length - 1]],
+    t_range: [run.t0, run.t1],
   }),
 };
 window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
@@ -392,7 +392,7 @@ $('viewsel').onchange = (e) => window.miniview.setView(e.target.value);
 new ResizeObserver(() => views.resize()).observe($('stage'));
 
 const track = $('track');
-const fromX = (ev) => { const r = track.getBoundingClientRect(); return fr.t[0] + Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1) * (fr.t[fr.t.length - 1] - fr.t[0]); };
+const fromX = (ev) => { const r = track.getBoundingClientRect(); return run.t0 + Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1) * (run.t1 - run.t0); };
 track.onpointerdown = (e) => { track.setPointerCapture(e.pointerId); setTime(fromX(e)); };
 track.onpointermove = (e) => { if (track.hasPointerCapture(e.pointerId)) setTime(fromX(e)); };
 

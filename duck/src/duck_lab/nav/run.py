@@ -179,8 +179,16 @@ class Navigator:
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
 
-    def move(self, tw: Twist) -> None:
+    def move(self, tw: Twist, **extra) -> None:
+        """Send a command and log it with the pose: every command, so surveys, survey turns and the
+        waits after a stop are in the log too (explore12 had events there but no poses)."""
         self.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
+        pose = self.loc.pose()
+        if pose is None:
+            return
+        self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), tilt=self._tilt(),
+                    **extra, **({"depth": self._depth} if self._depth else {}))
+        self._depth = None
 
     def fix(self) -> bool:
         st = self.mapd.call("map.status")
@@ -440,10 +448,7 @@ class Navigator:
                 self.survey()
                 path = None
                 continue
-            self.move(tw)
-            self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), nearest_mm=near,
-                        turning=st.turning, tilt=self._tilt(), **({"depth": self._depth} if self._depth else {}))
-            self._depth = None
+            self.move(tw, nearest_mm=near, turning=st.turning)
             if int(now / 1.0) != int((now - TICK_S) / 1.0):
                 self.fix()
             time.sleep(max(0.0, TICK_S - (time.monotonic() - now)))

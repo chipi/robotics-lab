@@ -103,7 +103,7 @@ export async function loadRun(id) {
   };
   const t = f.t;
   return { run, f, t, n, epochs, epochAt, epochIdx, beliefW, trackMap, trackW, trackT, depthIdx, depthRange, depthPoint, dk, depthTotal: total, planData, worldAt,
-    t0: t[0], t1: t[n - 1] };
+    t0: run.t0, t1: run.t1 };
 }
 
 // first tick whose time is after t - w (the start of "the last w seconds")
