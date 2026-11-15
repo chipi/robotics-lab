@@ -82,7 +82,7 @@ jobs:
           python-version: '3.12'
       - name: Install uv (the image test imports a fixture run on the host, as production does)
         run: pip install "uv==${UV_VERSION}"
-      - name: make test-viewer-image (miniview's image: data read only, index on its own volume)
+      - name: "make test-viewer-image (miniview's image: data read only, index on its own volume)"
         run: make viewer-sync && make test-viewer-image
       - name: make nxt-programs
         run: make nxt-programs

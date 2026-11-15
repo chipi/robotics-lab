@@ -67,6 +67,8 @@ lint: ## Byte-compile every Python file of every project
 	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
 	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(VIEWER_DIR)/src $(VIEWER_DIR)/tests >/dev/null \
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
+	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
+	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
 	@echo "lint PASS"
 
 # One line per test file: PASS, or FAIL with its output. $(1) the project dir, $(2) the test files.
