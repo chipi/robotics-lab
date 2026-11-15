@@ -28,6 +28,7 @@ GAP = (40.0, 44.0)         # no ticks between these run times
 T0, T1, DT = 10.0, 70.0, 0.125
 fails = []
 lib = "?"
+EXTERNAL = []
 CAM, PROBE = {}, {}      # per page: where the 3D camera puts known world points, the pixel over a box top
 
 
@@ -97,6 +98,8 @@ def run_page(b, base, rid, other):
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
+    EXTERNAL.clear()
+    page.on("request", lambda r: EXTERNAL.append(r.url) if not r.url.startswith(("http://127.0.0.1", "data:", "blob:")) else None)
 
     def call(js, t=60000):
         page.evaluate("window.__ready = false")
@@ -177,24 +180,12 @@ def run_page(b, base, rid, other):
     check("tick shows as 'tick K of N' (1-based) in the field and the inspector; state().tick is 0-based",
           kin == str(st["tick"] + 1) and kn == f"of {nt}" and f"{st['tick'] + 1} of {nt}" in insp, (kin, kn, st["tick"]))
 
-    # fonts: linked in <head>, ready waits for them (when Google Fonts is reachable at all)
-    try:
-        urllib.request.urlopen("https://fonts.googleapis.com/css2?family=Inter", timeout=4)
-        reachable = True
-    except Exception as e:  # noqa: BLE001
-        reachable = False
-        why = str(e)[:80]
-    if reachable:
-        f = ev("""(async () => { await document.fonts.ready; return [document.fonts.check('12px Inter'), document.fonts.check('11px "JetBrains Mono"'),
-          [...document.fonts].some(f => f.family === 'Inter' && f.status === 'loaded'), [...document.fonts].some(f => f.family === 'JetBrains Mono' && f.status === 'loaded'),
-          getComputedStyle(document.body).fontFamily]; })()""")
-        font_net_errors = [log for log in logs if "fonts.g" in log and "net::ERR" in log]
-        if f[:4] != [True, True, True, True] and font_net_errors:
-            skip("Inter and JetBrains Mono are loaded when the page says it is ready", "the font request failed: " + font_net_errors[0][:90])
-        else:
-            check("Inter and JetBrains Mono are loaded when the page says it is ready", f[:4] == [True, True, True, True], f)
-    else:
-        skip("Inter and JetBrains Mono are loaded when the page says it is ready", "Google Fonts unreachable: " + why)
+    # fonts: served by the service (no CDN): loaded when the page says it is ready, and no request leaves the machine
+    f = ev("""(async () => { await document.fonts.ready; return [document.fonts.check('12px Inter'), document.fonts.check('11px "JetBrains Mono"'),
+      [...document.fonts].some(f => f.family === 'Inter' && f.status === 'loaded'), [...document.fonts].some(f => f.family === 'JetBrains Mono' && f.status === 'loaded'),
+      getComputedStyle(document.body).fontFamily]; })()""")
+    check("Inter and JetBrains Mono are loaded from the service when the page says it is ready", f[:4] == [True, True, True, True], f)
+    check("no request left this machine (no CDN at runtime)", not EXTERNAL, EXTERNAL[:3])
 
     # outliner
     nrows = ev("document.querySelectorAll('#tree .row').length")
@@ -209,7 +200,7 @@ def run_page(b, base, rid, other):
     st = state()
     inh = ev("document.querySelector('#tree .row[data-id=\"sensors.depth.floor\"]').classList.contains('inh')")
     check("hiding Depth hides its kinds, dims them, keeps their own state", {"sensors.depth.floor", "sensors.depth.obstacle"} <= set(st["hidden"]) and inh
-          and ev("window.miniview.internals.M.on['sensors.depth.floor'] !== false"), st["hidden"])
+          and ev("window.miniview.config().on['sensors.depth.floor'] !== false"), st["hidden"])
     page.click("#tree .row[data-id='sensors.depth'] .eye")
     check("and showing it again restores them", state()["hidden"] == [])
     page.click("#tree .row[data-id='sensors.depth.floor'] .eye")
@@ -233,19 +224,19 @@ def run_page(b, base, rid, other):
     secs = ev("[...document.querySelectorAll('#props .sec')].map(s => s.dataset.sec)")
     check("properties sections: Time, Display, Source, Relations", secs == ["time", "display", "source", "rel"], secs)
     page.click("#props [data-mode='window']")
-    check("segmented control changes the mode (belief.track -> window)", ev("window.miniview.internals.M.modes['belief.track'].mode") == "window")
+    check("segmented control changes the mode (belief.track -> window)", ev("window.miniview.config().modes['belief.track'].mode") == "window")
     check("the Window field is enabled and a band shows on the timeline", ev("document.getElementById('winf').getAttribute('aria-disabled')") == "false" and ev("document.querySelectorAll('.wband').length") == 1)
     page.fill("#winv", "3.5")
     page.press("#winv", "Enter")
-    check("typing the window length sets it", ev("window.miniview.internals.M.modes['belief.track'].n") == 3.5)
+    check("typing the window length sets it", ev("window.miniview.config().modes['belief.track'].n") == 3.5)
     page.click("#props [data-mode='upto']")
-    check("Up to t sets upto", ev("window.miniview.internals.M.modes['belief.track'].mode") == "upto")
+    check("Up to t sets upto", ev("window.miniview.config().modes['belief.track'].mode") == "upto")
     page.click("#props [data-vv='front']")
-    check("In-views toggle wired (setViewVisible)", ev("window.miniview.internals.M.vv.front['belief.track']") is False)
+    check("In-views toggle wired (setViewVisible)", ev("window.miniview.config().vv.front['belief.track']") is False)
     page.click("#props [data-vv='front']")
     page.click("#tree .row[data-id='sensors.depth'] .name")
     page.click("#props [data-mode='window']")
-    check("group time mode applies to every kind", all(ev(f"window.miniview.internals.M.modes['sensors.depth.{k}'].mode") == "window" for k in ("floor", "obstacle", "below")))
+    check("group time mode applies to every kind", all(ev(f"window.miniview.config().modes['sensors.depth.{k}'].mode") == "window" for k in ("floor", "obstacle", "below")))
     page.click("#props [data-mode='at']")
 
     # display: point size and line width change the drawing
@@ -302,7 +293,7 @@ def run_page(b, base, rid, other):
     page.click("#loopBtn")
     page.click("#playBtn")
     page.wait_for_timeout(700)
-    wrapped, still = state()["t"], ev("window.miniview.internals.M.play.on")
+    wrapped, still = state()["t"], ev("window.miniview.config().play.on")
     page.click("#playBtn")
     check("loop: playing past the end wraps to the start and keeps playing", still and wrapped < t0 + 10, (wrapped, still))
     page.click("#loopBtn")
@@ -311,10 +302,10 @@ def run_page(b, base, rid, other):
     call(f"window.miniview.setTime({t1 - 0.3})")
     page.click("#playBtn")
     try:
-        page.wait_for_function("window.miniview.internals.M.play.on === false", timeout=8000)
+        page.wait_for_function("window.miniview.config().play.on === false", timeout=8000)
     except Exception:  # noqa: BLE001
         pass
-    check("without loop, play stops at the end (waited for the stop, not a fixed sleep)", ev("window.miniview.internals.M.play.on") is False and state()["t"] == t1, (state()["t"], t1))
+    check("without loop, play stops at the end (waited for the stop, not a fixed sleep)", ev("window.miniview.config().play.on") is False and state()["t"] == t1, (state()["t"], t1))
     sp = ev("(() => { const r = document.getElementById('split').getBoundingClientRect(); return [r.left + r.width / 2, r.top + 2]; })()")
     h0 = ev("document.getElementById('tree').getBoundingClientRect().height")
     page.mouse.move(sp[0], sp[1])
@@ -561,7 +552,7 @@ def run_page(b, base, rid, other):
     page.check("[data-ov='gizmo']")
     page.check("[data-ov='coords']")
     page.uncheck("[data-ov='rel']")
-    check("overlays popover: belief <-> truth line is the relation flag", ev("window.miniview.internals.M.rel.belief_truth") is False)
+    check("overlays popover: belief <-> truth line is the relation flag", ev("window.miniview.config().rel.belief_truth") is False)
     page.check("[data-ov='rel']")
     page.keyboard.press("Escape")
     call("window.miniview.setFrame('map')")
@@ -578,9 +569,9 @@ def run_page(b, base, rid, other):
     check("on the scenes page the chrome says no run is open (no run chip, no layout or frame buttons)",
           ev("document.getElementById('runName').textContent") == "choose a run" and ev("document.getElementById('st-run').textContent") == "no run open"
           and all(ev(f"getComputedStyle(document.getElementById('{i}')).display") == "none" for i in ("layoutSeg", "frameSeg", "runinfo")))
-    page.click(f"#scenespage tr[data-run='{other}']")
+    page.click(f"#scenespage tr[data-run='duck/apartment/{other}']")
     page.wait_for_function(f"window.__ready === true && location.hash.includes('{other}')", timeout=30000)
-    check("a scenes-page row opens that run", ev("window.miniview.internals.M.runId") == other and ev("document.getElementById('runinfo').textContent").find("ticks") > 0, ev("location.hash"))
+    check("a scenes-page row opens that run", ev("window.miniview.state().run") == f"duck/apartment/{other}" and ev("document.getElementById('runinfo').textContent").find("ticks") > 0, ev("location.hash"))
     call(f"window.miniview.load('apartment', '{rid}')")
     call(f"window.miniview.setTime({TA})")
 

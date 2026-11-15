@@ -56,31 +56,62 @@ void main() {
   #include <colorspace_fragment>
 }`;
 class ThickLine extends THREE.Mesh {
-  constructor(pos, hex, width, dash = 0, gap = 0) {
-    const n = pos.length / 3, m = Math.max(0, n - 1), P = new Float32Array(m * 12), Q = new Float32Array(m * 12), K = new Float32Array(m * 8), D = new Float32Array(m * 8);
-    const idx = new Uint32Array(m * 6), cx = [0, 0, 1, 1], cy = [-1, 1, 1, -1];
-    let acc = 0;
-    for (let k = 0; k < m; k++) {
+  constructor(hex, width, dash = 0, gap = 0) {
+    super(new THREE.BufferGeometry(), new THREE.ShaderMaterial({ vertexShader: THICK_VS, fragmentShader: THICK_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { res: RES, width: { value: width }, color: { value: new THREE.Color(hex) }, dash: { value: dash }, gap: { value: gap } } }));
+    this.frustumCulled = false;
+    this.made = 0; this.cap = 0; this.acc = 0;
+    this._grow(64);
+  }
+  _grow(cap) {
+    const mk = (T, size, old) => { const a = new T(cap * size); if (old) a.set(old); return a; };
+    this.P = mk(Float32Array, 12, this.P); this.Q = mk(Float32Array, 12, this.Q); this.K = mk(Float32Array, 8, this.K); this.D = mk(Float32Array, 8, this.D);
+    this.idx = mk(Uint32Array, 6, this.idx);
+    this.cap = cap;
+    const g = this.geometry;
+    g.setAttribute('position', new THREE.BufferAttribute(this.P, 3)); g.setAttribute('pb', new THREE.BufferAttribute(this.Q, 3));
+    g.setAttribute('corner', new THREE.BufferAttribute(this.K, 2)); g.setAttribute('dist', new THREE.BufferAttribute(this.D, 2));
+    g.setIndex(new THREE.BufferAttribute(this.idx, 1));
+  }
+  // the polyline is pos[0 .. n); only the segments not made yet are made (appending costs what it adds)
+  set(pos, n) {
+    const m = Math.max(0, n - 1), cx = [0, 0, 1, 1], cy = [-1, 1, 1, -1];
+    if (m > this.cap) this._grow(Math.max(m, this.cap * 2));
+    const { P, Q, K, D, idx } = this;
+    for (let k = this.made; k < m; k++) {
       const len = Math.hypot(pos[k * 3 + 3] - pos[k * 3], pos[k * 3 + 4] - pos[k * 3 + 1], pos[k * 3 + 5] - pos[k * 3 + 2]);
       for (let c = 0; c < 4; c++) {
         const v = k * 4 + c;
         P.set(pos.subarray(k * 3, k * 3 + 3), v * 3); Q.set(pos.subarray(k * 3 + 3, k * 3 + 6), v * 3);
-        K[v * 2] = cx[c]; K[v * 2 + 1] = cy[c]; D[v * 2] = acc; D[v * 2 + 1] = acc + len;
+        K[v * 2] = cx[c]; K[v * 2 + 1] = cy[c]; D[v * 2] = this.acc; D[v * 2 + 1] = this.acc + len;
       }
-      acc += len;
-      idx.set([0, 1, 2, 0, 2, 3].map((q) => k * 4 + q), k * 6);
+      this.acc += len;
+      for (let q = 0; q < 6; q++) idx[k * 6 + q] = k * 4 + [0, 1, 2, 0, 2, 3][q];
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('pb', new THREE.BufferAttribute(Q, 3));
-    g.setAttribute('corner', new THREE.BufferAttribute(K, 2)); g.setAttribute('dist', new THREE.BufferAttribute(D, 2));
-    g.setIndex(new THREE.BufferAttribute(idx, 1));
-    super(g, new THREE.ShaderMaterial({ vertexShader: THICK_VS, fragmentShader: THICK_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-      uniforms: { res: RES, width: { value: width }, color: { value: new THREE.Color(hex) }, dash: { value: dash }, gap: { value: gap } } }));
-    this.frustumCulled = false;
+    this.made = Math.max(this.made, m);
+    const g = this.geometry;
+    for (const name of ['position', 'pb', 'corner', 'dist']) g.getAttribute(name).needsUpdate = true;
+    g.index.needsUpdate = true;
   }
   setWidth(w) { this.material.uniforms.width.value = w; }
   range(i0, n) { this.geometry.setDrawRange(i0 * 6, Math.max(0, n - 1) * 6); }
   raycast() {}
+}
+
+// a typed array that doubles when it is full: what a run being appended to is packed into
+class Grow {
+  constructor(T, stride, cap = 512) { this.T = T; this.s = stride; this.a = new T(cap * stride); }
+  need(n) {
+    if (n * this.s <= this.a.length) return;
+    const b = new this.T(Math.max(n, (this.a.length / this.s) * 2) * this.s);
+    b.set(this.a); this.a = b;
+  }
+}
+// the attribute follows its array: replaced when the array was reallocated, else marked for upload
+function sync(geom, name, G, size) {
+  const at = geom.getAttribute(name);
+  if (!at || at.array !== G.a) geom.setAttribute(name, new THREE.BufferAttribute(G.a, size)); else at.needsUpdate = true;
+  geom.boundingSphere = null;
 }
 
 function segs(pos, hex) {
@@ -194,11 +225,18 @@ export const DEPTH_KINDS = [['f', 'sensors.depth.floor'], ['o', 'sensors.depth.o
 export const TAIL_S = 1.0;
 
 // One run's drawable layers, one object per stream id (R.obj). `world` applies the epoch in force
-// (map -> world); otherwise the robot's own map frame is drawn as is (the data view). Everything is
-// packed into buffers here; update() only moves draw ranges and poses. Every point keeps the tick
-// it came from so a click can say which record it is.
+// (map -> world); otherwise the robot's own map frame is drawn as is (the data view). The run is packed
+// into buffers that grow: append({i0, i1, plans, worlds}) adds the ticks i0..i1-1 and the plans and
+// worlds that became available, and costs what it adds; update() only moves draw ranges and poses.
+// Every point keeps the tick it came from so a click can say which record it is.
+export function fullRange(fr) {
+  const have = (arr) => arr.map((x, k) => (x ? k : -1)).filter((k) => k >= 0);
+  return { i0: 0, i1: fr.t.length, plans: have(fr.plans), worlds: have(fr.worlds) };
+}
+
 export function buildRun(run, fr, world) {
-  const n = fr.t.length, r = run.robot.radius, h = run.robot.height;
+  const r = run.robot.radius, h = run.robot.height;
+  let n = 0;                                          // ticks built
   const tf = (t) => {
     if (!world) return (x, y) => [x, y, 0];
     const [ox, oy, yaw] = epochAt(run, t), c = Math.cos(yaw), s = Math.sin(yaw);
@@ -213,107 +251,139 @@ export function buildRun(run, fr, world) {
     return lo;
   };
 
-  const pose = new Float32Array(n * 3), track = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const [x, y, yaw] = fr.belief[i], [wx, wy, ey] = tf(fr.t[i])(x, y);
-    pose.set([wx, wy, yaw + ey], i * 3);
-    track.set([wx, wy, 0.01], i * 3);
-  }
-  L.pose = pose;
-  const bTrack = add('belief.track', new ThickLine(track, C.belief, 2)), bRobot = add('belief.pose', robotMesh(r, h, C.belief));
+  const posG = new Grow(Float32Array, 3), trkG = new Grow(Float32Array, 3);
+  const bTrack = add('belief.track', new ThickLine(C.belief, 2)), bRobot = add('belief.pose', robotMesh(r, h, C.belief));
   bRobot.position.z = 0.02;
   bRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 0 }); });
+  Object.defineProperty(L, 'pose', { get: () => posG.a });
 
-  let tTrack, tRobot, tpose = null, rel = null;
+  let tTrack, tRobot, rel = null, tpG = null, trG = null, lastTruth = null, firstTruthAt = -1;
   if (world) {
-    tpose = new Float32Array(n * 3);
-    const tr = new Float32Array(n * 3);
-    let last = fr.truth.find(Boolean) || [0, 0, 0];
-    for (let i = 0; i < n; i++) {
-      last = fr.truth[i] || last;
-      tpose.set(last, i * 3);
-      tr.set([last[0], last[1], 0.01], i * 3);
-    }
-    tTrack = add('truth.track', new ThickLine(tr, C.truth, 2)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
+    tpG = new Grow(Float32Array, 3); trG = new Grow(Float32Array, 3);
+    tTrack = add('truth.track', new ThickLine(C.truth, 2)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
     tRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 1 }); });
-    L.tpose = tpose;
+    Object.defineProperty(L, 'tpose', { get: () => tpG.a });
     rel = add('rel.belief_truth', lineObj(new Float32Array(6), C.rel));
   }
 
   // depth: one buffer per kind; tick i's returns of a kind are [cum[i], cum[i+1]) in it, so "at t",
   // "last N s" and "all up to t" are each one draw range.
-  const cnt = { f: 0, o: 0, v: 0, b: 0 };
-  const kindOf = (k) => (k in cnt ? k : 'o');
-  for (const d of fr.depth) if (d) for (const p of d) cnt[kindOf(p[3])]++;
+  const kindOf = (k) => (k in { f: 1, o: 1, v: 1, b: 1 } ? k : 'o');
   const D = {};
   for (const [k, id] of DEPTH_KINDS) {
-    D[k] = { id, pos: new Float32Array(cnt[k] * 3), flat: new Int32Array(cnt[k]), tick: new Int32Array(cnt[k]), cum: new Int32Array(n + 1), o: 0 };
+    D[k] = { id, pos: new Grow(Float32Array, 3), flat: new Grow(Int32Array, 1), tick: new Grow(Int32Array, 1), cum: new Grow(Int32Array, 1), o: 0 };
+    const pts = add(id, pointsObj(D[k].pos.a, null, 4));
+    pts.material.color.set(C.depth[k]);
+    pts.geometry.setDrawRange(0, 0);
+    pts.userData.pick = (hit) => ({ kind: 'depth', index: D[k].flat.a[hit.index] });
   }
-  const dLast = new Int32Array(n);
+  const dLast = new Grow(Int32Array, 1);
   const flatOf = [];  // flat index (file order) -> [kind, buffer index]
   let last = -1;
-  for (let i = 0; i < n; i++) {
-    for (const k in D) D[k].cum[i] = D[k].o;
-    const d = fr.depth[i];
-    if (d) {
-      last = i;
-      const f = tf(fr.t[i]);
-      for (const [x, y, z, kk] of d) {
-        const k = kindOf(kk), B = D[k], [wx, wy] = f(x, y);
-        B.pos.set([wx, wy, z], B.o * 3);
-        B.flat[B.o] = flatOf.length; B.tick[B.o] = i;
-        flatOf.push([k, B.o]);
-        B.o++;
-      }
-    }
-    dLast[i] = last;
-  }
-  for (const k in D) D[k].cum[n] = D[k].o;
-  for (const [k, id] of DEPTH_KINDS) {
-    const pts = add(id, pointsObj(D[k].pos, null, 4));
-    pts.material.color.set(C.depth[k]);
-    pts.userData.pick = (hit) => ({ kind: 'depth', index: D[k].flat[hit.index] });
-  }
   L.depth = { D, flatOf };
 
-  const ps = [], pStart = [], pCount = [];
-  for (const p of fr.plans) {
-    pStart.push(ps.length / 3); pCount.push(p.path.length);
-    const f = tf(p.t);
-    for (const [x, y] of p.path) ps.push(...f(x, y).slice(0, 2), 0.012);
-  }
-  const plan = add('plan.path', new ThickLine(new Float32Array(ps), C.plan, 2, 0.07, 0.05));
+  const psG = new Grow(Float32Array, 3), pStart = [], pCount = [];
+  let psN = 0;
+  const plan = add('plan.path', new ThickLine(C.plan, 2, 0.07, 0.05));
 
   // the world model: grid cells as quads in one geometry, obstacles and drops as points, all with
   // per-world ranges. (InstancedMesh has no offset into its instances, so ranges on plain
   // geometry it is.)
-  const cq = [], cc = [], quadWorld = [], quadK = [], wCell = [], op = [], oRange = [], dp = [], dRange = [];
-  for (const [wi, w] of fr.worlds.entries()) {
-    const f = tf(w.t), g = w.grid, s = cq.length / 3;
-    for (let k = 0; k < g.cells.length; k++) {
-      const ch = g.cells[k];
-      if (ch === '?') continue;
-      const i = k % g.w, j = (k / g.w) | 0;
-      const x0 = g.origin[0] + i * g.res, y0 = g.origin[1] + j * g.res;
-      const q = [[x0, y0], [x0 + g.res, y0], [x0 + g.res, y0 + g.res], [x0, y0 + g.res]].map(([x, y]) => f(x, y));
-      const c = col(ch === '#' ? C.occ : C.free);
-      for (const m of [0, 1, 2, 0, 2, 3]) { cq.push(q[m][0], q[m][1], 0.001); cc.push(c.r, c.g, c.b); }
-      quadWorld.push(wi); quadK.push(k);
-    }
-    wCell.push([s, cq.length / 3 - s]);
-    oRange.push([op.length / 3, w.obstacles.length]);
-    for (const [x, y] of w.obstacles) op.push(...f(x, y).slice(0, 2), 0.03);
-    dRange.push([dp.length / 3, w.drops.length]);
-    for (const [x, y] of w.drops) dp.push(...f(x, y).slice(0, 2), 0.03);
-  }
+  const qP = new Grow(Float32Array, 3, 4096), qC = new Grow(Float32Array, 3, 4096), oG = new Grow(Float32Array, 3, 64), dG = new Grow(Float32Array, 3, 64);
+  let qN = 0, oN = 0, dN = 0;
+  const quadWorld = [], quadK = [], wCell = [], oRange = [], dRange = [];
   const cg = new THREE.BufferGeometry();
-  cg.setAttribute('position', new THREE.Float32BufferAttribute(cq, 3));
-  cg.setAttribute('color', new THREE.Float32BufferAttribute(cc, 3));
+  cg.setAttribute('position', new THREE.BufferAttribute(qP.a, 3)); cg.setAttribute('color', new THREE.BufferAttribute(qC.a, 3));
+  cg.setDrawRange(0, 0);
   const cells = add('world.grid', new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
   cells.frustumCulled = false;
   cells.userData.pick = (hit) => { const q = hit.faceIndex >> 1; return { kind: 'cell', index: quadK[q], world: quadWorld[q] }; };
-  const obst = add('world.obstacles', pointsObj(new Float32Array(op), null, 5)), drops = add('world.drops', pointsObj(new Float32Array(dp), null, 6));
+  const obst = add('world.obstacles', pointsObj(oG.a, null, 5)), drops = add('world.drops', pointsObj(dG.a, null, 6));
   obst.material.color.set(C.obst); drops.material.color.set(C.hazard);
+
+  const extendTicks = (a, b) => {
+    posG.need(b); trkG.need(b); dLast.need(b); for (const k in D) D[k].cum.need(b + 1);
+    if (world) { tpG.need(b); trG.need(b); }
+    for (let i = a; i < b; i++) {
+      const [x, y, yaw] = fr.belief[i], [wx, wy, ey] = tf(fr.t[i])(x, y);
+      posG.a.set([wx, wy, yaw + ey], i * 3);
+      trkG.a.set([wx, wy, 0.01], i * 3);
+      if (world) {
+        const tr = fr.truth[i];
+        if (tr && firstTruthAt < 0) {                      // ticks before the first truth wear it
+          firstTruthAt = i;
+          for (let j = 0; j < i; j++) { tpG.a.set(tr, j * 3); trG.a.set([tr[0], tr[1], 0.01], j * 3); }
+        }
+        lastTruth = tr || lastTruth || [0, 0, 0];
+        tpG.a.set(lastTruth, i * 3);
+        trG.a.set([lastTruth[0], lastTruth[1], 0.01], i * 3);
+      }
+      for (const k in D) D[k].cum.a[i] = D[k].o;
+      const d = fr.depth[i];
+      if (d) {
+        last = i;
+        const f = tf(fr.t[i]);
+        for (const [x2, y2, z, kk] of d) {
+          const k = kindOf(kk), B = D[k], [dx, dy] = f(x2, y2);
+          B.pos.need(B.o + 1); B.flat.need(B.o + 1); B.tick.need(B.o + 1);
+          B.pos.a.set([dx, dy, z], B.o * 3);
+          B.flat.a[B.o] = flatOf.length; B.tick.a[B.o] = i;
+          flatOf.push([k, B.o]);
+          B.o++;
+        }
+      }
+      dLast.a[i] = last;
+    }
+    for (const k in D) D[k].cum.a[b] = D[k].o;
+    for (const [k, id] of DEPTH_KINDS) sync(L.obj[id].geometry, 'position', D[k].pos, 3);
+    bTrack.set(trkG.a, b);
+    if (world) tTrack.set(trG.a, b);
+  };
+
+  const extendPlans = (ks) => {
+    for (const k of ks) {
+      const p = fr.plans[k];
+      if (!p || pStart[k] !== undefined) continue;
+      pStart[k] = psN; pCount[k] = p.path.length;
+      const f = tf(p.t);
+      psG.need(psN + p.path.length);
+      for (const [x, y] of p.path) { psG.a.set([...f(x, y).slice(0, 2), 0.012], psN * 3); psN++; }
+    }
+    plan.set(psG.a, psN);
+  };
+
+  const extendWorlds = (ks) => {
+    for (const wi of ks) {
+      const w = fr.worlds[wi];
+      if (!w || wCell[wi] !== undefined) continue;
+      const f = tf(w.t), g = w.grid, s0 = qN;
+      qP.need(qN + g.cells.length * 6); qC.need(qN + g.cells.length * 6);
+      for (let k = 0; k < g.cells.length; k++) {
+        const ch = g.cells[k];
+        if (ch === '?') continue;
+        const i = k % g.w, j = (k / g.w) | 0;
+        const x0 = g.origin[0] + i * g.res, y0 = g.origin[1] + j * g.res;
+        const q = [[x0, y0], [x0 + g.res, y0], [x0 + g.res, y0 + g.res], [x0, y0 + g.res]].map(([x, y]) => f(x, y));
+        const c = col(ch === '#' ? C.occ : C.free);
+        for (const m of [0, 1, 2, 0, 2, 3]) { qP.a.set([q[m][0], q[m][1], 0.001], qN * 3); qC.a.set([c.r, c.g, c.b], qN * 3); qN++; }
+        quadWorld.push(wi); quadK.push(k);
+      }
+      wCell[wi] = [s0, qN - s0];
+      oG.need(oN + w.obstacles.length); dG.need(dN + w.drops.length);
+      oRange[wi] = [oN, w.obstacles.length];
+      for (const [x, y] of w.obstacles) { oG.a.set([...f(x, y).slice(0, 2), 0.03], oN * 3); oN++; }
+      dRange[wi] = [dN, w.drops.length];
+      for (const [x, y] of w.drops) { dG.a.set([...f(x, y).slice(0, 2), 0.03], dN * 3); dN++; }
+    }
+    sync(cg, 'position', qP, 3); sync(cg, 'color', qC, 3);
+    sync(obst.geometry, 'position', oG, 3); sync(drops.geometry, 'position', dG, 3);
+  };
+
+  L.append = (range) => {
+    if (range.i1 > n) { extendTicks(Math.max(range.i0, n), range.i1); n = range.i1; }
+    if (range.plans?.length) extendPlans(range.plans);
+    if (range.worlds?.length) extendWorlds(range.worlds);
+  };
 
   // where a record sits in this run's frame: [x, y, z, tick] or null
   L.locate = (kind, index, wi) => {
@@ -321,7 +391,7 @@ export function buildRun(run, fr, world) {
       const fo = L.depth.flatOf[index];
       if (!fo) return null;
       const B = D[fo[0]], o = fo[1];
-      return { stream: B.id, dk: fo[0], p: [B.pos[o * 3], B.pos[o * 3 + 1], B.pos[o * 3 + 2]], tick: B.tick[o] };
+      return { stream: B.id, dk: fo[0], p: [B.pos.a[o * 3], B.pos.a[o * 3 + 1], B.pos.a[o * 3 + 2]], tick: B.tick.a[o] };
     }
     if (kind === 'cell') {
       const g = fr.worlds[wi]?.grid;
@@ -335,6 +405,7 @@ export function buildRun(run, fr, world) {
 
   // cfg(id) -> {mode: 'at'|'window'|'upto', n: seconds}
   L.update = (i, t, cfg, size) => {
+    const pose = posG.a, tpose = tpG?.a;
     bRobot.position.set(pose[i * 3], pose[i * 3 + 1], 0.02);
     bRobot.rotation.z = pose[i * 3 + 2];
     const trackRange = (id) => {
@@ -352,24 +423,25 @@ export function buildRun(run, fr, world) {
       a.array.set([pose[i * 3], pose[i * 3 + 1], 0.05, tpose[i * 3], tpose[i * 3 + 1], 0.05]);
       a.needsUpdate = true;
     }
-    const d = dLast[i];
+    const d = dLast.a[i];
     for (const [k, id] of DEPTH_KINDS) {
-      const { mode, n: w } = cfg(id), B = D[k];
-      let r;
-      if (mode === 'upto') r = [0, B.cum[i + 1]];
-      else if (mode === 'window') { const i0 = Math.min(firstAt(t - w), i); r = [B.cum[i0], B.cum[i + 1] - B.cum[i0]]; }
-      else r = d < 0 ? [0, 0] : [B.cum[d], B.cum[d + 1] - B.cum[d]];
-      L.obj[id].geometry.setDrawRange(r[0], r[1]);
+      const { mode, n: w } = cfg(id), B = D[k], cum = B.cum.a;
+      let rg;
+      if (mode === 'upto') rg = [0, cum[i + 1]];
+      else if (mode === 'window') { const i0 = Math.min(firstAt(t - w), i); rg = [cum[i0], cum[i + 1] - cum[i0]]; }
+      else rg = d < 0 ? [0, 0] : [cum[d], cum[d + 1] - cum[d]];
+      L.obj[id].geometry.setDrawRange(rg[0], rg[1]);
       L.obj[id].material.size = size(id);
     }
     const pi = fr.plan_at[i];
     plan.setWidth(size('plan.path'));
-    plan.range(...(pi >= 0 ? [pStart[pi], pCount[pi]] : [0, 0]));
+    plan.range(...(pi >= 0 && pStart[pi] !== undefined ? [pStart[pi], pCount[pi]] : [0, 0]));
     const wi = fr.world_at[i], none = [0, 0];
-    cells.geometry.setDrawRange(...(wi >= 0 ? wCell[wi] : none));
-    obst.geometry.setDrawRange(...(wi >= 0 ? oRange[wi] : none));
-    drops.geometry.setDrawRange(...(wi >= 0 ? dRange[wi] : none));
+    cells.geometry.setDrawRange(...(wi >= 0 && wCell[wi] ? wCell[wi] : none));
+    obst.geometry.setDrawRange(...(wi >= 0 && oRange[wi] ? oRange[wi] : none));
+    drops.geometry.setDrawRange(...(wi >= 0 && dRange[wi] ? dRange[wi] : none));
     obst.material.size = size('world.obstacles'); drops.material.size = size('world.drops');
   };
+  L.append(fullRange(fr));
   return L;
 }

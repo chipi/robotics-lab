@@ -130,6 +130,8 @@ const adapter = {
 
   setScene(sc) { scn = sc; buildSceneObjects(); },
   setRun(r, f) { run = r; fr = f; buildRunObjects(); },
+  // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
+  append(range) { if (!RW) return; RW.append(range); RM.append(range); },
   // the shell draws after a layout, so the draw views.setup() would trigger is skipped
   setLayout(view, frame) { rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
 

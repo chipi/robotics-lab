@@ -110,7 +110,7 @@ def sheet(images: list, captions: list, out: Path, cols: int) -> Path:
         browser = launch(p)
         page = browser.new_page(viewport={"width": 1800, "height": 600})
         page.set_content(html)
-        page.wait_for_timeout(300)
+        page.wait_for_function("[...document.images].every((i) => i.complete)", timeout=30000)
         out.parent.mkdir(parents=True, exist_ok=True)
         page.locator(".g").screenshot(path=str(out))
         browser.close()

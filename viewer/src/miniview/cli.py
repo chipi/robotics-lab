@@ -147,8 +147,8 @@ def cmd_frame(args) -> None:
 
     cat = _cat(args)
     run, _ = query.load_run(cat, args.run)
-    out = Path(args.out or f"{args.run}-{args.at:.1f}-{args.view}.png")
-    pictures(cat, args.lib, run["scene"], args.run, [_shot(args, args.at, out)])
+    out = Path(args.out or f"{args.run.replace('/', '_')}-{args.at:.1f}-{args.view}.png")
+    pictures(cat, args.lib, run["scene"], run["key"], [_shot(args, args.at, out)])
     print(out)
 
 
@@ -158,11 +158,11 @@ def cmd_film(args) -> None:
     cat = _cat(args)
     run, _ = query.load_run(cat, args.run)
     times = [args.at - args.span + args.span * i / max(args.n - 1, 1) for i in range(args.n)]
-    out = Path(args.out or f"{args.run}-{args.at:.1f}-film.png")
+    out = Path(args.out or f"{args.run.replace('/', '_')}-{args.at:.1f}-film.png")
     with tempfile.TemporaryDirectory() as tmp:
         # The view alone in each tile (#stage: the page's view area, CONTRACT.md), so it reads at sheet size.
         shots = [dict(_shot(args, t, Path(tmp) / f"{i}.png"), crop="#stage") for i, t in enumerate(times)]
-        imgs = pictures(cat, args.lib, run["scene"], args.run, shots)
+        imgs = pictures(cat, args.lib, run["scene"], run["key"], shots)
         sheet(imgs, [f"t = {t:.2f} s" for t in times], out, cols=min(args.n, 3))
     print(out)
 

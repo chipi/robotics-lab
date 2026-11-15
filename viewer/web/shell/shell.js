@@ -6,7 +6,8 @@
 // adapter = {
 //   init(stage, shell)       create the canvas / deck inside the stage element; shell.M is the model
 //   setScene(scene)          the scene (world frame) of the run about to open
-//   setRun(run, fr)          a run's summary and frames, again as the run grows while live
+//   setRun(run, fr)          a run's summary and the frames loaded so far (ticks 0..n-1 without a hole); again when what depends on an epoch changed
+//   append(range)            the run grew: range = {i0, i1, plans: [k..], worlds: [k..]}, the ticks i0..i1-1 and the plan and world numbers that became available; nothing is rebuilt
 //   setLayout(view, frame)   rebuild the panes for view (top|front|back|left|right|three|3d) and frame
 //   draw(sync)               draw the model now (time, visibility, time modes, relations, selection)
 //   settled() -> Promise     resolves once what was drawn has been painted
@@ -20,6 +21,7 @@
 // }
 // shell (given to the adapter): M, shown(id, view), cfg(id), size(id), pick(sel), viewChanged(), tickAt(t), palette()
 import { svgI, paintIcons } from './icons.js';
+import { RunStore } from './runstore.js';
 
 const API = '/api/v1/';
 const json = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -134,7 +136,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     index: null, sceneId: null, runId: null, scene: null, run: null, fr: null, pres: null, bw: [],
     t: 0, i: 0, view: 'top', frame: 'world', on: {}, vv: {}, modes: {}, rel: { belief_truth: true, depth_pose: false },
     size: {}, sel: null, selNode: null, ov: { coords: true, gizmo: true, legend: true }, open: {}, query: '', hideMissing: false,
-    tab: 'moment', secOpen: {}, kinds: {}, rows: true, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark',
+    tab: 'moment', secOpen: {}, kinds: {}, rows: true, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true,
   };
   let T = { tree: [], nodes: {}, parents: {}, order: [], leaves: () => [] };
   const sceneCache = {};
@@ -174,7 +176,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   };
 
   // ---- epochs, belief in the world, the moment ---------------------------------------------------------
-  const epochAt = (t) => { let e = M.run.epochs[0]; for (const x of M.run.epochs) if (x.from_t <= t) e = x; return e; };
+  const epochAt = (t) => { const eps = (store.run || M.run).epochs; let e = eps[0]; for (const x of eps) if (x.from_t <= t) e = x; return e; };
   const toWorld = ([tx, ty, h], [x, y, yaw]) => { const c = Math.cos(h), s = Math.sin(h); return [tx + c * x - s * y, ty + s * x + c * y, yaw + h]; };
   const lastEvent = () => {
     if (!M.run) return null;
@@ -189,110 +191,131 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     for (const p of fr.depth[di] || []) if (p[3] in cnt) cnt[p[3]]++;
     const pi = fr.plan_at[i], wi = fr.world_at[i];
     return {
-      t: fr.t[i], tick: i, n: fr.t.length, epoch: epochAt(fr.t[i]).from_t, bm, bw, tr, dist,
+      t: fr.t[i], tick: i, n: run.ticks, epoch: epochAt(fr.t[i]).from_t, bm, bw, tr, dist,
       herr: tr ? deg(wrap(bw[2] - tr[2])) : null, cmd: fr.cmd[i], depthTick: di, cnt,
-      plan: pi >= 0 ? { k: pi + 1, n: fr.plans.length, t: fr.plans[pi].t } : null, world: wi >= 0 ? { k: wi + 1, n: fr.worlds.length, t: fr.worlds[wi].t } : null,
+      plan: pi >= 0 ? { k: pi + 1, n: store.planCount, t: fr.plans[pi].t } : null, world: wi >= 0 ? { k: wi + 1, n: store.worldCount, t: fr.worlds[wi].t } : null,
       ev: lastEvent(), run,
     };
   }
 
-  // ---- loading ----------------------------------------------------------------------------------
-  const ensureIndex = async () => { if (!M.index) M.index = await json(API + 'scenes'); return M.index; };
-  const keyOf = (id) => { for (const s of M.index.scenes) for (const r of s.runs) if (r.id === id) return r.key; return id; };
-  const arr = (o) => (Array.isArray(o) ? o : Object.keys(o).map(Number).sort((x, y) => x - y).map((k) => o[k]));
-  const fetchRun = async (id) => {
-    const k = keyOf(id);
-    const [run, fr, pres] = await Promise.all([json(`${API}runs/${k}`), json(`${API}runs/${k}/frames`), json(`${API}runs/${k}/presence`).catch(() => null)]);
-    fr.plans = arr(fr.plans); fr.worlds = arr(fr.worlds);
-    return [run, fr, pres];
-  };
+  // ---- loading (ADR-0011): the run store loads by window, then by record; the renderers take appends ----------
+  const store = new RunStore({
+    json,
+    onAppend: (range) => {
+      for (let k = range.i0; k < range.i1; k++) M.bw[k] = toWorld(epochAt(store.fr.t[k]).map_to_world, store.fr.belief[k]);
+      if (built) adapter.append(range);
+      grew();
+    },
+    onRecord: (kind, d) => {
+      if (kind === 'epoch' && built && hasTicks() && d.t <= store.fr.t[store.fr.t.length - 1]) {        // an epoch behind drawn ticks: what depends on it is drawn again
+        M.bw = store.fr.belief.map((p, k) => toWorld(epochAt(store.fr.t[k]).map_to_world, p));
+        adapter.setRun(M.run, M.fr);
+      }
+      if (kind === 'event' && !(d.kind in M.kinds)) M.kinds[d.kind] = d.kind !== 'leg';
+      grew();
+    },
+    onStatus: () => { renderChrome(); grew(); },
+    onReload: () => { const sc = M.sceneId, r = M.runId; if (r) openRun(sc, r).catch((e) => console.warn(e)); },
+  });
+  let built = false;                           // the adapter has the run: from now on it is told what was appended
+  const ensureIndex = async (fresh) => { if (!M.index || fresh) M.index = await json(API + 'scenes'); return M.index; };
+  const runsOf = (sc) => sc.runs;
+  // a run of a scene by key, or by name when only one run has it
+  function findRun(sc, id) {
+    const exact = sc.runs.find((r) => r.key === id);
+    if (exact) return exact;
+    const named = sc.runs.filter((r) => r.id === id);
+    if (named.length > 1) throw new Error(`${named.length} runs are called ${id} in scene ${sc.id}: ${named.map((r) => r.key).join(', ')}`);
+    return named[0] || null;
+  }
 
   function layout() { laidOut = hasTicks(); if (laidOut) adapter.setLayout(M.view, M.frame); }
-  function adopt(run, fr, pres) {
-    M.run = run; M.fr = fr; M.pres = pres;
-    M.bw = fr.belief.map((p, k) => toWorld(epochAt(fr.t[k]).map_to_world, p));
-    for (const e of run.events) if (!(e.kind in M.kinds)) M.kinds[e.kind] = e.kind !== 'leg';
-    if (hasTicks()) adapter.setRun(run, fr);
-  }
 
   async function openRun(sceneId, runId) {
     M.loading = true;
     try {
-      await ensureIndex();
+      await ensureIndex(true);
       if (sceneId === undefined && runId === undefined) { M.loading = false; return scenesPage(); }
-      const sc = M.index.scenes.find((s) => s.id === sceneId) || M.index.scenes.find((s) => s.id === M.sceneId) || M.index.scenes[0];
-      const r0 = sc && (sc.runs.find((r) => r.id === runId) || sc.runs[0]);
-      if (!r0) { M.loading = false; return scenesPage(); }
+      const sc = sceneId === undefined ? (M.index.scenes.find((s) => s.id === M.sceneId) || M.index.scenes[0]) : M.index.scenes.find((s) => s.id === sceneId);
+      if (!sc) throw new Error(`unknown scene ${sceneId}`);
+      const r0 = runId === undefined ? sc.runs[0] : findRun(sc, runId);
+      if (!r0) throw new Error(runId === undefined ? `scene ${sc.id} has no runs` : `unknown run ${runId} in scene ${sc.id}`);
       const scene = sceneCache[sc.id] ||= await json(`${API}scenes/${sc.id}`);
-      const [run, fr, pres] = await fetchRun(r0.id);
+      built = false;
+      const first = await store.open(r0.key, M.follow && r0.status === 'live' ? 'end' : 'start');
+      if (!first) return null;                                           // another load took over
+      const { run, pres } = first;
       if (M.sceneId !== sc.id || M.scene !== scene) { M.scene = scene; adapter.setScene(scene); }
-      M.sceneId = sc.id; M.runId = r0.id;
+      M.sceneId = sc.id; M.runId = r0.key;
       M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {};
       T = buildTree(run);
       M.selNode = T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null;
       M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, true]));
       M.modes = Object.fromEntries((run.streams || []).map((s) => [s.id, { mode: s.default_mode || 'at', n: 2 }]));
-      adopt(run, fr, pres);
-      const follow = $('follow-on').checked && run.status === 'live';
-      M.t = follow ? run.t1 : run.t0;
+      M.run = run; M.fr = store.fr; M.pres = pres;
+      M.bw = M.fr.belief.map((p, k) => toWorld(epochAt(M.fr.t[k]).map_to_world, p));
+      for (const e of run.events) if (!(e.kind in M.kinds)) M.kinds[e.kind] = e.kind !== 'leg';
+      if (hasTicks()) { adapter.setRun(run, M.fr); built = true; }
+      const live = run.status === 'live';
+      $('follow').hidden = !live;
+      M.t = M.follow && live ? run.t1 : run.t0;
       M.i = hasTicks() ? tickAt(M.t) : 0;
       app.classList.remove('scenes');
       M.loading = false;
       layout();
       renderAll();
-      startLive();
+      return state();
     } finally { M.loading = false; }
   }
 
   function scenesPage() {
     play(false);
     app.classList.add('scenes');
-    M.runId = null; stopLive();
+    M.runId = null; store.close(); built = false; $('follow').hidden = true;
     writeHash();
     $('scenespage').innerHTML = M.index.scenes.map((s) => `<div class="sc"><h2>${esc(s.name)}</h2><span class="dim">${esc(s.id === s.kind ? s.kind : s.id + ' · ' + s.kind)} · ${s.runs.length} runs</span>`
       + '<table><thead><tr><th>run</th><th>kind</th><th>robot</th><th>length</th><th>verdict</th><th>events</th></tr></thead><tbody>'
-      + s.runs.map((r) => `<tr data-scene="${esc(s.id)}" data-run="${esc(r.id)}"><td><b>${esc(r.id)}</b></td><td>${esc(r.kind)}</td><td>${esc(r.robot)}</td><td class="mono">${r.length_s} s</td>`
-        + `<td><span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>${r.status === 'live' ? ' <span class="live-dot"></span>' : ''}</td><td class="mono">${r.events}</td></tr>`).join('')
+      + s.runs.map((r) => `<tr data-scene="${esc(s.id)}" data-run="${esc(r.key)}"><td><b>${esc(r.id)}</b></td><td>${esc(r.kind)}</td><td>${esc(r.robot)}</td><td class="mono">${r.length_s} s</td>`
+        + `<td><span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>${r.status === 'live' ? ' <span class="live-dot"></span>' : ''}${r.status === 'broken' ? ` <span class="verdict" title="${esc(r.error || '')}">broken</span>` : ''}</td><td class="mono">${r.events}</td></tr>`).join('')
       + '</tbody></table></div>').join('');
     renderChrome();
     return null;
   }
   const verdictClass = (v) => (['reached', 'evaluated'].includes(v) ? 'verdict ok' : 'verdict');
 
-  // ---- live (ADR-0005): the run grows while it runs; Follow live keeps the newest tick in view ---------
-  let source = null, dirty = false, refreshing = false;
-  function stopLive() { if (source) { source.close(); source = null; } $('follow').hidden = true; }
-  function startLive() {
-    if (source) { source.close(); source = null; }
-    $('follow').hidden = M.run.status !== 'live';
-    if (M.run.status !== 'live') return;
-    source = new EventSource(`${API}runs/${M.run.key}/live?since=${M.run.seq}`);
-    for (const k of ['tick', 'plan', 'world', 'event', 'epoch', 'end', 'status']) source.addEventListener(k, () => { dirty = true; });
-  }
-  setInterval(async () => {
-    if (!dirty || refreshing || !M.run) return;
-    dirty = false; refreshing = true;
-    try {
-      const id = M.run.id, follow = $('follow-on').checked;
-      const [run, fr, pres] = await fetchRun(id);
-      if (!M.run || M.run.id !== id) return;
-      adopt(run, fr, pres);
-      for (const s of run.streams || []) M.modes[s.id] ||= { mode: s.default_mode || 'at', n: 2 };
-      const nt = buildTree(run); T = nt;
-      M.t = hasTicks() ? clamp(follow ? run.t1 : M.t, run.t0, run.t1) : M.t;
+  // ---- live (ADR-0005, ADR-0011): the store applies the records; the page follows what it gained, at most 4 times a second ----
+  let growTimer = 0, presAt = 0;
+  function grew() {
+    if (growTimer || !M.run) return;
+    growTimer = setTimeout(async () => {
+      growTimer = 0;
+      if (!M.run || M.loading || !M.runId) return;
+      const live = M.run.status === 'live';
+      $('follow').hidden = !live;
+      if (hasTicks() && !built) { adapter.setRun(M.run, M.fr); built = true; }
+      if (hasTicks() && !laidOut) { M.t = M.follow && live ? M.run.t1 : M.run.t0; layout(); }
+      if (M.follow && live && hasTicks()) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
       M.i = hasTicks() ? tickAt(M.t) : 0;
-      if (hasTicks() && !laidOut) layout();
+      for (const sx of M.run.streams || []) M.modes[sx.id] ||= { mode: sx.default_mode || 'at', n: 2 };
+      T = buildTree(M.run);
       renderAll();
-      if (run.status !== 'live') startLive();
-    } finally { refreshing = false; }
-  }, 1000);
+      if (live && Date.now() - presAt > 2000) {
+        presAt = Date.now();
+        const key = M.runId;
+        json(`${API}runs/${key}/presence`).then((p) => { if (M.runId === key) { M.pres = p; renderLanes(); } }).catch(() => {});
+      }
+    }, 250);
+  }
 
   // ---- state changes: each one is a function, a click and a script call do the same thing -----------
-  function setTime(t, sync) {
+  // `following` is the one caller that does not turn Follow live off: the follow itself
+  function setTime(t, sync, following = false) {
     if (!M.run) return M.t;
+    if (!following && M.follow) { M.follow = false; $('follow-on').checked = false; renderChrome(); }
     M.t = clamp(+t, M.run.t0, M.run.t1);
     if (hasTicks()) { M.i = tickAt(M.t); adapter.draw(sync); }
     syncTime();
+    if (!store.covers(M.t)) store.ensure(M.t).then(() => { if (M.run && hasTicks()) { M.i = tickAt(M.t); adapter.draw(); syncTime(); } });
     return M.t;
   }
   function setView(v) {
@@ -358,11 +381,13 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const { p, ...rest } = d;
     return { kind: M.sel.kind, index: M.sel.index, ...(M.sel.world !== undefined && { world: M.sel.world }), ...rest, position: [f3(p[0]), f3(p[1])], height: f3(d.height) };
   };
+  const identity = () => ({ run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
+    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete } : null });
   function state() {
-    if (!M.run || !hasTicks()) return { t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: null, selection: null, t_range: M.run ? [M.run.t0, M.run.t1] : null };
+    if (!M.run || !hasTicks()) return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: null, selection: null, t_range: M.run ? [M.run.t0, M.run.t1] : null };
     const m = moment();
     return {
-      t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view,
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view,
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1],
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -609,7 +634,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
         + isec('c', 'Command', '', kv('Forward', fx(m.cmd?.[0]), 'm/s') + kv('Turn', fx(m.cmd?.[1]), 'rad/s'))
         + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', `${m.depthTick + 1} of ${m.n}`) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
         + isec('w', 'Plan and map', '', (m.plan ? kv('Plan', `${m.plan.k} of ${m.plan.n}`) + kv('Plan made at', fx(m.plan.t, 2), 's') : kv('Plan', 'none yet', '', 'na')) + (m.world ? kv('Map', `${m.world.k} of ${m.world.n}`) + kv('Map made at', fx(m.world.t, 2), 's') : kv('Map', 'none yet', '', 'na')))
-        + isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc(ev.text.replace(new RegExp('^' + ev.kind + '\\s*'), ''))}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
+        + isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
         + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
     } else {
       const d = M.sel ? adapter.describe(M.sel) : null;
@@ -617,7 +642,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       else {
         const sty = styleOf(d.stream), id = d.stream;
         el.innerHTML = isec('s', esc(cap(d.detail || d.kind)), sty.c, kv('x', fx(d.p[0]), 'm') + kv('y', fx(d.p[1]), 'm') + kv('Height z', fx(d.height), 'm')
-          + (d.yaw != null ? kv('Yaw', fx(deg(d.yaw), 1), '°') : '') + (d.res ? kv('Cell size', fx(d.res, 4), 'm') : '') + kv('Frame tick', `${d.tick + 1} of ${M.fr.t.length}`) + kv('Time', fx(d.t, 2), 's'), `<span class="fchip">${esc(d.frame)}</span>`)
+          + (d.yaw != null ? kv('Yaw', fx(deg(d.yaw), 1), '°') : '') + (d.res ? kv('Cell size', fx(d.res, 4), 'm') : '') + kv('Frame tick', `${d.tick + 1} of ${M.run.ticks}`) + kv('Time', fx(d.t, 2), 's'), `<span class="fchip">${esc(d.frame)}</span>`)
           + `<div class="evnav" style="padding-top:8px"><button id="toRow" data-stream="${esc(id)}" title="${esc(id)}">${svgI('chev', 12)} Select the stream</button></div>`;
       }
     }
@@ -646,10 +671,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('runVerdict').className = r ? (live ? 'verdict live' : verdictClass(r.verdict)) : '';
     $('layoutSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === M.view));
     $('frameSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.frame === M.frame));
-    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${live ? '<span class="live-dot"></span> <span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · <span class="mono">${(r.t1 - r.t0).toFixed(1)} s</span> · <span class="mono">${M.fr.t.length}</span> ticks` : 'no run open';
+    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${live ? '<span class="live-dot"></span> <span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · <span class="mono">${(r.t1 - r.t0).toFixed(1)} s</span> · <span class="mono">${r.ticks}</span> ticks` : 'no run open';
     $('vt').innerHTML = `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';
-    $('st-live').textContent = live ? (($('follow-on').checked) ? 'live · following' : 'live') : r ? `${r.status} · ${r.verdict}` : '';
+    $('st-live').textContent = live ? (M.follow ? 'live · following' : 'live') : r ? `${r.status} · ${r.verdict}` : '';
     $('st-live').className = live ? 'live' : '';
     $('gizmo').style.display = M.ov.gizmo && M.view !== 'three' ? '' : 'none';
     $('legend').style.display = M.ov.legend ? '' : 'none';
@@ -771,7 +796,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const ti = $('tin'), ki = $('kin');
     if (document.activeElement !== ti) ti.value = M.t.toFixed(2);
     if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : 0;
-    $('kn').textContent = 'of ' + (hasTicks() ? M.fr.t.length : 0);
+    $('kn').textContent = 'of ' + (hasTicks() ? M.run.ticks : 0);
     renderBand();
     if (M.tab === 'moment' || M.sel) scheduleInsp();
   }
@@ -825,15 +850,22 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   const api = {
     load: (scene, run) => openRun(scene, run),
     scenes: () => scenesPage(),
-    setTime: (t, sync = false) => setTime(t, sync),
+    setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
     select: (sel) => select(sel),
   };
   window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
   window.miniview.state = state;
+  // the settings a script can have changed, as plain data: per-stream time modes, visibility (global and per view), drawn
+  // sizes, event kinds, the playback state, overlays, the relation flag
+  window.miniview.config = () => JSON.parse(JSON.stringify({ modes: M.modes, on: M.on, vv: M.vv, size: M.size, kinds: M.kinds, play: M.play, rel: M.rel, overlays: M.ov,
+    view: M.view, frame: M.frame, theme: M.theme, follow: M.follow, scene: M.sceneId, run: M.runId }));
+  // resolves when every tick of the open run is loaded (the page draws from the first window on; this waits for the rest)
+  window.miniview.whenLoaded = async () => { await store.whenComplete(); return { ticks: store.ticks }; };
   window.miniview.scenes = () => { scenesPage(); };
   window.miniview.setData = (d) => window.miniview.setFrame(d ? 'map' : 'world');
-  window.miniview.internals = { M, adapter, shell: () => shell };
+  // FOR THE TESTS OF THIS REPOSITORY ONLY: the model and the renderer's probes. Scripts use the functions above (load, state, config, ...).
+  window.miniview.internals = { M, adapter, store, shell: () => shell };
 
   // ---- wiring ---------------------------------------------------------------------------------------
   const shell = {
@@ -847,13 +879,13 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   $('layoutSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setView(b.dataset.view); };
   $('frameSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setFrame(b.dataset.frame); };
   $('themeBtn').onclick = () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true);
-  $('follow-on').onchange = () => { renderChrome(); if ($('follow-on').checked && M.run?.status === 'live') setTime(M.run.t1); };
+  $('follow-on').onchange = () => { M.follow = $('follow-on').checked; renderChrome(); if (M.follow && M.run?.status === 'live') setTime(M.run.t1, false, true); };
   $('sceneBtn').onclick = (e) => ensureIndex().then(() => popover(e.currentTarget, '<h6>Scenes</h6>' + M.index.scenes.map((s) => `<button class="item ${s.id === M.sceneId ? 'cur' : ''}" data-scene="${esc(s.id)}"><span>${esc(s.id)}</span><span class="mono dim">${s.runs.length} runs</span><small>${esc(s.name)}</small></button>`).join(''),
     (p) => p.querySelectorAll('[data-scene]').forEach((b) => (b.onclick = () => { closePop(); window.miniview.load(b.dataset.scene); }))));
   $('runBtn').onclick = (e) => ensureIndex().then(() => {
     const sc = M.index.scenes.find((s) => s.id === M.sceneId) || M.index.scenes[0];
     if (!sc) return;
-    popover(e.currentTarget, `<h6>Runs in ${esc(sc.id)}</h6>` + sc.runs.map((r) => `<button class="item ${r.id === M.runId ? 'cur' : ''}" data-run="${esc(r.id)}"><span>${esc(r.id)}</span><span class="mono dim">${r.length_s} s</span>`
+    popover(e.currentTarget, `<h6>Runs in ${esc(sc.id)}</h6>` + sc.runs.map((r) => `<button class="item ${r.key === M.runId ? 'cur' : ''}" data-run="${esc(r.key)}"><span>${esc(r.id)}</span><span class="mono dim">${r.length_s} s</span>`
       + `<small>${esc(r.kind)} · ${r.status === 'live' ? '<span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · ${r.events} events</small></button>`).join(''),
     (p) => p.querySelectorAll('[data-run]').forEach((b) => (b.onclick = () => { closePop(); window.miniview.load(sc.id, b.dataset.run); })));
   });
@@ -987,8 +1019,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   (async () => {
     try {
       await ensureIndex();
-      if (h.get('run') || h.get('scene')) await openRun(h.get('scene') || undefined, h.get('run') || undefined);
-      else if (!M.run && !M.loading) scenesPage();
+      if (h.get('run') || h.get('scene')) {
+        try { await openRun(h.get('scene') || undefined, h.get('run') || undefined); } catch (e) { console.warn('the URL names no run:', String(e)); scenesPage(); }
+      } else if (!M.run && !M.loading) scenesPage();
       renderChrome();
       await fontsReady();
     } catch (e) { console.error(e); document.body.append(String(e)); } finally { end(); }
@@ -996,7 +1029,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   return shell;
 }
 
-// The pages link Inter and JetBrains Mono from Google Fonts in their <head>. A font file is fetched only when
+// The pages link Inter and JetBrains Mono from the service (web/fonts, no CDN). A font file is fetched only when
 // text first uses it, so a screenshot taken at once used to show the system fallbacks; ready waits for them,
 // but never longer than 3 s (offline, the system fonts in the --ui and --mono stacks stay).
 async function fontsReady() {

@@ -127,6 +127,8 @@ const adapter = {
 
   setScene(sc) { X.scene = prepareScene(sc); },
   setRun(run, fr) { runRaw = run; frRaw = fr; X.D = prepareRun(run, fr); },
+  // the run grew: prepare what it gained; nothing prepared is touched
+  append(range) { if (X.D) X.D.append(range); },
   setLayout(view, frame) {
     X.dv = frame === 'map';
     panes = paneList(view);
