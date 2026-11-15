@@ -153,12 +153,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const k = String(id).replace(/^group:/, '');
     return T.nodes[k] ? k : T.nodes[GROUP_IDS[k]] ? GROUP_IDS[k] : (T.order.find((x) => T.nodes[x].name === k) || null);
   };
-  const tickAt = (t) => {
-    const ts = M.fr.t; let lo = 0, hi = ts.length - 1;
-    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ts[m] <= t) lo = m; else hi = m - 1; }
-    return lo;
-  };
-  const hasTicks = () => !!M.fr && M.fr.t.length > 0;
+  // the loaded tick at or before t (the nearest loaded one when t lies in a part that is not loaded yet)
+  const tickAt = (t) => store.tickAt(t);
+  const hasTicks = () => !!M.fr && M.fr.ranges.length > 0;
+  // the span of the run's ticks (from the data rows), whatever is loaded
+  const tickSpan = () => { const sp = M.pres?.streams?.['belief.pose']?.spans; return sp?.length ? [sp[0][0], sp[sp.length - 1][1]] : [M.run.t0, M.run.t1]; };
 
   // a stream shows when it is in the run and it, its parent and its groups are on, here and (given a view) in that view
   function shown(id, view) {
@@ -207,7 +206,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       grew();
     },
     onRecord: (kind, d) => {
-      if (kind === 'epoch' && built && hasTicks() && d.t <= store.fr.t[store.fr.t.length - 1]) {        // an epoch behind drawn ticks: what depends on it is drawn again
+      if (kind === 'epoch' && built && hasTicks() && d.t <= store.lastT) {        // an epoch behind drawn ticks: what depends on it is drawn again
         M.bw = store.fr.belief.map((p, k) => toWorld(epochAt(store.fr.t[k]).map_to_world, p));
         adapter.setRun(M.run, M.fr);
       }
@@ -388,7 +387,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     return { kind: M.sel.kind, index: M.sel.index, ...(M.sel.world !== undefined && { world: M.sel.world }), ...rest, position: [f3(p[0]), f3(p[1])], height: f3(d.height) };
   };
   const identity = () => ({ run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
-    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete } : null });
+    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]) } : null });
   function state() {
     if (!M.run || !hasTicks()) return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: null, selection: null, t_range: M.run ? [M.run.t0, M.run.t1] : null };
     const m = moment();
@@ -421,11 +420,19 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     }
     renderTransport();
   }
+  // the tick numbered k (0-based) of the run: when it is not loaded, the window around where it should be is loaded first
+  async function gotoTick(k) {
+    k = clamp(k, 0, M.run.ticks - 1);
+    if (M.fr.t[k] === undefined) {
+      const [a, b] = tickSpan(), est = a + ((b - a) * k) / Math.max(1, M.run.ticks - 1);
+      await store.ensure(est);
+    }
+    setTime(M.fr.t[k] ?? M.fr.t[tickAt(M.t)]);
+  }
   function stepTick(d) {
     if (!hasTicks()) return;
     const i = M.i, at = M.fr.t[i];
-    const k = d < 0 ? (M.t > at + 1e-6 ? i : i - 1) : i + 1;
-    setTime(M.fr.t[clamp(k, 0, M.fr.t.length - 1)]);
+    gotoTick(d < 0 ? (M.t > at + 1e-6 ? i : i - 1) : i + 1);
   }
   function stepEvent(d) {
     if (!M.run) return;
@@ -740,9 +747,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const each = (st, k) => { for (let t = Math.ceil(a / st - 1e-9) * st; t <= b + 1e-9; t += st) k(+t.toFixed(4)); };
     each(minor, (t) => { if (Math.abs(t / step - Math.round(t / step)) > 1e-6) h += `<span class="t min" style="left:${pct(t)}%"></span>`; });
     each(step, (t) => { h += `<span class="t maj" style="left:${pct(t)}%"></span><span class="lb" style="left:${pct(t)}%">${+t.toFixed(2)}</span>`; });
-    if (hasTicks()) h += `<span class="data" style="left:${pct(M.fr.t[0])}%;width:${pct(M.fr.t[M.fr.t.length - 1]) - pct(M.fr.t[0])}%" title="Recorded ticks ${M.fr.t[0].toFixed(2)} – ${M.fr.t[M.fr.t.length - 1].toFixed(2)} s"></span>`;
+    if (hasTicks()) { const [a, b] = tickSpan(); h += `<span class="data" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="Recorded ticks ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`; }
     $('ruler').innerHTML = h;
-    if (hasTicks()) $('rbar').style.cssText = `left:${pct(M.fr.t[0])}%;width:${pct(M.fr.t[M.fr.t.length - 1]) - pct(M.fr.t[0])}%`;
+    if (hasTicks()) { const [a, b] = tickSpan(); $('rbar').style.cssText = `left:${pct(a)}%;width:${pct(b) - pct(a)}%`; }
   }
   function renderMarkers() {
     if (!M.run) return;
@@ -772,7 +779,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!hasTicks()) return [];
     const sp = ['floor', 'obstacle', 'overhead'].flatMap((k) => M.pres?.streams?.['sensors.depth.' + k]?.spans || []).sort((a, b) => a[0] - b[0]), merged = [];
     for (const [a, b] of sp) { const l = merged[merged.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else merged.push([a, b]); }
-    const t0 = M.fr.t[0], t1 = M.fr.t[M.fr.t.length - 1];
+    const [t0, t1] = tickSpan();
     return merged.slice(1).map((m, i) => [merged[i][1], m[0]]).filter(([a, b]) => a >= t0 && b <= t1 && b > a);
   }
   function renderLanesSel() { document.querySelectorAll('#lanesL .lane-l').forEach((l) => l.classList.toggle('sel', l.dataset.lane === M.selNode)); renderBand(); }
@@ -950,12 +957,12 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const m = e.target.closest('.mk');
     if (!m) { tip.hidden = true; return; }
     const ev = M.run.events[m.dataset.ev];
-    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${hasTicks() && ev.t > M.fr.t[M.fr.t.length - 1] ? `<br><span style="color:var(--warn)">after the last recorded tick (${M.fr.t[M.fr.t.length - 1].toFixed(2)} s)</span>` : ''}`;
+    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${hasTicks() && ev.t > tickSpan()[1] ? `<br><span style="color:var(--warn)">after the last recorded tick (${tickSpan()[1].toFixed(2)} s)</span>` : ''}`;
     tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
   dragField($('tfT'), { get: () => M.t, set: (v) => setTime(v), lo: -1e9, hi: 1e9, k: () => (M.run ? (M.run.t1 - M.run.t0) / 700 : 0.05), fmt: (v) => (+v).toFixed(2) });
-  dragField($('tfK'), { get: () => M.i + 1, set: (v) => hasTicks() && setTime(M.fr.t[clamp(Math.round(v) - 1, 0, M.fr.t.length - 1)]), lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)) });
+  dragField($('tfK'), { get: () => M.i + 1, set: (v) => hasTicks() && gotoTick(Math.round(v) - 1), lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)) });
   new ResizeObserver(() => { if (M.run) { renderRuler(); renderMarkers(); renderLanes(); syncTime(); } }).observe($('overlay'));
 
   // the splitter between the outliner and the properties

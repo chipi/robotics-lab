@@ -93,6 +93,22 @@ class ThickLine extends THREE.Mesh {
     for (const name of ['position', 'pb', 'corner', 'dist']) g.getAttribute(name).needsUpdate = true;
     g.index.needsUpdate = true;
   }
+  // segment k joins points k and k+1 of pos: made when both are there, wherever they are in the run
+  seg(pos, k) {
+    if (k >= this.cap) this._grow(Math.max(k + 1, this.cap * 2));
+    const { P, Q, K, D, idx } = this, cx = [0, 0, 1, 1], cy = [-1, 1, 1, -1];
+    for (let c = 0; c < 4; c++) {
+      const v = k * 4 + c;
+      P.set(pos.subarray(k * 3, k * 3 + 3), v * 3); Q.set(pos.subarray(k * 3 + 3, k * 3 + 6), v * 3);
+      K[v * 2] = cx[c]; K[v * 2 + 1] = cy[c]; D[v * 2] = 0; D[v * 2 + 1] = 0;
+    }
+    for (let q = 0; q < 6; q++) idx[k * 6 + q] = k * 4 + [0, 1, 2, 0, 2, 3][q];
+  }
+  flush() {
+    const g = this.geometry;
+    for (const name of ['position', 'pb', 'corner', 'dist']) g.getAttribute(name).needsUpdate = true;
+    g.index.needsUpdate = true;
+  }
   setWidth(w) { this.material.uniforms.width.value = w; }
   range(i0, n) { this.geometry.setDrawRange(i0 * 6, Math.max(0, n - 1) * 6); }
   raycast() {}
@@ -226,17 +242,20 @@ export const TAIL_S = 1.0;
 
 // One run's drawable layers, one object per stream id (R.obj). `world` applies the epoch in force
 // (map -> world); otherwise the robot's own map frame is drawn as is (the data view). The run is packed
-// into buffers that grow: append({i0, i1, plans, worlds}) adds the ticks i0..i1-1 and the plans and
-// worlds that became available, and costs what it adds; update() only moves draw ranges and poses.
-// Every point keeps the tick it came from so a click can say which record it is.
+// into buffers indexed by the tick's number in the run: append({i0, i1, plans, worlds}) adds the ticks i0..i1-1 wherever
+// they are (a window of a long run, the next tick of a live one) and the plans and worlds that became available, and
+// costs what it adds; update() only moves draw ranges and poses. A segment of a track exists once both its ticks are
+// loaded; depth returns are packed per loaded stretch of ticks. Every point keeps the tick it came from so a click can
+// say which record it is (tick * 100000 + its place in the tick).
+export const POINT_ID = 100000;
+
 export function fullRange(fr) {
   const have = (arr) => arr.map((x, k) => (x ? k : -1)).filter((k) => k >= 0);
-  return { i0: 0, i1: fr.t.length, plans: have(fr.plans), worlds: have(fr.worlds) };
+  return { ranges: fr.ranges.map((r) => [...r]), plans: have(fr.plans), worlds: have(fr.worlds) };
 }
 
 export function buildRun(run, fr, world) {
   const r = run.robot.radius, h = run.robot.height;
-  let n = 0;                                          // ticks built
   const tf = (t) => {
     if (!world) return (x, y) => [x, y, 0];
     const [ox, oy, yaw] = epochAt(run, t), c = Math.cos(yaw), s = Math.sin(yaw);
@@ -244,20 +263,14 @@ export function buildRun(run, fr, world) {
   };
   const L = { group: new THREE.Group(), obj: {}, pick: {} };
   const add = (id, o) => { L.obj[id] = o; L.group.add(o); return o; };
-  // first tick at or after time x
-  const firstAt = (x) => {
-    let lo = 0, hi = n;
-    while (lo < hi) { const m = (lo + hi) >> 1; if (fr.t[m] < x) lo = m + 1; else hi = m; }
-    return lo;
-  };
 
-  const posG = new Grow(Float32Array, 3), trkG = new Grow(Float32Array, 3);
+  const posG = new Grow(Float32Array, 3), trkG = new Grow(Float32Array, 3), maskG = new Grow(Uint8Array, 1);
   const bTrack = add('belief.track', new ThickLine(C.belief, 2)), bRobot = add('belief.pose', robotMesh(r, h, C.belief));
   bRobot.position.z = 0.02;
   bRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 0 }); });
   Object.defineProperty(L, 'pose', { get: () => posG.a });
 
-  let tTrack, tRobot, rel = null, tpG = null, trG = null, lastTruth = null, firstTruthAt = -1;
+  let tTrack, tRobot, rel = null, tpG = null, trG = null;
   if (world) {
     tpG = new Grow(Float32Array, 3); trG = new Grow(Float32Array, 3);
     tTrack = add('truth.track', new ThickLine(C.truth, 2)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
@@ -266,21 +279,24 @@ export function buildRun(run, fr, world) {
     rel = add('rel.belief_truth', lineObj(new Float32Array(6), C.rel));
   }
 
-  // depth: one buffer per kind; tick i's returns of a kind are [cum[i], cum[i+1]) in it, so "at t",
-  // "last N s" and "all up to t" are each one draw range.
+  // depth: per stretch of loaded ticks ("chunk"), one buffer per kind; tick i's returns of a kind are
+  // [cum[i - i0], cum[i - i0 + 1]) in it, so "at t", "last N s" and "all up to t" are each one draw range per chunk.
   const kindOf = (k) => (k in { f: 1, o: 1, v: 1, b: 1 } ? k : 'o');
-  const D = {};
-  for (const [k, id] of DEPTH_KINDS) {
-    D[k] = { id, pos: new Grow(Float32Array, 3), flat: new Grow(Int32Array, 1), tick: new Grow(Int32Array, 1), cum: new Grow(Int32Array, 1), o: 0 };
-    const pts = add(id, pointsObj(D[k].pos.a, null, 4));
-    pts.material.color.set(C.depth[k]);
-    pts.geometry.setDrawRange(0, 0);
-    pts.userData.pick = (hit) => ({ kind: 'depth', index: D[k].flat.a[hit.index] });
-  }
-  const dLast = new Grow(Int32Array, 1);
-  const flatOf = [];  // flat index (file order) -> [kind, buffer index]
-  let last = -1;
-  L.depth = { D, flatOf };
+  const chunks = [];
+  for (const [, id] of DEPTH_KINDS) add(id, new THREE.Group());
+  const newChunk = (i0) => {
+    const c = { i0, i1: i0, last: new Grow(Int32Array, 1), lastTick: -1, D: {} };
+    for (const [k, id] of DEPTH_KINDS) {
+      const B = c.D[k] = { id, pos: new Grow(Float32Array, 3), ids: new Grow(Float64Array, 1), cum: new Grow(Int32Array, 1), o: 0 };
+      const pts = pointsObj(B.pos.a, null, 4);
+      pts.material.color.set(C.depth[k]);
+      pts.geometry.setDrawRange(0, 0); pts.visible = false;
+      pts.userData.pick = (hit) => ({ kind: 'depth', index: B.ids.a[hit.index] });
+      B.obj = pts; L.obj[id].add(pts);
+    }
+    chunks.push(c);
+    return c;
+  };
 
   const psG = new Grow(Float32Array, 3), pStart = [], pCount = [];
   let psN = 0;
@@ -302,42 +318,52 @@ export function buildRun(run, fr, world) {
   obst.material.color.set(C.obst); drops.material.color.set(C.hazard);
 
   const extendTicks = (a, b) => {
-    posG.need(b); trkG.need(b); dLast.need(b); for (const k in D) D[k].cum.need(b + 1);
+    posG.need(b); trkG.need(b); maskG.need(b + 1);
     if (world) { tpG.need(b); trG.need(b); }
+    let lastTruth = (world && fr.truth.slice(a, b).find(Boolean)) || [0, 0, 0];     // a tick without truth wears the last one
     for (let i = a; i < b; i++) {
       const [x, y, yaw] = fr.belief[i], [wx, wy, ey] = tf(fr.t[i])(x, y);
       posG.a.set([wx, wy, yaw + ey], i * 3);
       trkG.a.set([wx, wy, 0.01], i * 3);
+      maskG.a[i] = 1;
       if (world) {
-        const tr = fr.truth[i];
-        if (tr && firstTruthAt < 0) {                      // ticks before the first truth wear it
-          firstTruthAt = i;
-          for (let j = 0; j < i; j++) { tpG.a.set(tr, j * 3); trG.a.set([tr[0], tr[1], 0.01], j * 3); }
-        }
-        lastTruth = tr || lastTruth || [0, 0, 0];
+        lastTruth = fr.truth[i] || lastTruth;
         tpG.a.set(lastTruth, i * 3);
         trG.a.set([lastTruth[0], lastTruth[1], 0.01], i * 3);
       }
-      for (const k in D) D[k].cum.a[i] = D[k].o;
-      const d = fr.depth[i];
-      if (d) {
-        last = i;
-        const f = tf(fr.t[i]);
-        for (const [x2, y2, z, kk] of d) {
-          const k = kindOf(kk), B = D[k], [dx, dy] = f(x2, y2);
-          B.pos.need(B.o + 1); B.flat.need(B.o + 1); B.tick.need(B.o + 1);
-          B.pos.a.set([dx, dy, z], B.o * 3);
-          B.flat.a[B.o] = flatOf.length; B.tick.a[B.o] = i;
-          flatOf.push([k, B.o]);
-          B.o++;
-        }
-      }
-      dLast.a[i] = last;
     }
-    for (const k in D) D[k].cum.a[b] = D[k].o;
-    for (const [k, id] of DEPTH_KINDS) sync(L.obj[id].geometry, 'position', D[k].pos, 3);
-    bTrack.set(trkG.a, b);
-    if (world) tTrack.set(trG.a, b);
+    // a track's segment k joins ticks k and k+1: made now if both are loaded (the ones beside the new ticks are)
+    for (let k = Math.max(a - 1, 0); k < b; k++) {
+      if (!(maskG.a[k] && maskG.a[k + 1])) continue;
+      bTrack.seg(trkG.a, k);
+      if (world) tTrack.seg(trG.a, k);
+    }
+    bTrack.flush();
+    if (world) tTrack.flush();
+
+    // depth: appended to the stretch this range continues, else a stretch of its own
+    const c = chunks.find((q) => q.i1 === a) || newChunk(a);
+    c.last.need(b - c.i0 + 1);
+    for (const k in c.D) c.D[k].cum.need(b - c.i0 + 2);
+    for (let i = a; i < b; i++) {
+      const rel0 = i - c.i0;
+      for (const k in c.D) c.D[k].cum.a[rel0] = c.D[k].o;
+      const d = fr.depth[i];
+      if (d && d.length) {
+        c.lastTick = i;
+        const f = tf(fr.t[i]);
+        d.forEach(([x2, y2, z, kk], j) => {
+          const B = c.D[kindOf(kk)], [dx, dy] = f(x2, y2);
+          B.pos.need(B.o + 1); B.ids.need(B.o + 1);
+          B.pos.a.set([dx, dy, z], B.o * 3);
+          B.ids.a[B.o] = i * POINT_ID + j;
+          B.o++;
+        });
+      }
+      c.last.a[rel0] = c.lastTick;
+    }
+    c.i1 = b;
+    for (const k in c.D) { c.D[k].cum.a[b - c.i0] = c.D[k].o; sync(c.D[k].obj.geometry, 'position', c.D[k].pos, 3); }
   };
 
   const extendPlans = (ks) => {
@@ -348,8 +374,9 @@ export function buildRun(run, fr, world) {
       const f = tf(p.t);
       psG.need(psN + p.path.length);
       for (const [x, y] of p.path) { psG.a.set([...f(x, y).slice(0, 2), 0.012], psN * 3); psN++; }
+      plan.made = pStart[k]; plan.acc = 0;               // the dashes start with each plan, whatever order the plans were loaded in
+      plan.set(psG.a, psN);
     }
-    plan.set(psG.a, psN);
   };
 
   const extendWorlds = (ks) => {
@@ -380,7 +407,7 @@ export function buildRun(run, fr, world) {
   };
 
   L.append = (range) => {
-    if (range.i1 > n) { extendTicks(Math.max(range.i0, n), range.i1); n = range.i1; }
+    for (const [a, b] of range.ranges ?? [[range.i0, range.i1]]) if (b > a) extendTicks(a, b);
     if (range.plans?.length) extendPlans(range.plans);
     if (range.worlds?.length) extendWorlds(range.worlds);
   };
@@ -388,10 +415,10 @@ export function buildRun(run, fr, world) {
   // where a record sits in this run's frame: [x, y, z, tick] or null
   L.locate = (kind, index, wi) => {
     if (kind === 'depth') {
-      const fo = L.depth.flatOf[index];
-      if (!fo) return null;
-      const B = D[fo[0]], o = fo[1];
-      return { stream: B.id, dk: fo[0], p: [B.pos.a[o * 3], B.pos.a[o * 3 + 1], B.pos.a[o * 3 + 2]], tick: B.tick.a[o] };
+      const tick = Math.floor(index / POINT_ID), p = fr.depth[tick]?.[index % POINT_ID];
+      if (!p) return null;
+      const dk = kindOf(p[3]), [wx, wy] = tf(fr.t[tick])(p[0], p[1]);
+      return { stream: DEPTH_KINDS.find(([k]) => k === dk)[1], dk, p: [wx, wy, p[2]], tick };
     }
     if (kind === 'cell') {
       const g = fr.worlds[wi]?.grid;
@@ -411,7 +438,7 @@ export function buildRun(run, fr, world) {
     const trackRange = (id) => {
       const { mode, n: w } = cfg(id);
       if (mode === 'upto') return [0, i + 1];
-      const i0 = Math.min(firstAt(t - (mode === 'window' ? w : TAIL_S)), i);
+      const i0 = Math.min(fr.firstAt(t - (mode === 'window' ? w : TAIL_S)), i);
       return [i0, i - i0 + 1];
     };
     bTrack.range(...trackRange('belief.track')); bTrack.setWidth(size('belief.track'));
@@ -423,15 +450,23 @@ export function buildRun(run, fr, world) {
       a.array.set([pose[i * 3], pose[i * 3 + 1], 0.05, tpose[i * 3], tpose[i * 3 + 1], 0.05]);
       a.needsUpdate = true;
     }
-    const d = dLast.a[i];
     for (const [k, id] of DEPTH_KINDS) {
-      const { mode, n: w } = cfg(id), B = D[k], cum = B.cum.a;
-      let rg;
-      if (mode === 'upto') rg = [0, cum[i + 1]];
-      else if (mode === 'window') { const i0 = Math.min(firstAt(t - w), i); rg = [cum[i0], cum[i + 1] - cum[i0]]; }
-      else rg = d < 0 ? [0, 0] : [cum[d], cum[d + 1] - cum[d]];
-      L.obj[id].geometry.setDrawRange(rg[0], rg[1]);
-      L.obj[id].material.size = size(id);
+      const { mode, n: w } = cfg(id);
+      const from = mode === 'window' ? Math.min(fr.firstAt(t - w), i) : 0;
+      for (const c of chunks) {
+        const B = c.D[k], cum = B.cum.a;
+        let rg = [0, 0];
+        if (mode === 'at') {
+          const d = i >= c.i0 && i < c.i1 ? c.last.a[i - c.i0] : -1;
+          if (d >= c.i0) rg = [cum[d - c.i0], cum[d - c.i0 + 1] - cum[d - c.i0]];
+        } else {
+          const lo = Math.max(c.i0, from), hi = Math.min(i, c.i1 - 1);
+          if (hi >= lo) rg = [cum[lo - c.i0], cum[hi - c.i0 + 1] - cum[lo - c.i0]];
+        }
+        B.obj.geometry.setDrawRange(rg[0], rg[1]);
+        B.obj.visible = rg[1] > 0;
+        B.obj.material.size = size(id);
+      }
     }
     const pi = fr.plan_at[i];
     plan.setWidth(size('plan.path'));

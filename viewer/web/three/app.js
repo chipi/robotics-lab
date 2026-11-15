@@ -131,7 +131,11 @@ const adapter = {
   setScene(sc) { scn = sc; buildSceneObjects(); },
   setRun(r, f) { run = r; fr = f; buildRunObjects(); },
   // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
-  append(range) { if (!RW) return; RW.append(range); RM.append(range); },
+  append(range) {
+    if (!RW) return;
+    RW.append(range); RM.append(range);
+    for (const Rn of [RW, RM]) for (const [id, o] of Object.entries(Rn.obj)) setLayers(o, id);       // a new stretch of depth points joins its stream's layer
+  },
   // the shell draws after a layout, so the draw views.setup() would trigger is skipped
   setLayout(view, frame) { rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
 

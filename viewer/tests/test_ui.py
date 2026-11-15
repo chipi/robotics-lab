@@ -431,7 +431,13 @@ def run_page(b, base, rid, other):
     page.click("#tabSel")
     check("Selection tab: empty state text", "Nothing picked" in ev("document.getElementById('inspBody').innerText"))
     total = sum(len(d) for d in fr["depth"] if d)
-    call(f"window.miniview.select({{kind: 'depth', index: {total // 2}}})")
+    mid, acc = None, 0                  # the middle depth return, as the page names it: tick * 100000 + its place in the tick
+    for k, d in enumerate(fr["depth"]):
+        if d and acc + len(d) > total // 2:
+            mid = k * 100000 + (total // 2 - acc)
+            break
+        acc += len(d or [])
+    call(f"window.miniview.select({{kind: 'depth', index: {mid}}})")
     check("select() fills the Selection tab", "x" in ev("document.getElementById('inspBody').innerText") and state()["selection"] is not None, json.dumps(state()["selection"])[:160])
     call("window.miniview.select(null)")
     call("window.miniview.select({kind: 'belief', index: 0})")
@@ -458,7 +464,7 @@ def run_page(b, base, rid, other):
     sel = state()["selection"]
     check("a real click on the robot selects it (map frame)", sel is not None and sel["stream"] == "belief.pose", sel)
     check("and the inspector switched to the Selection tab with its values", ev("document.getElementById('tabSel').getAttribute('aria-selected')") == "true" and "Yaw" in ev("document.getElementById('inspBody').innerText"))
-    call(f"window.miniview.select({{kind: 'depth', index: {total // 2}}})")
+    call(f"window.miniview.select({{kind: 'depth', index: {mid}}})")
     dp = state()["selection"]
     call("window.miniview.select(null)")
     call(f"window.miniview.setTime({dp['t']})")

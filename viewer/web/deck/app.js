@@ -1,6 +1,6 @@
 // The deck.gl page: the shared workbench (../shell/) with a deck.gl renderer in #stage.
 import { createShell } from '../shell/shell.js';
-import { prepareScene, prepareRun, idxAt, applyPose, KIND_NAME } from './data.js';
+import { prepareScene, prepareRun, applyPose, KIND_NAME } from './data.js';
 import { buildLayers, setPalette } from './layers.js';
 
 const { Deck, OrthographicView, OrbitView } = deck;
@@ -57,8 +57,9 @@ function describe(sel) {
   const dv = M.frame === 'map', frame = M.frame;
   const at = (p, tick) => { const q = dv ? p : applyPose(D.epochs[D.epochIdx[tick]].p, p); return [q[0], q[1]]; };
   if (sel.kind === 'depth') {
-    if (sel.index < 0 || sel.index >= D.depthTotal) return null;
-    const { p, kind, tick } = D.depthPoint(sel.index), q = at(p, tick);
+    const dp = D.depthPoint(sel.index);
+    if (!dp) return null;
+    const { p, kind, tick } = dp, q = at(p, tick);
     return { stream: `sensors.depth.${{ f: 'floor', o: 'obstacle', v: 'overhead', b: 'below' }[kind]}`, detail: `${KIND_NAME[kind]} return`, depth_kind: kind, p: q, height: p[2], tick, t: D.t[tick], frame };
   }
   if (sel.kind === 'robot') {
@@ -73,7 +74,7 @@ function describe(sel) {
     if (k == null || k < 0 || k >= g.cells.length) return null;
     const c = [g.origin[0] + ((k % g.w) + 0.5) * g.res, g.origin[1] + (Math.floor(k / g.w) + 0.5) * g.res, 0];
     const st = { '#': 'occupied', '.': 'free' }[g.cells[k]] || 'unknown';
-    return { stream: 'world.grid', detail: `${st} cell`, state: st, res: g.res, p: at(c, idxAt(W.t, D.t)), height: 0, tick: idxAt(W.t, D.t), t: W.t, frame };
+    return { stream: 'world.grid', detail: `${st} cell`, state: st, res: g.res, p: at(c, D.f.tickAt(W.t)), height: 0, tick: D.f.tickAt(W.t), t: W.t, frame };
   }
   return null;
 }
@@ -81,7 +82,7 @@ function describe(sel) {
 function onClick(info) {
   const lid = info.layer && info.layer.id.split('@')[0];
   if (!lid || info.index < 0) return S.pick(null);
-  if (lid.startsWith('depth')) { const b = X.pickBase[info.layer.id]; return S.pick({ kind: 'depth', index: X.D.dk[b.ch].gi[b.base + info.index] }); }
+  if (lid.startsWith('depth')) { const b = X.pickBase[info.layer.id]; return S.pick({ kind: 'depth', index: X.D.depthId(b.ci, b.ch, b.base + info.index) }); }
   if (lid === 'map') return S.pick({ kind: 'cell', index: info.object.k });
   if (lid.startsWith('belief')) return S.pick({ kind: 'robot', index: 0 });
   if (lid.startsWith('truth')) return S.pick({ kind: 'robot', index: 1 });

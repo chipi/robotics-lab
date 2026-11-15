@@ -199,14 +199,18 @@ live. Fonts (Inter, JetBrains Mono; OFL, licences in `web/fonts/`) are served by
 request leaves the machine.
 
 **The run store** (`web/shell/runstore.js`, shared by both renderers): the run's summary; then the
-ticks up to the
-playhead + 30 s in windows of 60 s, so the page draws at once; then the rest in the background, one
-window per turn;
-plans and worlds by number as ticks refer to them; then the live stream, applied in order. `seq` is
-checked: a gap
-reconnects from the last seq held. The loaded part is always the first ticks without a hole, because
-renderers take
-appends only: a playhead deep in a run loads the first ticks up to it, then draws.
+window of ticks
+around the playhead, from 30 s before it to 30 s after, wherever in the run it is, so the page draws
+at once; then the
+rest in the background, in windows of 60 s outwards from what is loaded, nearest the playhead first;
+plans and worlds
+by number as ticks refer to them; then the live stream, applied in order. `seq` is checked: a gap
+reconnects from the
+last seq held. The frames the renderers read are indexed by the tick's number in the run and have
+holes where a tick is
+not loaded (`frames.ranges` lists what is, as sorted `[first, end)` pairs). A seek into a part that
+is not loaded loads
+the window around it first (`setTime` waits for it); the playhead shows the nearest loaded tick meanwhile.
 
 **Script API.** Every page exposes `window.miniview` and sets `window.__ready = true` after its
 first draw, and again after
@@ -217,7 +221,7 @@ load(scene, run)            setTime(t)                  setView("top|front|back|
 setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "at|window|upto", seconds)
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
 select({kind, index})       scenes()
-state()     -> {run, scene, status, seq, follow, loaded: {ticks, of, complete}, t, tick, tick_t, frame, view, belief,
+state()     -> {run, scene, status, seq, follow, loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief,
                 belief_map, truth, distance, last_event, selection, t_range, hidden}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
@@ -236,9 +240,9 @@ whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
   the timeline or the transport, a key, playback) turns it off, and the switch shows it; the switch
   turns it on again.
 - `setTime(t)` waits for the ticks up to `t` to be loaded. `select` takes a depth return (`{kind:
-  "depth", index}`), a robot
-  (`{kind: "robot", index: 0 belief | 1 truth}`) or a map cell (`{kind: "cell", index, world}`);
-  `select(null)` clears.
+  "depth", index}`, the index being `tick * 100000` plus
+  the point's place in its tick), a robot (`{kind: "robot", index: 0 belief | 1 truth}`) or a map cell
+  (`{kind: "cell", index, world}`); `select(null)` clears.
   `setVisible` takes a stream id or a group (`g.sensors`, `Sensors`, ...).
 - `miniview.internals` (the model, the store and the renderer adapter) is **for this repository's
   tests only**; scripts use
@@ -264,19 +268,24 @@ fillsDrawn(pane) -> bool   whether the faint box faces are drawn in the pane nam
 project([x, y, z]) -> [clientX, clientY] | null   where a world point falls in the first pane (tests probe pixels there)
 ```
 
-`setRun(run, frames)` gives the run and the frames loaded so far (ticks `0..n-1` without a hole;
-plans and worlds by
-number, only those a loaded tick refers to). `append({i0, i1, plans: [k, ...], worlds: [k, ...]})`
-says what was added:
-the ticks `i0..i1-1` and the plan and world numbers that became available; nothing is rebuilt
-(three.js packs into buffers
-that double when full, deck.gl prepares only what was added). An epoch that arrives behind drawn
-ticks makes the shell call
-`setRun` again: what depends on the epoch is drawn again. The shell gives the adapter `M` (the
-model), `shown(id, view)`,
-`cfg(id)`, `size(id)`, `pick(sel)`, `viewChanged()`, `tickAt(t)` and `palette()`. The 3D views of
-both pages start from
-the same camera; `viewer/tests/test_ui.py` checks that six world points land on the same pixels.
+`setRun(run, frames)` gives the run and the frames loaded so far (ticks by their number in the run,
+holes where a tick
+is not loaded, `frames.ranges` saying where; plans and worlds by number, only those a loaded tick
+refers to; the frames
+also carry `tickAt(t)`, `firstAt(t)` and `firstAfter(t)` over the loaded ticks).
+`append({i0, i1, plans: [k, ...], worlds: [k, ...]})` says what was added: the ticks `i0..i1-1`,
+**wherever they are in
+the run** (a window in the middle of a long run, or the next tick of a live one), and the plan and
+world numbers that
+became available. Nothing is rebuilt: three.js packs ticks into buffers indexed by tick (a track's
+segment exists once
+both its ticks do) and depth returns per stretch of loaded ticks; deck.gl prepares only what was
+added, one layer per
+stretch. An epoch that arrives behind drawn ticks makes the shell call `setRun` again: what depends
+on the epoch is drawn
+again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`, `size(id)`, `pick(sel)`,
+`viewChanged()`, `tickAt(t)` and `palette()`. The 3D views of both pages start from the same camera;
+`viewer/tests/test_ui.py` checks that six world points land on the same pixels.
 
 ## Commands (the agent's face)
 

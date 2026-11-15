@@ -1,6 +1,6 @@
 // Builds the deck.gl layers for one pane. Static data stays referentially stable; only the
 // per-moment pieces (poses, track slice, depth frame, plan, world) change with t.
-import { IDENT, KIND_COL, CELL_COL, firstAfter } from './data.js';
+import { IDENT, KIND_COL, CELL_COL } from './data.js';
 
 const { PathLayer, LineLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer, PathStyleExtension, COORDINATE_SYSTEM } = deck;
 const DASH = [new PathStyleExtension({ dash: true })];
@@ -95,12 +95,24 @@ function faces(list, mode) {
 export const SHORT_TAIL_S = 2; // what "at t" shows of a track: a short tail
 
 
+// the loaded stretches of tr[a..b] as paths (a hole in the run is a break in the line, not a bridge over it)
+function pathsOf(tr, a, b) {
+  const out = [];
+  let cur = null;
+  for (let k = a; k <= b; k++) {
+    if (!tr[k]) { cur = null; continue; }
+    if (!cur) out.push(cur = { path: [] });
+    cur.path.push(tr[k]);
+  }
+  return out;
+}
+
 // ticks a..b a stream shows at tick i, from its time mode
 export function ticksFor(S, id, i, tail) {
   const { D } = S, tm = S.cfg(id);
   if (tm.mode === 'upto') return [0, i];
-  if (tm.mode === 'window') return [Math.min(firstAfter(D.t[i] - tm.n, D.t), i), i];
-  return tail ? [Math.min(firstAfter(D.t[i] - tail, D.t), i), i] : [i, i];
+  if (tm.mode === 'window') return [Math.min(D.f.firstAfter(D.t[i] - tm.n), i), i];
+  return tail ? [Math.min(D.f.firstAfter(D.t[i] - tail), i), i] : [i, i];
 }
 
 // Every layer of a pane is in the list at every moment, with `visible` (and empty data) saying whether it draws:
@@ -141,9 +153,11 @@ export function buildLayers(S, pane) {
     const sid = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' }[ch];
     const tm = S.cfg(sid), vis = on(sid);
     const [a, b] = tm.mode === 'at' ? [D.depthIdx[i], D.depthIdx[i]] : ticksFor(S, sid, i);
-    const r = vis ? D.depthRange(ch, a, b) : null;
-    if (r) S.pickBase[id('depth' + ch)] = { ch, base: r.base };
-    out.push(new ScatterplotLayer({ id: id('depth' + ch), data: r ? r.data : EMPTY_POINTS, visible: !!r && r.data.length > 0, getFillColor: KIND_COL[ch], getRadius: S.size(sid) / 2, radiusUnits: 'pixels', pickable: true, modelMatrix: mm, ...Z }));
+    D.chunks.forEach((c, ci) => {                      // one layer per stretch of loaded ticks, always in the list
+      const r = vis ? D.depthRange(ci, ch, a, b) : null;
+      if (r) S.pickBase[id(`depth${ch}${ci}`)] = { ch, ci, base: r.base };
+      out.push(new ScatterplotLayer({ id: id(`depth${ch}${ci}`), data: r ? r.data : EMPTY_POINTS, visible: !!r && r.data.length > 0, getFillColor: KIND_COL[ch], getRadius: S.size(sid) / 2, radiusUnits: 'pixels', pickable: true, modelMatrix: mm, ...Z }));
+    });
   }
   out.push(new ScatterplotLayer({ id: id('obst'), data: world ? world.obstacles : EMPTY, visible: !!world && on('world.obstacles'), getPosition: (d) => d, getFillColor: C.obst.concat(255), getRadius: S.size('world.obstacles') / 2, radiusUnits: 'pixels', modelMatrix: mm, ...Z }));
   out.push(new ScatterplotLayer({ id: id('drops'), data: world ? world.drops : EMPTY, visible: !!world && on('world.drops'), getPosition: (d) => d, getFillColor: C.haz.concat(255), getRadius: S.size('world.drops') / 2, radiusUnits: 'pixels', modelMatrix: mm, ...Z }));
@@ -151,7 +165,7 @@ export function buildLayers(S, pane) {
   const tp = D.f.truth[i], bp = dv ? D.f.belief[i] : D.beliefW[i];
   const track = (sid, col, name, tr, vis) => {
     const [a, b] = ticksFor(S, sid, i, SHORT_TAIL_S);
-    out.push(new PathLayer({ id: id(name + 'track'), data: vis ? [{ path: tr.slice(a, b + 1).filter(Boolean) }] : EMPTY, visible: vis, getPath: (d) => d.path, getColor: col.concat(200), ...px(S.size(sid)), modelMatrix: V, ...Z }));
+    out.push(new PathLayer({ id: id(name + 'track'), data: vis ? pathsOf(tr, a, b) : EMPTY, visible: vis, getPath: (d) => d.path, getColor: col.concat(200), ...px(S.size(sid)), modelMatrix: V, ...Z }));
   };
   const r = D.run.robot.radius, h = D.run.robot.height;
   const robot = (name, col, p, vis) => {
