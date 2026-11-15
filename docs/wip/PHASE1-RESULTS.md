@@ -5,6 +5,9 @@ go-to goals, each from the dock with an empty map, in the office and the north c
 zero contacts (trunk centre within 8.3 cm of an obstacle's outline), upright; every goal reached or
 refused with a reason, no timeouts; ≥ 18 reached within 25 cm of the goal by simulator truth.
 
+**Met again on 2026-11-15 by run 15** (20 of 20, no refusals or contacts, closest 12.6 cm) after
+phase 2's changes broke and the fixes below restored it; see the regression table.
+
 **Met on 2026-11-14: run 7 at the edge of the bar, run 8 with margin** — 20 of 20 within 25 cm, no
 refusals, no contacts (closest 9.3 cm), no falls. Code: commits "phase 1 — the obstacle layer; run 7
 meets the bar" and "phase 1 — the two fixes after run 7; run 8". Runs: `duck/runs/phase1-run*`
@@ -22,6 +25,21 @@ meets the bar" and "phase 1 — the two fixes after run 7; run 8". Runs: `duck/r
 | 6 | lethal 12 → 15 cm | (stopped after goal 3: still touched the cabinet) | | | 1 | 0 | zone size was not the cause |
 | 7 | the obstacle layer (what the sensor sees within 60 cm, every tick) | **18** | 2 | 0 | **0** | 0 | **bar met**, at its edge |
 | 8 | lethal back to 12 cm; a drop must persist 3 frames | **20** | **0** | 0 | **0** | 0 | **bar met with margin**: closest 9.3 cm, errors 12-17 cm (median ~14) |
+
+### The regression after phase 2's changes (2026-11-15)
+
+Phase 2 changed the grid (drop zones, a 0.5 m escape, lethal cost apart from obstacles); phase 1 was
+run again. Run 8's pass turned out to be partly luck at the office doorway, beside the cabinet.
+
+| Run | What changed before it | Reached ≤ 25 cm | Refused | Timeouts or stalls | Contacts | Falls | What it showed |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 9 | phase 2's grid | (stopped after goal 2) | | | 1 | 0 | the 0.5 m escape let a path on free floor cut a lethal zone |
+| 10 | escape only out of a lethal zone, never back in | (stopped after goal 13) | | | 2 | 0 | the follower cut the doorway's bend inside, 7 cm from the cabinet |
+| 11 | lookahead 0.15 m near obstacles, 10 cm waypoints; a 15 s stall rule | 19 | 0 | 1 | 0 | 0 | replans flipped between two routes; "MET" until stalls counted |
+| 12 | replan hysteresis; stalls count as timeouts | 20 | 0 | 0 | 1 | 0 | a contact while turning on the spot by the cabinet (turn drift) |
+| 13 | turn rules: pivot only with room, else an arc, else refuse; cliff stop 0.60 m | (stopped after goal 9) | 1 | 1 | 0 | 0 | the arc's 400 mm was too strict; a pivot never started stepping |
+| 14 | arc at 300 mm; a stuck pivot kicks again | 19 | 1 | 0 | **0** | 0 | **bar met**; one refusal by phantom obstacle points |
+| 15 | unseen cells by an obstacle cost 60; a monitored pivot in a squeeze | **20** | **0** | 0 | **0** | 0 | **bar met, 20 of 20**: closest 12.6 cm |
 
 ## Run 7, honestly
 
