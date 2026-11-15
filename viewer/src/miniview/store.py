@@ -36,6 +36,7 @@ class RunData:
         self.log = []                 # (seq, t, kind, payload): what live followers send
         self.seq = 0
         self.last_t = 0.0
+        self.counts = {"truth": 0, "depth": 0, "tilt": 0, "f": 0, "o": 0, "v": 0, "b": 0}   # stream counts, kept as records arrive
         self.mem = 0                  # an estimate of the bytes this run holds in memory (the cache's measure)
         self._spanned = False
 
@@ -72,6 +73,13 @@ class RunData:
             f["t"].append(t)
             for k in ("belief", "truth", "tilt", "cmd", "depth"):
                 f[k].append(p.get(k))
+            c = self.counts
+            c["truth"] += bool(p.get("truth"))
+            c["tilt"] += bool(p.get("tilt"))
+            if p.get("depth"):
+                c["depth"] += 1
+                for pt in p["depth"]:
+                    c[pt[3]] = c.get(pt[3], 0) + 1
             f["plan_at"].append(len(f["plans"]) - 1)
             f["world_at"].append(len(f["worlds"]) - 1)
             r["ticks"] = len(f["t"])
@@ -90,16 +98,13 @@ class RunData:
         self.mem += _cost(kind, p)
 
     def finish_batch(self) -> None:
-        self.run["streams"] = streams(self.frames, self.run["events"])
+        self.run["streams"] = streams(self.frames, self.run["events"], self.counts)
         with self.changed:
             self.changed.notify_all()
 
     def since(self, seq: int) -> list:
-        """Records applied after seq (the live stream's resume point)."""
-        lo = 0
-        while lo < len(self.log) and self.log[lo][0] <= seq:
-            lo += 1
-        return self.log[lo:]
+        """Records applied after seq (the live stream's resume point); the log's index is seq - 1."""
+        return self.log[max(seq, 0):]
 
 
 def _cost(kind: str, p: dict) -> int:
@@ -129,7 +134,7 @@ def verdict_of(events: list, evaluated: bool) -> str:
     return "ended"
 
 
-def streams(f: dict, events: list) -> list:
+def streams(f: dict, events: list, counts: dict) -> list:
     """What the run holds, stream by stream, for the streams tree and its badges (CONTRACT.md)."""
     span = (f["t"][-1] - f["t"][0]) if len(f["t"]) > 1 else 0.0
 
@@ -146,13 +151,7 @@ def streams(f: dict, events: list) -> list:
         return e
 
     n = len(f["t"])
-    truth = sum(1 for x in f["truth"] if x)
-    depth_frames = sum(1 for d in f["depth"] if d)
-    kinds = {"f": 0, "o": 0, "v": 0, "b": 0}
-    for d in f["depth"]:
-        for p in d or ():
-            kinds[p[3]] = kinds.get(p[3], 0) + 1
-    tilt = sum(1 for x in f["tilt"] if x)
+    truth, depth_frames, tilt, kinds = counts["truth"], counts["depth"], counts["tilt"], counts
     last = f["worlds"][-1] if f["worlds"] else {"obstacles": [], "drops": []}
     track = ("at", "window", "upto")
     out = [

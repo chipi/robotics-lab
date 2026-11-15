@@ -1,42 +1,91 @@
-"""`miniview serve`: the two pages and the API over the catalog (ADR-0005), standard library only.
+"""`miniview serve`: the two pages and the API over the catalog (ADR-0005, ADR-0010), standard library only.
 
     GET /api/v1/health
-    GET /api/v1/scenes                      the scenes with their runs (index.json's shape)
-    GET /api/v1/scenes/{id}                 a scene
-    GET /api/v1/runs?scene=                 a scene's runs
-    GET /api/v1/runs/{id}                   the run (run.json's shape, with status and seq)
-    GET /api/v1/runs/{id}/frames?from=&to=  drawing data (frames.json's shape) for a time window
-    GET /api/v1/runs/{id}/state?t=          the moment: belief, truth, distance, depth, last event
-    GET /api/v1/runs/{id}/events?kinds=     what happened, when
-    GET /api/v1/runs/{id}/presence          when each stream has data (the timeline's rows)
-    GET /api/v1/runs/{id}/live?since=       Server-Sent Events: tick, plan, world, event, epoch,
-                                            end, then status; resumes after `since` (a seq)
-    GET /web/...                            the pages (three.js, deck.gl, the mockup)
+    GET /api/v1/scenes                                the scenes with their runs (index.json's shape)
+    GET /api/v1/scenes/{id}                           a scene
+    GET /api/v1/runs?robot=&scene=&status=            the runs, newest first (from the index)
+    GET /api/v1/runs/{robot}/{scene}/{run}            the run (run.json's shape, with status and seq)
+        .../frames?from=&to=                          drawing data for a time window, with only the plans and maps its
+                                                      ticks refer to, keyed by index
+        .../state?t=                                  the moment: belief, truth, distance, depth, last event
+        .../events?kinds=                             what happened, when
+        .../presence                                  when each stream has data (the timeline's rows)
+        .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
+                                                      then `status`; resumes after `since` or Last-Event-ID
+    GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
+
+Errors are JSON ({"error": ...}): 400 bad input, 404, 405, 409 (no ticks yet, a broken run), 500 with an id that is
+also in the log. gzip for JSON over 1 KB when accepted; static files carry an ETag.
 """
 
 import bisect
+import gzip
 import http.server
 import json
+import logging
+import math
 import mimetypes
 import threading
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 
-from miniview import query
+from miniview import keys, query
 from miniview.catalog import Catalog
 
+log = logging.getLogger("miniview")
 WEB = Path(__file__).resolve().parents[2] / "web"
 HEARTBEAT_S = 15.0
+REQUEST_TIMEOUT_S = 30.0
+GZIP_OVER = 1024
+PER_TICK = ("t", "belief", "truth", "tilt", "cmd", "depth", "plan_at", "world_at")
+ONE_DAY = "public, max-age=86400"
 
 
-def window(frames: dict, t_from: float | None, t_to: float | None) -> dict:
-    """The ticks in [t_from, t_to], with every plan and world (the per-tick indices refer to them)."""
-    ts = frames["t"]
-    lo = 0 if t_from is None else bisect.bisect_left(ts, t_from)
-    hi = len(ts) if t_to is None else bisect.bisect_right(ts, t_to)
-    out = {k: (v[lo:hi] if k not in ("plans", "worlds") else v) for k, v in frames.items()}
-    out["i0"] = lo
+class HttpError(Exception):
+    def __init__(self, code: int, msg: str):
+        super().__init__(msg)
+        self.code, self.msg = code, msg
+
+
+def number(q: dict, k: str) -> float | None:
+    """A finite number from the query, None when absent; HttpError 400 for anything else."""
+    v = q.get(k)
+    if v in (None, ""):
+        return None
+    try:
+        x = float(v)
+    except ValueError:
+        raise HttpError(400, f"{k}: {v!r} is not a number") from None
+    if not math.isfinite(x):
+        raise HttpError(400, f"{k}: {v!r} is not a finite number")
+    return x
+
+
+def integer(q: dict, k: str, default: int = 0) -> int:
+    v = q.get(k)
+    if v in (None, ""):
+        return default
+    try:
+        x = int(v)
+    except ValueError:
+        raise HttpError(400, f"{k}: {v!r} is not a whole number") from None
+    if x < 0:
+        raise HttpError(400, f"{k}: {v!r} is negative")
+    return x
+
+
+def window(f: dict, n: int, t_from: float | None, t_to: float | None) -> dict:
+    """The ticks of [t_from, t_to] out of the first n, with only the plans and worlds those ticks refer to, by index.
+    `f` is the run's live lists; the first n ticks are whole (the caller took n under the run's lock)."""
+    ts = f["t"]
+    lo = 0 if t_from is None else bisect.bisect_left(ts, t_from, 0, n)
+    hi = n if t_to is None else bisect.bisect_right(ts, t_to, 0, n)
+    out = {k: f[k][lo:hi] for k in PER_TICK}
+    out["plans"] = {str(i): f["plans"][i] for i in sorted({i for i in out["plan_at"] if i >= 0})}
+    out["worlds"] = {str(i): f["worlds"][i] for i in sorted({i for i in out["world_at"] if i >= 0})}
+    out["i0"], out["ticks"] = lo, n
     return out
 
 
@@ -76,36 +125,48 @@ def presence(run: dict, frames: dict) -> dict:
 class Handler(http.server.BaseHTTPRequestHandler):
     catalog: Catalog = None
     protocol_version = "HTTP/1.1"
+    timeout = REQUEST_TIMEOUT_S
 
     def log_message(self, *a):
         pass
 
     # ---- plumbing --------------------------------------------------------------------------------
-    def _send(self, code: int, body: bytes, ctype: str, extra=None) -> None:
+    def _send(self, code: int, body: bytes, ctype: str, extra=None, cache: str = "no-store", gz: bool = False) -> None:
+        headers = dict(extra or {})
+        if gz and len(body) > GZIP_OVER and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = gzip.compress(body, compresslevel=5)
+            headers["Content-Encoding"] = "gzip"
+        if gz:
+            headers["Vary"] = "Accept-Encoding"
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        for k, v in (extra or {}).items():
+        self.send_header("Cache-Control", cache)
+        for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
 
     def _json(self, obj, code: int = 200) -> None:
-        self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json")
+        self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json", gz=True)
 
-    def _error(self, code: int, msg: str) -> None:
-        self._json({"error": msg}, code)
+    def _error(self, code: int, msg: str, **more) -> None:
+        self._json(dict(more, error=msg), code)
+
+    def _not_allowed(self):
+        self._error(405, f"{self.command} is not allowed here", allow="GET, HEAD")
+
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
 
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
-        url = urllib.parse.urlsplit(self.path)
-        q = {k: v[-1] for k, v in urllib.parse.parse_qs(url.query).items()}
-        parts = [p for p in url.path.split("/") if p]
         try:
+            url = urllib.parse.urlsplit(self.path)
+            q = {k: v[-1] for k, v in urllib.parse.parse_qs(url.query, errors="strict").items()}
+            parts = [urllib.parse.unquote(p, errors="strict") for p in url.path.split("/") if p]
             if not parts:
                 self._send(302, b"", "text/plain", {"Location": "/web/three/"})
             elif parts[0] == "web":
@@ -113,9 +174,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif parts[:2] == ["api", "v1"]:
                 self._api(parts[2:], q)
             else:
-                self._error(404, "not found")
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+                raise HttpError(404, "not found")
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
+        except HttpError as e:
+            self._error(e.code, e.msg)
+        except UnicodeDecodeError:
+            self._error(400, "the URL is not valid UTF-8")
+        except Exception:
+            eid = uuid.uuid4().hex[:10]
+            log.exception("request %s failed (error id %s)", self.path, eid)
+            try:
+                self._error(500, f"internal error (id {eid})", id=eid)
+            except OSError:
+                self.close_connection = True
 
     def _static(self, rest: list) -> None:
         p = (WEB / "/".join(rest)).resolve()
@@ -124,92 +196,138 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._send(301, b"", "text/plain", {"Location": self.path.split("?")[0] + "/"})
             p = p / "index.html"
         if WEB not in p.parents or not p.is_file():
-            return self._error(404, "not found")
+            raise HttpError(404, "not found")
+        st = p.stat()
+        etag = f'"{st.st_size:x}-{st.st_mtime_ns:x}"'
+        cache = ONE_DAY if ("vendor" in p.relative_to(WEB).parts or p.relative_to(WEB).parts[0] == "fonts") else "no-cache"
+        if self.headers.get("If-None-Match") == etag:
+            return self._send(304, b"", "text/plain", {"ETag": etag}, cache)
         ctype = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
         if p.suffix == ".js":
             ctype = "text/javascript"
-        self._send(200, p.read_bytes(), ctype)
+        elif p.suffix == ".woff2":
+            ctype = "font/woff2"
+        self._send(200, p.read_bytes(), ctype, {"ETag": etag}, cache)
 
     # ---- the API ---------------------------------------------------------------------------------
     def _api(self, parts: list, q: dict) -> None:
         cat = self.catalog
         if parts == ["health"]:
-            return self._json({"ok": True, "runs": len(cat.paths), "data": str(cat.data)})
+            return self._json({"ok": True, "runs": len(cat.paths), "data": str(cat.data), "cache_mb": round(cat.cache_used() / 1048576, 1)})
         if parts == ["scenes"]:
             return self._json(cat.scenes_with_runs())
         if len(parts) == 2 and parts[0] == "scenes":
-            sc = cat.scene(parts[1])
-            return self._json(sc) if sc else self._error(404, f"no scene {parts[1]!r}")
+            sc = cat.scene(parts[1]) if keys.PART.match(parts[1]) else None
+            if sc is None:
+                raise HttpError(404, f"no scene {parts[1]!r}")
+            return self._json(sc)
         if parts == ["runs"]:
-            scenes = cat.scenes_with_runs()["scenes"]
-            return self._json([r for s in scenes if not q.get("scene") or s["id"] == q["scene"] for r in s["runs"]])
-        if len(parts) >= 2 and parts[0] == "runs":
-            ld = cat.get(parts[1])
+            return self._json(cat.list_runs(q.get("robot"), q.get("scene"), q.get("status")))
+        if len(parts) >= 4 and parts[0] == "runs":
+            try:
+                key = keys.make_key(*parts[1:4])
+            except ValueError as e:
+                raise HttpError(400, str(e)) from None
+            what = parts[4] if len(parts) > 4 else ""
+            if len(parts) > 5 or what not in ("", "frames", "state", "events", "presence", "live"):
+                raise HttpError(404, "not found")
+            ld = cat.get(key)
             if ld is None:
-                return self._error(404, f"no run {parts[1]!r}")
-            what = parts[2] if len(parts) > 2 else ""
+                raise HttpError(404, f"no run {key!r}")
+            if ld.error and what:
+                raise HttpError(409, f"the run is broken: {ld.error}")
             if what == "live":
-                return self._live(ld, int(q.get("since", 0) or 0))
-            with ld.data.changed:                       # a consistent snapshot while the follower appends
-                code, obj = self._run_answer(ld, what, q)
-                body = json.dumps(obj, separators=(",", ":")).encode()
-            return self._send(code, body, "application/json")
-        self._error(404, "not found")
+                return self._live(ld, q)
+            return self._run_answer(ld, what, q)
+        raise HttpError(404, "not found")
 
-    def _run_answer(self, ld, what: str, q: dict) -> tuple:
-        run, frames, cat = ld.data.run, ld.data.frames, self.catalog
+    def _snapshot(self, ld):
+        """(run copy, n ticks, seq) taken under the run's lock; what is served is built after it is released."""
+        d = ld.data
+        with d.changed:
+            run = dict(d.run, epochs=list(d.run["epochs"]), events=list(d.run["events"]),
+                       segments=list(d.run["segments"]))
+            return run, len(d.frames["t"]), d.seq
+
+    def _run_answer(self, ld, what: str, q: dict) -> None:
+        cat, f = self.catalog, ld.data.frames
+        run, n, seq = self._snapshot(ld)
         if what == "":
-            return 200, dict(run, status=cat.status(ld), seq=ld.data.seq)
+            return self._json(dict(run, status=cat.status(ld), seq=seq))
         if what == "frames":
-            return 200, window(frames, _num(q, "from"), _num(q, "to"))
+            t_from, t_to = number(q, "from"), number(q, "to")
+            if t_from is not None and t_to is not None and t_from > t_to:
+                raise HttpError(400, f"from {t_from} is after to {t_to}")
+            return self._json(window(f, n, t_from, t_to))
         if what == "events":
-            return 200, query.events(run, set(q["kinds"].split(",")) if q.get("kinds") else None)
-        if what in ("state", "presence") and not frames["t"]:
-            return 409, {"error": "the run has no ticks yet"}
+            return self._json(query.events(run, set(q["kinds"].split(",")) if q.get("kinds") else None))
+        if n == 0:
+            raise HttpError(409, "the run has no ticks yet")
+        frames = {k: (v[:n] if k in PER_TICK else list(v)) for k, v in f.items()}
         if what == "state":
-            t = _num(q, "t")
-            return 200, query.state(run, frames, run["t1"] if t is None else t)
-        if what == "presence":
-            return 200, presence(run, frames)
-        return 404, {"error": "not found"}
+            t = number(q, "t")
+            return self._json(query.state(run, frames, run["t1"] if t is None else t))
+        return self._json(presence(run, frames))
 
-    def _live(self, ld, since: int) -> None:
+    def _event(self, name: str, data, eid=None) -> None:
+        head = f"id: {eid}\n" if eid is not None else ""
+        self.wfile.write(f"{head}event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode())
+
+    def _live(self, ld, q: dict) -> None:
+        last_id = self.headers.get("Last-Event-ID")
+        try:
+            seq = integer(q, "since", -1)
+            if seq < 0:
+                seq = int(last_id) if last_id not in (None, "") and int(last_id) >= 0 else 0
+        except ValueError:
+            raise HttpError(400, f"Last-Event-ID: {last_id!r} is not a whole number") from None
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Connection", "close")
         self.end_headers()
-        data, seq, beat = ld.data, since, time.monotonic()
-        while True:
-            items = data.since(seq)
-            for s, t, kind, p in items:
-                self.wfile.write(f"id: {s}\nevent: {kind}\ndata: {json.dumps(dict(p, t=t), separators=(',', ':'))}\n\n"
-                                 .encode())
-                seq = s
-            status = self.catalog.status(ld)
-            if items:
-                self.wfile.write(f"event: status\ndata: {json.dumps({'status': status, 'seq': seq, 't1': data.run['t1']})}\n\n"
-                                 .encode())
-                self.wfile.flush()
-                beat = time.monotonic()
-            if status != "live" and not data.since(seq):
-                self.wfile.write(f"event: status\ndata: {json.dumps({'status': status, 'seq': seq, 'done': True})}\n\n"
-                                 .encode())
-                self.wfile.flush()
-                return
-            if time.monotonic() - beat > HEARTBEAT_S:
-                self.wfile.write(b": heartbeat\n\n")
-                self.wfile.flush()
-                beat = time.monotonic()
-            with data.changed:
-                data.changed.wait(timeout=1.0)
-
-
-def _num(q: dict, k: str):
-    try:
-        return float(q[k]) if q.get(k) not in (None, "") else None
-    except ValueError:
-        return None
+        self.close_connection = True
+        if self.command == "HEAD":
+            return
+        self.connection.settimeout(None)                 # a stream waits as long as the run does
+        data, cat, beat = ld.data, self.catalog, time.monotonic()
+        with cat.lock:
+            ld.pins += 1                                 # an open stream keeps its run in memory
+        try:
+            while True:
+                with data.changed:                       # look and wait under one lock: a notify cannot slip between
+                    if seq > data.seq:
+                        items, reset = [], True
+                    else:
+                        items, reset = data.since(seq), False
+                        if not items and cat.status(ld) == "live" and not ld.error:
+                            data.changed.wait(timeout=1.0)
+                            items = data.since(seq)
+                    t1 = data.run["t1"]
+                if reset:                                # the file was rewritten: the client starts over
+                    self._event("rewritten", {"seq": data.seq})
+                    self.wfile.flush()
+                    return
+                for s, t, kind, p in items:
+                    self._event(kind, dict(p, t=t), s)
+                    seq = s
+                status = cat.status(ld)
+                if items:
+                    self._event("status", {"status": status, "seq": seq, "t1": t1})
+                    self.wfile.flush()
+                    beat = time.monotonic()
+                if status != "live" and not data.since(seq):
+                    self._event("status", {"status": status, "seq": seq, "t1": t1, "done": True,
+                                           **({"error": ld.error} if ld.error else {})})
+                    self.wfile.flush()
+                    return
+                if time.monotonic() - beat > HEARTBEAT_S:
+                    self.wfile.write(b": heartbeat\n\n")
+                    self.wfile.flush()
+                    beat = time.monotonic()
+        finally:
+            with cat.lock:
+                ld.pins -= 1
 
 
 def make_server(catalog: Catalog, host: str = "127.0.0.1", port: int = 8070, follow: bool = True):

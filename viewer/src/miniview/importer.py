@@ -54,7 +54,7 @@ def import_duck(log_dir: Path, scene: str, data: Path, follow: bool = False, idl
         started, started_src = time.time_ns(), "importer_clock"
     else:
         started, started_src = ticks.stat().st_mtime_ns, "file_mtime"
-    run = new_run(key, log.robot, scene, log.kind, started, started_src, {"name": "ticks.jsonl", "sha256": sha},
+    run = new_run(key, dict(log.robot, name=robot), scene, log.kind, started, started_src, {"name": "ticks.jsonl", "sha256": sha},
                   str(uuid.uuid5(UUID_NAMESPACE, f"{key}:{sha}")) if sha else None)
     try:
         rec = Recorder(out_dir, run)

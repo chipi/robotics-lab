@@ -198,7 +198,14 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   // ---- loading ----------------------------------------------------------------------------------
   const ensureIndex = async () => { if (!M.index) M.index = await json(API + 'scenes'); return M.index; };
-  const fetchRun = (id) => Promise.all([json(`${API}runs/${id}`), json(`${API}runs/${id}/frames`), json(`${API}runs/${id}/presence`).catch(() => null)]);
+  const keyOf = (id) => { for (const s of M.index.scenes) for (const r of s.runs) if (r.id === id) return r.key; return id; };
+  const arr = (o) => (Array.isArray(o) ? o : Object.keys(o).map(Number).sort((x, y) => x - y).map((k) => o[k]));
+  const fetchRun = async (id) => {
+    const k = keyOf(id);
+    const [run, fr, pres] = await Promise.all([json(`${API}runs/${k}`), json(`${API}runs/${k}/frames`), json(`${API}runs/${k}/presence`).catch(() => null)]);
+    fr.plans = arr(fr.plans); fr.worlds = arr(fr.worlds);
+    return [run, fr, pres];
+  };
 
   function layout() { laidOut = hasTicks(); if (laidOut) adapter.setLayout(M.view, M.frame); }
   function adopt(run, fr, pres) {
@@ -259,7 +266,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (source) { source.close(); source = null; }
     $('follow').hidden = M.run.status !== 'live';
     if (M.run.status !== 'live') return;
-    source = new EventSource(`${API}runs/${M.run.id}/live?since=${M.run.seq}`);
+    source = new EventSource(`${API}runs/${M.run.key}/live?since=${M.run.seq}`);
     for (const k of ['tick', 'plan', 'world', 'event', 'epoch', 'end', 'status']) source.addEventListener(k, () => { dirty = true; });
   }
   setInterval(async () => {
