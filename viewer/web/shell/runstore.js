@@ -177,6 +177,7 @@ export class RunStore {
     es.addEventListener('status', (e) => {
       if (gen !== this.gen || es !== this.es) return;
       const d = JSON.parse(e.data);
+      if (d.generation != null && d.generation !== this.run.generation) { this.onReload(); return; }      // the file was read again from its start
       if (d.done) { this.run.status = d.status; if (d.status !== 'live') { es.close(); this.es = null; } this.onStatus(d); }
     });
     es.addEventListener('rewritten', () => { if (gen === this.gen) this.onReload(); });

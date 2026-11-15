@@ -20,17 +20,19 @@ class RunData:
 
     def __init__(self):
         self.changed = threading.Condition()
+        self.generation = 0           # how many times the file was read again from its start: a stream's check for a rewrite
         self._init()
 
     def reset(self) -> None:
         """Start over (the file was replaced); the condition, and so the readers waiting on it, stay."""
+        self.generation += 1
         self._init()
 
     def _init(self):
         self.run = {"id": None, "key": None, "uuid": None, "scene": None, "kind": "run", "robot": {}, "status": "live",
                     "started_at_ns": None, "started_at_source": None, "t0": 0.0, "t1": 0.0, "ticks": 0,
                     "verdict": "live", "epochs": [], "events": [], "segments": [], "streams": [],
-                    "rejects": 0, "first_error": None, "error": None, "rewritten": 0}
+                    "rejects": 0, "first_error": None, "error": None, "rewritten": 0, "generation": self.generation}
         self.frames = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
         self.log = []                 # (seq, t, kind, payload): what live followers send

@@ -111,6 +111,11 @@ class Index:
             r = cur.fetchone()
         return dict(zip(RUN_COLS, r)) if r else None
 
+    def rows(self) -> dict:
+        """Every run's row, by key, in one query (a scan compares the files with them)."""
+        with self.mutex:
+            return {r[0]: dict(zip(RUN_COLS, r)) for r in self.db.execute(f"select {', '.join(RUN_COLS)} from runs")}
+
     def keys(self) -> list:
         with self.mutex:
             return [k for (k,) in self.db.execute("select key from runs")]

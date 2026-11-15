@@ -38,9 +38,15 @@ log = logging.getLogger("miniview")
 WEB = Path(__file__).resolve().parents[2] / "web"
 HEARTBEAT_S = 15.0
 REQUEST_TIMEOUT_S = 30.0
+STREAM_TIMEOUT_S = 60.0     # a live stream whose client stops reading is dropped after this long (a write that blocks)
 GZIP_OVER = 1024
 PER_TICK = ("t", "belief", "truth", "tilt", "cmd", "depth", "plan_at", "world_at")
 ONE_DAY = "public, max-age=86400"
+# the pages load only from their own origin (the libraries are vendored, the fonts served, no CDN); inline scripts and
+# styles are the import map and the shell's own, eval is what deck.gl's shaders need
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; "
+       "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; "
+       "frame-ancestors 'self'")
 
 
 class HttpError(Exception):
@@ -126,9 +132,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     catalog: Catalog = None
     protocol_version = "HTTP/1.1"
     timeout = REQUEST_TIMEOUT_S
+    # one thread per connection, unbounded: a non-goal on a loopback service for one operator (ADR-0010)
 
     def log_message(self, *a):
         pass
+
+    def version_string(self):
+        return "miniview"
 
     # ---- plumbing --------------------------------------------------------------------------------
     def _send(self, code: int, body: bytes, ctype: str, extra=None, cache: str = "no-store", gz: bool = False) -> None:
@@ -142,20 +152,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
+        self.send_header("X-Content-Type-Options", "nosniff")
         for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _json(self, obj, code: int = 200) -> None:
-        self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json", gz=True)
+    def _json(self, obj, code: int = 200, extra=None) -> None:
+        self._send(code, json.dumps(obj, separators=(",", ":")).encode(), "application/json", extra, gz=True)
 
     def _error(self, code: int, msg: str, **more) -> None:
         self._json(dict(more, error=msg), code)
 
     def _not_allowed(self):
-        self._error(405, f"{self.command} is not allowed here", allow="GET, HEAD")
+        self._json({"error": f"{self.command} is not allowed here", "allow": "GET, HEAD"}, 405, {"Connection": "close", "Allow": "GET, HEAD"})
+        self.close_connection = True       # the body of the request, if any, was not read
 
     do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
 
@@ -191,11 +203,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _static(self, rest: list) -> None:
         p = (WEB / "/".join(rest)).resolve()
+        if p != WEB and WEB not in p.parents:               # before anything that says what is there
+            raise HttpError(404, "not found")
         if p.is_dir():
             if not self.path.split("?")[0].endswith("/"):
                 return self._send(301, b"", "text/plain", {"Location": self.path.split("?")[0] + "/"})
             p = p / "index.html"
-        if WEB not in p.parents or not p.is_file():
+        if not p.is_file():
             raise HttpError(404, "not found")
         st = p.stat()
         etag = f'"{st.st_size:x}-{st.st_mtime_ns:x}"'
@@ -207,7 +221,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ctype = "text/javascript"
         elif p.suffix == ".woff2":
             ctype = "font/woff2"
-        self._send(200, p.read_bytes(), ctype, {"ETag": etag}, cache)
+        extra = {"ETag": etag}
+        if p.suffix == ".html":
+            extra["Content-Security-Policy"] = CSP
+        self._send(200, p.read_bytes(), ctype, extra, cache)
 
     # ---- the API ---------------------------------------------------------------------------------
     def _api(self, parts: list, q: dict) -> None:
@@ -269,62 +286,72 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(query.state(run, frames, run["t1"] if t is None else t))
         return self._json(presence(run, frames))
 
-    def _event(self, name: str, data, eid=None) -> None:
+    @staticmethod
+    def _ev(name: str, data, eid=None) -> bytes:
         head = f"id: {eid}\n" if eid is not None else ""
-        self.wfile.write(f"{head}event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode())
+        return f"{head}event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()
 
     def _live(self, ld, q: dict) -> None:
         last_id = self.headers.get("Last-Event-ID")
         try:
-            seq = integer(q, "since", -1)
-            if seq < 0:
-                seq = int(last_id) if last_id not in (None, "") and int(last_id) >= 0 else 0
+            if last_id not in (None, ""):                # a reconnect: the id the client last saw is current, `since` is its first URL's
+                seq = int(last_id)
+                if seq < 0:
+                    raise ValueError
+            else:
+                seq = integer(q, "since", 0)
         except ValueError:
             raise HttpError(400, f"Last-Event-ID: {last_id!r} is not a whole number") from None
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
         if self.command == "HEAD":
             return
-        self.connection.settimeout(None)                 # a stream waits as long as the run does
+        self.connection.settimeout(STREAM_TIMEOUT_S)       # a client that stops reading is dropped, not waited for
         data, cat, beat = ld.data, self.catalog, time.monotonic()
+        gen = data.generation
         with cat.lock:
             ld.pins += 1                                 # an open stream keeps its run in memory
         try:
             while True:
                 with data.changed:                       # look and wait under one lock: a notify cannot slip between
-                    if seq > data.seq:
+                    if data.generation != gen or seq > data.seq:
                         items, reset = [], True
                     else:
                         items, reset = data.since(seq), False
                         if not items and cat.status(ld) == "live" and not ld.error:
                             data.changed.wait(timeout=1.0)
+                            if data.generation != gen:
+                                continue
                             items = data.since(seq)
-                    t1 = data.run["t1"]
+                    t1, generation = data.run["t1"], data.generation
                 if reset:                                # the file was rewritten: the client starts over
-                    self._event("rewritten", {"seq": data.seq})
+                    self.wfile.write(self._ev("rewritten", {"seq": data.seq, "generation": data.generation}))
                     self.wfile.flush()
                     return
-                for s, t, kind, p in items:
-                    self._event(kind, dict(p, t=t), s)
-                    seq = s
+                out = [self._ev(kind, dict(p, t=t), s_) for s_, t, kind, p in items]    # one write for what this wake-up found
+                if items:
+                    seq = items[-1][0]
                 status = cat.status(ld)
                 if items:
-                    self._event("status", {"status": status, "seq": seq, "t1": t1})
-                    self.wfile.flush()
+                    out.append(self._ev("status", {"status": status, "seq": seq, "t1": t1, "generation": generation}))
                     beat = time.monotonic()
                 if status != "live" and not data.since(seq):
-                    self._event("status", {"status": status, "seq": seq, "t1": t1, "done": True,
-                                           **({"error": ld.error} if ld.error else {})})
+                    out.append(self._ev("status", {"status": status, "seq": seq, "t1": t1, "generation": generation, "done": True,
+                                                   **({"error": ld.error} if ld.error else {})}))
+                    self.wfile.write(b"".join(out))
                     self.wfile.flush()
                     return
                 if time.monotonic() - beat > HEARTBEAT_S:
-                    self.wfile.write(b": heartbeat\n\n")
-                    self.wfile.flush()
+                    out.append(b": heartbeat\n\n")
                     beat = time.monotonic()
+                if out:
+                    self.wfile.write(b"".join(out))
+                    self.wfile.flush()
         finally:
             with cat.lock:
                 ld.pins -= 1

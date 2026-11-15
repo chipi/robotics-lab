@@ -156,6 +156,27 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
     raise ValueError(f"unknown record kind {kind!r}")
 
 
+# The tick protocol (ADR-0007): a tick is /belief/pose first, then at most one each of /truth/pose, /depth,
+# /miniview/command, /miniview/tilt in that order, then /miniview/tick_extra last. A world is /map then /miniview/memory.
+# Nothing else is written between the first and the last message of a tick or a world.
+TICK_PARTS = ("truth", "depth", "cmd", "tilt")
+TICK_TOPICS = {"belief": "/belief/pose", "truth": "/truth/pose", "depth": "/depth", "cmd": "/miniview/command",
+               "tilt": "/miniview/tilt", "extra": "/miniview/tick_extra"}
+TICK_INSIDE = {"/truth/pose", "/depth", "/miniview/command", "/miniview/tilt", "/miniview/tick_extra"}
+FRAMES = {"/belief/pose": "map", "/truth/pose": "world", "/depth": "map", "/map": "map"}     # a message's frame_id
+
+
+def tick_part(name: str, t: float, value, base_ns: int, t_src: float | None = None) -> tuple:
+    """The one message (topic, log_ns, publish_ns, data) of a part of a tick: belief, truth, depth, cmd, tilt or extra."""
+    p = {"belief": [0.0, 0.0, 0.0], "t_src": t_src, "raw": value if name == "extra" else {}}
+    if name not in ("belief", "extra"):
+        p[name] = value
+    elif name == "belief":
+        p["belief"] = value
+    topic = TICK_TOPICS[name]
+    return next(m for m in to_messages(t, "tick", p, base_ns) if m[0] == topic)
+
+
 class Assembler:
     """Messages (topic, log_ns, data) in file order -> records (t, kind, payload).
 
@@ -168,6 +189,18 @@ class Assembler:
         self.run = None
         self.pending = None           # a tick or world whose last message has not arrived
         self.partials = 0             # ticks and worlds dropped for lack of their last message
+        self.partial_msgs = []        # why, one line each, until drained
+
+    def _interrupt(self, by: str, t: float) -> None:
+        """A tick or a world was started and another record came before its last message: it is dropped, and said."""
+        if self.pending:
+            self.partials += 1
+            self.partial_msgs.append(f"{self.pending[1]} at t={self.pending[0]}: interrupted by {by} at t={t}")
+            self.pending = None
+
+    def drain(self) -> list:
+        out, self.partial_msgs = self.partial_msgs, []
+        return out
 
     def _t(self, ns: int) -> float:
         return round((ns - self.base_ns) / 1e9, 6)
@@ -181,20 +214,23 @@ class Assembler:
         if self.base_ns is None:
             raise ValueError("a message before the run record")
         t = self._t(ns)
+        if self.pending and not (
+                (self.pending[1] == "tick" and topic in TICK_INSIDE) or (self.pending[1] == "world" and topic == "/miniview/memory")):
+            self._interrupt(topic, t)
+        if topic in FRAMES and o.get("frame_id") != FRAMES[topic]:
+            raise ValueError(f"{topic}: frame_id {o.get('frame_id')!r}, expected {FRAMES[topic]!r}")
         if topic == "/tf":
+            if (o.get("parent_frame_id"), o.get("child_frame_id")) != ("world", "map"):
+                raise ValueError(f"/tf is {o.get('parent_frame_id')!r} <- {o.get('child_frame_id')!r}, expected world <- map")
             return [(t, "epoch", {"map_to_world": [round(o["translation"]["x"], 5), round(o["translation"]["y"], 5),
                                                     round(_yaw(o["rotation"]), 5)]})]
         if topic == "/belief/pose":
-            if self.pending:
-                self.partials += 1
             p = o["pose"]
             self.pending = (t, "tick", {"belief": [round(p["position"]["x"], 4), round(p["position"]["y"], 4),
                                                    round(_yaw(p["orientation"]), 4)],
                                         "truth": None, "tilt": None, "cmd": None, "depth": None})
             return []
         if topic == "/map":
-            if self.pending:
-                self.partials += 1
             g, c = o, o["cell_size"]["x"]
             self.pending = (t, "world", {"grid": {"res": c, "origin": [g["pose"]["position"]["x"],
                                                                       g["pose"]["position"]["y"]],

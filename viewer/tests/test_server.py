@@ -209,9 +209,9 @@ with tempfile.TemporaryDirectory() as tmp:
     c = Stream(base, "duck/room/live1", last_id=first_seq)
     wait_until(lambda: len(c.records()) >= 2, 5, what="the resume to replay")
     check("a resume by Last-Event-ID replays only what comes after that id", [i for _, i, _ in c.records()] == [first_seq + 1, first_seq + 2], c.records())
-    d = Stream(base, "duck/room/live1", since=first_seq + 1, last_id=0)
-    wait_until(lambda: len(d.records()) >= 1, 5, what="the since resume")
-    check("`since` wins over Last-Event-ID", [i for _, i, _ in d.records()] == [first_seq + 2])
+    d = Stream(base, "duck/room/live1", since=0, last_id=first_seq + 1)
+    wait_until(lambda: len(d.records()) >= 1, 5, what="the Last-Event-ID resume")
+    check("Last-Event-ID wins over `since` (a reconnect keeps the id the client last saw)", [i for _, i, _ in d.records()] == [first_seq + 2], d.records())
     # a burst: no record waits for the 1 s timeout (the notify cannot be missed between looking and waiting)
     burst = Stream(base, "duck/room/live1", since=cat.get("duck/room/live1").data.seq)
     stamps = {}

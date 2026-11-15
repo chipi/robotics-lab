@@ -106,7 +106,7 @@ class Loaded:
                 return True
 
     def _poll(self) -> bool:
-        gen = self.follower.generation
+        gen, was_done = self.follower.generation, self.follower.done
         recs = self.follower.poll()
         with self.data.changed:                         # readers serialize under the same lock
             if self.follower.generation != gen:
@@ -122,7 +122,8 @@ class Loaded:
                 self.data.run["first_error"] = self.data.run["first_error"] or msg
             if self.follower.generation != gen:
                 self.data.run["rewritten"] = self.follower.rewrites
-            if recs or bad or self.follower.done or self.follower.generation != gen:
+            finished = self.follower.done and not was_done
+            if recs or bad or finished or self.follower.generation != gen:
                 if self.follower.done and self.data.run["status"] == "live":
                     self.data.run["status"] = "ended"   # finished without an end record
                     if self.data.run["verdict"] == "live":
@@ -133,7 +134,7 @@ class Loaded:
         # The signature says which file the records came from: only a poll that read the file may
         # take the file's signature. A poll of a finished run reads nothing, and taking the signature
         # then would hide a replaced file from check_changed (CI, 2026-11-15).
-        if recs or bad or self.sig is None or self.follower.generation != gen:
+        if recs or bad or self.sig is None or self.follower.generation != gen or self.follower.done != was_done:
             self.sig = signature(self.dir)
         return bool(recs or bad)
 
@@ -143,7 +144,15 @@ class Loaded:
             sig = signature(self.dir)
             if sig is None or self.sig is None or sig == self.sig or not (self.follower.done or self.error or self.stopped):
                 return False
-            repaired = self.stopped and self.sig[0] == mcapio.LIVE and sig[0] == mcapio.FINAL
+            if self.stopped and not self.error and self.sig[0] == sig[0] == mcapio.LIVE and sig[1] == self.sig[1] and sig[2] > self.sig[2]:
+                self.stopped = False                # a paused writer wrote again: the same file grew, the run goes on
+                with self.data.changed:
+                    self.data.run.update(status="live", verdict="live")
+                    self.data.changed.notify_all()
+                self.poll()
+                log.warning("run %s: its file grew again after it had stopped; following it again", self.key)
+                return True
+            repaired = self.sig[0] == mcapio.LIVE and sig[0] == mcapio.FINAL      # compaction (or a repair), not a rewrite
             with self.data.changed:     # readers wait for the new content; they never see the run empty
                 self.rebuild()
                 self.poll()
@@ -180,14 +189,16 @@ class Catalog:
         self.paths = {}               # run key -> the run's folder
         self.evictions = 0
         self._keylocks = {}
+        self._missed = {}          # keys looked for and not found, and when: a bad key does not rescan the folder every time
 
     # ---- scenes ----------------------------------------------------------------------------------
     def scene(self, scene_id: str) -> dict | None:
         p = self.data / "scenes" / scene_id / "scene.json"
         try:
-            return json.loads(p.read_text())
+            sc = json.loads(p.read_text())
         except (OSError, ValueError):
             return None
+        return sc if sc.get("id") == scene_id else None
 
     def put_scene(self, scene: dict) -> Path:
         p = self.data / "scenes" / scene["id"] / "scene.json"
@@ -244,8 +255,14 @@ class Catalog:
         with self.lock:
             key = self.resolve(run_id)
             if key is None:
-                self.scan_paths()
-                key = self.resolve(run_id)
+                now = time.monotonic()
+                if now - self._missed.get(run_id, -10.0) > 1.0:           # a run may have appeared; a key that was just missing, once a second
+                    self.scan_paths()
+                    key = self.resolve(run_id)
+                    if key is None:
+                        if len(self._missed) > 256:
+                            self._missed.clear()
+                        self._missed[run_id] = now
             if key is None:
                 return None
             ld = self.loaded.get(key)
@@ -262,9 +279,22 @@ class Catalog:
             ld = self._open(key, path)
             with self.lock:
                 self.loaded[key] = ld
-            self._index(ld)
+            self._index_or_break(ld)
             self._evict(keep=key)
             return ld
+
+    def _index_or_break(self, ld: Loaded, status: str | None = None) -> None:
+        """Write the run to the index; if that fails, the run is broken (with the reason), not the request."""
+        try:
+            self._index(ld, status)
+        except Exception as e:
+            log.exception("indexing run %s failed", ld.key)
+            if not ld.error:
+                ld.mark_broken(f"index: {type(e).__name__}: {e}")
+            try:
+                self._index(ld, "broken")
+            except Exception:
+                pass
 
     def _open(self, key: str, path: Path) -> Loaded:
         ld = Loaded(key, path)
@@ -301,9 +331,10 @@ class Catalog:
         with self.lock:
             self.scan_paths()
             paths = dict(self.paths)
+        rows = self.index.rows()
         for key, d in sorted(paths.items()):
             try:
-                self._scan_one(key, d)
+                self._scan_one(key, d, rows.get(key))
             except Exception:
                 log.exception("scanning run %s failed", key)
         for key in set(self.index.keys()) - set(paths):
@@ -312,26 +343,36 @@ class Catalog:
                 self.loaded.pop(key, None)
         for s in sorted((self.data / "scenes").glob("*/scene.json")):
             try:
-                self.index.put_scene(json.loads(s.read_text()))
+                sc = json.loads(s.read_text())
+                if sc.get("id") != s.parent.name:
+                    log.warning("scene %s says it is %r: not indexed", s, sc.get("id"))
+                    continue
+                self.index.put_scene(sc)
             except Exception:
                 log.exception("scene %s cannot be read", s)
 
-    def _scan_one(self, key: str, d: Path) -> None:
+    def _scan_one(self, key: str, d: Path, row: dict | None) -> None:
         with self.lock:
             ld = self.loaded.get(key)
         if ld:
             if ld.check_changed():
-                self._index(ld)
+                self._index_or_break(ld)
             return
-        sig, row = signature(d), self.index.row(key)
+        sig = signature(d)
         if row and sig and (row["inode"], row["size"], row["mtime_ns"]) == sig[1:] and row["status"] in FINAL:
             return
         ld = self._open(key, d)
-        self._index(ld)
+        with self.lock:
+            kept = self.loaded.get(key)                 # a request may have opened it meanwhile: its Loaded is the one
+        if kept is not None:
+            return
+        self._index_or_break(ld)
         if self.status(ld) == "live":
             with self.lock:
-                self.loaded[key] = ld
+                kept = self.loaded.setdefault(key, ld)
                 self.loaded.move_to_end(key)
+            if kept is not ld:
+                self._index_or_break(kept)
 
     def follow_once(self) -> list:
         """Poll every live run once, bring the index along; the keys of the runs that changed."""
@@ -343,7 +384,7 @@ class Catalog:
                 changed = ld.poll()
                 status = self.status(ld)
                 if changed or status != ld.indexed_status:
-                    self._index(ld, status)
+                    self._index_or_break(ld, status)
                     grew.append(ld.key)
             except Exception:
                 log.exception("following run %s failed", ld.key)

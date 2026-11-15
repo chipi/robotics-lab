@@ -229,8 +229,10 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a tick without its last message is not emitted", f.poll() == [])
 
     # ---- compaction while a reader follows: nothing twice, nothing lost --------------------------------------------
-    rec._fh.truncate(pre)                               # the partial tick is cut off; the writer goes on
-    rec._fh.seek(pre)
+    for topic, ns, pub, data_ in mcapio.wire.to_messages(1.2, "tick", tick(1.2, 0.06)[2], T0_NS)[2:]:      # the writer finishes the tick
+        w.add_message(rec._ch[topic], ns, data_, pub)
+    rec.last_t = 1.2
+    rec.flush()
     rec.add(*tick(1.3, 0.09))
     rec.add(2.0, "event", {"kind": "trapped", "text": "trapped"})
     rec.add(2.0, "end", {"verdict": "trapped"})
@@ -240,9 +242,9 @@ with tempfile.TemporaryDirectory() as tmp:
           sorted(p.name for p in d.iterdir()))
     rest = f.poll()
     check("the follower continues across compaction without repeating or losing a record",
-          [k for _, k, _ in mid + rest] == ["tick", "event", "end"] and f.done, [k for _, k, _ in mid + rest])
+          [k for _, k, _ in mid + rest] == ["tick", "tick", "event", "end"] and f.done, [k for _, k, _ in mid + rest])
     check("a new reader of the compacted run gets all of it",
-          [k for _, k, _ in Follower(d).poll()] == ["run", "tick", "tick", "tick", "event", "end"])
+          [k for _, k, _ in Follower(d).poll()] == ["run", "tick", "tick", "tick", "tick", "event", "end"])
     check("a run that exists is refused by a writer", raises(WriterBusy, Recorder, d, run_record(key)) is not False)
     check("a run record whose key is not the folder's is refused by the writer",
           raises(ValueError, Recorder, data / "runs" / "duck" / "room" / "other", run_record(key)) is not False)

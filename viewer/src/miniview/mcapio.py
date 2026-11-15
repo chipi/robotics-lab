@@ -66,13 +66,17 @@ def lock_info(run_dir: Path) -> dict | None:
 
 
 def writer_alive(run_dir: Path) -> bool:
-    """A lock whose PID is alive on this host. A lock from another host cannot be checked: alive."""
+    """A lock whose PID is alive on this host. A lock from another host (a writer in another container or on
+    another machine) cannot be checked: it is unknown, not alive, and the file's growth decides (ADR-0009)."""
     info = lock_info(run_dir)
-    if not info:
-        return (Path(run_dir) / LOCK).exists()
-    if info.get("host") != socket.gethostname():
-        return True
+    if not info or info.get("host") != socket.gethostname():
+        return False
     return pid_alive(int(info.get("pid", 0)))
+
+
+def lock_is_foreign(run_dir: Path) -> bool:
+    info = lock_info(run_dir)
+    return bool(info) and info.get("host") != socket.gethostname()
 
 
 class Recorder:
@@ -98,6 +102,7 @@ class Recorder:
         self.base_ns = run["started_at_ns"]
         self.last_t = 0.0
         self.ended = False
+        self._tick = None             # the tick being written in parts: {"t", "src", "next"}
         self._w = Writer(self._fh, use_chunking=False, compression=CompressionType.NONE)
         self._w.start(profile=PROFILE, library=f"miniview {VERSION}")
         self._ch = {}
@@ -107,16 +112,63 @@ class Recorder:
             self._ch[topic] = self._w.register_channel(topic, "protobuf" if topic in wire.PROTO else "json", sid)
         self._emit(0.0, "run", run)
 
-    def _emit(self, t: float, kind: str, p: dict) -> None:
-        for topic, ns, pub, data in wire.to_messages(t, kind, p, self.base_ns):
+    def _write(self, messages) -> None:
+        for topic, ns, pub, data in messages:
             self._w.add_message(self._ch[topic], ns, data, pub)
+
+    def _emit(self, t: float, kind: str, p: dict) -> None:
+        self._write(wire.to_messages(t, kind, p, self.base_ns))
+        self._fh.flush()                      # once per record: a tick or a map is on disk whole or not at all
+
+    # The tick protocol (ADR-0007), for a writer that has the parts of a tick one by one: begin_tick writes /belief/pose,
+    # then at most one each of tick_truth, tick_depth, tick_command, tick_tilt, in that order, then end_tick writes
+    # /miniview/tick_extra and flushes. Nothing else may be written in between; `add(t, "tick", ...)` is the same in one call.
+    def begin_tick(self, t: float, belief, t_src: float | None = None) -> None:
+        self._check_open(t)
+        self._tick = {"t": t, "src": t_src, "next": 0}
+        self.last_t = max(self.last_t, t)
+        self._write([wire.tick_part("belief", t, belief, self.base_ns, t_src)])
+
+    def _part(self, name: str, value) -> None:
+        tk = self._tick
+        if tk is None:
+            raise ValueError(f"{name} outside a tick: begin_tick first")
+        order = wire.TICK_PARTS
+        if order.index(name) < tk["next"]:
+            raise ValueError(f"{name} out of order or twice in a tick (the order is {', '.join(order)})")
+        tk["next"] = order.index(name) + 1
+        self._write([wire.tick_part(name, tk["t"], value, self.base_ns, tk["src"])])
+
+    def tick_truth(self, pose) -> None:
+        self._part("truth", pose)
+
+    def tick_depth(self, points) -> None:
+        self._part("depth", points)
+
+    def tick_command(self, vx: float, vyaw: float) -> None:
+        self._part("cmd", [vx, vyaw])
+
+    def tick_tilt(self, pitch_deg: float, roll_deg: float) -> None:
+        self._part("tilt", [pitch_deg, roll_deg])
+
+    def end_tick(self, raw: dict | None = None) -> None:
+        tk = self._tick
+        if tk is None:
+            raise ValueError("end_tick without begin_tick")
+        self._write([wire.tick_part("extra", tk["t"], raw or {}, self.base_ns, tk["src"])])
+        self._tick = None
         self._fh.flush()
 
-    def add(self, t: float, kind: str, payload: dict) -> None:
+    def _check_open(self, t: float) -> None:
         if self.ended:
             raise ValueError("the run has ended")
+        if self._tick is not None:
+            raise ValueError("a tick is open: end_tick before anything else is written")
         if t < self.last_t - 1e-9:
             raise ValueError(f"time goes back: {t} after {self.last_t}")
+
+    def add(self, t: float, kind: str, payload: dict) -> None:
+        self._check_open(t)
         self.last_t = max(self.last_t, t)
         self._emit(t, kind, payload)
         self.ended = kind == "end"
@@ -132,6 +184,11 @@ class Recorder:
         return compact(self.dir)
 
 
+BLOCK = 1 << 20           # what the live reader takes of the file at a time
+VALID_OPS = range(0x01, 0x10)
+MAX_RECORD = 1 << 31      # a length past this is garbage, not a record
+
+
 def _complete_end(buf: bytes, pos: int) -> int:
     """The offset after the last whole record in buf[pos:]; stops at a footer's DATA_END."""
     end = pos
@@ -143,6 +200,14 @@ def _complete_end(buf: bytes, pos: int) -> int:
     return end
 
 
+def _looks_wrong(buf: bytes, pos: int) -> bool:
+    """The bytes at a record boundary are not a record: the file is not what the reader has read so far."""
+    if pos + 9 > len(buf):
+        return False
+    op, length = struct.unpack_from("<BQ", buf, pos)
+    return op not in VALID_OPS or length > MAX_RECORD
+
+
 def _records(buf: bytes, pos: int, end: int):
     it = StreamReader(io.BytesIO(buf[pos:end]), skip_magic=True).records
     while True:
@@ -152,20 +217,50 @@ def _records(buf: bytes, pos: int, end: int):
             return
 
 
-def compact(run_dir: Path, stopped: bool = False) -> Path:
-    """run.live.mcap -> run.mcap (zstd chunks, message indexes, summary). With `stopped`, a run with no
-    `end` gets one with the verdict `stopped` (a writer that died). Removes the live file and the lock."""
+class _Limited:
+    """A file read as if it ended at `end`: what a reader of a live file may use of it."""
+
+    def __init__(self, fh, end: int):
+        self.fh, self.end = fh, end
+
+    def read(self, n: int = -1) -> bytes:
+        left = self.end - self.fh.tell()
+        return self.fh.read(left if n < 0 else min(n, left))
+
+
+def _scan_end(fh, size: int) -> int:
+    """The offset after the last whole record of a file (after the magic), by reading record headers only."""
+    pos = len(MAGIC)
+    while pos + 9 <= size:
+        fh.seek(pos)
+        op, length = struct.unpack("<BQ", fh.read(9))
+        if op == Opcode.DATA_END or pos + 9 + length > size:
+            break
+        pos += 9 + length
+    return pos
+
+
+def compact(run_dir: Path, stopped: bool = False, require_end: bool = False) -> Path:
+    """run.live.mcap -> run.mcap (zstd chunks, message indexes, summary), streamed: the live file is read record by
+    record, never held whole. With `stopped`, a run with no `end` gets one with the verdict `stopped` (a writer that
+    died); with `require_end`, a run with no `end` is refused (ValueError) and nothing changes. Removes the live file and
+    the lock. Runs wherever the file is: the writer's computer need not do it (ADR-0007)."""
     run_dir = Path(run_dir)
     live, tmp, final = run_dir / LIVE, run_dir / (FINAL + ".tmp"), run_dir / FINAL
-    buf = live.read_bytes()
-    if buf[:len(MAGIC)] != MAGIC:
-        raise ValueError(f"{live}: not an MCAP file")
-    end = _complete_end(buf, len(MAGIC))
     schema_map, chan_map, ch_by_topic, topics = {}, {}, {}, {}
     base, last_ns, has_end = None, 0, False
-    with open(tmp, "wb") as fh:
+    with open(live, "rb") as src, open(tmp, "wb") as fh:
+        if src.read(len(MAGIC)) != MAGIC:
+            raise ValueError(f"{live}: not an MCAP file")
+        end = _scan_end(src, live.stat().st_size)
+        src.seek(len(MAGIC))
         w = Writer(fh, use_chunking=True, compression=CompressionType.ZSTD)
-        for rec in _records(buf, len(MAGIC), end):
+        it = StreamReader(_Limited(src, end), skip_magic=True).records
+        while True:
+            try:
+                rec = next(it)
+            except (StopIteration, EndOfFile):
+                break
             if isinstance(rec, Header):
                 w.start(profile=rec.profile, library=rec.library)
             elif isinstance(rec, Schema):
@@ -181,6 +276,8 @@ def compact(run_dir: Path, stopped: bool = False) -> Path:
                 has_end = has_end or topic == "/miniview/end"
                 last_ns = max(last_ns, rec.log_time)
                 w.add_message(chan_map[rec.channel_id], rec.log_time, rec.data, rec.publish_time, rec.sequence)
+        if require_end and not has_end:
+            raise ValueError(f"{run_dir.name}: the file has no end record; `miniview repair` closes it as stopped")
         if stopped and not has_end and base is not None:
             for topic, ns, pub, data in wire.to_messages((last_ns - base) / 1e9, "end", {"verdict": "stopped"}, base):
                 w.add_message(ch_by_topic[topic], ns, data, pub)
@@ -200,8 +297,9 @@ def write(run_dir: Path, run: dict, records) -> Path:
 
 
 class Follower:
-    """Reads the records added to a run's file since the last call; safe on a file still being written.
-    The compacted file, once it exists, is read from the message after the last one taken from the live file."""
+    """Reads the records added to a run's file since the last call; safe on a file still being written, and bounded in
+    memory (the file is read a block at a time). The compacted file, once it exists, is read from the message after the
+    last one taken from the live file. `iter_poll` yields the records as they are decoded; `poll` collects them."""
 
     def __init__(self, run_dir: Path, keep_raw: bool = False):
         self.dir = Path(run_dir)
@@ -228,40 +326,58 @@ class Follower:
         self.rewrites += 1
 
     def poll(self) -> list:
+        out, gen = [], self.generation
+        for rec in self.iter_poll():
+            if self.generation != gen:          # the file was found rewritten while reading: what came before is stale
+                out, gen = [], self.generation
+            out.append(rec)
+        return [] if self.generation != gen else out
+
+    def iter_poll(self):
         if self.done:
-            return []
+            return
         final, live = self.dir / FINAL, self.dir / LIVE
         if final.exists():
-            return self._read_final(final)
-        if not live.exists():
-            return []
+            yield from self._iter_final(final)
+        elif live.exists():
+            yield from self._iter_live(live)
+
+    def _iter_live(self, live: Path):
         st = live.stat()
         if self.ino is not None and (st.st_ino != self.ino or st.st_size < self.offset):
             self._start_over()
         self.ino = st.st_ino
+        block = BLOCK
         with open(live, "rb") as fh:
-            fh.seek(self.offset)
-            buf = fh.read()
-        pos = 0
-        if self.offset == 0:
-            if len(buf) < len(MAGIC):
-                return []
-            if buf[:len(MAGIC)] != MAGIC:
-                raise ValueError(f"{live}: not an MCAP file")
-            pos = len(MAGIC)
-        end = _complete_end(buf, pos)
-        out = self._take(_records(buf, pos, end), 0)
-        self.offset += end
-        return out
+            while True:
+                fh.seek(self.offset)
+                buf = fh.read(block)
+                pos = 0
+                if self.offset == 0:
+                    if len(buf) < len(MAGIC):
+                        return
+                    if buf[:len(MAGIC)] != MAGIC:
+                        raise ValueError(f"{live}: not an MCAP file")
+                    pos = len(MAGIC)
+                if self.offset > 0 and _looks_wrong(buf, 0):      # the same file, cut and rewritten, longer than we had read
+                    self._start_over()
+                    continue
+                end = _complete_end(buf, pos)
+                if end == pos and len(buf) >= block:               # a record bigger than the block: take a bigger one
+                    block *= 2
+                    continue
+                yield from self._iter_take(_records(buf, pos, end), 0)
+                self.offset += end
+                if len(buf) < block or end == pos:
+                    return
 
-    def _read_final(self, final: Path) -> list:
-        buf = final.read_bytes()
-        if buf[:len(MAGIC)] != MAGIC:
-            raise ValueError(f"{final}: not an MCAP file")
-        it = StreamReader(io.BytesIO(buf[len(MAGIC):]), skip_magic=True).records
-        out = self._take(self._tolerant(it), self.taken, fresh=True)
+    def _iter_final(self, final: Path):
+        with open(final, "rb") as fh:
+            if fh.read(len(MAGIC)) != MAGIC:
+                raise ValueError(f"{final}: not an MCAP file")
+            it = StreamReader(fh, skip_magic=True).records
+            yield from self._iter_take(self._tolerant(it), self.taken, fresh=True)
         self.done = True
-        return out
 
     @staticmethod
     def _tolerant(it):
@@ -271,25 +387,27 @@ class Follower:
             except (StopIteration, EndOfFile):
                 return
 
-    def _take(self, recs, skip: int, fresh: bool = False) -> list:
+    def _iter_take(self, recs, skip: int, fresh: bool = False):
         topics = {} if fresh else self.topics
-        out, seen = [], 0
-        for rec in recs:
-            if isinstance(rec, Channel):
-                topics[rec.id] = rec.topic
-            elif isinstance(rec, Message):
-                seen += 1
-                if seen <= skip:
-                    continue
-                try:
-                    out += self.asm.feed(topics[rec.channel_id], rec.log_time, rec.data)
-                except Exception as e:      # one message that is not what its channel says costs that record only
-                    self.asm.pending = None
-                    self.errors.append(f"{topics.get(rec.channel_id)} at {rec.log_time}: {type(e).__name__}: {e}")
-        if not fresh:
-            self.taken += seen
-        self.partials = self.asm.partials
-        return out
+        seen = 0
+        try:
+            for rec in recs:
+                if isinstance(rec, Channel):
+                    topics[rec.id] = rec.topic
+                elif isinstance(rec, Message):
+                    seen += 1
+                    if seen <= skip:
+                        continue
+                    try:
+                        yield from self.asm.feed(topics[rec.channel_id], rec.log_time, rec.data)
+                    except Exception as e:      # one message that is not what its channel says costs that record only
+                        self.asm.pending = None
+                        self.errors.append(f"{topics.get(rec.channel_id)} at {rec.log_time}: {type(e).__name__}: {e}")
+                    self.errors += self.asm.drain()
+        finally:
+            if not fresh:
+                self.taken += seen
+            self.partials = self.asm.partials
 
 
 def read(run_dir: Path, keep_raw: bool = False) -> list:

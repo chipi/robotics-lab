@@ -30,8 +30,8 @@ def _run(p):
             return f"{k} missing or not text"
     if not isinstance(p.get("robot"), dict) or not isinstance(p["robot"].get("name"), str):
         return "robot missing or without a name"
-    if not isinstance(p.get("started_at_ns"), int) or isinstance(p["started_at_ns"], bool) or p["started_at_ns"] <= 0:
-        return "started_at_ns missing or not a positive integer"
+    if not isinstance(p.get("started_at_ns"), int) or isinstance(p["started_at_ns"], bool) or not 0 < p["started_at_ns"] < 2**63:
+        return "started_at_ns missing, or not an integer from 1 to 2**63 - 1"
     if not isinstance(p.get("writer"), dict):
         return "writer missing"
     return None

@@ -83,7 +83,7 @@ endef
 DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py \
                        tests/test_world.py tests/test_miniview.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
-                       tests/test_index.py tests/test_server.py
+                       tests/test_index.py tests/test_review2.py tests/test_server.py
 VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py
 
 .PHONY: test-duck test-viewer test-viewer-pages
