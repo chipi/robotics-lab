@@ -47,7 +47,7 @@ function buildFrame(name, bounds) {
   for (let a = Math.ceil(h0); a <= h1; a++) pos.push(...at(a, v0), ...at(a, v1));
   for (let b = Math.ceil(v0); b <= v1; b++) pos.push(...at(h0, b), ...at(h1, b));
   const grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)),
-    new THREE.LineBasicMaterial({ color: 0xdadae0 }));
+    new THREE.LineBasicMaterial({ color: C.grid }));
   grid.position.z = is3 || va !== 'z' ? 0.003 : 0;
   g.add(grid);
   const hEdge = hs > 0 ? h0 - 0.3 : h1 + 0.3, vEdge = v0 - 0.3;
@@ -85,7 +85,9 @@ export class Views {
     lr.domElement.className = 'labels';
     const cap = document.createElement('div');
     cap.className = 'cap';
-    cap.innerHTML = `<b>${this.frameName}</b> frame · ${name} · ${VIEWS[name].note}`;
+    cap.textContent = `${this.frameName} · ${name}`;
+    cap.style.top = rect[1] === 0 ? '32px' : '6px';
+    if (!LAYOUTS[this.layout]) cap.hidden = true;
     el.append(lr.domElement, cap);
     this.host.append(el);
     const is3 = name === '3d';
@@ -147,6 +149,30 @@ export class Views {
     const c = s.camera;
     if (!s.is3) return (c.right - c.left) / c.zoom / s.w;
     return c.position.distanceTo(s.controls.target) * 2 * Math.tan(c.fov * Math.PI / 360) / s.h;
+  }
+
+  fit() {
+    for (const s of this.slots) this.resetCamera(s);
+    this.onChange();
+  }
+
+  // the world coordinates under a screen point, in the plane an orthographic view shows; null elsewhere
+  cursorAt(cx, cy) {
+    for (const s of this.slots) {
+      const r = s.el.getBoundingClientRect();
+      if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom || s.is3) continue;
+      const p = new THREE.Vector3(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1, 0).unproject(s.camera), v = VIEWS[s.name];
+      return { axes: [v.h, v.v], v: [p[v.h], p[v.v]] };
+    }
+    return null;
+  }
+
+  // the world axes in the 3D view's camera space (x right, y up, z toward the viewer)
+  axes3d() {
+    const s = this.slots.find((q) => q.is3);
+    if (!s) return null;
+    const m = s.camera.matrixWorldInverse, d = (x, y, z) => new THREE.Vector3(x, y, z).transformDirection(m).toArray();
+    return { x: d(1, 0, 0), y: d(0, 1, 0), z: d(0, 0, 1) };
   }
 
   render() {

@@ -27,14 +27,15 @@ def check(name, cond, detail=""):
 
 
 def write_log(log: Path, stop: threading.Event) -> None:
-    """A navigator at 10 Hz for about 4 s, then trapped."""
+    """A navigator logging a tick every 0.15 s for about 6 s (run time 0.1 s apart), then trapped. Slow enough that
+    two cold pages, each starting WebGL, are open before it ends."""
     with open(log / "ticks.jsonl", "w") as fh:
         for i in range(40):
             t = 1.0 + i * 0.1
             fh.write(json.dumps({"t": round(t, 3), "pose": [0.01 * i, 0.0, 0.0], "truth": [0.01 * i, 0.0, 0.0],
                                  "vx": 0.1, "vyaw": 0.0, "depth": [[0.01 * i + 0.4, 0.0, 0.0, "o"]]}) + "\n")
             fh.flush()
-            time.sleep(0.1)
+            time.sleep(0.15)
         fh.write(json.dumps({"event": "trapped", "t": 5.2}) + "\n")
         fh.flush()
     stop.set()
@@ -72,12 +73,24 @@ with tempfile.TemporaryDirectory() as tmp:
             pg.evaluate("window.miniview.load('room', 'explore99')")
             pg.wait_for_function("window.__ready === true", timeout=30000)
             pages[lib] = pg
-        ticks = {"three": "+document.getElementById('runinfo').textContent.match(/(\\d+) ticks/)[1]",
-                 "deck": "window.miniview.internals.S.D.n"}
+        # both pages are the same workbench: the status chip says "... N ticks"
+        chip = "+document.getElementById('runinfo').textContent.match(/(\\d+) ticks/)[1]"
+        ticks = {"three": chip, "deck": chip}
         first = {lib: pg.evaluate(ticks[lib]) for lib, pg in pages.items()}
         check("both pages show the live run with its follow switch", all(
             pg.evaluate("!document.getElementById('follow').hidden") for pg in pages.values()), first)
-        time.sleep(2.0)
+        # typing into a field while the live run refreshes the panels every second: the field survives
+        pg = pages["three"]
+        pg.evaluate("window.miniview.setTimeMode('belief.track', 'window', 2)")
+        pg.click('#tree .row[data-id="belief.track"]')
+        pg.click("#winv")
+        pg.keyboard.type("7")
+        time.sleep(2.2)
+        kept = pg.evaluate("[document.activeElement && document.activeElement.id, document.getElementById('winv').value]")
+        pg.keyboard.press("Enter")
+        n = pg.evaluate("window.miniview.internals.M.modes['belief.track'].n")
+        check("a field being typed in survives the live refreshes, and Enter applies it", kept == ["winv", "7"] and n == 7,
+              (kept, n))
         later = {lib: pg.evaluate(ticks[lib]) for lib, pg in pages.items()}
         check("the run grows on both pages while it runs", all(later[k] > first[k] for k in pages), (first, later))
         t_cursor = pages["three"].evaluate("window.miniview.state().t")

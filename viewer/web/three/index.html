@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>miniview - three.js</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../shell/shell.css">
 <script type="importmap">
 {"imports": {
   "three": "./vendor/three.module.js",
@@ -12,28 +13,6 @@
 </script>
 </head>
 <body>
-<header id="head">
-  <b>miniview</b> <span class="dim">three.js</span>
-  <a href="#scenes" id="scenes-link">scenes</a>
-  <label class="pick">scene <select id="scenesel"></select></label>
-  <label class="runctl">run <select id="runsel"></select></label>
-  <label class="runctl">view <select id="viewsel">
-    <option value="top">top</option><option value="front">front</option><option value="back">back</option>
-    <option value="left">left</option><option value="right">right</option>
-    <option value="three">three-view</option><option value="3d">3D</option></select></label>
-  <span id="runinfo" class="dim"></span>
-  <label id="follow" hidden><input type="checkbox" id="follow-on" checked> follow live</label>
-</header>
-<main>
-  <aside id="layers"></aside>
-  <div id="stage"><canvas id="gl"></canvas></div>
-  <aside id="moment"></aside>
-</main>
-<section id="scenespage"></section>
-<footer id="timebar">
-  <div id="track"><div id="cursor"></div></div>
-  <div id="legend"></div>
-</footer>
 <script type="module" src="app.js"></script>
 </body>
 </html>

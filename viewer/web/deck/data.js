@@ -1,10 +1,8 @@
-// Loads a scene and a run and precomputes everything the layers need, so scrubbing only picks.
-const get = async (u) => (await fetch(u)).json();
-export const loadIndex = () => get('/api/v1/scenes');
-
-const COL = { f: [60, 200, 90, 255], o: [230, 50, 40, 255], v: [60, 120, 230, 255], b: [230, 0, 230, 255] };
+// Prepares a scene and a run (as the shell fetched them from the API) and precomputes everything the
+// layers need, so scrubbing only picks.
+export const KIND_COL = { f: [60, 200, 90, 255], o: [230, 50, 40, 255], v: [60, 120, 230, 255], b: [230, 0, 230, 255] };
+export const CELL_COL = { occ: [80, 80, 80, 255], free: [205, 236, 205, 255] };
 export const KIND_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
-export const KIND_COL = COL;
 export const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 const matrix = ([x, y, yaw]) => {
@@ -16,8 +14,7 @@ const apply = ([tx, ty, yaw], [x, y, h]) => {
   return [tx + c * x - s * y, ty + s * x + c * y, h + yaw];
 };
 
-export async function loadScene(id) {
-  const sc = await get(`/api/v1/scenes/${id}`);
+export function prepareScene(sc) {
   const ring = (b, z) => {
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
     return [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, d]) => {
@@ -40,8 +37,7 @@ export async function loadScene(id) {
   return { ...sc, boxPaths: paths, hazardPaths: hz };
 }
 
-export async function loadRun(id) {
-  const [run, f] = await Promise.all([get(`/api/v1/runs/${id}`), get(`/api/v1/runs/${id}/frames`)]);
+export function prepareRun(run, f) {
   const n = f.t.length;
   const epochs = run.epochs.map((e) => ({ from_t: e.from_t, p: e.map_to_world, mat: matrix(e.map_to_world) }));
   const epochAt = (t) => { let e = epochs[0]; for (const x of epochs) if (x.from_t <= t) e = x; return e; };
@@ -94,7 +90,7 @@ export async function loadRun(id) {
         const ch = g.cells[k];
         if (ch === '?') continue;
         const x0 = g.origin[0] + (k % g.w) * g.res, y0 = g.origin[1] + Math.floor(k / g.w) * g.res;
-        cells.push({ k, poly: [[x0, y0], [x0 + g.res, y0], [x0 + g.res, y0 + g.res], [x0, y0 + g.res]], c: ch === '#' ? [80, 80, 80, 255] : [205, 236, 205, 255] });
+        cells.push({ k, poly: [[x0, y0], [x0 + g.res, y0], [x0 + g.res, y0 + g.res], [x0, y0 + g.res]], c: ch === '#' ? CELL_COL.occ : CELL_COL.free });
       }
       o = { cells, obstacles: W.obstacles.map(([x, y]) => [x, y, 0]), drops: W.drops.map(([x, y]) => [x, y, 0]) };
       worldCache.set(w, o);

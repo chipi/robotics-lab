@@ -3,8 +3,18 @@ import * as THREE from 'three';
 export const C = {
   belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
-  occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96,
+  occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
 };
+
+// the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
+export function setPalette(p) {
+  const h = (k) => new THREE.Color(p[k]).getHex();
+  Object.assign(C, {
+    belief: h('c-belief'), truth: h('c-truth'), plan: h('c-plan'), obst: h('c-obst'), hazard: h('c-drop'), occ: h('c-occ'), free: h('c-free'),
+    x: h('c-x'), y: h('c-y'), z: h('c-z'), box: h('c-box'), grid: h('draw-grid'), rel: h('draw-rel'),
+    depth: { f: h('c-floor'), o: h('c-ob'), v: h('c-over'), b: h('c-drop') },
+  });
+}
 const col = (hex) => new THREE.Color(hex);
 const lineMat = (hex) => new THREE.LineBasicMaterial({ color: hex });
 
@@ -136,7 +146,7 @@ export function buildRun(run, fr, world) {
     tTrack = add('truth.track', lineObj(tr, C.truth)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
     tRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 1 }); });
     L.tpose = tpose;
-    rel = add('rel.belief_truth', lineObj(new Float32Array(6), 0x222222));
+    rel = add('rel.belief_truth', lineObj(new Float32Array(6), C.rel));
   }
 
   // depth: one buffer per kind; tick i's returns of a kind are [cum[i], cum[i+1]) in it, so "at t",

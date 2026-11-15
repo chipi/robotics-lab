@@ -93,7 +93,17 @@ setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, str
 select({kind, index})        state() -> {t, belief, truth, distance, last_event, selection}
 ```
 
-The view area is the element `#stage`; commands crop to it for the filmstrip.
+`select` takes a depth return (`{kind: "depth", index}`, the point's place in the file), a robot
+(`{kind: "robot", index: 0 belief | 1 truth}`; `belief` and `truth` with any index also work and mean
+the robot at the current tick) or a map cell (`{kind: "cell", index, world}`); `select(null)` clears.
+`state()` adds `tick`, `frame`, `view`, `belief_map`, `t_range` and `hidden` (the streams not shown).
+`setVisible` takes a stream id or a group (`g.sensors`, `Sensors`, ...).
+
+The view area is the element `#stage`; commands crop to it for the filmstrip. The two pages are one
+workbench (`web/shell/`: top bar, outliner, properties, inspector, timeline, themes) with a renderer
+adapter each (`web/three/app.js`, `web/deck/app.js`); the status chip `#runinfo` reads "robot ·
+kind · verdict · length · N ticks", and `#follow` (with `#follow-on`) shows only while the run is
+live.
 
 ## `GET /api/v1/runs/{id}/frames` — everything, by tick
 

@@ -1,13 +1,24 @@
 // Builds the deck.gl layers for one pane. Static data stays referentially stable; only the
 // per-moment pieces (poses, track slice, depth frame, plan, world) change with t.
-import { IDENT, KIND_COL, firstAfter } from './data.js';
+import { IDENT, KIND_COL, CELL_COL, firstAfter } from './data.js';
 
 const { PathLayer, LineLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer, COORDINATE_SYSTEM } = deck;
 const CART = COORDINATE_SYSTEM.CARTESIAN;
 export const C = {
   belief: [70, 130, 255], truth: [40, 180, 90], plan: [230, 180, 0], obst: [255, 150, 0], haz: [230, 0, 230],
   x: [224, 48, 48], y: [48, 176, 48], z: [48, 96, 224], box: [138, 138, 150], grid: [216, 216, 224], text: [100, 100, 112],
+  rel: [30, 30, 30], sel: [0, 0, 0], bg: [255, 255, 255],
 };
+const rgb = (hex) => { const n = parseInt(hex.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+// the page's theme tokens (shell palette, CSS hex strings) -> the colours the layers are built with
+export function setPalette(p) {
+  const c = (k) => rgb(p[k]);
+  Object.assign(C, { belief: c('c-belief'), truth: c('c-truth'), plan: c('c-plan'), obst: c('c-obst'), haz: c('c-drop'), x: c('c-x'), y: c('c-y'), z: c('c-z'),
+    box: c('c-box'), grid: c('draw-grid'), text: c('draw-label'), rel: c('draw-rel'), sel: c('draw-sel'), bg: c('bg-viewport') });
+  Object.assign(KIND_COL, { f: [...c('c-floor'), 255], o: [...c('c-ob'), 255], v: [...c('c-over'), 255], b: [...c('c-drop'), 255] });
+  Object.assign(CELL_COL, { occ: [...c('c-occ'), 255], free: [...c('c-free'), 255] });
+  gridCache.clear();
+}
 const P = { depthTest: false };
 // Side views are the 2D OrthographicView looking at a rotated world: the modelMatrix sends
 // (x, y, z) to (screen x, screen y, depth), so every layer works as it does in the top view.
@@ -69,24 +80,17 @@ const cached = (k, f) => { if (!gridCache.has(k)) gridCache.set(k, f()); return 
 
 export const SHORT_TAIL_S = 2; // what "at t" shows of a track: a short tail
 
-// a stream is drawn in a pane unless it, its parent or its group is off, globally or in that view only
-export function shown(S, id, paneId) {
-  const st = S.streams[id];
-  if (!st || st.missing) return false;
-  const chain = [id, st.parent, 'group:' + st.group].filter(Boolean);
-  return chain.every((k) => S.vis[k] !== false && !(paneId && S.vv[paneId] && S.vv[paneId][k] === false));
-}
 
 // ticks a..b a stream shows at tick i, from its time mode
 export function ticksFor(S, id, i, tail) {
-  const { D } = S, tm = S.tm[id] || { mode: 'at', n: 0.5 };
+  const { D } = S, tm = S.cfg(id);
   if (tm.mode === 'upto') return [0, i];
   if (tm.mode === 'window') return [Math.min(firstAfter(D.t[i] - tm.n, D.t), i), i];
   return tail ? [Math.min(firstAfter(D.t[i] - tail, D.t), i), i] : [i, i];
 }
 
 export function buildLayers(S, pane) {
-  const { D, scene, i, dv } = S, mode = pane.kind, id = (n) => `${n}@${pane.id}`, on = (k) => shown(S, k, pane.id);
+  const { D, scene, i, dv } = S, mode = pane.kind, id = (n) => `${n}@${pane.id}`, on = (k) => S.shown(k, pane.id);
   const out = [];
   const V = SIDEM[mode];
   const mm = mul(V, dv ? IDENT : D.epochs[D.epochIdx[i]].mat);
@@ -109,7 +113,7 @@ export function buildLayers(S, pane) {
   for (const ch of ['f', 'o', 'v', 'b']) {
     const sid = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' }[ch];
     if (!on(sid)) continue;
-    const tm = S.tm[sid] || { mode: 'at' };
+    const tm = S.cfg(sid);
     const [a, b] = tm.mode === 'at' ? [D.depthIdx[i], D.depthIdx[i]] : ticksFor(S, sid, i);
     const r = D.depthRange(ch, a, b);
     if (!r || !r.data.length) continue;
@@ -138,17 +142,17 @@ export function buildLayers(S, pane) {
 
   if (S.rel.belief_truth && !dv && tp && on('belief.pose') && on('truth.pose')) {
     const q = [(bp[0] + tp[0]) / 2, (bp[1] + tp[1]) / 2, h / 2], d = Math.hypot(bp[0] - tp[0], bp[1] - tp[1]);
-    out.push(new LineLayer({ id: id('rel'), data: [0], getSourcePosition: () => [bp[0], bp[1], h / 2], getTargetPosition: () => [tp[0], tp[1], h / 2], getColor: [30, 30, 30, 255], getWidth: 2, widthUnits: 'pixels', modelMatrix: V, ...Z }));
-    out.push(new TextLayer({ id: id('reltext'), data: [0], getPosition: () => q, getText: () => `${(d * 100).toFixed(1)} cm`, getSize: 11, getColor: [30, 30, 30, 255], getPixelOffset: [0, -12], background: true, getBackgroundColor: [255, 255, 255, 200], modelMatrix: V, ...Z }));
+    out.push(new LineLayer({ id: id('rel'), data: [0], getSourcePosition: () => [bp[0], bp[1], h / 2], getTargetPosition: () => [tp[0], tp[1], h / 2], getColor: C.rel.concat(255), getWidth: 2, widthUnits: 'pixels', modelMatrix: V, ...Z }));
+    out.push(new TextLayer({ id: id('reltext'), data: [0], getPosition: () => q, getText: () => `${(d * 100).toFixed(1)} cm`, getSize: 11, getColor: C.rel.concat(255), getPixelOffset: [0, -12], background: true, getBackgroundColor: C.bg.concat(215), modelMatrix: V, ...Z }));
   }
   const sp = S.selPos;
-  if (sp) out.push(new ScatterplotLayer({ id: id('sel'), data: [sp], getPosition: (d) => d, getRadius: 9, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: [0, 0, 0, 255], lineWidthUnits: 'pixels', getLineWidth: 2, modelMatrix: V, ...Z }));
+  if (sp) out.push(new ScatterplotLayer({ id: id('sel'), data: [sp], getPosition: (d) => d, getRadius: 9, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: C.sel.concat(255), lineWidthUnits: 'pixels', getLineWidth: 2, modelMatrix: V, ...Z }));
 
   if (S.coord) {
     const a = cached('axes' + mode, () => axesFor(mode));
     out.push(new LineLayer({ id: id('axes'), data: a.lines, getSourcePosition: (d) => d.s, getTargetPosition: (d) => d.t, getColor: (d) => d.col.concat(255), getWidth: 2.5, widthUnits: 'pixels', modelMatrix: V, ...Z }));
     out.push(new TextLayer({ id: id('axislabels'), data: a.labels, getPosition: (d) => d.p, getText: (d) => d.text, getSize: 15, fontWeight: 'bold', getColor: (d) => d.col.concat(255), modelMatrix: V, ...Z }));
-    out.push(new ScatterplotLayer({ id: id('origin'), data: [[0, 0, 0]], getPosition: (d) => d, getRadius: 4, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: [20, 20, 20, 255], lineWidthUnits: 'pixels', getLineWidth: 1.5, modelMatrix: V, ...Z }));
+    out.push(new ScatterplotLayer({ id: id('origin'), data: [[0, 0, 0]], getPosition: (d) => d, getRadius: 4, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: C.text.concat(255), lineWidthUnits: 'pixels', getLineWidth: 1.5, modelMatrix: V, ...Z }));
   }
   return out;
 }
