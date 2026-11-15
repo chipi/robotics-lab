@@ -27,7 +27,7 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 - [Review of the navigator, 2026-11-15](REVIEW-2026-11-15-navigator.md) — rules in conflict,
   blind spots, next steps (led to RFC-0008).
 - [Review of miniview, 2026-11-15](REVIEW-2026-11-15-miniview.md) — 13 findings, all to be
-  fixed (led to ADR-0006).
+  fixed (led to RFC-0010 and ADR-0006 to ADR-0012).
 - [Review of miniview, round 2, 2026-11-16](REVIEW-2026-11-16-miniview-round2.md) — findings
   of a second review and the RFC-0008 gaps, with what was done.
 - [What robotics asks of flotilla](FLOTILLA-ASKS.md) — for the flotilla session to assess.
