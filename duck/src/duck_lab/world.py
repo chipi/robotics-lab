@@ -32,7 +32,7 @@ from duck_lab.nav.frames import compose, inverse
 LAYOUT = Path(__file__).resolve().parents[2] / "sim" / "apartment_layout.json"
 STAIRS = (-0.40, 0.00, -1.40, -0.70)
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
-DEPTH_COLOURS = {"f": (60, 200, 90), "o": (230, 50, 40), "v": (60, 120, 230)}   # floor, obstacle, overhead
+DEPTH_COLOURS = {"f": (60, 200, 90), "o": (230, 50, 40), "v": (60, 120, 230), "b": (230, 0, 230)}   # floor, obstacle, overhead, below the floor
 
 
 def apply(t: tuple, p) -> list:

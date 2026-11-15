@@ -20,7 +20,11 @@ VALID = {5, 9}
 LOOK_M = 0.7           # only floor expected within this horizontal distance is checked
 EXTRA_M = 0.06         # a return this much further than the floor (along the beam's drop) is a drop
 MIN_ZONES = 2          # zones that must agree, in the central columns
-CENTRAL = range(2, 6)
+# Which beams the cliff check reads: every column whose expected floor point lies within this of the
+# duck's line, ahead (its corridor and the bend beside it). It used to read the central columns only,
+# and exploration trial 10 walked diagonally past the stairwell's corner with the hole to its left,
+# outside them, until the truth guard stopped it 5 cm from the edge.
+CORRIDOR_DROP_M = 0.25
 
 
 def _beams() -> list:
@@ -62,6 +66,18 @@ def sensor_pose(state: dict) -> tuple:
     return height, q
 
 
+def sensor_offset(state: dict) -> tuple:
+    """Where the sensor is relative to the trunk, level and turned to the trunk's heading (ahead, left):
+    about 8.5 cm ahead and 2 cm left. Points are returned relative to the trunk, where the navigator's
+    pose is; without this every remembered obstacle and drop sat 8.5 cm nearer the duck (explore9)."""
+    q = tuple(state["imu"]["quat"])
+    off = rotate(q, state["frames"]["tof"]["pos"])
+    w, x, y, z = q
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    c, s_ = math.cos(-yaw), math.sin(-yaw)
+    return c * off[0] - s_ * off[1], s_ * off[0] + c * off[1]
+
+
 # Higher than mapd's 3 cm: over flat floor with the head turned, returns read up to 6.5 cm above the
 # predicted floor at 0.4 m (pose error); real obstacles (walls, the cabinet) read a median 14 cm.
 FLOOR_MARGIN_M = 0.08      # a return lower than this (+3 cm per metre of range) is floor
@@ -71,9 +87,10 @@ OVERHEAD_M = 0.30          # above the duck's head (27.2 cm): passes over it
 
 def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
     """(ahead, left) of every valid return that is an obstacle — above the floor, below the duck's
-    head, within within_m — relative to the sensor and turned to the trunk's heading. The reflex's
-    memory takes all of them, not one point: a wall seen once is a wall, not a dot."""
+    head, within within_m of the sensor — relative to the trunk and turned to its heading. The
+    reflex's memory takes all of them, not one point: a wall seen once is a wall, not a dot."""
     height, q = sensor_pose(state)
+    sx, sy = sensor_offset(state)
     w, x, y, z = state["imu"]["quat"]
     yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
     c, s_ = math.cos(-yaw), math.sin(-yaw)
@@ -88,15 +105,17 @@ def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
         z = height + r * d[2]
         if h > within_m or z < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h or z > OVERHEAD_M:
             continue
-        out.append((c * hx - s_ * hy, s_ * hx + c * hy))
+        out.append((sx + c * hx - s_ * hy, sy + s_ * hx + c * hy))
     return out
 
 
 def depth_points(frame: dict, state: dict) -> list:
-    """Every valid return as (ahead, left, height above the floor, kind), relative to the sensor and
-    turned to the trunk's heading, with the same geometry and thresholds as obstacle_points: kind is
-    "floor", "obstacle" or "overhead". For the viewer: what the sensor saw, not only what was kept."""
+    """Every valid return as (ahead, left, height above the floor, kind), relative to the trunk and
+    turned to its heading, with the same geometry and thresholds as obstacle_points: kind is
+    "below" (under the floor by more than EXTRA_M: a hole), "floor", "obstacle" or "overhead". For
+    the viewer, and for the floor the explorer trusts: what the sensor saw, not only what was kept."""
     height, q = sensor_pose(state)
+    sx, sy = sensor_offset(state)
     w, x, y, z = state["imu"]["quat"]
     yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
     c, s_ = math.cos(-yaw), math.sin(-yaw)
@@ -109,9 +128,41 @@ def depth_points(frame: dict, state: dict) -> list:
         hx, hy = r * d[0], r * d[1]
         h = math.hypot(hx, hy)
         zz = height + r * d[2]
-        kind = ("floor" if zz < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h else
+        kind = ("below" if zz < -EXTRA_M else "floor" if zz < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h else
                 "overhead" if zz > OVERHEAD_M else "obstacle")
-        out.append((c * hx - s_ * hy, s_ * hx + c * hy, zz, kind))
+        out.append((sx + c * hx - s_ * hy, sy + s_ * hx + c * hy, zz, kind))
+    return out
+
+
+def blocking_ahead(points: list, half_width_m: float) -> float | None:
+    """How far ahead (m, from the trunk) the nearest obstacle return lies inside the corridor the duck
+    sweeps walking straight on — |left| within half_width_m; None when there is none. points are
+    depth_points. The reflex stops on this, not on the nearest return anywhere in view: phase 1 run
+    16 stopped eight times for a door frame it was passing with room to spare."""
+    ahead = [p[0] for p in points if p[3] == "obstacle" and p[0] > 0 and abs(p[1]) <= half_width_m]
+    return min(ahead) if ahead else None
+
+
+def extend_edge(points: list, extend_m: float, step_m: float = 0.05) -> list:
+    """A drop's edge, beyond what was seen: points every step_m along the line through `points`
+    (x, y), extend_m past each end. A stop sees a short stretch of an edge; the hole goes on to the
+    sides (trial 8 reached a target 0.3 m from a stairwell corner it had not seen)."""
+    if len(points) < 2:
+        return []
+    mx = sum(p[0] for p in points) / len(points)
+    my = sum(p[1] for p in points) / len(points)
+    sxx = sum((p[0] - mx) ** 2 for p in points)
+    syy = sum((p[1] - my) ** 2 for p in points)
+    sxy = sum((p[0] - mx) * (p[1] - my) for p in points)
+    a = 0.5 * math.atan2(2 * sxy, sxx - syy)            # the edge's direction (principal axis)
+    ux, uy = math.cos(a), math.sin(a)
+    ts = [(p[0] - mx) * ux + (p[1] - my) * uy for p in points]
+    out = []
+    for lo, hi, sign in ((max(ts), max(ts) + extend_m, 1), (min(ts) - extend_m, min(ts), -1)):
+        t = lo + step_m if sign > 0 else hi - step_m
+        while (t <= hi + 1e-9) if sign > 0 else (t >= lo - 1e-9):
+            out.append((mx + t * ux, my + t * uy))
+            t += sign * step_m
     return out
 
 
@@ -123,8 +174,10 @@ def drop_ahead(frame: dict, state: dict) -> float | None:
 
 def drop_points(frame: dict, state: dict) -> list:
     """(ahead, left, horizontal distance) of each beam's expected floor point where there was no
-    floor, relative to the sensor and turned to the trunk's heading; empty under MIN_ZONES."""
+    floor: ahead and left relative to the trunk, turned to its heading; the distance from the sensor
+    (what the cliff check stops on: the nearer, so the more careful). Empty under MIN_ZONES."""
     height, q = sensor_pose(state)
+    sx, sy = sensor_offset(state)
     if height <= 0.02:
         return []
     yaw_q = state["imu"]["quat"]
@@ -133,8 +186,6 @@ def drop_points(frame: dict, state: dict) -> list:
     c, s_ = math.cos(-yaw), math.sin(-yaw)
     drops = []
     for i, beam in enumerate(BEAMS):
-        if i % COLS not in CENTRAL:
-            continue
         d = rotate(q, beam)
         if d[2] > -0.15:
             continue        # a beam that never reaches the floor nearby says nothing about it
@@ -148,5 +199,8 @@ def drop_points(frame: dict, state: dict) -> list:
             if r * -d[2] < height + EXTRA_M:
                 continue    # it reached the floor (or something on it): no drop here
         wx, wy = t_floor * d[0], t_floor * d[1]          # level frame, world-aligned yaw
-        drops.append((c * wx - s_ * wy, s_ * wx + c * wy, h_floor))
+        ahead, left = sx + c * wx - s_ * wy, sy + s_ * wx + c * wy
+        if abs(left) > CORRIDOR_DROP_M:
+            continue        # beside the duck's way, not on it
+        drops.append((ahead, left, h_floor))
     return drops if len(drops) >= MIN_ZONES else []

@@ -111,7 +111,11 @@ class Explorer:
 
             def reachable(goal, costs=costs):
                 c = costs.cell(*goal)
-                return not costs.inside(*c) or costs.at(*c) < LETHAL_COST
+                if costs.inside(*c) and costs.at(*c) >= LETHAL_COST:
+                    return False
+                # Floor the depth sensor saw, not only mapd's "free": mapd draws a stairwell as free
+                # (upstream #599) and trial 10 picked a target inside one.
+                return self.nav.floor_seen_near(goal)
 
             avoid = self.failed + self.nav.drops
             target = pick(frontiers(grid, self.nav.scale), pose, avoid, ok=reachable)

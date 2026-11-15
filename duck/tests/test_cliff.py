@@ -6,7 +6,7 @@ import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav.cliff import BEAMS, COLS, drop_ahead, rotate, sensor_pose
+from duck_lab.nav.cliff import BEAMS, COLS, drop_ahead, drop_points, rotate, sensor_pose
 
 failures = []
 
@@ -57,6 +57,52 @@ check("something on the floor (shorter returns): not a drop", drop_ahead(box, st
 level = state(pitch_deg=0.0)
 check("head level: the lower rows still see the floor", drop_ahead(frame_for(level), level) is None)
 
+
+def side_hole(st, left_from_m, drop_m=0.3):
+    """Flat floor, except a hole to the left: where the floor point lies more than left_from_m left."""
+    height, q = sensor_pose(st)
+    dist, status = [], []
+    for beam in BEAMS:
+        d = rotate(q, beam)
+        if d[2] >= -0.01:
+            dist.append(2000), status.append(5)
+            continue
+        t = -height / d[2]
+        if t * d[1] > left_from_m:
+            t = -(height + drop_m) / d[2]
+        dist.append(int(t * beam[0] * 1000)), status.append(5)
+    return {"distance_mm": dist, "status": status}
+
+
+# Exploration trial 10: the duck walked diagonally past the stairwell's corner, the hole to its left,
+# and the central columns saw only floor. Columns whose floor point falls in the duck's corridor and
+# the bend beside it count too.
+sh = drop_points(side_hole(st, 0.12), st)
+check("a hole 12 cm to the left of the line: a drop, on the left", sh and all(p[1] > 0 for p in sh), sh[:2])
+check("a hole beyond the corridor (30 cm left): not a stop", drop_points(side_hole(st, 0.30), st) == [])
+
+# The head pitched 3 deg higher than the duck believes (contact, gait): shallow beams meet the floor
+# further out than predicted. That is not a drop (trial 12's false stop by the office cabinet).
+believed, actual = state(pitch_deg=25.0), state(pitch_deg=22.0)
+check("flat floor seen with the head 3 deg higher than believed: no drop",
+      drop_points(frame_for(actual), believed) == [], len(drop_points(frame_for(actual), believed)))
+
+from duck_lab.nav.cliff import depth_points as _dp  # noqa: E402
+
+hole_pts = _dp(side_hole(st, 0.12), st)
+check("returns from inside a hole are 'below', never 'floor' (the explorer trusts only floor)",
+      any(p[3] == "below" for p in hole_pts) and not any(p[3] == "floor" and p[1] > 0.14 for p in hole_pts),
+      sorted({p[3] for p in hole_pts}))
+
+from duck_lab.nav.cliff import extend_edge  # noqa: E402
+
+seen = [(0.0, -0.7), (0.1, -0.71), (0.2, -0.7)]          # 20 cm of a stairwell's edge, along x
+ext = extend_edge(seen, 0.15)
+check("an edge seen for 20 cm is remembered 15 cm further each way, along it",
+      len(ext) == 6 and min(p[0] for p in ext) < -0.14 and max(p[0] for p in ext) > 0.34
+      and all(abs(p[1] + 0.703) < 0.02 for p in ext), [tuple(round(v, 2) for v in p) for p in ext])
+check("one point is no edge", extend_edge([(0.0, 0.0)], 0.15) == [])
+
 # Recorded in the simulator standing on flat floor, each frame with robotd's state at that moment
 # (duck/sim/probes/tof_rows.py). Skipped where the recordings are absent (they live in runs/).
 for path in sorted((Path(__file__).resolve().parents[1] / "runs").glob("tof-flat-*.json")):
@@ -81,6 +127,37 @@ if (runs / "tof-flat-0.json").exists():
     ahead = sorted(p[0] for p in pts)
     check("facing the doorway and the cabinet: obstacles 0.3-0.7 m ahead",
           len(pts) > 100 and 0.3 <= ahead[len(ahead) // 2] <= 0.7, (len(pts), ahead[len(ahead) // 2] if ahead else None))
+
+# Points are relative to the trunk, not the sensor: the sensor sits 8.5 cm ahead of the trunk and 2 cm
+# left (frames.tof.pos), and leaving that out put every remembered obstacle 8.5 cm nearer the duck
+# (explore9: "0.12 m of room" at a door frame 0.2 m away by truth).
+if (runs / "tof-flat-0.json").exists():
+    import copy  # noqa: E402
+
+    f = json.loads((runs / "tof-flat-0.json").read_text())["frames"][0]
+    at_trunk = copy.deepcopy(f)
+    at_trunk["state"]["frames"]["tof"]["pos"] = [0.0, 0.0, f["state"]["frames"]["tof"]["pos"][2]]
+    a, b = obstacle_points(f, f["state"]), obstacle_points(at_trunk, at_trunk["state"])
+    from duck_lab.nav.cliff import sensor_offset  # noqa: E402
+
+    (ax_, ay_), (bx_, by_) = sensor_offset(f["state"]), sensor_offset(at_trunk["state"])
+    ex, ey = ax_ - bx_, ay_ - by_
+    check("the sensor is ~8.5 cm ahead, ~2 cm left of the trunk", 0.07 < ax_ < 0.10 and 0.0 < ay_ < 0.04,
+          (round(ax_, 3), round(ay_, 3)))
+    shifted = len(a) == len(b) and len(a) > 0 and all(abs(p[0] - r[0] - ex) < 1e-6 and abs(p[1] - r[1] - ey) < 1e-6
+                                                      for p, r in zip(a, b))
+    check("obstacle points include the sensor's offset from the trunk (8.5 cm ahead)", shifted,
+          (round(ex, 3), round(ey, 3), len(a), len(b)))
+
+# The reflex's corridor: only what the duck would walk into counts.
+from duck_lab.nav.cliff import blocking_ahead  # noqa: E402
+
+pts = [(0.25, 0.30, 0.2, "obstacle"),     # a door frame to the side: passed, not hit
+       (0.40, 0.05, 0.2, "obstacle"),     # straight ahead, further on
+       (0.20, 0.00, 0.01, "floor"),       # floor is not an obstacle
+       (-0.1, 0.00, 0.2, "obstacle")]     # behind
+check("blocking_ahead: the nearest obstacle in the corridor, not the nearest in view",
+      blocking_ahead(pts, 0.12) == 0.40 and blocking_ahead(pts[:1], 0.12) is None, blocking_ahead(pts, 0.12))
 
 # The viewer's depth points: every valid return, classified as the obstacle layer classifies them.
 from duck_lab.nav.cliff import depth_points  # noqa: E402

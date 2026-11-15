@@ -5,7 +5,7 @@
 
 Loop at 10 Hz: pose = map ← odom (frames.py) on the latest odometry; twist from follow.step; robot.move
 with every tick (the deadman wants one every 100 ms); replan on a fresh map.grid every few seconds.
-Reflex on each depth frame: something closer than STOP_MM ahead while walking forward → stop, survey
+Reflex on each depth frame: an obstacle in the duck's corridor within REFLEX_AHEAD_M while walking → stop, survey
 (the stop puts the obstacle in the map), replan. Every stop ends with an explicit zero move: robotd
 keeps the last request after its deadman trips, and mapd then never sees a stop (PHASE0-SPIKE.md §3).
 """
@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.cliff import depth_points, drop_points, obstacle_points
+from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, extend_edge, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
@@ -32,7 +32,13 @@ REPLAN_S = 3.0
 PROGRESS_M = 0.10
 NO_PROGRESS_S = 15.0
 FOLLOW_SPACING_M = 0.10
-STOP_MM = 250            # depth reflex distance, central columns
+# The depth reflex: an obstacle return inside the corridor the duck sweeps (its 8.3 cm radius and 4 cm)
+# within REFLEX_AHEAD_M of the trunk stops it; so does any return at all within EMERGENCY_MM of the
+# sensor. It used to stop for the nearest return in the central columns within 250 mm, wherever it was:
+# phase 1 run 16 stopped eight times for a door frame it was passing with room to spare.
+REFLEX_AHEAD_M = 0.30
+REFLEX_HALF_W_M = 0.083 + 0.04
+EMERGENCY_MM = 150
 # A drop this close ahead (horizontal) stops the duck. 0.60, not 0.45: the duck then has to turn round
 # where it stopped, and a turn on the spot drifts (exploration trial 5: 26 cm over 4.3 rad).
 CLIFF_STOP_M = 0.60
@@ -60,6 +66,9 @@ ARC_AHEAD_M = 0.25
 # - 2.5 cm more than the 8.3 cm footprint radius. Below it the duck stands and the leg is refused.
 TIGHT_PIVOT_M = 0.11
 BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
+EDGE_EXTEND_M = 0.15
+FLOOR_CELL_M = 0.05
+FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
 
@@ -71,6 +80,7 @@ class TofStream:
         self.nearest_mm = None
         self.frames = 0
         self.last = None
+        self.on_frame = None     # called with each frame (the navigator's seen-floor memory)
         self._sock = socket.socket(socket.AF_UNIX)
         self._sock.connect(str(path))
         self._sock.settimeout(1.0)
@@ -99,6 +109,8 @@ class TofStream:
                     if fr["status"][r * cols + c] in VALID_STATUS and fr["distance_mm"][r * cols + c] > 0]
             self.nearest_mm = min(near) if near else None
             self.frames += 1
+            if self.on_frame:
+                self.on_frame(fr)
 
     def close(self):
         self._stop.set()
@@ -154,8 +166,13 @@ class Navigator:
         self._drop_streak = 0
         self._drop_frame = None
         self._depth = None       # the newest depth frame's returns in map metres, for the next tick record
+        self._block = None       # how far ahead an obstacle sits in the duck's corridor (newest frame)
+        # Floor the depth sensor itself has seen, as FLOOR_CELL_M cells: mapd draws a stairwell as free
+        # floor (upstream #599), and exploration trial 10 took a target inside one.
+        self.floor_seen = set()
         self._map_raw = None     # mapd's last grid (scaled), for the world record
         self._world_key = None
+        self.tof.on_frame = self._on_frame
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
@@ -207,6 +224,40 @@ class Navigator:
                 self.blocked.append(q)
                 new.append(q)
         return new
+
+    def _on_frame(self, frame: dict) -> None:
+        """Every depth frame, whatever the duck is doing (surveys and turns too: trial 11 surveyed
+        first and found no frontier with seen floor): the floor it shows joins floor_seen."""
+        pose, state = self.loc.pose(), self.state.latest
+        if pose is None or state is None:
+            return
+        try:
+            pts = depth_points(frame, state)
+        except (KeyError, TypeError, ValueError):
+            return
+        c, s_ = math.cos(pose[2]), math.sin(pose[2])
+        for ax, ay, _, kind in pts:
+            if kind == "floor":
+                x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
+                self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+
+    def _tilt(self) -> list | None:
+        """The trunk's pitch and roll (deg) by the IMU: trial 12's false drop needs a 5 deg pitch
+        error, and the log did not say whether the duck was tilted."""
+        st = self.state.latest
+        if not st or "imu" not in st:
+            return None
+        w, x, y, z = st["imu"]["quat"]
+        pitch = math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x)))))
+        roll = math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)))
+        return [round(pitch, 1), round(roll, 1)]
+
+    def floor_seen_near(self, xy: tuple, radius_m: float = FLOOR_NEAR_M) -> bool:
+        """Has the depth sensor seen floor within radius_m of xy?"""
+        cx, cy = round(xy[0] / FLOOR_CELL_M), round(xy[1] / FLOOR_CELL_M)
+        r = math.ceil(radius_m / FLOOR_CELL_M)
+        return any((cx + dx, cy + dy) in self.floor_seen for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+                   if math.hypot(dx, dy) * FLOOR_CELL_M <= radius_m)
 
     def _arc_clear(self, costs: CostGrid, pose: tuple) -> bool:
         """Clear floor for a slow turn while walking: the depth sensor, the grid and the drop memory."""
@@ -330,9 +381,10 @@ class Navigator:
                 if self.tof.last is not self._drop_frame:      # count frames, not ticks
                     self._drop_frame = self.tof.last
                     c, s_ = math.cos(pose[2]), math.sin(pose[2])
+                    seen_all = depth_points(self.tof.last, self.state.latest)
+                    self._block = blocking_ahead(seen_all, REFLEX_HALF_W_M)
                     self._depth = [[round(pose[0] + c * ax - s_ * ay, 3), round(pose[1] + s_ * ax + c * ay, 3),
-                                    round(z, 3), kind[0]]
-                                   for ax, ay, z, kind in depth_points(self.tof.last, self.state.latest)]
+                                    round(z, 3), kind[0]] for ax, ay, z, kind in seen_all]
                     self._drop_streak = self._drop_streak + 1 if pts else 0
                 if self._drop_streak < DROP_FRAMES:
                     pts = []
@@ -346,10 +398,12 @@ class Navigator:
             if tw.vx > 0 and pts and min(p[2] for p in pts) < CLIFF_STOP_M:
                 self.move(Twist())
                 c, s_ = math.cos(pose[2]), math.sin(pose[2])
+                edge = [(pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay) for ax, ay, _ in pts]
                 for ax, ay, h in pts:
                     for extra in (0.0,) + BEYOND_M:
                         k = (h + extra) / h if h > 0 else 1.0
                         self.drops.append((pose[0] + k * (c * ax - s_ * ay), pose[1] + k * (s_ * ax + c * ay)))
+                self.drops.extend(extend_edge(edge, EDGE_EXTEND_M))
                 self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose,
                             drops=[[round(v, 2) for v in d] for d in self.drops])
                 self.survey()
@@ -373,7 +427,8 @@ class Navigator:
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm
-            if tw.vx > 0 and near is not None and near < STOP_MM:
+            blocked_ahead = self._block is not None and self._block < REFLEX_AHEAD_M
+            if tw.vx > 0 and (blocked_ahead or (near is not None and near < EMERGENCY_MM)):
                 reflex_stops += 1
                 self.move(Twist())
                 seen = obstacle_points(self.tof.last, self.state.latest) if self.state.latest else []
@@ -381,13 +436,13 @@ class Navigator:
                 if not seen:   # no geometry (no state yet): the nearest return straight ahead
                     ahead = near / 1000.0
                     self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
-                self.record(event="reflex_stop", nearest_mm=near, pose=pose)
+                self.record(event="reflex_stop", nearest_mm=near, block_m=self._block, pose=pose)
                 self.survey()
                 path = None
                 continue
             self.move(tw)
             self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), nearest_mm=near,
-                        turning=st.turning, **({"depth": self._depth} if self._depth else {}))
+                        turning=st.turning, tilt=self._tilt(), **({"depth": self._depth} if self._depth else {}))
             self._depth = None
             if int(now / 1.0) != int((now - TICK_S) / 1.0):
                 self.fix()
