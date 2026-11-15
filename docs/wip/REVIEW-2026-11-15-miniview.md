@@ -27,3 +27,21 @@ into the UI — [RFC-0010](../rfc/RFC-0010-run-store-v2.md) and ADR-0006 to ADR-
 The CI workflow was judged runnable on ubuntu-latest by reading (uv 0.12.10 exists, Playwright's
 Chromium under `CI=true`, Docker available); not verified by a run. The nbc toolchain pins a
 Debian package revision (low risk).
+
+## Resolution (RFC-0010 built, 2026-11-15)
+
+| # | Fixed by | Shown by |
+| --- | --- | --- |
+| 1 | ADR-0008: records validated, a bad run isolated as broken, the follower never stops | `test_reading.py` (garbage file, bad records, key mismatch, a failing run, a failing round); `test_server.py` (broken run: 409 with the reason) |
+| 2 | ADR-0010 and ADR-0011: windows with their own plans, snapshots outside the lock, counts kept as records arrive, a page store that loads by window then by record | `test_server.py` (a window is 19% of the run's bytes, counts equal a recount); `test_live_page.py` and `test_store_page.py` (no frames request while the run grows; one setRun, appends); `make perf-viewer` (lock held 0.75 ms at most) |
+| 3 | ADR-0009: a cache bounded by memory, stopped runs final, start-up from the index, the index read | `test_index.py` (eviction under 4.5 MB, a restart opens only what changed, the stopped run is neither reloaded nor followed, the estimate within 25% of tracemalloc) |
+| 4 | ADR-0006 and ADR-0007: the key `robot/scene/run`, one writer under a lock, a replaced file read again | `test_server.py` (same name under two robots), `test_mcapio.py` (second writer refused), `test_reading.py` (key mismatch, replaced file) |
+| 5 | ADR-0007: absolute time, segments at goal-ending events, nothing dropped, flushed per record | `test_mcapio.py` (log_time, publish_time, segments, every source field, a tick on disk when `add` returns) |
+| 6 | ADR-0009: one transaction per change, counters reset together | `test_index.py` (the index equals memory after a live run, first epoch and early events included) |
+| 7 | ADR-0011: `load()` rejects, `state()` names the run, Follow live a mode, `config()` replaces what tests read | `test_store_page.py`, `test_live_page.py` |
+| 8 | ADR-0010 and ADR-0011: JSON errors, event kinds as text, fonts served by the service | `test_server.py` (bad query input is 400), `test_store_page.py` (a kind with pattern characters), `test_ui.py` (no request leaves the machine) |
+| 9 | ADR-0009 and ADR-0012: the index outside the data with WAL, the rebuild refuses under a service, the data mounted read only | `test_index.py`, `make test-viewer-image` |
+| 10 | ADR-0007 and ADR-0010: Foxglove schemas, zstd chunks and indexes, gzip, timeouts, JSON errors. The renderer question stays the operator's | `test_mcapio.py`, `test_server.py` |
+| 11 | RFC-0010 section 5: a real run as a fixture, a fault test per finding, no fixed waits | `viewer/tests/`, `viewer/tests/fixtures/explore9/` |
+| 12 | RFC-0010 step 7 | ADR-0004, ADR-0005, PRD-001, RFC-0009, `viewer/CONTRACT.md` |
+| 13 | ADR-0010: `HEAD` without a stream, a bad `from` is a 400, the data path from the environment, vendored files cached | `test_server.py` |

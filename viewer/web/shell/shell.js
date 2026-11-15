@@ -299,12 +299,18 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       for (const sx of M.run.streams || []) M.modes[sx.id] ||= { mode: sx.default_mode || 'at', n: 2 };
       T = buildTree(M.run);
       renderAll();
-      if (live && Date.now() - presAt > 2000) {
-        presAt = Date.now();
-        const key = M.runId;
-        json(`${API}runs/${key}/presence`).then((p) => { if (M.runId === key) { M.pres = p; renderLanes(); } }).catch(() => {});
-      }
+      if (live || presStatus !== M.run.status) { presStatus = M.run.status; wantPresence(); }
     }, 250);
+  }
+  // the timeline's data rows: refetched at most every 2 s while live, and once more after the last change (also at the end)
+  let presTimer = 0, presStatus = null;
+  function wantPresence() {
+    if (presTimer) return;
+    presTimer = setTimeout(() => {
+      presTimer = 0; presAt = Date.now();
+      const key = M.runId;
+      if (key) json(`${API}runs/${key}/presence`).then((p) => { if (M.runId === key) { M.pres = p; renderLanes(); } }).catch(() => {});
+    }, Math.max(0, 2000 - (Date.now() - presAt)));
   }
 
   // ---- state changes: each one is a function, a click and a script call do the same thing -----------

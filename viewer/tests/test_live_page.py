@@ -120,6 +120,9 @@ with tempfile.TemporaryDirectory() as tmp:
             info = q.evaluate("document.getElementById('runinfo').textContent")
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
+        for lib, q in pages.items():
+            q.wait_for_function("window.miniview.internals.M.pres.t1 === window.miniview.internals.M.run.t1", timeout=20000)
+            check(f"{lib}: after the end the timeline's data rows (presence) reach the run's last time", True)
         check("a run that is not live is not followed: the pages asked for no frames after the first windows",
               {lib: len(r) for lib, r in frames_requests.items()} == initial)
         b.close()
