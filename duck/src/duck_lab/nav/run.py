@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.cliff import drop_points, obstacle_points
+from duck_lab.nav.cliff import depth_points, drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
@@ -153,6 +153,9 @@ class Navigator:
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
         self._drop_streak = 0
         self._drop_frame = None
+        self._depth = None       # the newest depth frame's returns in map metres, for the next tick record
+        self._map_raw = None     # mapd's last grid (scaled), for the world record
+        self._world_key = None
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
 
@@ -188,6 +191,7 @@ class Navigator:
         if g.get("res_m"):
             g["res_m"] *= self.scale
             g["origin"] = [v * self.scale for v in g["origin"]]
+        self._map_raw = g
         return CostGrid.from_map_grid(g)
 
     def _remember(self, pts: list, pose: tuple) -> list:
@@ -219,6 +223,20 @@ class Navigator:
             if dist < CLIFF_STOP_M and math.cos(bearing) > math.cos(math.radians(60)):
                 return False
         return True
+
+    def _record_world(self) -> None:
+        """The world model as the planner saw it, for the viewer (duck-world): mapd's grid and the
+        remembered obstacles and drops, whenever any of them changed."""
+        g = self._map_raw
+        if not g:
+            return
+        key = (hash(g["cells"]), g["width"], g["height"], len(self.blocked), len(self.drops))
+        if key == self._world_key:
+            return
+        self._world_key = key
+        self.record(event="world", grid={k: g[k] for k in ("res_m", "origin", "width", "height", "cells")},
+                    blocked=[[round(v, 3) for v in b] for b in self.blocked],
+                    drops=[[round(v, 3) for v in d] for d in self.drops])
 
     def forget_blocked_near(self, pose: tuple, radius_m: float) -> int:
         """Nav2's "clear around the robot" recovery, for the obstacle memory only: mapd's map stays, and
@@ -282,8 +300,9 @@ class Navigator:
                 else:
                     # 10 cm waypoints: at the old 30 cm the lookahead landed 0.3-0.6 m ahead and cut bends.
                     path = thin(raw, FOLLOW_SPACING_M)
-                    self.record(event="plan", pose=pose, goal=goal, path=[[round(v, 2) for v in q] for q in path[:24:3]])
+                    self.record(event="plan", pose=pose, goal=goal, path=[[round(v, 3) for v in q] for q in path])
                 following, planned_at, costs = path, now, grid
+                self._record_world()
                 left = path_length([pose[:2]] + path)
                 if left < best_left - PROGRESS_M:
                     best_left, best_at = left, now
@@ -310,6 +329,10 @@ class Navigator:
                 pts = drop_points(self.tof.last, self.state.latest)
                 if self.tof.last is not self._drop_frame:      # count frames, not ticks
                     self._drop_frame = self.tof.last
+                    c, s_ = math.cos(pose[2]), math.sin(pose[2])
+                    self._depth = [[round(pose[0] + c * ax - s_ * ay, 3), round(pose[1] + s_ * ax + c * ay, 3),
+                                    round(z, 3), kind[0]]
+                                   for ax, ay, z, kind in depth_points(self.tof.last, self.state.latest)]
                     self._drop_streak = self._drop_streak + 1 if pts else 0
                 if self._drop_streak < DROP_FRAMES:
                     pts = []
@@ -364,7 +387,8 @@ class Navigator:
                 continue
             self.move(tw)
             self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), nearest_mm=near,
-                        turning=st.turning)
+                        turning=st.turning, **({"depth": self._depth} if self._depth else {}))
+            self._depth = None
             if int(now / 1.0) != int((now - TICK_S) / 1.0):
                 self.fix()
             time.sleep(max(0.0, TICK_S - (time.monotonic() - now)))

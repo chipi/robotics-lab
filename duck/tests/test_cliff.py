@@ -82,5 +82,18 @@ if (runs / "tof-flat-0.json").exists():
     check("facing the doorway and the cabinet: obstacles 0.3-0.7 m ahead",
           len(pts) > 100 and 0.3 <= ahead[len(ahead) // 2] <= 0.7, (len(pts), ahead[len(ahead) // 2] if ahead else None))
 
+# The viewer's depth points: every valid return, classified as the obstacle layer classifies them.
+from duck_lab.nav.cliff import depth_points  # noqa: E402
+
+for name in ("tof-flat-0.json", "tof-flat-180.json"):
+    if (runs / name).exists():
+        frames = json.loads((runs / name).read_text())["frames"]
+        agree = all(
+            sorted((round(p[0], 6), round(p[1], 6)) for p in depth_points(f, f["state"])
+                   if p[3] == "obstacle" and math.hypot(p[0], p[1]) <= 0.8)
+            == sorted((round(p[0], 6), round(p[1], 6)) for p in obstacle_points(f, f["state"]))
+            for f in frames)
+        check(f"{name}: depth_points' obstacles are obstacle_points' points", agree)
+
 print("CLIFF", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

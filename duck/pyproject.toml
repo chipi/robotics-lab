@@ -14,6 +14,7 @@ duck-go = "duck_lab.nav.run:main"
 duck-eval = "duck_lab.nav.evaluate:main"
 duck-explore = "duck_lab.nav.explore_run:main"
 duck-rooms = "duck_lab.nav.rooms:main"
+duck-world = "duck_lab.world:main"
 
 [build-system]
 requires = ["hatchling"]

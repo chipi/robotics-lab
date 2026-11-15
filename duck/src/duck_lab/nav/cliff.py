@@ -92,6 +92,29 @@ def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
     return out
 
 
+def depth_points(frame: dict, state: dict) -> list:
+    """Every valid return as (ahead, left, height above the floor, kind), relative to the sensor and
+    turned to the trunk's heading, with the same geometry and thresholds as obstacle_points: kind is
+    "floor", "obstacle" or "overhead". For the viewer: what the sensor saw, not only what was kept."""
+    height, q = sensor_pose(state)
+    w, x, y, z = state["imu"]["quat"]
+    yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    c, s_ = math.cos(-yaw), math.sin(-yaw)
+    out = []
+    for i, beam in enumerate(BEAMS):
+        if frame["status"][i] not in VALID or frame["distance_mm"][i] <= 0:
+            continue
+        r = frame["distance_mm"][i] / 1000.0 / beam[0]
+        d = rotate(q, beam)
+        hx, hy = r * d[0], r * d[1]
+        h = math.hypot(hx, hy)
+        zz = height + r * d[2]
+        kind = ("floor" if zz < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h else
+                "overhead" if zz > OVERHEAD_M else "obstacle")
+        out.append((c * hx - s_ * hy, s_ * hx + c * hy, zz, kind))
+    return out
+
+
 def drop_ahead(frame: dict, state: dict) -> float | None:
     """Horizontal distance to the nearest place ahead where the floor should be and is not."""
     pts = drop_points(frame, state)

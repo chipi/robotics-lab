@@ -49,6 +49,11 @@ up() {
         "$duck/duck-to-rerun" "$f" -o "$view/rrd/$(basename "$f" .mcap).rrd" 2>/dev/null | sed 's|^|  |'
     done
     chmod -R a+rX "$view/mcap"
+    # The brain's world model for the newest duck runs (VIEWER_RUNS, default 4): duck-world.
+    for d in $(ls -1dt "$here"/duck/runs/*/ 2>/dev/null | head -"${VIEWER_RUNS:-4}"); do
+        [ -f "$d/ticks.jsonl" ] || continue
+        "$duck/duck-world" "$d" -o "$view/rrd/world-$(basename "$d").rrd" 2>/dev/null | sed 's|^|  |'
+    done
 
     docker run -d --rm --name "$container" -p "127.0.0.1:$LICHTBLICK_PORT:8080" \
         -v "$view/mcap:/src/runs:ro" "$lichtblick_image" >/dev/null
@@ -64,7 +69,7 @@ up() {
     fi
 
     echo
-    echo "Rerun (timeline: choose 'recorded'):"
+    echo "Rerun (timeline: 'recorded'; the world-* recordings: 'run'):"
     echo "  http://localhost:$RERUN_PORT/?url=rerun%2Bhttp%3A%2F%2Flocalhost%3A$RERUN_GRPC_PORT%2Fproxy"
     echo "Lichtblick (3D panel: display frame 'world'):"
     for f in "$view"/mcap/*.mcap; do
