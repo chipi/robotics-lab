@@ -35,7 +35,12 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   (`{verdict}`), then `run.mcap`, then the live file and the lock are removed. `miniview repair
   <key>` closes a dead
   writer's run with the verdict `stopped`.
-- **Messages** (JSON; Foxglove's published JSON schemas, copied in `src/miniview/schemas/`):
+- **Messages**: the Foxglove channels (`/belief/pose`, `/truth/pose`, `/depth`, `/tf`, `/map`) are
+  protobuf with a
+  `FileDescriptorSet` schema (the `foxglove-schemas-protobuf` package); ours (`miniview.*`) are JSON
+  with JSON schemas.
+  Foxglove's published JSON schemas stay copied in `src/miniview/schemas/` as the reference tests
+  check against:
 
   | Topic | Schema | Holds |
   | --- | --- | --- |

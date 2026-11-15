@@ -10,6 +10,10 @@ import json
 import math
 import struct
 
+from google.protobuf import json_format
+
+from miniview import schemas
+
 KINDS = ("run", "epoch", "tick", "plan", "world", "event", "segment", "end")
 
 CHANNELS = {                          # topic -> schema
@@ -31,6 +35,23 @@ CHANNELS = {                          # topic -> schema
 POINT = struct.Struct("<fffB")
 UINT8, FLOAT32 = 1, 7
 _IDENT = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+
+
+PROTO = {"/belief/pose": "PoseInFrame", "/truth/pose": "PoseInFrame", "/tf": "FrameTransform", "/map": "Grid",
+         "/depth": "PointCloud"}      # the Foxglove channels are protobuf (ADR-0007); our own kinds are JSON
+
+
+def _pb(topic: str, obj: dict, ns: int) -> bytes:
+    msg = schemas.message_class(PROTO[topic])()
+    json_format.ParseDict({k: v for k, v in obj.items() if k != "timestamp"}, msg)
+    msg.timestamp.FromNanoseconds(ns)
+    return msg.SerializeToString()
+
+
+def _unpb(topic: str, data: bytes) -> dict:
+    msg = schemas.message_class(PROTO[topic])()
+    msg.ParseFromString(data)
+    return json_format.MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
 
 
 def _js(obj) -> bytes:
@@ -82,7 +103,7 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
     pub = max(0, pub)
 
     def m(topic, obj):
-        return (topic, ns, pub, _js(obj))
+        return (topic, ns, pub, _pb(topic, obj, ns) if topic in PROTO else _js(obj))
 
     if kind == "run":
         return [("/miniview/run", base_ns, base_ns, _js(p))]
@@ -153,7 +174,7 @@ class Assembler:
 
     def feed(self, topic: str, ns: int, data: bytes) -> list:
         """The records this message completes (usually none or one). ValueError for what is not ours."""
-        o = json.loads(data)
+        o = _unpb(topic, data) if topic in PROTO else json.loads(data)
         if topic == "/miniview/run":
             self.base_ns, self.run = ns, o
             return [(0.0, "run", o)]

@@ -1,5 +1,6 @@
-"""The schemas of a format 2 run (ADR-0007): Foxglove's published JSON schemas (copied from
-github.com/foxglove/schemas, MIT, in schemas/) for the standard shapes, our own `miniview.*` for the rest."""
+"""The schemas of a format 2 run (ADR-0007): Foxglove's protobuf schemas (the foxglove-schemas-protobuf package) for the
+standard shapes, our own `miniview.*` JSON schemas for the rest. Foxglove's published JSON schemas stay copied in schemas/
+(MIT, github.com/foxglove/schemas) as the reference the tests check the protobuf messages against."""
 
 import json
 from pathlib import Path
@@ -39,8 +40,41 @@ def foxglove(name: str) -> dict:
     return json.loads((HERE / f"foxglove.{name}.json").read_text())
 
 
+def message_class(short: str):
+    """The protobuf class of a Foxglove schema ("PoseInFrame"), from the foxglove-schemas-protobuf package."""
+    import importlib
+
+    return getattr(importlib.import_module(f"foxglove_schemas_protobuf.{short}_pb2"), short)
+
+
+def descriptor_set(short: str) -> bytes:
+    """The FileDescriptorSet of a Foxglove message: its file and every file it imports, dependencies first."""
+    from google.protobuf import descriptor_pb2
+
+    out, seen = descriptor_pb2.FileDescriptorSet(), set()
+
+    def add(fd):
+        if fd.name in seen:
+            return
+        seen.add(fd.name)
+        for dep in fd.dependencies:
+            add(dep)
+        fd.CopyToProto(out.file.add())
+
+    add(message_class(short).DESCRIPTOR.file)
+    return out.SerializeToString()
+
+
+def schema_for(name: str) -> tuple:
+    """(encoding, data) of a schema as the file stores it: `foxglove.X` is a protobuf descriptor set, `miniview.x` a JSON schema."""
+    ns, _, short = name.partition(".")
+    if ns == "foxglove":
+        return "protobuf", descriptor_set(short)
+    return "jsonschema", json.dumps(dict(MINIVIEW[short], title=name), separators=(",", ":")).encode()
+
+
 def schema_bytes(name: str) -> bytes:
-    """The JSON schema for `foxglove.X` or `miniview.x`, as the file stores it."""
+    """The JSON schema for `foxglove.X` (the published one, kept for the tests) or `miniview.x`."""
     ns, _, short = name.partition(".")
     obj = foxglove(short) if ns == "foxglove" else dict(MINIVIEW[short], title=name)
     return json.dumps(obj, separators=(",", ":")).encode()

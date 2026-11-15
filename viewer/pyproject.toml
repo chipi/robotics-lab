@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Seeing what a robot believed, against what happened — for people and agents, any robot (PRD-001, RFC-0009)"
 requires-python = ">=3.10"
 dependencies = [
+    "foxglove-schemas-protobuf>=0.4.0",
     "mcap>=1.2",
+    "protobuf>=7.36.2",
 ]
 
 [project.scripts]

@@ -24,7 +24,11 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
   the source clock's origin). A new segment starts at the event that ended the last goal
   (`reached`, `refused`, `timeout`, `stalled`, `aborted` with a `goal`), never at a clock jump.
   Each tick keeps its source time as `t_src`.
-- **Standard shapes where they exist**, as JSON messages with Foxglove's JSON schemas:
+- **Standard shapes where they exist**, as protobuf messages (message encoding `protobuf`, the
+  schema a
+  `FileDescriptorSet` from the `foxglove-schemas-protobuf` package; changed from JSON on 2026-11-15
+  by the
+  operator after the check below):
   `/belief/pose` and `/truth/pose` as `foxglove.PoseInFrame`, the map → world transform on `/tf`
   as `foxglove.FrameTransform`, the map grid on `/map` as `foxglove.Grid`, depth returns on
   `/depth` as `foxglove.PointCloud` (with the return kind as a field). Our own kinds use
@@ -46,10 +50,15 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
 
 **As checked (2026-11-15, explore9 in format 2):**
 
-- **Rerun 0.43.2 does not show them.** `rerun mcap check` passes every channel and `rerun mcap
-  info` reads the real start time and the Foxglove schemas, but `rerun mcap convert -d foxglove`
-  decodes no entity: Rerun's Foxglove decoder reads protobuf, not JSON. Showing runs in Rerun needs
-  protobuf (the alternative below) or our own converter.
+- **Rerun 0.43.2, with the Foxglove channels as protobuf:** `rerun mcap check` passes every channel
+  and
+  `rerun rrd verify` passes the converted file. `rerun mcap convert -d protobuf --disable-raw-fallback`
+  decodes the entities `/belief/pose` (116 rows), `/truth/pose` (116), `/depth` (116 point clouds),
+  `/map`
+  (16 grids) and `/tf` (1 transform): the counts of the run. `-d foxglove` alone decodes nothing in
+  this
+  Rerun, with JSON or with protobuf; the `protobuf` decoder is the one that reads these channels.
+  (Before the change, with JSON messages, no decoder showed them.)
 - **Lichtblick loads them** with the right start time, the transforms, and `/belief/pose`,
   `/truth/pose`, `/depth` and `/map` classed as pose, point cloud and grid in its 3D panel. It
   rejected three of our own schemas at first (an array without an item type, an array of arrays);
@@ -61,6 +70,7 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
 
 - **Chunked while live.** A reader sees a chunk only when it closes, so live latency would depend
   on chunk size. Writing unchunked while live and compacting at the end gives both.
-- **Foxglove protobuf instead of JSON.** Smaller, and Rerun decodes it natively; it needs a
-  protobuf dependency on every writer, including the robot. JSON with Foxglove's schemas first.
+- **Foxglove JSON schemas instead of protobuf.** No dependency, but Rerun decodes none of it and the
+  messages are larger. Used first (checked 2026-11-15), then replaced by protobuf; every writer,
+  including the robot, needs the `protobuf` and `foxglove-schemas-protobuf` packages.
 - **Keep format 1 and fix only the reader.** A migration later, with hundreds of runs.

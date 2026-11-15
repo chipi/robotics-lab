@@ -14,7 +14,7 @@ from pathlib import Path
 from mcap.reader import make_reader
 
 from helpers import FIXTURE, T0_NS, Checks, import_fixture, make_run, run_record, tick
-from miniview import cli, keys, mcapio, schemas
+from miniview import cli, keys, mcapio, schemas, wire
 from miniview.importer import sha256_of
 from miniview.mcapio import Follower, Recorder, WriterBusy
 from miniview.store import build
@@ -85,6 +85,14 @@ with tempfile.TemporaryDirectory() as tmp:
           and topics["/depth"] == "foxglove.PointCloud" and topics["/miniview/event"] == "miniview.event"
           and all(topics[f"/miniview/{k}"] == f"miniview.{k}" for k in ("run", "segment", "plan", "command", "tilt",
                                                                       "memory", "tick_extra", "end")), topics)
+    with open(final, "rb") as fh:
+        enc = {ch.topic: (ch.message_encoding, summ.schemas[ch.schema_id].encoding) for ch in make_reader(fh).get_summary().channels.values()}
+    check("the Foxglove channels are protobuf with a FileDescriptorSet, ours are JSON with a JSON schema",
+          all(enc[t] == ("protobuf", "protobuf") for t in wire.PROTO) and all(v == ("json", "jsonschema") for t, v in enc.items() if t not in wire.PROTO), enc)
+    from google.protobuf import descriptor_pb2
+    fds = descriptor_pb2.FileDescriptorSet.FromString(next(s_.data for s_ in summ.schemas.values() if s_.name == "foxglove.PoseInFrame"))
+    check("the descriptor set carries the message and what it imports (Pose, Vector3, Quaternion, Timestamp)",
+          {"foxglove/PoseInFrame.proto", "foxglove/Pose.proto", "google/protobuf/timestamp.proto"} <= {f.name for f in fds.file}, [f.name for f in fds.file])
     check("compacted: zstd chunks, a summary with statistics, message indexes",
           chunks and all(c.compression == "zstd" for c in chunks) and stats.message_count == len(msgs)
           and all(c.message_index_offsets for c in chunks), (len(chunks), stats.message_count))
@@ -93,19 +101,19 @@ with tempfile.TemporaryDirectory() as tmp:
         sch = schemas.foxglove(name.split(".")[1])
         for t, _, m in msgs:
             if t == topic:
-                o = json.loads(m.data)
+                o = wire._unpb(topic, m.data)
                 return all(k in o for k in sch["required"])
         return False
 
     check("each Foxglove message carries every property its published schema requires",
           all(required_ok(t, n) for t, n in (("/belief/pose", "foxglove.PoseInFrame"), ("/tf", "foxglove.FrameTransform"),
                                              ("/map", "foxglove.Grid"), ("/depth", "foxglove.PointCloud"))))
-    cloud = json.loads(next(m for t, _, m in msgs if t == "/depth").data)
+    cloud = wire._unpb("/depth", next(m for t, _, m in msgs if t == "/depth").data)
     pts = base64.b64decode(cloud["data"])
     check("/depth is a point cloud with the return kind as a field",
           [f["name"] for f in cloud["fields"]] == ["x", "y", "z", "kind"] and len(pts) % cloud["point_stride"] == 0
           and chr(pts[12]) in "fovb", cloud["fields"])
-    tf = json.loads(next(m for t, _, m in msgs if t == "/tf").data)
+    tf = wire._unpb("/tf", next(m for t, _, m in msgs if t == "/tf").data)
     check("the map -> world transform is a FrameTransform", tf["parent_frame_id"] == "world" and tf["child_frame_id"] == "map")
 
     # ---- nothing dropped ---------------------------------------------------------------------------------------

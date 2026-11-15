@@ -102,8 +102,9 @@ class Recorder:
         self._w.start(profile=PROFILE, library=f"miniview {VERSION}")
         self._ch = {}
         for topic, name in wire.CHANNELS.items():
-            sid = self._w.register_schema(name, "jsonschema", schemas.schema_bytes(name))
-            self._ch[topic] = self._w.register_channel(topic, "json", sid)
+            enc, data = schemas.schema_for(name)
+            sid = self._w.register_schema(name, enc, data)
+            self._ch[topic] = self._w.register_channel(topic, "protobuf" if topic in wire.PROTO else "json", sid)
         self._emit(0.0, "run", run)
 
     def _emit(self, t: float, kind: str, p: dict) -> None:
