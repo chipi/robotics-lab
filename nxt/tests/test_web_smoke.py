@@ -263,7 +263,11 @@ else:
         check("files refused when not connected", code == 409, (code, r))
         code, r = call(base, "/api/connect", {})
         s = call(base, "/api/status")[1]
-        check("connect retry reports error, server stays up", code == 200 and not s["connected"], s)
+        # A failed connect answers 409 with the error (since 95aaf9f; the page shows it), and the
+        # server keeps answering. This check expected 200 and never ran on the workstation, which
+        # skips it while a brick may be reachable; CI ran it first (2026-11-15).
+        check("connect retry reports error, server stays up",
+              code == 409 and "no brick" in (r.get("error") or "") and not s["connected"], (code, r, s))
     finally:
         p.terminate(); p.wait(5)
 
