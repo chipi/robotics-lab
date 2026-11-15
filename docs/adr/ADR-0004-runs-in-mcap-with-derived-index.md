@@ -1,9 +1,25 @@
 # ADR-0004 — Runs: MCAP the record of truth; a SQLite index and prepared frames derived from it
 
-**Status:** Accepted (2026-11-15, by the operator)
+**Status:** Accepted (2026-11-15, by the operator); in part superseded by [RFC-0010](../rfc/RFC-0010-run-store-v2.md)
 **Date:** 2026-11-15
 **Context documents:** [RFC-0009](../rfc/RFC-0009-miniview.md) §2 and §7,
 [ADR-0001](ADR-0001-ros-aligned-foxglove.md), [ADR-0002](ADR-0002-viewers-rerun-and-lichtblick.md)
+
+> **What RFC-0010 supersedes (2026-11-15).** The run file is **format 2**
+> ([ADR-0007](ADR-0007-run-file-format-2.md)): Foxglove
+> JSON-schema messages for poses, transforms, the map and depth, one writer under a lock, flushed
+> per tick, absolute time,
+> compacted into zstd chunks at the end; format 1 is not read any more. The run is `robot/scene/run`
+> ([ADR-0006](ADR-0006-run-identity.md)). The index is no longer in the data folder and has no
+> per-tick table: it is the
+> service's own, read by the listing and by questions across runs
+> ([ADR-0009](ADR-0009-index-and-lifecycle.md)); "the ticks
+> table answers the Moment" is withdrawn (the moment comes from the loaded run). "A killed run loses
+> at most the record
+> being written" became "at most the tick being written" (the writer flushes after each tick's
+> records). "Prepared frames" were
+> never built: the pages load windows from the API ([ADR-0010](ADR-0010-api-2.md), [ADR-0011](ADR-0011-loading-into-the-ui.md)).
+> The rest of this record (MCAP as the record of truth, an index derived from it) stands.
 
 ## Context
 
@@ -39,8 +55,9 @@ pages that day).
    `frames.json` or `miniview prepare`. The MCAP has one channel per record kind with **JSON
    messages only** (no Foxglove protobuf schemas yet, so Foxglove and Lichtblick open the files but
    have no ready panels for them, and Rerun does not decode them), and it is written **without
-   chunks**, so a reader can follow the file while it grows; a killed run loses at most the record
-   being written. `miniview import` converts `ticks.jsonl`.
+   chunks**, so a reader can follow the file while it grows; a killed run loses at most the tick
+   being written (the writer flushes after each tick's records, ADR-0007). `miniview import`
+   converts `ticks.jsonl`.
 3. **Scenes** are files of their own, referred to by name from each run's metadata.
 4. **Where: one lab data folder outside the code checkout**, `/work/robotics-lab/data/` (operator,
    2026-11-15), for every robot and tool; not in git (runs grow to gigabytes). Later the logbook
@@ -50,8 +67,8 @@ pages that day).
    data/
      scenes/<scene>/scene.json
      runs/<robot>/<scene>/<run-id>/run.mcap      the record (truth)
-                                   frames.json    prepared for the page (derived)
-     index.sqlite                                 the database across runs (derived)
+                                   source/        the original log, copied by an import (ADR-0007)
+     (index.sqlite is the service's own, outside the data: MINIVIEW_INDEX, ADR-0009)
    ```
 
 5. **The database is SQLite** (the operator asked which): one file, in Python's standard library,

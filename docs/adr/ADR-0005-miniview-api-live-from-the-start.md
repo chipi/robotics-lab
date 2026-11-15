@@ -1,11 +1,23 @@
 # ADR-0005 — miniview: one API over the run store, live from the start
 
-**Status:** Accepted (2026-11-15, by the operator)
+**Status:** Accepted (2026-11-15, by the operator); in part superseded by [RFC-0010](../rfc/RFC-0010-run-store-v2.md)
 **Date:** 2026-11-15
 **Context documents:** [RFC-0009](../rfc/RFC-0009-miniview.md) §2,
 [ADR-0004](ADR-0004-runs-in-mcap-with-derived-index.md) (MCAP the record, SQLite the index),
 [ADR-0001](ADR-0001-ros-aligned-foxglove.md) (Foxglove's protocol and schemas),
 [UXS-001](../uxs/UXS-001-miniview.md) (the whole page)
+
+> **What RFC-0010 supersedes (2026-11-15).** The API is **version 2**
+> ([ADR-0010](ADR-0010-api-2.md)): runs are addressed by
+> key (`/api/v1/runs/<robot>/<scene>/<run>`), a frames window carries only the plans and maps its
+> ticks refer to, errors are JSON,
+> and the live stream takes `since` or `Last-Event-ID` (not `from`), sends each record as an event
+> named by its kind with its
+> seq as id, and answers `HEAD` with headers only. "The ticks table answers the Moment" is withdrawn
+> ([ADR-0009](ADR-0009-index-and-lifecycle.md)). "The page caches windows" became the page's run store
+> ([ADR-0011](ADR-0011-loading-into-the-ui.md)): a window around the playhead, then the rest, then
+> live by record. One API over
+> one database, and live from the start, stand.
 
 ## Context
 
@@ -42,32 +54,38 @@ superseded only in that the pages now read through a small API process instead o
    | Event | t, kind, text, values |
    | Record | stream, t, payload by the stream's kind |
 
-4. **The database** is ADR-0004's `index.sqlite`, with these tables: scenes, runs, streams, epochs,
-   events, and `ticks` — one row per tick per run (t, belief, truth, command, tilt). The ticks table
-   answers the inspector's Moment and the timeline's rows without opening MCAP. Bulk records (depth
+4. **The database** is the service's `index.sqlite` ([ADR-0009](ADR-0009-index-and-lifecycle.md)),
+   with these tables: scenes,
+   runs, streams, events and segments. It answers the run list, the scenes page and questions across
+   runs; the inspector's
+   Moment and the timeline's rows come from the run loaded in memory (there is no per-tick table).
+   Records (poses, depth
    points, grids, plans) stay in the run's MCAP and are read by time range.
 5. **Endpoints** (read-only, JSON):
 
    | Endpoint | For |
    | --- | --- |
    | `GET scenes`, `GET scenes/{id}` | the scene picker, the scene drawing |
-   | `GET runs?scene=` | the run picker |
-   | `GET runs/{id}` | the outliner: streams, epochs, status |
-   | `GET runs/{id}/state?t=` | the inspector's Moment |
-   | `GET runs/{id}/presence` | the timeline's data rows |
-   | `GET runs/{id}/events?kinds=` | the markers, the event list |
-   | `GET runs/{id}/frames?from=&to=` | drawing data for a time window; the page caches windows |
-   | `GET runs/{id}/live?from=` | the live stream (below) |
+   | `GET runs?robot=&scene=&status=` | the run picker |
+   | `GET runs/{robot}/{scene}/{run}` | the outliner: streams, epochs, status |
+   | `GET runs/{key}/state?t=` | the inspector's Moment |
+   | `GET runs/{key}/presence` | the timeline's data rows |
+   | `GET runs/{key}/events?kinds=` | the markers, the event list |
+   | `GET runs/{key}/frames?from=&to=` | drawing data for a time window, with only the plans and maps its ticks refer to |
+   | `GET runs/{key}/live?since=` | the live stream (below), or `Last-Event-ID` |
 
    The schemas are written in `viewer/CONTRACT.md`; the version is in the path.
 6. **Live from the start: a live run is a run that has not ended.**
    - The robot side (the navigator, the simulator, later a bridge for a real robot) **appends to the
-     run's MCAP with small chunks** (ADR-0004) and marks the run `live` in the index. It does not
-     need the service to be running.
-   - The service **follows the growing file**, reading each completed chunk, updates the index
-     (ticks, events, t1) and sends new data to the pages as **Server-Sent Events** from
-     `runs/{id}/live`: `tick` (a ticks row), `record` (a stream's record), `event`, and `status`
-     (ended, with the verdict). Server-Sent Events go one way (service to page), are native in the
+     run's live file** (`run.live.mcap`, unchunked, flushed after each tick's records, [ADR-0007](ADR-0007-run-file-format-2.md))
+     under a writer lock, and compacts it into `run.mcap` when done. It does not need the service to
+     be running.
+   - The service **follows the growing file**, reading each complete record, updates the index
+     (counts, events, t1) and sends new data to the pages as **Server-Sent Events** from
+     `runs/{key}/live`: one event per record, named by its kind (`tick`, `plan`, `world`, `event`,
+     `epoch`, `segment`,
+     `end`), its seq as the event id, and `status` (live, ended, stopped, with the verdict).
+     Server-Sent Events go one way (service to page), are native in the
      browser (`EventSource`, which reconnects by itself) and need nothing beyond the standard
      library.
    - The page: the timeline grows; a **Follow live** switch pins the playhead to the newest tick;

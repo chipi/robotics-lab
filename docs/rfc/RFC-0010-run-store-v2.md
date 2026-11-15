@@ -1,6 +1,7 @@
 # RFC-0010 — Runs, version 2: how they are stored, read, served and loaded
 
-**Status:** Accepted (2026-11-15, by the operator), with ADR-0006 to ADR-0012.
+**Status:** Accepted (2026-11-15, by the operator), with ADR-0006 to ADR-0012. Built (steps 1 to 7)
+on 2026-11-15.
 **Builds on:** [RFC-0009](RFC-0009-miniview.md) (miniview), [ADR-0004](../adr/ADR-0004-runs-in-mcap-with-derived-index.md)
 (MCAP the record), [ADR-0005](../adr/ADR-0005-miniview-api-live-from-the-start.md) (one API, live).
 **Serves:** [RFC-0008](RFC-0008-challenge-course.md) (runs by the hundred; the navigator writing MCAP).

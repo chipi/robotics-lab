@@ -40,9 +40,17 @@ twenty challenges, ten runs each. A first `miniview` exists (top and 3D frames, 
 ## Non-Goals
 
 - Replacing Rerun or Lichtblick for free 3D exploration, point clouds at scale, or live streams.
-- Live viewing of a running robot (later; the format allows it).
+- ~~Live viewing of a running robot (later; the format allows it).~~ *Now in scope* (ADR-0005,
+  RFC-0010): a run being
+  written is followed by record and shown live, with Follow live as a mode. Free 3D exploration of
+  live streams stays with
+  Rerun and Lichtblick.
 - Editing runs or annotating them (the logbook of RFC-0007 may).
-- A server or a database: files in, files out.
+- ~~A server or a database: files in, files out.~~ *A small service exists* (RFC-0009 "Running in
+  Docker", ADR-0005, ADR-0012):
+  one process serving the pages and the API, with a SQLite index of its own derived from the run
+  files. The runs stay files; the
+  service reads them and cannot change them (the data is mounted read only).
 
 ## Personas
 

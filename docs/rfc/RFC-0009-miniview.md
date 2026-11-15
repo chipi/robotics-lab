@@ -41,10 +41,13 @@ by the hundred; the viewer should be shaped before the logs that feed it.
 5. **The viewer page**: one HTML page and a small script, served by `make viewers` (a browser does
    not let a page opened from disk read other files, and choosing runs needs that). It reads
    `index.json` (the scenes and their runs, written by `miniview index`) and, for the chosen run,
-   its prepared frames — the builder's shapes per tick, written by `miniview prepare` next to the run
-   — and draws them with the same cameras as the agent renderer, so the page and the commands cannot
-   disagree. Prepared frames are what make the timebar immediate. The drawing library for 2D and 3D
-   is an open decision (§7). *Since ADR-0005:* the pages read the service's API (`/api/v1`), not
+   the run's frames — loaded from the service by window, then by record
+   ([ADR-0011](../adr/ADR-0011-loading-into-the-ui.md)) —
+   and draws them with the same cameras as the agent renderer, so the page and the commands cannot
+   disagree. There is no `prepare` step: nothing is written next to a run but the run itself. The
+   drawing library for 2D
+   and 3D is an open decision (§7). *Since ADR-0005:* the pages read the service's API (`/api/v1`),
+   not
    files; `viewer/CONTRACT.md` lists it.
 6. **Scenes** (operator, 2026-11-15): the thing that is loaded. A scene is a place with what is
    really there — geometry, hazards, origin and frame — and, for a challenge, its mission and
@@ -95,7 +98,8 @@ smallest); the port is **8070**, published on `127.0.0.1` only like the repo's o
 ## 4. Versions
 
 - **v0.1 — what RFC-0008's steps 1–2 need, and the operator's page** (operator, 2026-11-15): the
-  format v1 and the `duck` adapter; `events`, `frame`, `film`, `state`, `sensor`, `index`, `prepare`;
+  format v1 and the `duck` adapter; `events`, `frame`, `film`, `state`, `sensor`, `index`, `repair`
+  (there is no `prepare`, RFC-0010);
   the viewer page with the runs list and picker, the timebar every panel follows, 2D views (top by
   default, any side, all three) and 3D, the coordinate system in every view, the data view (the
   robot's own data in its own frame), layers, the moment panel; scenes and their runs, several
