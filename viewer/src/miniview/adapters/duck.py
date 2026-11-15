@@ -1,141 +1,114 @@
-"""The duck's navigator log (ticks.jsonl, start.json) as prepared run files (CONTRACT.md).
+"""The duck's navigator log (ticks.jsonl, start.json) as records (miniview.store).
 
-Reads only; never edits the run. Evaluation runs (a new navigator per goal, the simulator reset each
-time) are laid end to end in time, one epoch per goal; exploration runs have one epoch from start.json.
+Reads only; never edits the run. `DuckLog` turns one log line at a time into records, so a log
+still being written (a live run) goes through the same code as a finished one. Evaluation runs (a
+new navigator per goal, the simulator reset each time) are laid end to end in time, one epoch per
+goal; exploration runs have one epoch from start.json.
 """
 
 import json
 from pathlib import Path
 
 from miniview.se2 import compose, inverse
+from miniview.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
            "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
+ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
 
 
 def _r(v, n=3):
     return round(v, n)
 
 
-def prepare(run_dir: Path, scene_id: str) -> tuple:
-    """(run.json, frames.json) as dicts."""
-    start = json.loads((run_dir / "start.json").read_text()) if (run_dir / "start.json").exists() else None
-    epoch_t = compose(tuple(start["truth"]), inverse(tuple(start["map"]))) if start else None
-    epochs, fresh = [], epoch_t is None
-    if epoch_t is not None:
-        epochs.append({"from_t": 0.0, "map_to_world": [_r(v, 5) for v in epoch_t]})
+def kind_of(run_id: str) -> str:
+    return next((k for prefix, k in KIND_OF_RUN if run_id.startswith(prefix)), "run")
 
-    f = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [], "world_at": [],
-         "plans": [], "worlds": []}
-    events, offset, last_t = [], 0.0, 0.0
-    plan_i, world_i = -1, -1
-    span = None      # every record's time: events can fall outside the poses (explore12)
-    for line in open(run_dir / "ticks.jsonl"):
+
+class DuckLog:
+    def __init__(self, run_dir: Path, scene_id: str):
+        self.run_dir = Path(run_dir)
+        start_p = self.run_dir / "start.json"
+        self.start = json.loads(start_p.read_text()) if start_p.exists() else None
+        self.offset, self.last_t = 0.0, 0.0
+        self.fresh = self.start is None
+        self.events = []
+        self.ticks = 0
+        self.header = [(0.0, "run", {"id": self.run_dir.name, "scene": scene_id, "kind": kind_of(self.run_dir.name),
+                                     "robot": ROBOT})]
+        if self.start:
+            m2w = compose(tuple(self.start["truth"]), inverse(tuple(self.start["map"])))
+            self.header.append((0.0, "epoch", {"map_to_world": [_r(v, 5) for v in m2w]}))
+
+    def feed(self, line: str) -> list:
+        """One log line -> its records (none for lines the viewer does not use)."""
         try:
             r = json.loads(line)
         except ValueError:
-            continue
-        if "t" not in r:
-            continue
-        if r["t"] < last_t - 1.0:                  # a new navigator (next goal): its clock restarts
-            offset += last_t + 1.0
-        last_t = r["t"]
-        t = _r(offset + r["t"])
-        span = (min(span[0], t), max(span[1], t)) if span else (t, t)
+            return []
+        if not isinstance(r, dict) or "t" not in r:
+            return []
+        if r["t"] < self.last_t - 1.0:                  # a new navigator (next goal): its clock restarts
+            self.offset += self.last_t + 1.0
+        self.last_t = r["t"]
+        t = _r(self.offset + r["t"])
         ev = r.get("event")
-        if ev == "plan" and r.get("path"):
-            f["plans"].append({"t": t, "path": [[_r(p[0]), _r(p[1])] for p in r["path"]]})
-            plan_i = len(f["plans"]) - 1
-            continue
+        if ev == "plan":
+            return [(t, "plan", {"path": [[_r(p[0]), _r(p[1])] for p in r["path"]]})] if r.get("path") else []
         if ev == "world":
             g = r["grid"]
-            f["worlds"].append({"t": t, "grid": {"res": g["res_m"], "origin": g["origin"], "w": g["width"],
-                                                 "h": g["height"], "cells": g["cells"]},
-                                "obstacles": r.get("blocked", []), "drops": r.get("drops", [])})
-            world_i = len(f["worlds"]) - 1
-            continue
+            return [(t, "world", {"grid": {"res": g["res_m"], "origin": g["origin"], "w": g["width"],
+                                           "h": g["height"], "cells": g["cells"]},
+                                  "obstacles": r.get("blocked", []), "drops": r.get("drops", [])})]
         if ev:
+            out = []
             if ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached"):
                 detail = " ".join(f"{k} {v}" for k, v in r.items()
                                   if k in ("why", "status", "drop_m", "room_m", "nearest_mm", "n"))
-                events.append({"t": t, "kind": ev, "text": f"{ev} {detail}".strip()})
-            if ev in ENDS and r.get("goal") is not None and start is None:
-                fresh = True                       # the next goal starts on a reset simulator
-            continue
+                e = {"kind": ev, "text": f"{ev} {detail}".strip()}
+                self.events.append(dict(e, t=t))
+                out.append((t, "event", e))
+            if ev in ENDS and r.get("goal") is not None and self.start is None:
+                self.fresh = True                       # the next goal starts on a reset simulator
+            return out
         if "pose" not in r:
-            continue
-        if fresh and "truth" in r:
+            return []
+        out = []
+        if self.fresh and "truth" in r:
             m2w = compose(tuple(r["truth"]), inverse(tuple(r["pose"])))
-            epochs.append({"from_t": t, "map_to_world": [_r(v, 5) for v in m2w]})
-            fresh = False
-        f["t"].append(t)
-        f["belief"].append([_r(v, 4) for v in r["pose"][:3]])
-        f["truth"].append([_r(v, 4) for v in r["truth"][:3]] if "truth" in r else None)
-        f["tilt"].append(r.get("tilt"))
-        f["cmd"].append([r.get("vx", 0.0), r.get("vyaw", 0.0)])
-        f["depth"].append(r.get("depth"))
-        f["plan_at"].append(plan_i)
-        f["world_at"].append(world_i)
+            out.append((t, "epoch", {"map_to_world": [_r(v, 5) for v in m2w]}))
+            self.fresh = False
+        self.ticks += 1
+        out.append((t, "tick", {"belief": [_r(v, 4) for v in r["pose"][:3]],
+                                "truth": [_r(v, 4) for v in r["truth"][:3]] if "truth" in r else None,
+                                "tilt": r.get("tilt"), "cmd": [r.get("vx", 0.0), r.get("vyaw", 0.0)],
+                                "depth": r.get("depth")}))
+        return out
 
-    verdict = events[-1]["kind"] if events and events[-1]["kind"] in ("trapped", "aborted", "no_frontier_left") else (
-        "ended" if f["t"] else "empty")
-    if (run_dir / "results.json").exists():
-        verdict = "evaluated"
-    kind = next((k for prefix, k in KIND_OF_RUN if run_dir.name.startswith(prefix)), "run")
-    run = {"id": run_dir.name, "scene": scene_id, "kind": kind,
-           "robot": {"name": "duck", "radius": 0.083, "height": 0.272},
-           "t0": span[0] if span else 0.0, "t1": span[1] if span else 0.0, "ticks": len(f["t"]),
-           "verdict": verdict, "epochs": epochs, "events": events, "streams": streams(f, events)}
-    return run, f
+    def ended(self) -> bool:
+        """The log says the run is over: an exploration's last word, or an evaluation's results."""
+        return (self.run_dir / "results.json").exists() or bool(self.events and self.events[-1]["kind"] in
+                                                                  ("trapped", "aborted", "no_frontier_left"))
+
+    def end(self) -> tuple:
+        v = verdict_of(self.events, (self.run_dir / "results.json").exists()) if self.ticks else "empty"
+        return (self.last_t + self.offset, "end", {"verdict": v})
 
 
-def streams(f: dict, events: list) -> list:
-    """What the run holds, stream by stream, for the streams tree and its badges (CONTRACT.md)."""
-    span = (f["t"][-1] - f["t"][0]) if len(f["t"]) > 1 else 0.0
-
-    def rate(n):
-        return round(n / span, 1) if span else None
-
-    def s(sid, group, name, frame, count, modes=("at",), default="at", parent=None, why="not in this run"):
-        e = {"id": sid, "group": group, "name": name, "frame": frame, "count": count, "rate_hz": rate(count),
-             "missing": count == 0, "time_modes": list(modes), "default_mode": default}
-        if parent:
-            e["parent"] = parent
-        if count == 0:
-            e["why"] = why
-        return e
-
-    n = len(f["t"])
-    truth = sum(1 for x in f["truth"] if x)
-    depth_frames = sum(1 for d in f["depth"] if d)
-    kinds = {"f": 0, "o": 0, "v": 0, "b": 0}
-    for d in f["depth"]:
-        for p in d or ():
-            kinds[p[3]] = kinds.get(p[3], 0) + 1
-    tilt = sum(1 for x in f["tilt"] if x)
-    last = f["worlds"][-1] if f["worlds"] else {"obstacles": [], "drops": []}
-    track = ("at", "window", "upto")
-    out = [
-        s("scene.boxes", "Scene", "walls and furniture", "world", 1, why="no scene"),
-        s("scene.hazards", "Scene", "hazards", "world", 1, why="no scene"),
-        s("belief.pose", "Robot (belief)", "pose", "map", n),
-        s("belief.track", "Robot (belief)", "track", "map", n, track, "upto"),
-        s("truth.pose", "Truth", "pose", "world", truth, why="no simulator truth"),
-        s("truth.track", "Truth", "track", "world", truth, track, "upto", why="no simulator truth"),
-        s("sensors.depth", "Sensors", "depth", "map", depth_frames, track, "at"),
-    ]
-    for k, name in (("f", "floor"), ("o", "obstacle"), ("v", "overhead"), ("b", "below the floor")):
-        out.append(s(f"sensors.depth.{ {'f': 'floor', 'o': 'obstacle', 'v': 'overhead', 'b': 'below'}[k] }",
-                     "Sensors", name, "map", kinds.get(k, 0), track, "at", parent="sensors.depth",
-                     why="none of this kind"))
-    out += [
-        s("sensors.tilt", "Sensors", "tilt", "robot", tilt),
-        s("world.grid", "World model", "map grid", "map", len(f["worlds"])),
-        s("world.obstacles", "World model", "obstacle memory", "map", len(last["obstacles"])),
-        s("world.drops", "World model", "drops", "map", len(last["drops"]), why="no drop seen"),
-        s("plan.path", "Plan", "path", "map", len(f["plans"])),
-        s("events", "Events", "events", "time", len(events), why="no events"),
-    ]
+def records(run_dir: Path, scene_id: str) -> list:
+    """Every record of a finished log, the end included."""
+    log = DuckLog(run_dir, scene_id)
+    out = list(log.header)
+    with open(Path(run_dir) / "ticks.jsonl") as fh:
+        for line in fh:
+            out += log.feed(line)
+    out.append(log.end())
     return out
+
+
+def prepare(run_dir: Path, scene_id: str) -> tuple:
+    """(run.json, frames.json) as dicts."""
+    d = build(records(run_dir, scene_id))
+    return d.run, d.frames

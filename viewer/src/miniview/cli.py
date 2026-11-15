@@ -1,9 +1,12 @@
-"""miniview — prepare runs and scenes for the pages, index them, serve them (RFC-0009 v0.1).
+"""miniview — runs into the lab's data folder, the service for the pages, answers for the agent
+(RFC-0009, ADR-0004, ADR-0005). The data folder is MINIVIEW_DATA or --data (default
+/work/robotics-lab/data).
 
-    uv run miniview prepare ../duck/runs/explore12 ../duck/runs/phase1-run18
     uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
-    uv run miniview index
-    uv run miniview serve                 # http://127.0.0.1:8095/web/three/  and  /web/deck/
+    uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
+    uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
+    uv run miniview index                  # rebuild index.sqlite from the run files
+    uv run miniview serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
 
 The agent's face (UXS-001 "The commands"): answers from the data, pictures from the real page.
 
@@ -16,63 +19,48 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
 """
 
 import argparse
-import functools
-import http.server
 import json
+import tempfile
 from pathlib import Path
 
 from miniview import query
-from miniview.adapters import duck
+from miniview.catalog import DEFAULT_DATA, Catalog
+from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
 
-ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "site" / "data"
 
-
-def _write(path: Path, obj) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, separators=(",", ":")))
-
-
-def cmd_prepare(args) -> None:
-    for run_dir in args.runs:
-        run, frames = duck.prepare(Path(run_dir), args.scene)
-        out = DATA / "runs" / run["id"]
-        _write(out / "run.json", run)
-        _write(out / "frames.json", frames)
-        print(f"{run['id']}: {run['ticks']} ticks, {len(frames['plans'])} plans, {len(frames['worlds'])} worlds, "
-              f"{len(run['events'])} events, {len(run['epochs'])} epochs -> {out}")
+def _cat(args) -> Catalog:
+    return Catalog(Path(args.data))
 
 
 def cmd_scene(args) -> None:
     scene = from_mujoco_layout(Path(args.layout), args.id, args.name)
-    _write(DATA / "scenes" / f"{args.id}.json", scene)
-    print(f"scene {args.id}: {len(scene['boxes'])} boxes, {len(scene['hazards'])} hazards")
+    p = _cat(args).put_scene(scene)
+    print(f"scene {args.id}: {len(scene['boxes'])} boxes, {len(scene['hazards'])} hazards -> {p}")
+
+
+def cmd_import(args) -> None:
+    for log_dir in args.logs:
+        import_duck(Path(log_dir), args.scene, Path(args.data), follow=args.follow, idle_s=args.idle)
+    if not args.follow:
+        _cat(args).scan()
 
 
 def cmd_index(args) -> None:
-    scenes = {}
-    for p in sorted((DATA / "scenes").glob("*.json")):
-        s = json.loads(p.read_text())
-        scenes[s["id"]] = {"id": s["id"], "name": s.get("name", s["id"]), "kind": s.get("kind", ""), "runs": []}
-    for p in sorted((DATA / "runs").glob("*/run.json"), key=lambda q: q.stat().st_mtime, reverse=True):
-        r = json.loads(p.read_text())
-        entry = {"id": r["id"], "robot": r["robot"]["name"], "kind": r.get("kind", ""),
-                 "length_s": round(r["t1"] - r["t0"], 1), "verdict": r.get("verdict", ""), "events": len(r["events"])}
-        scenes.setdefault(r["scene"], {"id": r["scene"], "name": r["scene"], "kind": "", "runs": []})["runs"].append(entry)
-    _write(DATA / "index.json", {"format": 1, "scenes": list(scenes.values())})
-    print(f"index: {len(scenes)} scenes, {sum(len(s['runs']) for s in scenes.values())} runs")
-
-
-def _index() -> dict:
-    p = DATA / "index.json"
-    if not p.exists():
-        raise SystemExit("no index yet: miniview index")
-    return json.loads(p.read_text())
+    cat = _cat(args)
+    for table in ("runs", "streams", "epochs", "events", "ticks"):
+        cat.db.execute(f"delete from {table}")
+    cat.db.commit()
+    cat.scan()
+    idx = cat.scenes_with_runs()
+    print(f"index: {len(idx['scenes'])} scenes, {sum(len(s['runs']) for s in idx['scenes'])} runs -> "
+          f"{cat.data / 'index.sqlite'}")
 
 
 def cmd_scenes(args) -> None:
-    idx = _index()
+    cat = _cat(args)
+    cat.scan()
+    idx = cat.scenes_with_runs()
     if args.json:
         print(json.dumps(idx["scenes"], indent=1))
         return
@@ -81,20 +69,22 @@ def cmd_scenes(args) -> None:
 
 
 def cmd_runs(args) -> None:
-    sc = next((s for s in _index()["scenes"] if s["id"] == args.scene), None)
+    cat = _cat(args)
+    cat.scan()
+    sc = next((s for s in cat.scenes_with_runs()["scenes"] if s["id"] == args.scene), None)
     if sc is None:
         raise SystemExit(f"no scene {args.scene!r}")
     if args.json:
         print(json.dumps(sc["runs"], indent=1))
         return
     for r in sc["runs"]:
-        print(f"{r['id']:<16} {r['kind']:<18} {r['length_s']:>7.1f} s  {r['verdict']:<16} {r['events']} events")
+        print(f"{r['id']:<16} {r['kind']:<18} {r['length_s']:>7.1f} s  {r['status']:<8} {r['verdict']:<16} "
+              f"{r['events']} events")
 
 
 def cmd_events(args) -> None:
-    run, _ = query.load_run(DATA, args.run)
-    kinds = set(args.kinds.split(",")) if args.kinds else None
-    evs = query.events(run, kinds)
+    run, _ = query.load_run(_cat(args), args.run)
+    evs = query.events(run, set(args.kinds.split(",")) if args.kinds else None)
     if args.json:
         print(json.dumps(evs, indent=1))
         return
@@ -103,7 +93,7 @@ def cmd_events(args) -> None:
 
 
 def cmd_state(args) -> None:
-    run, frames = query.load_run(DATA, args.run)
+    run, frames = query.load_run(_cat(args), args.run)
     st = query.state(run, frames, args.at)
     if args.json:
         print(json.dumps(st, indent=1))
@@ -124,23 +114,24 @@ def _shot(args, t, out) -> dict:
 def cmd_frame(args) -> None:
     from miniview.shots import pictures
 
-    run, _ = query.load_run(DATA, args.run)
+    cat = _cat(args)
+    run, _ = query.load_run(cat, args.run)
     out = Path(args.out or f"{args.run}-{args.at:.1f}-{args.view}.png")
-    pictures(ROOT, args.lib, run["scene"], args.run, [_shot(args, args.at, out)])
+    pictures(cat, args.lib, run["scene"], args.run, [_shot(args, args.at, out)])
     print(out)
 
 
 def cmd_film(args) -> None:
     from miniview.shots import pictures, sheet
-    import tempfile
 
-    run, _ = query.load_run(DATA, args.run)
+    cat = _cat(args)
+    run, _ = query.load_run(cat, args.run)
     times = [args.at - args.span + args.span * i / max(args.n - 1, 1) for i in range(args.n)]
     out = Path(args.out or f"{args.run}-{args.at:.1f}-film.png")
     with tempfile.TemporaryDirectory() as tmp:
         # The view alone in each tile (#stage: the page's view area, CONTRACT.md), so it reads at sheet size.
         shots = [dict(_shot(args, t, Path(tmp) / f"{i}.png"), crop="#stage") for i, t in enumerate(times)]
-        imgs = pictures(ROOT, args.lib, run["scene"], args.run, shots)
+        imgs = pictures(cat, args.lib, run["scene"], args.run, shots)
         sheet(imgs, [f"t = {t:.2f} s" for t in times], out, cols=min(args.n, 3))
     print(out)
 
@@ -151,30 +142,33 @@ def cmd_sensor(args) -> None:
 
 
 def cmd_serve(args) -> None:
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(ROOT))
-    with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as httpd:
-        print(f"serving {ROOT} at http://127.0.0.1:{args.port}/web/three/ and /web/deck/")
-        httpd.serve_forever()
+    from miniview.server import make_server
+
+    httpd = make_server(_cat(args), args.host, args.port)
+    print(f"miniview at http://{args.host}:{args.port}/ (API /api/v1), data {args.data}", flush=True)
+    httpd.serve_forever()
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--data", default=str(DEFAULT_DATA), help="the lab's data folder")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("prepare", help="prepare runs for the pages")
-    p.add_argument("runs", nargs="+")
-    p.add_argument("--scene", default="apartment")
-    p.set_defaults(fn=cmd_prepare)
     p = sub.add_parser("scene", help="write a scene from a simulator layout")
     p.add_argument("id")
     p.add_argument("--layout", required=True)
     p.add_argument("--name", default="The simulated apartment")
     p.set_defaults(fn=cmd_scene)
-    p = sub.add_parser("index", help="list scenes and their runs for the pages")
+    p = sub.add_parser("import", help="a robot's log into the data folder as MCAP")
+    p.add_argument("logs", nargs="+")
+    p.add_argument("--scene", default="apartment")
+    p.add_argument("--follow", action="store_true", help="follow a log still being written (a live run)")
+    p.add_argument("--idle", type=float, default=60.0, help="with --follow: end after this many quiet seconds")
+    p.set_defaults(fn=cmd_import)
+    p = sub.add_parser("index", help="rebuild index.sqlite from the run files")
     p.set_defaults(fn=cmd_index)
-    for name, fn, hlp in (("scenes", cmd_scenes, "the scenes and their runs"),):
-        p = sub.add_parser(name, help=hlp)
-        p.add_argument("--json", action="store_true")
-        p.set_defaults(fn=fn)
+    p = sub.add_parser("scenes", help="the scenes and their runs")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_scenes)
     p = sub.add_parser("runs", help="a scene's runs")
     p.add_argument("scene")
     p.add_argument("--json", action="store_true")
@@ -207,8 +201,9 @@ def main() -> None:
     p.add_argument("run")
     p.add_argument("--at", type=float, required=True)
     p.set_defaults(fn=cmd_sensor)
-    p = sub.add_parser("serve", help="serve the pages and the data")
-    p.add_argument("--port", type=int, default=8095)
+    p = sub.add_parser("serve", help="the pages and the API (ADR-0005)")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8070)
     p.set_defaults(fn=cmd_serve)
     args = ap.parse_args()
     args.fn(args)

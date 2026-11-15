@@ -105,11 +105,25 @@ nxt-image: ## Build the NXT web UI image (NXT_IMAGE)
 	docker build -t $(NXT_IMAGE) $(NXT_DIR)
 
 .PHONY: viewers viewers-down
-viewers: ## Both viewers on loopback with every recorded run: Rerun (:9090) and Lichtblick (:8090) (ADR-0002)
+viewers: viewer-up ## The viewers on loopback: miniview (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)
 	@scripts/viewers.sh up
 
-viewers-down: ## Stop the viewers started by make viewers
+viewers-down: viewer-down ## Stop the viewers started by make viewers
 	@scripts/viewers.sh down
+
+MINIVIEW_PORT ?= 8070
+MINIVIEW_DATA ?= /work/robotics-lab/data
+MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g)
+
+.PHONY: viewer-up viewer-down
+viewer-up: ## miniview's service in Docker on 127.0.0.1:$(MINIVIEW_PORT), data from $(MINIVIEW_DATA) (RFC-0009)
+	@mkdir -p $(MINIVIEW_DATA)
+	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml up -d --build --wait \
+	  && echo "miniview at http://127.0.0.1:$(MINIVIEW_PORT)/" \
+	  || { echo "viewer-up FAIL"; $(MINIVIEW_ENV) docker compose -f viewer/compose.yml logs --tail 40; exit 1; }
+
+viewer-down: ## Stop miniview's service
+	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml down
 
 .PHONY: nxt-image-run
 nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only

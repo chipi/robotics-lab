@@ -33,6 +33,14 @@ pages that day).
      `index.json` for the page is exported from it.
    - Prepared frames per run, next to its MCAP: what the page loads whole and scrubs in memory.
    Both are rebuilt by `miniview index` and `miniview prepare`, with a staleness check.
+
+   **As built (2026-11-15, with [ADR-0005](ADR-0005-miniview-api-live-from-the-start.md)):** the
+   frames are built in memory by the service from the MCAP and served by time window; there is no
+   `frames.json` or `miniview prepare`. The MCAP has one channel per record kind with **JSON
+   messages only** (no Foxglove protobuf schemas yet, so Foxglove and Lichtblick open the files but
+   have no ready panels for them, and Rerun does not decode them), and it is written **without
+   chunks**, so a reader can follow the file while it grows; a killed run loses at most the record
+   being written. `miniview import` converts `ticks.jsonl`.
 3. **Scenes** are files of their own, referred to by name from each run's metadata.
 4. **Where: one lab data folder outside the code checkout**, `/work/robotics-lab/data/` (operator,
    2026-11-15), for every robot and tool; not in git (runs grow to gigabytes). Later the logbook

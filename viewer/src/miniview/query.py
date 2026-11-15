@@ -1,18 +1,16 @@
 """Answers from the prepared data, without a browser: scenes, runs, events, the state at t."""
 
 import bisect
-import json
 import math
-from pathlib import Path
 
 from miniview.se2 import compose
 
 
-def load_run(data: Path, run_id: str) -> tuple:
-    base = data / "runs" / run_id
-    if not base.exists():
-        raise SystemExit(f"no prepared run {run_id!r} under {data / 'runs'} (miniview prepare it first)")
-    return json.loads((base / "run.json").read_text()), json.loads((base / "frames.json").read_text())
+def load_run(catalog, run_id: str) -> tuple:
+    ld = catalog.get(run_id)
+    if ld is None:
+        raise SystemExit(f"no run {run_id!r} under {catalog.data / 'runs'} (miniview import it first)")
+    return ld.data.run, ld.data.frames
 
 
 def epoch_at(run: dict, t: float):
@@ -36,8 +34,8 @@ def state(run: dict, frames: dict, t: float) -> dict:
     truth = frames["truth"][i]
     distance = math.dist(belief_world[:2], truth[:2]) if belief_world and truth else None
     last = None
-    for e in run["events"]:
-        if e["t"] <= frames["t"][i] + 1e-9:
+    for e in run["events"]:            # by the time asked: events can follow the last pose (explore12)
+        if e["t"] <= max(t, frames["t"][i]) + 1e-9:
             last = e
     depth_i = next((j for j in range(i, -1, -1) if frames["depth"][j]), None)
     kinds = {}

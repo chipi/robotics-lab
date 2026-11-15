@@ -3,7 +3,9 @@ name = "miniview"
 version = "0.1.0"
 description = "Seeing what a robot believed, against what happened — for people and agents, any robot (PRD-001, RFC-0009)"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "mcap>=1.2",
+]
 
 [project.scripts]
 miniview = "miniview.cli:main"

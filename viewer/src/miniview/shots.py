@@ -1,13 +1,10 @@
 """Pictures from the real page, headless: the agent's face uses the operator's page (ADR-0003).
 
-Starts its own static server on a free port (its own thread, stopped at the end), opens the page in
+Starts the service (API and pages) on a free port (its own thread, stopped at the end), opens the page in
 Chromium with software GL through Playwright, drives it only through `window.miniview` (CONTRACT.md)
 and screenshots the page. Playwright is the viewer's dev dependency; Chromium is the system's.
 """
 
-import functools
-import http.server
-import socket
 import threading
 from pathlib import Path
 
@@ -16,18 +13,13 @@ ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"
 
 
 class _Server:
-    def __init__(self, root: Path):
-        s = socket.socket()
-        s.bind(("127.0.0.1", 0))
-        self.port = s.getsockname()[1]
-        s.close()
+    """The real service (API and pages) on a free port, over the given catalog."""
 
-        class Quiet(http.server.SimpleHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
+    def __init__(self, catalog):
+        from miniview.server import make_server
 
-        handler = functools.partial(Quiet, directory=str(root))
-        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", self.port), handler)
+        self.httpd = make_server(catalog, "127.0.0.1", 0, follow=False)
+        self.port = self.httpd.server_address[1]
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     def __enter__(self):
@@ -46,14 +38,14 @@ def _call(page, js: str, timeout_ms: int = 30000) -> None:
     page.wait_for_function("window.__ready === true", timeout=timeout_ms)
 
 
-def pictures(root: Path, lib: str, scene: str, run: str, shots: list, size=(1400, 900)) -> list:
+def pictures(catalog, lib: str, scene: str, run: str, shots: list, size=(1400, 900)) -> list:
     """shots: dicts with t, out (Path) and optional view, frame, hidden (stream ids), modes
     ({stream: [mode, seconds]}), relations ({name: bool}), crop (a CSS selector: only that element,
     e.g. "#stage" for the view alone). Returns the paths written."""
     from playwright.sync_api import sync_playwright
 
     written = []
-    with _Server(root) as srv, sync_playwright() as p:
+    with _Server(catalog) as srv, sync_playwright() as p:
         browser = p.chromium.launch(executable_path=CHROMIUM, args=ARGS)
         page = browser.new_page(viewport={"width": size[0], "height": size[1]}, device_scale_factor=1)
         page.goto(f"http://127.0.0.1:{srv.port}/web/{lib}/index.html")

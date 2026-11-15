@@ -1,4 +1,4 @@
-"""Screenshots and numbers for the three.js miniview page (v0.2). Needs `miniview serve --port 8095`.
+"""Screenshots and numbers for the three.js miniview page (v0.2). Needs `miniview serve --port 8095` (the service with the lab data folder).
 Drives the page only through window.miniview."""
 import json
 import pathlib

@@ -1,6 +1,6 @@
 """Drive the deck.gl miniview page (v0.2) headless, ONLY through window.miniview, and save shots/v2-*.png.
 Run with viewer/.venv/bin/python, the server on 8096 (cd viewer && .venv/bin/miniview serve --port 8096)."""
-import json, pathlib
+import json, pathlib, urllib.request
 from playwright.sync_api import sync_playwright
 
 BASE = "http://127.0.0.1:8096/web/deck/"
@@ -11,7 +11,7 @@ ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"
 T = 79.0
 
 # a depth point of kind "o" (obstacle) in the newest depth frame at or before T, by its place in the file
-f = json.load(open(HERE.parent.parent / "site/data/runs/explore12/frames.json"))
+f = json.load(urllib.request.urlopen(BASE.replace("/web/deck/", "/api/v1/runs/explore12/frames")))
 tick = max(i for i, t in enumerate(f["t"]) if t <= T and f["depth"][i])
 before = sum(len(d) for d in f["depth"][:tick] if d)
 pt = next(k for k, p in enumerate(f["depth"][tick]) if p[3] == "o")

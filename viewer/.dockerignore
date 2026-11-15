@@ -1,0 +1,5 @@
+.venv
+site
+tests
+**/__pycache__
+web/*/shots

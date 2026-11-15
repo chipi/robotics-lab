@@ -1,0 +1,13 @@
+# miniview's service: `make viewer-up` / `make viewer-down` (RFC-0009 "Running in Docker").
+# Published on loopback only; the data folder stays on the host and is written as the host user.
+name: miniview
+services:
+  miniview:
+    build: .
+    image: miniview:local
+    user: "${MINIVIEW_UID:-1000}:${MINIVIEW_GID:-1000}"
+    ports:
+      - "127.0.0.1:${MINIVIEW_PORT:-8070}:8070"
+    volumes:
+      - "${MINIVIEW_DATA:-/work/robotics-lab/data}:/data"
+    restart: unless-stopped

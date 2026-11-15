@@ -3,7 +3,7 @@ import { Views } from './views.js';
 import { buildScene, buildRun } from './build.js';
 
 const $ = (id) => document.getElementById(id);
-const DATA = '/site/data/';
+const API = '/api/v1/';
 const json = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
 const KIND = { cliff_stop: '#e03030', reflex_stop: '#e07020', refused: '#c08000', trapped: '#802020', reached: '#28a050', leg: '#8a8a96', tight_pivot: '#8a40c0', no_survey_turn: '#20a0a0' };
 const kindColor = (k) => KIND[k] || `hsl(${[...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 360} 50% 45%)`;
@@ -262,7 +262,7 @@ const scene_bounds = () => (sceneCache[st.sceneId]?.bounds ?? [-4, 4, -3, 3]);
 
 async function loadScene(id) {
   st.sceneId = id; $('scenesel').value = id;
-  sceneCache[id] ||= await json(`${DATA}scenes/${id}.json`);
+  sceneCache[id] ||= await json(`${API}scenes/${id}`);
   if (sceneG) scene.remove(sceneG);
   sceneG = buildScene(sceneCache[id]);
   for (const [sid, o] of Object.entries(sceneG.parts)) setLayers(o, sid);
@@ -271,23 +271,55 @@ async function loadScene(id) {
   $('runsel').innerHTML = runs.map((r) => `<option value="${r.id}">${r.id} (${r.kind}, ${r.length_s} s)</option>`).join('');
 }
 
-async function loadRun(id) {
-  st.runId = id; $('runsel').value = id;
-  [run, fr] = await Promise.all([json(`${DATA}runs/${id}/run.json`), json(`${DATA}runs/${id}/frames.json`)]);
+const fetchRun = (id) => Promise.all([json(`${API}runs/${id}`), json(`${API}runs/${id}/frames`)]);
+
+function buildRunObjects() {
   for (const Rn of [RW, RM]) if (Rn) scene.remove(Rn.group);
   RW = buildRun(run, fr, true); RM = buildRun(run, fr, false);
   for (const Rn of [RW, RM]) for (const [sid, o] of Object.entries(Rn.obj)) setLayers(o, sid);
   scene.add(RW.group, RM.group);
   streams = run.streams || [];
+  $('runinfo').textContent = `${run.robot.name} · ${run.status === 'live' ? 'live' : run.verdict} · ${(run.t1 - run.t0).toFixed(1)} s · ${fr.t.length} ticks`;
+}
+
+async function loadRun(id) {
+  st.runId = id; $('runsel').value = id;
+  [run, fr] = await fetchRun(id);
+  buildRunObjects();
   st.vis = {}; st.groupVis = {}; st.vv = {}; st.sel = null;
   st.modes = Object.fromEntries(streams.map((s) => [s.id, { mode: s.default_mode || 'at', n: 0.5 }]));
   document.body.classList.remove('scenes');
   setViewLayout(st.view);
   panel(); timebar();
-  $('runinfo').textContent = `${run.robot.name} · ${run.verdict} · ${(run.t1 - run.t0).toFixed(1)} s · ${fr.t.length} ticks`;
   hashWrite();
   setTime(run.t0);
+  live();
 }
+
+// ---- live (ADR-0005): the run grows while it runs; Follow live keeps the newest tick in view -------
+let source = null, dirty = false, refreshing = false;
+function live() {
+  if (source) { source.close(); source = null; }
+  $('follow').hidden = run.status !== 'live';
+  if (run.status !== 'live') return;
+  source = new EventSource(`${API}runs/${run.id}/live?since=${run.seq}`);
+  for (const k of ['tick', 'plan', 'world', 'event', 'epoch', 'end', 'status']) source.addEventListener(k, () => { dirty = true; });
+}
+setInterval(async () => {
+  if (!dirty || refreshing || !run) return;
+  dirty = false; refreshing = true;
+  try {
+    const id = run.id, follow = $('follow-on').checked;
+    const [r2, f2] = await fetchRun(id);
+    if (!run || run.id !== id) return;
+    [run, fr] = [r2, f2];
+    buildRunObjects();
+    for (const s of streams) st.modes[s.id] ||= { mode: s.default_mode || 'at', n: 0.5 };
+    panel(); timebar();
+    setTime(follow ? run.t1 : st.t);
+    if (run.status !== 'live') live();
+  } finally { refreshing = false; }
+}, 1000);
 
 function showScenes() {
   document.body.classList.add('scenes');
@@ -376,7 +408,7 @@ window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, cal
 window.miniview.setData = (d) => window.miniview.setFrame(d ? 'map' : 'world');
 
 async function init() {
-  st.index = await json(DATA + 'index.json');
+  st.index = await json(API + 'scenes');
   $('scenesel').innerHTML = st.index.scenes.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   const h = hashRead();
   st.view = h.view || 'top'; st.frame = h.frame === 'map' ? 'map' : 'world'; $('viewsel').value = st.view;

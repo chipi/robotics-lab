@@ -1,6 +1,6 @@
 // Loads a scene and a run and precomputes everything the layers need, so scrubbing only picks.
 const get = async (u) => (await fetch(u)).json();
-export const loadIndex = () => get('/site/data/index.json');
+export const loadIndex = () => get('/api/v1/scenes');
 
 const COL = { f: [60, 200, 90, 255], o: [230, 50, 40, 255], v: [60, 120, 230, 255], b: [230, 0, 230, 255] };
 export const KIND_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
@@ -17,7 +17,7 @@ const apply = ([tx, ty, yaw], [x, y, h]) => {
 };
 
 export async function loadScene(id) {
-  const sc = await get(`/site/data/scenes/${id}.json`);
+  const sc = await get(`/api/v1/scenes/${id}`);
   const ring = (b, z) => {
     const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
     return [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, d]) => {
@@ -41,7 +41,7 @@ export async function loadScene(id) {
 }
 
 export async function loadRun(id) {
-  const [run, f] = await Promise.all([get(`/site/data/runs/${id}/run.json`), get(`/site/data/runs/${id}/frames.json`)]);
+  const [run, f] = await Promise.all([get(`/api/v1/runs/${id}`), get(`/api/v1/runs/${id}/frames`)]);
   const n = f.t.length;
   const epochs = run.epochs.map((e) => ({ from_t: e.from_t, p: e.map_to_world, mat: matrix(e.map_to_world) }));
   const epochAt = (t) => { let e = epochs[0]; for (const x of epochs) if (x.from_t <= t) e = x; return e; };

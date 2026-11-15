@@ -1,19 +1,40 @@
-# The prepared data — what every miniview page reads
+# The API — what every miniview page reads (ADR-0005)
 
-`miniview prepare` and `miniview index` write these files under `site/data/`; `miniview serve`
-serves the `viewer/` directory, so a page at `/web/<lib>/index.html` reads `/site/data/...`.
-Units SI (metres, radians, seconds). Frames: **world** (the scene's, where truth is) and **map** (the
-robot's own). A pose is `[x, y, yaw]`.
+`miniview serve` (or `make viewer-up`, in Docker) serves the pages and the API over the lab's data
+folder (ADR-0004: `MINIVIEW_DATA`, default `/work/robotics-lab/data`). Runs are stored as MCAP
+(`runs/<robot>/<scene>/<run>/run.mcap`, one channel per record kind: `/miniview/run`, `epoch`,
+`tick`, `plan`, `world`, `event`, `end`; JSON messages; log time = the run's t in nanoseconds);
+`index.sqlite` beside them is derived. The pages read only the API below. Units SI (metres, radians,
+seconds). Frames: **world** (the scene's, where truth is) and **map** (the robot's own). A pose is
+`[x, y, yaw]`.
 
-## `site/data/index.json`
+| Endpoint | Answers |
+| --- | --- |
+| `GET /api/v1/health` | `{"ok": true, "runs": n, "data": path}` |
+| `GET /api/v1/scenes` | the scenes with their runs (below) |
+| `GET /api/v1/scenes/{id}` | a scene (below) |
+| `GET /api/v1/runs?scene=` | a scene's runs |
+| `GET /api/v1/runs/{id}` | the run (below), with `status` (`live`, `ended`, `stopped`) and `seq` |
+| `GET /api/v1/runs/{id}/frames?from=&to=` | the frames (below) for a time window; `i0` is the first tick's index |
+| `GET /api/v1/runs/{id}/state?t=` | belief, truth, distance, depth returns, the last event at t |
+| `GET /api/v1/runs/{id}/events?kinds=` | what happened, when |
+| `GET /api/v1/runs/{id}/presence` | per stream, the spans or times it has data (the timeline's rows) |
+| `GET /api/v1/runs/{id}/live?since=SEQ` | Server-Sent Events, below |
+
+**Live.** A live run is a run whose file has not ended; it grows while a page watches. `live` sends
+`tick`, `plan`, `world`, `event`, `epoch` and `end` events (data: the record with its `t`), then
+`status` (`{"status", "seq", "t1"}`, with `"done": true` last); it resumes after `since`. `stopped`
+is a live file that has not grown for 120 s (its writer is gone).
+
+## `GET /api/v1/scenes`
 
 ```json
 {"format": 1, "scenes": [{"id": "apartment", "name": "The simulated apartment", "kind": "apartment",
-  "runs": [{"id": "explore12", "robot": "duck", "kind": "exploration", "length_s": 83.4,
-            "verdict": "trapped", "events": 21}]}]}
+  "runs": [{"id": "explore12", "robot": "duck", "kind": "exploration", "status": "ended",
+            "length_s": 58.5, "verdict": "trapped", "events": 23}]}]}
 ```
 
-## `site/data/scenes/<scene>.json` — what is really there (world frame)
+## `GET /api/v1/scenes/{id}` — what is really there (world frame)
 
 ```json
 {"id": "apartment", "frame": "world", "bounds": [-4.0, 4.0, -3.0, 3.0],
@@ -26,14 +47,18 @@ robot's own). A pose is `[x, y, yaw]`.
 `boxes` are oriented boxes (centre, half sizes in x and y, bottom and top z, yaw). Cylinders are given
 as boxes with equal half sizes.
 
-## `site/data/runs/<run>/run.json` — the run's summary
+## `GET /api/v1/runs/{id}` — the run's summary
 
 ```json
 {"id": "explore12", "scene": "apartment", "robot": {"name": "duck", "radius": 0.083, "height": 0.272},
- "t0": 0.0, "t1": 83.44, "ticks": 594, "verdict": "trapped",
+ "kind": "exploration", "status": "ended", "seq": 516,
+ "t0": 24.962, "t1": 83.44, "ticks": 464, "verdict": "trapped",
  "epochs": [{"from_t": 0.0, "map_to_world": [-0.018, 0.0, 0.0]}],
- "events": [{"t": 44.6, "kind": "cliff_stop", "text": "cliff_stop drop_m 0.589"}]}
+ "events": [{"t": 44.613, "kind": "cliff_stop", "text": "cliff_stop drop_m 0.589"}]}
 ```
+
+- `t0`, `t1`: the span of every record (poses, plans, maps, events), not only the poses: events can
+  come before the first pose or after the last. While a run is live, `verdict` is `live`.
 
 - `epochs`: the map → world transform from a time on (a reset simulator starts a new map; phase-1
   evaluations have one epoch per goal). To draw map-frame data in the world, use the epoch in force
@@ -70,7 +95,7 @@ select({kind, index})        state() -> {t, belief, truth, distance, last_event,
 
 The view area is the element `#stage`; commands crop to it for the filmstrip.
 
-## `site/data/runs/<run>/frames.json` — everything, by tick
+## `GET /api/v1/runs/{id}/frames` — everything, by tick
 
 ```json
 {"t": [0.1, 0.2],

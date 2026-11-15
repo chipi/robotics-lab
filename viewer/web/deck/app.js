@@ -198,35 +198,70 @@ function ui(e) {
 
 // --- loading ---------------------------------------------------------------
 async function load(sceneId, runId) {
-  window.__ready = false;
+  window.__ready = false; S.loading = true;
   if (!S.index) S.index = await loadIndex();
   const sc = S.index.scenes.find((s) => s.id === sceneId) || S.index.scenes[0];
   const run = sc.runs.find((r) => r.id === runId) || sc.runs[0];
-  document.body.classList.remove('scenes');
   S.scene = await loadScene(sc.id);
   S.D = await loadRun(run.id);
+  S.loading = false;
+  document.body.classList.remove('scenes');   // after the awaits: boot may have shown the scenes page meanwhile
   S.streams = Object.fromEntries(S.D.run.streams.map((s) => [s.id, s]));
   S.vis = {}; S.vv = {}; S.sel = null;
   S.tm = Object.fromEntries(S.D.run.streams.map((s) => [s.id, { mode: s.default_mode || 'at', n: 0.5 }]));
   $('#scene').value = sc.id;
   $('#run').innerHTML = sc.runs.map((r) => `<option value="${r.id}">${r.id} (${r.kind}, ${r.length_s} s)</option>`).join('');
   $('#run').value = run.id;
-  $('#runinfo').textContent = `${S.D.run.robot.name} · r ${S.D.run.robot.radius} m · ${S.D.run.verdict}`;
-  $('#track').querySelectorAll('.ev').forEach((e) => e.remove());
-  for (const e of S.D.run.events) {
-    if (e.t < S.D.t0 || e.t > S.D.t1) continue;
-    const d = document.createElement('div');
-    d.className = 'ev'; d.title = `${e.t.toFixed(1)} s ${e.text}`; d.style.background = evColor(e.kind);
-    d.style.left = `${((e.t - S.D.t0) / (S.D.t1 - S.D.t0)) * 100}%`;
-    $('#track').append(d);
-  }
-  $('#tl').textContent = S.D.t0.toFixed(0) + ' s'; $('#tr').textContent = S.D.t1.toFixed(0) + ' s';
+  timebar();
   S.t = Math.min(Math.max(S.t, S.D.t0), S.D.t1);
   fit(); dk.setProps({ viewState });
   panel(); render(); writeHash();
+  live();
   await settle();
   window.__ready = true;
 }
+
+function timebar() {
+  const r = S.D.run;
+  $('#runinfo').textContent = `${r.robot.name} · r ${r.robot.radius} m · ${r.status === 'live' ? 'live' : r.verdict}`;
+  $('#track').querySelectorAll('.ev').forEach((e) => e.remove());
+  for (const e of r.events) {
+    if (e.t < S.D.t0 || e.t > S.D.t1) continue;
+    const d = document.createElement('div');
+    d.className = 'ev'; d.title = `${e.t.toFixed(1)} s ${e.text}`; d.style.background = evColor(e.kind);
+    d.style.left = `${((e.t - S.D.t0) / (S.D.t1 - S.D.t0 || 1)) * 100}%`;
+    $('#track').append(d);
+  }
+  $('#tl').textContent = S.D.t0.toFixed(0) + ' s'; $('#tr').textContent = S.D.t1.toFixed(0) + ' s';
+}
+
+// --- live (ADR-0005): the run grows while it runs; Follow live keeps the newest tick in view -----
+let source = null, dirty = false, refreshing = false;
+function live() {
+  if (source) { source.close(); source = null; }
+  const r = S.D.run;
+  $('#follow').hidden = r.status !== 'live';
+  if (r.status !== 'live') return;
+  source = new EventSource(`/api/v1/runs/${r.id}/live?since=${r.seq}`);
+  source.onmessage = source.onerror = null;
+  for (const k of ['tick', 'plan', 'world', 'event', 'epoch', 'end', 'status']) source.addEventListener(k, () => { dirty = true; });
+}
+setInterval(async () => {
+  if (!dirty || refreshing || !S.D) return;
+  dirty = false; refreshing = true;
+  try {
+    const id = S.D.run.id, follow = $('#follow-on').checked;
+    const D = await loadRun(id);
+    if (!S.D || S.D.run.id !== id) return;
+    S.D = D;
+    S.streams = Object.fromEntries(D.run.streams.map((s) => [s.id, s]));
+    for (const s of D.run.streams) S.tm[s.id] ||= { mode: s.default_mode || 'at', n: 0.5 };
+    timebar();
+    S.t = follow ? D.t1 : Math.min(Math.max(S.t, D.t0), D.t1);
+    panel(); render();
+    if (D.run.status !== 'live') live();
+  } finally { refreshing = false; }
+}, 1000);
 
 function scenesPage() {
   window.__ready = false;
@@ -329,6 +364,6 @@ async function boot() {
   window.addEventListener('resize', () => { if (!userView && S.D && !document.body.classList.contains('scenes')) { fit(); dk.setProps({ viewState }); } });
   tags();
   if (h.get('run') || h.get('scene')) await load(h.get('scene'), h.get('run'));
-  else scenesPage();
+  else if (!S.D && !S.loading) scenesPage();     // a scripted load() may be under way
 }
 boot();

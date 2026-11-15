@@ -44,7 +44,8 @@ by the hundred; the viewer should be shaped before the logs that feed it.
    its prepared frames — the builder's shapes per tick, written by `miniview prepare` next to the run
    — and draws them with the same cameras as the agent renderer, so the page and the commands cannot
    disagree. Prepared frames are what make the timebar immediate. The drawing library for 2D and 3D
-   is an open decision (§7).
+   is an open decision (§7). *Since ADR-0005:* the pages read the service's API (`/api/v1`), not
+   files; `viewer/CONTRACT.md` lists it.
 6. **Scenes** (operator, 2026-11-15): the thing that is loaded. A scene is a place with what is
    really there — geometry, hazards, origin and frame — and, for a challenge, its mission and
    invariants; scenes are written once (the simulator's layout, a challenge's generator, later a
