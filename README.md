@@ -19,7 +19,8 @@ so a red job reproduces locally with the target it names:
 | `make ci-fast` | lint, then every project's unit tests: `test-unit` (nxt), `test-duck`, `test-viewer` |
 | `make test-viewer-pages` | miniview's two pages in headless Chromium (`MINIVIEW_CHROMIUM`, else Playwright's) |
 | `make test-integration` | the NXT web UI image answers with a simulated brick |
-| `make test-viewer-image` | miniview's image starts on an empty data folder and serves its API and pages |
+| `make test-viewer-image` | miniview's image runs with the data mounted read only and its index on its own volume, serves a run, and cannot write the data |
+| `make perf-viewer` | not in CI: replays a real run at 20 Hz through the writer with both pages open and prints latency, bytes per page and lock hold time |
 | `make nxt-programs` | every NXC program compiles for the brick |
 | `make ci` | all of the above and the docs (`docs-lint`, `docs-build`) |
 

@@ -11,6 +11,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -128,9 +129,20 @@ def run_page(b, base, rid, other):
     def count_colour(png, rgb, tol=28):
         return helper(png, f"let n = 0; for (let k = 0; k < d.length; k += 4) if (Math.abs(d[k] - {rgb[0]}) < {tol} && Math.abs(d[k+1] - {rgb[1]}) < {tol} && Math.abs(d[k+2] - {rgb[2]}) < {tol}) n++; return n;")
 
+    def settle(timeout=15.0):
+        """The stage's picture once two frames in a row are the same: zoom, resize and theme changes have finished."""
+        end, prev = time.monotonic() + timeout, page.locator("#stage").screenshot()
+        while True:
+            page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+            cur = page.locator("#stage").screenshot()
+            if cur == prev:
+                return cur
+            if time.monotonic() > end:
+                raise TimeoutError("the stage never settled")
+            prev = cur
+
     def stage_png():
-        page.wait_for_timeout(700)
-        return page.locator("#stage").screenshot()
+        return settle()
 
     def readout_xy(px, py):
         page.mouse.move(px, py)
@@ -268,23 +280,25 @@ def run_page(b, base, rid, other):
     # playback: the first test here waits for the stop (a fixed sleep once failed by 60 ms)
     t_a = state()["t"]
     page.click("#playBtn")
-    page.wait_for_timeout(900)
+    page.wait_for_function(f"window.miniview.state().t > {t_a + 0.6}", timeout=15000)
     page.click("#playBtn")
     t_b = state()["t"]
     check("play advances t", t_b > t_a + 0.5, (t_a, t_b))
     check("pause stops it", abs(state()["t"] - t_b) < 0.05)
     page.keyboard.press("Space")
-    page.wait_for_timeout(400)
+    page.wait_for_function(f"window.miniview.state().t > {t_b + 0.05}", timeout=15000)
     page.keyboard.press("Space")
     check("Space toggles play", state()["t"] > t_b)
     call("window.miniview.setTime(20)")
     page.click("#speedBtn")
     page.click(".pop [data-speed='4']")
-    t_a = state()["t"]
+    t_a, w_a = state()["t"], ev("performance.now()")
     page.click("#playBtn")
-    page.wait_for_timeout(500)
+    page.wait_for_function(f"window.miniview.state().t > {t_a + 1.2}", timeout=15000)
     page.click("#playBtn")
-    check("speed menu: 4x advances faster than real time", state()["t"] - t_a > 1.2, round(state()["t"] - t_a, 2))
+    t_c, w_c = state()["t"], ev("performance.now()")
+    check("speed menu: 4x advances faster than real time (run seconds per wall second, measured in the page)",
+          (t_c - t_a) / ((w_c - w_a) / 1000) > 1.8, round((t_c - t_a) / ((w_c - w_a) / 1000), 2))
     page.click("#speedBtn")
     page.click(".pop [data-speed='1']")
     call(f"window.miniview.setTime({t1 - 0.5})")
@@ -292,7 +306,7 @@ def run_page(b, base, rid, other):
     page.click(".pop [data-speed='8']")
     page.click("#loopBtn")
     page.click("#playBtn")
-    page.wait_for_timeout(700)
+    page.wait_for_function(f"window.miniview.state().t < {t1 - 5}", timeout=15000)       # it reached the end and wrapped
     wrapped, still = state()["t"], ev("window.miniview.config().play.on")
     page.click("#playBtn")
     check("loop: playing past the end wraps to the start and keeps playing", still and wrapped < t0 + 10, (wrapped, still))
@@ -461,7 +475,7 @@ def run_page(b, base, rid, other):
     sb = stage_box()
     page.mouse.move(sb[0] + sb[2] / 2, sb[1] + sb[3] / 2)
     page.mouse.wheel(0, -500)
-    page.wait_for_timeout(800)
+    settle()
     a2 = readout_xy(sb[0] + 400, sb[1] + 300)
     b2 = readout_xy(sb[0] + 700, sb[1] + 500)
     ppm2 = 300 / (b2[0] - a2[0])
@@ -507,16 +521,16 @@ def run_page(b, base, rid, other):
         check(f"3D view {tag}: the grid numbers do not reach the legend or the bottom edge", low < (top if top is not None else bottom) - 4 and low < bottom - 30, (round(low), top, round(bottom)))
     grid_clear_of_bottom("at 1600 px")
     page.set_viewport_size({"width": 960, "height": 900})
-    page.wait_for_timeout(600)
+    settle()
     grid_clear_of_bottom("at 960 px")
     page.set_viewport_size({"width": 1600, "height": 1000})
-    page.wait_for_timeout(600)
+    settle()
     CAM[lib] = ev("[[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [3, 2, 0], [-3, -2, 0]].map((p) => window.miniview.internals.adapter.project(p))")
     scene = json.loads(urllib.request.urlopen(f"{base}/api/v1/scenes/apartment").read())
     big = max((b for b in scene["boxes"] if b["z0"] < 0.5), key=lambda b: b["hx"] * b["hy"])
     bx, by = ev(f"window.miniview.internals.adapter.project([{big['cx']}, {big['cy']}, {min(big['z1'], 0.5)}])")
     call("window.miniview.setTime(%s)" % TA)
-    page.wait_for_timeout(500)
+    settle()
     shot = page.screenshot()
     PROBE[lib] = (pixel(shot, int(bx), int(by)), pixel(shot, 290, 500)[:3])
 
@@ -590,7 +604,7 @@ def run_page(b, base, rid, other):
     # narrow windows: no horizontal page scroll, the viewport first, the timeline right under it
     for w in (960, 700, 400):
         page.set_viewport_size({"width": w, "height": 900})
-        page.wait_for_timeout(500)
+        settle()
         sw = ev("[document.documentElement.scrollWidth, innerWidth]")
         g = ev("(() => { const r = (i) => document.getElementById(i).getBoundingClientRect(); return [r('stage').top, r('tl').top, r('ruler').width, r('ruler').left]; })()")
         check(f"{w} px wide: no horizontal page scroll; the viewport, then the timeline, with a usable ruler",
@@ -603,7 +617,7 @@ def run_page(b, base, rid, other):
             page.keyboard.press("Escape")
             check("400 px wide: the legend is hidden in the viewport and the colour keys are in the overlays popover", hidden and "Belief" in keys and len(keys) >= 4, keys)
     page.set_viewport_size({"width": 1600, "height": 1000})
-    page.wait_for_timeout(500)
+    settle()
     page.click("#ovBtn")
     check("wide: the legend shows in the viewport and the overlays popover does not repeat it", ev("getComputedStyle(document.getElementById('legend')).display") != "none" and page.query_selector(".pop .lg") is None)
     page.keyboard.press("Escape")
@@ -613,7 +627,7 @@ def run_page(b, base, rid, other):
     tok_dark = ev("getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim()")
     px_dark = pixel(page.locator("#stage").screenshot(), 3, 500)
     page.click("#themeBtn")
-    page.wait_for_timeout(700)
+    settle()
     tok_light = ev("getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim()")
     px_light = pixel(page.locator("#stage").screenshot(), 3, 500)
     check("theme switch flips the tokens; the renderer's clear colour follows (pixel in the viewport)", tok_dark == "#202125" and tok_light == "#f6f7f9"

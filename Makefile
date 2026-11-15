@@ -123,6 +123,10 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	    || { echo "FAIL image did not answer as expected"; cat /tmp/robotics-lab-image-status.json 2>/dev/null; docker logs $$cid; exit 1; }
 	@echo "test-integration PASS"
 
+.PHONY: perf-viewer
+perf-viewer: viewer-sync ## NOT in CI: replay duck/runs/phase1-run18 at 20 Hz through the writer with both pages open; prints latency, bytes per page, lock hold time
+	@cd $(VIEWER_DIR) && uv run --frozen python perf/perf_viewer.py $(PERF_ARGS)
+
 .PHONY: test-viewer-image
 test-viewer-image: ## miniview's image: build it, run it with the data read only and the index on its own volume, check what it serves and that it cannot write the data (ADR-0012)
 	@docker build -q -t $(VIEWER_IMAGE) $(VIEWER_DIR) >/dev/null
