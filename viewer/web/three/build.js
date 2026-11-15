@@ -4,11 +4,14 @@ export const C = {
   belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
   occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
+  boxFill: [0x8a8a96, 0.16],
 };
 
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
 export function setPalette(p) {
   const h = (k) => new THREE.Color(p[k]).getHex();
+  const bf = p['box-fill'];                                    // #rrggbbaa
+  C.boxFill = [new THREE.Color('#' + bf.slice(1, 7)).getHex(), parseInt(bf.slice(7, 9) || 'ff', 16) / 255];
   Object.assign(C, {
     belief: h('c-belief'), truth: h('c-truth'), plan: h('c-plan'), obst: h('c-obst'), hazard: h('c-drop'), occ: h('c-occ'), free: h('c-free'),
     x: h('c-x'), y: h('c-y'), z: h('c-z'), box: h('c-box'), grid: h('draw-grid'), rel: h('draw-rel'),
@@ -16,12 +19,95 @@ export function setPalette(p) {
   });
 }
 const col = (hex) => new THREE.Color(hex);
-const lineMat = (hex) => new THREE.LineBasicMaterial({ color: hex });
+// everything but the faint fills is transparent, so it is drawn after them (renderOrder) and never tinted by them
+const lineMat = (hex) => new THREE.LineBasicMaterial({ color: hex, transparent: true });
+const dashMat = (hex) => new THREE.LineDashedMaterial({ color: hex, dashSize: 0.06, gapSize: 0.04, transparent: true });
+const fillMat = (hex, opacity) => new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+const fillMesh = (tri, hex, opacity) => {
+  const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
+  const m = new THREE.Mesh(g, fillMat(hex, opacity));
+  m.renderOrder = -10; m.frustumCulled = false;
+  return m;
+};
+
+// WebGL draws every line one pixel wide, so a polyline with a width (and dashes) is a strip of quads that a vertex
+// shader widens in screen space; the width stays in pixels when zooming. range(i0, n) draws points i0 .. i0+n-1.
+// RES is the size in pixels of the pane being drawn; the views set it before each pane.
+export const RES = { value: new THREE.Vector2(1, 1) };
+const THICK_VS = `
+attribute vec3 pb; attribute vec2 corner; attribute vec2 dist;
+uniform vec2 res; uniform float width;
+varying float vD;
+void main() {
+  vec4 A = projectionMatrix * modelViewMatrix * vec4(position, 1.0), B = projectionMatrix * modelViewMatrix * vec4(pb, 1.0);
+  vec2 sa = A.xy / A.w * res * 0.5, sb = B.xy / B.w * res * 0.5, d = sb - sa;
+  float L = length(d); d = L > 1e-4 ? d / L : vec2(1.0, 0.0);
+  vec2 off = (vec2(-d.y, d.x) * corner.y + d * (corner.x * 2.0 - 1.0)) * width * 0.5;
+  vec4 P = mix(A, B, corner.x);
+  gl_Position = vec4(P.xy + off / (res * 0.5) * P.w, P.zw);
+  vD = mix(dist.x, dist.y, corner.x);
+}`;
+const THICK_FS = `
+uniform vec3 color; uniform float dash, gap;
+varying float vD;
+void main() {
+  if (dash > 0.0 && mod(vD, dash + gap) > dash) discard;
+  gl_FragColor = vec4(color, 1.0);
+  #include <colorspace_fragment>
+}`;
+class ThickLine extends THREE.Mesh {
+  constructor(pos, hex, width, dash = 0, gap = 0) {
+    const n = pos.length / 3, m = Math.max(0, n - 1), P = new Float32Array(m * 12), Q = new Float32Array(m * 12), K = new Float32Array(m * 8), D = new Float32Array(m * 8);
+    const idx = new Uint32Array(m * 6), cx = [0, 0, 1, 1], cy = [-1, 1, 1, -1];
+    let acc = 0;
+    for (let k = 0; k < m; k++) {
+      const len = Math.hypot(pos[k * 3 + 3] - pos[k * 3], pos[k * 3 + 4] - pos[k * 3 + 1], pos[k * 3 + 5] - pos[k * 3 + 2]);
+      for (let c = 0; c < 4; c++) {
+        const v = k * 4 + c;
+        P.set(pos.subarray(k * 3, k * 3 + 3), v * 3); Q.set(pos.subarray(k * 3 + 3, k * 3 + 6), v * 3);
+        K[v * 2] = cx[c]; K[v * 2 + 1] = cy[c]; D[v * 2] = acc; D[v * 2 + 1] = acc + len;
+      }
+      acc += len;
+      idx.set([0, 1, 2, 0, 2, 3].map((q) => k * 4 + q), k * 6);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('pb', new THREE.BufferAttribute(Q, 3));
+    g.setAttribute('corner', new THREE.BufferAttribute(K, 2)); g.setAttribute('dist', new THREE.BufferAttribute(D, 2));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    super(g, new THREE.ShaderMaterial({ vertexShader: THICK_VS, fragmentShader: THICK_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { res: RES, width: { value: width }, color: { value: new THREE.Color(hex) }, dash: { value: dash }, gap: { value: gap } } }));
+    this.frustumCulled = false;
+  }
+  setWidth(w) { this.material.uniforms.width.value = w; }
+  range(i0, n) { this.geometry.setDrawRange(i0 * 6, Math.max(0, n - 1) * 6); }
+  raycast() {}
+}
 
 function segs(pos, hex) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   return new THREE.LineSegments(g, lineMat(hex));
+}
+
+function dashed(pos, hex) {
+  const l = segs(pos, hex);
+  l.material = dashMat(hex);
+  l.computeLineDistances();
+  return l;
+}
+
+// the top and the four sides of a box, as triangles (the bottom sits on the floor)
+function boxFaces(out, b, z0, z1) {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  const p = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => {
+    const x = i * b.hx, y = j * b.hy;
+    return [b.cx + c * x - s * y, b.cy + s * x + c * y];
+  });
+  out.push(...p[0], z1, ...p[1], z1, ...p[2], z1, ...p[0], z1, ...p[2], z1, ...p[3], z1);
+  for (let k = 0; k < 4; k++) {
+    const [ax, ay] = p[k], [bx, by] = p[(k + 1) % 4];
+    out.push(ax, ay, z0, bx, by, z0, bx, by, z1, ax, ay, z0, bx, by, z1, ax, ay, z1);
+  }
 }
 
 function boxEdges(out, b, z0, z1) {
@@ -40,10 +126,12 @@ function boxEdges(out, b, z0, z1) {
 // Two groups (the streams scene.boxes and scene.hazards) under one.
 export function buildScene(sc, cut = 0.5) {
   const g = new THREE.Group(), boxes = new THREE.Group(), hazards = new THREE.Group();
-  const gray = [], mag = [], hz = [];
+  const gray = [], mag = [], hz = [], grayFill = [], magFill = [];
   for (const b of sc.boxes) {
     if (b.z0 >= cut) continue;
-    boxEdges(b.name.startsWith('stair') ? mag : gray, b, b.z0, Math.min(b.z1, cut));
+    const stair = b.name.startsWith('stair');
+    boxEdges(stair ? mag : gray, b, b.z0, Math.min(b.z1, cut));
+    boxFaces(stair ? magFill : grayFill, b, b.z0, Math.min(b.z1, cut));
   }
   const fill = [];
   for (const h of sc.hazards) {
@@ -55,12 +143,15 @@ export function buildScene(sc, cut = 0.5) {
     const q = [0, 1, 2, 0, 2, 3].map((k) => [...r[k], 0.002]);
     fill.push(...q.flat());
   }
-  boxes.add(segs(gray, C.box), segs(mag, C.hazard));
-  hazards.add(segs(hz, C.hazard));
+  boxes.add(fillMesh(grayFill, C.boxFill[0], C.boxFill[1]), fillMesh(magFill, C.hazard, 0.12), segs(gray, C.box), segs(mag, C.hazard));
+  hazards.add(dashed(hz, C.hazard));
   const fg = new THREE.BufferGeometry();
   fg.setAttribute('position', new THREE.Float32BufferAttribute(fill, 3));
-  hazards.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: C.hazard, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })));
+  const hf = new THREE.Mesh(fg, fillMat(C.hazard, 0.12));
+  hf.renderOrder = -10; hf.frustumCulled = false;
+  hazards.add(hf);
   g.add(boxes, hazards);
+  g.fills = { 'fill.boxes': [boxes.children[0], boxes.children[1]], 'fill.hazards': [hf] };
   g.parts = { 'scene.boxes': boxes, 'scene.hazards': hazards };
   return g;
 }
@@ -86,7 +177,7 @@ function lineObj(pos, hex) {
 
 function pointsObj(pos, colors, size) {
   const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const m = { size, sizeAttenuation: false };
+  const m = { size, sizeAttenuation: false, transparent: true };
   if (colors) { g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); m.vertexColors = true; }
   const p = new THREE.Points(g, new THREE.PointsMaterial(m));
   p.frustumCulled = false;
@@ -129,7 +220,7 @@ export function buildRun(run, fr, world) {
     track.set([wx, wy, 0.01], i * 3);
   }
   L.pose = pose;
-  const bTrack = add('belief.track', lineObj(track, C.belief)), bRobot = add('belief.pose', robotMesh(r, h, C.belief));
+  const bTrack = add('belief.track', new ThickLine(track, C.belief, 2)), bRobot = add('belief.pose', robotMesh(r, h, C.belief));
   bRobot.position.z = 0.02;
   bRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 0 }); });
 
@@ -143,7 +234,7 @@ export function buildRun(run, fr, world) {
       tpose.set(last, i * 3);
       tr.set([last[0], last[1], 0.01], i * 3);
     }
-    tTrack = add('truth.track', lineObj(tr, C.truth)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
+    tTrack = add('truth.track', new ThickLine(tr, C.truth, 2)); tRobot = add('truth.pose', robotMesh(r, h, C.truth)); tRobot.position.z = 0.02;
     tRobot.traverse((o) => { o.userData.pick = () => ({ kind: 'robot', index: 1 }); });
     L.tpose = tpose;
     rel = add('rel.belief_truth', lineObj(new Float32Array(6), C.rel));
@@ -191,7 +282,7 @@ export function buildRun(run, fr, world) {
     const f = tf(p.t);
     for (const [x, y] of p.path) ps.push(...f(x, y).slice(0, 2), 0.012);
   }
-  const plan = add('plan.path', lineObj(new Float32Array(ps), C.plan));
+  const plan = add('plan.path', new ThickLine(new Float32Array(ps), C.plan, 2, 0.07, 0.05));
 
   // the world model: grid cells as quads in one geometry, obstacles and drops as points, all with
   // per-world ranges. (InstancedMesh has no offset into its instances, so ranges on plain
@@ -243,7 +334,7 @@ export function buildRun(run, fr, world) {
   };
 
   // cfg(id) -> {mode: 'at'|'window'|'upto', n: seconds}
-  L.update = (i, t, cfg) => {
+  L.update = (i, t, cfg, size) => {
     bRobot.position.set(pose[i * 3], pose[i * 3 + 1], 0.02);
     bRobot.rotation.z = pose[i * 3 + 2];
     const trackRange = (id) => {
@@ -252,11 +343,11 @@ export function buildRun(run, fr, world) {
       const i0 = Math.min(firstAt(t - (mode === 'window' ? w : TAIL_S)), i);
       return [i0, i - i0 + 1];
     };
-    bTrack.geometry.setDrawRange(...trackRange('belief.track'));
+    bTrack.range(...trackRange('belief.track')); bTrack.setWidth(size('belief.track'));
     if (world) {
       tRobot.position.set(tpose[i * 3], tpose[i * 3 + 1], 0.02);
       tRobot.rotation.z = tpose[i * 3 + 2];
-      tTrack.geometry.setDrawRange(...trackRange('truth.track'));
+      tTrack.range(...trackRange('truth.track')); tTrack.setWidth(size('truth.track'));
       const a = rel.geometry.attributes.position;
       a.array.set([pose[i * 3], pose[i * 3 + 1], 0.05, tpose[i * 3], tpose[i * 3 + 1], 0.05]);
       a.needsUpdate = true;
@@ -269,13 +360,16 @@ export function buildRun(run, fr, world) {
       else if (mode === 'window') { const i0 = Math.min(firstAt(t - w), i); r = [B.cum[i0], B.cum[i + 1] - B.cum[i0]]; }
       else r = d < 0 ? [0, 0] : [B.cum[d], B.cum[d + 1] - B.cum[d]];
       L.obj[id].geometry.setDrawRange(r[0], r[1]);
+      L.obj[id].material.size = size(id);
     }
     const pi = fr.plan_at[i];
-    plan.geometry.setDrawRange(...(pi >= 0 ? [pStart[pi], pCount[pi]] : [0, 0]));
+    plan.setWidth(size('plan.path'));
+    plan.range(...(pi >= 0 ? [pStart[pi], pCount[pi]] : [0, 0]));
     const wi = fr.world_at[i], none = [0, 0];
     cells.geometry.setDrawRange(...(wi >= 0 ? wCell[wi] : none));
     obst.geometry.setDrawRange(...(wi >= 0 ? oRange[wi] : none));
     drops.geometry.setDrawRange(...(wi >= 0 ? dRange[wi] : none));
+    obst.material.size = size('world.obstacles'); drops.material.size = size('world.drops');
   };
   return L;
 }

@@ -12,10 +12,13 @@
 //   settled() -> Promise     resolves once what was drawn has been painted
 //   resize(), fit(), theme(palette)
 //   describe(sel) -> {stream, detail, p:[x,y], height, tick, t, frame, ...} | null
-//   cursor(clientX, clientY) -> {axes:['x','y'], v:[a,b]} | null
+//   cursor(clientX, clientY) -> {axes:['x','y'], v:[a,b], note?} | null   the world axes of the pane under the pointer
+//   fillsDrawn(pane) -> whether the faint box faces are drawn in the pane named so (top and 3d: yes; side views: outlines only)
+//   project([x,y,z]) -> [clientX, clientY] of a world point in the first pane (tests probe pixels there)
+//   scale() -> pixels per metre of the first (bottom-left) orthographic pane, or null (3D)
 //   gizmo() -> {x:[dx,dy,dz], y, z} | null     camera-space unit vectors (3D view only)
 // }
-// shell (given to the adapter): M, shown(id, view), cfg(id), pick(sel), viewChanged(), tickAt(t), palette()
+// shell (given to the adapter): M, shown(id, view), cfg(id), size(id), pick(sel), viewChanged(), tickAt(t), palette()
 import { svgI, paintIcons } from './icons.js';
 
 const API = '/api/v1/';
@@ -44,6 +47,13 @@ const AXES = {
   right: { x: [1, 0, 0], y: [0, 0, -1], z: [0, 1, 0] },
 };
 const GROUP_IDS = { Scene: 'g.scene', 'Robot (belief)': 'g.belief', Truth: 'g.truth', Sensors: 'g.sensors', 'World model': 'g.world', Plan: 'g.plan', Robot: 'g.robot' };
+
+// drawn size per stream, in pixels: a point's diameter or a line's width (Display > Point size / Line width)
+const SIZE_KIND = {
+  'sensors.depth.floor': 'point', 'sensors.depth.obstacle': 'point', 'sensors.depth.overhead': 'point', 'sensors.depth.below': 'point',
+  'world.obstacles': 'point', 'world.drops': 'point', 'belief.track': 'line', 'truth.track': 'line', 'plan.path': 'line',
+};
+const SIZE_DEFAULT = { 'world.obstacles': 5, 'world.drops': 6 };
 
 // event kinds: [colour, stop-like (drawn as a triangle)]
 const KINDS = {
@@ -123,7 +133,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   const M = {
     index: null, sceneId: null, runId: null, scene: null, run: null, fr: null, pres: null, bw: [],
     t: 0, i: 0, view: 'top', frame: 'world', on: {}, vv: {}, modes: {}, rel: { belief_truth: true, depth_pose: false },
-    sel: null, selNode: null, ov: { coords: true, gizmo: true, legend: true }, open: {}, query: '', hideMissing: false,
+    size: {}, sel: null, selNode: null, ov: { coords: true, gizmo: true, legend: true }, open: {}, query: '', hideMissing: false,
     tab: 'moment', secOpen: {}, kinds: {}, rows: true, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark',
   };
   let T = { tree: [], nodes: {}, parents: {}, order: [], leaves: () => [] };
@@ -155,11 +165,12 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!s || s.missing) return false;
     return [id, ...(T.parents[id] || [])].every((k) => M.on[k] !== false && !(view && M.vv[view]?.[k] === false));
   }
+  const size = (id) => M.size[id] ?? SIZE_DEFAULT[id] ?? (SIZE_KIND[id] === 'line' ? 2 : 4);
   const frameName = () => (M.frame === 'map' ? 'Map' : 'World');
   const palette = () => {
     const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue('--' + n).trim();
     return Object.fromEntries(['bg-viewport', 'c-belief', 'c-truth', 'c-plan', 'c-obst', 'c-drop', 'c-floor', 'c-ob', 'c-over', 'c-box', 'c-occ', 'c-free',
-      'c-x', 'c-y', 'c-z', 'draw-grid', 'draw-label', 'draw-rel', 'draw-sel', 'text'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
+      'c-x', 'c-y', 'c-z', 'draw-grid', 'draw-label', 'draw-rel', 'draw-sel', 'box-fill', 'text'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
   };
 
   // ---- epochs, belief in the world, the moment ---------------------------------------------------------
@@ -209,7 +220,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       const [run, fr, pres] = await fetchRun(r0.id);
       if (M.sceneId !== sc.id || M.scene !== scene) { M.scene = scene; adapter.setScene(scene); }
       M.sceneId = sc.id; M.runId = r0.id;
-      M.on = {}; M.vv = {}; M.sel = null; M.kinds = {};
+      M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {};
       T = buildTree(run);
       M.selNode = T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null;
       M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, true]));
@@ -495,13 +506,16 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       h += sec('time', 'Time', `<span class="lab">Show</span><span>${segMode(cur, avail, n.id)}${modes.size > 1 ? `<span class="ro faint" style="margin-left:6px">mixed: ${[...modes].map((m) => MODE_WORD[m]).join(', ')}</span>` : ''}</span>`
         + `<span class="lab">Window</span><span class="field" id="winf" aria-disabled="${!win.length}" title="Drag to change, click to type; Shift fine, Ctrl coarse"><input id="winv" value="${(+wv).toFixed(1)}" aria-label="Window length in seconds"><span class="u">s</span></span>`);
     }
+    const ptIds = live.filter((l) => SIZE_KIND[l] === 'point'), lnIds = live.filter((l) => SIZE_KIND[l] === 'line');
     const hidden = M.on[n.id] !== false && !T.parents[n.id].every((p) => M.on[p] !== false);
     const vis = group ? `${live.filter((l) => shown(l)).length} of ${live.length} shown` : '';
     h += sec('display', 'Display', `<span class="lab">Visible</span><label class="cb"><input type="checkbox" id="vis" ${M.on[n.id] !== false ? 'checked' : ''} ${s?.missing ? 'disabled' : ''}>`
       + `${hidden ? '<span class="faint">hidden by its group</span>' : ''}${vis ? `<span class="dim">${vis}</span>` : ''}</label>`
       + (live.length ? `<span class="lab">In views</span><span class="toggles">${[['top', 'T', 'Top'], ['front', 'F', 'Front'], ['right', 'S', 'Side'], ['3d', '3D', '3D']].map(([v, l, t]) =>
         `<button class="tg" data-vv="${v}" aria-pressed="${M.vv[v]?.[n.id] !== false}" title="${t}">${l}</button>`).join('')}</span>` : '')
-      + (s && !s.missing ? `<span class="lab">Colour</span><span class="swatch"><i style="background:${sty.c}"></i>${esc(cssColour(sty.c))}</span>` : ''));
+      + (s && !s.missing ? `<span class="lab">Colour</span><span class="swatch"><i style="background:${sty.c}"></i>${esc(cssColour(sty.c))}</span>` : '')
+      + (ptIds.length ? `<span class="lab">Point size</span><span class="field" id="pszf" title="Drag to change, click to type; Shift fine, Ctrl coarse"><input id="pszv" value="${size(ptIds[0]).toFixed(1)}" aria-label="Point size in pixels"><span class="u">px</span></span>` : '')
+      + (lnIds.length ? `<span class="lab">Line width</span><span class="field" id="lszf" title="Drag to change, click to type; Shift fine, Ctrl coarse"><input id="lszv" value="${size(lnIds[0]).toFixed(1)}" aria-label="Line width in pixels"><span class="u">px</span></span>` : ''));
     if (s) {
       const pr = presenceRange(n.id);
       h += sec('source', 'Source', `<span class="lab">Frame</span><span class="ro">${esc(s.frame)}</span><span class="lab">Records</span><span class="ro">${nf(s.count)}</span>`
@@ -526,6 +540,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (wf && wf.getAttribute('aria-disabled') === 'false') {
       const targets = () => leafIds.filter((l) => !stream(l).missing && cfg(l).mode === 'window');
       dragField(wf, { get: () => cfg(targets()[0] || n.id).n, set: (v) => { for (const l of targets()) M.modes[l] = { ...M.modes[l], n: v }; syncTime(); if (hasTicks()) adapter.draw(); }, lo: 0.1, hi: 600, k: 0.05, fmt: (v) => v.toFixed(1) });
+    }
+    for (const [fid, ids, lo, hi] of [['pszf', ptIds, 1, 24], ['lszf', lnIds, 0.5, 12]]) {
+      const f = $(fid);
+      if (f) dragField(f, { get: () => size(ids[0]), set: (v) => { for (const l of ids) M.size[l] = v; if (hasTicks()) adapter.draw(); }, lo, hi, k: 0.05, fmt: (v) => v.toFixed(1) });
     }
     renderBand();
   }
@@ -577,12 +595,12 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       const pose = (p) => kv('x', fx(p[0]), 'm') + kv('y', fx(p[1]), 'm') + kv('Yaw', fx(deg(p[2]), 1), '°');
       momentJson = { t: m.t, tick: m.tick, frame: M.frame, belief: (map ? m.bm : m.bw).map(f3), truth: m.tr && !map ? m.tr.map(f3) : null, distance: f3(m.dist), heading_error_deg: f3(m.herr), cmd: m.cmd, last_event: ev };
       el.innerHTML =
-        isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick} / ${m.n - 1}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
+        isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick + 1} of ${m.n}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
         + isec('b', 'Belief', 'var(--c-belief)', pose(map ? m.bm : m.bw), `<span class="fchip">${map ? 'map' : 'world'}</span>`)
         + isec('t', 'Truth', 'var(--c-truth)', map ? kv('Truth', 'hidden in the map frame', '', 'na') : m.tr ? pose(m.tr) : kv('Truth', 'none in this run', '', 'na'), '<span class="fchip">world</span>')
         + isec('e', 'Error', '', (map ? kv('Belief to truth', 'world frame only', '', 'na derived') : m.dist != null ? kv('Belief to truth', fx(m.dist), 'm', 'derived') + kv('Heading error', fx(m.herr, 1), '°', 'derived') : kv('Belief to truth', 'no truth', '', 'na derived')) + kv('Nearest obstacle', 'not in the data yet', '', 'na'))
         + isec('c', 'Command', '', kv('Forward', fx(m.cmd?.[0]), 'm/s') + kv('Turn', fx(m.cmd?.[1]), 'rad/s'))
-        + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', String(m.depthTick)) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
+        + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', `${m.depthTick + 1} of ${m.n}`) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
         + isec('w', 'Plan and map', '', (m.plan ? kv('Plan', `${m.plan.k} of ${m.plan.n}`) + kv('Plan made at', fx(m.plan.t, 2), 's') : kv('Plan', 'none yet', '', 'na')) + (m.world ? kv('Map', `${m.world.k} of ${m.world.n}`) + kv('Map made at', fx(m.world.t, 2), 's') : kv('Map', 'none yet', '', 'na')))
         + isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc(ev.text.replace(new RegExp('^' + ev.kind + '\\s*'), ''))}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
         + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
@@ -592,7 +610,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       else {
         const sty = styleOf(d.stream), id = d.stream;
         el.innerHTML = isec('s', esc(cap(d.detail || d.kind)), sty.c, kv('x', fx(d.p[0]), 'm') + kv('y', fx(d.p[1]), 'm') + kv('Height z', fx(d.height), 'm')
-          + (d.yaw != null ? kv('Yaw', fx(deg(d.yaw), 1), '°') : '') + (d.res ? kv('Cell size', fx(d.res, 4), 'm') : '') + kv('Frame tick', String(d.tick)) + kv('Time', fx(d.t, 2), 's'), `<span class="fchip">${esc(d.frame)}</span>`)
+          + (d.yaw != null ? kv('Yaw', fx(deg(d.yaw), 1), '°') : '') + (d.res ? kv('Cell size', fx(d.res, 4), 'm') : '') + kv('Frame tick', `${d.tick + 1} of ${M.fr.t.length}`) + kv('Time', fx(d.t, 2), 's'), `<span class="fchip">${esc(d.frame)}</span>`)
           + `<div class="evnav" style="padding-top:8px"><button id="toRow" data-stream="${esc(id)}" title="${esc(id)}">${svgI('chev', 12)} Select the stream</button></div>`;
       }
     }
@@ -613,7 +631,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   // ---- rendering: top bar, viewport chrome, legend, status ----------------------------------------------
   function renderChrome() {
-    const r = M.run, sc = M.index?.scenes.find((s) => s.id === M.sceneId), live = r?.status === 'live';
+    // the chrome follows the run that is open: on the scenes page (M.runId null) M.run is only the last one opened
+    const r = M.runId ? M.run : null, sc = r && M.index?.scenes.find((s) => s.id === M.sceneId), live = r?.status === 'live';
     $('sceneName').textContent = sc ? sc.id : '—';
     $('runName').textContent = r ? r.id : 'choose a run';
     $('runVerdict').textContent = r ? (live ? 'live' : r.verdict) : '';
@@ -629,16 +648,30 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('legend').style.display = M.ov.legend ? '' : 'none';
     $('themeBtn').innerHTML = svgI(M.theme === 'dark' ? 'sun' : 'moon', 14);
     $('themeBtn').title = M.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme';
-    renderLegend(); updateGizmo();
+    renderLegend(); updateGizmo(); updateScale();
   }
-  function renderLegend() {
-    if (!M.run) { $('legend').innerHTML = ''; return; }
+  function legendHtml() {
+    if (!M.run) return '';
     const w = M.frame === 'world', sh = (id) => shown(id);
     const L = [['Belief', 'c-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'c-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'c-plan', sh('plan.path'), 1],
       ['Floor', 'c-floor', sh('sensors.depth.floor')], ['Obstacle', 'c-ob', sh('sensors.depth.obstacle')], ['Overhead', 'c-over', sh('sensors.depth.overhead')], ['Below floor', 'c-drop', sh('sensors.depth.below')],
       ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')]];
-    $('legend').innerHTML = L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})"></i>${n}</span>`).join('');
+    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})"></i>${n}</span>`).join('');
   }
+  const renderLegend = () => { $('legend').innerHTML = legendHtml(); };
+  // where the legend is hidden (narrow windows) the overlays popover carries the colour keys
+  const legendHidden = () => matchMedia('(max-width: 960px)').matches;
+  // a scale bar the length of 1 m on the screen (a nicer length when zooming makes 1 m too long or too short)
+  const SCALE_M = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20];
+  function updateScale() {
+    const el = $('scale'), ppm = M.run && hasTicks() ? adapter.scale?.() : null;
+    el.hidden = !(ppm > 0);
+    if (el.hidden) return;
+    const L = ppm >= 30 && ppm <= 220 ? 1 : [...SCALE_M].reverse().find((m) => m * ppm <= 160) || SCALE_M[0];
+    el.dataset.m = L; el.dataset.px = (L * ppm).toFixed(2);
+    el.innerHTML = `<i style="width:${(L * ppm).toFixed(1)}px"></i><span>${L} m</span>`;
+  }
+  const fit = () => { adapter.fit(); updateScale(); };
   function updateGizmo() {
     const g = $('gizmo');
     if (!M.run || !hasTicks() || M.view === 'three') return;
@@ -687,12 +720,22 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && (M.pres?.streams?.[id] || stream(id)?.missing));
     const quant = (t) => Math.round(pct(t) * 20) / 20;
     $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || cap(s.name))}</div>`; }).join('');
-    $('dlanes').innerHTML = ids.map((id) => {
+    const gaps = depthGaps().map(([a, b]) => `<span class="gap" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="No depth frames ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`).join('');
+    $('dlanes').innerHTML = gaps + ids.map((id) => {
       const s = stream(id), p = M.pres?.streams?.[id], miss = s.missing || !p;
       const sp = (p?.spans || []).map(([x, y]) => `<span class="sp" style="left:${pct(x)}%;width:calc(${pct(y) - pct(x)}% + 2px)"></span>`).join('');
       const seen = new Set(), pt = (p?.times || []).filter((t) => { const q = quant(t); if (seen.has(q)) return false; seen.add(q); return true; }).map((t) => `<span class="pt" style="left:${pct(t)}%"></span>`).join('');
       return `<div class="dl ${miss ? 'missing' : ''} ${shown(id) ? '' : 'hid'}" style="color:${styleOf(id).c}">${sp}${pt}</div>`;
     }).join('');
+  }
+  // where the run has ticks but no depth frames: between the depth spans (the presence of floor, obstacle and
+  // overhead returns, merged), inside the span of the ticks
+  function depthGaps() {
+    if (!hasTicks()) return [];
+    const sp = ['floor', 'obstacle', 'overhead'].flatMap((k) => M.pres?.streams?.['sensors.depth.' + k]?.spans || []).sort((a, b) => a[0] - b[0]), merged = [];
+    for (const [a, b] of sp) { const l = merged[merged.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else merged.push([a, b]); }
+    const t0 = M.fr.t[0], t1 = M.fr.t[M.fr.t.length - 1];
+    return merged.slice(1).map((m, i) => [merged[i][1], m[0]]).filter(([a, b]) => a >= t0 && b <= t1 && b > a);
   }
   function renderLanesSel() { document.querySelectorAll('#lanesL .lane-l').forEach((l) => l.classList.toggle('sel', l.dataset.lane === M.selNode)); renderBand(); }
   function renderBand() {
@@ -713,11 +756,15 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   function syncTime() {
     if (!M.run) return;
-    const ph = $('ph'); ph.style.left = pct(M.t) + '%'; ph.firstChild.textContent = M.t.toFixed(2) + ' s';
+    const ph = $('ph'), at = pct(M.t); ph.style.left = at + '%'; ph.firstChild.textContent = M.t.toFixed(2) + ' s';
+    // the time label is centred on the playhead but kept inside the strip, by its measured width
+    const head = ph.firstChild, hw = head.offsetWidth, sw = $('overlay').clientWidth, x = (at / 100) * sw;
+    head.style.transform = 'none';
+    head.style.left = clamp(x - hw / 2, 0, Math.max(0, sw - hw)) - x + 'px';
     const ti = $('tin'), ki = $('kin');
     if (document.activeElement !== ti) ti.value = M.t.toFixed(2);
-    if (document.activeElement !== ki) ki.value = hasTicks() ? M.i : 0;
-    $('kn').textContent = '/ ' + (hasTicks() ? M.fr.t.length - 1 : 0);
+    if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : 0;
+    $('kn').textContent = 'of ' + (hasTicks() ? M.fr.t.length : 0);
     renderBand();
     if (M.tab === 'moment' || M.sel) scheduleInsp();
   }
@@ -783,9 +830,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   // ---- wiring ---------------------------------------------------------------------------------------
   const shell = {
-    M, shown, cfg, tickAt, palette,
+    M, shown, cfg, size, tickAt, palette,
     pick: (sel) => select(sel),
-    viewChanged: () => updateGizmo(),
+    viewChanged: () => { updateGizmo(); updateScale(); },
   };
 
   $('scenes-link').onclick = () => window.miniview.scenes();
@@ -807,11 +854,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     <label class="cb"><input type="checkbox" data-ov="coords" ${M.ov.coords ? 'checked' : ''}>Coordinate system and grid</label>
     <label class="cb"><input type="checkbox" data-ov="rel" ${M.rel.belief_truth ? 'checked' : ''}>Belief ↔ truth line</label>
     <label class="cb"><input type="checkbox" data-ov="gizmo" ${M.ov.gizmo ? 'checked' : ''}>Axis gizmo</label>
-    <label class="cb"><input type="checkbox" data-ov="legend" ${M.ov.legend ? 'checked' : ''}>Legend</label>`,
+    <label class="cb"><input type="checkbox" data-ov="legend" ${M.ov.legend ? 'checked' : ''}>Legend</label>${legendHidden() && M.run ? `<h6>Legend</h6><div class="lg" id="lgpop">${legendHtml()}</div>` : ''}`,
   (p) => p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
     if (c.dataset.ov === 'rel') setRelation('belief_truth', c.checked); else { M.ov[c.dataset.ov] = c.checked; renderChrome(); if (hasTicks()) adapter.draw(); }
   })));
-  $('fitBtn').onclick = () => adapter.fit();
+  $('fitBtn').onclick = () => fit();
   $('helpBtn').onclick = () => help();
   $('filterBtn').onclick = (e) => popover(e.currentTarget, `<h6>Show in the list</h6><label class="cb"><input type="checkbox" id="fm" ${M.hideMissing ? '' : 'checked'}>Missing streams</label>`,
     (p) => (p.querySelector('#fm').onchange = (ev) => { M.hideMissing = !ev.target.checked; renderTree(); }));
@@ -863,7 +910,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
   dragField($('tfT'), { get: () => M.t, set: (v) => setTime(v), lo: -1e9, hi: 1e9, k: () => (M.run ? (M.run.t1 - M.run.t0) / 700 : 0.05), fmt: (v) => (+v).toFixed(2) });
-  dragField($('tfK'), { get: () => M.i, set: (v) => hasTicks() && setTime(M.fr.t[clamp(Math.round(v), 0, M.fr.t.length - 1)]), lo: 0, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)) });
+  dragField($('tfK'), { get: () => M.i + 1, set: (v) => hasTicks() && setTime(M.fr.t[clamp(Math.round(v) - 1, 0, M.fr.t.length - 1)]), lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)) });
   new ResizeObserver(() => { if (M.run) { renderRuler(); renderMarkers(); renderLanes(); syncTime(); } }).observe($('overlay'));
 
   // the splitter between the outliner and the properties
@@ -879,10 +926,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   stage.addEventListener('pointermove', (e) => {
     if (!hasTicks()) return;
     const c = adapter.cursor(e.clientX, e.clientY);
-    $('readout').textContent = c ? `${c.axes[0]} ${fx(c.v[0])}  ${c.axes[1]} ${fx(c.v[1])} m  ${M.frame}` : `x —  y — m  ${M.frame}`;
+    $('readout').textContent = c ? `${c.axes[0]} ${fx(c.v[0])}  ${c.axes[1]} ${fx(c.v[1])} m  ${M.frame}${c.note ? ' · ' + c.note : ''}` : `x —  y — m  ${M.frame}`;
   });
   stage.addEventListener('pointerleave', () => { $('readout').textContent = 'x —  y — m'; });
-  new ResizeObserver(() => adapter.resize()).observe(stage);
+  new ResizeObserver(() => { adapter.resize(); updateScale(); }).observe(stage);
 
   function help() {
     if (document.querySelector('.help')) return;
@@ -918,12 +965,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     else if (k === '2') setView('three');
     else if (k === '3') setView('3d');
     else if (lk === 'w') setFrame(M.frame === 'world' ? 'map' : 'world');
-    else if (lk === 'f') adapter.fit();
+    else if (lk === 'f') fit();
   });
 
   // ---- boot ---------------------------------------------------------------------------------------------
   adapter.init(stage, shell);
-  loadFonts();
   applyTheme(stored() || (mq.matches ? 'light' : 'dark'));
   const h = new URLSearchParams(location.hash.slice(1));
   M.view = VIEW_ALIAS[h.get('view')] || (VIEWS.includes(h.get('view')) ? h.get('view') : 'top');
@@ -937,22 +983,18 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (h.get('run') || h.get('scene')) await openRun(h.get('scene') || undefined, h.get('run') || undefined);
       else if (!M.run && !M.loading) scenesPage();
       renderChrome();
+      await fontsReady();
     } catch (e) { console.error(e); document.body.append(String(e)); } finally { end(); }
   })();
   return shell;
 }
 
-// Inter and JetBrains Mono from Google Fonts, added once the page has loaded so that an offline or slow
-// font host never delays the workbench; the system fonts in the --ui and --mono stacks show until they arrive.
-function loadFonts() {
-  const add = () => {
-    for (const [rel, href, cross] of [['preconnect', 'https://fonts.googleapis.com'], ['preconnect', 'https://fonts.gstatic.com', true],
-      ['stylesheet', 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap']]) {
-      const l = document.createElement('link'); l.rel = rel; l.href = href; if (cross) l.crossOrigin = '';
-      document.head.append(l);
-    }
-  };
-  if (document.readyState === 'complete') add(); else addEventListener('load', add, { once: true });
+// The pages link Inter and JetBrains Mono from Google Fonts in their <head>. A font file is fetched only when
+// text first uses it, so a screenshot taken at once used to show the system fallbacks; ready waits for them,
+// but never longer than 3 s (offline, the system fonts in the --ui and --mono stacks stay).
+async function fontsReady() {
+  await new Promise((r) => requestAnimationFrame(() => r()));
+  await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))]);
 }
 
 const TEMPLATE = `
@@ -1000,7 +1042,7 @@ const TEMPLATE = `
       <button class="icon-btn" id="fitBtn" title="Fit the run (F)"><svg class="i" data-i="fit"></svg></button>
     </div>
     <svg class="gizmo" id="gizmo" viewBox="0 0 56 56" aria-hidden="true"></svg>
-    <div class="legend" id="legend"></div>
+    <div class="vcorner"><div class="scale" id="scale" hidden></div><div class="legend" id="legend"></div></div>
     <div class="readout" id="readout">x —  y — m</div>
   </main>
 
@@ -1021,7 +1063,7 @@ const TEMPLATE = `
       <button class="icon-btn" id="tNext" title="Next tick (→)"><svg class="i" data-i="right"></svg></button>
       <button class="icon-btn" id="tLast" title="End (End)"><svg class="i" data-i="last"></svg></button>
       <span class="tfield" id="tfT" title="Drag to scrub, click to type"><input id="tin" aria-label="Time in seconds" value="0.00"><span class="u">s</span></span>
-      <span class="tfield tick" id="tfK" title="Tick"><input id="kin" aria-label="Tick" value="0"><span class="u" id="kn">/ 0</span></span>
+      <span class="tfield tick" id="tfK" title="Tick: drag to scrub, click to type"><span class="u">tick</span><input id="kin" aria-label="Tick (1-based)" value="1"><span class="u" id="kn">of 0</span></span>
     </div>
     <div class="tlopts">
       <button class="mini" id="speedBtn" title="Playback speed (Shift+↑/↓)">1×<svg class="i" data-i="down" style="width:11px;height:11px"></svg></button>

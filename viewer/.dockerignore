@@ -2,4 +2,3 @@
 site
 tests
 **/__pycache__
-web/*/shots

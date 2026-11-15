@@ -1,0 +1,67 @@
+# Build, test and check every project in the repo: the NXT web UI (nxt/), the duck's navigator and
+# tools (duck/), and miniview (viewer/). The docs have their own workflow (docs.yml).
+#
+# Each job runs the same make targets as on the workstation, so a red job reproduces locally with
+# the target named in its step:
+#   unit   → make ci-fast            lint + every project's unit tests
+#   pages  → make test-viewer-pages  miniview's two pages in headless Chromium
+#   images → make test-integration test-viewer-image nxt-programs   the Docker images, the NXC programs
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: '0.12.10'
+
+jobs:
+  unit:
+    name: Unit tests (nxt, duck, viewer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install "uv==${UV_VERSION}"
+      - name: make ci-fast
+        run: make ci-fast
+
+  pages:
+    name: miniview pages (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        run: pip install "uv==${UV_VERSION}"
+      - name: Playwright's Chromium
+        run: make viewer-sync && cd viewer && uv run --frozen playwright install --with-deps chromium
+      - name: make test-viewer-pages
+        run: make test-viewer-pages
+
+  images:
+    name: Images and NXC programs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: make test-integration (the NXT web UI image)
+        run: make test-integration
+      - name: make test-viewer-image (miniview's image)
+        run: make test-viewer-image
+      - name: make nxt-programs
+        run: make nxt-programs

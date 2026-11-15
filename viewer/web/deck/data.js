@@ -22,19 +22,23 @@ export function prepareScene(sc) {
       return [b.cx + c * x - s * y, b.cy + s * x + c * y, z];
     });
   };
-  const paths = [];
+  const paths = [], fill = [], stairs = [];
   for (const b of sc.boxes) {
+    if (b.z0 >= 0.5) continue;
     const z1 = Math.min(b.z1, 0.5); // cut away at 0.5 m
     const lo = ring(b, b.z0), hi = ring(b, z1);
-    paths.push({ path: lo }, { path: hi });
-    for (let k = 0; k < 4; k++) paths.push({ path: [lo[k], hi[k]] });
+    const stair = b.name.startsWith('stair');
+    (stair ? stairs : fill).push({ poly: lo.slice(0, 4), z0: b.z0, z1 });
+    paths.push({ path: lo, stair }, { path: hi, stair });
+    for (let k = 0; k < 4; k++) paths.push({ path: [lo[k], hi[k]], stair });
   }
   const hz = sc.hazards.flatMap((h) => {
     const r = (z) => [[h.x0, h.y0, z], [h.x1, h.y0, z], [h.x1, h.y1, z], [h.x0, h.y1, z], [h.x0, h.y0, z]];
     const lo = r(-h.depth), hi = r(0);
     return [{ path: hi }, { path: lo }, ...[0, 1, 2, 3].map((k) => ({ path: [lo[k], hi[k]] }))];
   });
-  return { ...sc, boxPaths: paths, hazardPaths: hz };
+  const pits = sc.hazards.map((h) => ({ poly: [[h.x0, h.y0], [h.x1, h.y0], [h.x1, h.y1], [h.x0, h.y1]], z0: -h.depth, z1: 0 }));
+  return { ...sc, boxPaths: paths, boxFill: fill, stairFill: stairs, hazardPaths: hz, pitFill: pits };
 }
 
 export function prepareRun(run, f) {

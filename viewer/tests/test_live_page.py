@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 from miniview.catalog import Catalog
 from miniview.importer import import_duck
 from miniview.server import make_server
-from miniview.shots import ARGS, CHROMIUM
+from miniview.shots import launch
 
 failures = []
 
@@ -26,11 +26,14 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-def write_log(log: Path, stop: threading.Event) -> None:
-    """A navigator logging a tick every 0.15 s for about 6 s (run time 0.1 s apart), then trapped. Slow enough that
-    two cold pages, each starting WebGL, are open before it ends."""
+def write_log(log: Path, stop: threading.Event, pages_open: threading.Event) -> None:
+    """A navigator logging a tick every 0.15 s (run time 0.1 s apart), then trapped. After 10 ticks it waits until
+    both pages are open: opening two cold pages can take longer than the whole run on a busy machine, and the
+    pages must meet the run while it is still live."""
     with open(log / "ticks.jsonl", "w") as fh:
         for i in range(40):
+            if i == 10:
+                pages_open.wait(120)
             t = 1.0 + i * 0.1
             fh.write(json.dumps({"t": round(t, 3), "pose": [0.01 * i, 0.0, 0.0], "truth": [0.01 * i, 0.0, 0.0],
                                  "vx": 0.1, "vyaw": 0.0, "depth": [[0.01 * i + 0.4, 0.0, 0.0, "o"]]}) + "\n")
@@ -54,16 +57,17 @@ with tempfile.TemporaryDirectory() as tmp:
     written = threading.Event()
     (log / "ticks.jsonl").write_text("")
     imp = threading.Thread(target=import_duck, args=(log, "room", data),
-                           kwargs={"follow": True, "idle_s": 20, "say": lambda *_: None}, daemon=True)
+                           kwargs={"follow": True, "idle_s": 150, "say": lambda *_: None}, daemon=True)
     imp.start()
-    writer = threading.Thread(target=write_log, args=(log, written), daemon=True)
+    pages_open = threading.Event()
+    writer = threading.Thread(target=write_log, args=(log, written, pages_open), daemon=True)
     writer.start()
     t_end = time.monotonic() + 10
     while time.monotonic() < t_end and cat.get("explore99") is None:
         time.sleep(0.2)
 
     with sync_playwright() as p:
-        b = p.chromium.launch(executable_path=CHROMIUM, args=ARGS)
+        b = launch(p)
         pages = {}
         for lib in ("three", "deck"):
             pg = b.new_page(viewport={"width": 1200, "height": 800})
@@ -79,6 +83,7 @@ with tempfile.TemporaryDirectory() as tmp:
         first = {lib: pg.evaluate(ticks[lib]) for lib, pg in pages.items()}
         check("both pages show the live run with its follow switch", all(
             pg.evaluate("!document.getElementById('follow').hidden") for pg in pages.values()), first)
+        pages_open.set()
         # typing into a field while the live run refreshes the panels every second: the field survives
         pg = pages["three"]
         pg.evaluate("window.miniview.setTimeMode('belief.track', 'window', 2)")

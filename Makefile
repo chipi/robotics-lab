@@ -1,9 +1,11 @@
 # robotics-lab — Makefile
 #
 # Layered tiers, as in the operator's other projects (flotilla, eval-harness):
-#   - lint / test-unit / test-integration → atomic
+#   - lint / test-unit / test-duck / test-viewer / test-viewer-pages /
+#     test-integration / test-viewer-image  → atomic (one project, one kind of check)
 #   - ci-fast                             → what every push must pass (fast feedback)
 #   - ci                                  → what every merge must pass (full gate)
+#   CI (.github/workflows/ci.yml) runs these same targets.
 #   - nxt-*                               → run, package and program the NXT
 #   - test-hardware                       → checks against the real NXT (manual, never in CI)
 #   - docs-*                              → MkDocs site (preview + strict build) and markdownlint
@@ -35,6 +37,10 @@ NXT_LINK       ?= auto
 NXT_IMAGE      ?= robotics-lab/nxt-web:dev
 NXT_DATA       ?= nxt-web-data
 
+DUCK_DIR       := duck
+VIEWER_DIR     := viewer
+VIEWER_IMAGE   ?= miniview:ci
+
 # ---- Meta --------------------------------------------------------------------
 
 .PHONY: help
@@ -49,10 +55,46 @@ help: ## Show this help (default target)
 nxt-sync: ## Create/refresh the NXT project's venv from its lock (uv)
 	@cd $(NXT_DIR) && uv sync --frozen && echo "nxt-sync PASS"
 
+.PHONY: duck-sync viewer-sync
+duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its dev tools: the tests need rerun-sdk)
+	@cd $(DUCK_DIR) && uv sync --frozen && echo "duck-sync PASS"
+
+viewer-sync: ## Create/refresh the viewer's venv from its lock (uv, with Playwright)
+	@cd $(VIEWER_DIR) && uv sync --frozen && echo "viewer-sync PASS"
+
 .PHONY: lint
-lint: ## Byte-compile every Python file
-	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests >/dev/null || { echo "lint FAIL: Python does not compile"; exit 1; }
+lint: ## Byte-compile every Python file of every project
+	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
+	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(VIEWER_DIR)/src $(VIEWER_DIR)/tests >/dev/null \
+	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@echo "lint PASS"
+
+# One line per test file: PASS, or FAIL with its output. $(1) the project dir, $(2) the test files.
+define run_tests
+	@fail=0; for t in $(2); do \
+	  log=$$(mktemp); \
+	  if (cd $(1) && uv run --frozen $(3) python $$t) >$$log 2>&1; then echo "PASS $(1)/$$t"; \
+	  else echo "FAIL $(1)/$$t"; cat $$log; fail=1; fi; rm -f $$log; \
+	done; exit $$fail
+endef
+
+DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py \
+                       tests/test_world.py tests/test_miniview.py
+VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_server.py
+VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_ui.py
+
+.PHONY: test-duck test-viewer test-viewer-pages
+test-duck: duck-sync ## The duck's navigator and tools, no simulator
+	$(call run_tests,$(DUCK_DIR),$(DUCK_TESTS),)
+	@echo "test-duck PASS"
+
+test-viewer: viewer-sync ## miniview: adapter, queries, MCAP, the API and live service
+	$(call run_tests,$(VIEWER_DIR),$(VIEWER_TESTS),)
+	@echo "test-viewer PASS"
+
+test-viewer-pages: viewer-sync ## miniview's two pages in headless Chromium (MINIVIEW_CHROMIUM, else Playwright's)
+	$(call run_tests,$(VIEWER_DIR),$(VIEWER_PAGE_TESTS),)
+	@echo "test-viewer-pages PASS"
 
 .PHONY: test-unit
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
@@ -80,14 +122,31 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	    || { echo "FAIL image did not answer as expected"; cat /tmp/robotics-lab-image-status.json 2>/dev/null; docker logs $$cid; exit 1; }
 	@echo "test-integration PASS"
 
+.PHONY: test-viewer-image
+test-viewer-image: ## miniview's image: build it, start it on an empty data folder, check its API and pages answer
+	@docker build -q -t $(VIEWER_IMAGE) $(VIEWER_DIR) >/dev/null
+	@data=$$(mktemp -d); \
+	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data:/data --user $$(id -u):$$(id -g) $(VIEWER_IMAGE)); \
+	  trap 'docker stop $$cid >/dev/null; rm -rf $$data' EXIT; \
+	  port=$$(docker port $$cid 8070/tcp | head -1 | sed 's/.*://'); \
+	  for i in $$(seq 1 60); do curl -fs -m 2 http://127.0.0.1:$$port/api/v1/health >/tmp/robotics-lab-miniview-health.json && break; sleep 0.25; done; \
+	  grep -q '"ok":true' /tmp/robotics-lab-miniview-health.json \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/scenes | grep -q '"format":1' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/web/three/ | grep -qi '<html' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/web/shell/shell.js >/dev/null \
+	    && test -f $$data/index.sqlite \
+	    && echo "PASS miniview image answers: $$(cat /tmp/robotics-lab-miniview-health.json)" \
+	    || { echo "FAIL miniview image"; cat /tmp/robotics-lab-miniview-health.json 2>/dev/null; docker logs $$cid; exit 1; }
+	@echo "test-viewer-image PASS"
+
 # ---- Composite tiers ---------------------------------------------------------
 
 .PHONY: ci-fast
-ci-fast: lint test-unit ## What every push must pass (fast feedback)
+ci-fast: lint test-unit test-duck test-viewer ## What every push must pass (fast feedback): every project's unit tests
 	@echo "ci-fast PASS"
 
 .PHONY: ci
-ci: ci-fast test-integration nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
+ci: ci-fast test-viewer-pages test-integration test-viewer-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
 	@echo "ci PASS"
 
 # ---- NXT: run and package ----------------------------------------------------

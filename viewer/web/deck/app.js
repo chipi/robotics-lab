@@ -5,22 +5,23 @@ import { buildLayers, setPalette } from './layers.js';
 
 const { Deck, OrthographicView, OrbitView } = deck;
 
+const ELEVATION = (Math.asin(6.5 / Math.hypot(5.5, 7.5, 6.5)) * 180) / Math.PI, ORBIT = 36.3;
 let S, M, dk, stage, deckEl, tagsEl;
 let panes = [], viewState = {}, userView = false, afterRender = [];
 // what layers.js reads: the run, the scene, the moment, and the shell's say on what is shown
-const X = { D: null, scene: null, i: 0, dv: false, coord: true, rel: null, selPos: null, pickBase: {}, shown: () => false, cfg: () => ({ mode: 'at', n: 2 }) };
+const X = { D: null, scene: null, i: 0, dv: false, coord: true, rel: null, selPos: null, pickBase: {}, shown: () => false, cfg: () => ({ mode: 'at', n: 2 }), size: () => 4 };
 let runRaw = null, frRaw = null;
 
 // --- views -----------------------------------------------------------------
 const paneList = (mode) => (mode === 'three'
-  ? [{ id: 'top', kind: 'top', x: 0, y: 0, w: 0.5, h: 0.5 }, { id: '3d', kind: '3d', x: 0.5, y: 0, w: 0.5, h: 0.5 },
-    { id: 'front', kind: 'front', x: 0, y: 0.5, w: 0.5, h: 0.5 }, { id: 'right', kind: 'right', x: 0.5, y: 0.5, w: 0.5, h: 0.5 }]
+  ? [{ id: 'top', kind: 'top', x: 0, y: 0, w: 0.5, h: 1 }, { id: 'front', kind: 'front', x: 0.5, y: 0, w: 0.5, h: 0.5 },
+    { id: 'right', kind: 'right', x: 0.5, y: 0.5, w: 0.5, h: 0.5 }]
   : [{ id: mode, kind: mode, x: 0, y: 0, w: 1, h: 1 }]);
 
 function makeViews() {
   return panes.map((p) => {
     const box = { x: `${p.x * 100}%`, y: `${p.y * 100}%`, width: `${p.w * 100}%`, height: `${p.h * 100}%` };
-    return p.kind === '3d' ? new OrbitView({ id: p.id, controller: true, ...box }) : new OrthographicView({ id: p.id, flipY: false, near: -100, far: 100, controller: true, ...box });
+    return p.kind === '3d' ? new OrbitView({ id: p.id, controller: true, fovy: 45, ...box }) : new OrthographicView({ id: p.id, flipY: false, near: -100, far: 100, controller: true, ...box });
   });
 }
 
@@ -28,12 +29,13 @@ function fit() {
   const b = X.scene ? X.scene.bounds : [-4, 4, -3, 3], W = stage.clientWidth, H = stage.clientHeight, cx = (b[0] + b[1]) / 2, cy = (b[2] + b[3]) / 2;
   viewState = {};
   for (const p of panes) {
-    const w = W * p.w, h = H * p.h, m = 1.0;
+    const w = W * p.w, h = H * p.h, m = 1.8;
     if (p.kind === 'top') viewState[p.id] = { target: [cx, cy, 0], zoom: Math.log2(Math.min(w / (b[1] - b[0] + m), h / (b[3] - b[2] + m))) };
-    else if (p.kind === '3d') viewState[p.id] = { target: [cx, cy, 0], zoom: Math.log2(Math.min(w, h) / 10), rotationX: 40, rotationOrbit: -25 };
+    // the three.js page's camera: 45 degrees, from (-5.5, -7.5, 6.5) at the origin, so 11 m of height fill the pane (the same framing)
+    else if (p.kind === '3d') viewState[p.id] = { target: [0, 0, 0], zoom: Math.log2(h / 11), rotationX: ELEVATION, rotationOrbit: ORBIT };
     else {
-      const fb = p.kind === 'front' || p.kind === 'back', ext = fb ? b[1] - b[0] : b[3] - b[2];
-      const c = fb ? cx : cy, sign = p.kind === 'back' || p.kind === 'left' ? -1 : 1; // screen x = sign * c
+      const fb = p.kind === 'front' || p.kind === 'back', ext = fb ? b[3] - b[2] : b[1] - b[0];   // front and back show y across, right and left x
+      const c = fb ? cy : cx, sign = p.kind === 'back' || p.kind === 'left' ? -1 : 1;           // screen x = sign * c
       viewState[p.id] = { target: [sign * c, 0.5, 0], zoom: Math.log2(Math.min(w / (ext + 1), h / 3.6)) };
     }
   }
@@ -100,16 +102,27 @@ const adapter = {
     tagsEl = document.createElement('div'); tagsEl.id = 'tags';
     stage.prepend(tagsEl); stage.prepend(deckEl);
     X.rel = M.rel;
-    X.shown = (id, pane) => S.shown(id, pane); X.cfg = (id) => S.cfg(id);
+    X.shown = (id, pane) => S.shown(id, pane); X.cfg = (id) => S.cfg(id); X.size = (id) => S.size(id);
     panes = paneList('top');
     dk = new Deck({
       parent: deckEl, views: makeViews(), viewState: {}, controller: true, layers: [], useDevicePixels: 1, pickingRadius: 5,
       layerFilter: ({ layer, viewport }) => layer.id.endsWith('@' + viewport.id),
       onViewStateChange: ({ viewId, viewState: v }) => { viewState = { ...viewState, [viewId]: v }; userView = true; dk.setProps({ viewState }); S.viewChanged(); },
       onAfterRender: () => { const q = afterRender; afterRender = []; q.forEach((r) => r()); },
-      onClick: (info) => onClick(info),
       getCursor: () => 'crosshair',
     });
+    // A click is a press and a release that moved less than 4 px, however long it took: deck's own tap gives up after
+    // 250 ms, which a slow frame exceeds. Picking is by hand on the release; dragging still pans.
+    let down = null;
+    deckEl.addEventListener('pointerdown', (e) => { down = e.button === 0 ? [e.clientX, e.clientY] : null; }, true);
+    deckEl.addEventListener('pointerup', (e) => {
+      if (!down) return;
+      const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+      down = null;
+      if (moved > 4) return;
+      const r = deckEl.getBoundingClientRect();
+      onClick(dk.pickObject({ x: e.clientX - r.left, y: e.clientY - r.top, radius: 5 }) || { index: -1 });
+    }, true);
   },
 
   setScene(sc) { X.scene = prepareScene(sc); },
@@ -129,19 +142,13 @@ const adapter = {
     X.pickBase = {};
     dk.setProps({ layers: panes.flatMap((p) => buildLayers(X, p)) });
   },
-  // deck.gl applies the layers set by draw() on its next animation frame (and onAfterRender may belong to an
-  // earlier one): ready is when its layer manager holds our layers and no redraw is pending
+  // deck.gl applies the layers set by draw() on its next animation frame, and calls onAfterRender when that frame is
+  // drawn: ready is that call (or, should deck have nothing to redraw, 1.5 s). Never force a redraw here: each one
+  // is a whole frame, and they pile up.
   settled: () => new Promise((r) => {
-    const last = dk.props.layers[dk.props.layers.length - 1];
     const finish = () => { clearTimeout(to); r(); };
-    const to = setTimeout(finish, 4000);
-    const poll = () => {
-      const synced = !last || dk.layerManager.getLayers().includes(last);
-      if (synced && !dk.needsRedraw({ clearRedrawFlags: false })) return finish();
-      if (!synced && !dk.needsRedraw({ clearRedrawFlags: false })) dk.redraw('miniview');
-      setTimeout(poll, 16);
-    };
-    poll();
+    const to = setTimeout(finish, 1500);
+    afterRender.push(finish);
   }),
   resize() { if (!userView && X.D && stage.clientWidth && stage.clientHeight) { fit(); dk.setProps({ viewState }); } },
   fit() { fit(); dk.setProps({ viewState }); },
@@ -151,16 +158,36 @@ const adapter = {
   },
   describe,
   deck: () => dk,
+  fillsDrawn: (pane) => dk.props.layers.some((l) => l.id === 'boxfill@' + pane && l.props.visible),
+  project(p) {
+    const vp = dk.getViewports()[0], r = stage.getBoundingClientRect();
+    if (!vp) return null;
+    const q = vp.project(p);
+    return [r.left + vp.x + q[0], r.top + vp.y + q[1]];
+  },
 
-  // world coordinates under the pointer: the top view directly, the side views through their rotation
+  // world coordinates under the pointer: the two axes of an orthographic pane (the side views through their rotation);
+  // in the 3D pane the point of the floor (z = 0) under it, found by intersecting the pointer's ray (the unprojected
+  // near and far points) with that plane; null values where it misses
   cursor(cx, cy) {
     const h = viewportAt(cx, cy);
     if (!h) return null;
     const pane = panes.find((p) => p.id === h.vp.id);
-    if (!pane || pane.kind === '3d') return null;
+    if (!pane) return null;
+    if (pane.kind === '3d') {
+      const a = h.vp.unproject([h.x, h.y, 0]), b = h.vp.unproject([h.x, h.y, 1]), t = a[2] / (a[2] - b[2]);
+      const ok = Number.isFinite(t) && t >= 0 && t <= 1;
+      return { axes: ['x', 'y'], v: ok ? [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])] : [null, null], note: 'floor z 0' };
+    }
     const [sx, sy] = h.vp.unproject([h.x, h.y]);
-    return { top: { axes: ['x', 'y'], v: [sx, sy] }, front: { axes: ['x', 'z'], v: [sx, sy] }, back: { axes: ['x', 'z'], v: [-sx, sy] },
-      right: { axes: ['y', 'z'], v: [sx, sy] }, left: { axes: ['y', 'z'], v: [-sx, sy] } }[pane.kind] || null;
+    return { top: { axes: ['x', 'y'], v: [sx, sy] }, front: { axes: ['y', 'z'], v: [sx, sy] }, back: { axes: ['y', 'z'], v: [-sx, sy] },
+      right: { axes: ['x', 'z'], v: [sx, sy] }, left: { axes: ['x', 'z'], v: [-sx, sy] } }[pane.kind] || null;
+  },
+
+  // pixels per metre of the first pane when it is orthographic (deck.gl's zoom is the log2 of it)
+  scale() {
+    const p = panes[0], z = p && viewState[p.id]?.zoom;
+    return p && p.kind !== '3d' && Number.isFinite(z) ? 2 ** z : null;
   },
 
   // the world axes as the 3D pane's camera sees them, from projecting the origin and the unit points

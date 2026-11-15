@@ -2,14 +2,33 @@
 
 Starts the service (API and pages) on a free port (its own thread, stopped at the end), opens the page in
 Chromium with software GL through Playwright, drives it only through `window.miniview` (CONTRACT.md)
-and screenshots the page. Playwright is the viewer's dev dependency; Chromium is the system's.
+and screenshots the page. Playwright is the viewer's dev dependency; Chromium is the system's when it
+is there, else Playwright's own (`uv run playwright install --with-deps chromium`).
 """
 
+import os
 import threading
 from pathlib import Path
 
-CHROMIUM = "/usr/bin/chromium"
+SYSTEM_CHROMIUM = "/usr/bin/chromium"
 ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"]
+
+
+def chromium_path() -> str | None:
+    """The Chromium to launch: MINIVIEW_CHROMIUM when set and non-empty; else the system's, but not in CI
+    (on a runner /usr/bin/chromium can be a snap wrapper that fails headless) and only if it exists; else
+    None, which is Playwright's bundled Chromium."""
+    env = os.environ.get("MINIVIEW_CHROMIUM", "").strip()
+    if env:
+        return env
+    if os.environ.get("CI", "").lower() != "true" and Path(SYSTEM_CHROMIUM).exists():
+        return SYSTEM_CHROMIUM
+    return None
+
+
+def launch(p):
+    """Every test and picture launches Chromium through here (software GL, no sandbox)."""
+    return p.chromium.launch(executable_path=chromium_path(), args=ARGS)
 
 
 class _Server:
@@ -46,7 +65,7 @@ def pictures(catalog, lib: str, scene: str, run: str, shots: list, size=(1400, 9
 
     written = []
     with _Server(catalog) as srv, sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=CHROMIUM, args=ARGS)
+        browser = launch(p)
         page = browser.new_page(viewport={"width": size[0], "height": size[1]}, device_scale_factor=1)
         page.goto(f"http://127.0.0.1:{srv.port}/web/{lib}/index.html")
         page.wait_for_function("window.miniview !== undefined", timeout=30000)
@@ -88,7 +107,7 @@ def sheet(images: list, captions: list, out: Path, cols: int) -> Path:
             "figcaption{padding:2px 4px;color:#333}</style>"
             f'<div class="g">{"".join(cells)}</div>')
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=CHROMIUM, args=ARGS)
+        browser = launch(p)
         page = browser.new_page(viewport={"width": 1800, "height": 600})
         page.set_content(html)
         page.wait_for_timeout(300)

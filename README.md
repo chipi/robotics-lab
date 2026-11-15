@@ -6,6 +6,22 @@ with its own `.venv`.
 | Project | What |
 | --- | --- |
 | [nxt/](nxt/) | LEGO Mindstorms NXT 2.0 driven from our own Python code: web UI, NXC programs |
+| [duck/](duck/) | Pollen's Microduck in simulation: the navigator, exploration, probes, recording |
+| [viewer/](viewer/) | miniview: runs as MCAP, an API with live runs, the workbench pages (`make viewer-up`) |
+
+## Checks and CI
+
+The same make targets run on the workstation and in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)),
+so a red job reproduces locally with the target it names:
+
+| Target | What |
+| --- | --- |
+| `make ci-fast` | lint, then every project's unit tests: `test-unit` (nxt), `test-duck`, `test-viewer` |
+| `make test-viewer-pages` | miniview's two pages in headless Chromium (`MINIVIEW_CHROMIUM`, else Playwright's) |
+| `make test-integration` | the NXT web UI image answers with a simulated brick |
+| `make test-viewer-image` | miniview's image starts on an empty data folder and serves its API and pages |
+| `make nxt-programs` | every NXC program compiles for the brick |
+| `make ci` | all of the above and the docs (`docs-lint`, `docs-build`) |
 
 ## Docs
 

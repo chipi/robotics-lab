@@ -8,7 +8,7 @@ import { buildScene, buildRun, setPalette } from './build.js';
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'plan.path', 'rel.belief_truth'];
+  'world.grid', 'world.obstacles', 'world.drops', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards'];
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
@@ -20,13 +20,17 @@ const bounds = () => scn?.bounds ?? [-4, 4, -3, 3];
 const setLayers = (obj, id) => obj.traverse((o) => o.layers.set(LAYER[id]));
 
 // the selection marker: a ring that stays the same size on screen
-function makeMarker() {
+// a ring in the theme's selection colour with a halo in the viewport's, so it reads on either background
+function markerTexture(ring, halo) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d');
-  g.lineWidth = 6; g.strokeStyle = '#000'; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke();
-  g.lineWidth = 3; g.strokeStyle = '#fff'; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke();
+  g.lineWidth = 13.5; g.strokeStyle = halo; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke();
+  g.lineWidth = 7.4; g.strokeStyle = ring; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+function makeMarker() {
   const m = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3)),
-    new THREE.PointsMaterial({ map: new THREE.CanvasTexture(c), size: 26, sizeAttenuation: false, transparent: true, depthTest: false }));
+    new THREE.PointsMaterial({ map: markerTexture('#fff', '#000'), size: 26, sizeAttenuation: false, transparent: true, depthTest: false }));
   m.frustumCulled = false; m.renderOrder = 10; m.visible = false;
   return m;
 }
@@ -35,6 +39,7 @@ function buildSceneObjects() {
   if (sceneG) scene.remove(sceneG);
   sceneG = buildScene(scn);
   for (const [id, o] of Object.entries(sceneG.parts)) setLayers(o, id);
+  for (const [id, list] of Object.entries(sceneG.fills)) for (const o of list) setLayers(o, id);
   scene.add(sceneG);
 }
 
@@ -102,7 +107,10 @@ const adapter = {
     marker = makeMarker(); scene.add(marker);
     views.layerMask = (view) => {
       let m = 1;
-      for (const id of DRAWN) if (S.shown(id, view)) m |= 1 << LAYER[id];
+      for (const id of DRAWN) {
+        const fill = id.startsWith('fill.');     // the faint faces of boxes and pits: from above and in 3D, outlines only in a side view
+        if (fill ? (view === 'top' || view === '3d') && S.shown(id === 'fill.boxes' ? 'scene.boxes' : 'scene.hazards', view) : S.shown(id, view)) m |= 1 << LAYER[id];
+      }
       return m;
     };
     const rc = new THREE.Raycaster();
@@ -127,7 +135,7 @@ const adapter = {
 
   draw(sync = false) {
     if (!fr || !RW) return;
-    RW.update(M.i, M.t, S.cfg); RM.update(M.i, M.t, S.cfg);
+    RW.update(M.i, M.t, S.cfg, S.size); RM.update(M.i, M.t, S.cfg, S.size);
     applyVis(); placeMarker();
     views.coords = M.ov.coords;
     views.render();
@@ -139,13 +147,18 @@ const adapter = {
   theme(p) {
     setPalette(p);
     renderer.setClearColor(p['bg-viewport']);
+    marker.material.map = markerTexture(p['draw-sel'], p['bg-viewport']); marker.material.needsUpdate = true;
     if (scn) buildSceneObjects();
     if (run && fr) buildRunObjects();
     if (views.layout) { rebuilding = true; views.setup(views.layout, bounds(), views.frameName); rebuilding = false; }
   },
   describe,
   cursor: (x, y) => views.cursorAt(x, y),
+  scale: () => views.scale(),
+  fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,
+  project: (p) => views.project(p),
   gizmo: () => views.axes3d(),
 };
 
 createShell(adapter, { title: 'miniview - three.js' });
+

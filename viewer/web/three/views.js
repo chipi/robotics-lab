@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { C } from './build.js';
+import { C, RES } from './build.js';
 
 const ZR = [-0.7, 1.8];
 // dir: where the camera sits (looking at the origin); hAxis/vAxis: what runs right / up on the screen
@@ -114,7 +114,9 @@ export class Views {
   resetCamera(s) {
     const b = this.bounds, v = VIEWS[s.name], cam = s.camera;
     if (s.is3) {
-      cam.position.set(-5.5, -7.5, 6.5); s.controls.target.set(0, 0, 0);
+      // 9.4 m of height fill the pane from 11.35 m away; 11 m leave the grid numbers clear of the legend and the readout
+      const k = 11 / 9.4;
+      cam.position.set(-5.5 * k, -7.5 * k, 6.5 * k); s.controls.target.set(0, 0, 0);
       cam.aspect = s.w / s.h; cam.updateProjectionMatrix();
     } else {
       const [h0, h1] = rng(b, v.h), [v0, v1] = rng(b, v.v), m = 0.7;
@@ -156,15 +158,37 @@ export class Views {
     this.onChange();
   }
 
-  // the world coordinates under a screen point, in the plane an orthographic view shows; null elsewhere
+  // the world coordinates under a screen point: the two axes an orthographic view shows, or in the 3D view the point
+  // of the floor (z = 0) under the pointer (null values where the ray misses it); null outside every pane
   cursorAt(cx, cy) {
     for (const s of this.slots) {
       const r = s.el.getBoundingClientRect();
-      if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom || s.is3) continue;
-      const p = new THREE.Vector3(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1, 0).unproject(s.camera), v = VIEWS[s.name];
+      if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) continue;
+      const nx = ((cx - r.left) / r.width) * 2 - 1, ny = -((cy - r.top) / r.height) * 2 + 1;
+      if (s.is3) {
+        const rc = new THREE.Raycaster(), hit = new THREE.Vector3();
+        rc.setFromCamera({ x: nx, y: ny }, s.camera);
+        const ok = rc.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit);
+        return { axes: ['x', 'y'], v: ok ? [hit.x, hit.y] : [null, null], note: 'floor z 0' };
+      }
+      const p = new THREE.Vector3(nx, ny, 0).unproject(s.camera), v = VIEWS[s.name];
       return { axes: [v.h, v.v], v: [p[v.h], p[v.v]] };
     }
     return null;
+  }
+
+  // the screen position (client pixels) of a world point in the first pane
+  project(p) {
+    const s = this.slots[0];
+    if (!s) return null;
+    const v = new THREE.Vector3(...p).project(s.camera), r = s.el.getBoundingClientRect();
+    return [r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height];
+  }
+
+  // pixels per metre of the first orthographic pane (the top view in the three-view layout), or null
+  scale() {
+    const s = this.slots[0];
+    return s && !s.is3 && s.w ? 1 / this.metresPerPx(s) : null;
   }
 
   // the world axes in the 3D view's camera space (x right, y up, z toward the viewer)
@@ -183,6 +207,7 @@ export class Views {
       s.camera.layers.mask = this.layerMask(s.name);
       r.setViewport(s.x, this.H - s.y - s.h, s.w, s.h);
       r.setScissor(s.x, this.H - s.y - s.h, s.w, s.h);
+      RES.value.set(s.w, s.h);
       r.render(this.scene, s.camera);
       s.frame.visible = this.coords;
       s.lr.render(s.frame, s.camera);

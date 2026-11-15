@@ -105,6 +105,37 @@ adapter each (`web/three/app.js`, `web/deck/app.js`); the status chip `#runinfo`
 kind · verdict · length · N ticks", and `#follow` (with `#follow-on`) shows only while the run is
 live.
 
+The page shows ticks 1-based, "tick 457 of 464" (the time-tick field and the inspector);
+`state().tick` stays the 0-based index, and `miniview.internals.M.fr` is indexed the same way.
+Display > Point size (depth returns, map obstacles and drops) and Line width (tracks, plan), per
+stream in pixels, are held in `miniview.internals.M.size` (stream id -> px; unset means the
+default) and apply in both renderers. A 1 m scale bar (`#scale`, `data-m`, `data-px`) sits at the
+bottom-left of the viewport in the orthographic views (the top pane in Three), and the cursor
+readout (`#readout`) names the axes of the view under the pointer (front and back: y z; left and
+right: x z; top: x y; 3D: x y of the floor, z = 0, or "—" off it). In the timeline, hatched bands
+(`#dlanes .gap`) mark where the run has ticks but no depth frames (between the depth spans of
+`/presence`). `viewer/tests/test_ui.py` drives all of this on a synthetic run, both pages.
+
+### Renderer adapters (what `web/shell/shell.js` calls; `web/three/app.js`, `web/deck/app.js`)
+
+A page gives the shell an adapter that draws into `#stage`:
+
+```text
+init(stage, shell)      setScene(scene)         setRun(run, frames)     setLayout(view, frame)
+draw(sync)              settled() -> Promise    resize()                fit()               theme(palette)
+describe(sel)           cursor(clientX, clientY) -> {axes, v, note?} | null
+gizmo() -> {x, y, z}    camera-space axes (3D only)
+scale() -> px per metre of the first orthographic pane, or null (3D)
+fillsDrawn(pane) -> bool   whether the faint box faces are drawn in the pane named so (top and 3d yes; front, back, left, right outlines only)
+project([x, y, z]) -> [clientX, clientY] | null   where a world point falls in the first pane (tests probe pixels there)
+```
+
+The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`, `size(id)` (point
+diameter or line width in px), `pick(sel)`, `viewChanged()`, `tickAt(t)` and `palette()` (the
+theme's drawing colours, including `box-fill`). The 3D views of both pages start from the same
+camera (45 degrees, from (-6.4, -8.8, 7.6) at the origin); `test_ui.py` checks that six world
+points land on the same pixels.
+
 ## `GET /api/v1/runs/{id}/frames` — everything, by tick
 
 ```json
