@@ -40,6 +40,8 @@ class DuckLog:
         self.fresh = self.start is None
         self.reset_per_goal = self.start is None       # a goal-ending event means the next goal starts on a reset simulator (an evaluation)
         self.boundary = False                          # the last goal ended: the next record opens a segment
+        self.restart_armed = False                     # a goal ended: the next goal's clock restart is still to come
+        self.seg_ticks = 0                             # ticks in the open segment (a segment with none is not written)
         self.seg = {"index": 0, "t_start": None, "origin_src": None, "goal": None}
         self.events = []
         self.ticks = 0
@@ -52,11 +54,17 @@ class DuckLog:
         """Run time for a source time: never back. A new segment whose clock restarted keeps that clock: its
         zero goes 1 s after the last record (the gap between goals is not in the log), so the time the new
         navigator spent before its first record (a survey, about 12 s a goal in phase 1) stays in the run."""
-        if self.boundary:
-            if ts + self.offset < self.last_t:
-                self.offset = self.last_t + 1.0
+        if self.boundary:                              # the first record after a goal opens the next segment
             self.seg.update(origin_src=ts, t_start=None)
             self.boundary = False
+            self.restart_armed = True
+        # A restart is a source clock more than 1 s back (the threads' records can be a few ms out of order), looked
+        # for until it comes: the first record after a goal can still be the old navigator's (duck-eval logs a `leg`
+        # row after "reached"), and taking that one as the answer squeezed the next goal into the old one's time.
+        if self.restart_armed and ts + self.offset < self.last_t - 1.0:
+            self.offset = self.last_t + 1.0
+            self.seg.update(origin_src=ts, t_start=None)     # the goal starts with its own navigator's first record
+            self.restart_armed = False
         t = max(_r(ts + self.offset), self.last_t)
         self.last_t = t
         if self.seg["t_start"] is None:
@@ -73,6 +81,7 @@ class DuckLog:
         if outcome:
             rec["outcome"] = outcome
         self.seg = {"index": self.seg["index"] + 1, "t_start": None, "origin_src": None, "goal": None}
+        self.seg_ticks = 0
         return (t, "segment", rec)
 
     def feed(self, line: str) -> list:
@@ -126,6 +135,7 @@ class DuckLog:
             out.append((t, "epoch", {"map_to_world": [_r(v, 5) for v in m2w]}))
             self.fresh = False
         self.ticks += 1
+        self.seg_ticks += 1
         out.append((t, "tick", {"belief": [_r(v, 4) for v in r["pose"][:3]],
                                 "truth": [_r(v, 4) for v in r["truth"][:3]] if "truth" in r else None,
                                 "tilt": r.get("tilt"), "cmd": [r.get("vx", 0.0), r.get("vyaw", 0.0)],
@@ -141,7 +151,10 @@ class DuckLog:
     def finish(self) -> list:
         """The records that close the run: the open segment (if it saw anything), then the verdict."""
         out = []
-        if self.seg["t_start"] is not None:
+        # An open segment is written when it has ticks of its own. In an evaluation, what comes after a goal ended and
+        # before a new navigator's clock started (the stop command logged after "reached") is that goal's tail, no goal.
+        tail = self.reset_per_goal and self.restart_armed
+        if self.seg["t_start"] is not None and self.seg_ticks and not tail:
             out.append(self._segment(self.last_t, None, None))
         v = verdict_of(self.events, (self.run_dir / "results.json").exists()) if self.ticks else "empty"
         out.append((self.last_t, "end", {"verdict": v}))

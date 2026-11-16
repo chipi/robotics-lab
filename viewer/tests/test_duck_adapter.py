@@ -40,6 +40,27 @@ with tempfile.TemporaryDirectory() as tmp:
     # starts 1 s after goal 1's last record (2.5) and its first tick is at 2.5 + 1 + 1.0. Format 2
     # had dropped each goal's setup (phase1-run18: 340.8 s instead of ~588 s; 2026-11-16).
     check("a new goal keeps its own clock: its setup time is not dropped", frames["t"][2] == 4.5, frames["t"])
+
+    # duck-eval writing natively (2026-11-16, eval2): after "reached" the evaluation logs a `leg` row still on the old
+    # navigator's clock; goal 2's navigator then starts at 0. The restart must be found at goal 2's first record, not
+    # given up at the stale row: goal 2's ticks went 29.86 .. 34.96 for 32.6 s of driving, and an empty third segment.
+    ev = Path(tmp) / "phase1-runy"
+    ev.mkdir()
+    rows = [tick(1.0, [0.0, 0.0, 0.0], [0.1, 0.2, 0.0]), tick(20.0, [1.0, 0.0, 0.0], [1.1, 0.2, 0.0]),
+            {"event": "reached", "goal": [1.0, 0.0], "t": 20.5},
+            {"event": "leg", "n": 1, "status": "reached", "t": 20.6},           # the old navigator's clock
+            tick(12.0, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),                       # goal 2: its navigator's clock restarted
+            tick(30.0, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            {"event": "reached", "goal": [3.0, 0.0], "t": 30.5},
+            {"event": "leg", "n": 2, "status": "reached", "t": 30.6},
+            tick(30.7, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0])]                       # the stop command after "reached"
+    (ev / "ticks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    meta4, frames4 = prepare(ev, "apartment")
+    check("a stale row after a goal does not hide the next goal's clock restart: goal 2 keeps its own clock",
+          frames4["t"] == [1.0, 20.0, 33.6, 51.6, 52.3], frames4["t"])
+    segs = [r for r in (meta4.get("segments") or [])]
+    check("no empty segment after the last goal", len(segs) == 2 and all(s.get("outcome") == "reached" for s in segs),
+          [(s.get("index"), s.get("t_start"), s.get("t_end"), s.get("outcome")) for s in segs])
     check("one epoch per goal (the simulator reset each time)", len(meta["epochs"]) == 2, meta["epochs"])
     e0 = meta["epochs"][0]["map_to_world"]
     check("epoch 1: map to world from the first tick's truth and belief", abs(e0[0] - 0.1) < 1e-6 and abs(e0[1] - 0.2) < 1e-6, e0)
