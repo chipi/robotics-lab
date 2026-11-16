@@ -4,12 +4,15 @@
 #   scripts/viewers.sh up      # convert runs, start Lichtblick (Docker) and Rerun (web viewer)
 #   scripts/viewers.sh down    # stop both (only what this script started)
 #
-# Runs: nxt/runs/*.mcap and duck/runs/*.mcap. From another machine:
+# Runs: the format 2 runs of the lab data folder (MINIVIEW_DATA, default /work/robotics-lab/data:
+# data/runs/<robot>/<scene>/<run>/run.mcap, the finished ones; the NXT's recordings are there, ADR-0013) and the duck's own
+# duck/runs/*.mcap. From another machine:
 #   ssh -N -L 8090:127.0.0.1:8090 -L 9090:127.0.0.1:9090 -L 9876:127.0.0.1:9876 <this host>
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 view="$here/.viewers"
+data="${MINIVIEW_DATA:-/work/robotics-lab/data}"
 duck="$here/duck/.venv/bin"
 container=robotics-lichtblick
 # pinned by digest, as in viewer/tests/test_run_compat.py (how to bump it: ADR-0007 "Compatibility")
@@ -43,9 +46,17 @@ up() {
     rm -rf "$view/mcap" "$view/rrd"
     mkdir -p "$view/mcap" "$view/rrd"
     shopt -s nullglob
-    runs=("$here"/nxt/runs/*.mcap "$here"/duck/runs/*.mcap)
-    [ ${#runs[@]} -gt 0 ] || { echo "no runs yet: record one in nxt-web or with duck-record" >&2; exit 2; }
-    for f in "${runs[@]}"; do
+    v2_runs=("$data"/runs/*/*/*/run.mcap)
+    duck_runs=("$here"/duck/runs/*.mcap)
+    [ $((${#v2_runs[@]} + ${#duck_runs[@]})) -gt 0 ] || { echo "no runs yet in $data/runs or duck/runs: record one in nxt-web or with duck-record" >&2; exit 2; }
+    # format 2 (ADR-0007): the protobuf channels decode in Rerun with its protobuf decoder; Lichtblick reads the file as it is
+    for f in "${v2_runs[@]}"; do
+        rel="${f#"$data"/runs/}"                      # robot/scene/run/run.mcap
+        name="$(dirname "$rel" | tr / -)"             # robot-scene-run
+        cp "$f" "$view/mcap/$name.mcap"
+        "$rerun_bin" mcap convert -d protobuf --disable-raw-fallback "$f" -o "$view/rrd/$name.rrd" >/dev/null 2>&1 && echo "  $name.rrd"
+    done
+    for f in "${duck_runs[@]}"; do
         cp "$f" "$view/mcap/"
         "$duck/duck-to-rerun" "$f" -o "$view/rrd/$(basename "$f" .mcap).rrd" 2>/dev/null | sed 's|^|  |'
     done

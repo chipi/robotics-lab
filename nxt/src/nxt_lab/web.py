@@ -31,7 +31,7 @@ EVENTS_FILE = "events.jsonl"  # the simulated brick logs to events-fake.jsonl in
 
 
 class Controller:
-    def __init__(self, config: Config, fake: bool, config_path: Path, link: str = "auto"):
+    def __init__(self, config: Config, fake: bool, config_path: Path, link: str = "auto", miniview_data: Path | None = None):
         self.config = config
         self.config_path = config_path
         self.fake = fake
@@ -40,7 +40,7 @@ class Controller:
         self.error = None
         self.last_drive = 0.0
         self._lock = threading.Lock()
-        self.recorder = Recorder(self)
+        self.recorder = Recorder(self, miniview_data=miniview_data)
         self.started = time.monotonic()
         self.connected_at = None
         self.connects = 0
@@ -195,7 +195,7 @@ class Controller:
             "fake": self.fake,
             "error": self.error,
             "program": self.recorder.program,
-            "recording": None if rec is None else {"name": rec["name"], "rows": rec["rows"]},
+            "recording": None if rec is None else {"name": rec["name"], "rows": rec["rows"], "miniview": self.recorder.run_status()},
         }
         if robot is not None:
             out.update(self.call(lambda r: r.info()))
@@ -430,11 +430,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--fake", action="store_true", help="simulated brick, nothing moves")
     parser.add_argument("--config", type=Path, default=config_mod.CONFIG_PATH, help="port setup file")
+    parser.add_argument("--miniview-data", type=Path, help="the lab data folder the recordings are written to as miniview runs (default: $MINIVIEW_DATA, else miniview/ in this program's data folder)")
     parser.add_argument("--link", choices=sorted(LINK_BACKENDS), default="auto",
                         help="auto tries USB, then Bluetooth (/dev/rfcomm*)")
     args = parser.parse_args()
 
-    controller = Controller(config_mod.load(args.config), fake=args.fake, config_path=args.config, link=args.link)
+    controller = Controller(config_mod.load(args.config), fake=args.fake, config_path=args.config, link=args.link, miniview_data=args.miniview_data)
     controller.connect()
     threading.Thread(target=controller.watchdog, daemon=True).start()
     threading.Thread(target=controller.recorder.run_forever, daemon=True).start()

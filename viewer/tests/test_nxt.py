@@ -94,6 +94,11 @@ with tempfile.TemporaryDirectory() as tmp:
     rec.begin_signals(1.5, {"s4_ultrasonic": 30.0})
     check("after a signals tick has begun no pose part is accepted in it", raises(ValueError, rec.tick_depth, []))
     rec.end_tick({})
+    rec3 = Recorder(keys.run_dir(data, "nxt/unmapped/t3"), mini_run("nxt/unmapped/t3"))
+    check("a value that cannot be encoded raises before anything is written, and leaves no tick open (the next one is written)",
+          raises(ValueError, rec3.begin_signals, 2.0, {"nope": 1.0}) and raises(Exception, rec3.begin_tick, 2.0, ["x", 0, 0])
+          and rec3.add(2.0, "signals", {"values": {"power_left": 1.0}}) is None)
+    rec3.close()
     nosig = Recorder(keys.run_dir(data, "nxt/unmapped/t2"), mini_run("nxt/unmapped/t2", decl=None))
     check("begin_signals in a run that declares no signals is refused", raises(ValueError, nosig.begin_signals, 1.0, {"a": 1.0}))
     nosig.close()

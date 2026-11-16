@@ -17,8 +17,10 @@ from pathlib import Path
 
 NXT_DIR = Path(__file__).resolve().parents[1]
 NXT_WEB = os.environ.get("NXT_WEB", str(NXT_DIR / ".venv" / "bin" / "nxt-web"))
-RUNS = NXT_DIR / "runs"
-runs_before = set(RUNS.glob("*")) if RUNS.exists() else set()
+# The server's recordings, command log and miniview runs go to a folder of this test's own, never to nxt/runs.
+tmp = Path(tempfile.mkdtemp())
+ENV = dict(os.environ, NXT_LAB_DATA=str(tmp), MINIVIEW_DATA=str(tmp / "miniview"))
+RUNS = tmp / "runs"
 
 
 def call(base, path, body=None, raw=False):
@@ -35,7 +37,7 @@ def call(base, path, body=None, raw=False):
 
 
 def start(port, *extra):
-    p = subprocess.Popen([NXT_WEB, "--port", str(port), *extra], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.Popen([NXT_WEB, "--port", str(port), *extra], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=ENV)
     print("server:", p.stdout.readline().strip())
     return p
 
@@ -49,7 +51,6 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-tmp = Path(tempfile.mkdtemp())
 cfg = tmp / "config.json"
 p = start(8761, "--fake", "--config", str(cfg))
 base = "http://127.0.0.1:8761"
@@ -115,27 +116,25 @@ try:
     lines = csv_bytes.decode().splitlines()
     check("run CSV header", lines[0] == "t,power_left,power_right,tacho_A,tacho_B,tacho_C,s1_touch,s3_color,s3_color_name,s4_ultrasonic,program", lines[0])
     check("run CSV rows", len(lines) >= 6, len(lines))
+    # the recording is also a miniview run (ADR-0013): compacted when the recording stopped, the .mcap link is that file
+    from miniview import mcapio
     mcap_name = run_name.replace(".csv", ".mcap")
-    check("run lists its MCAP file", any(x["name"] == run_name and x["mcap"] == mcap_name for x in runs), runs)
+    check("run lists its miniview run as the .mcap file", any(x["name"] == run_name and x["mcap"] == mcap_name for x in runs), runs)
     code, mcap_bytes = call(base, f"/api/runs/download?name={mcap_name}")
-    check("MCAP download", code == 200 and mcap_bytes[:8] == b"\x89MCAP0\r\n", mcap_bytes[:8])
-    from mcap.reader import make_reader
-    import io
-    reader = make_reader(io.BytesIO(mcap_bytes))
-    topics = {}
-    for _schema, channel, message in reader.iter_messages():
-        topics.setdefault(channel.topic, []).append(json.loads(message.data))
-    states = topics.get("/nxt/state", [])
-    check("MCAP has one state per CSV row", len(states) == len(lines) - 1, (len(states), len(lines) - 1))
-    check("MCAP state carries tachos, sensors and robotd's answer",
-          states and set(states[-1]["tacho"]) == {"A", "B", "C"} and "4" in states[-1]["sensors"]
-          and "deadman" in states[-1], states[-1] if states else None)
-    # "record start" is logged once the file is open; "record stop" after it is closed.
-    check("MCAP has the command log while recording",
-          [e["kind"] for e in topics.get("/nxt/events", [])] == ["record start"], topics.get("/nxt/events"))
-    meta = {m.name: m.metadata for m in reader.iter_metadata()}
-    check("MCAP metadata names the robot and drive mode",
-          meta.get("nxt_lab.run", {}).get("robot") == "nxt" and meta["nxt_lab.run"].get("drive_mode") == "deadman", meta)
+    check("MCAP download is the finished miniview run", code == 200 and mcap_bytes[:8] == b"\x89MCAP0\r\n", mcap_bytes[:8])
+    run_dir = tmp / "miniview" / "runs" / "nxt" / "unmapped" / run_name[:-4]
+    check("the run is closed: run.mcap, no live file, no lock", sorted(p_.name for p_ in run_dir.iterdir()) == ["run.mcap"], sorted(p_.name for p_ in run_dir.iterdir()))
+    recs = mcapio.read(run_dir)
+    kinds = [k for _t, k, _p in recs]
+    check("the run has a signals tick per CSV row, the command log's events, and its end",
+          kinds.count("signals") == len(lines) - 1 and [p_["kind"] for _t, k, p_ in recs if k == "event"] == ["record start"]
+          and kinds[-1] == "end" and recs[-1][2]["verdict"] == "recorded", (kinds.count("signals"), len(lines) - 1))
+    first = recs[0][2]
+    check("the run record says who and what: nxt/unmapped, the declared signals are the CSV's columns, no pose without wheel geometry",
+          first["key"] == f"nxt/unmapped/{run_name[:-4]}" and [d["name"] for d in first["signals"]] == lines[0].split(",")[1:]
+          and first["no_pose"].startswith("no wheel geometry") and "tick" not in kinds and first["writer"]["program"] == "nxt-web", first.get("no_pose"))
+    sig = [p_["values"] for _t, k, p_ in recs if k == "signals"][-1]
+    check("a sample carries the motor powers, the tachos, the sensors and the program", {"power_left", "tacho_A", "tacho_B", "tacho_C", "s4_ultrasonic", "s3_color_name"} <= set(sig), sorted(sig))
     code, r = call(base, "/api/runs/download?name=../config.json")
     check("run download refuses path traversal", code == 404, (code, r))
 
@@ -271,11 +270,6 @@ else:
     finally:
         p.terminate(); p.wait(5)
 
-# remove only the runs this test created
-for f in (set(RUNS.glob("*")) if RUNS.exists() else set()) - runs_before:
-    f.unlink()
-if RUNS.exists() and not any(RUNS.iterdir()) and not runs_before:
-    RUNS.rmdir()
 shutil.rmtree(tmp)
 
 print("SMOKE", "FAIL " + ", ".join(failures) if failures else "PASS")

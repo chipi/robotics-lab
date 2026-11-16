@@ -1,34 +1,49 @@
-"""Samples motors and sensors at a fixed rate: a live ring buffer for the UI, and a CSV and an MCAP
-file per recording."""
+"""Samples motors and sensors at a fixed rate: a live ring buffer for the UI, and per recording a CSV (the Plot view
+reads it) and a miniview run (ADR-0013): format 2, written while it is recorded, so it is live in miniview and
+compacted when the recording stops."""
 
 import collections
 import csv
-import json
+import hashlib
+import os
+import re
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
+from miniview import keys
+from miniview.adapters import nxt as nxt_run
+from miniview.mcapio import FINAL, Recorder as RunWriter
+
 from nxt_lab import deadman
 from nxt_lab.config import DATA_DIR
-from nxt_lab.mcap_log import McapLog
 
 RUNS_DIR = DATA_DIR / "runs"
 PROGRAM_CHECK_SECONDS = 1.0
+RUN_NAME = re.compile(r"^run-[0-9]{8}-[0-9]{6}(-[0-9]+)?$")
+
+
+def default_miniview_data() -> Path:
+    """The lab's data folder for the runs of this recorder: $MINIVIEW_DATA, else `miniview/` in nxt-web's own data folder."""
+    v = os.environ.get("MINIVIEW_DATA", "").strip()
+    return Path(v) if v else DATA_DIR / "miniview"
 
 
 class Recorder:
-    def __init__(self, controller, runs_dir: Path = RUNS_DIR):
+    def __init__(self, controller, runs_dir: Path = RUNS_DIR, miniview_data: Path | None = None):
         self.controller = controller
         self.runs_dir = runs_dir
+        self.miniview_data = miniview_data or default_miniview_data()
         self.samples = collections.deque(maxlen=1200)
         self.seq = 0
         self.program = None
         self.recording = None
         self._file = None
         self._writer = None
-        self._mcap = None
+        self._run = None              # the miniview run being written: {"key", "writer", "odom", "error"}
         self._columns = []
+        self._header = []
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
         self._last_program_check = 0.0
@@ -80,43 +95,73 @@ class Recorder:
         with self._lock:
             return [s for s in self.samples if s["seq"] > seq]
 
+    def _free_name(self) -> str:
+        """run-YYYYMMDD-HHMMSS, with -2, -3, ... when that name (a CSV, or a miniview run) is already taken."""
+        base = datetime.now().strftime("run-%Y%m%d-%H%M%S")
+        for n in range(1, 1000):
+            name = base if n == 1 else f"{base}-{n}"
+            if not (self.runs_dir / f"{name}.csv").exists() and not keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{name}").exists():
+                return name
+        raise RuntimeError(f"no free run name after {base}")
+
     def start(self) -> dict:
         with self._lock:
             if self.recording is not None:
                 return self.recording
             self.runs_dir.mkdir(parents=True, exist_ok=True)
-            name = datetime.now().strftime("run-%Y%m%d-%H%M%S.csv")
-            sensors = self.controller.config.sensors
+            name = self._free_name()
+            config = self.controller.config
+            sensors = config.sensors
             self._columns = [(port, kind) for port, kind in sorted(sensors.items()) if kind != "none"]
-            header = ["t", "power_left", "power_right", "tacho_A", "tacho_B", "tacho_C"]
-            for port, kind in self._columns:
-                header.append(f"s{port}_{kind}")
-                if kind == "color":
-                    header.append(f"s{port}_color_name")
-            header.append("program")
-            self._file = open(self.runs_dir / name, "w", newline="")
+            header = ["t"] + nxt_run.columns_for(sensors)
+            self._header = header
+            self._file = open(self.runs_dir / f"{name}.csv", "w", newline="")
             self._writer = csv.writer(self._file)
             self._writer.writerow(header)
-            robot = self.controller.robot
-            self._mcap = McapLog(self.runs_dir / name.replace(".csv", ".mcap"), {
-                "robot": "nxt", "link": robot.link if robot else None,
-                "firmware": robot.firmware if robot else None,
-                "drive_mode": self.controller.config.drive_mode,
-                "config": json.dumps(self.controller.config.to_dict()),
-            })
-            self.recording = {"name": name, "rows": 0, "started": time.monotonic()}
+            self._start_run(name, header[1:], config)
+            self.recording = {"name": f"{name}.csv", "rows": 0, "started": time.monotonic()}
+            if self._run:
+                self.recording["run"] = self._run["key"]
             return self.recording
+
+    def _start_run(self, name: str, columns: list, config) -> None:
+        """Open the miniview run beside the CSV. A failure here costs the run, never the recording: the CSV goes on."""
+        self._run = None
+        try:
+            key = f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{name}"
+            geometry = nxt_run.geometry_from(config.to_dict(), "config")
+            run = nxt_run.run_record(key, time.time_ns(), "writer", {c: nxt_run.kind_of(c) for c in columns}, geometry,
+                                     {"name": f"{name}.csv"}, writer={"program": "nxt-web", "version": "0.1.0"})
+            writer = RunWriter(keys.run_dir(self.miniview_data, key), run)
+            nxt_run.header(writer, geometry)
+            self._run = {"key": key, "writer": writer, "odom": nxt_run.Odometry(geometry) if geometry else None, "error": None}
+        except Exception as exc:
+            self._run = {"key": None, "writer": None, "odom": None, "error": f"{type(exc).__name__}: {exc}"}
 
     def stop(self) -> dict | None:
         with self._lock:
             done = self.recording
             if self._file is not None:
                 self._file.close()
-            if self._mcap is not None:
-                self._mcap.close()
-            self._file = self._writer = self._mcap = None
+                self._finish_run(self.runs_dir / done["name"], done["rows"])
+            self._file = self._writer = self._run = None
             self.recording = None
             return done
+
+    def _finish_run(self, csv_path: Path, rows: int) -> None:
+        run = self._run
+        if not run or not run["writer"]:
+            return
+        try:
+            sha = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+            run["writer"].add(run["writer"].last_t, "end", {"verdict": "recorded" if rows else "empty", "source_sha256": sha})
+            run["writer"].close()
+        except Exception as exc:
+            run["error"] = f"{type(exc).__name__}: {exc}"           # the live file stays: `miniview repair` closes it
+
+    def _run_time(self, now: float) -> float:
+        """Run time for a moment: seconds since the recording began, never behind what was already written."""
+        return max(round(now - self.recording["started"], 3), self._run["writer"].last_t, 0.0)
 
     def _write_row(self, sample: dict, now: float) -> None:
         tacho = sample["tacho"]
@@ -136,30 +181,49 @@ class Recorder:
         row.append(sample["program"] or "")
         self._writer.writerow(row)
         self._file.flush()
-        self._mcap.write("/nxt/state", {
-            "t": row[0], "power_left": sample["left"], "power_right": sample["right"],
-            "tacho": tacho, "sensors": sample["sensors"], "program": sample["program"],
-            "deadman": sample["deadman"],
-        })
         self.recording["rows"] += 1
+        run = self._run
+        if run and run["writer"]:
+            try:
+                nxt_run.write_sample(run["writer"], self._run_time(now), dict(zip(self._header[1:], row[1:])), run["odom"], tacho)
+            except Exception as exc:
+                run["error"] = f"{type(exc).__name__}: {exc}"
+                run["writer"] = None                              # the miniview run stops here (its live file stays); the CSV goes on
 
     def log_event(self, entry: dict) -> None:
-        """A command-log entry, into the recording's MCAP file while recording."""
+        """A command-log entry, into the recording's miniview run while recording."""
         with self._lock:
-            if self._mcap is not None:
-                self._mcap.write("/nxt/events", entry)
+            run = self._run
+            if run and run["writer"]:
+                try:
+                    run["writer"].add(*nxt_run.event_record(entry, self._run_time(time.monotonic())))
+                except Exception as exc:
+                    run["error"] = f"{type(exc).__name__}: {exc}"
+                    run["writer"] = None
+
+    def run_status(self) -> dict | None:
+        """What the page shows of the miniview run of the recording in progress: its key, and an error if writing it failed."""
+        run = self._run
+        return {"key": run["key"], "error": run["error"]} if run else None
+
+    def _final(self, name: str) -> Path:
+        return keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{Path(name).stem}") / FINAL
 
     def list_runs(self) -> list:
         if not self.runs_dir.exists():
             return []
-        return [
-            {"name": p.name, "size": p.stat().st_size,
-             "mcap": p.with_suffix(".mcap").name if p.with_suffix(".mcap").exists() else None}
-            for p in sorted(self.runs_dir.glob("run-*.csv"), reverse=True)
-        ]
+        out = []
+        for p in sorted(self.runs_dir.glob("run-*.csv"), reverse=True):
+            final = self._final(p.name) if RUN_NAME.match(p.stem) else None
+            out.append({"name": p.name, "size": p.stat().st_size,
+                        "mcap": p.with_suffix(".mcap").name if final and final.exists() else None})
+        return out
 
     def run_path(self, name: str) -> Path:
+        """The file a download names: the CSV, or `<run>.mcap`: the finished miniview run of that recording."""
         path = (self.runs_dir / name).resolve()
-        if path.parent != self.runs_dir.resolve() or path.suffix not in (".csv", ".mcap") or not path.exists():
-            raise FileNotFoundError(name)
-        return path
+        if path.parent == self.runs_dir.resolve() and path.suffix == ".csv" and path.exists():
+            return path
+        if path.parent == self.runs_dir.resolve() and path.suffix == ".mcap" and RUN_NAME.match(path.stem) and self._final(name).exists():
+            return self._final(name)
+        raise FileNotFoundError(name)

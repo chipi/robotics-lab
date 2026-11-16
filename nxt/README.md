@@ -62,9 +62,13 @@ Tabs (also reachable as `#drive`, `#sensors`, `#programs`, `#setup` in the URL):
   The page resends the drive command every 200 ms while held, and the server stops the
   motors if those stop arriving for 0.6 s (tab closed, connection lost).
 - **Sensors & log** — live readings and chart of sensors, motor power and tacho counts.
-  *Start recording* writes every sample to `runs/run-<date>-<time>.csv`, and the samples plus the
-  command log to `runs/run-<date>-<time>.mcap` for Foxglove, Lichtblick or Rerun (not committed).
-  Saved runs can be plotted again or downloaded.
+  *Start recording* writes every sample to `runs/run-<date>-<time>.csv` and, at the same time, the
+  samples plus the command log as a miniview run, `nxt/unmapped/run-<date>-<time>`, in the lab data
+  folder (`MINIVIEW_DATA` or `--miniview-data`, else `miniview/` beside `runs/`; not committed): it
+  is live in miniview while recording, compacted when you stop, and opens in Rerun and Lichtblick
+  too (ADR-0013). With the wheel geometry set in Setup (Odometry) the run also has a pose from
+  the tracks' tacho counts; without it, none. Saved runs can be plotted again or downloaded (the
+  `.mcap` link is the finished miniview run).
 - **Programs** — files on the brick: upload (e.g. a compiled `.rxe`), run, stop, view
   or plot text/CSV files a program wrote, download, delete. While a program runs, the
   PC stops reading sensors (reading can change a sensor's mode under the program) and

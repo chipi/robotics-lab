@@ -159,6 +159,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # ---- a live file cut and rewritten under the reader -------------------------------------------------------------
     rec = make_run(data, "duck/room/cut", HEAD + [tick(1.0, 0.0), tick(1.1, 0.1), tick(1.2, 0.2)], close=False)
     ld = cat.get("duck/room/cut")
+    ld.poll()                                              # the follower thread started above may have opened the run before its third tick
     check("(setup) the live run has its three ticks", ld.data.run["ticks"] == 3)
     other2 = Path(tmp) / "other2"
     rec2 = make_run(other2, "duck/room/cut", HEAD + [tick(9.0, 0.9)], close=False)

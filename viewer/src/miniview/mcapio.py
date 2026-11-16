@@ -134,9 +134,10 @@ class Recorder:
     # A signals tick (ADR-0013) is begin_signals, then end_tick: the robot's named values at t, with no pose.
     def begin_tick(self, t: float, belief, t_src: float | None = None) -> None:
         self._check_open(t)
+        msg = wire.tick_part("belief", t, belief, self.base_ns, t_src)     # built first: a value that cannot be encoded leaves no tick open
         self._tick = {"t": t, "src": t_src, "next": 0}
         self.last_t = max(self.last_t, t)
-        self._write([wire.tick_part("belief", t, belief, self.base_ns, t_src)])
+        self._write([msg])
 
     def _part(self, name: str, value) -> None:
         tk = self._tick
@@ -165,9 +166,10 @@ class Recorder:
         if self.sigs is None:
             raise ValueError("the run declares no signals")
         self._check_open(t)
+        msg = wire.signals_part(t, values, self.base_ns, self.sigs, t_src)    # built first: a value that cannot be encoded leaves no tick open
         self._tick = {"t": t, "src": t_src, "next": len(wire.TICK_PARTS)}
         self.last_t = max(self.last_t, t)
-        self._write([wire.signals_part(t, values, self.base_ns, self.sigs, t_src)])
+        self._write([msg])
 
     def end_tick(self, raw: dict | None = None) -> None:
         tk = self._tick

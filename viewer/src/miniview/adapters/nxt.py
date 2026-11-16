@@ -158,7 +158,12 @@ def write_sample(rec: Recorder, t: float, values: dict, odom: Odometry | None = 
     if odom is not None:
         rec.begin_tick(t, [round(v, 5) for v in odom.step(tacho or {})], t_src=t)
         rec.end_tick({})
-    present = {k: v for k, v in values.items() if v is not None and v != ""}
+    present = {}
+    for k, v in values.items():
+        v = int(v) if isinstance(v, bool) else v                     # a touch sensor reads a bool
+        if v is None or v == "" or (isinstance(v, float) and not math.isfinite(v)):
+            continue
+        present[k] = v
     if present:
         rec.begin_signals(t, present, t_src=t)
         rec.end_tick({})

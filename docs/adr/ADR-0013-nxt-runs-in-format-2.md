@@ -110,6 +110,39 @@ truth and a map.
   own MCAP config, else `config.json` beside the recordings' folder. The motor mapping is the
   recording's own when its MCAP has one.
 
+### nxt-web writes format 2 itself
+
+- Its recorder writes the run through miniview's `Recorder` (the same tick helpers, the live file and
+  lock, compaction at the end) beside the CSV: a pose tick (with odometry) and a signals tick per
+  sample at the same run time, the command log's entries as events, the CSV's SHA-256 in the `end`
+  record. A recording is **live** in miniview from its first sample, and compacted when it stops
+  (or when nxt-web is stopped: SIGTERM and Ctrl-C take the stop path). The receiver of ADR-0007
+  ("Remote robots") is not needed: nxt-web runs on the workstation.
+- **Where it writes (decided here):** the lab data folder `MINIVIEW_DATA`, or `--miniview-data`,
+  else `miniview/` in nxt-web's own data folder (`NXT_LAB_DATA`, else the `nxt/` folder): a folder in
+  miniview's layout (`runs/nxt/unmapped/<run>/`), so it can be served as it is. `make nxt-web` passes
+  `--miniview-data $(MINIVIEW_DATA)` (the workstation's `/work/robotics-lab/data` that
+  `make viewer-up` serves), so a real recording is live in the running service; `make nxt-web-fake`
+  does not, so a simulated drive does not land in the lab data. The image writes to the mounted
+  `MINIVIEW_DATA` (`make nxt-image-run`), else `/data/miniview` in its volume; as the container
+  runs as root, runs written there are root's.
+- A run's name is the CSV's (`run-YYYYMMDD-HHMMSS`, local time); a name taken by a CSV or by a run
+  gets `-2`, `-3`, and so on. Run time is the monotonic clock since the recording began, never behind
+  what was already written. `started_at` is the writer's clock.
+- **A failure to write the run costs the run, never the recording.** The CSV is written first; an
+  error in the miniview writer (a folder that cannot be written, say) is shown in the status
+  (`recording.miniview.error`) and the recording goes on; a live file left behind is closed with
+  `miniview repair`.
+- The CSV stays (nxt-web's Plot view uses it); the `.mcap` link in the run list downloads the
+  finished format 2 run. `mcap_log.py` (the old ad-hoc MCAP) is gone; `scripts/viewers.sh` gives
+  Rerun (its protobuf decoder) and Lichtblick the finished format 2 runs of the data folder, and
+  the duck's own `duck/runs/*.mcap` as before.
+- nxt depends on the viewer package (`miniview`) by a path source
+  (`[tool.uv.sources] miniview = { path = "../viewer", editable = true }`, the lock updated; protobuf
+  and foxglove-schemas-protobuf come with it). pip does not read that table, so the NXT image is
+  built from the repository root (`docker build -f nxt/Dockerfile .`) and installs `viewer/` before
+  `nxt/`.
+
 ## Calibration (the operator's to run; the robot on the floor)
 
 Both numbers belong to the robot, the floor and the speed: calibrate on the surface it will drive on,
@@ -133,11 +166,13 @@ button, read the tacho counts from the CSV (first and last rows) or from
 
 ## Consequences
 
-- **Positive:** every NXT recording is a run miniview, Rerun and Lichtblick open; the signals
-  message is generic (any robot with named values can use it) and self-describing in the file.
-- **Negative:** the per-run descriptor means the signal set is fixed when a run starts (a sensor
-  changed mid-run is a new run); a run of the old kind (`nxt/runs/*.mcap`) is not read by miniview,
-  only imported from its CSV.
+- **Positive:** every NXT recording, old and new, is a run miniview, Rerun and Lichtblick open; a
+  recording is live while it is made; one writer (miniview's) for every robot; the signals message
+  is generic (any robot with named values can use it) and self-describing in the file.
+- **Negative:** nxt-web now depends on the viewer package; the per-run descriptor means the signal
+  set is fixed when a run starts (a sensor changed mid-run is a new run); a run of the old kind
+  (`nxt/runs/*.mcap`) is not read by miniview, only imported from its CSV; the image's runs are
+  root's.
 - **Neutral:** the pose is dead reckoning from the tracks and drifts; the run says how it was made.
 
 ## Compatibility (checked 2026-11-16)

@@ -105,7 +105,9 @@ stays usable for MCAP in the meantime.
    recording also writes `runs/run-*.mcap` (zstd chunks; JSON messages with JSON Schemas):
    `/nxt/state` per sample (powers, tachos, sensors, program, robotd-lite's answer) and
    `/nxt/events` (the command log while recording), with the robot, link, firmware, drive mode and
-   setup as metadata (`nxt_lab/mcap_log.py`).
+   setup as metadata (`nxt_lab/mcap_log.py`). Replaced 2026-11-16
+   ([ADR-0013](../adr/ADR-0013-nxt-runs-in-format-2.md)):
+   a recording is a format 2 run, written live through miniview's writer.
 2. The viewer spike (Rerun vs Lichtblick). Done 2026-11-14:
    [ADR-0002](../adr/ADR-0002-viewers-rerun-and-lichtblick.md) — Rerun first, Lichtblick kept usable.
 3. A minimal logbook: a folder, an index, search, events.

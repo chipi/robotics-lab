@@ -107,6 +107,9 @@ test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a
 	@$(NXT_PY) $(NXT_DIR)/tests/test_config.py >/tmp/robotics-lab-test_config.log 2>&1 \
 	  && echo "PASS nxt/tests/test_config.py" \
 	  || { echo "FAIL nxt/tests/test_config.py"; cat /tmp/robotics-lab-test_config.log; exit 1; }
+	@$(NXT_PY) $(NXT_DIR)/tests/test_recorder_v2.py >/tmp/robotics-lab-test_recorder_v2.log 2>&1 \
+	  && echo "PASS nxt/tests/test_recorder_v2.py" \
+	  || { echo "FAIL nxt/tests/test_recorder_v2.py"; cat /tmp/robotics-lab-test_recorder_v2.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
 	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
 	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
@@ -125,7 +128,13 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	  for i in $$(seq 1 40); do curl -fs -m 2 http://127.0.0.1:$$port/api/status >/tmp/robotics-lab-image-status.json && break; sleep 0.25; done; \
 	  grep -q '"connected": true' /tmp/robotics-lab-image-status.json && grep -q '"link": "fake"' /tmp/robotics-lab-image-status.json \
 	    && echo "PASS image answers: $$(cat /tmp/robotics-lab-image-status.json | head -c 120)" \
-	    || { echo "FAIL image did not answer as expected"; cat /tmp/robotics-lab-image-status.json 2>/dev/null; docker logs $$cid; exit 1; }
+	    || { echo "FAIL image did not answer as expected"; cat /tmp/robotics-lab-image-status.json 2>/dev/null; docker logs $$cid; exit 1; }; \
+	  curl -fs -m 5 -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:$$port/api/record/start >/dev/null \
+	    && for i in $$(seq 1 60); do curl -fs -m 2 http://127.0.0.1:$$port/api/status | grep -Eq '"rows": [3-9]' && break; sleep 0.25; done \
+	    && curl -fs -m 5 -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:$$port/api/record/stop >/dev/null \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/api/runs | grep -Eq '"mcap": "run-[0-9-]+\.mcap"' \
+	    && echo "PASS image records a recording as a miniview run (its .mcap is listed)" \
+	    || { echo "FAIL image did not record a miniview run"; docker logs $$cid; exit 1; }
 	@echo "test-integration PASS"
 
 .PHONY: test-run-compat
@@ -181,20 +190,20 @@ ci: ci-fast test-viewer-pages test-run-compat test-integration test-viewer-image
 # ---- NXT: run and package ----------------------------------------------------
 
 .PHONY: nxt-web
-nxt-web: nxt-sync ## Serve the NXT web UI on the real robot (NXT_HOST, NXT_PORT, NXT_LINK=auto|usb|bluetooth)
-	cd $(NXT_DIR) && exec .venv/bin/nxt-web --host $(NXT_HOST) --port $(NXT_PORT) --link $(NXT_LINK)
+nxt-web: nxt-sync ## Serve the NXT web UI on the real robot (NXT_HOST, NXT_PORT, NXT_LINK=auto|usb|bluetooth); recordings are live in miniview (MINIVIEW_DATA)
+	cd $(NXT_DIR) && exec .venv/bin/nxt-web --host $(NXT_HOST) --port $(NXT_PORT) --link $(NXT_LINK) --miniview-data $(MINIVIEW_DATA)
 
 .PHONY: nxt-web-fake
 nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot needed)
 	cd $(NXT_DIR) && exec .venv/bin/nxt-web --fake --host $(NXT_HOST) --port $(NXT_PORT)
 
 .PHONY: nxt-image
-nxt-image: ## Build the NXT web UI image (NXT_IMAGE)
-	docker build -t $(NXT_IMAGE) $(NXT_DIR)
+nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs viewer/ too, ADR-0013)
+	docker build -f $(NXT_DIR)/Dockerfile -t $(NXT_IMAGE) .
 
 .PHONY: viewers viewers-down
 viewers: viewer-up ## The viewers on loopback: miniview (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)
-	@scripts/viewers.sh up
+	@MINIVIEW_DATA=$(MINIVIEW_DATA) scripts/viewers.sh up
 
 viewers-down: viewer-down ## Stop the viewers started by make viewers
 	@scripts/viewers.sh down
@@ -215,8 +224,9 @@ viewer-down: ## Stop miniview's service
 	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml down
 
 .PHONY: nxt-image-run
-nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only
-	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data \
+nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only; recordings go to $(MINIVIEW_DATA) as miniview runs
+	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes
+	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data -v $(MINIVIEW_DATA):/miniview -e MINIVIEW_DATA=/miniview \
 	  $$(test -d /dev/bus/usb && echo --device /dev/bus/usb) \
 	  $$(for d in /dev/rfcomm*; do test -e $$d && echo --device $$d; done) \
 	  $(NXT_IMAGE) nxt-web --host 0.0.0.0 --port 8000 --link $(NXT_LINK)

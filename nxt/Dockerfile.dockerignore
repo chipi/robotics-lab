@@ -1,0 +1,9 @@
+# The build context is the repository root (the image installs the viewer package beside nxt-web, ADR-0013): only what
+# the Dockerfile copies goes in.
+*
+!nxt/pyproject.toml
+!nxt/README.md
+!nxt/src
+!viewer/pyproject.toml
+!viewer/src
+**/__pycache__/

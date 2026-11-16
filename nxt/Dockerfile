@@ -1,11 +1,13 @@
 # The NXT web UI (nxt-web) as an image, to run on any Linux machine near the robot.
 #
-#   docker build -t robotics-lab/nxt-web nxt
-#   docker run --rm -p 127.0.0.1:8000:8000 -v nxt-data:/data \
+#   docker build -f nxt/Dockerfile -t robotics-lab/nxt-web .     # from the repository root: it installs ../viewer too
+#   docker run --rm -p 127.0.0.1:8000:8000 -v nxt-data:/data -v /work/robotics-lab/data:/miniview -e MINIVIEW_DATA=/miniview \
 #     --device /dev/bus/usb robotics-lab/nxt-web                 # NXT over USB
 #   docker run ... --device /dev/rfcomm0 robotics-lab/nxt-web     # NXT over Bluetooth (bound on the host)
 #   docker run ... robotics-lab/nxt-web nxt-web --fake --host 0.0.0.0   # no robot
 #
+# Recordings are also written as miniview runs (ADR-0013) into $MINIVIEW_DATA, which `make nxt-image-run` mounts from the
+# host's lab data folder; without it they go to /data/miniview, in the nxt-data volume.
 # `make nxt-image` / `make nxt-image-run` wrap these. The UI has no login: publish the port on
 # 127.0.0.1 (as above) and reach it through an ssh tunnel, not on the open network.
 #
@@ -19,9 +21,13 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
-COPY src ./src
-RUN pip install --no-cache-dir . \
+# pip does not read [tool.uv.sources]: install the viewer package first, then nxt-web finds `miniview` satisfied
+COPY viewer/pyproject.toml ./viewer/pyproject.toml
+COPY viewer/src ./viewer/src
+COPY nxt/pyproject.toml nxt/README.md ./nxt/
+COPY nxt/src ./nxt/src
+RUN pip install --no-cache-dir ./viewer \
+ && pip install --no-cache-dir ./nxt \
  && nxt-web --help >/dev/null
 
 ENV NXT_LAB_DATA=/data PYTHONUNBUFFERED=1
