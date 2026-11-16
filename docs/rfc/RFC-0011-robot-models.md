@@ -74,12 +74,16 @@ description.
   select a link, see it highlighted on the body.
 - Shown at the playhead with the window the page has; scrubbing asks the API for link poses in
   windows, as it does for frames.
-- **The Robot view** (the operator, 2026-11-16: "a basic robot body explorer"): a view mode beside
-  Top, 3D and Map with the robot alone, centred, to orbit, zoom and pan. Click a part (a link): its
-  name, the joint that moves it and the joint's limits, its meshes, its place in the tree;
-  highlight, isolate or hide any part. Two poses: **as recorded** (the body at the playhead) and
-  **by hand** (a slider per joint, within its limits). A robot with a description and no run can
-  be explored too.
+- **The Robot view** (the operator, 2026-11-16: "a basic robot body explorer"): the robot alone,
+  centred, to orbit, zoom and pan. Click a part (a link): its name, the joint that moves it and the
+  joint's limits, its meshes, its place in the tree; highlight, isolate or hide any part. Two poses:
+  **as recorded** (the body at the playhead) and **by hand** (a slider per joint, within its
+  limits). A robot with a description and no run can be explored too. *Placed by the operator
+  after the prototype (`viewer/web/proto/`, 2026-11-16): not a view mode beside Top, 3D and Map,
+  but the first kind of the right panel's **Explore** tab, beside Moment and Selection; parts are
+  picked in the body or in the list of parts under it; technical names only. The left panel's
+  link and joint tree is the **Body** section, joints grouped by chain with their angles (a
+  show/hide switch). See [UXS-001](../uxs/UXS-001-miniview.md#the-left-panel-by-meaning-and-the-explore-view-operator-2026-11-16).*
 
 ### 3.4 Which robot, and where from (the operator: "we need to know what is in the sim and what we are looking at")
 
@@ -101,8 +105,8 @@ description.
    against MuJoCo itself: every link's pose from our FK equals MuJoCo's `xpos`/`xquat` for the same
    joint values.
 2. The API (description, link windows) and the Rerun export, checked in Rerun (the duck moving).
-3. The Robot layer in miniview's 3D view, the link/joint tree, the joint lanes; the Robot view
-   (explore the body, as recorded or by hand).
+3. The Robot layer in miniview's 3D view, the left panel by meaning (the Body section: the joints
+   by chain), the joint lanes; the Explore tab with the robot's body (as recorded or by hand).
 4. The Foxglove export; the Blender engine on link poses (ADR-0017).
 5. The NXT's description; then the EV3's when it arrives.
 
@@ -110,7 +114,8 @@ description.
 
 - The pages' FK: the API's link windows (one implementation, a request per window) or the same FK
   in JavaScript (no request when scrubbing, two implementations to keep equal, tested against each
-  other).
+  other). Posing by hand moves a slider many times a second, which a request per move cannot
+  follow; the prototype did its FK in JavaScript.
 - Mesh size in the pages: 23 MB for the duck. Decimated meshes for the pages, the full ones for
   videos?
 - MJCF features URDF lacks (the duck's passive backlash joints, ball joints): kept at rest in the

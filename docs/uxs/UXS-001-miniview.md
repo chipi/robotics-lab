@@ -83,7 +83,8 @@ entity tree (comparison: the "miniview and Rerun" page):
 
 1. **Streams tree** — every stream the run holds, grouped by source (Scene, Robot (belief), Truth,
    Sensors with depth by kind as children, World model, Plan, Events), each with an eye to show or
-   hide it; hiding a group hides its children.
+   hide it; hiding a group hides its children. *Grouped by meaning since 2026-11-16 (World, Body,
+   Senses, Mind, Other values; [below](#the-left-panel-by-meaning-and-the-explore-view-operator-2026-11-16)).*
 2. **Badges** — on each stream: its frame (world, map, robot), how many records and how often, or
    **missing** with the reason (a run without tilt, a real robot without truth).
 3. **Time mode** per stream — at t (the latest at or before t), the last N seconds, or everything up
@@ -148,13 +149,16 @@ Unreal, Unity, Rerun and Foxglove:
   once per group as a dim suffix, an eye in a fixed column at the right edge (a group's eye shows
   all, some or none; hiding a group dims its children without changing them). Count, rate and id on
   hover only. Missing streams are dimmed with a warning icon, and one filter hides them. Search
-  with `/`. **Belief and Truth are grouped under Robot** (decision D3).
+  with `/`. **Belief and Truth are grouped under Robot** (decision D3). *The grouping is replaced by
+  the sections World, Body, Senses, Mind and Other values (operator, 2026-11-16; [below](#the-left-panel-by-meaning-and-the-explore-view-operator-2026-11-16));
+  the outliner's rows, eyes, badges and search stay.*
 - **Left, under the outliner — the selected stream's properties** (decision D2): a header (name, id,
   frame, records and rate), then collapsible sections Time (At t, Window, Up to t; window length as
   a drag field), Display (visible, views T F S 3D, colour, size), Source (read-only), Relations.
 - **Right — the inspector**, read-only: Moment (time, tick, belief, truth, error, command, depth
   frame, plan and map, last event with previous and next) and Selection (a picked point's values).
-  Label left, value right in mono, unit dim, copy on hover; "copy JSON" per section.
+  Label left, value right in mono, unit dim, copy on hover; "copy JSON" per section. A third tab,
+  **Explore**, was added on 2026-11-16 ([below](#the-left-panel-by-meaning-and-the-explore-view-operator-2026-11-16)).
 - **Viewport**: a header with the frame and orientation, an overlays menu (coordinate system,
   relations), fit; axis gizmo, cursor readout, legend, a 1 m scale bar.
 - **Bottom — the timeline**: transport, time and tick fields, speed, loop, an event-kind filter; a
@@ -162,6 +166,59 @@ Unreal, Unity, Rerun and Foxglove:
   selected stream's window as a band. **Data rows, one per stream, are on by default, with a switch
   to the compact timeline without them** (decision D4).
 - **Status bar** (22 px): key hints, scene and run.
+
+## The left panel by meaning, and the Explore view (operator, 2026-11-16)
+
+Prototyped in `viewer/web/proto/` (round 1: a run of challenge 3 with the duck's joints and
+Pollen's meshes; the main view unchanged) after the duck's runs gained joints (ADR-0016) and robots
+their description (RFC-0011). The operator's answers:
+
+**The left panel** groups the streams by what they mean for the robot, not by where they come from:
+
+- **Run** (the header): the robot, the scene, where the run came from (simulated or real), its
+  length and verdict.
+- **World**: what was really there: the scene's geometry and hazards, the truth's pose and track
+  (simulator only).
+- **Body**: what the robot is: its 3D model (its parts), and its joints grouped by kinematic chain
+  (left leg, right leg, head), the chains read from the robot's joint tree.
+- **Senses**: what it perceived: depth by kind, the raw frame, the IMU.
+- **Mind**: what it believed and decided: belief and its track, the map grid, remembered obstacles
+  and drops, the plan, decisions and events.
+- **Other values**: the navigator's own signals that belong to none of the above.
+
+Rules:
+
+- **Every section collapses**, and they are **not all open by default**; each viewer's open and
+  closed sections are remembered on their machine. Which section, if any, opens on a first visit is
+  open (the prototype opened Body).
+- **The joints show their angle at t**, with **a switch to show or hide the angles** (on the Body
+  section's header).
+- **Names are the robot's technical names** (`left_knee`, `neck_pitch`, `head_roll_link`), not
+  friendly ones, for now.
+- **The same sections order the timeline's data rows and the Moment tab's values**, so a joint is in
+  Body everywhere (else the duck's 14 joints are 14 more flat rows in each).
+- The outliner's rows, eyes, badges, missing-stream dimming and search are those of the whole page
+  above.
+
+**Explore** is a third tab of the right panel, beside Moment and Selection: a detail view for
+looking closely at one thing. A picker says what is explored; its first kind is **the robot's
+body**. Other kinds (a depth frame, the map) come later in the same place. The tab can take more
+room ("Expand").
+
+- **The body in 3D**: the robot's meshes placed by its joint tree (RFC-0011's forward kinematics);
+  drag to orbit, scroll to zoom. **Posed as recorded at t** (it follows the timeline) **or by
+  hand**, with a slider per joint grouped by chain.
+- **Parts are clickable**, in the 3D view or in the list of parts under it (the link tree). A picked
+  part is highlighted and its **details** shown: what moves it (its joint, the joint's type and
+  limits) or what it is fixed to, what it hangs from and what it carries, its meshes, and where it is
+  relative to the trunk now. Mass and inertia are not shown: the description has none
+  (`robots/duck/robot.urdf` has no `<inertial>`).
+- **Isolate, hide, show all**, and **focus** on the picked part.
+- A robot can be explored with no run open (the registry, RFC-0011 §3.4); then it is posed by hand
+  only.
+
+This places RFC-0011's Robot view as the Explore tab's first kind, not as a view mode beside Top, 3D
+and Map.
 
 ## Theme
 

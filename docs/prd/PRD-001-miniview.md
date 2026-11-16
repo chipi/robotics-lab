@@ -40,6 +40,8 @@ twenty challenges, ten runs each. A first `miniview` exists (top and 3D frames, 
 ## Non-Goals
 
 - Replacing Rerun or Lichtblick for free 3D exploration, point clouds at scale, or live streams.
+  (The Explore tab's robot body, RFC-0011, is one robot's model to orbit and pick parts from, not a
+  free 3D scene.)
 - ~~Live viewing of a running robot (later; the format allows it).~~ *Now in scope* (ADR-0005,
   RFC-0010): a run being
   written is followed by record and shown live, with Follow live as a mode. Free 3D exploration of
@@ -75,6 +77,10 @@ twenty challenges, ten runs each. A first `miniview` exists (top and 3D frames, 
   clearance to the nearest real obstacle and drop, the rule that acted — instead of reading ticks.
 - As a reviewing agent, I ask which runs in a scene broke an invariant and when.
 - As the operator, I draw several runs of the same scene together (repeats; before and after a fix).
+- As the operator, I open a run's robot in the Explore tab, turn its body around, click a part to
+  see what moves it and where it hangs, and pose it as recorded at t or by hand (2026-11-16).
+- As the operator, I find a stream by what it means for the robot (World, Body, Senses, Mind), with
+  the joints by leg and head, and keep closed what I do not need (2026-11-16).
 
 ## Functional Requirements
 
@@ -98,7 +104,9 @@ timebar that every panel follows; 2D by default from the top, any side or all th
 3D; the coordinate system always visible; a data view with only the robot's own data in its own
 frame; layers, the state panel, the
 filmstrip; scenes to load and runs within them, several runs drawn together. (Scenes, choosing
-runs, the timebar, 2D first: operator, 2026-11-15.)
+runs, the timebar, 2D first: operator, 2026-11-15.) The left panel grouped by meaning in sections
+that collapse; an Explore tab on the right whose first kind is the robot's body (operator,
+2026-11-16; UXS-001).
 
 ### FR4: Truth and numbers beside the picture
 
