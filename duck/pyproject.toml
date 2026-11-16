@@ -21,6 +21,7 @@ duck-explore = "duck_lab.nav.explore_run:main"
 duck-replay = "duck_lab.replay:main"
 duck-rooms = "duck_lab.nav.rooms:main"
 duck-world = "duck_lab.world:main"
+duck-challenge = "duck_lab.challenge.run:main"
 miniview = "duck_lab.miniview:main"
 
 [build-system]

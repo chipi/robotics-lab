@@ -39,6 +39,12 @@ def stop_mapd() -> None:
     pid_file.unlink(missing_ok=True)
 
 
+def down(scene: str = "apartment_backlash") -> None:
+    """mapd and the simulator stopped (duck-sim down stops what its pidfiles name, after checking each is what it says)."""
+    stop_mapd()
+    subprocess.run([str(REPO / "scripts" / "duck-sim"), "down"], env=_env(scene), capture_output=True, timeout=120)
+
+
 def reset(scene: str = "apartment_backlash") -> None:
     """Down, up, fresh mapd. Raises if the duck does not stand or mapd does not answer."""
     env = _env(scene)

@@ -44,6 +44,7 @@ Required sections:
 - [ADR-0013 — NXT runs in format 2: signals, odometry, a scene with no
   layout](ADR-0013-nxt-runs-in-format-2.md) (Proposed, 2026-11-16)
 - [ADR-0014 — The duck writes its runs itself, with what a replay needs](ADR-0014-replay-logging.md)
+- [ADR-0015 — The scenario runner: small generated scenes, scored by truth, as pass rates](ADR-0015-scenario-runner.md)
   (Proposed, 2026-11-16)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

@@ -15,7 +15,7 @@ from miniview.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
-           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg")
+           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
 ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
 

@@ -103,6 +103,7 @@ nav:
     - ADR-0012 — Docker, data read only: adr/ADR-0012-docker-read-only-data.md
     - ADR-0013 — NXT runs in format 2: adr/ADR-0013-nxt-runs-in-format-2.md
     - ADR-0014 — Replay logging, the duck writes format 2: adr/ADR-0014-replay-logging.md
+    - ADR-0015 — The scenario runner: adr/ADR-0015-scenario-runner.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

@@ -206,6 +206,7 @@ def load_scale(robot: str | None) -> float:
 
 class Navigator:
     runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
+    watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None):
@@ -429,6 +430,10 @@ class Navigator:
                 self._log.flush()
             if self.runlog:
                 self.runlog.row(self._sid, row)
+            if self.watch and "truth" in row and "event" not in row:
+                said = self.watch(row)
+                if said:
+                    self.record(**said)
 
     def go_to(self, goal: tuple, timeout_s: float = 90.0) -> dict:
         try:
