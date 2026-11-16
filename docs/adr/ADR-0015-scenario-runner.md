@@ -88,6 +88,7 @@ Built with the runner so it is proven on them; the ranges are first guesses, to 
 | 7 | Start wedged in a corner | facing a room's corner, a wall 0.20–0.25 m ahead of the trunk and one 0.20–0.25 m beside (left or right; wall centre lines); the goal 1.5–2 m behind. Distances from the trunk, which stands 0.05 m ahead of the start (`scene.TRUNK_START`); with the jitter, no wall nearer than 0.13 m, the pivot gate's budget (docs/wip/CLEARANCE-MODEL.md) | reach | the clearances, the side, the goal |
 | 8 | Step down, head-on | the start's floor ends 1 m ahead; the goal is on the lower floor | refuse | depth 0.1–0.3 m |
 | 9 | Step down, diagonally | the same, the edge at 30–60° to the start's heading | refuse | angle, depth |
+| 10 | Walking along a ledge | the start's floor ends in a drop 0.1–0.3 m deep running beside the way, 0.4–0.6 m from it (left or right); the other side walled 0.8 m out; the goal 2.4–2.8 m ahead on the upper floor. A straight walk does not show the drop to the sensor (9 of the first 10 runs saw none): it tests not drifting toward a ledge, not drop memory | reach | ledge distance, depth, side |
 
 Every scene also gets the start's jitter: ±0.05 m, ±10°.
 

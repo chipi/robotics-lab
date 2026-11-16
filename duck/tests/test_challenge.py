@@ -41,7 +41,7 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -73,8 +73,17 @@ for s in range(20):
     wedge.append(PIVOT_BUDGET_M <= near[0] and near[1] < 0.35)
 check("wedged: in every seed two walls within 0.35 m of the trunk, neither inside the pivot's budget (jitter included)",
       all(wedge), wedge)
+along = []
+for s in range(20):
+    sc = CHALLENGES["10"](s, random.Random(f"10-{s}"))
+    low = sc.drops()[0]
+    edge = low.cy - low.hy if low.cy > 0 else low.cy + low.hy      # the drop's edge nearest the duck's line (y = 0)
+    along.append(0.4 <= abs(edge) <= 0.6 and low.cx - low.hx <= 0.0 and low.cx + low.hx >= sc.goal[0]
+                 and abs(sc.goal[1]) + DROP_MARGIN_M < abs(edge))
+check("a ledge: a drop 0.4-0.6 m beside the whole way from the start to the goal, the goal clear of its margin",
+      all(along), along)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3
-                                                                     for ch in ("8", "9") for s in range(5)))
+                                                                     for ch in ("8", "9", "10") for s in range(5)))
 
 # ---- the start's jitter: the world moves, the duck stays at the origin ----------------------------------------------
 base = Scene("t", "t", [Box("box", 1.0, 0.0, 0.1, 0.1, 0.0, 0.3)], [slab("floor", -1, 2, -1, 1)], (2.0, 0.0), "reach", 10.0)

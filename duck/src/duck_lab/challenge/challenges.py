@@ -110,7 +110,23 @@ def step_down_diagonal(seed: int, rng: random.Random) -> Scene:
     return _step_down("ch9", "Step down, approached diagonally", seed, a, rng.uniform(0.1, 0.3))
 
 
-CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal}
+def ledge(seed: int, rng: random.Random) -> Scene:
+    """Walking along a ledge: the start's floor ends in a drop running beside the way to the goal, 0.4-0.6 m from it, on
+    one side; the other side is walled 0.8 m out, room enough to keep a drop's margin. The drop is seen only by the
+    sensor's side beams, if at all (trial 8): drop memory and side beams (RFC-0008 §3)."""
+    off, depth, side = rng.uniform(0.4, 0.6), rng.uniform(0.1, 0.3), rng.choice((-1, 1))
+    x0, x1, wall_y, edge_y = -0.6, 3.2, -side * 0.8, side * off
+    up_lo, up_hi = sorted((wall_y, edge_y))
+    low_lo, low_hi = sorted((edge_y, edge_y + side * 1.2))
+    up_skip = ("n",) if side > 0 else ("s",)                  # the edge's side of the start's floor is the drop
+    low_skip = ("s",) if side > 0 else ("n",)
+    boxes = _walled("upper", x0, x1, up_lo, up_hi, skip=up_skip) + _walled("lower", x0, x1, low_lo, low_hi, z0=-depth, skip=low_skip)
+    floors = [slab("upper", x0, x1, up_lo, up_hi), slab("lower", x0, x1, low_lo, low_hi, top=-depth)]
+    return Scene(f"ch10-s{seed}", "Walking along a ledge", boxes, floors, (rng.uniform(2.4, 2.8), 0.0), "reach", 90.0,
+                 notes={"ledge_m": round(off, 3), "depth_m": round(depth, 3), "side": side})
+
+
+CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge}
 
 
 def build(challenge: str, seed: int) -> Scene:
