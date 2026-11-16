@@ -40,6 +40,42 @@ The forward sensor cannot see these drops. Measured by the review from the recor
    (0.45 m); the stop distance is now 0.60 m. Walking beside a seen edge needs the glance's measured
    error, not the stop distance.
 
+## The forward sensor already sees most side drops (replayed, 2026-11-16)
+
+The recorded runs say the look is often not where a drop is first noticed.
+
+- **The returns are there.** `sim/probes/below_seen.py`: every recorded run of challenges 10 and 11
+  (40 of 40) had below-floor returns ("b") inside the real drop, usually 2–10 s before the closest
+  approach. Seed 8 of challenge 11 crossed the margin, yet had 57 such returns from 7.5 s on.
+  They are thrown away: only a cliff stop dead ahead turns returns into remembered drops.
+- **One by one they cannot be trusted.** On floor with no drop (challenges 1–5) there are below
+  returns too: a median of 14–72 per run.
+- **Kept per 5 cm cell, they can** (`sim/probes/below_cells.py`). A cell is a drop cell once at
+  least K frames put a below return there and below outnumbers floor by the ratio:
+
+  | Filter | Drop caught before the closest approach (10, 11) | Drop-free runs with a false drop cell |
+  | --- | --- | --- |
+  | K 3, ratio 2 | 38 of 40 (lead ~17 s) | 26 of 273 (up to 9 cells) |
+  | K 5, ratio 3 | 36 of 40 (lead ~14–18 s) | 8 of 273 (up to 2 cells) |
+  | K 8, ratio 3 | 33 of 40 | 3 of 273 |
+
+- **The design these numbers point to,** RFC-0008 §4's drops "suspected or confirmed":
+  1. **Suspect early, from the forward sensor.** Persistent below cells (K 5, ratio 3) are kept
+     as suspected drops, with a smaller ring than a confirmed drop.
+  2. **Confirm with a glance.** A suspected drop near the way is the attention trigger. The
+     glance confirms it, placing the edge within −4.7/+0.6 cm and the depth within 5 cm. Or it
+     clears it: no false drops in 14 looks. A false suspicion then costs one look, not a closed
+     doorway.
+  3. **Unseen floor beside the way** stays the fallback trigger, for the drops the forward
+     sensor does not catch (4 of 40 here).
+- **The unseen-floor trigger alone was replayed too** (`sim/probes/trigger_replay.py`). It fires
+  2–5 times a run in the rooms with no drop; that is the cost of each look. It fires before the
+  closest approach in every challenge 11 run. In challenge 10 it often fires only at the start:
+  in 2 runs it never looked at the ledge's side. Floor seen far ahead covers most of the band
+  before the duck gets there.
+
+Not verified: any of it closed loop; the real duck.
+
 ## Gates before trusting the glance
 
 1. **Why did the earlier glance read short? Explained, 2026-11-16.** It was timing, not
