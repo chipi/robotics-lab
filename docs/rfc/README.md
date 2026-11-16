@@ -50,4 +50,4 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0012 — Look far, get ready early: where to look and how fast to
   go](RFC-0012-look-far.md) (Proposed, 2026-11-16)
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
-  it](RFC-0013-robot-eye.md) (Proposed, 2026-11-16)
+  it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)

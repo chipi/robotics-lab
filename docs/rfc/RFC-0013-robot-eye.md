@@ -1,6 +1,6 @@
 # RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch it
 
-**Status:** Proposed (2026-11-16, the operator's direction); mockups below, prototype next
+**Status:** Accepted (2026-11-17, the operator: "I am OK, make it"); steps 1 to 4 of section 4 are built
 **Builds on:** [RFC-0009](RFC-0009-miniview.md) (miniview), [RFC-0010](RFC-0010-run-store-v2.md) (runs,
 one API, live), [RFC-0011](RFC-0011-robot-models.md) (robots drawn as themselves),
 [ADR-0014](../adr/ADR-0014-replay-logging.md) (decisions as events, frames with their state).
@@ -124,6 +124,9 @@ The mockups are flat drawings that set the direction. The prototype is the explo
   for analysis, but it can be read as "the robot sees it". The mockups mark the truth as dashed.
 - On the real duck there is no truth: the Eye then shows only what it saw and built.
 
+The first two are answered by the prototype's approval (section 7): the dark HUD stays, and the
+truth stays dashed.
+
 ## 6. Mockups
 
 Drawn from the recording of ch11-s8 at 22.5 s with throwaway scripts (snapshot, then SVG), to set the
@@ -137,3 +140,8 @@ are partly illustrative.
   prototype.
 - 2026-11-16, the operator on the mockups: the decision log on the right ("What it decided") is
   exactly what was wanted; all of it to be seen in the 3D scene, live and in replay (2.4).
+- 2026-11-17, the operator, after reviewing the prototype: "I am OK, make it". The Eye keeps its
+  dark HUD and the truth stays dashed (section 5's first two questions); steps 1 to 4 of section 4
+  follow. The HUD's attention alert shows the navigator's recorded cliff stop and glance
+  (RFC-0012's first trigger as built); a glance is LOOKING while it runs and LOOKED when it ends,
+  with what it saw.
