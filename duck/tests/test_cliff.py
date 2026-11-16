@@ -172,5 +172,79 @@ for name in ("tof-flat-0.json", "tof-flat-180.json"):
             for f in frames)
         check(f"{name}: depth_points' obstacles are obstacle_points' points", agree)
 
+# The sensor as mounted (calibration "tof"). The simulator's looks 2.5 deg further down than its servo angles say and reads
+# along each ray; read with the real duck's values (3 deg, axial) its flat floor looked further away when the head looked near
+# level, and the duck stopped for drops that were not there (the challenge course, 2026-11-16).
+from duck_lab.nav import cliff  # noqa: E402
+
+SIM_TOF = json.loads((Path(__file__).resolve().parents[1] / "calibration" / "sim.json").read_text())["tof"]
+SIM_MOUNT = (SIM_TOF["pitch_offset_deg"], SIM_TOF["range"])
+
+
+def sim_frame(st, floor_until_m=None, drop_m=0.3):
+    """What the simulator's sensor reports: mounted as calibration/sim.json says, the distance along each zone's ray."""
+    cliff.configure(*SIM_MOUNT)
+    height, q = sensor_pose(st)
+    dist = []
+    for beam in BEAMS:
+        d = rotate(q, beam)
+        if d[2] >= -0.01:
+            dist.append(2000)
+            continue
+        t = -height / d[2]
+        if floor_until_m is not None and t * math.hypot(d[0], d[1]) > floor_until_m:
+            t = -(height + drop_m) / d[2]
+        dist.append(int(t * 1000))
+    return {"distance_mm": dist, "status": [5] * 64}
+
+
+try:
+    cliff.configure(0.0, "slant")
+    check("configure: an unknown range kind is refused", False)
+except ValueError:
+    check("configure: an unknown range kind is refused", True)
+beam = BEAMS[0]
+cliff.configure()
+axial = cliff.along_beam(500, beam)
+cliff.configure(0.0, "radial")
+check("along_beam: axial readings are divided by the beam's axial part, radial ones are not",
+      abs(axial - 0.5 / beam[0]) < 1e-12 and cliff.along_beam(500, beam) == 0.5, (axial, beam[0]))
+
+def first_stop(frames, stop_m, needed):
+    """The navigator's cliff stop: `needed` frames in a row with a drop, the last one's nearest within stop_m."""
+    streak = 0
+    for f in frames:
+        pts = drop_points(f, f["state"])
+        streak = streak + 1 if pts else 0
+        if streak >= needed and min(p[2] for p in pts) < stop_m:
+            return f["t"]
+    return None
+
+
+# The recorded false stops (sim/probes/false_drop_fixture.py): flat floor, the real duck's mounting stopped in each.
+fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "flat_false_stops.json").read_text())
+stops = {}
+for mount in ((3.0, "axial"), SIM_MOUNT):
+    cliff.configure(*mount)
+    stops[mount] = [first_stop(r["frames"], fx["stop_m"], fx["frames_needed"]) for r in fx["runs"]]
+check(f"recorded flat floor ({len(fx['runs'])} runs): the real duck's mounting stops for a drop in every run, as it did",
+      len(fx["runs"]) == 8 and all(s is not None and abs(s - r["stop_t"]) < 1e-6 for s, r in zip(stops[(3.0, "axial")], fx["runs"])),
+      stops[(3.0, "axial")])
+check("recorded flat floor: the simulator's own mounting stops in none", not any(stops[SIM_MOUNT]), stops[SIM_MOUNT])
+
+# The simulator's mounting keeps the check's reach: an 8 cm drop is seen; with no pitch offset the floor sits too high and
+# a drop that shallow is not (0 deg removed the false stops too, by blinding the check).
+st = state()
+edge = drop_points(sim_frame(st, floor_until_m=0.45), st)
+check("the simulator's floor ending 0.45 m ahead: a drop, at about 0.45 m",
+      edge and 0.4 <= min(p[2] for p in edge) <= 0.55, min((p[2] for p in edge), default=None))
+shallow = sim_frame(st, floor_until_m=0.45, drop_m=0.08)
+cliff.configure(*SIM_MOUNT)
+seen = len(drop_points(shallow, st))
+cliff.configure(0.0, "radial")
+blind = len(drop_points(shallow, st))
+check("an 8 cm drop 0.45 m ahead: seen with the simulator's mounting, not with no pitch offset", seen > 0 and blind == 0, (seen, blind))
+cliff.configure()
+
 print("CLIFF", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

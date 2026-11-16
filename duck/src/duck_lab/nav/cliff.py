@@ -15,7 +15,25 @@ import math
 
 FOV_DEG = 45.0
 ROWS = COLS = 8
+# The sensor as mounted on this robot (configure(), from calibration/<robot>.json): how much further down it looks than the
+# head's kinematics say, and whether its readings run along the optical axis or along each zone's ray. The defaults are the
+# real duck's (mapd's: 3°, axial). The simulator's reads along the ray and looks 2.5° down (calibration/sim.json); with the
+# real duck's values its floor sat up to 2 cm too low, and the cliff check stopped for drops that were not there (the
+# challenge course, 2026-11-16: 131 frames, 8 stops in 40 runs on flat floor).
 PITCH_OFFSET_RAD = math.radians(3.0)
+RANGE = "axial"
+
+
+def configure(pitch_offset_deg: float = 3.0, range_kind: str = "axial") -> None:
+    global PITCH_OFFSET_RAD, RANGE
+    if range_kind not in ("axial", "radial"):
+        raise ValueError(f"range {range_kind!r}: axial or radial")
+    PITCH_OFFSET_RAD, RANGE = math.radians(pitch_offset_deg), range_kind
+
+
+def along_beam(mm: float, beam: tuple) -> float:
+    """A zone's reading (mm) as the distance along its beam (m)."""
+    return mm / 1000.0 if RANGE == "radial" else mm / 1000.0 / beam[0]
 VALID = {5, 9}
 LOOK_M = 0.7           # only floor expected within this horizontal distance is checked
 EXTRA_M = 0.06         # a return this much further than the floor (along the beam's drop) is a drop
@@ -98,7 +116,7 @@ def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
     for i, beam in enumerate(BEAMS):
         if frame["status"][i] not in VALID or frame["distance_mm"][i] <= 0:
             continue
-        r = frame["distance_mm"][i] / 1000.0 / beam[0]
+        r = along_beam(frame["distance_mm"][i], beam)
         d = rotate(q, beam)
         hx, hy = r * d[0], r * d[1]
         h = math.hypot(hx, hy)
@@ -123,7 +141,7 @@ def depth_points(frame: dict, state: dict) -> list:
     for i, beam in enumerate(BEAMS):
         if frame["status"][i] not in VALID or frame["distance_mm"][i] <= 0:
             continue
-        r = frame["distance_mm"][i] / 1000.0 / beam[0]
+        r = along_beam(frame["distance_mm"][i], beam)
         d = rotate(q, beam)
         hx, hy = r * d[0], r * d[1]
         h = math.hypot(hx, hy)
@@ -195,7 +213,7 @@ def drop_points(frame: dict, state: dict) -> list:
             continue
         valid = frame["status"][i] in VALID and frame["distance_mm"][i] > 0
         if valid:
-            r = frame["distance_mm"][i] / 1000.0 / beam[0]   # axial reading -> along the beam
+            r = along_beam(frame["distance_mm"][i], beam)
             if r * -d[2] < height + EXTRA_M:
                 continue    # it reached the floor (or something on it): no drop here
         wx, wy = t_floor * d[0], t_floor * d[1]          # level frame, world-aligned yaw

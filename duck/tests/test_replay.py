@@ -17,9 +17,10 @@ from pathlib import Path
 from miniview.mcapio import Follower
 
 from duck_lab import replay
+from duck_lab.nav import cliff
 from duck_lab.nav.cliff import BEAMS, rotate, sensor_pose
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.run import FrameView, Navigator, decision
+from duck_lab.nav.run import FrameView, Navigator, decision, load_tof
 from duck_lab.nav.runlog import RunLog, SIGNALS
 
 failures = []
@@ -209,6 +210,40 @@ with tempfile.TemporaryDirectory() as tmp:
         nav.runlog.row(nav._sid, {"t": 0.1, "pose": [0.0, 0.0, 0.0]})
     check("a write that fails is said once and the navigator's own threads carry on", bad.error and "disk full" in bad.error
           and err.getvalue().count("not written any more") == 1 and nav._fv is not None, err.getvalue())
+
+    # ---- the sensor's mounting: the robot's calibration, recorded with the run, applied by the replay --------------------
+    check("load_tof: the simulator's sensor, as calibration/sim.json measured it (2.5 deg, along the ray)",
+          load_tof("sim") == {"pitch_offset_deg": 2.5, "range_kind": "radial"}, load_tof("sim"))
+    check("load_tof: no robot is the real duck's mounting (cliff.py's defaults)",
+          load_tof(None) == {"pitch_offset_deg": 3.0, "range_kind": "axial"}, load_tof(None))
+    # A navigator applies its robot's mounting when it starts (its sockets stubbed: no simulator here).
+    from duck_lab.nav import run as nav_run
+    real = {k: getattr(nav_run, k) for k in ("Rpc", "StateStream", "TofStream", "Body")}
+    for k in real:
+        setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {})())
+    try:
+        Navigator(calibration="sim", truth=False)
+        sim_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(2.5), "radial")
+        Navigator(calibration=None, truth=False)
+        default_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(3.0), "axial")
+    finally:
+        for k, v in real.items():
+            setattr(nav_run, k, v)
+    check("a navigator configures the cliff check with its robot's mounting when it starts (and the real duck's without one)",
+          sim_applied and default_applied, (sim_applied, default_applied))
+    cal_rl = RunLog(data, "apartment", "calib1", "exploration", None)
+    cal_sid = cal_rl.new_session()
+    cal_rl.row(cal_sid, {"t": 0.0, "event": "calibration", "tof": load_tof("sim"), "odom_scale": 0.91})
+    cal_rl.row(cal_sid, {"t": 0.5, "pose": [0.0, 0.0, 0.0]})
+    cal_recs = Follower(cal_rl.finish().parent, keep_raw=True).poll()
+    check("the run's calibration event is read back as the mounting it was recorded with",
+          replay.calibration_of(cal_recs) == load_tof("sim"), replay.calibration_of(cal_recs))
+    check("a run from before the event existed: the real duck's mounting", replay.calibration_of(recs) == load_tof(None))
+    replay.replay(cal_recs + [r for r in recs if r[1] == "depth_frame"])
+    sim_set = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(2.5), "radial")
+    replay.replay(recs)
+    check("the replay applies each run's own mounting, and puts the default back for a run without one",
+          sim_set and (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(3.0), "axial"), (cliff.PITCH_OFFSET_RAD, cliff.RANGE))
 
     # ---- a run that exists is not overwritten -----------------------------------------------------------------------
     try:

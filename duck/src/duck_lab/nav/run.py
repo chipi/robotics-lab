@@ -25,6 +25,7 @@ import threading
 import time
 from pathlib import Path
 
+from duck_lab.nav import cliff
 from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, extend_edge, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
@@ -205,6 +206,13 @@ def load_scale(robot: str | None) -> float:
     return float(json.loads((CALIBRATION / f"{robot}.json").read_text())["odom_scale"])
 
 
+def load_tof(robot: str | None) -> dict:
+    """The robot's depth sensor as mounted (calibration/<robot>.json "tof"): {pitch_offset_deg, range}; the real duck's
+    defaults (cliff.py's) when the robot or its file says nothing."""
+    tof = json.loads((CALIBRATION / f"{robot}.json").read_text()).get("tof", {}) if robot else {}
+    return {"pitch_offset_deg": float(tof.get("pitch_offset_deg", 3.0)), "range_kind": tof.get("range", "axial")}
+
+
 class Navigator:
     runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
     watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
@@ -215,6 +223,8 @@ class Navigator:
         # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
         # first stop, so scaling about it keeps the duck where it is.
         self.scale = load_scale(calibration)
+        self.tof_cal = load_tof(calibration)
+        cliff.configure(**self.tof_cal)
         self.loc = Localizer()
         self._t0 = time.monotonic()
         self.runlog = runlog
@@ -244,6 +254,8 @@ class Navigator:
         self.tof.on_frame = self._on_frame
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
+        # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
+        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale)
 
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]

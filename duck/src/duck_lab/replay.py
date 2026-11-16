@@ -19,6 +19,7 @@ from pathlib import Path
 from miniview import keys
 from miniview.mcapio import FINAL, LIVE, Follower
 
+from duck_lab.nav import cliff
 from duck_lab.nav.run import FrameView
 
 TOL = 1e-9
@@ -40,8 +41,18 @@ def _same(a, b) -> bool:
     return a == b
 
 
+def calibration_of(records: list) -> dict:
+    """The sensor's mounting the run was recorded with (its `calibration` event), else the real duck's defaults: a run from
+    before the event existed was recorded with those."""
+    for _, k, p in records:
+        if k == "event" and p.get("kind") == "calibration" and isinstance((p.get("raw") or {}).get("tof"), dict):
+            return p["raw"]["tof"]
+    return {"pitch_offset_deg": 3.0, "range_kind": "axial"}
+
+
 def replay(records: list) -> dict:
-    """The report for a run's records (read with keep_raw)."""
+    """The report for a run's records (read with keep_raw), with the sensor configured as the run was."""
+    cliff.configure(**calibration_of(records))
     frames = [(t, p) for t, k, p in records if k == "depth_frame"]
     ticks = [p for _, k, p in records if k == "tick"]
     rep = {"frames": len(frames), "replayed": 0, "no_state": 0, "no_pose": 0, "diffs": [], "pair_dt_ms": [],

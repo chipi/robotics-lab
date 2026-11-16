@@ -4,5 +4,11 @@
   "at_speed_mps": 0.3,
   "by_speed": {"0.2": 0.849, "0.3": 0.911, "0.4": 0.930},
   "measured": "2026-11-14, duck/sim/probes/odom_vs_truth.py (straight walks, 3 x 8 s per speed, truth = body server trunk) and duck/sim/odom_scale.py over ~41 m of navigation logs (0.909)",
-  "why": "robotd's odometry reads ~10 % long in the simulator and mapd builds its map from it; the navigator scales odometry, mapd's poses and mapd's grid by this factor (operator, 2026-11-14: options 2 and 3). A real duck gets its own measurement (phase 5). Remove when robotd or mapd corrects it upstream."
+  "why": "robotd's odometry reads ~10 % long in the simulator and mapd builds its map from it; the navigator scales odometry, mapd's poses and mapd's grid by this factor (operator, 2026-11-14: options 2 and 3). A real duck gets its own measurement (phase 5). Remove when robotd or mapd corrects it upstream.",
+  "tof": {
+    "pitch_offset_deg": 2.5,
+    "range": "radial",
+    "measured": "2026-11-16. Range: the simulator's tof.py casts unit rays (mj_ray) and reports the hit distance along each, so readings are radial. Pitch: duck/sim/probes/floor_fit.py over the challenge course's 40 flat-floor runs, the offset (0 to 4 deg in 0.5 deg steps with radial readings, and the real duck's 3 deg axial) that puts the recorded floor returns at floor height; 2.5 deg radial places them at +5.5 to -3.7 mm from 0.3 to 0.9 m (mean |error| 2.8 mm, the smallest), 0 deg radial 16 to 32 mm high (23.2), 3 deg axial 6 to 18 mm low (14.6). The servo joints alone (tof_truth.py, which leaves the model's passive backlash hinges at 0) put the optical axis 3.0 deg less steep than 3 deg believed: the extra ~2.5 deg is not in the servo angles, most likely the head sagging on its backlash hinges (not measured directly).",
+    "why": "with the real duck's values (3 deg, axial) the cliff check placed the floor up to 2 cm too low and, with the head near level (the walk's first second, the neck pitched up ~13 deg), stopped for drops that were not there: 131 frames and 8 cliff stops in the challenge course's 40 runs on flat floor (duck/sim/probes/cliff_replay.py). 0 deg also removed them but by placing the floor too high, which made the check blind to the first 2-3 cm of any drop. The real duck keeps mapd's 3 deg and axial ranges (cliff.py's defaults); whether the real sensor's ranges are axial is not checked here."
+  }
 }
