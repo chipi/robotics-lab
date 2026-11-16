@@ -71,7 +71,7 @@ def dead_end(seed: int, rng: random.Random) -> Scene:
 def wedged(seed: int, rng: random.Random) -> Scene:
     """The start facing into a room's corner, a wall close ahead and one close beside, the goal behind in the open: boxed-in
     recovery (trial 4). The clearances keep the footprint (0.083 m) off both walls, the start's jitter included."""
-    ahead, aside, side = rng.uniform(0.16, 0.22), rng.uniform(0.14, 0.2), rng.choice((-1, 1))
+    ahead, aside, side = rng.uniform(0.2, 0.25), rng.uniform(0.2, 0.25), rng.choice((-1, 1))
     x1, y_wall = TRUNK_START[0] + ahead, side * aside             # from the trunk, where contacts are judged
     y0, y1 = (y_wall - 2.6, y_wall) if side > 0 else (y_wall, y_wall + 2.6)
     boxes = _walled("room", x1 - 3.2, x1, y0, y1)

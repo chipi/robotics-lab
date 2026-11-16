@@ -63,12 +63,16 @@ for s in range(20):
 check("a dead end: the start inside a corridor 0.55 m or narrower, its closed end 0.2-0.3 m ahead, the mouth behind",
       all(inside), inside)
 check("a dead end: the goal is out of the corridor, in the room beside its mouth", all(walled_in), walled_in)
+# The pivot gate's budget (docs/wip/CLEARANCE-MODEL.md): footprint 0.083 + belief error in the kick ~0.013 + kick creep
+# ~0.01, under the 0.11 m gate; a wall nearer than this at the start is a right refusal, not a wedge to get out of.
+PIVOT_BUDGET_M = 0.13
 wedge = []
 for s in range(20):
     sc = build("7", s)                                    # with the start's jitter
     near = sorted(footprint_distance(TRUNK_START, g) for g in Judge(sc).obs)[:2]
-    wedge.append(FOOTPRINT_M < near[0] and near[1] < 0.35)
-check("wedged: in every seed two walls within 0.35 m of the start, neither inside the footprint (jitter included)", all(wedge), wedge)
+    wedge.append(PIVOT_BUDGET_M <= near[0] and near[1] < 0.35)
+check("wedged: in every seed two walls within 0.35 m of the trunk, neither inside the pivot's budget (jitter included)",
+      all(wedge), wedge)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3
                                                                      for ch in ("8", "9") for s in range(5)))
 

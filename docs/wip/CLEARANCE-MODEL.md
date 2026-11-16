@@ -57,6 +57,16 @@ Margins are unchanged: `LETHAL_M` 0.12 m, the tight pivot 0.11 m. Only the measu
   0.083 m, so the total is about 0.106 m against the 0.11 m gate. The failing seeds start with a
   wall about 0.13 m from the trunk.
 
+The operator chose to keep the 0.11 m gate and move challenge 7's close walls outside the budget:
+wall centre lines 0.20–0.25 m from the trunk, and with the start's jitter no wall nearer than
+0.13 m (test_challenge checks 20 seeds). Challenge 7 then scored 9/10.
+
+The one failure, seed 7, was a refusal with no contact; the closest the trunk came was 0.127 m. It
+started with a true room of 0.165 m. During the pivot the trunk crept about 1.8 cm forward in the
+0.6 s of kick, twice the probe's figure. The belief was then off by about 2.5 cm (0.106 m read,
+about 0.13 m true). So in closed loop the budget is wider than estimated above: kick creep and
+belief error reach about 2–2.5 cm each. The 0.13 m figure holds for 9 seeds in 10, not all.
+
 The kick (`follow.step`) now stands still: vx 0 for the first second, then the robot's pivot speed.
 `sim/probes/pivot_kick.py`, 6 starts each from a stand, turn rate 1.2 rad/s:
 
