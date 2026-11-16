@@ -228,7 +228,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // frame and the next (`next_t`); the last frame stays current until the stream's count (it arrives by record) says a newer one exists.
   // One request at a time.
   const RAW_VALID = [5, 9];          // the sensor's "range valid" statuses
-  const raw = { key: null, fr: null, busy: false, failed: 0 };
+  // `failed` starts at -Infinity: performance.now() counts from the page's start, so 0 read as "failed just now" for the first 500 ms
+  // and a page that drew its inspector that early never asked for a frame (CI 2026-11-16)
+  const raw = { key: null, fr: null, busy: false, failed: -Infinity };
   function rawFrame(strict = false) {
     const s = stream('sensors.raw');
     if (!M.runId || !M.run || s?.missing) return null;

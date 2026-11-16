@@ -43,6 +43,17 @@ def entities(text):
     return {e.strip().rstrip(",") for e in m.group(1).split("\n") if e.strip()} if m else set()
 
 
+def lb_wait(pg, js, timeout=30000):
+    """pg.wait_for_function for a Lichtblick page; on a timeout, the page's visible text, so a failure in CI says what was
+    there instead (CI 2026-11-16: the transforms note did not show, twice in four runs, with nothing to go on)."""
+    try:
+        pg.wait_for_function(js, timeout=timeout)
+    except Exception:
+        text = re.sub(r"\n+", " | ", pg.locator("body").inner_text())
+        print(f"waited {timeout / 1000:.0f} s for {js[:90]!r}; the page showed: {text[:1500]}", flush=True)
+        raise
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -165,25 +176,25 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             pg = b.new_page(viewport={"width": 1500, "height": 950})
             pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
             day = datetime.datetime.fromtimestamp(T0_NS / 1e9, datetime.timezone.utc).strftime("%Y-%m-%d")
-            pg.wait_for_function("document.body.innerText.includes('Topics')", timeout=60000)
+            lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
             pg.get_by_text("Topics", exact=True).first.click()
-            pg.wait_for_function("document.body.innerText.includes('foxglove.PoseInFrame')", timeout=60000)
+            lb_wait(pg, "document.body.innerText.includes('foxglove.PoseInFrame')", timeout=60000)
             topics = pg.locator("body").inner_text()
             check("Lichtblick: the topic list has the Foxglove topics with their schemas and the run's counts",
                   all(re.search(rf"{t}\s+foxglove\.\w+", topics) for t in FOXGLOVE_TOPICS) and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+116", topics), topics[:200])
             pg.get_by_text("Alerts", exact=False).first.click()
-            pg.wait_for_function("document.body.innerText.includes('Transform topics detected')", timeout=30000)
+            lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
             alerts = pg.locator("body").inner_text()
             alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
             titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
             check("Lichtblick: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
             shown = "[...document.querySelectorAll('input')].map((i) => i.value).join(' ') + ' ' + document.body.innerText"
-            pg.wait_for_function(f"({shown}).includes('{day}') || ({shown}).includes('1970')", timeout=30000)
+            lb_wait(pg, f"({shown}).includes('{day}') || ({shown}).includes('1970')", timeout=30000)
             text = pg.evaluate(shown)
             check("Lichtblick: the timeline shows the run's real start date, not 1970", day in text and "1970" not in text, day)
             pg.get_by_text("Panel", exact=True).first.click()
             pg.locator("canvas").first.click(position={"x": 100, "y": 100})
-            pg.wait_for_function("document.querySelectorAll('[data-testid=VisibilityToggle]').length === 4", timeout=30000)
+            lb_wait(pg, "document.querySelectorAll('[data-testid=VisibilityToggle]').length === 4", timeout=30000)
             panel = pg.locator("[data-testid=settings-tree-editor]").inner_text()
             check("Lichtblick: the 3D panel's topic list has the four topics", all(t in panel for t in ("/belief/pose", "/truth/pose", "/map", "/depth")), panel[:300])
             bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()      # the timeline; 87% of the way in is where the data is
@@ -272,14 +283,14 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             b = launch(p)
             pg = b.new_page(viewport={"width": 1500, "height": 950}, timezone_id="UTC")   # the Plot tooltip says clock time
             pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
-            pg.wait_for_function("document.body.innerText.includes('Topics')", timeout=60000)
+            lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
             pg.get_by_text("Topics", exact=True).first.click()
-            pg.wait_for_function("document.body.innerText.includes('miniview.Signals')", timeout=60000)
+            lb_wait(pg, "document.body.innerText.includes('miniview.Signals')", timeout=60000)
             topics = pg.locator("body").inner_text()
             check("Lichtblick, NXT run: the topic list has /nxt/signals with its schema and the run's 281 samples, beside the pose",
                   re.search(r"/nxt/signals\s+miniview\.Signals\s+[\d.]+ Hz\s+281", topics) is not None and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+281", topics) is not None, topics[:200])
             pg.get_by_text("Alerts", exact=False).first.click()
-            pg.wait_for_function("document.body.innerText.includes('Transform topics detected')", timeout=30000)
+            lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
             alerts = pg.locator("body").inner_text()
             alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
             titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
@@ -288,10 +299,10 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             pg.get_by_placeholder("/some/topic.msgs[0].field").first.click()
             pg.keyboard.type("/nxt/signals")
             pg.keyboard.press("Enter")
-            pg.wait_for_function("document.body.innerText.includes('miniview.Signals @')", timeout=30000)
+            lb_wait(pg, "document.body.innerText.includes('miniview.Signals @')", timeout=30000)
             bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()
             pg.mouse.click(bar["x"] + 0.5 * bar["width"], bar["y"] + bar["height"] / 2)
-            pg.wait_for_function("(() => { const m = /miniview\\.Signals @ (\\d+\\.\\d+)/.exec(document.body.innerText); return m && +m[1] > 1700000010; })()", timeout=30000)
+            lb_wait(pg, "(() => { const m = /miniview\\.Signals @ (\\d+\\.\\d+)/.exec(document.body.innerText); return m && +m[1] > 1700000010; })()", timeout=30000)
             text = pg.locator("body").inner_text()
             msg = text[text.index("miniview.Signals @"):]
             at = float(re.match(r"miniview\.Signals @ (\d+\.\d+)", msg).group(1)) - T0_NS / 1e9
@@ -306,7 +317,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             label = pg.get_by_text("tacho_B", exact=True).first.bounding_box()
             pg.mouse.move(label["x"] + label["width"] + 30, label["y"] + label["height"] / 2)
             pg.locator("[aria-label='Plot this value on a line chart']").first.click()
-            pg.wait_for_function("document.body.innerText.includes('/nxt/signals.tacho_B')", timeout=15000)
+            lb_wait(pg, "document.body.innerText.includes('/nxt/signals.tacho_B')", timeout=15000)
             day0 = (T0_NS / 1e9) % 86400
             for frac in (0.3, 0.7):
                 sec, val, texts = plot_tooltip(pg, frac)

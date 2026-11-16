@@ -118,7 +118,7 @@ def wait_raw(page, js, logs, what, timeout=15000):
     except Exception:
         seen = page.evaluate("(() => { const c = document.getElementById('rawcv'), i = window.miniview.internals, r = i.raw, "
                              "s = i.M.run?.streams?.find((x) => x.id === 'sensors.raw'); "
-                             "return { canvas: c ? { ...c.dataset } : null, busy: r.busy, failed_ms_ago: r.failed ? performance.now() - r.failed : null, "
+                             "return { canvas: c ? { ...c.dataset } : null, busy: r.busy, failed_ms_ago: isFinite(r.failed) ? performance.now() - r.failed : null, "
                              "key: r.key, run: i.M.runId, have: r.fr ? { i: r.fr.index, n: r.fr.n, t: r.fr.t, next_t: r.fr.next_t } : null, "
                              "stream: s ? { count: s.count, missing: s.missing } : null, t: i.M.t, status: i.M.run?.status, "
                              "inspector: (document.getElementById('inspBody')?.innerText || '').split('Raw depth frame')[1]?.slice(0, 160) }; })()")
@@ -230,6 +230,20 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         ok = eventually(page, f"document.getElementById('rawcv')?.dataset.i === '{want['index']}'")
         check("a frame request that failed is asked again, and the inspector shows the frame", len(failed) == 1 and ok,
               (failed, page.evaluate("document.getElementById('rawcv')?.dataset.i ?? 'no image'")))
+        ctx.close()
+
+        # a page that draws its inspector in its first half second still asks for the frame: CI's fast runner did, and the page
+        # took the start of its clock for a failure 0 s ago, asked nothing, and said "loading" for good. The page's clock is
+        # started again just before the playhead moves, which makes that moment come here on any machine.
+        ctx, page, logs = run_page(b, base)
+        call(page, f"window.miniview.load('apartment', '{KEY}')")
+        asked = []
+        page.on("request", lambda r: asked.append(r.url) if "/sensor?" in r.url else None)
+        page.evaluate("(() => { const real = performance.now.bind(performance), base = real(); performance.now = () => real() - base; })()")
+        call(page, "window.miniview.setTime(2.5)")
+        ok = eventually(page, f"document.getElementById('rawcv')?.dataset.i === '{want['index']}'")
+        check("a page in its first half second still asks for the frame, and the inspector shows it", ok and asked,
+              (len(asked), page.evaluate("document.getElementById('rawcv')?.dataset.i ?? 'no image'")))
         ctx.close()
 
         # a frame request never answered is given up after 5 s and asked again (it held `busy` for good before)
