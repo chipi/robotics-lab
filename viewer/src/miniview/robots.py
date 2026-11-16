@@ -53,7 +53,8 @@ def description(name: str, root: Path = ROOT) -> dict | None:
             if not (folder / v["mesh"]).is_file():
                 missing.add(v["mesh"])
             v["url"] = f"robots/{name}/{v['mesh']}"
-    desc.update(label=_entry(folder).get("label", name), meshes_missing=sorted(missing))
+    e = _entry(folder)
+    desc.update(label=e.get("label", name), meshes_missing=sorted(missing), stand_z=e.get("stand_z"))
     return desc
 
 

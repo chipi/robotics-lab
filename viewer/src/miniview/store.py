@@ -35,7 +35,7 @@ class RunData:
                     "rejects": 0, "first_error": None, "error": None, "rewritten": 0, "generation": self.generation,
                     "samples": 0}
         self.raw = []                 # the depth frames, raw (ADR-0014): {t, rows, cols, distance_mm, status, frame_t_ns, ...}, in time order
-        self.frames = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
+        self.frames = {"t": [], "belief": [], "truth": [], "truth_3d": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
         self.sig = {"t": [], "v": {}}     # the signals ticks: times, and per declared signal its value at each (None: none then)
         self.sig_kinds = {}               # declared signal -> "number" | "text"
@@ -99,7 +99,7 @@ class RunData:
             r["epochs"].append({"from_t": t, "map_to_world": p["map_to_world"]})
         elif kind == "tick":
             f["t"].append(t)
-            for k in ("belief", "truth", "tilt", "cmd", "depth"):
+            for k in ("belief", "truth", "truth_3d", "tilt", "cmd", "depth"):
                 f[k].append(p.get(k))
             c = self.counts
             c["truth"] += bool(p.get("truth"))

@@ -219,7 +219,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   function shown(id, view) {
     if (id === 'rel.belief_truth') return M.rel.belief_truth && M.frame === 'world' && shown('belief.pose', view) && shown('truth.pose', view);
     const s = stream(id);
-    if (!s || s.missing) return false;
+    if (id === 'body.model') { if (!M.robot || !hasTicks()) return false; }      // the Robot layer: not a stream, the robot's description
+    else if (!s || s.missing) return false;
     return [id, ...(T.parents[id] || [])].every((k) => M.on[k] !== false && !(view && M.vv[view]?.[k] === false));
   }
   const size = (id) => M.size[id] ?? SIZE_DEFAULT[id] ?? (SIZE_KIND[id] === 'line' ? 2 : 4);
@@ -697,7 +698,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (n.model) {
         h += `<div class="row model" role="treeitem" data-id="${esc(n.id)}" aria-level="${d + 1}" aria-selected="${M.selNode === n.id}" title="Explore the robot's body (the Explore tab)" style="padding-left:${4 + d * 14}px">`
           + `<span class="caret"></span><span class="ti" style="color:var(--accent)">${svgI('robot', 13)}</span><span class="name">${esc(n.name)}</span><span class="sfx">${esc(n.sfx)}</span>`
-          + `<span class="extra"><button class="mini" data-explore="1">Explore</button></span></div>`;
+          + `<span class="extra"><button class="mini" data-explore="1">Explore</button><button class="eye" data-eye="${esc(n.id)}" aria-pressed="${st !== 'off'}" aria-label="Show the robot's body in the views">`
+          + `${svgI(st === 'on' ? 'eye' : 'eyeoff', 13)}</button></span></div>`;
         return;
       }
       const meta = n.joint ? (M.angles ? angleText(n.joint) : '') : s ? rate(s) : '';
@@ -1191,6 +1193,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   window.miniview.state = state;
   window.miniview.exploreState = () => (explore ? explore.state() : null);
   window.miniview.exploreSnapshot = () => (explore ? explore.snapshot() : null);
+  window.miniview.exploreScreenOf = (link) => (explore ? explore.screenOf(link) : null);
   // the settings a script can have changed, as plain data: per-stream time modes, visibility (global and per view), drawn
   // sizes, event kinds, the playback state, overlays, the relation flag
   window.miniview.config = () => JSON.parse(JSON.stringify({ modes: M.modes, on: M.on, vv: M.vv, size: M.size, kinds: M.kinds, play: M.play, rel: M.rel, overlays: M.ov,
@@ -1205,6 +1208,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // ---- wiring ---------------------------------------------------------------------------------------
   const shell = {
     M, shown, cfg, size, tickAt, palette,
+    // the Robot layer (RFC-0011): the run's robot's description (null when it has none) and its joints' values at the playhead
+    robot: () => M.robot,
+    joints: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
+    api: API,
     pick: (sel) => select(sel),
     viewChanged: () => { updateGizmo(); updateScale(); },
   };

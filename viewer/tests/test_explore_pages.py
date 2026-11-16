@@ -54,6 +54,7 @@ ARM = """<robot name="arm">
 arm = TMP / "robots" / "arm"
 (arm / "meshes").mkdir(parents=True)
 (arm / "robot.urdf").write_text(ARM)
+(arm / "robot.json").write_text('{"label": "Test arm", "stand_z": 0.05}')
 (arm / "meshes" / "base.stl").write_bytes(box_stl(0.12, 0.12, 0.1))
 (arm / "meshes" / "upper.stl").write_bytes(box_stl(0.03, 0.03, 0.15))
 
@@ -69,6 +70,9 @@ shoulder = lambda t: round(0.6 * math.sin(t), 4)  # noqa: E731
 for k in range(0, 51):
     t = k * 0.1
     rec.begin_tick(t, [0.02 * k, 0.0, 0.0])
+    # the truth a metre aside, its whole pose (ADR-0016): 0.2 m up, turned 0.2 rad about x; the IMU's tilt for the belief's body
+    rec.tick_truth([0.02 * k + 1.0, 0.5, 0.0], {"z": 0.2, "quat": [math.cos(0.1), math.sin(0.1), 0.0, 0.0]})
+    rec.tick_tilt(2.0, -1.0)
     rec.end_tick()
     rec.begin_signals(t + 0.05, {"joint_shoulder": shoulder(t + 0.05), "pitch_deg": 1.0, "roll_deg": -0.5, "battery_v": 7.4})
     rec.end_tick()
@@ -193,6 +197,14 @@ with sync_playwright() as p:
             check("a part picked in the body (a click on the isolated upper arm, focused)", page.evaluate("window.miniview.exploreState().selected") == "upper",
                   page.evaluate("window.miniview.exploreState().selected"))
             page.click('#xall')
+            # nothing isolated or hidden: a click picks the part that is in front, where each is
+            picked = {}
+            for link in ("upper", "base"):
+                page.click('#explore [data-act="close"]') if page.query_selector('#explore [data-act="close"]') else None
+                xy = page.evaluate(f"window.miniview.exploreScreenOf('{link}')")
+                page.mouse.click(*xy)
+                picked[link] = page.evaluate("window.miniview.exploreState().selected")
+            check("with every part shown, a click on each part picks that part (the one in front)", picked == {"upper": "upper", "base": "base"}, picked)
             call(page, "window.miniview.exploreHide('base')")
             xs = page.evaluate("window.miniview.exploreState()")
             check("hide a part; show all brings everything back", xs["hidden"] == ["base"] and xs["isolated"] is None, xs)
@@ -217,6 +229,23 @@ with sync_playwright() as p:
             check("Expand gives the explorer more room", page.evaluate("document.getElementById('app').classList.contains('xwide')")
                   and page.evaluate("document.getElementById('insp').getBoundingClientRect().width") > 450)
             shot(page, "explore-wide")
+            # the main view is narrower now: its legend may wrap, and nothing (the 3D labels) may be drawn over it
+            # (pointer events on for everything while it looks: the corner and the labels have none, and elementFromPoint skips those)
+            over = page.evaluate("""(() => { const l = document.getElementById('legend'); if (!l || !l.offsetParent) return 'no legend';
+              const st = document.createElement('style'); st.textContent = '#app * { pointer-events: auto !important; }'; document.head.append(st);
+              // the three.js page: a label where CSS2DRenderer puts them (inside a slot's label layer, a high z-index to sort by
+              // depth), under the first legend item, so the check does not depend on where this scene's labels happen to fall
+              const layer = document.querySelector('.slot .labels'), first = l.querySelector('span'), probe = document.createElement('div');
+              if (layer && first) {
+                const lb = layer.getBoundingClientRect(), fb = first.getBoundingClientRect();
+                probe.textContent = '8.88'; probe.style.cssText = `position:absolute;z-index:9999;left:${fb.x - lb.x}px;top:${fb.y - lb.y}px;width:${fb.width}px;height:${fb.height}px`;
+                layer.append(probe);
+              }
+              try {
+                return [...l.querySelectorAll('span')].map((s) => { const b = s.getBoundingClientRect(); return [s, document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)]; })
+                  .filter(([, e]) => !l.contains(e)).map(([s, e]) => `${s.innerText} under ${e ? e.tagName + '.' + e.className : 'nothing'}`);
+              } finally { st.remove(); probe.remove(); } })()""")
+            check("the main view's legend is on top: no label is drawn over any of its items", over == [], over)
             page.click('#xwide')
 
             # the pages' forward kinematics are miniview.kinematics' and MuJoCo's: every link of the duck, for every fixture case
@@ -235,6 +264,32 @@ with sync_playwright() as p:
             }""", [duck, fixture["cases"]])
             check(f"the pages' kinematics put every link of the duck where MuJoCo does ({len(fixture['cases'])} cases): within 1e-6 m and 1e-6",
                   worst[0] < 1e-6 and worst[1] < 1e-6, worst)
+
+            # the Robot layer in the main 3D view (three.js page): the body where the truth was, or the belief, its joints at t
+            if lib == "three":
+                call(page, "window.miniview.setView('3d')")
+                call(page, "window.miniview.setTime(2.0)")
+                page.wait_for_function("window.miniview.internals.adapter.body()?.drawn === 2", timeout=20000)
+                call(page, "window.miniview.setTime(2.0)")
+                bd = page.evaluate("window.miniview.internals.adapter.body()")
+                a = shoulder(1.95)
+                near = lambda x, y, tol=1e-4: all(abs(p - q) < tol for p, q in zip(x, y))  # noqa: E731
+                check("the Robot layer in the world frame: the trunk at the truth's whole pose (x, y, z and tilt), the joint at its value at t",
+                      bd["visible"] and near(bd["pos"], [1.4, 0.5, 0.2]) and near(bd["quat"], [math.cos(0.1), math.sin(0.1), 0, 0])
+                      and near(bd["joint_upper_quat"], [math.cos(a / 2), math.sin(a / 2)]), bd)
+                call(page, "window.miniview.setFrame('map')")
+                bd = page.evaluate("window.miniview.internals.adapter.body()")
+                p_, r_ = math.radians(2.0) / 2, math.radians(-1.0) / 2
+                want_q = [math.cos(p_) * math.cos(r_), math.cos(p_) * math.sin(r_), math.sin(p_) * math.cos(r_), -math.sin(p_) * math.sin(r_)]
+                check("in the map frame (no truth there): at the belief, at the robot's standing height, tilted by the IMU",
+                      bd["visible"] and near(bd["pos"], [0.4, 0.0, 0.05]) and near(bd["quat"], want_q), (bd, want_q))
+                call(page, "window.miniview.setFrame('world')")
+                page.click('#tree .row[data-id="body.model"] .eye')
+                hidden = page.evaluate("window.miniview.internals.adapter.body().visible")
+                page.click('#tree .row[data-id="body.model"] .eye')
+                check("the 3D model row's eye hides the body and shows it again", hidden is False and page.evaluate("window.miniview.internals.adapter.body().visible") is True)
+                shot(page, "robot-layer-3d")
+                call(page, "window.miniview.setView('top')")
 
             errs = [m for m in logs if "favicon" not in m]
             check("no console errors or warnings", not errs, errs[:5])

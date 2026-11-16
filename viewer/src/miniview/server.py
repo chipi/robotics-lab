@@ -53,7 +53,7 @@ HEARTBEAT_S = 15.0
 REQUEST_TIMEOUT_S = 30.0
 STREAM_TIMEOUT_S = 60.0     # a live stream whose client stops reading is dropped after this long (a write that blocks)
 GZIP_OVER = 1024
-PER_TICK = ("t", "belief", "truth", "tilt", "cmd", "depth", "plan_at", "world_at")
+PER_TICK = ("t", "belief", "truth", "truth_3d", "tilt", "cmd", "depth", "plan_at", "world_at")
 ONE_DAY = "public, max-age=86400"
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 # the pages load only from their own origin (the libraries are vendored, the fonts served, no CDN); inline scripts and

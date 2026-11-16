@@ -2,5 +2,7 @@
   "label": "Microduck",
   "description": "robot.urdf (from Pollen's MuJoCo model by from_mjcf.py; meshes by `make robots`)",
   "simulator": {"engine": "mujoco", "model": "microduck_rl robot_allcollisions_backlash.xml", "launcher": "microduck scripts/duck-sim"},
-  "backend": "robotd"
+  "backend": "robotd",
+  "stand_z": 0.116,
+  "stand_z_why": "the trunk's height standing (the simulator's STAND keyframe), where a run with no truth places the body"
 }

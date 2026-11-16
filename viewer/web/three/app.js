@@ -3,12 +3,13 @@ import * as THREE from 'three';
 import { createShell } from '../shell/shell.js';
 import { Views } from './views.js';
 import { buildScene, buildRun, setPalette } from './build.js';
+import { createBody } from '../shell/robotbody.js';
 
 // One three.js layer bit per drawable stream: a camera shows a stream only when its layer is on,
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards'];
+  'world.grid', 'world.obstacles', 'world.drops', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model'];
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
@@ -48,6 +49,45 @@ function buildRunObjects() {
   RW = buildRun(run, fr, true); RM = buildRun(run, fr, false);
   for (const Rn of [RW, RM]) for (const [id, o] of Object.entries(Rn.obj)) setLayers(o, id);
   scene.add(RW.group, RM.group);
+}
+
+// ---- the Robot layer (RFC-0011): the robot's body from its description, its joints at the playhead, where it was --------
+let body = null, bodyFor = null, lit = false;
+async function buildBody() {
+  const desc = S.robot();
+  if (!desc || bodyFor === desc) return;
+  bodyFor = desc;
+  if (body) { scene.remove(body.root); body = null; }
+  const b = await createBody(THREE, desc, S.api);
+  if (bodyFor !== desc) return;                                   // another run's robot came meanwhile
+  body = b;
+  setLayers(body.root, 'body.model');
+  if (!lit) {                                                      // the body is shaded; everything else is drawn flat and ignores lights
+    lit = true;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+    sun.position.set(1, -1, 2);
+    scene.add(sun);
+  }
+  scene.add(body.root);
+  if (fr) adapter.draw();
+}
+// the trunk where the truth had it (the whole pose, ADR-0016) in the world frame of a simulated run; else at the belief's
+// x, y and yaw (the frame being looked at), tilted by the IMU, at the robot's standing height
+function placeBody() {
+  if (!body) return;
+  const on = !!fr && !!RW && S.shown('body.model');
+  body.root.visible = on;
+  if (!on) return;
+  const i = M.i, t3 = M.frame === 'world' ? fr.truth_3d?.[i] : null;
+  if (t3 && RW.tpose) body.place([RW.tpose[i * 3], RW.tpose[i * 3 + 1], t3.z], t3.quat);
+  else {
+    const P = R().pose, tl = fr.tilt?.[i];
+    const yaw = P[i * 3 + 2], pitch = tl ? (tl[0] * Math.PI) / 180 : 0, roll = tl ? (tl[1] * Math.PI) / 180 : 0;
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(roll, pitch, yaw, 'ZYX'));
+    body.place([P[i * 3], P[i * 3 + 1], S.robot()?.stand_z ?? 0], [q.w, q.x, q.y, q.z]);
+  }
+  body.pose(S.joints());
 }
 
 function applyVis() {
@@ -129,7 +169,7 @@ const adapter = {
   },
 
   setScene(sc) { scn = sc; buildSceneObjects(); },
-  setRun(r, f) { run = r; fr = f; buildRunObjects(); },
+  setRun(r, f) { run = r; fr = f; buildRunObjects(); buildBody(); },
   // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
   append(range) {
     if (!RW) return;
@@ -142,7 +182,7 @@ const adapter = {
   draw(sync = false) {
     if (!fr || !RW) return;
     RW.update(M.i, M.t, S.cfg, S.size); RM.update(M.i, M.t, S.cfg, S.size);
-    applyVis(); placeMarker();
+    applyVis(); placeMarker(); placeBody();
     views.coords = M.ov.coords;
     views.render();
     if (sync) { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); }
@@ -159,6 +199,10 @@ const adapter = {
     if (views.layout) { rebuilding = true; views.setup(views.layout, bounds(), views.frameName); rebuilding = false; }
   },
   describe,
+  // the Robot layer as drawn: shown, where its root is, how many parts (for this repository's tests)
+  body: () => (body ? { visible: body.root.visible, pos: body.root.position.toArray().map((v) => +v.toFixed(5)),
+    quat: [body.root.quaternion.w, body.root.quaternion.x, body.root.quaternion.y, body.root.quaternion.z].map((v) => +v.toFixed(5)), drawn: body.drawn(),
+    joint_upper_quat: body.links.upper ? [body.links.upper.quaternion.w, body.links.upper.quaternion.y].map((v) => +v.toFixed(5)) : null } : null),
   cursor: (x, y) => views.cursorAt(x, y),
   scale: () => views.scale(),
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,

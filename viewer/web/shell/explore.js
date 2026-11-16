@@ -2,7 +2,8 @@
 // robot's body: the description's meshes placed by its forward kinematics (robot.js), posed as recorded at the playhead or
 // by hand, parts picked in the body or in the list of parts, with their details; isolate, hide, focus. three.js is loaded
 // when Explore first opens (the 2D page does not otherwise need it).
-import { chainsOf, linkPoses, parseSTL } from './robot.js';
+import { chainsOf, linkPoses } from './robot.js';
+import { createBody } from './robotbody.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const deg = (r) => (r == null ? '—' : `${(r * 180 / Math.PI).toFixed(1)}°`);
@@ -84,29 +85,10 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
       loop();
       bindPicking();
     }
-    view.root.clear(); view.links = {};
-    const geoms = {};
-    await Promise.all([...new Set(S.desc.links.flatMap((l) => l.visuals.filter((v) => !missing.includes(v.mesh)).map((v) => v.url)))].map(async (u) => {
-      const pos = parseSTL(await (await fetch(api + u)).arrayBuffer());
-      if (!pos) return;
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.computeVertexNormals();
-      geoms[u] = g;
-    }));
-    const q4 = (q) => new THREE.Quaternion(q[1], q[2], q[3], q[0]);
-    for (const l of S.desc.links) {
-      const grp = new THREE.Group();
-      grp.userData.link = l.name;
-      for (const v of l.visuals) {
-        if (!geoms[v.url]) continue;
-        const m = new THREE.Mesh(geoms[v.url], new THREE.MeshStandardMaterial({ color: new THREE.Color(v.rgba[0], v.rgba[1], v.rgba[2]), roughness: 0.6, metalness: 0.05 }));
-        m.position.set(...v.origin.pos); m.quaternion.copy(q4(v.origin.quat)); m.userData.link = l.name;
-        grp.add(m);
-      }
-      view.root.add(grp);
-      view.links[l.name] = grp;
-    }
+    view.root.clear();
+    view.body = await createBody(THREE, S.desc, api);
+    view.root.add(view.body.root);
+    view.links = view.body.links;
     place();
     frame();
   }
@@ -125,11 +107,9 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
   }
   // every part where the forward kinematics put it, shown or hidden, the picked one lit
   function place() {
-    if (!view || !S.desc) return;
-    const poses = linkPoses(S.desc, values());
+    if (!view?.body || !S.desc) return;
+    view.body.pose(values());
     for (const [n, g] of Object.entries(view.links)) {
-      const p = poses[n];
-      if (p) { g.position.set(...p.pos); g.quaternion.set(p.quat[1], p.quat[2], p.quat[3], p.quat[0]); }
       g.visible = !S.hidden.has(n) && (!S.isolated || S.isolated === n);
       for (const m of g.children) m.material.emissive?.setHex(n === S.sel ? 0x3a5fa0 : n === view.hover ? 0x2a2a2a : 0x000000);
     }
@@ -244,5 +224,12 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
         poses: S.desc ? linkPoses(S.desc, values()) : {} };
     },
     snapshot() { if (!view) return null; view.renderer.render(view.scene, view.camera); return view.renderer.domElement.toDataURL('image/png'); },
+    // where a part's centre (its bounding box's) is on the screen, in client pixels: to click a part by name
+    screenOf(link) {
+      if (!view?.links[link]) return null;
+      const c = new THREE.Box3().setFromObject(view.links[link]).getCenter(new THREE.Vector3()).project(view.camera);
+      const r = view.renderer.domElement.getBoundingClientRect();
+      return [r.left + ((c.x + 1) / 2) * r.width, r.top + ((1 - c.y) / 2) * r.height];
+    },
   };
 }

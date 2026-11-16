@@ -130,7 +130,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `.../presence` | per stream, the spans or times it has data |
 | `.../live?since=SEQ` | Server-Sent Events, below |
 | `GET /api/v1/robots` | the robots with a description (`robots/<robot>/robot.urdf` under `MINIVIEW_ROBOTS`, default the repository's `robots/`): `[{"name", "label", "description": true, "links", "joints", "meshes", "meshes_missing", "simulator", "backend"}]` (RFC-0011 §3.4; the rest from `robot.json`) |
-| `GET /api/v1/robots/{robot}` | its description: `{"name", "label", "root", "links": [{"name", "visuals": [{"mesh", "url", "origin": {"pos", "quat"}, "rgba"}]}], "joints": [{"name", "type", "parent", "child", "origin", "axis", "lower", "upper"}] (from the root out), "meshes_missing": [...]}`; 404 for an unknown robot |
+| `GET /api/v1/robots/{robot}` | its description: `{"name", "label", "root", "links": [{"name", "visuals": [{"mesh", "url", "origin": {"pos", "quat"}, "rgba"}]}], "joints": [{"name", "type", "parent", "child", "origin", "axis", "lower", "upper"}] (from the root out), "meshes_missing": [...], "stand_z": m \| null}` (`stand_z`: the root's height standing, from `robot.json`); 404 for an unknown robot |
 | `GET /api/v1/robots/{robot}/meshes/{file}.stl` | a mesh of the description (`model/stl`, with an ETag); 404 for a missing mesh, a file that is not a mesh or a path out of the robot's folder |
 | `GET /api/v1/render` | the render service's `GET /engines` (`{"engines": [{"name", "available", "why", "robots"}]}`), or `{"available": false, "why": "no render service configured" \| "render service not answering: ..."}` |
 | `POST /api/v1/runs/{robot}/{scene}/{run}/video` | body `{"engine", "from"?, "to"?, "size"?: "1280x720"}`; 202 `{"id"}`; the render service's 400, 404, 409 (one job at a time) and 503 come through with its reason |
@@ -233,6 +233,7 @@ as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, 
 {"t": [0.1, 0.2], "i0": 120, "ticks": 464,
  "belief": [[x, y, yaw], ...],            "map frame (the robot's own)"
  "truth": [[x, y, yaw] | null, ...],      "world frame; null on a real robot"
+ "truth_3d": [{"z": m, "quat": [w, x, y, z]} | null, ...],   "the truth's height and whole orientation (ADR-0016); null when not recorded"
  "tilt": [[pitch_deg, roll_deg] | null, ...],
  "cmd": [[vx, vyaw], ...],
  "depth": [[[x, y, z, "f|o|v|b"], ...] | null, ...],   "map frame; null = no new frame that tick"
@@ -313,6 +314,10 @@ exploreSnapshot() -> the body as a PNG data URL
   The timeline's rows and the Moment's signals follow the same order. `setVisible` and
   `setSection` take a node id or a name; the names before the sections still resolve (`Sensors`
   is Senses, `Robot` Body, `Signals` Other values).
+- **The Robot layer** (RFC-0011 §3.2, the three.js page): the run's robot's body in the views
+  (`body.model`, its eye in the Body section): in the world frame of a run with `truth_3d`, the
+  root link (the trunk) at the truth's whole pose; otherwise at the belief's x, y and yaw in the
+  frame looked at, tilted by `tilt`, at the registry's `stand_z`. The joints at the playhead.
 - **Explore** (RFC-0011 §3.3): the right panel's third tab (`#tabExplore`, `#explore`), a detail
   view whose first kind is a robot's body (the run's robot, or any of `GET /api/v1/robots`). The
   description's meshes placed by the pages' forward kinematics (`web/shell/robot.js`, the same as

@@ -21,7 +21,7 @@ export const AHEAD_S = 30;
 const SIG_WINDOW_S = 1800;
 const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'depth_frame', 'epoch', 'segment', 'end'];
 const DEPTH_STREAM = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' };
-const TICK_FIELDS = ['t', 'belief', 'truth', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
+const TICK_FIELDS = ['t', 'belief', 'truth', 'truth_3d', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
 const idle = () => new Promise((r) => setTimeout(r, 0));
 
 // the first index in [a, b) whose time is >= x (strict: > x)
@@ -226,7 +226,7 @@ export class RunStore {
     if (kind === 'tick') {
       this._span(d.t);
       const i = r.ticks;
-      fr.t[i] = d.t; fr.belief[i] = d.belief; fr.truth[i] = d.truth; fr.tilt[i] = d.tilt; fr.cmd[i] = d.cmd; fr.depth[i] = d.depth;
+      fr.t[i] = d.t; fr.belief[i] = d.belief; fr.truth[i] = d.truth; fr.truth_3d[i] = d.truth_3d ?? null; fr.tilt[i] = d.tilt; fr.cmd[i] = d.cmd; fr.depth[i] = d.depth;
       fr.plan_at[i] = this.planCount - 1; fr.world_at[i] = this.worldCount - 1;
       r.ticks = i + 1;
       this._addRange(i, i + 1);

@@ -224,7 +224,8 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
   max-width: calc(100% - 200px); pointer-events: none; }
 .scale { flex: none; display: flex; align-items: center; gap: 6px; font: 10.5px var(--mono); color: var(--text-dim); background: var(--veil-2); padding: 3px 7px; border-radius: 3px; }
 .scale i { height: 7px; border: 1.5px solid var(--text-dim); border-top: 0; display: block; flex: none; }
-.legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); background: var(--veil-2); padding: 4px 8px; border-radius: 3px; }
+/* opaque: a legend wrapped onto two lines in a narrow view sits over the axis numbers, which must not show through */
+.legend { display: flex; gap: 4px 10px; flex-wrap: wrap; font-size: 11px; color: var(--text-dim); background: var(--bg-viewport); box-shadow: 0 0 0 1px var(--hair-3); padding: 4px 8px; border-radius: 3px; }
 .legend:empty { display: none; }
 .lg { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 4px 8px 6px; font-size: 11px; color: var(--text-dim); max-width: 280px; }
 .lg span { display: inline-flex; align-items: center; gap: 5px; }
@@ -233,7 +234,9 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; display: block; }
 .legend i.ln { height: 2px; width: 12px; border-radius: 0; }
-.slot { position: absolute; border: 1px solid var(--hair-3); touch-action: none; }
+/* isolate: three.js's CSS2DRenderer gives every label a z-index to sort them by depth; kept inside the slot, they stay under
+   the view's corner (scale, legend), which they otherwise covered */
+.slot { position: absolute; border: 1px solid var(--hair-3); touch-action: none; isolation: isolate; }
 .slot .labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .slot .cap, .pane-tag { position: absolute; left: 8px; font: 10.5px var(--mono); color: var(--text-dim); background: var(--veil-2); padding: 1px 6px; border-radius: 3px; pointer-events: none; z-index: 2; }
 .lbl { font: 10px var(--mono); color: var(--draw-label); white-space: nowrap; pointer-events: none; }
