@@ -17,6 +17,20 @@ def load_run(catalog, run_id: str) -> tuple:
     return ld.data.run, ld.data.frames
 
 
+def load_signals(catalog, run_id: str) -> dict:
+    """The run's signals ({"t": [...], "v": {name: [...]}}); the run is already loaded (`load_run`)."""
+    return catalog.get(run_id).data.sig
+
+
+def signals_at(sig: dict, t: float) -> dict | None:
+    """The sample at or before t (the first one when t is earlier): its time, its number, and each signal's value in
+    it (None where that sample had none)."""
+    if not sig["t"]:
+        return None
+    i = max(0, bisect.bisect_right(sig["t"], t) - 1)
+    return {"t": sig["t"][i], "index": i, "n": len(sig["t"]), "values": {k: col[i] for k, col in sig["v"].items()}}
+
+
 def epoch_at(run: dict, t: float):
     current = None
     for e in run["epochs"]:
@@ -30,7 +44,25 @@ def tick_at(frames: dict, t: float) -> int:
     return max(0, bisect.bisect_right(frames["t"], t) - 1)
 
 
-def state(run: dict, frames: dict, t: float) -> dict:
+def state(run: dict, frames: dict, t: float, sig: dict | None = None) -> dict:
+    """The run at t. A run with signals adds `signals` (see `signals_at`); a run with only signals has no pose, so
+    the answer is the run's identity, the time and the signals."""
+    out = _pose_state(run, frames, t) if frames["t"] else {"run": run["id"], "scene": run["scene"], "t": t, "tick": None,
+                                                           "last_event": _last_event(run, t)}
+    if sig is not None and sig["t"]:
+        out["signals"] = signals_at(sig, t)
+    return out
+
+
+def _last_event(run: dict, t: float):
+    last = None
+    for e in run["events"]:
+        if e["t"] <= t + 1e-9:
+            last = e
+    return last
+
+
+def _pose_state(run: dict, frames: dict, t: float) -> dict:
     i = tick_at(frames, t)
     m2w = epoch_at(run, frames["t"][i])
     belief_map = frames["belief"][i]

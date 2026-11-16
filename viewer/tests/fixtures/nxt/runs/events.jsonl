@@ -1,0 +1,10 @@
+{"seq": 1, "at": "2026-11-14T10:01:24.212", "kind": "connect", "ok": true, "link": "bluetooth", "detail": "DevFile (/dev/rfcomm0)", "asked": "auto"}
+{"seq": 2, "at": "2026-11-14T10:01:28.253", "kind": "linktest", "ok": true, "n": 20, "median_ms": 169.0, "min_ms": 34.0, "max_ms": 323.1}
+{"seq": 3, "at": "2026-11-14T10:02:46.211", "kind": "drive", "ok": true, "left": 50, "right": 50}
+{"seq": 4, "at": "2026-11-14T10:02:47.264", "kind": "stop", "ok": true}
+{"seq": 5, "at": "2026-11-14T10:02:49.733", "kind": "drive", "ok": true, "left": 65, "right": 65}
+{"seq": 6, "at": "2026-11-14T10:02:56.684", "kind": "stop", "ok": true}
+{"seq": 7, "at": "2026-11-14T10:02:57.080", "kind": "drive", "ok": true, "left": -65, "right": 65}
+{"seq": 8, "at": "2026-11-14T10:02:58.698", "kind": "stop", "ok": true}
+{"seq": 9, "at": "2026-11-14T10:02:59.464", "kind": "drive", "ok": true, "left": -65, "right": -65}
+{"seq": 10, "at": "2026-11-14T10:03:01.105", "kind": "stop", "ok": true}

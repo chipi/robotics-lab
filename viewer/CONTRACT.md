@@ -25,7 +25,10 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   scene, kind,
   started_at_ns, started_at_source ("writer", "file_mtime", "importer_clock", "given"), writer:
   {program, version},
-  source?: {name, sha256}}`. A run whose record disagrees with its folder is broken.
+  source?: {name, sha256}, signals?, odometry?, no_pose?}`. A run whose record disagrees with its
+  folder is broken. `signals` declares a robot's named values (ADR-0013): `[{name, kind: "number" |
+  "text", unit?}]`; `odometry` how a pose was computed (`{sprocket_diameter_m, track_width_m, left,
+  right, invert_left, invert_right, source}`), `no_pose` why there is none ("no wheel geometry ...").
 - **Time**: `log_time = started_at_ns + t` (UTC nanoseconds; `t` is the run's time and only grows);
   `publish_time` is the source's own clock (each tick also keeps `t_src`).
 - **Writer**: one, with `writer.lock` (`{pid, host, started_at_ns}`) created exclusively; it refuses
@@ -46,7 +49,10 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   `/belief/pose`; (2) then at most one each of `/truth/pose`, `/depth`, `/miniview/command`,
   `/miniview/tilt`, in that order; (3) its last message is `/miniview/tick_extra`; (4) nothing else
   between the first and the last; (5) a world is `/map` then `/miniview/memory`; (6) one flush per
-  tick. A tick another message interrupts is dropped and counted as a reject. Frames: `/belief/pose`,
+  tick; (7) **a signals tick** (ADR-0013) is the robot's `/<robot>/signals` message, then
+  `/miniview/tick_extra`, nothing between: a tick of named values with no pose
+  (`begin_signals(t, values)`, `end_tick()`, or `add(t, "signals", {"values": {...}})`). A tick
+  another message interrupts is dropped and counted as a reject. Frames: `/belief/pose`,
   `/depth`, `/map` in `map`; `/truth/pose` in `world`; `/tf` is `world` <- `map` (parent `world`,
   child `map`). The recorder: `begin_tick`, `tick_truth`, `tick_depth`, `tick_command`, `tick_tilt`,
   `end_tick`, or `add(t, "tick", ...)`. **Clocks:** `t` only grows; `t_src` is the source's own clock
@@ -62,6 +68,7 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   | `/depth` | `foxglove.PointCloud` (frame `map`; fields x, y, z, `kind` = the ASCII of f/o/v/b) | the tick's depth returns |
   | `/miniview/command` | `miniview.command` | `{vx, vyaw}` |
   | `/miniview/tilt` | `miniview.tilt` | `{tilt}` |
+  | `/<robot>/signals` | `miniview.Signals` (protobuf, built from the run's `signals`) | one optional field per declared signal (a double or a string); absent = no value; **first** message of a signals tick |
   | `/miniview/tick_extra` | `miniview.tick_extra` | `{t_src, raw}`: every other source field; **last** message of a tick |
   | `/tf` | `foxglove.FrameTransform` (`world` <- `map`) | an epoch: the map to world transform from this time on |
   | `/map` + `/miniview/memory` | `foxglove.Grid` (cells as bytes) + `miniview.memory` (`{obstacles, drops, raw}`) | a map snapshot; `memory` last |
@@ -103,6 +110,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `GET /api/v1/runs?robot=&scene=&status=` | the runs, from the index |
 | `GET /api/v1/runs/{robot}/{scene}/{run}` | the run (below), with `status` and `seq` |
 | `.../frames?from=&to=` | the ticks in the window and only the plans and worlds they refer to (below) |
+| `.../signals?from=&to=` | the signals ticks in the window, columnar (below) |
 | `.../state?t=` | belief, truth, distance, depth returns, the last event at t |
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
@@ -117,14 +125,25 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   (`If-None-Match` answers 304),
   vendored libraries and fonts are cached for a day; request sockets time out after 30 s except live
   streams.
-- **Live.** `live` sends one event per record, named by its kind (`tick`, `plan`, `world`, `event`,
-  `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq` as the event id; then
+- **Live.** `live` sends one event per record, named by its kind (`tick`, `signals`, `plan`, `world`,
+  `event`, `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq` as the event
+  id; then
   `status` (`{"status", "seq", "t1", "generation"}`, with `"done": true` last, and `error` for a broken
   run). It resumes after `Last-Event-ID` (what a reconnecting client has just seen), or after `since`
   when there is no such header. A heartbeat comment every 15 s; a client that stops reading is dropped
   after 60 s. A run whose file was rewritten has a new `generation` (in its summary and in every
   status): the stream sends `rewritten` and ends, and the client starts over. `HEAD` answers with the
   headers only.
+
+- **A run of a scene with no `scene.json`** (the NXT's `unmapped`, ADR-0013) is listed under its scene
+  (`kind` `no layout`); `GET /scenes/{id}` for it is a 404 and the pages draw none of a scene.
+- **Signals.** `.../signals?from=&to=` (time window, both optional; 400 for `from` after `to`)
+  answers `{"i0": 12, "n": 281, "t": [...], "v": {"power_left": [50.0, null, ...], ...}}`: the
+  samples in the window, `i0` the first one's number in the run, `n` how many the run has, `null`
+  where a sample had no value for that signal. `state` adds `signals` (`{t, index, n, values}`: the
+  sample at or before `t`); a run with no pose answers `state` with `tick: null` and the signals;
+  `presence` has `signals.<name>`
+  spans; `frames` of a run with no pose is an empty window.
 
 ### `GET /api/v1/scenes/{id}` — what is really there (world frame)
 
@@ -153,8 +172,10 @@ as boxes with equal half sizes.
  "streams": [...]}
 ```
 
-- `t0`, `t1`: the span of every record (poses, plans, maps, events), not only the poses. While a run
-  is live,
+- `samples` is the number of signals ticks (0 for a robot with none), `signals` the declared signals,
+  `odometry` and `no_pose` as in the run record.
+- `t0`, `t1`: the span of every record (poses, signals, plans, maps, events), not only the poses.
+  While a run is live,
   `verdict` is `live`. `status` is `live`, `ended`, `stopped` or `broken`.
 - `epochs`: the map to world transform from a time on (a reset simulator starts a new map; phase-1
   evaluations have one
@@ -171,9 +192,10 @@ as boxes with equal half sizes.
 
   Ids: `scene.boxes`, `scene.hazards`, `belief.pose`, `belief.track`, `truth.pose`, `truth.track`,
   `sensors.depth` with children `sensors.depth.floor|obstacle|overhead|below`, `sensors.tilt`,
-  `world.grid`, `world.obstacles`, `world.drops`, `plan.path`, `events`. Time modes: `at`, `window`
-  (the last N seconds
-  before t), `upto` (everything up to t).
+  `world.grid`, `world.obstacles`, `world.drops`, `plan.path`, `events`, and one per declared signal,
+  `signals.<name>` (group `Signals`, frame `time`, with `kind` and `unit`, no time modes). A stream
+  of a run with no pose says why in `why` (the run's `no_pose`). Time modes: `at`, `window` (the
+  last N seconds before t), `upto` (everything up to t).
 
 ### `GET /api/v1/runs/{key}/frames` — a window, by tick
 
@@ -241,6 +263,17 @@ config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, th
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
 ```
 
+- **Signals** (ADR-0013). A run with `signals` has a Signals group in the outliner (a row and an eye
+  per signal), the values at the playhead in the inspector's Moment (the sample at or before it,
+  with its number), and a data row per signal in the timeline. A run with signals and **no pose**
+  has no spatial view: the viewport is the **Signals view** (`#sigview`, `web/shell/signals.js`): a
+  chart per numeric signal and a band per text signal on one time axis with the playhead; a click
+  or a drag on a chart (`.sg-p`) seeks; the layout and frame buttons are hidden, the streams the
+  run lacks are hidden ("Show them"), "tick" reads "sample" and the status chip counts samples.
+  The run store loads every
+  sample when the run opens (`GET .../signals`, in windows) and takes the later ones by record.
+  `state()` adds `signals` (`{i, n, t, values}` for the sample at or before the playhead) and
+  `loaded.samples`; a run with no pose answers `tick: 0` and `belief: null`.
 - `load(scene, run)`: `run` is the key, or a name only one run of that scene has. It **rejects** (an
   `Error`) for an unknown
   scene, an unknown run or an ambiguous name (listing the keys), and leaves the open run as it was.
@@ -305,7 +338,9 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 
 `miniview scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
 <run> --at t |
-frame | film | import | repair <key> | compact <key> | index | serve`. While a service holds the
+frame | film | import | repair <key> | compact <key> | index | serve`. `import --robot nxt <run>.csv
+[--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web
+recording (ADR-0013); `state` of a run with signals prints them. While a service holds the
 index the
 commands read it and write nothing (one index, ADR-0012); `compact` closes a finished run whose
 writer did

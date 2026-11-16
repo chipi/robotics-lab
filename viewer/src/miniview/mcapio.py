@@ -38,13 +38,17 @@ class WriterBusy(Exception):
 
 
 def new_run(key: str, robot: dict, scene: str, kind: str, started_at_ns: int, started_at_source: str = "writer",
-            source: dict | None = None, run_uuid: str | None = None) -> dict:
+            source: dict | None = None, run_uuid: str | None = None, signals: list | None = None,
+            odometry: dict | None = None, no_pose: str | None = None, writer: dict | None = None) -> dict:
+    """The run record. `signals` declares the robot's named values (miniview.signals); `odometry` says how the pose was
+    computed, `no_pose` why there is none (a robot with signals only); `writer` names the program that writes the run."""
     keys.split_key(key)
     rec = {"format": FORMAT, "key": key, "uuid": run_uuid or str(uuidlib.uuid4()), "robot": robot, "scene": scene,
            "kind": kind, "started_at_ns": int(started_at_ns), "started_at_source": started_at_source,
-           "writer": {"program": "miniview", "version": VERSION}}
-    if source:
-        rec["source"] = source
+           "writer": writer or {"program": "miniview", "version": VERSION}}
+    for k, v in (("source", source), ("signals", signals), ("odometry", odometry), ("no_pose", no_pose)):
+        if v:
+            rec[k] = v
     return rec
 
 
@@ -110,6 +114,10 @@ class Recorder:
             enc, data = schemas.schema_for(name)
             sid = self._w.register_schema(name, enc, data)
             self._ch[topic] = self._w.register_channel(topic, "protobuf" if topic in wire.PROTO else "json", sid)
+        self.sigs = wire.signal_set(run)
+        if self.sigs:
+            sid = self._w.register_schema("miniview.Signals", "protobuf", self.sigs.descriptor_set)
+            self._ch[self.sigs.topic] = self._w.register_channel(self.sigs.topic, "protobuf", sid)
         self._emit(0.0, "run", run)
 
     def _write(self, messages) -> None:
@@ -117,12 +125,13 @@ class Recorder:
             self._w.add_message(self._ch[topic], ns, data, pub)
 
     def _emit(self, t: float, kind: str, p: dict) -> None:
-        self._write(wire.to_messages(t, kind, p, self.base_ns))
+        self._write(wire.to_messages(t, kind, p, self.base_ns, self.sigs))
         self._fh.flush()                      # once per record: a tick or a map is on disk whole or not at all
 
     # The tick protocol (ADR-0007), for a writer that has the parts of a tick one by one: begin_tick writes /belief/pose,
     # then at most one each of tick_truth, tick_depth, tick_command, tick_tilt, in that order, then end_tick writes
     # /miniview/tick_extra and flushes. Nothing else may be written in between; `add(t, "tick", ...)` is the same in one call.
+    # A signals tick (ADR-0013) is begin_signals, then end_tick: the robot's named values at t, with no pose.
     def begin_tick(self, t: float, belief, t_src: float | None = None) -> None:
         self._check_open(t)
         self._tick = {"t": t, "src": t_src, "next": 0}
@@ -150,6 +159,15 @@ class Recorder:
 
     def tick_tilt(self, pitch_deg: float, roll_deg: float) -> None:
         self._part("tilt", [pitch_deg, roll_deg])
+
+    def begin_signals(self, t: float, values: dict, t_src: float | None = None) -> None:
+        """A signals tick (ADR-0013): the robot's named values at t, with no pose; `end_tick` closes it, nothing between."""
+        if self.sigs is None:
+            raise ValueError("the run declares no signals")
+        self._check_open(t)
+        self._tick = {"t": t, "src": t_src, "next": len(wire.TICK_PARTS)}
+        self.last_t = max(self.last_t, t)
+        self._write([wire.signals_part(t, values, self.base_ns, self.sigs, t_src)])
 
     def end_tick(self, raw: dict | None = None) -> None:
         tk = self._tick

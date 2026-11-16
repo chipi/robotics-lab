@@ -443,5 +443,6 @@ class Catalog:
         """index.json's shape (CONTRACT.md): the scenes, each with its runs, newest first."""
         out = {s["id"]: dict(s, runs=[]) for s in self.index.scenes()}
         for r in self.list_runs():
-            out.setdefault(r["scene"], {"id": r["scene"], "name": r["scene"], "kind": "", "runs": []})["runs"].append(r)
+            # a run of a scene with no scene.json (RFC-0009 "a run without a known scene", ADR-0013 `unmapped`): listed, nothing drawn of the scene
+            out.setdefault(r["scene"], {"id": r["scene"], "name": r["scene"], "kind": "no layout", "runs": []})["runs"].append(r)
         return {"format": 2, "scenes": list(out.values())}

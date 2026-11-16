@@ -6,6 +6,7 @@
     uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
     uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
     uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
+    uv run miniview import --robot nxt ../nxt/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
     uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
     uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run miniview index                  # rebuild index.sqlite from the run files
@@ -52,8 +53,17 @@ def cmd_scene(args) -> None:
 
 def cmd_import(args) -> None:
     data = _cat(args).data
-    for log_dir in args.logs:
-        import_duck(Path(log_dir), args.scene, data, follow=args.follow, idle_s=args.idle)
+    if args.robot == "nxt":
+        from miniview.adapters import nxt
+
+        if args.follow:
+            raise SystemExit("--follow is for the duck's log; nxt-web writes its runs live itself (ADR-0013)")
+        for f in args.logs:
+            nxt.import_csv(Path(f), data, args.scene or nxt.SCENE, tz=args.tz, sprocket=args.sprocket_diameter,
+                           track=args.track_width, config_path=Path(args.config) if args.config else None)
+    else:
+        for log_dir in args.logs:
+            import_duck(Path(log_dir), args.scene or "apartment", data, follow=args.follow, idle_s=args.idle)
     if not args.follow:
         _cat(args).scan()
 
@@ -159,16 +169,27 @@ def cmd_events(args) -> None:
 
 
 def cmd_state(args) -> None:
-    run, frames = query.load_run(_cat(args), args.run)
-    st = query.state(run, frames, args.at)
+    cat = _cat(args)
+    run, frames = query.load_run(cat, args.run)
+    st = query.state(run, frames, args.at, query.load_signals(cat, args.run))
     if args.json:
         print(json.dumps(st, indent=1))
+        return
+    sg = st.get("signals")
+    sig_line = ("  signals at " + f"{sg['t']:.2f} s (sample {sg['index'] + 1} of {sg['n']}): "
+                + ", ".join(f"{k} {v}" for k, v in sg["values"].items() if v is not None)) if sg else None
+    if st["tick"] is None:                                  # a run with signals and no pose
+        print(f"{st['run']} at t = {st['t']:.2f} s, scene {st['scene']} (no pose: {run.get('no_pose') or 'not in this run'})")
+        print(sig_line or "  no signals yet")
+        print(f"  last event {st['last_event']}")
         return
     print(f"{st['run']} at t = {st['t']:.2f} s (tick {st['tick']}), scene {st['scene']}")
     print(f"  belief (world) {st['belief_world']}   truth {st['truth']}   distance {st['belief_truth_distance_m']} m")
     print(f"  belief (map)   {st['belief_map']}   tilt {st['tilt_deg']}   cmd {st['cmd']}")
     d = st["depth"]
     print(f"  depth frame at {d['frame_t']} s: {d['returns']}  (f floor, o obstacle, v overhead, b below the floor)")
+    if sig_line:
+        print(sig_line)
     print(f"  last event {st['last_event']}")
 
 
@@ -227,10 +248,15 @@ def main() -> None:
     p.add_argument("--name", default="The simulated apartment")
     p.set_defaults(fn=cmd_scene)
     p = sub.add_parser("import", help="a robot's log into the data folder as MCAP")
-    p.add_argument("logs", nargs="+")
-    p.add_argument("--scene", default="apartment")
+    p.add_argument("logs", nargs="+", help="the duck's run folders, or with --robot nxt nxt-web's run-*.csv files")
+    p.add_argument("--robot", default="duck", choices=("duck", "nxt"))
+    p.add_argument("--scene", help="the run's scene (default: apartment for the duck, unmapped for the NXT)")
     p.add_argument("--follow", action="store_true", help="follow a log still being written (a live run)")
     p.add_argument("--idle", type=float, default=60.0, help="with --follow: end after this many quiet seconds")
+    p.add_argument("--tz", help="--robot nxt: the IANA time zone of the machine that recorded (the file name's time is local to it); default: this machine's")
+    p.add_argument("--sprocket-diameter", type=float, help="--robot nxt: the drive sprockets' diameter in metres (odometry); default: the config's odom_sprocket_diameter_m")
+    p.add_argument("--track-width", type=float, help="--robot nxt: the effective track width in metres (odometry); default: the config's odom_track_width_m")
+    p.add_argument("--config", help="--robot nxt: nxt-web's config.json (default: the one beside the recording's folder); the old MCAP's own config wins")
     p.set_defaults(fn=cmd_import)
     p = sub.add_parser("repair", help="close a run whose writer died: compact it, verdict stopped")
     p.add_argument("run", help="the run's key (robot/scene/run), or its name when only one run has it")

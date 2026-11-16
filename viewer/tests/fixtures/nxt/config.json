@@ -1,0 +1,16 @@
+{
+  "left": "C",
+  "right": "B",
+  "shooter": "A",
+  "invert_left": false,
+  "invert_right": false,
+  "fire_power": 75,
+  "fire_degrees": 360,
+  "sensors": {
+    "1": "none",
+    "2": "none",
+    "3": "color",
+    "4": "ultrasonic"
+  },
+  "sample_hz": 2.0
+}

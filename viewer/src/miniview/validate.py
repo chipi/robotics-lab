@@ -3,7 +3,7 @@ A bad record is skipped and counted by the run, never applied half way."""
 
 import math
 
-from miniview import keys
+from miniview import keys, signals
 
 
 class BrokenRun(Exception):
@@ -34,6 +34,14 @@ def _run(p):
         return "started_at_ns missing, or not an integer from 1 to 2**63 - 1"
     if not isinstance(p.get("writer"), dict):
         return "writer missing"
+    if p.get("signals") is not None:
+        err = signals.check_decl(p["signals"])
+        if err:
+            return err
+    if p.get("no_pose") is not None and not isinstance(p["no_pose"], str):
+        return "no_pose is not text"
+    if p.get("odometry") is not None and not isinstance(p["odometry"], dict):
+        return "odometry is not an object"
     return None
 
 
@@ -54,6 +62,18 @@ def _tick(p):
     if d is not None and not (isinstance(d, list) and all(isinstance(x, (list, tuple)) and len(x) == 4 and _nums(x[:3])
                                                           and isinstance(x[3], str) and len(x[3]) == 1 for x in d)):
         return "depth is not null or points [x, y, z, kind]"
+    return None
+
+
+def _signals(p):
+    v = p.get("values")
+    if not isinstance(v, dict) or not v:
+        return "values is not a non-empty object"
+    for name, x in v.items():
+        if not isinstance(name, str):
+            return "a signal name is not text"
+        if not isinstance(x, str) and not _num(x):
+            return f"signal {name!r} is neither text nor a finite number"
     return None
 
 
@@ -95,7 +115,7 @@ def _end(p):
     return None if isinstance(p.get("verdict"), str) else "verdict missing"
 
 
-CHECKS = {"run": _run, "epoch": _epoch, "tick": _tick, "plan": _plan, "world": _world, "event": _event,
+CHECKS = {"run": _run, "epoch": _epoch, "tick": _tick, "signals": _signals, "plan": _plan, "world": _world, "event": _event,
           "segment": _segment, "end": _end}
 
 

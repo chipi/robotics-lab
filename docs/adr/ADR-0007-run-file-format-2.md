@@ -61,6 +61,11 @@ reader checks:
 5. A world is `/map` then `/miniview/memory`, with nothing between them.
 6. The writer flushes once per tick (and once per world or other record): a crash loses at most the
    tick being written.
+7. (Added by [ADR-0013](ADR-0013-nxt-runs-in-format-2.md), proposed 2026-11-16.) A **signals tick**,
+   a tick of a robot's named values with no pose, is the robot's `/<robot>/signals` message (a
+   protobuf message built from the signals the run record declares) then `/miniview/tick_extra`,
+   nothing between (`begin_signals`, `end_tick`). A robot with a pose and signals writes both at the
+   same `t`.
 
 A reader emits a tick only when its last message has arrived. A tick or world that another message
 interrupts is dropped and counted as a reject with its reason. Frames are checked: `/belief/pose`,

@@ -83,8 +83,8 @@ endef
 DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py \
                        tests/test_world.py tests/test_miniview.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
-                       tests/test_index.py tests/test_review2.py tests/test_server.py
-VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py
+                       tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py
+VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py
 
 .PHONY: test-duck test-viewer test-viewer-pages
 test-duck: duck-sync ## The duck's navigator and tools, no simulator
@@ -104,6 +104,9 @@ test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a
 	@$(NXT_PY) $(NXT_DIR)/tests/test_deadman.py >/tmp/robotics-lab-test_deadman.log 2>&1 \
 	  && echo "PASS nxt/tests/test_deadman.py" \
 	  || { echo "FAIL nxt/tests/test_deadman.py"; cat /tmp/robotics-lab-test_deadman.log; exit 1; }
+	@$(NXT_PY) $(NXT_DIR)/tests/test_config.py >/tmp/robotics-lab-test_config.log 2>&1 \
+	  && echo "PASS nxt/tests/test_config.py" \
+	  || { echo "FAIL nxt/tests/test_config.py"; cat /tmp/robotics-lab-test_config.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
 	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
 	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }

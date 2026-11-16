@@ -229,6 +229,16 @@
         <p class="hint">NXT analog sensors (touch, light, sound) cannot be detected automatically, so set what is plugged in.</p>
       </div>
     </div>
+    <div class="cols">
+      <div class="card">
+        <h2>Odometry</h2>
+        <div class="grid2">
+          <label for="cfg-odom_sprocket_diameter_m">Sprocket diameter (m)</label><input type="number" id="cfg-odom_sprocket_diameter_m" min="0.001" max="1" step="0.0005" placeholder="not set">
+          <label for="cfg-odom_track_width_m">Effective track width (m)</label><input type="number" id="cfg-odom_track_width_m" min="0.001" max="1" step="0.0005" placeholder="not set">
+        </div>
+        <p class="hint">With both set, a recording also has a pose, integrated from the two tracks' tacho counts. With either empty it has none: the values are never guessed. The track width is calibrated, not measured (tracks slip); the recipe is in ADR-0013.</p>
+      </div>
+    </div>
     <div class="row"><button class="primary" id="cfg-save">Save setup</button><span class="hint">Saving stops any recording in progress.</span></div>
   </section>
 </main>
@@ -526,19 +536,19 @@ $("upload").addEventListener("click", async () => {
 });
 
 // ---- setup
-const FIELDS = ["left", "right", "shooter", "invert_left", "invert_right", "fire_power", "fire_degrees", "shooter_enabled", "sample_hz", "drive_mode"];
+const FIELDS = ["left", "right", "shooter", "invert_left", "invert_right", "fire_power", "fire_degrees", "shooter_enabled", "sample_hz", "drive_mode", "odom_sprocket_diameter_m", "odom_track_width_m"];
 async function loadConfig() {
   const data = await api("/api/config");
   if (!data) return;
   config = data.config;
   for (const id of ["left", "right", "shooter"]) $(`cfg-${id}`).innerHTML = ["A", "B", "C"].map((p) => `<option>${p}</option>`).join("");
   $("cfg-sensors").innerHTML = Object.keys(config.sensors).sort().map((p) => `<label for="cfg-s${p}">Port ${p}</label><select id="cfg-s${p}">${data.sensor_types.map((t) => `<option>${t}</option>`).join("")}</select>`).join("");
-  for (const k of FIELDS) { const el = $(`cfg-${k}`); el.type === "checkbox" ? (el.checked = config[k]) : (el.value = config[k]); }
+  for (const k of FIELDS) { const el = $(`cfg-${k}`); el.type === "checkbox" ? (el.checked = config[k]) : (el.value = config[k] ?? ""); }
   for (const [p, kind] of Object.entries(config.sensors)) $(`cfg-s${p}`).value = kind;
 }
 $("cfg-save").addEventListener("click", async () => {
   const body = { sensors: {} };
-  for (const k of FIELDS) { const el = $(`cfg-${k}`); body[k] = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value; }
+  for (const k of FIELDS) { const el = $(`cfg-${k}`); body[k] = el.type === "checkbox" ? el.checked : el.type === "number" ? (k.startsWith("odom_") && el.value === "" ? null : Number(el.value)) : el.value; }
   for (const p of Object.keys(config.sensors)) body.sensors[p] = $(`cfg-s${p}`).value;
   const res = await api("/api/config", body);
   if (res) { config = res.config; renderLegend.sig = null; toast("Setup saved"); refreshStatus(); }

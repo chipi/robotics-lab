@@ -10,11 +10,16 @@
 // that is not loaded loads the window around it first. Plans and worlds are indexed by the number the server gave them;
 // only those a loaded tick refers to are fetched. The store never rebuilds: it says what it added, wherever it is:
 // onAppend({i0, i1, plans: [k, ...], worlds: [k, ...]}).
+//
+// A robot's named values (ADR-0013) are the run's `signals` ticks: `sig` holds them as columns, `sig.t[i]` the time of sample
+// i and `sig.v[name][i]` its value (null where that sample had none). They are small: every sample is loaded when the run
+// opens (in windows of SIG_WINDOW_S), the later ones come by record.
 
 const API = '/api/v1/';
 export const WINDOW_S = 60;
 export const AHEAD_S = 30;
-const RECORDS = ['tick', 'plan', 'world', 'event', 'epoch', 'segment', 'end'];
+const SIG_WINDOW_S = 1800;
+const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'epoch', 'segment', 'end'];
 const DEPTH_STREAM = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' };
 const TICK_FIELDS = ['t', 'belief', 'truth', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
 const idle = () => new Promise((r) => setTimeout(r, 0));
@@ -29,8 +34,9 @@ export class RunStore {
   constructor({ json, onAppend, onRecord, onStatus, onReload }) {
     Object.assign(this, { json, onAppend, onRecord, onStatus, onReload });
     this.gen = 0; this.run = null; this.pres = null; this.key = null;
-    this.seq = 0; this.es = null; this.n0 = 0; this.pumping = null;
+    this.seq = 0; this.es = null; this.n0 = 0; this.s0 = 0; this.pumping = null;
     this.fr = this._frames();
+    this.sig = { t: [], v: {} };
   }
 
   _frames() {
@@ -77,12 +83,16 @@ export class RunStore {
     const [run, pres] = await Promise.all([this.json(`${API}runs/${key}`), this.json(`${API}runs/${key}/presence`).catch(() => null)]);
     if (gen !== this.gen) return null;
     this.run = run; this.pres = pres; this.fr = this._frames(); this.seq = run.seq; this.n0 = run.ticks;
+    this.s0 = run.samples ?? 0;
+    this.sig = { t: [], v: Object.fromEntries((run.signals || []).map((d) => [d.name, []])) };
     const t = at === 'end' ? run.t1 : at === 'start' || at == null ? run.t0 : at;
     this.want = t;
     const count = (id) => run.streams?.find((s) => s.id === id)?.count ?? 0;
     this.planCount = count('plan.path'); this.worldCount = count('world.grid');
-    this.fresh = run.ticks === 0 && !run.events.length && !this.planCount && !this.worldCount;
+    this.fresh = run.ticks === 0 && !run.samples && !run.events.length && !this.planCount && !this.worldCount;
     if (run.status === 'live') this._connect(gen);
+    if (this.s0 > 0) await this._loadSignals(gen);
+    if (gen !== this.gen) return null;
     if (this.n0 > 0) await this._fetch(gen, t - AHEAD_S, t + AHEAD_S);
     if (gen !== this.gen) return null;
     this.pumping = this._pump(gen);
@@ -104,6 +114,23 @@ export class RunStore {
   async _fetch(gen, from, to) {
     const w = await this.json(`${API}runs/${this.key}/frames?from=${from}&to=${to}`);
     if (gen === this.gen) this._ingest(w);
+  }
+
+  // every sample the run had when it was opened, window by window (a sample on a window's edge comes twice: the index dedups)
+  async _loadSignals(gen) {
+    const run = this.run;
+    for (let from = run.t0; from <= run.t1 + 1e-9 && gen === this.gen; from += SIG_WINDOW_S) {
+      const w = await this.json(`${API}runs/${this.key}/signals?from=${from}&to=${from + SIG_WINDOW_S}`);
+      if (gen !== this.gen) return;
+      const sig = this.sig;
+      for (let k = 0; k < w.t.length; k++) {
+        const i = w.i0 + k;
+        if (i >= this.s0) break;                                                      // later samples come by record
+        if (sig.t[i] !== undefined) continue;
+        sig.t[i] = w.t[k];
+        for (const name of Object.keys(sig.v)) sig.v[name][i] = w.v[name]?.[k] ?? null;
+      }
+    }
   }
 
   // ---- windows ----------------------------------------------------------------------------------------------
@@ -208,6 +235,18 @@ export class RunStore {
       if (d.tilt) this._count('sensors.tilt');
       if (d.depth?.length) { this._count('sensors.depth'); for (const p of d.depth) this._count(DEPTH_STREAM[p[3]] ?? DEPTH_STREAM.o); }
       this.onAppend({ i0: i, i1: i + 1, plans: [], worlds: [] });
+    } else if (kind === 'signals') {
+      this._span(d.t);
+      const i = r.samples ?? 0, sig = this.sig;
+      sig.t[i] = d.t;
+      for (const name of Object.keys(sig.v)) {
+        const v = d.values[name];
+        sig.v[name][i] = v === undefined ? null : v;
+        if (v !== undefined) this._count('signals.' + name);
+      }
+      r.samples = i + 1;
+      const ts = sig.t[i] - sig.t[0];
+      if (ts > 0) for (const s of r.streams) if (s.id.startsWith('signals.')) s.rate_hz = Math.round((s.count / ts) * 10) / 10;
     } else if (kind === 'plan') {
       this._span(d.t);
       fr.plans[this.planCount] = { t: d.t, path: d.path };

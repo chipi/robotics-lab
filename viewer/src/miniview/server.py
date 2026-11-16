@@ -7,7 +7,8 @@
     GET /api/v1/runs/{robot}/{scene}/{run}            the run (run.json's shape, with status and seq)
         .../frames?from=&to=                          drawing data for a time window, with only the plans and maps its
                                                       ticks refer to, keyed by index
-        .../state?t=                                  the moment: belief, truth, distance, depth, last event
+        .../signals?from=&to=                         a robot's named values over a time window, columnar (ADR-0013)
+        .../state?t=                                  the moment: belief, truth, distance, depth, signals, last event
         .../events?kinds=                             what happened, when
         .../presence                                  when each stream has data (the timeline's rows)
         .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
@@ -95,14 +96,23 @@ def window(f: dict, n: int, t_from: float | None, t_to: float | None) -> dict:
     return out
 
 
-def presence(run: dict, frames: dict) -> dict:
+def signals_window(sig: dict, n: int, t_from: float | None, t_to: float | None) -> dict:
+    """The signals ticks of [t_from, t_to] out of the first n: `i0` is the first one's number in the run, `v` the values per
+    signal (null where a tick carried none)."""
+    ts = sig["t"]
+    lo = 0 if t_from is None else bisect.bisect_left(ts, t_from, 0, n)
+    hi = n if t_to is None else bisect.bisect_right(ts, t_to, 0, n)
+    return {"i0": lo, "n": n, "t": ts[lo:hi], "v": {k: col[lo:hi] for k, col in sig["v"].items()}}
+
+
+def presence(run: dict, frames: dict, sig: dict | None = None) -> dict:
     """Per stream: the spans where it has data (gaps longer than 3 ticks split them) or the times of
     its records, for the timeline's data rows."""
     ts = frames["t"]
-    dts = sorted(b - a for a, b in zip(ts, ts[1:]))
-    gap = 3 * (dts[len(dts) // 2] if dts else 0.1)
 
-    def spans(times):
+    def spans(times, ts=ts):
+        dts = sorted(b - a for a, b in zip(ts, ts[1:]))
+        gap = 3 * (dts[len(dts) // 2] if dts else 0.1)
         out = []
         for t in times:
             if out and t - out[-1][1] <= gap:
@@ -114,7 +124,12 @@ def presence(run: dict, frames: dict) -> dict:
     def depth_kind(k):
         return [t for t, d in zip(ts, frames["depth"]) if d and any(p[3] == k for p in d)]
 
+    sigs = {}
+    if sig:
+        for name, col in sig["v"].items():
+            sigs[f"signals.{name}"] = {"spans": spans([t for t, x in zip(sig["t"], col) if x is not None], sig["t"])}
     return {"t0": run["t0"], "t1": run["t1"], "streams": {
+        **sigs,
         "belief.pose": {"spans": spans(ts)},
         "truth.pose": {"spans": spans([t for t, x in zip(ts, frames["truth"]) if x])},
         "sensors.depth.floor": {"spans": spans(depth_kind("f"))},
@@ -246,7 +261,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 raise HttpError(400, str(e)) from None
             what = parts[4] if len(parts) > 4 else ""
-            if len(parts) > 5 or what not in ("", "frames", "state", "events", "presence", "live"):
+            if len(parts) > 5 or what not in ("", "frames", "signals", "state", "events", "presence", "live"):
                 raise HttpError(404, "not found")
             ld = cat.get(key)
             if ld is None:
@@ -276,15 +291,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if t_from is not None and t_to is not None and t_from > t_to:
                 raise HttpError(400, f"from {t_from} is after to {t_to}")
             return self._json(window(f, n, t_from, t_to))
+        if what == "signals":
+            t_from, t_to = number(q, "from"), number(q, "to")
+            if t_from is not None and t_to is not None and t_from > t_to:
+                raise HttpError(400, f"from {t_from} is after to {t_to}")
+            return self._json(signals_window(ld.data.sig, run["samples"], t_from, t_to))
         if what == "events":
             return self._json(query.events(run, set(q["kinds"].split(",")) if q.get("kinds") else None))
-        if n == 0:
+        if n == 0 and run["samples"] == 0:
             raise HttpError(409, "the run has no ticks yet")
         frames = {k: (v[:n] if k in PER_TICK else list(v)) for k, v in f.items()}
+        sig = {"t": ld.data.sig["t"][:run["samples"]], "v": {k: c[:run["samples"]] for k, c in ld.data.sig["v"].items()}}
         if what == "state":
             t = number(q, "t")
-            return self._json(query.state(run, frames, run["t1"] if t is None else t))
-        return self._json(presence(run, frames))
+            return self._json(query.state(run, frames, run["t1"] if t is None else t, sig))
+        return self._json(presence(run, frames, sig))
 
     @staticmethod
     def _ev(name: str, data, eid=None) -> bytes:

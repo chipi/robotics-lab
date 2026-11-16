@@ -13,8 +13,9 @@ import struct
 from google.protobuf import json_format
 
 from miniview import schemas
+from miniview.signals import SignalSet
 
-KINDS = ("run", "epoch", "tick", "plan", "world", "event", "segment", "end")
+KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "segment", "end")
 
 CHANNELS = {                          # topic -> schema
     "/miniview/run": "miniview.run",
@@ -95,8 +96,14 @@ def _pose(ns: int, frame: str, p) -> dict:
             "pose": {"position": {"x": p[0], "y": p[1], "z": 0.0}, "orientation": _quat(p[2])}}
 
 
-def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
-    """[(topic, log_ns, publish_ns, data)] for one record, in the order they are written."""
+def signal_set(run: dict) -> SignalSet | None:
+    """The run's declared signals as a message, or None when it declares none."""
+    return SignalSet(run["signals"], run["robot"]["name"]) if run.get("signals") else None
+
+
+def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | None = None) -> list:
+    """[(topic, log_ns, publish_ns, data)] for one record, in the order they are written. `sigs` is the run's
+    signal set: a `signals` record needs it."""
     ns = base_ns + max(0, round(t * 1e9))
     src = p.get("t_src")
     pub = round(src * 1e9) if isinstance(src, (int, float)) else ns
@@ -130,6 +137,11 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
             out.append(m("/miniview/tilt", {"pitch_deg": p["tilt"][0], "roll_deg": p["tilt"][1]}))
         out.append(m("/miniview/tick_extra", {"t_src": src, "raw": _raw(p.get("raw", {}))}))
         return out
+    if kind == "signals":
+        if sigs is None:
+            raise ValueError("a signals record in a run that declares no signals")
+        return [(sigs.topic, ns, pub, sigs.encode(p["values"])),
+                m("/miniview/tick_extra", {"t_src": src, "raw": _raw(p.get("raw", {}))})]
     if kind == "plan":
         return [m("/miniview/plan", {"path": _xy(p["path"]), "t_src": src, "raw": _raw(p.get("raw", {}))})]
     if kind == "world":
@@ -156,9 +168,10 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int) -> list:
     raise ValueError(f"unknown record kind {kind!r}")
 
 
-# The tick protocol (ADR-0007): a tick is /belief/pose first, then at most one each of /truth/pose, /depth,
-# /miniview/command, /miniview/tilt in that order, then /miniview/tick_extra last. A world is /map then /miniview/memory.
-# Nothing else is written between the first and the last message of a tick or a world.
+# The tick protocol (ADR-0007, extended by ADR-0013): a tick is /belief/pose first, then at most one each of /truth/pose,
+# /depth, /miniview/command, /miniview/tilt in that order, then /miniview/tick_extra last; a signals tick is the robot's
+# /<robot>/signals message, then /miniview/tick_extra. A world is /map then /miniview/memory. Nothing else is written
+# between the first and the last message of a tick or a world.
 TICK_PARTS = ("truth", "depth", "cmd", "tilt")
 TICK_TOPICS = {"belief": "/belief/pose", "truth": "/truth/pose", "depth": "/depth", "cmd": "/miniview/command",
                "tilt": "/miniview/tilt", "extra": "/miniview/tick_extra"}
@@ -177,6 +190,11 @@ def tick_part(name: str, t: float, value, base_ns: int, t_src: float | None = No
     return next(m for m in to_messages(t, "tick", p, base_ns) if m[0] == topic)
 
 
+def signals_part(t: float, values: dict, base_ns: int, sigs: SignalSet, t_src: float | None = None) -> tuple:
+    """The first message of a signals tick (a tick of the robot's named values, with no pose): then comes `tick_part("extra", ...)`."""
+    return to_messages(t, "signals", {"values": values, "t_src": t_src}, base_ns, sigs)[0]
+
+
 class Assembler:
     """Messages (topic, log_ns, data) in file order -> records (t, kind, payload).
 
@@ -187,6 +205,7 @@ class Assembler:
         self.keep_raw = keep_raw
         self.base_ns = None
         self.run = None
+        self.sigs = None              # the run's signal set, once its run record is read
         self.pending = None           # a tick or world whose last message has not arrived
         self.partials = 0             # ticks and worlds dropped for lack of their last message
         self.partial_msgs = []        # why, one line each, until drained
@@ -207,16 +226,27 @@ class Assembler:
 
     def feed(self, topic: str, ns: int, data: bytes) -> list:
         """The records this message completes (usually none or one). ValueError for what is not ours."""
-        o = _unpb(topic, data) if topic in PROTO else json.loads(data)
+        if self.sigs is not None and topic == self.sigs.topic:
+            o = self.sigs.decode(data)
+        else:
+            o = _unpb(topic, data) if topic in PROTO else json.loads(data)
         if topic == "/miniview/run":
             self.base_ns, self.run = ns, o
+            try:
+                self.sigs = signal_set(o)
+            except (KeyError, TypeError, ValueError):
+                self.sigs = None                 # the run record says what is wrong with it (validate); no signals are read
             return [(0.0, "run", o)]
         if self.base_ns is None:
             raise ValueError("a message before the run record")
         t = self._t(ns)
         if self.pending and not (
-                (self.pending[1] == "tick" and topic in TICK_INSIDE) or (self.pending[1] == "world" and topic == "/miniview/memory")):
+                (self.pending[1] == "tick" and topic in TICK_INSIDE) or (self.pending[1] == "world" and topic == "/miniview/memory")
+                or (self.pending[1] == "signals" and topic == "/miniview/tick_extra")):
             self._interrupt(topic, t)
+        if self.sigs is not None and topic == self.sigs.topic:
+            self.pending = (t, "signals", {"values": o})
+            return []
         if topic in FRAMES and o.get("frame_id") != FRAMES[topic]:
             raise ValueError(f"{topic}: frame_id {o.get('frame_id')!r}, expected {FRAMES[topic]!r}")
         if topic == "/tf":
@@ -255,7 +285,7 @@ class Assembler:
                 d["tilt"] = [o["pitch_deg"], o["roll_deg"]]
             return []
         if topic == "/miniview/tick_extra":
-            if not self.pending or self.pending[1] != "tick":
+            if not self.pending or self.pending[1] not in ("tick", "signals"):
                 raise ValueError("tick_extra outside a tick")
             pt, kind, d = self.pending
             self.pending = None

@@ -17,6 +17,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import T0_NS, Checks, catalog, get, import_fixture, scene, serve, wait_until
+from miniview.adapters import nxt
 from miniview.shots import launch
 
 check = Checks("RUN COMPAT")
@@ -138,6 +139,102 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
           and r["verdict"] == "trapped" and r["started_at_ns"] == T0_NS, {k: r[k] for k in ("ticks", "status", "verdict")})
     code, w, _ = get(base, "/api/v1/runs/duck/apartment/explore9/frames?from=33&to=35")
     check("miniview: a window of it carries poses, depth and the plans and maps it refers to", code == 200 and w["t"] and w["depth"][0] is not None and w["plans"] and w["worlds"])
+    httpd.shutdown()
+
+    # ---- (d) an NXT run (ADR-0013): signals on /nxt/signals, and a pose from the odometry ---------------------------------
+    nxt_csv = Path(__file__).resolve().parent / "fixtures" / "nxt" / "runs" / "run-20261114-094243.csv"
+    nkey = "nxt/unmapped/run-20261114-094243"
+    nxt_data = tmp / "nxt-data"
+    nxt.import_csv(nxt_csv, nxt_data, tz="Europe/Zurich", sprocket=0.043, track=0.12, started_at_ns=T0_NS, say=lambda *_: None)
+    bare_data = tmp / "nxt-bare"
+    nxt.import_csv(nxt_csv, bare_data, tz="Europe/Zurich", started_at_ns=T0_NS, say=lambda *_: None)
+    n_mcap, bare_mcap = nxt_data / "runs" / nkey / "run.mcap", bare_data / "runs" / nkey / "run.mcap"
+    first = [float(x) for x in nxt_csv.read_text().splitlines()[1].split(",")[1:4]]       # power_left, power_right, tacho_A of the first sample
+    for label, f, pose in (("with odometry", n_mcap, True), ("without wheel geometry", bare_mcap, False)):
+        rc, out = run([RERUN, "mcap", "check", f])
+        check(f"Rerun, NXT run {label}: `rerun mcap check` passes every channel", rc == 0 and "Issues" in out and not re.search(r"^(warn|error)", out, re.M | re.I), out[-300:])
+        rrd = tmp / f"nxt-{pose}.rrd"
+        rc, out = run([RERUN, "mcap", "convert", "-d", "protobuf", "--disable-raw-fallback", f, "-o", rrd])
+        got = entities(out)
+        check(f"Rerun, NXT run {label}: the protobuf decoder gives an entity for /nxt/signals" + (" and for the pose and the transform" if pose else ""),
+              rc == 0 and "/nxt/signals" in got and (({"/belief/pose", "/tf"} <= got) if pose else not ({"/belief/pose"} & got)), sorted(got))
+        rc, out = run([RERUN, "rrd", "print", rrd])
+        rows = {m.group(2): int(m.group(1)) for m in re.finditer(r"with (\d+) rows .*? - (/\S+) - data columns: \[(?:foxglove|miniview)", out)}
+        check(f"Rerun, NXT run {label}: one row per sample on /nxt/signals" + (", one pose per sample" if pose else ""),
+              rows.get("/nxt/signals") == 281 and (rows.get("/belief/pose") == 281 and rows.get("/tf") == 1 if pose else "/belief/pose" not in rows), rows)
+        rc, out = run([RERUN, "rrd", "print", "-vvv", rrd])
+        sch = re.search(r'type: List\(Struct\("power_left": Float64, "power_right": Float64, "tacho_A": Float64, "tacho_B": Float64, "tacho_C": Float64, '
+                        r'"s3_color": Float64, "s3_color_name": Utf8, "s4_ultrasonic": Float64(?:, "program": Utf8)?\)\)', out)
+        row0 = re.search(r"\[\{power_left: ([-\d.]+), power_right: ([-\d.]+), tacho_A: ([-\d.]+)", out)
+        check(f"Rerun, NXT run {label}: each signal is a named Float64 or Utf8 column of the decoded struct (plottable by name), with the first sample's values",
+              sch is not None and row0 is not None and [float(x) for x in row0.groups()] == first, (bool(sch), row0.groups() if row0 else None, first))
+        rc, out = run([RERUN, "rrd", "verify", rrd])
+        check(f"Rerun, NXT run {label}: `rerun rrd verify` passes the converted file", rc == 0, out[-200:])
+
+    served = tmp / "served-nxt"
+    served.mkdir()
+    shutil.copy(n_mcap, served / "run.mcap")
+    os.chmod(served, 0o755)
+    os.chmod(served / "run.mcap", 0o644)
+    cid = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{served}:/src/runs:ro", LICHTBLICK], text=True).strip()
+    try:
+        port = subprocess.check_output(["docker", "port", cid, "8080/tcp"], text=True).split(":")[-1].strip()
+        base = f"http://127.0.0.1:{port}"
+
+        def lb_up():
+            try:
+                return urllib.request.urlopen(base, timeout=2).status == 200
+            except Exception:
+                return False
+
+        wait_until(lb_up, 60, every=0.3, what="Lichtblick to answer")
+        nhttpd, nbase = serve(catalog(nxt_data), follow=False)
+        with sync_playwright() as p:
+            b = launch(p)
+            pg = b.new_page(viewport={"width": 1500, "height": 950})
+            pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
+            pg.wait_for_function("document.body.innerText.includes('Topics')", timeout=60000)
+            pg.get_by_text("Topics", exact=True).first.click()
+            pg.wait_for_function("document.body.innerText.includes('miniview.Signals')", timeout=60000)
+            topics = pg.locator("body").inner_text()
+            check("Lichtblick, NXT run: the topic list has /nxt/signals with its schema and the run's 281 samples, beside the pose",
+                  re.search(r"/nxt/signals\s+miniview\.Signals\s+[\d.]+ Hz\s+281", topics) is not None and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+281", topics) is not None, topics[:200])
+            pg.get_by_text("Alerts", exact=False).first.click()
+            pg.wait_for_function("document.body.innerText.includes('Transform topics detected')", timeout=30000)
+            alerts = pg.locator("body").inner_text()
+            alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
+            titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
+            check("Lichtblick, NXT run: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
+            # Lichtblick's Raw Messages panel (the third panel of the default layout): the message at the playhead, decoded by name from the descriptor in the file
+            pg.get_by_placeholder("/some/topic.msgs[0].field").first.click()
+            pg.keyboard.type("/nxt/signals")
+            pg.keyboard.press("Enter")
+            pg.wait_for_function("document.body.innerText.includes('miniview.Signals @')", timeout=30000)
+            bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()
+            pg.mouse.click(bar["x"] + 0.5 * bar["width"], bar["y"] + bar["height"] / 2)
+            pg.wait_for_function("(() => { const m = /miniview\\.Signals @ (\\d+\\.\\d+)/.exec(document.body.innerText); return m && +m[1] > 1700000010; })()", timeout=30000)
+            text = pg.locator("body").inner_text()
+            msg = text[text.index("miniview.Signals @"):]
+            at = float(re.match(r"miniview\.Signals @ (\d+\.\d+)", msg).group(1)) - T0_NS / 1e9
+            shown = {m.group(1): m.group(2) for m in re.finditer(r"\n(power_left|power_right|tacho_A|tacho_B|tacho_C|s3_color|s3_color_name|s4_ultrasonic)\n(\S+)", msg)}
+            code, st, _ = get(nbase, f"/api/v1/runs/{nkey}/state?t={at + 1e-4}")
+            want = st["signals"]["values"]
+            check("Lichtblick, NXT run: the Raw Messages panel decodes the /nxt/signals message at the playhead by name, with the values miniview reads for that sample",
+                  code == 200 and abs(st["signals"]["t"] - at) < 1e-3 and set(shown) == {k for k, v in want.items() if v is not None}
+                  and all(shown[k] == (f'"{v}"' if isinstance(v, str) else f"{v:g}") for k, v in want.items() if v is not None), (shown, want))
+            b.close()
+        nhttpd.shutdown()
+    finally:
+        subprocess.run(["docker", "stop", cid], capture_output=True)
+
+    # ---- (e) miniview serves the NXT run from the same file ----------------------------------------------------------------
+    cat = catalog(nxt_data)
+    httpd, base = serve(cat, follow=False)
+    code, r, _ = get(base, f"/api/v1/runs/{nkey}")
+    check("miniview, NXT run: the same file loads and serves: 281 ticks of pose and 281 samples, ended, recorded, real start",
+          code == 200 and r["ticks"] == 281 and r["samples"] == 281 and r["status"] == "ended" and r["verdict"] == "recorded" and r["started_at_ns"] == T0_NS, {k: r.get(k) for k in ("ticks", "samples", "status")})
+    code, w, _ = get(base, f"/api/v1/runs/{nkey}/signals?from=10&to=11")
+    check("miniview, NXT run: a window of its signals", code == 200 and w["t"] and w["v"]["tacho_B"][0] is not None)
     httpd.shutdown()
 
 check.done()

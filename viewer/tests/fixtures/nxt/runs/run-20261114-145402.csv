@@ -1,0 +1,14 @@
+t,power_left,power_right,tacho_A,tacho_B,tacho_C,s3_color,s3_color_name,s4_ultrasonic,program
+0.49,50,50,0,220,220,2,blue,42,robotd.rxe
+0.99,50,50,0,445,445,2,blue,38,robotd.rxe
+1.491,50,50,0,670,670,2,blue,34,robotd.rxe
+1.991,50,50,0,895,895,2,blue,30,robotd.rxe
+2.491,40,-40,0,735,1077,3,green,27,robotd.rxe
+2.991,40,-40,0,554,1257,3,green,24,robotd.rxe
+3.491,50,50,0,754,1479,3,green,22,robotd.rxe
+3.991,50,50,0,979,1704,3,green,21,robotd.rxe
+4.491,50,50,0,1204,1929,4,yellow,20,robotd.rxe
+4.991,50,50,0,1429,2154,4,yellow,20,robotd.rxe
+5.491,-30,-30,0,1326,2052,4,yellow,20,robotd.rxe
+5.991,-30,-30,0,1191,1917,4,yellow,21,robotd.rxe
+6.491,0,0,0,1177,1903,5,red,22,robotd.rxe

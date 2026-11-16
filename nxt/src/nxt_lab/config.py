@@ -34,6 +34,11 @@ class Config:
     # when commands stop (RFC-0003 §2.3). "direct": motor commands from the PC, stopped only by
     # the server's watchdog — a crashed server or a lost link leaves the tracks running.
     drive_mode: str = "deadman"
+    # Wheel geometry for odometry (ADR-0013), in metres, unset until calibrated (docs/adr/ADR-0013, "Calibration"). The width
+    # is the EFFECTIVE track width for turning: tracks slip, so it is calibrated, not measured off the parts. With either
+    # unset a recording has no pose; the values are never guessed.
+    odom_sprocket_diameter_m: float | None = None
+    odom_track_width_m: float | None = None
 
     def validate(self) -> None:
         roles = (self.left, self.right, self.shooter)
@@ -52,6 +57,10 @@ class Config:
             raise ValueError("sample_hz must be 0.5..20")
         if self.drive_mode not in DRIVE_MODES:
             raise ValueError(f"drive_mode must be one of {DRIVE_MODES}")
+        for name in ("odom_sprocket_diameter_m", "odom_track_width_m"):
+            v = getattr(self, name)
+            if v is not None and not 0 < v <= 1:
+                raise ValueError(f"{name} must be above 0 and at most 1 (metres), or unset")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,6 +73,9 @@ class Config:
         config.fire_power = int(config.fire_power)
         config.fire_degrees = int(config.fire_degrees)
         config.sample_hz = float(config.sample_hz)
+        for name in ("odom_sprocket_diameter_m", "odom_track_width_m"):
+            v = getattr(config, name)
+            setattr(config, name, None if v in (None, "") else float(v))
         config.validate()
         return config
 

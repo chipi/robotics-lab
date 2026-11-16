@@ -330,3 +330,33 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
 }
 @media (max-width: 600px) { .readout { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* the Signals view (ADR-0013): a run with a robot's named values and no pose draws them as charts in the viewport */
+.app.signals-only #layoutSeg, .app.signals-only #frameSeg, .app.signals-only #ovBtn, .app.signals-only #fitBtn,
+.app.signals-only .gizmo, .app.signals-only .vcorner, .app.signals-only .readout { display: none; }
+.sigview { position: absolute; left: 0; right: 0; top: 26px; bottom: 0; z-index: 2; background: var(--bg-viewport); overflow: hidden; }
+.sg-scroll { position: absolute; inset: 0; overflow: auto; overflow-x: hidden; touch-action: pan-y; }
+.sg-empty { padding: 24px 14px; color: var(--text-faint); text-align: center; }
+.sg-ax { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: 168px minmax(0, 1fr); height: 22px; background: var(--bg-header); border-bottom: 1px solid var(--border); }
+.sg-axl { border-right: 1px solid var(--border); }
+.sg-axp { position: relative; overflow: hidden; }
+.sg-tk { position: absolute; top: 4px; padding-left: 4px; font: 10px var(--mono); color: var(--text-dim); border-left: 1px solid var(--hair-4); height: 14px; line-height: 14px; }
+.sg { display: grid; grid-template-columns: 168px minmax(0, 1fr); border-bottom: 1px solid var(--border); }
+.sg.sel { background: var(--accent-soft); }
+.sg-l { padding: 5px 8px 4px 10px; border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.sg-h { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sg-h .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: 11px; }
+.sg-h .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; display: block; }
+.sg-c { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.sg-c .val { font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-c .u { color: var(--text-faint); font-size: 11px; }
+.sg[data-kind="text"] .sg-c .val { font-size: 12px; }
+.sg-p { position: relative; cursor: crosshair; touch-action: none; user-select: none; min-width: 0; overflow: hidden; }
+.sg-p svg { display: block; }
+.sg-p .gridl { stroke: var(--hair-2); stroke-width: 1; }
+.sg-p .line { fill: none; stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.sg-p .ph { stroke: var(--accent); stroke-width: 1; }
+.sg-p .dot { stroke: var(--bg-viewport); stroke-width: 1.5; }
+.sg-p .band { fill-opacity: .5; stroke: var(--hair-3); stroke-width: 1; }
+.sg-p .bandl { fill: var(--text); font: 11px var(--ui); pointer-events: none; }
+.sg-r { position: absolute; left: 4px; top: 2px; bottom: 2px; display: flex; flex-direction: column; justify-content: space-between; font: 9.5px var(--mono); color: var(--text-faint); pointer-events: none; }

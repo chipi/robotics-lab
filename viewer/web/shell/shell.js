@@ -22,9 +22,11 @@
 // shell (given to the adapter): M, shown(id, view), cfg(id), size(id), pick(sel), viewChanged(), tickAt(t), palette()
 import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
+import { createSignalsView, sigColor, sampleAt } from './signals.js';
 
 const API = '/api/v1/';
 const json = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
+const noScene = (id) => ({ id, name: id, kind: 'no layout', frame: 'world', bounds: [-4, 4, -3, 3], boxes: [], hazards: [] });   // a run whose scene has no layout (ADR-0013 `unmapped`)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -91,6 +93,7 @@ function styleOf(id) {
   if (id === 'world.drops') return c('c-drop', 'points');
   if (id === 'plan.path') return c('c-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
+  if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
 }
 
@@ -145,6 +148,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   document.body.innerHTML = TEMPLATE;
   paintIcons();
   const stage = $('stage'), app = $('app');
+  const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t) });
 
   const stream = (id) => (M.run?.streams || []).find((s) => s.id === id);
   const cfg = (id) => M.modes[id] || { mode: 'at', n: 2 };
@@ -156,8 +160,15 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // the loaded tick at or before t (the nearest loaded one when t lies in a part that is not loaded yet)
   const tickAt = (t) => store.tickAt(t);
   const hasTicks = () => !!M.fr && M.fr.ranges.length > 0;
+  // a robot's named values (ADR-0013): the run declares them; a run with them and no pose shows them as charts in the viewport
+  const hasSignals = () => !!M.run?.signals?.length;
+  const signalsOnly = () => !!M.runId && hasSignals() && !hasTicks();
+  const sampleN = () => store.sig.t.length;
+  const sampleIdx = (t) => sampleAt(store.sig.t, t);
   // the span of the run's ticks (from the data rows), whatever is loaded
   const tickSpan = () => { const sp = M.pres?.streams?.['belief.pose']?.spans; return sp?.length ? [sp[0][0], sp[sp.length - 1][1]] : [M.run.t0, M.run.t1]; };
+  // the span the timeline marks as recorded: the ticks', else the samples' (a run with signals and no pose); null when there is nothing yet
+  const dataSpan = () => (hasTicks() ? tickSpan() : hasSignals() && sampleN() ? [store.sig.t[0], store.sig.t[sampleN() - 1]] : null);
 
   // a stream shows when it is in the run and it, its parent and its groups are on, here and (given a view) in that view
   function shown(id, view) {
@@ -195,6 +206,13 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       plan: pi >= 0 ? { k: pi + 1, n: store.planCount, t: fr.plans[pi].t } : null, world: wi >= 0 ? { k: wi + 1, n: store.worldCount, t: fr.worlds[wi].t } : null,
       ev: lastEvent(), run,
     };
+  }
+  // the signals' values at the playhead: the sample at or before it (ADR-0013); null when there is no sample yet
+  function sigMoment() {
+    const n = sampleN(), i = sampleIdx(M.t);
+    if (!n || i < 0) return null;
+    const { t, v } = store.sig;
+    return { i, n, t: t[i], values: Object.fromEntries((M.run.signals || []).map((d) => [d.name, v[d.name]?.[i] ?? null])) };
   }
 
   // ---- loading (ADR-0011): the run store loads by window, then by record; the renderers take appends ----------
@@ -239,19 +257,23 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (!sc) throw new Error(`unknown scene ${sceneId}`);
       const r0 = runId === undefined ? sc.runs[0] : findRun(sc, runId);
       if (!r0) throw new Error(runId === undefined ? `scene ${sc.id} has no runs` : `unknown run ${runId} in scene ${sc.id}`);
-      const scene = sceneCache[sc.id] ||= await json(`${API}scenes/${sc.id}`);
+      // the index says which scenes have no layout (their runs are listed, nothing of the scene is drawn): no request for one
+      const scene = sceneCache[sc.id] ||= sc.kind === 'no layout' ? noScene(sc.id) : await json(`${API}scenes/${sc.id}`).catch((e) => { if (/ 404$/.test(String(e))) return noScene(sc.id); throw e; });
       built = false;
       const first = await store.open(r0.key, M.follow && r0.status === 'live' ? 'end' : 'start');
       if (!first) return null;                                           // another load took over
       const { run, pres } = first;
+      if (scene.kind === 'no layout') for (const s of run.streams || []) if (s.id.startsWith('scene.')) Object.assign(s, { count: 0, missing: true, why: 'no scene' });
       if (M.sceneId !== sc.id || M.scene !== scene) { M.scene = scene; adapter.setScene(scene); }
       M.sceneId = sc.id; M.runId = r0.key;
       M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {};
       T = buildTree(run);
-      M.selNode = T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null;
+      const live0 = (id) => T.nodes[id]?.leaf && !T.nodes[id].s.missing;
+      M.selNode = live0('belief.pose') || !run.signals?.length ? (T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null) : T.order.find((id) => id.startsWith('signals.') && live0(id)) || 'g.Signals';
       M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, true]));
       M.modes = Object.fromEntries((run.streams || []).map((s) => [s.id, { mode: s.default_mode || 'at', n: 2 }]));
       M.run = run; M.fr = store.fr; M.pres = pres;
+      if (hasSignals() && !hasTicks()) M.hideMissing = true;                   // what the run has is the signals: the streams it lacks are a click away ("Show them")
       M.bw = M.fr.belief.map((p, k) => toWorld(epochAt(M.fr.t[k]).map_to_world, p));
       for (const e of run.events) if (!(e.kind in M.kinds)) M.kinds[e.kind] = e.kind !== 'leg';
       if (hasTicks()) { adapter.setRun(run, M.fr); built = true; }
@@ -293,7 +315,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       $('follow').hidden = !live;
       if (hasTicks() && !built) { adapter.setRun(M.run, M.fr); built = true; }
       if (hasTicks() && !laidOut) { M.t = M.follow && live ? M.run.t1 : M.run.t0; layout(); }
-      if (M.follow && live && hasTicks()) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
+      if (M.follow && live && (hasTicks() || hasSignals())) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
       M.i = hasTicks() ? tickAt(M.t) : 0;
       for (const sx of M.run.streams || []) M.modes[sx.id] ||= { mode: sx.default_mode || 'at', n: 2 };
       T = buildTree(M.run);
@@ -320,6 +342,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     M.t = clamp(+t, M.run.t0, M.run.t1);
     if (hasTicks()) { M.i = tickAt(M.t); adapter.draw(sync); }
     syncTime();
+    if (signalsOnly()) sigView.update(M.t);
     if (!store.covers(M.t)) store.ensure(M.t).then(() => { if (M.run && hasTicks()) { M.i = tickAt(M.t); adapter.draw(); syncTime(); } });
     return M.t;
   }
@@ -387,12 +410,15 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     return { kind: M.sel.kind, index: M.sel.index, ...(M.sel.world !== undefined && { world: M.sel.world }), ...rest, position: [f3(p[0]), f3(p[1])], height: f3(d.height) };
   };
   const identity = () => ({ run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
-    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]) } : null });
+    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]), samples: sampleN() } : null });
   function state() {
-    if (!M.run || !hasTicks()) return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: null, selection: null, t_range: M.run ? [M.run.t0, M.run.t1] : null };
+    if (!M.run || !hasTicks()) {
+      return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: M.run ? lastEvent() : null, selection: null,
+        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }) };
+    }
     const m = moment();
     return {
-      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view,
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1],
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -429,8 +455,13 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     }
     setTime(M.fr.t[k] ?? M.fr.t[tickAt(M.t)]);
   }
+  function stepSample(d) {
+    const ts = store.sig.t, i = sampleIdx(M.t);
+    if (i < 0) return;
+    setTime(ts[clamp(d < 0 ? (M.t > ts[i] + 1e-6 ? i : i - 1) : i + 1, 0, ts.length - 1)]);
+  }
   function stepTick(d) {
-    if (!hasTicks()) return;
+    if (!hasTicks()) { if (signalsOnly()) stepSample(d); return; }
     const i = M.i, at = M.fr.t[i];
     gotoTick(d < 0 ? (M.t > at + 1e-6 ? i : i - 1) : i + 1);
   }
@@ -556,7 +587,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const vis = group ? `${live.filter((l) => shown(l)).length} of ${live.length} shown` : '';
     h += sec('display', 'Display', `<span class="lab">Visible</span><label class="cb"><input type="checkbox" id="vis" ${M.on[n.id] !== false ? 'checked' : ''} ${s?.missing ? 'disabled' : ''}>`
       + `${hidden ? '<span class="faint">hidden by its group</span>' : ''}${vis ? `<span class="dim">${vis}</span>` : ''}</label>`
-      + (live.length ? `<span class="lab">In views</span><span class="toggles">${[['top', 'T', 'Top'], ['front', 'F', 'Front'], ['right', 'S', 'Side'], ['3d', '3D', '3D']].map(([v, l, t]) =>
+      + (live.length && !live.every((l) => l.startsWith('signals.')) ? `<span class="lab">In views</span><span class="toggles">${[['top', 'T', 'Top'], ['front', 'F', 'Front'], ['right', 'S', 'Side'], ['3d', '3D', '3D']].map(([v, l, t]) =>
         `<button class="tg" data-vv="${v}" aria-pressed="${M.vv[v]?.[n.id] !== false}" title="${t}">${l}</button>`).join('')}</span>` : '')
       + (s && !s.missing ? `<span class="lab">Colour</span><span class="swatch"><i style="background:${sty.c}"></i>${esc(cssColour(sty.c))}</span>` : '')
       + (ptIds.length ? `<span class="lab">Point size</span><span class="field" id="pszf" title="Drag to change, click to type; Shift fine, Ctrl coarse"><input id="pszv" value="${size(ptIds[0]).toFixed(1)}" aria-label="Point size in pixels"><span class="u">px</span></span>` : '')
@@ -565,6 +596,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       const pr = presenceRange(n.id);
       h += sec('source', 'Source', `<span class="lab">Frame</span><span class="ro">${esc(s.frame)}</span><span class="lab">Records</span><span class="ro">${nf(s.count)}</span>`
         + `<span class="lab">Rate</span><span class="ro">${s.rate_hz ? s.rate_hz + ' Hz' : 'static'}</span>`
+        + (s.kind ? `<span class="lab">Value</span><span class="ro">${esc(s.kind)}${s.unit ? ' · ' + esc(s.unit) : ''}</span>` : '')
         + (pr ? `<span class="lab">First – last</span><span class="ro">${pr[0].toFixed(2)} – ${pr[1].toFixed(2)} s</span>` : '')
         + (s.missing ? `<span class="lab">Why missing</span><span class="ro" style="color:var(--warn);font-family:var(--ui)">${esc(s.why || 'missing')}</span>` : ''));
     }
@@ -629,29 +661,47 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   const kv = (k, v, u = '', cls = '') => `<div class="kv ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="u">${u}</span><button class="cp" title="Copy" data-copy="${esc(`${k}: ${v} ${u}`.replace(/<[^>]+>/g, ''))}">${svgI('copy', 11)}</button></div>`;
   const isec = (key, title, dot, body, act = '') => `<div class="sec" data-open="${M.secOpen['i' + key] !== false}" data-sec="i${key}"><button class="shead"><span class="caret">${svgI('chev', 12)}</span>${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${title}<span class="act">${act}</span></button><div class="ibody">${body}</div></div>`;
   let momentJson = null;
+  // the inspector's last event, and the events before and after the playhead to jump to
+  function eventSections(ev) {
+    const prev = [...M.run.events].reverse().find((e) => M.kinds[e.kind] !== false && e.t < M.t - 1e-6), next = M.run.events.find((e) => M.kinds[e.kind] !== false && e.t > M.t + 1e-6);
+    return isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
+      + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
+  }
+  // the values of the robot's signals at the playhead (ADR-0013), one row each, in the order the run declares them
+  function signalsSection(sg) {
+    const rows = (M.run.signals || []).map((d) => {
+      const v = sg?.values[d.name];
+      return v == null ? kv(esc(d.name), 'none', '', 'na') : kv(esc(d.name), typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 2) : esc(v), esc(d.unit || ''));
+    }).join('');
+    return isec('g', 'Signals', '', rows || kv('Signals', 'none yet', '', 'na'), sg ? `<span class="fchip">sample ${sg.i + 1} of ${sg.n} · ${fx(sg.t, 2)} s</span>` : '');
+  }
 
   function renderInsp() {
     const el = $('inspBody');
     $('tabMoment').setAttribute('aria-selected', M.tab === 'moment'); $('tabSel').setAttribute('aria-selected', M.tab === 'sel');
-    if (!M.run || !hasTicks()) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
-    if (M.tab === 'moment') {
-      const m = moment(), map = M.frame === 'map', ev = m.ev;
-      const prev = [...M.run.events].reverse().find((e) => M.kinds[e.kind] !== false && e.t < M.t - 1e-6), next = M.run.events.find((e) => M.kinds[e.kind] !== false && e.t > M.t + 1e-6);
+    if (!M.run || (!hasTicks() && !hasSignals())) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
+    if (M.tab === 'moment' && !hasTicks()) {
+      const sg = sigMoment(), ev = lastEvent();
+      momentJson = { t: M.t, sample: sg ? sg.i : null, signals: sg ? sg.values : null, last_event: ev };
+      el.innerHTML = isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Sample', sg ? `${sg.i + 1} of ${sg.n}` : 'none yet', '', sg ? '' : 'na'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
+        + signalsSection(sg) + eventSections(ev);
+    } else if (M.tab === 'moment') {
+      const m = moment(), map = M.frame === 'map', ev = m.ev, sg = hasSignals() ? sigMoment() : null;
       const pose = (p) => kv('x', fx(p[0]), 'm') + kv('y', fx(p[1]), 'm') + kv('Yaw', fx(deg(p[2]), 1), '°');
-      momentJson = { t: m.t, tick: m.tick, frame: M.frame, belief: (map ? m.bm : m.bw).map(f3), truth: m.tr && !map ? m.tr.map(f3) : null, distance: f3(m.dist), heading_error_deg: f3(m.herr), cmd: m.cmd, last_event: ev };
+      momentJson = { t: m.t, tick: m.tick, frame: M.frame, belief: (map ? m.bm : m.bw).map(f3), truth: m.tr && !map ? m.tr.map(f3) : null, distance: f3(m.dist), heading_error_deg: f3(m.herr), cmd: m.cmd, last_event: ev, ...(sg && { signals: sg.values }) };
       el.innerHTML =
         isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick + 1} of ${m.n}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
+        + (hasSignals() ? signalsSection(sg) : '')
         + isec('b', 'Belief', 'var(--c-belief)', pose(map ? m.bm : m.bw), `<span class="fchip">${map ? 'map' : 'world'}</span>`)
         + isec('t', 'Truth', 'var(--c-truth)', map ? kv('Truth', 'hidden in the map frame', '', 'na') : m.tr ? pose(m.tr) : kv('Truth', 'none in this run', '', 'na'), '<span class="fchip">world</span>')
         + isec('e', 'Error', '', (map ? kv('Belief to truth', 'world frame only', '', 'na derived') : m.dist != null ? kv('Belief to truth', fx(m.dist), 'm', 'derived') + kv('Heading error', fx(m.herr, 1), '°', 'derived') : kv('Belief to truth', 'no truth', '', 'na derived')) + kv('Nearest obstacle', 'not in the data yet', '', 'na'))
         + isec('c', 'Command', '', kv('Forward', fx(m.cmd?.[0]), 'm/s') + kv('Turn', fx(m.cmd?.[1]), 'rad/s'))
         + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', `${m.depthTick + 1} of ${m.n}`) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
         + isec('w', 'Plan and map', '', (m.plan ? kv('Plan', `${m.plan.k} of ${m.plan.n}`) + kv('Plan made at', fx(m.plan.t, 2), 's') : kv('Plan', 'none yet', '', 'na')) + (m.world ? kv('Map', `${m.world.k} of ${m.world.n}`) + kv('Map made at', fx(m.world.t, 2), 's') : kv('Map', 'none yet', '', 'na')))
-        + isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
-        + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
+        + eventSections(ev);
     } else {
       const d = M.sel ? adapter.describe(M.sel) : null;
-      if (!d) el.innerHTML = `<div class="empty">${svgI('crosshair', 20)}<br>Nothing picked.<br>Click a point in the view: a depth return, a robot or a map cell.</div>`;
+      if (!d) el.innerHTML = `<div class="empty">${svgI('crosshair', 20)}<br>Nothing picked.<br>${signalsOnly() ? 'This run has no pose to pick: click a chart to move the playhead.' : 'Click a point in the view: a depth return, a robot or a map cell.'}</div>`;
       else {
         const sty = styleOf(d.stream), id = d.stream;
         el.innerHTML = isec('s', esc(cap(d.detail || d.kind)), sty.c, kv('x', fx(d.p[0]), 'm') + kv('y', fx(d.p[1]), 'm') + kv('Height z', fx(d.height), 'm')
@@ -684,8 +734,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('runVerdict').className = r ? (live ? 'verdict live' : verdictClass(r.verdict)) : '';
     $('layoutSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === M.view));
     $('frameSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.frame === M.frame));
-    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${live ? '<span class="live-dot"></span> <span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · <span class="mono">${(r.t1 - r.t0).toFixed(1)} s</span> · <span class="mono">${r.ticks}</span> ticks` : 'no run open';
-    $('vt').innerHTML = `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
+    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${live ? '<span class="live-dot"></span> <span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · <span class="mono">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="mono">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="mono">${r.samples}</span> samples` : ''}` : 'no run open';
+    app.classList.toggle('signals-only', signalsOnly());
+    $('vt').innerHTML = signalsOnly() ? '<b>Signals</b> · time series, click or drag to seek' : `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';
     $('st-live').textContent = live ? (M.follow ? 'live · following' : 'live') : r ? `${r.status} · ${r.verdict}` : '';
     $('st-live').className = live ? 'live' : '';
@@ -747,9 +798,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const each = (st, k) => { for (let t = Math.ceil(a / st - 1e-9) * st; t <= b + 1e-9; t += st) k(+t.toFixed(4)); };
     each(minor, (t) => { if (Math.abs(t / step - Math.round(t / step)) > 1e-6) h += `<span class="t min" style="left:${pct(t)}%"></span>`; });
     each(step, (t) => { h += `<span class="t maj" style="left:${pct(t)}%"></span><span class="lb" style="left:${pct(t)}%">${+t.toFixed(2)}</span>`; });
-    if (hasTicks()) { const [a, b] = tickSpan(); h += `<span class="data" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="Recorded ticks ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`; }
+    const ds = dataSpan();
+    if (ds) h += `<span class="data" style="left:${pct(ds[0])}%;width:${pct(ds[1]) - pct(ds[0])}%" title="Recorded ${hasTicks() ? 'ticks' : 'samples'} ${ds[0].toFixed(2)} – ${ds[1].toFixed(2)} s"></span>`;
     $('ruler').innerHTML = h;
-    if (hasTicks()) { const [a, b] = tickSpan(); $('rbar').style.cssText = `left:${pct(a)}%;width:${pct(b) - pct(a)}%`; }
+    if (ds) $('rbar').style.cssText = `left:${pct(ds[0])}%;width:${pct(ds[1]) - pct(ds[0])}%`;
   }
   function renderMarkers() {
     if (!M.run) return;
@@ -762,7 +814,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('lanesBtn').setAttribute('aria-pressed', M.rows);
     if (!M.run || !M.rows) { $('lanesL').innerHTML = ''; $('dlanes').innerHTML = ''; return; }
     // one row per stream the API reports presence for (the events have their own lane), in outliner order
-    const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && (M.pres?.streams?.[id] || stream(id)?.missing));
+    // a run with no pose has nothing to show for the streams it lacks: only the rows it has
+    const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && (M.pres?.streams?.[id] || stream(id)?.missing)
+      && (hasTicks() || !hasSignals() || !stream(id)?.missing));
     const quant = (t) => Math.round(pct(t) * 20) / 20;
     $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || cap(s.name))}</div>`; }).join('');
     const gaps = depthGaps().map(([a, b]) => `<span class="gap" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="No depth frames ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`).join('');
@@ -782,7 +836,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const [t0, t1] = tickSpan();
     return merged.slice(1).map((m, i) => [merged[i][1], m[0]]).filter(([a, b]) => a >= t0 && b <= t1 && b > a);
   }
-  function renderLanesSel() { document.querySelectorAll('#lanesL .lane-l').forEach((l) => l.classList.toggle('sel', l.dataset.lane === M.selNode)); renderBand(); }
+  function renderLanesSel() { document.querySelectorAll('#lanesL .lane-l').forEach((l) => l.classList.toggle('sel', l.dataset.lane === M.selNode)); renderBand(); renderSignals(); }
   function renderBand() {
     document.querySelectorAll('.wband').forEach((b) => b.remove());
     const id = M.selNode, s = stream(id);
@@ -808,8 +862,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     head.style.left = clamp(x - hw / 2, 0, Math.max(0, sw - hw)) - x + 'px';
     const ti = $('tin'), ki = $('kin');
     if (document.activeElement !== ti) ti.value = M.t.toFixed(2);
-    if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : 0;
-    $('kn').textContent = 'of ' + (hasTicks() ? M.run.ticks : 0);
+    const bySample = !hasTicks() && hasSignals();
+    $('tfK').firstElementChild.textContent = bySample ? 'sample' : 'tick';
+    if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : bySample ? Math.max(0, sampleIdx(M.t) + 1) : 0;
+    $('kn').textContent = 'of ' + (hasTicks() ? M.run.ticks : bySample ? sampleN() : 0);
     renderBand();
     if (M.tab === 'moment' || M.sel) scheduleInsp();
   }
@@ -823,12 +879,20 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   // ---- the whole thing ------------------------------------------------------------------------------
   function refresh() {
-    renderTree(); renderProps(); renderInsp(); renderChrome(); renderLanes();
+    renderTree(); renderProps(); renderInsp(); renderChrome(); renderLanes(); renderSignals();
     if (hasTicks()) adapter.draw();
   }
   function renderAll() {
-    renderTree(); renderProps(); renderInsp(); renderChrome(); renderTimeline(); writeHash();
+    renderTree(); renderProps(); renderInsp(); renderChrome(); renderTimeline(); renderSignals(); writeHash();
     if (hasTicks()) adapter.draw();
+  }
+  // the Signals view takes the viewport of a run that has signals and no pose (ADR-0013); a run with a pose keeps its views
+  function renderSignals() {
+    const on = signalsOnly();
+    $('sigview').hidden = !on;
+    if (!on) return;
+    const ids = T.order.filter((id) => id.startsWith('signals.') && T.nodes[id].leaf && shown(id));
+    sigView.render({ run: M.run, sig: store.sig, ids, selected: M.selNode, t: M.t });
   }
   function writeHash() {
     history.replaceState(null, '', M.runId ? '#' + new URLSearchParams({ scene: M.sceneId, run: M.runId, view: M.view, frame: M.frame }) : '#scenes');
@@ -844,6 +908,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     adapter.theme(palette());
     renderChrome();
     if (hasTicks()) adapter.draw();
+    if (M.run) { renderTree(); renderProps(); renderLanes(); renderSignals(); }      // the signals' colours follow the theme
   }
   mq.addEventListener?.('change', () => { if (!stored()) applyTheme(mq.matches ? 'light' : 'dark'); });
 
@@ -962,7 +1027,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
   dragField($('tfT'), { get: () => M.t, set: (v) => setTime(v), lo: -1e9, hi: 1e9, k: () => (M.run ? (M.run.t1 - M.run.t0) / 700 : 0.05), fmt: (v) => (+v).toFixed(2) });
-  dragField($('tfK'), { get: () => M.i + 1, set: (v) => hasTicks() && gotoTick(Math.round(v) - 1), lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)) });
+  dragField($('tfK'), {
+    get: () => (hasTicks() ? M.i + 1 : sampleIdx(M.t) + 1),
+    set: (v) => { if (hasTicks()) gotoTick(Math.round(v) - 1); else if (signalsOnly() && sampleN()) setTime(store.sig.t[clamp(Math.round(v) - 1, 0, sampleN() - 1)]); },
+    lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)),
+  });
   new ResizeObserver(() => { if (M.run) { renderRuler(); renderMarkers(); renderLanes(); syncTime(); } }).observe($('overlay'));
 
   // the splitter between the outliner and the properties
@@ -981,7 +1050,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('readout').textContent = c ? `${c.axes[0]} ${fx(c.v[0])}  ${c.axes[1]} ${fx(c.v[1])} m  ${M.frame}${c.note ? ' · ' + c.note : ''}` : `x —  y — m  ${M.frame}`;
   });
   stage.addEventListener('pointerleave', () => { $('readout').textContent = 'x —  y — m'; });
-  new ResizeObserver(() => { adapter.resize(); updateScale(); }).observe(stage);
+  new ResizeObserver(() => { adapter.resize(); updateScale(); if (M.run) renderSignals(); }).observe(stage);
 
   function help() {
     if (document.querySelector('.help')) return;
@@ -1097,6 +1166,7 @@ const TEMPLATE = `
     <svg class="gizmo" id="gizmo" viewBox="0 0 56 56" aria-hidden="true"></svg>
     <div class="vcorner"><div class="scale" id="scale" hidden></div><div class="legend" id="legend"></div></div>
     <div class="readout" id="readout">x —  y — m</div>
+    <div class="sigview" id="sigview" hidden aria-label="Signals"></div>
   </main>
 
   <aside class="right region" id="insp">
