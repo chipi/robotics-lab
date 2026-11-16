@@ -109,20 +109,22 @@ class Recorder:
         self._tick = None             # the tick being written in parts: {"t", "src", "next"}
         self._w = Writer(self._fh, use_chunking=False, compression=CompressionType.NONE)
         self._w.start(profile=PROFILE, library=f"miniview {VERSION}")
-        self._ch = {}
-        for topic, name in wire.CHANNELS.items():
-            enc, data = schemas.schema_for(name)
-            sid = self._w.register_schema(name, enc, data)
-            self._ch[topic] = self._w.register_channel(topic, "protobuf" if topic in wire.PROTO else "json", sid)
+        # A channel is written with its first message: a run without raw frames has no /depth/raw, and Lichtblick opens no
+        # empty Image panel for it.
+        self._ch, self._sid = {}, {}
         self.sigs = wire.signal_set(run)
         if self.sigs:
             sid = self._w.register_schema("miniview.Signals", "protobuf", self.sigs.descriptor_set)
             self._ch[self.sigs.topic] = self._w.register_channel(self.sigs.topic, "protobuf", sid)
         self._emit(0.0, "run", run)
 
+    def channel(self, topic: str) -> int:
+        """The channel id of one of wire.CHANNELS' topics, registered (with its schema) on first use."""
+        return _channel(self._w, self._ch, self._sid, topic)
+
     def _write(self, messages) -> None:
         for topic, ns, pub, data in messages:
-            self._w.add_message(self._ch[topic], ns, data, pub)
+            self._w.add_message(self.channel(topic), ns, data, pub)
 
     def _emit(self, t: float, kind: str, p: dict) -> None:
         self._write(wire.to_messages(t, kind, p, self.base_ns, self.sigs))
@@ -260,6 +262,15 @@ def _scan_end(fh, size: int) -> int:
     return pos
 
 
+def _channel(w: Writer, by_topic: dict, schema_ids: dict, topic: str) -> int:
+    if topic not in by_topic:
+        name = wire.CHANNELS[topic]
+        if name not in schema_ids:
+            schema_ids[name] = w.register_schema(name, *schemas.schema_for(name))
+        by_topic[topic] = w.register_channel(topic, "protobuf" if topic in wire.PROTO else "json", schema_ids[name])
+    return by_topic[topic]
+
+
 def compact(run_dir: Path, stopped: bool = False, require_end: bool = False) -> Path:
     """run.live.mcap -> run.mcap (zstd chunks, message indexes, summary), streamed: the live file is read record by
     record, never held whole. With `stopped`, a run with no `end` gets one with the verdict `stopped` (a writer that
@@ -300,7 +311,7 @@ def compact(run_dir: Path, stopped: bool = False, require_end: bool = False) -> 
             raise ValueError(f"{run_dir.name}: the file has no end record; `miniview repair` closes it as stopped")
         if stopped and not has_end and base is not None:
             for topic, ns, pub, data in wire.to_messages((last_ns - base) / 1e9, "end", {"verdict": "stopped"}, base):
-                w.add_message(ch_by_topic[topic], ns, data, pub)
+                w.add_message(_channel(w, ch_by_topic, {}, topic), ns, data, pub)
         w.finish()
     os.replace(tmp, final)
     live.unlink()

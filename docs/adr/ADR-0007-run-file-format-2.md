@@ -121,6 +121,13 @@ which the service treats as unknown: the file's growth decides whether the run i
   points are now `{x, y}` objects and a test keeps the schemas inside what Lichtblick reads. That
   the poses, map and depth draw in its 3D panel is not verified: switching the topics on was not
   scripted successfully.
+- **A channel is written with its first message** (2026-11-16). With every channel declared at the
+  start, a run without raw depth frames had an empty `/depth/raw`: the Image panel of Lichtblick's
+  default layout (there with or without one) took it as its topic, and the compatibility check's 3D
+  panel no longer listed its four topics (why is not established). A file has a channel only for a
+  topic it holds; `compact` adds the `end` channel itself when it closes a stopped run. Runs written
+  before keep their empty channels; the duck and NXT runs in the data folder open in Lichtblick with
+  only the transform-topics note.
 
 ## Compatibility
 

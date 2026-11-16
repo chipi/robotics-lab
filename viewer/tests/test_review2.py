@@ -231,7 +231,7 @@ if want('B2'):
         msgs = wire.to_messages(1.1, "tick", tick(1.1, 0.1)[2], base_ns)
         world = wire.to_messages(1.1, "world", {"grid": {"res": 0.1, "origin": [0, 0], "w": 2, "h": 2, "cells": "..##"}, "obstacles": [], "drops": []}, base_ns)
         for topic, ns, pub, dat in msgs[:1] + world + msgs[1:]:
-            rec._w.add_message(rec._ch[topic], ns, dat, pub)
+            rec._w.add_message(rec.channel(topic), ns, dat, pub)
         rec.flush()
         rec.add(*tick(1.2, 0.2))
         ld = cat.get("duck/room/b2")

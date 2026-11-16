@@ -82,13 +82,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("Foxglove schemas on the standard shapes, miniview.* on ours",
           topics["/belief/pose"] == "foxglove.PoseInFrame" and topics["/truth/pose"] == "foxglove.PoseInFrame"
           and topics["/tf"] == "foxglove.FrameTransform" and topics["/map"] == "foxglove.Grid"
-          and topics["/depth"] == "foxglove.PointCloud" and topics["/miniview/event"] == "miniview.event"
-          and all(topics[f"/miniview/{k}"] == f"miniview.{k}" for k in ("run", "segment", "plan", "command", "tilt",
-                                                                      "memory", "tick_extra", "end")), topics)
+          and topics["/depth"] == "foxglove.PointCloud" and all(topics[t] == wire.CHANNELS[t] for t in topics), topics)
+    # explore9 has no raw frames: an empty /depth/raw channel made Lichtblick open an Image panel waiting for it (2026-11-16)
+    check("a channel only for a topic the run wrote: no empty channels", set(topics) == {m[0] for m in msgs}
+          and "/depth/raw" not in topics, sorted(set(topics) - {m[0] for m in msgs}))
     with open(final, "rb") as fh:
         enc = {ch.topic: (ch.message_encoding, summ.schemas[ch.schema_id].encoding) for ch in make_reader(fh).get_summary().channels.values()}
     check("the Foxglove channels are protobuf with a FileDescriptorSet, ours are JSON with a JSON schema",
-          all(enc[t] == ("protobuf", "protobuf") for t in wire.PROTO) and all(v == ("json", "jsonschema") for t, v in enc.items() if t not in wire.PROTO), enc)
+          all(v == ("protobuf", "protobuf") for t, v in enc.items() if t in wire.PROTO) and all(v == ("json", "jsonschema") for t, v in enc.items() if t not in wire.PROTO), enc)
     from google.protobuf import descriptor_pb2
     fds = descriptor_pb2.FileDescriptorSet.FromString(next(s_.data for s_ in summ.schemas.values() if s_.name == "foxglove.PoseInFrame"))
     check("the descriptor set carries the message and what it imports (Pose, Vector3, Quaternion, Timestamp)",
@@ -224,13 +225,13 @@ with tempfile.TemporaryDirectory() as tmp:
     w = rec._w
     pre = (d / "run.live.mcap").stat().st_size
     for topic, ns, pub, data_ in mcapio.wire.to_messages(1.2, "tick", tick(1.2, 0.06)[2], T0_NS)[:2]:
-        w.add_message(rec._ch[topic], ns, data_, pub)
+        w.add_message(rec.channel(topic), ns, data_, pub)
     rec.flush()
     check("a tick without its last message is not emitted", f.poll() == [])
 
     # ---- compaction while a reader follows: nothing twice, nothing lost --------------------------------------------
     for topic, ns, pub, data_ in mcapio.wire.to_messages(1.2, "tick", tick(1.2, 0.06)[2], T0_NS)[2:]:      # the writer finishes the tick
-        w.add_message(rec._ch[topic], ns, data_, pub)
+        w.add_message(rec.channel(topic), ns, data_, pub)
     rec.last_t = 1.2
     rec.flush()
     rec.add(*tick(1.3, 0.09))

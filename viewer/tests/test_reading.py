@@ -18,7 +18,7 @@ HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
 
 def inject(rec, topic, obj, t=1.0, raw=None):
     """A message written straight to the file, as a buggy writer could."""
-    rec._w.add_message(rec._ch[topic], T0_NS + round(t * 1e9), raw if raw is not None else json.dumps(obj).encode(),
+    rec._w.add_message(rec.channel(topic), T0_NS + round(t * 1e9), raw if raw is not None else json.dumps(obj).encode(),
                        T0_NS + round(t * 1e9))
     rec.flush()
 
