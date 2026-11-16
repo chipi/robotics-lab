@@ -77,8 +77,9 @@ with tempfile.TemporaryDirectory() as tmp:
     q = full[1][2]
     check("a frame that was not paired has none of that: no state time, no derived points", "state_t_ns" not in q and "derived" not in q and q["seq"] == 8, q)
     view = [x for x in Follower(run_dir).poll() if x[1] == "depth_frame"][0][2]
-    check("the viewer's reading keeps the frame and its pairing, not the state and the derived points (they are the replay's)",
-          view["distance_mm"] == DISTANCES and view["pair_dt_ms"] == -6.5 and not ({"state", "derived", "pose", "t_src"} & set(view)), sorted(view))
+    check("the viewer's reading keeps the frame, its pairing, and the paired state and pose (the eye, RFC-0013), not the derived points (they are the replay's)",
+          view["distance_mm"] == DISTANCES and view["pair_dt_ms"] == -6.5 and view["state"] == STATE and view["pose"] == [1.0, 2.0, 0.5]
+          and not ({"derived", "t_src"} & set(view)), sorted(view))
     ev = [x for x in Follower(run_dir).poll() if x[1] == "event"][0][2]
     check("an event keeps its decision (rule, reason, values) in the viewer's reading too", ev["decision"] == DECISION, ev)
 
@@ -131,8 +132,9 @@ with tempfile.TemporaryDirectory() as tmp:
     httpd, base = serve(cat, follow=False)
     try:
         code, body, _ = get(base, "/api/v1/runs/duck/room/r1/sensor?t=1.2")
-        check("GET .../sensor?t= answers the frame at t with its pairing", code == 200 and body["t"] == 1.05 and body["distance_mm"] == DISTANCES
-              and body["pair_dt_ms"] == -6.5 and body["index"] == 0 and body["n"] == 2 and "state" not in body, (code, str(body)[:200]))
+        check("GET .../sensor?t= answers the frame at t with its pairing, the paired state and the pose (not the derived points)", code == 200 and body["t"] == 1.05
+              and body["distance_mm"] == DISTANCES and body["pair_dt_ms"] == -6.5 and body["index"] == 0 and body["n"] == 2
+              and body["state"] == STATE and body["pose"] == [1.0, 2.0, 0.5] and "derived" not in body, (code, str(body)[:200]))
         code2, body2, _ = get(base, "/api/v1/runs/duck/room/r1/sensor")
         check("without t it is the last frame", code2 == 200 and body2["index"] == 1, code2)
         code3, body3, _ = get(base, "/api/v1/runs/duck/room/r1/sensor?t=abc")

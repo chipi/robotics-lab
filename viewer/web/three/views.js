@@ -12,9 +12,15 @@ export const VIEWS = {
   left:  { dir: [0, 1, 0],  up: [0, 0, 1], h: 'x', hs: -1, v: 'z', note: 'from +y, x left, z up' },
   right: { dir: [0, -1, 0], up: [0, 0, 1], h: 'x', hs: 1,  v: 'z', note: 'from -y, x right, z up' },
   '3d':  { note: 'perspective, drag to orbit' },
+  eye:   { note: 'the depth sensor, where it was' },
+  chase: { note: 'behind and above the robot' },
 };
+// the perspective cameras: the orbiting 3D view, and the two placed from the run (RFC-0013) by the page at each draw
+const PERSP = { '3d': 45, eye: 75, chase: 55 };
+export const EYE_FOV = PERSP.eye;
 export const LAYOUTS = {
   three: [['top', [0, 0, 0.5, 1]], ['front', [0.5, 0, 0.5, 0.5]], ['right', [0.5, 0.5, 0.5, 0.5]]],
+  watch: [['eye', [0, 0, 1, 1]], ['top', [0.012, 0.5, 0.27, 0.42]]],        // the eye, the top view inset
 };
 
 const rng = (b, a) => a === 'x' ? [b[0], b[1]] : a === 'y' ? [b[2], b[3]] : ZR;
@@ -39,7 +45,7 @@ function arrow(axis, hex) {
 // The coordinate system of one view: metre grid in the plane the view shows, numbered along the
 // bottom and left screen edges, origin axes x red / y green / z blue, labelled.
 function buildFrame(name, bounds) {
-  const g = new THREE.Group(), v = VIEWS[name], is3 = name === '3d';
+  const g = new THREE.Group(), v = VIEWS[name], is3 = name in PERSP;
   const [ha, va] = is3 ? ['x', 'y'] : [v.h, v.v], hs = is3 ? 1 : v.hs;
   const [h0, h1] = rng(bounds, ha), [v0, v1] = rng(bounds, va);
   const at = (a, b) => { const p = [0, 0, 0]; p['xyz'.indexOf(ha)] = a; p['xyz'.indexOf(va)] = b; return p; };
@@ -90,11 +96,13 @@ export class Views {
     if (!LAYOUTS[this.layout]) cap.hidden = true;
     el.append(lr.domElement, cap);
     this.host.append(el);
-    const is3 = name === '3d';
-    const camera = is3 ? new THREE.PerspectiveCamera(45, 1, 0.1, 100) : new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+    const is3 = name in PERSP;
+    if (this.layout === 'watch' && rect[2] < 1) el.style.zIndex = 3;           // an inset stays over the HUD's darkness
+    const camera = is3 ? new THREE.PerspectiveCamera(PERSP[name], 1, name === '3d' ? 0.1 : 0.02, 100) : new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
     camera.up.set(...(is3 ? [0, 0, 1] : VIEWS[name].up));
     const controls = new OrbitControls(camera, el);
     controls.addEventListener('change', () => this.quiet || this.onChange());
+    if (name === 'eye' || name === 'chase') controls.enabled = false;
     if (!is3) {
       controls.enableRotate = false; controls.screenSpacePanning = true; controls.zoomToCursor = true;
       controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
@@ -113,6 +121,10 @@ export class Views {
 
   resetCamera(s) {
     const b = this.bounds, v = VIEWS[s.name], cam = s.camera;
+    if (s.name === 'eye' || s.name === 'chase') {
+      cam.aspect = s.w / s.h; cam.updateProjectionMatrix();                      // where it stands is the page's, at each draw
+      return;
+    }
     if (s.is3) {
       // 9.4 m of height fill the pane from 11.35 m away; 11 m leave the grid numbers clear of the legend and the readout
       const k = 11 / 9.4;
@@ -151,6 +163,24 @@ export class Views {
     const c = s.camera;
     if (!s.is3) return (c.right - c.left) / c.zoom / s.w;
     return c.position.distanceTo(s.controls.target) * 2 * Math.tan(c.fov * Math.PI / 360) / s.h;
+  }
+
+  // put a placed camera (eye, chase) where the page says: position, and the sensor's axes (ahead, up) or a point to look at
+  place(name, { pos, forward, up, target }) {
+    const s = this.slots.find((q) => q.name === name);
+    if (!s) return null;
+    const c = s.camera;
+    c.position.set(...pos);
+    c.up.set(...(up || [0, 0, 1]));
+    c.lookAt(...(target || pos.map((v, k) => v + forward[k])));
+    c.updateMatrixWorld(true);
+    return s;
+  }
+
+  // the placed camera's field of view and its pane's height in pixels, for what is drawn over it
+  eyeView() {
+    const s = this.slots.find((q) => q.name === 'eye');
+    return s && s.h ? { fov: s.camera.fov, h: s.h } : null;
   }
 
   fit() {

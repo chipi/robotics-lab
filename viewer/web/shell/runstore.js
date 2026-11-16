@@ -253,12 +253,15 @@ export class RunStore {
       this.onAppend({ i0: 0, i1: 0, plans: [this.planCount], worlds: [] });
       this.planCount++;
       this._count('plan.path');
+      const gs = r.streams.find((x) => x.id === 'world.gaps');                      // the gaps need a plan and a world: the first plan brings the worlds already there
+      if (gs && !gs.count && this.worldCount) { gs.count = this.worldCount; gs.missing = false; delete gs.why; }
     } else if (kind === 'world') {
       this._span(d.t);
       fr.worlds[this.worldCount] = { t: d.t, grid: d.grid, obstacles: d.obstacles, drops: d.drops };
       this.onAppend({ i0: 0, i1: 0, plans: [], worlds: [this.worldCount] });
       this.worldCount++;
       this._count('world.grid');
+      if (this.planCount) this._count('world.gaps');
       for (const [id, list] of [['world.obstacles', d.obstacles], ['world.drops', d.drops]]) {
         const s = r.streams.find((x) => x.id === id);
         if (s) { s.count = list.length; s.missing = !list.length; }

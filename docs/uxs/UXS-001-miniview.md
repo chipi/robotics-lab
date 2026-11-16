@@ -220,6 +220,29 @@ room ("Expand").
 This places RFC-0011's Robot view as the Explore tab's first kind, not as a view mode beside Top, 3D
 and Map.
 
+## The robot's eye, what it decided, and the watch page (RFC-0013 prototype, operator 2026-11-16)
+
+Prototype for review, on the three.js page only.
+
+- **Two more views** in the layout switch, beside Top, Three and 3D, both in the world frame:
+  **Eye**, a camera at the depth sensor's pose at the playhead (recorded with the depth frame; for a
+  run without it, estimated from the trunk's pose and a nominal mount, and the HUD says which),
+  darkened outside the sensor's 45 degree cone; and **Chase**, behind and above the robot,
+  following it.
+- **The eye's HUD** (over the Eye view): pace (the tick's command), what the newest event decided
+  (its rule and reason), the numbers that decision compared, this frame's returns by kind and the
+  8 x 8 distances. Only recorded values or values computed from them.
+- **Gaps** (stream `world.gaps`, in the World model group): the unknown cells of the map in force within
+  0.45 m of the plan in force, tinted orange with a hatch; the other unknown cells as a faint fog.
+  **Real hazards over the model** (an overlay, off by default) draws the scene's hazards again as a
+  dashed outline over everything, so what is there and not in the model reads.
+- **Decided**, a fourth tab of the right panel: the run's events with their rule, reason and values,
+  the one at or before the playhead marked, a click seeks; stops and the judge's invariant and verdict
+  are emphasised.
+- **Watch** (`/watch/<robot>/<scene>/<run|latest>`): one run for watching: the eye with the top view
+  inset, the decisions beside it, a timeline with the events marked; it follows a live run. A link on
+  each page opens the other at the same moment.
+
 ## Theme
 
 **Dark and light from the start** (decision D1, operator 2026-11-15): one set of colour tokens with

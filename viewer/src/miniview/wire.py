@@ -337,11 +337,12 @@ class Assembler:
                 raise ValueError("depth frame metadata outside a depth frame")
             pt, kind, d = self.pending
             self.pending = None
-            for k in ("frame_t_ns", "seq", "state_t_ns", "pair_dt_ms"):
+            # the paired state and the pose are small and the eye needs them (RFC-0013: where the sensor was); `derived` and `t_src` stay the replay's
+            for k in ("frame_t_ns", "seq", "state_t_ns", "pair_dt_ms", "state", "pose"):
                 if k in o:
                     d[k] = o[k]
             if self.keep_raw:
-                d.update({k: o[k] for k in ("t_src", "state", "pose") if k in o})
+                d.update({k: o[k] for k in ("t_src",) if k in o})
                 if "derived" in o:
                     der = o["derived"]
                     d["derived"] = {"points": [[q["x"], q["y"], q["z"], q["k"]] for q in der["points"]]}

@@ -18,6 +18,7 @@
     GET /api/v1/robots/{robot}                        its description: links, visuals (mesh URLs), joints from the root out
         .../meshes/{file}.stl                         a mesh of the description
     GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
+    GET /watch/{robot}/{scene}/{run|latest}           the watch page (RFC-0013): one run, the robot's eye, live while written
     GET /api/v1/render                                the render service's engines (MINIVIEW_RENDER), or {"available": false, "why"}
     POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
     GET /api/v1/videos/{id}  and  .../file            the job's progress; the finished video (the render service's, passed through)
@@ -249,6 +250,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(302, b"", "text/plain", {"Location": "/web/three/"})
         elif parts[0] == "web":
             self._static(parts[1:])
+        elif parts[0] == "watch":
+            self._watch(parts[1:])
         elif parts[:2] == ["api", "v1"]:
             self._api(parts[2:], q)
         else:
@@ -270,6 +273,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._error(500, f"internal error (id {eid})", id=eid)
             except OSError:
                 self.close_connection = True
+
+    def _watch(self, rest: list) -> None:
+        """/watch/<robot>/<scene>/<run> and .../latest (RFC-0013): the watch page for one run. `latest` is the scene's newest run; the page
+        resolves it itself (and goes on to a newer one), here it only has to exist."""
+        if len(rest) != 3:
+            raise HttpError(404, "not found")
+        robot, scene, run = rest
+        try:
+            key = keys.make_key(robot, scene, run)
+        except ValueError as e:
+            raise HttpError(400, str(e)) from None
+        if run == "latest":
+            if not self.catalog.list_runs(robot, scene):
+                raise HttpError(404, f"no run of {robot}/{scene} yet")
+        elif self.catalog.get(key) is None:
+            raise HttpError(404, f"no run {key!r}")
+        self._file(WEB / "three" / "watch.html", "text/html", "no-cache", {"Content-Security-Policy": CSP})
 
     def _static(self, rest: list) -> None:
         p = (WEB / "/".join(rest)).resolve()

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- served at /watch/<robot>/<scene>/<run|latest> (RFC-0013): the base keeps the page's own files under /web/three/; app.js reads the run from the path -->
+<base href="/web/three/">
+<title>miniview - watch</title>
+<link rel="stylesheet" href="../fonts/fonts.css">
+<link rel="stylesheet" href="../shell/shell.css">
+<script type="importmap">
+{"imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/"
+}}
+</script>
+</head>
+<body>
+<script type="module" src="app.js"></script>
+</body>
+</html>

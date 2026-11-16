@@ -4,12 +4,15 @@ import { createShell } from '../shell/shell.js';
 import { Views } from './views.js';
 import { buildScene, buildRun, setPalette } from './build.js';
 import { createBody } from '../shell/robotbody.js';
+import { axes as sensorAxes } from '../shell/eye.js';
 
 // One three.js layer bit per drawable stream: a camera shows a stream only when its layer is on,
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model'];
+  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
+// what the eye does not draw: the robot itself, whose body the sensor sits in
+const NOT_IN_EYE = new Set(['body.model', 'belief.pose', 'truth.pose', 'rel.belief_truth']);
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
@@ -99,6 +102,21 @@ function placeBody() {
   body.pose(S.joints());
 }
 
+// ---- the placed cameras (RFC-0013): the eye at the sensor's pose at the playhead, the chase camera behind the robot -------------------
+let eyeAt = null;
+function placeCams() {
+  if (!views.slots.some((s) => s.name === 'eye' || s.name === 'chase')) return;
+  const e = S.eyePose();
+  if (e && !e.pending) {                                         // pending: the frame is being asked for, the camera stays where it was
+    eyeAt = e;
+    const a = sensorAxes(e.quat);
+    views.place('eye', { pos: e.pos, forward: a.forward, up: a.up });
+  }
+  // the robot where the truth had it, else where it believed it was (in the world frame), as the Robot layer stands it
+  const i = M.i, P = RW.tpose && fr.truth[i] ? RW.tpose : RW.pose, x = P[i * 3], y = P[i * 3 + 1], yaw = P[i * 3 + 2], c = Math.cos(yaw), s = Math.sin(yaw);
+  views.place('chase', { pos: [x - 0.9 * c, y - 0.9 * s, 0.55], target: [x + 0.35 * c, y + 0.35 * s, 0.08] });
+}
+
 function applyVis() {
   const w = M.frame === 'world';
   if (sceneG) {
@@ -157,8 +175,9 @@ const adapter = {
     views.layerMask = (view) => {
       let m = 1;
       for (const id of DRAWN) {
+        if (view === 'eye' && NOT_IN_EYE.has(id)) continue;
         const fill = id.startsWith('fill.');     // the faint faces of boxes and pits: from above and in 3D, outlines only in a side view
-        if (fill ? (view === 'top' || view === '3d') && S.shown(id === 'fill.boxes' ? 'scene.boxes' : 'scene.hazards', view) : S.shown(id, view)) m |= 1 << LAYER[id];
+        if (fill ? (view === 'top' || view === '3d' || view === 'eye' || view === 'chase') && S.shown(id === 'fill.boxes' ? 'scene.boxes' : 'scene.hazards', view) : S.shown(id, view)) m |= 1 << LAYER[id];
       }
       return m;
     };
@@ -191,9 +210,10 @@ const adapter = {
   draw(sync = false) {
     if (!fr || !RW) return;
     RW.update(M.i, M.t, S.cfg, S.size); RM.update(M.i, M.t, S.cfg, S.size);
-    applyVis(); placeMarker(); placeBody();
+    applyVis(); placeMarker(); placeBody(); placeCams();
     views.coords = M.ov.coords;
     views.render();
+    S.drawn?.();
     if (sync) { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); }
   },
   settled: () => new Promise((res) => requestAnimationFrame(() => res())),
@@ -214,6 +234,17 @@ const adapter = {
     joint_upper_quat: body.links.upper ? [body.links.upper.quaternion.w, body.links.upper.quaternion.y].map((v) => +v.toFixed(5)) : null,
     // per marker: [fill shown, outline shown]
     cylinders: Object.fromEntries([['truth', RW?.obj['truth.pose']], ['belief', R()?.obj['belief.pose']]].map(([k, m]) => [k, m ? [m.children[0].visible, m.children[1].visible] : null])) } : null),
+  // the eye's camera as drawn (RFC-0013): where it is, which way it looks, which way is up (world frame), and which pose it was placed from
+  eye: () => {
+    const s = views.slots.find((q) => q.name === 'eye');
+    if (!s) return null;
+    const c = s.camera, f = new THREE.Vector3(), u = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion), r5 = (v) => v.map((n) => +n.toFixed(5));
+    c.getWorldDirection(f);
+    return { source: eyeAt?.source ?? null, frame_t: eyeAt?.t ?? null, position: r5(c.position.toArray()), forward: r5(f.toArray()), up: r5(u.toArray()), fov: c.fov };
+  },
+  eyeView: () => views.eyeView(),
+  // the gaps as drawn at the playhead: the unknown cells near the plan, and the other unknown cells
+  gaps: () => (RW ? { ...RW.gapCount, visible: RW.obj['world.gaps'].visible && S.shown('world.gaps') } : null),
   cursor: (x, y) => views.cursorAt(x, y),
   scale: () => views.scale(),
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,
@@ -221,5 +252,5 @@ const adapter = {
   gizmo: () => views.axes3d(),
 };
 
-createShell(adapter, { title: 'miniview - three.js' });
+createShell(adapter, { title: 'miniview - three.js', eye: true, watch: location.pathname.startsWith('/watch/') });
 

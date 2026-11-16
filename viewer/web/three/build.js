@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { gapCells } from '../shell/gaps.js';
 
 export const C = {
   belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
   occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
-  boxFill: [0x8a8a96, 0.16],
+  boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0,
 };
 
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
@@ -40,6 +41,10 @@ uniform vec2 res; uniform float width;
 varying float vD;
 void main() {
   vec4 A = projectionMatrix * modelViewMatrix * vec4(position, 1.0), B = projectionMatrix * modelViewMatrix * vec4(pb, 1.0);
+  // a perspective camera (the eye) stands where lines begin: the part of a segment behind it is cut at the near side, not projected
+  if (A.w < 0.02 && B.w < 0.02) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  if (A.w < 0.02) A = mix(A, B, (0.02 - A.w) / (B.w - A.w));
+  if (B.w < 0.02) B = mix(B, A, (0.02 - B.w) / (A.w - B.w));
   vec2 sa = A.xy / A.w * res * 0.5, sb = B.xy / B.w * res * 0.5, d = sb - sa;
   float L = length(d); d = L > 1e-4 ? d / L : vec2(1.0, 0.0);
   vec2 off = (vec2(-d.y, d.x) * corner.y + d * (corner.x * 2.0 - 1.0)) * width * 0.5;
@@ -197,9 +202,18 @@ export function buildScene(sc, cut = 0.5) {
   const hf = new THREE.Mesh(fg, fillMat(C.hazard, 0.12));
   hf.renderOrder = -10; hf.frustumCulled = false;
   hazards.add(hf);
-  g.add(boxes, hazards);
+  // the real hazards' rims again, over the robot's model (RFC-0013): drawn without depth, after the layers that tint the floor
+  const over = new THREE.Group();
+  for (const h of sc.hazards) {
+    const t = new ThickLine(C.hazard, 2.5, 0.07, 0.05), r = h.corners;
+    t.material.depthTest = false; t.renderOrder = 8;
+    t.set(new Float32Array([...r, r[0]].flatMap(([x, y]) => [x, y, 0.004])), r.length + 1);
+    t.range(0, r.length + 1);
+    over.add(t);
+  }
+  g.add(boxes, hazards, over);
   g.fills = { 'fill.boxes': [boxes.children[0], boxes.children[1]], 'fill.hazards': [hf] };
-  g.parts = { 'scene.boxes': boxes, 'scene.hazards': hazards };
+  g.parts = { 'scene.boxes': boxes, 'scene.hazards': hazards, 'hazards.top': over };
   return g;
 }
 
@@ -316,6 +330,35 @@ export function buildRun(run, fr, world) {
   cells.userData.pick = (hit) => { const q = hit.faceIndex >> 1; return { kind: 'cell', index: quadK[q], world: quadWorld[q] }; };
   const obst = add('world.obstacles', pointsObj(oG.a, null, 5)), drops = add('world.drops', pointsObj(dG.a, null, 6));
   obst.material.color.set(C.obst); drops.material.color.set(C.hazard);
+
+  // the gaps (RFC-0013 2.1): the unknown cells of the map in force within the drop margin of the plan in force, tinted and hatched; the other
+  // unknown cells as a faint fog. Made when the map or the plan in force changes, not at each tick.
+  const gaps = add('world.gaps', new THREE.Group());
+  const flat = (hex, opacity) => { const m = new THREE.Mesh(new THREE.BufferGeometry(), fillMat(hex, opacity)); m.renderOrder = -9; m.frustumCulled = false; return m; };
+  const gFog = flat(C.fog, 0.1), gTint = flat(C.gap, 0.3);
+  const gHatch = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat(C.gap));
+  gHatch.frustumCulled = false; gHatch.renderOrder = -8;
+  gaps.add(gFog, gTint, gHatch);
+  let gapKey = '';
+  L.gapCount = { gap: 0, fog: 0 };
+  const setGaps = (wi, pi) => {
+    const w = fr.worlds[wi], p = fr.plans[pi];
+    if (!w || !p) { gapKey = ''; for (const o of [gFog, gTint, gHatch]) o.visible = false; L.gapCount = { gap: 0, fog: 0 }; return; }
+    const key = wi + ':' + pi;
+    if (key === gapKey) return;
+    gapKey = key;
+    const { gap, fog } = gapCells(w.grid, p.path), f = tf(w.t), g = w.grid;
+    const quad = (k, z) => {
+      const i = k % g.w, j = (k / g.w) | 0, x0 = g.origin[0] + i * g.res, y0 = g.origin[1] + j * g.res;
+      return [[x0, y0], [x0 + g.res, y0], [x0 + g.res, y0 + g.res], [x0, y0 + g.res]].map(([x, y]) => [...f(x, y).slice(0, 2), z]);
+    };
+    const tris = (ks, z) => ks.flatMap((k) => { const q = quad(k, z); return [0, 1, 2, 0, 2, 3].flatMap((m) => q[m]); });
+    gFog.geometry.setAttribute('position', new THREE.Float32BufferAttribute(tris(fog, 0.0005), 3));
+    gTint.geometry.setAttribute('position', new THREE.Float32BufferAttribute(tris(gap, 0.0015), 3));
+    gHatch.geometry.setAttribute('position', new THREE.Float32BufferAttribute(gap.flatMap((k) => { const q = quad(k, 0.003); return [...q[0], ...q[2]]; }), 3));
+    for (const o of [gFog, gTint, gHatch]) { o.geometry.boundingSphere = null; o.visible = true; }
+    L.gapCount = { gap: gap.length, fog: fog.length };
+  };
 
   const extendTicks = (a, b) => {
     posG.need(b); trkG.need(b); maskG.need(b + 1);
@@ -476,6 +519,7 @@ export function buildRun(run, fr, world) {
     obst.geometry.setDrawRange(...(wi >= 0 && oRange[wi] ? oRange[wi] : none));
     drops.geometry.setDrawRange(...(wi >= 0 && dRange[wi] ? dRange[wi] : none));
     obst.material.size = size('world.obstacles'); drops.material.size = size('world.drops');
+    setGaps(wi, pi);
   };
   L.append(fullRange(fr));
   return L;

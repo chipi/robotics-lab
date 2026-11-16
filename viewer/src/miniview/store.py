@@ -219,6 +219,7 @@ def streams(f: dict, events: list, counts: dict, run: dict | None = None, sig: d
         s("world.grid", "World model", "map grid", "map", len(f["worlds"])),
         s("world.obstacles", "World model", "obstacle memory", "map", len(last["obstacles"])),
         s("world.drops", "World model", "drops", "map", len(last["drops"]), why="no drop seen"),
+        s("world.gaps", "World model", "gaps", "map", len(f["worlds"]) if f["plans"] else 0, why="needs a world model and a plan"),
         s("plan.path", "Plan", "path", "map", len(f["plans"])),
         s("events", "Events", "events", "time", len(events), why="no events"),
     ]

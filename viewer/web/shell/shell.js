@@ -24,6 +24,7 @@ import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { chainsOf } from './robot.js';
+import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG } from './eye.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -48,7 +49,10 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 const VIEW_ALIAS = { side: 'right', T: 'top', F: 'front', S: 'right', '3D': '3d' };
 const VIEWS = ['top', 'front', 'back', 'left', 'right', 'three', '3d'];
+// the three.js page's cameras in the world frame (RFC-0013): the sensor's eye, a camera behind the robot, and the watch layout (eye with the top view inset)
+const EYE_VIEWS = ['eye', 'chase', 'watch'];
 const VIEW_NOTE = {
+  eye: 'Eye · what the depth sensor saw, from where it was', chase: 'Chase · behind and above the robot', watch: 'Watch · the eye, the top view inset',
   top: 'Top · x right, y up', front: 'Front · from +x, y right, z up', back: 'Back · from -x, y left, z up',
   left: 'Left · from +y, x left, z up', right: 'Side · from -y, x right, z up', '3d': '3D · perspective, drag to orbit',
   three: 'Three views · top, front and side',
@@ -104,6 +108,7 @@ function styleOf(id) {
   if (id === 'world.grid') return c('c-occ', 'grid');
   if (id === 'world.obstacles') return c('c-obst', 'points');
   if (id === 'world.drops') return c('c-drop', 'points');
+  if (id === 'world.gaps') return c('c-gap', 'grid');
   if (id === 'plan.path') return c('c-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
@@ -176,16 +181,19 @@ const robotNames = () => (robotList ||= fetch(`${API}robots`).then((r) => (r.ok 
 const robotDesc = async (name) => ((await robotNames()).has(name)
   ? (robotCache[name] ||= fetch(`${API}robots/${encodeURIComponent(name)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)) : null);
 
-export function createShell(adapter, { title = 'miniview' } = {}) {
+// options: `eye` turns on the eye, chase and watch views (RFC-0013) for an adapter that has the cameras; `watch` is the watch page (the run
+// named by the path /watch/<robot>/<scene>/<run|latest>, the eye with the top view inset, the decisions beside it)
+export function createShell(adapter, { title = 'miniview', eye = false, watch = false } = {}) {
   document.title = title;
   // ---- the model ---------------------------------------------------------------------------------
   const M = {
     index: null, sceneId: null, runId: null, scene: null, run: null, fr: null, pres: null, bw: [],
     t: 0, i: 0, view: 'top', frame: 'world', on: {}, vv: {}, modes: {}, rel: { belief_truth: true, depth_pose: false },
-    size: {}, sel: null, selNode: null, ov: { coords: true, gizmo: true, legend: true }, open: {}, query: '', hideMissing: false,
-    tab: 'moment', secOpen: {}, kinds: {}, rows: true, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true,
-    angles: prefs().angles !== false, robot: null,
+    size: {}, sel: null, selNode: null, ov: { coords: !watch, gizmo: true, legend: true, hazards_top: watch }, open: {}, query: '', hideMissing: false,
+    tab: watch ? 'decided' : 'moment', secOpen: {}, kinds: {}, rows: !watch, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true,
+    angles: prefs().angles !== false, robot: null, watch,
   };
+  const knownViews = () => (eye ? [...VIEWS, ...EYE_VIEWS] : VIEWS);
   let T = { tree: [], nodes: {}, parents: {}, order: [], leaves: () => [] };
   const sceneCache = {};
   let busy = 0, laidOut = false;
@@ -218,6 +226,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // a stream shows when it is in the run and it, its parent and its groups are on, here and (given a view) in that view
   function shown(id, view) {
     if (id === 'rel.belief_truth') return M.rel.belief_truth && M.frame === 'world' && shown('belief.pose', view) && shown('truth.pose', view);
+    // the scene's real hazards drawn over the robot's model, so what is there and not in the model reads (RFC-0013 mockup A)
+    if (id === 'hazards.top') return M.ov.hazards_top && M.frame === 'world' && shown('scene.hazards', view);
     const s = stream(id);
     if (id === 'body.model') { if (!M.robot || !hasTicks()) return false; }      // the Robot layer: not a stream, the robot's description
     else if (!s || s.missing) return false;
@@ -279,7 +289,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       // a failed request (or one unanswered for 5 s) is asked again once the pause is over: nothing else may redraw the inspector before then
       json(`${API}runs/${key}/sensor?t=${M.t}`, { signal: AbortSignal.timeout(5000) }).then((a) => { r.fr = a; r.key = key; },
         () => { r.fr = null; r.failed = performance.now(); setTimeout(() => M.runId === key && scheduleInsp(), 550); })
-        .finally(() => { r.busy = false; if (M.runId === key) scheduleInsp(); });
+        .finally(() => { r.busy = false; if (M.runId === key) { scheduleInsp(); redrawEye(); } });
     }
     return f && r.key === M.runId && (fresh || !strict) ? f : null;
   }
@@ -311,6 +321,93 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       + kv('Raw frame', `${f.index + 1} of ${f.n}`) + kv('Recorded at', fx(f.t, 3), 's')
       + kv('Valid zones', `${ok.length} of ${f.rows * f.cols}`) + kv('Nearest valid', ok.length ? String(Math.min(...ok)) : 'none', ok.length ? 'mm' : '', ok.length ? '' : 'na')
       + (dt != null ? kv('State minus frame', (dt > 0 ? '+' : '') + fx(dt, 1), 'ms') : kv('Paired state', f.state_t_ns != null ? 'no time to pair by' : 'none', '', 'na'));
+  }
+
+  // ---- the robot's eye (RFC-0013): where the depth sensor was at the playhead, and the HUD over what it saw ------------------
+  const eyeOn = () => eye && (M.view === 'eye' || M.view === 'watch');
+  const redrawEye = () => { if (M.run && hasTicks() && eye && (eyeOn() || M.view === 'chase')) adapter.draw(); };
+  // The sensor's pose in the world frame at the playhead: from the depth frame's recorded state and pose when it carries them
+  // (`source: 'recorded'`), else estimated from the trunk's pose at the tick and a nominal mount (`'estimated'`). {pending: true}
+  // while the frame is being asked for: the camera stays where it was rather than jump to an estimate.
+  function eyePose() {
+    if (!M.run || !hasTicks()) return null;
+    const rs = stream('sensors.raw');
+    let f = null;
+    if (rs && !rs.missing) {
+      f = rawFrame(true);
+      if (!f && performance.now() - raw.failed > 600) return { pending: true };
+    }
+    if (f?.state?.tof && f.pose) return { ...sensorFromFrame(f, epochAt(f.t).map_to_world), source: 'recorded', t: f.t };
+    const i = M.i, t3 = M.fr.truth_3d?.[i], tr = M.fr.truth?.[i];
+    let pos, quat;
+    if (tr && t3) { pos = [tr[0], tr[1], t3.z]; quat = t3.quat; }
+    else { const b = M.bw[i]; pos = [b[0], b[1], M.robot?.stand_z ?? 0.12]; quat = trunkQuat(b[2], M.fr.tilt?.[i]); }
+    return { ...sensorFromTrunk(pos, quat), source: 'estimated', t: M.fr.t[i] };
+  }
+  const sgn = (v, d = 2) => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(d);
+  const valText = (v) => (v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)));
+  // the HUD shows only recorded values or values computed from them: the tick's command, the newest event and the numbers its
+  // decision compared, this frame's returns by kind, the raw distances
+  function paintHud() {
+    const on = eyeOn() && !!M.run && hasTicks();
+    $('eyehud').hidden = $('eyecone').hidden = !on;
+    if (!on) return;
+    const m = moment(), ev = m.ev, d = ev?.decision, live = M.run.status === 'live';
+    const view = adapter.eyeView?.();
+    if (view) { const side = (view.h * Math.tan((FOV_DEG * Math.PI) / 360)) / Math.tan((view.fov * Math.PI) / 360); Object.assign($('eyecone').firstChild.style, { width: side + 'px', height: side + 'px' }); }
+    const ep = adapter.eye?.();
+    $('hudtxt').innerHTML = `<h4>${esc((M.run.robot?.name || 'robot').toUpperCase())} · EYE</h4>`
+      + `<div>${esc(M.sceneId)} · t <b>${m.t.toFixed(1)} s</b> · ${live ? (M.follow ? 'LIVE' : 'live') : 'REPLAY'}</div>`
+      + `<div><span class="hk">PACE</span><b>${fx(m.cmd?.[0], 2)} m/s</b> · turn <b>${m.cmd ? sgn(m.cmd[1]) : '—'} rad/s</b></div>`
+      + `<div><span class="hk">DOING</span>${ev ? `<b>${esc(d?.rule || ev.kind)}</b> · ${esc(d?.reason || (ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trim())} · ${Math.max(0, M.t - ev.t).toFixed(1)} s ago` : 'nothing decided yet'}</div>`
+      + (d ? `<div><span class="hk">NUMBERS</span><span class="hv">${Object.entries(d.values).map(([k, v]) => `${esc(k)} <b>${valText(v)}</b>`).join(' · ')}</span></div>` : '')
+      + `<div><span class="hk">FRAME</span>${m.depthTick < 0 ? 'no depth yet' : `floor <b>${m.cnt.f}</b> · obstacle <b>${m.cnt.o}</b> · overhead <b>${m.cnt.v}</b> · below <b>${m.cnt.b}</b>`}</div>`
+      + `<div class="src"><span class="hk">SENSOR</span>${ep ? (ep.source === 'recorded' ? 'pose recorded with the frame' : 'pose estimated: this run records no frame state') : '—'}</div>`;
+    const cv = $('hudcv'), f = rawFrame(false);
+    if (f && cv.dataset.i !== String(f.index)) {
+      cv.dataset.i = String(f.index);
+      cv.width = f.cols; cv.height = f.rows;
+      const g = cv.getContext('2d');
+      for (let k = 0; k < f.distance_mm.length; k++) {
+        const ok = RAW_VALID.includes(f.status[k]);
+        g.fillStyle = ok ? `hsl(${Math.round(240 * Math.min(Math.max(f.distance_mm[k], 0) / 4000, 1))} 65% 45%)` : '#2c2e34';
+        g.fillRect(k % f.cols, (k / f.cols) | 0, 1, 1);
+      }
+    }
+  }
+
+  // ---- what it decided (RFC-0013 2.3): the run's events with the rule and reason behind them, the one at the playhead marked ----
+  const decidedList = () => (M.run?.events || []).filter((e) => M.kinds[e.kind] !== false);
+  const isJudge = (e) => e.kind === 'invariant';
+  function decidedHtml() {
+    const evs = decidedList();
+    if (!evs.length) return '<div class="decided"><div class="dh">What it decided</div><div class="dnone">Nothing decided yet.</div></div>';
+    const rows = evs.map((e) => {
+      const d = e.decision, why = d?.reason ?? (e.text.startsWith(e.kind) ? e.text.slice(e.kind.length) : e.text).trim();
+      return `<div class="dec ${isJudge(e) ? 'judge' : isStop(e.kind) ? 'hot' : ''}" data-t="${e.t}" role="button" tabindex="0" title="Go to ${e.t.toFixed(2)} s">`
+        + `<span class="dt">${e.t.toFixed(1)}</span><div><div class="dr">${esc(d?.rule ?? e.kind)}</div>${why ? `<div class="dw">${esc(why)}</div>` : ''}`
+        + (d ? `<div class="dv">${Object.entries(d.values).map(([k, v]) => `${esc(k)} ${valText(v)}`).join(' · ')}</div>` : '') + '</div></div>';
+    }).join('');
+    const r = M.run, end = r.status !== 'live' && r.verdict ? `<div class="dec judge" data-t="${r.t1}" role="button" tabindex="0"><span class="dt">${r.t1.toFixed(1)}</span><div><div class="dr">verdict</div><div class="dw">${esc(r.verdict)}</div></div></div>` : '';
+    return `<div class="decided"><div class="dh">What it decided</div>${rows}${end}</div>`;
+  }
+  // the row of the last event at or before the playhead is marked (and kept in view on the watch page)
+  function paintDecidedNow() {
+    if (M.tab !== 'decided' || !M.run) return;
+    const rows = [...document.querySelectorAll('#inspBody .dec')];
+    let now = null;
+    for (const r of rows) if (+r.dataset.t <= M.t + 1e-9) now = r;
+    rows.forEach((r) => r.classList.toggle('now', r === now));
+    if (now && M.watch) now.scrollIntoView({ block: 'nearest' });
+  }
+  // the links between the explorer and the watch page, at this moment
+  function paintLinks() {
+    if (!M.runId) return;
+    const t = M.t.toFixed(2);
+    $('watchLink').hidden = !eye || M.watch;
+    $('exploreLink').hidden = !M.watch;
+    $('watchLink').href = `/watch/${M.runId}#${new URLSearchParams({ t })}`;
+    $('exploreLink').href = `/web/three/#${new URLSearchParams({ scene: M.sceneId, run: M.runId, view: M.view === 'watch' ? 'eye' : M.view, frame: 'world', t })}`;
   }
 
   // ---- loading (ADR-0011): the run store loads by window, then by record; the renderers take appends ----------
@@ -454,15 +551,16 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   }
   function setView(v) {
     v = VIEW_ALIAS[v] || v;
-    if (!VIEWS.includes(v)) return false;
+    if (!knownViews().includes(v)) return false;
     M.view = v;
+    if (EYE_VIEWS.includes(v)) M.frame = 'world';              // the sensor and the chase camera are placed in the world frame
     layout();
     renderChrome(); writeHash();
     if (M.run) { renderProps(); renderInsp(); if (hasTicks()) adapter.draw(); updateGizmo(); }
     return true;
   }
   function setFrame(f) {
-    M.frame = f === 'map' ? 'map' : 'world';
+    M.frame = f === 'map' && !EYE_VIEWS.includes(M.view) ? 'map' : 'world';
     layout();
     renderChrome(); writeHash();
     if (M.run) { renderTree(); renderProps(); renderInsp(); if (hasTicks()) adapter.draw(); }
@@ -516,6 +614,12 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     return { kind: M.sel.kind, index: M.sel.index, ...(M.sel.world !== undefined && { world: M.sel.world }), ...rest, position: [f3(p[0]), f3(p[1])], height: f3(d.height) };
   };
   // the left panel's sections (open or closed, what each holds) and the right panel's tab
+  // the eye's camera as drawn, and the decisions listed with the one at the playhead: what the page tests of RFC-0013 read
+  const eyeOut = () => (eyeOn() && M.run && hasTicks() ? adapter.eye?.() ?? null : null);
+  const decidedOut = () => {
+    const evs = decidedList(), now = [...evs].reverse().find((e) => e.t <= M.t + 1e-9);
+    return { n: evs.length, now: now ? now.t : null };
+  };
   const panels = () => ({ tab: M.tab, angles: M.angles, robot: M.robot ? M.robot.name : null,
     sections: T.tree.filter((n) => n.section).map((n) => ({ id: n.id, name: n.name, open: !!M.open[n.id], streams: T.leaves(n.id) })) });
   const identity = () => ({ ...panels(), run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
@@ -529,7 +633,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     return {
       ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
-      selection: selectionOut(), t_range: [M.run.t0, M.run.t1],
+      selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), decided: decidedOut(),
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
     };
   }
@@ -918,10 +1022,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   function renderInsp() {
     const el = $('inspBody');
     $('tabMoment').setAttribute('aria-selected', M.tab === 'moment'); $('tabSel').setAttribute('aria-selected', M.tab === 'sel');
-    $('tabExplore').setAttribute('aria-selected', M.tab === 'explore');
+    $('tabExplore').setAttribute('aria-selected', M.tab === 'explore'); $('tabDecided').setAttribute('aria-selected', M.tab === 'decided');
     el.hidden = M.tab === 'explore'; $('explore').hidden = M.tab !== 'explore';
     if (M.tab === 'explore') return;
     if (!M.run || (!hasTicks() && !hasSignals())) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
+    if (M.tab === 'decided') { el.innerHTML = decidedHtml(); paintDecidedNow(); return; }
     if (M.tab === 'moment' && !hasTicks()) {
       const sg = sigMoment(), ev = lastEvent();
       momentJson = { t: M.t, sample: sg ? sg.i : null, signals: sg ? sg.values : null, last_event: ev };
@@ -985,7 +1090,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';
     $('st-live').textContent = live ? (M.follow ? 'live · following' : 'live') : r ? `${r.status} · ${r.verdict}` : '';
     $('st-live').className = live ? 'live' : '';
-    $('gizmo').style.display = M.ov.gizmo && M.view !== 'three' ? '' : 'none';
+    $('gizmo').style.display = M.ov.gizmo && M.view !== 'three' && !EYE_VIEWS.includes(M.view) ? '' : 'none';
+    $('layoutSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === M.view));
+    paintLinks();
     $('legend').style.display = M.ov.legend ? '' : 'none';
     $('themeBtn').innerHTML = svgI(M.theme === 'dark' ? 'sun' : 'moon', 14);
     $('themeBtn').title = M.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme';
@@ -996,7 +1103,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const w = M.frame === 'world', sh = (id) => shown(id);
     const L = [['Belief', 'c-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'c-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'c-plan', sh('plan.path'), 1],
       ['Floor', 'c-floor', sh('sensors.depth.floor')], ['Obstacle', 'c-ob', sh('sensors.depth.obstacle')], ['Overhead', 'c-over', sh('sensors.depth.overhead')], ['Below floor', 'c-drop', sh('sensors.depth.below')],
-      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')]];
+      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')]];
     return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})"></i>${n}</span>`).join('');
   }
   const renderLegend = () => { $('legend').innerHTML = legendHtml(); };
@@ -1112,7 +1219,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : bySample ? Math.max(0, sampleIdx(M.t) + 1) : 0;
     $('kn').textContent = 'of ' + (hasTicks() ? M.run.ticks : bySample ? sampleN() : 0);
     renderBand();
-    paintAngles();
+    paintAngles(); paintDecidedNow(); paintLinks();
     if (M.tab === 'explore') explore?.pose();
     if (M.tab === 'moment' || M.sel) scheduleInsp();
   }
@@ -1177,6 +1284,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     scenes: () => scenesPage(),
     setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
+    // an overlay on or off: coords, gizmo, legend, hazards_top (the scene's real hazards drawn over the robot's model)
+    setOverlay: (name, on) => { if (!(name in M.ov)) return false; M.ov[name] = !!on; renderChrome(); if (hasTicks()) adapter.draw(); return !!on; },
     select: (sel) => select(sel),
     // the left panel (UXS-001): a section open or closed, the joints' angles shown or not
     setSection: (id, open = true) => { const k = nodeId(id); if (!T.nodes[k]?.section) return false; M.open[k] = !!open; saveOpen(); renderTree(); return M.open[k]; },
@@ -1214,6 +1323,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     api: API,
     pick: (sel) => select(sel),
     viewChanged: () => { updateGizmo(); updateScale(); },
+    // the robot's eye (RFC-0013): the sensor's pose at the playhead, and what the adapter drew; called at the end of a draw
+    eyePose,
+    drawn: () => paintHud(),
   };
 
   $('scenes-link').onclick = () => window.miniview.scenes();
@@ -1234,6 +1346,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   $('ovBtn').onclick = (e) => popover(e.currentTarget, `<h6>Overlays</h6>
     <label class="cb"><input type="checkbox" data-ov="coords" ${M.ov.coords ? 'checked' : ''}>Coordinate system and grid</label>
     <label class="cb"><input type="checkbox" data-ov="rel" ${M.rel.belief_truth ? 'checked' : ''}>Belief ↔ truth line</label>
+    <label class="cb"><input type="checkbox" data-ov="hazards_top" ${M.ov.hazards_top ? 'checked' : ''}>Real hazards over the model</label>
     <label class="cb"><input type="checkbox" data-ov="gizmo" ${M.ov.gizmo ? 'checked' : ''}>Axis gizmo</label>
     <label class="cb"><input type="checkbox" data-ov="legend" ${M.ov.legend ? 'checked' : ''}>Legend</label>${legendHidden() && M.run ? `<h6>Legend</h6><div class="lg" id="lgpop">${legendHtml()}</div>` : ''}`,
   (p) => p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
@@ -1260,6 +1373,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   $('tabMoment').onclick = () => { M.tab = 'moment'; renderInsp(); };
   $('tabSel').onclick = () => { M.tab = 'sel'; renderInsp(); };
   $('tabExplore').onclick = () => openExplore();
+  $('tabDecided').onclick = () => { M.tab = 'decided'; renderInsp(); };
+  // a decision in the list: seek to it
+  $('inspBody').addEventListener('click', (e) => { const r = e.target.closest('.dec'); if (r) setTime(+r.dataset.t); });
+  $('inspBody').addEventListener('keydown', (e) => { const r = e.target.closest('.dec'); if (r && e.key === 'Enter') setTime(+r.dataset.t); });
   $('lanesL').onclick = (e) => { const l = e.target.closest('[data-lane]'); if (l) selectNode(l.dataset.lane); };
   $('lanesBtn').onclick = () => { M.rows = !M.rows; renderLanes(); };
   $('loopBtn').onclick = () => { M.play.loop = !M.play.loop; renderTransport(); };
@@ -1361,17 +1478,35 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   adapter.init(stage, shell);
   applyTheme(stored() || (mq.matches ? 'light' : 'dark'));
   const h = new URLSearchParams(location.hash.slice(1));
-  M.view = VIEW_ALIAS[h.get('view')] || (VIEWS.includes(h.get('view')) ? h.get('view') : 'top');
-  M.frame = h.get('frame') === 'map' || h.get('data') === '1' ? 'map' : 'world';
+  M.view = VIEW_ALIAS[h.get('view')] || (knownViews().includes(h.get('view')) ? h.get('view') : watch ? 'watch' : 'top');
+  M.frame = (h.get('frame') === 'map' || h.get('data') === '1') && !EYE_VIEWS.includes(M.view) ? 'map' : 'world';
+  if (eye) {
+    if (watch) $('layoutSeg').innerHTML = '';
+    $('layoutSeg').insertAdjacentHTML('beforeend', (watch ? [['eye', 'Eye'], ['top', 'Above'], ['watch', 'Both']] : [['eye', 'Eye'], ['chase', 'Chase']])
+      .map(([v, l]) => `<button data-view="${v}" aria-pressed="false" title="${esc(VIEW_NOTE[v] || VIEW_NOTE.top)}">${l}</button>`).join(''));
+  }
+  app.classList.toggle('watch', watch);
+  // the watch page names its run in the path: /watch/<robot>/<scene>/<run>, or `latest` for the scene's newest (and the next, once this one has ended)
+  const wp = watch ? location.pathname.split('/').filter(Boolean).slice(1) : null;
+  const newest = async () => (await json(`${API}runs?robot=${encodeURIComponent(wp[0])}&scene=${encodeURIComponent(wp[1])}`))[0]?.key;
   renderChrome(); renderProps(); renderInsp(); renderTransport();
   window.__ready = false;
   begin();
   (async () => {
     try {
       await ensureIndex();
-      if (h.get('run') || h.get('scene')) {
+      if (watch) {
+        const key = wp[2] === 'latest' ? await newest() : `${wp[0]}/${wp[1]}/${wp[2]}`;
+        try { await openRun(wp[1], key); } catch (e) { console.warn('the URL names no run:', String(e)); scenesPage(); }
+        if (wp[2] === 'latest') setInterval(async () => {
+          if (M.run?.status === 'live' || M.loading) return;
+          const k = await newest().catch(() => null);
+          if (k && k !== M.runId) openRun(wp[1], k).catch((e) => console.warn(e));
+        }, 4000);
+      } else if (h.get('run') || h.get('scene')) {
         try { await openRun(h.get('scene') || undefined, h.get('run') || undefined); } catch (e) { console.warn('the URL names no run:', String(e)); scenesPage(); }
       } else if (!M.run && !M.loading) scenesPage();
+      if (M.runId && h.has('t') && Number.isFinite(+h.get('t'))) { await store.ensure(+h.get('t')); setTime(+h.get('t')); }       // a link from the other page: the same moment
       renderChrome();
       await fontsReady();
     } catch (e) { console.error(e); document.body.append(String(e)); } finally { end(); }
@@ -1404,6 +1539,8 @@ const TEMPLATE = `
       <button data-frame="map" aria-pressed="false" title="The robot's own map frame (W)">Map</button>
     </div>
     <span class="grow"></span>
+    <a class="tlink" id="watchLink" href="#" hidden title="Watch this run, at this moment (the eye, live)">Watch</a>
+    <a class="tlink" id="exploreLink" href="#" hidden title="Open this run, at this moment, in the explorer">Explorer</a>
     <label id="follow" class="follow" hidden><input type="checkbox" id="follow-on" checked> Follow live</label>
     <span class="chip" id="runinfo"></span>
     <button class="pick-btn" id="exportBtn" disabled aria-haspopup="dialog">Export video</button>
@@ -1436,6 +1573,8 @@ const TEMPLATE = `
     <div class="vcorner"><div class="scale" id="scale" hidden></div><div class="legend" id="legend"></div></div>
     <div class="readout" id="readout">x —  y — m</div>
     <div class="sigview" id="sigview" hidden aria-label="Signals"></div>
+    <div class="eyecone" id="eyecone" hidden><i></i></div>
+    <div class="eyehud" id="eyehud" hidden><div class="hudbox" id="hudtxt"></div><div class="hudraw">DEPTH 8×8 · mm<canvas id="hudcv" width="8" height="8"></canvas></div></div>
   </main>
 
   <aside class="right region" id="insp">
@@ -1443,6 +1582,7 @@ const TEMPLATE = `
       <button class="tab" role="tab" aria-selected="true" id="tabMoment">Moment</button>
       <button class="tab" role="tab" aria-selected="false" id="tabSel">Selection</button>
       <button class="tab" role="tab" aria-selected="false" id="tabExplore">Explore</button>
+      <button class="tab" role="tab" aria-selected="false" id="tabDecided">Decided</button>
       <span class="grow"></span>
     </div>
     <div class="props" id="inspBody"></div>

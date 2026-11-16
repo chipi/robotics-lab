@@ -86,8 +86,10 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   written between two ticks (a robot that sees 15 frames a second and moves 10 times a second writes
   both as they come). The tick's `/depth` stays: the frame's derived points as the viewer draws them.
   A frame another record interrupts is dropped and counted as a reject. The reader's view of a frame
-  is `{rows, cols, distance_mm, status, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?}` (`distance_mm`
-  and `status` as lists, row-major); `state`, `pose` and `derived` are for a replay (a reader with
+  is `{rows, cols, distance_mm, status, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?, state?, pose?}`
+  (`distance_mm` and `status` as lists, row-major); `state` (the paired state: `quat`, `odom_z`,
+  `tof: {pos, quat}`) and `pose` (the map pose the frame's points were placed with) are kept for the
+  robot's eye (RFC-0013: where the sensor was), `derived` and `t_src` are for a replay (a reader with
   `keep_raw`), not for the pages.
 
   `raw` holds every source field a message has no field of its own for; non-finite numbers in it are
@@ -124,7 +126,8 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `GET /api/v1/runs/{robot}/{scene}/{run}` | the run (below), with `status` and `seq` |
 | `.../frames?from=&to=` | the ticks in the window and only the plans and worlds they refer to (below) |
 | `.../signals?from=&to=` | the signals ticks in the window, columnar (below) |
-| `.../sensor?t=` | the raw depth frame at or before t, with its number and the count and the state it was paired with (404 when the run has none) |
+| `.../sensor?t=` | the raw depth frame at or before t, with its number, the count, the pairing (`state_t_ns`, `pair_dt_ms`) and, when recorded, the paired `state` and the `pose` (404 when the run has none) |
+| `GET /watch/{robot}/{scene}/{run}` and `.../latest` | the watch page (below), HTML; `latest` is the scene's newest run; 400 for a part that is not `[a-z0-9_-]+`, 404 for a run that does not exist or a scene with no run yet |
 | `.../state?t=` | belief, truth, distance, depth returns, the last event at t |
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
@@ -222,7 +225,9 @@ as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, 
   Ids: `scene.boxes`, `scene.hazards`, `belief.pose`, `belief.track`, `truth.pose`, `truth.track`,
   `sensors.depth` with children `sensors.depth.floor|obstacle|overhead|below`, `sensors.tilt`,
   `sensors.raw` (the raw depth frames: count, rate, spans; shown in the inspector, drawn in no view),
-  `world.grid`, `world.obstacles`, `world.drops`, `plan.path`, `events`, and one per declared signal,
+  `world.grid`, `world.obstacles`, `world.drops`, `world.gaps` (derived by the page, not recorded:
+  the unknown cells of the map in force within 0.45 m of the plan in force; its count is the number
+  of maps, 0 while the run has no plan), `plan.path`, `events`, and one per declared signal,
   `signals.<name>` (group `Signals`, frame `time`, with `kind` and `unit`, no time modes). A stream
   of a run with no pose says why in `why` (the run's `no_pose`). Time modes: `at`, `window` (the
   last N seconds before t), `upto` (everything up to t).
@@ -286,16 +291,17 @@ first draw, and again after
 each call once it has drawn (set it to `false` before calling, then wait for `true`):
 
 ```text
-load(scene, run)            setTime(t)                  setView("top|front|back|left|right|three|3d")
+load(scene, run)            setTime(t)                  setView("top|front|back|left|right|three|3d|eye|chase|watch")
 setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "at|window|upto", seconds)
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
+setOverlay("coords|gizmo|legend|hazards_top", bool)
 select({kind, index})       scenes()
 setSection(id, open)        setAngles(bool)
 explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
 state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
                 loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
-                last_event, selection, t_range, hidden}
+                last_event, selection, t_range, hidden, eye, decided}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
 exploreState() -> {robot, kind, pose, selected, hidden, isolated, why, links, drawn, values, poses}   (null before Explore opens)
@@ -318,6 +324,49 @@ exploreSnapshot() -> the body as a PNG data URL
   (`body.model`, its eye in the Body section): in the world frame of a run with `truth_3d`, the
   root link (the trunk) at the truth's whole pose; otherwise at the belief's x, y and yaw in the
   frame looked at, tilted by `tilt`, at the registry's `stand_z`. The joints at the playhead.
+- **The robot's eye, what it decided and the watch page** (RFC-0013, prototype; the three.js page
+  only, `createShell(adapter, {eye: true, watch})`).
+  - **Views `eye`, `chase`, `watch`** (`setView`, `#view=` of the URL hash; the layout switch has Eye
+    and Chase buttons): perspective cameras in the **world frame** (choosing one sets the frame to
+    world; `setFrame("map")` is refused while one is on). `eye` is the depth sensor's camera at the
+    playhead: the pose comes from the depth frame at or before it (`/sensor?t=`, `state` + `pose`,
+    through the epoch in force: the navigator's own geometry, `web/shell/eye.js`, with the 3 degree
+    pitch offset of `duck_lab.nav.cliff`; `source: "recorded"`), else is **estimated** from the tick's
+    trunk pose (`truth_3d` and truth, else belief and tilt) and a nominal mount
+    (`eye.js` `NOMINAL_MOUNT`; `source: "estimated"`). While the frame is being asked for the camera
+    stays where it was. The robot's own markers and body are not drawn in `eye`. Outside the sensor's
+    45 degree square (`#eyecone`) the view is darkened. `chase` is 0.9 m behind and 0.55 m above the
+    robot (truth, else belief). `watch` is the eye with the top view as an inset (`watch` layout).
+  - **The HUD** (`#eyehud`, over `eye` and `watch`): `#hudtxt` (pace = the tick's `cmd`, the newest
+    event with its rule and reason, the numbers of its `decision.values`, this frame's returns by
+    kind, where the sensor pose came from) and `#hudcv` (the 8 x 8 distances, one pixel per zone).
+    Recorded values and values computed from them only.
+  - **Gaps** (`world.gaps`, in the World model group, drawn by the three.js page only): the map
+    in force's unknown cells within `GAP_MARGIN_M` = 0.45 m (RFC-0012's drop margin,
+    `web/shell/gaps.js`, which also holds the pure `gapCells(grid, path, margin)`) of the plan in
+    force, tinted orange with a hatch; the other unknown cells as a faint fog. The adapter's
+    `gaps()` says how many of each are drawn. **`setOverlay("hazards_top", true)`** (the Overlays
+    popover, "Real hazards over the model"; off in the explorer, on in the watch page) draws the
+    scene's hazards again as a dashed outline over the other layers.
+  - **Decided** (`#tabDecided`, the right panel's fourth tab, `state().tab === "decided"`): the run's
+    events (those not switched off in the Events popover) as `.dec` rows with `data-t` = the event's
+    time: the rule (the decision's, else the kind), the reason, the values it compared; a stop is
+    `.hot`, the judge's `invariant` and the final **verdict** row (a run that is not live) `.judge`;
+    the last row at or before the playhead is `.now`; a click (or Enter) seeks to its time.
+    `state().decided` is `{n, now}` (rows, and the time of the one at the playhead or null);
+    `state().eye` is the eye camera as drawn `{source, frame_t, position, forward, up, fov}` while
+    `eye` or `watch` is the view, else null.
+  - **The watch page**: `GET /watch/<robot>/<scene>/<run>` or `.../latest` serves
+    `web/three/watch.html` (the same `app.js`, which reads the run from the path; `<base>` keeps
+    its files under `/web/three/`). Layout: the `watch` view (the eye, the top view inset, real
+    hazards on), the Decided tab as the whole right panel, the timeline with the events marked (no
+    data rows), buttons Eye, Above (top) and Both (watch); Follow live is on, as in the explorer, and
+    a live run is followed. `latest` opens the scene's newest run (`/api/v1/runs?robot=&scene=`,
+    newest first) and, once that run is not live, checks every 4 s for a newer one and opens it.
+  - **Links at the same moment**: the explorer's `#watchLink` ("Watch") is
+    `/watch/<robot>/<scene>/<run>#t=<playhead>`; the watch page's `#exploreLink` ("Explorer") is
+    `/web/three/#scene=&run=&view=eye&frame=world&t=<playhead>`. A page opened with `#t=<seconds>` in
+    its hash puts the playhead there once the run is open (Follow live turns off, as with any seek).
 - **Explore** (RFC-0011 §3.3): the right panel's third tab (`#tabExplore`, `#explore`), a detail
   view whose first kind is a robot's body (the run's robot, or any of `GET /api/v1/robots`). The
   description's meshes placed by the pages' forward kinematics (`web/shell/robot.js`, the same as
@@ -379,6 +428,9 @@ gizmo() -> {x, y, z}    camera-space axes (3D only)
 scale() -> px per metre of the first orthographic pane, or null (3D)
 fillsDrawn(pane) -> bool   whether the faint box faces are drawn in the pane named so
 project([x, y, z]) -> [clientX, clientY] | null   where a world point falls in the first pane (tests probe pixels there)
+eye() -> {source, frame_t, position, forward, up, fov} | null   the eye camera as drawn (three.js page; the shell gives it `shell.eyePose()` and
+                           is called back with `shell.drawn()` after each draw)
+eyeView() -> {fov, h} | null   the eye camera's field of view and its pane's height in pixels      gaps() -> {gap, fog, visible} | null
 ```
 
 `setRun(run, frames)` gives the run and the frames loaded so far (ticks by their number in the run,

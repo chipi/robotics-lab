@@ -56,6 +56,14 @@ with tempfile.TemporaryDirectory() as tmp:
             pg.wait_for_function("window.__ready === true", timeout=30000)
             pages[lib] = pg
         ticks = lambda pg: pg.evaluate(TICKS_RE)  # noqa: E731
+        # the watch page (RFC-0013), opened on `latest` while the run runs: the scene's newest run, followed
+        wp = b.new_page(viewport={"width": 1200, "height": 800})
+        wp.goto(f"{base}/watch/duck/room/latest")
+        wp.wait_for_function("window.miniview !== undefined", timeout=30000)
+        wp.wait_for_function("window.miniview.state().run !== null && window.__ready === true", timeout=30000)
+        ws = wp.evaluate("window.miniview.state()")
+        check("/watch/duck/room/latest opens the live run in the watch view, following it", ws["run"] == KEY and ws["status"] == "live" and ws["follow"] is True
+              and ws["view"] == "watch" and wp.evaluate("!document.getElementById('follow').hidden"), (ws["run"], ws["status"], ws["follow"], ws["view"]))
         check("both pages show the live run with its follow switch, following", all(
             pg.evaluate("!document.getElementById('follow').hidden") and pg.evaluate("window.miniview.state().follow") for pg in pages.values()),
               {lib: ticks(pg) for lib, pg in pages.items()})
@@ -86,6 +94,9 @@ with tempfile.TemporaryDirectory() as tmp:
             q.wait_for_function("window.miniview.state().t >= 1.0 + 0.1 * 29 - 0.01", timeout=15000)
         check("Follow live keeps the newest tick in view on both pages", all(pg.evaluate("window.miniview.state().t") >= 3.89 for pg in pages.values()),
               {lib: pg.evaluate("window.miniview.state().t") for lib, pg in pages.items()})
+        wp.wait_for_function("(+document.getElementById('runinfo').textContent.match(/(\\d+) ticks/)[1]) >= 30 && window.miniview.state().t >= 1.0 + 0.1 * 29 - 0.01", timeout=15000)
+        check("the watch page follows the live run: the newest tick is in view, the eye is drawn from it", wp.evaluate("window.miniview.state().t") >= 3.89
+              and wp.evaluate("window.miniview.state().follow") is True and wp.evaluate("window.miniview.state().eye") is not None, wp.evaluate("window.miniview.state().t"))
         check("the run grew by 20 ticks and the pages asked for no frames again",
               {lib: len(r) for lib, r in frames_requests.items()} == initial, {lib: len(r) for lib, r in frames_requests.items()})
         check("the live stream's seq on the page is the server's", all(
@@ -120,6 +131,10 @@ with tempfile.TemporaryDirectory() as tmp:
             info = q.evaluate("document.getElementById('runinfo').textContent")
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
+        wp.wait_for_function("document.getElementById('runinfo').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
+        check("the watch page shows the run end: the event and the verdict in the decisions, status ended",
+              wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["trapped", "verdict"],
+              wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)"))
         for lib, q in pages.items():
             q.wait_for_function("window.miniview.internals.M.pres.t1 === window.miniview.internals.M.run.t1", timeout=20000)
         check("a run that is not live is not followed: the pages asked for no frames after the first windows",
