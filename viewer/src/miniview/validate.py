@@ -100,7 +100,31 @@ def _world(p):
 
 
 def _event(p):
-    return None if isinstance(p.get("kind"), str) and isinstance(p.get("text"), str) else "kind or text missing"
+    if not (isinstance(p.get("kind"), str) and isinstance(p.get("text"), str)):
+        return "kind or text missing"
+    d = p.get("decision")
+    if d is not None and not (isinstance(d, dict) and isinstance(d.get("rule"), str) and isinstance(d.get("reason"), str)
+                              and isinstance(d.get("values"), dict)):
+        return "decision is not {rule, reason, values}"
+    return None
+
+
+def _depth_frame(p):
+    rows, cols = p.get("rows"), p.get("cols")
+    if not (isinstance(rows, int) and isinstance(cols, int) and not isinstance(rows, bool) and 0 < rows <= 64 and 0 < cols <= 64):
+        return "rows or cols invalid"
+    n = rows * cols
+    d, s = p.get("distance_mm"), p.get("status")
+    if not (isinstance(d, list) and len(d) == n and all(isinstance(x, int) and not isinstance(x, bool) for x in d)):
+        return f"distance_mm is not {n} whole numbers"
+    if not (isinstance(s, list) and len(s) == n and all(isinstance(x, int) and 0 <= x < 256 for x in s)):
+        return f"status is not {n} bytes"
+    if not isinstance(p.get("frame_t_ns"), int):
+        return "frame_t_ns missing"
+    for k in ("state_t_ns", "pair_dt_ms"):
+        if p.get(k) is not None and not _num(p[k]):
+            return f"{k} is not a finite number"
+    return None
 
 
 def _segment(p):
@@ -116,7 +140,7 @@ def _end(p):
 
 
 CHECKS = {"run": _run, "epoch": _epoch, "tick": _tick, "signals": _signals, "plan": _plan, "world": _world, "event": _event,
-          "segment": _segment, "end": _end}
+          "depth_frame": _depth_frame, "segment": _segment, "end": _end}
 
 
 def check(t, kind: str, p, last_t: float) -> str | None:

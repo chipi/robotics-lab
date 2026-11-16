@@ -8,6 +8,7 @@
         .../frames?from=&to=                          drawing data for a time window, with only the plans and maps its
                                                       ticks refer to, keyed by index
         .../signals?from=&to=                         a robot's named values over a time window, columnar (ADR-0013)
+        .../sensor?t=                                 the raw depth frame at or before t, with the state it was paired with (ADR-0014)
         .../state?t=                                  the moment: belief, truth, distance, depth, signals, last event
         .../events?kinds=                             what happened, when
         .../presence                                  when each stream has data (the timeline's rows)
@@ -105,7 +106,7 @@ def signals_window(sig: dict, n: int, t_from: float | None, t_to: float | None) 
     return {"i0": lo, "n": n, "t": ts[lo:hi], "v": {k: col[lo:hi] for k, col in sig["v"].items()}}
 
 
-def presence(run: dict, frames: dict, sig: dict | None = None) -> dict:
+def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None = None) -> dict:
     """Per stream: the spans where it has data (gaps longer than 3 ticks split them) or the times of
     its records, for the timeline's data rows."""
     ts = frames["t"]
@@ -137,6 +138,7 @@ def presence(run: dict, frames: dict, sig: dict | None = None) -> dict:
         "sensors.depth.overhead": {"spans": spans(depth_kind("v"))},
         "sensors.depth.below": {"times": depth_kind("b")},
         "sensors.tilt": {"spans": spans([t for t, x in zip(ts, frames["tilt"]) if x])},
+        "sensors.raw": {"spans": spans([f["t"] for f in raw or ()], [f["t"] for f in raw or ()])},
         "world.grid": {"times": [w["t"] for w in frames["worlds"]]},
         "plan.path": {"times": [p["t"] for p in frames["plans"]]},
         "events": {"times": [e["t"] for e in run["events"]]},
@@ -261,7 +263,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 raise HttpError(400, str(e)) from None
             what = parts[4] if len(parts) > 4 else ""
-            if len(parts) > 5 or what not in ("", "frames", "signals", "state", "events", "presence", "live"):
+            if len(parts) > 5 or what not in ("", "frames", "signals", "sensor", "state", "events", "presence", "live"):
                 raise HttpError(404, "not found")
             ld = cat.get(key)
             if ld is None:
@@ -296,6 +298,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if t_from is not None and t_to is not None and t_from > t_to:
                 raise HttpError(400, f"from {t_from} is after to {t_to}")
             return self._json(signals_window(ld.data.sig, run["samples"], t_from, t_to))
+        if what == "sensor":
+            t = number(q, "t")
+            with ld.data.changed:
+                raw = ld.data.raw
+                fr = query.sensor_at(raw, run["t1"] if t is None else t)
+            if fr is None:
+                raise HttpError(404, "the run has no raw depth frames")
+            return self._json(fr)
         if what == "events":
             return self._json(query.events(run, set(q["kinds"].split(",")) if q.get("kinds") else None))
         if n == 0 and run["samples"] == 0:
@@ -305,7 +315,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if what == "state":
             t = number(q, "t")
             return self._json(query.state(run, frames, run["t1"] if t is None else t, sig))
-        return self._json(presence(run, frames, sig))
+        with ld.data.changed:
+            raw = list(ld.data.raw)
+        return self._json(presence(run, frames, sig, raw))
 
     @staticmethod
     def _ev(name: str, data, eid=None) -> bytes:

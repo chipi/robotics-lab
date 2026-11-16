@@ -34,6 +34,7 @@ class RunData:
                     "verdict": "live", "epochs": [], "events": [], "segments": [], "streams": [],
                     "rejects": 0, "first_error": None, "error": None, "rewritten": 0, "generation": self.generation,
                     "samples": 0}
+        self.raw = []                 # the depth frames, raw (ADR-0014): {t, rows, cols, distance_mm, status, frame_t_ns, ...}, in time order
         self.frames = {"t": [], "belief": [], "truth": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
         self.sig = {"t": [], "v": {}}     # the signals ticks: times, and per declared signal its value at each (None: none then)
@@ -42,7 +43,7 @@ class RunData:
         self.log = []                 # (seq, t, kind, payload): what live followers send
         self.seq = 0
         self.last_t = 0.0
-        self.counts = {"truth": 0, "depth": 0, "tilt": 0, "f": 0, "o": 0, "v": 0, "b": 0}   # stream counts, kept as records arrive
+        self.counts = {"truth": 0, "depth": 0, "tilt": 0, "raw": 0, "f": 0, "o": 0, "v": 0, "b": 0}   # stream counts, kept as records arrive
         self.mem = 0                  # an estimate of the bytes this run holds in memory (the cache's measure)
         self._spanned = False
 
@@ -122,7 +123,10 @@ class RunData:
         elif kind == "world":
             f["worlds"].append(dict(p, t=t))
         elif kind == "event":
-            r["events"].append({"t": t, "kind": p["kind"], "text": p["text"]})
+            r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {})})
+        elif kind == "depth_frame":
+            self.raw.append(dict(p, t=t))
+            self.counts["raw"] += 1
         elif kind == "segment":
             r["segments"].append(dict(p))
         elif kind == "end":
@@ -149,6 +153,8 @@ def _cost(kind: str, p: dict) -> int:
         return 400 + 120 * len(p["values"])
     if kind == "plan":
         return 380 + 165 * len(p["path"])
+    if kind == "depth_frame":
+        return 700 + 40 * len(p["distance_mm"])
     if kind == "world":
         return 750 + len(p["grid"]["cells"]) + 165 * (len(p["obstacles"]) + len(p["drops"]))
     return 600
@@ -209,6 +215,7 @@ def streams(f: dict, events: list, counts: dict, run: dict | None = None, sig: d
                      parent="sensors.depth", why="none of this kind"))
     out += [
         s("sensors.tilt", "Sensors", "tilt", "robot", tilt),
+        s("sensors.raw", "Sensors", "raw depth frame", "robot", counts["raw"]),
         s("world.grid", "World model", "map grid", "map", len(f["worlds"])),
         s("world.obstacles", "World model", "obstacle memory", "map", len(last["obstacles"])),
         s("world.drops", "World model", "drops", "map", len(last["drops"]), why="no drop seen"),

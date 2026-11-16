@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent / "schemas"
-FOXGLOVE = ("PoseInFrame", "FrameTransform", "Grid", "PointCloud")
+FOXGLOVE = ("PoseInFrame", "FrameTransform", "Grid", "PointCloud", "RawImage")
 
 
 def _obj(required: list, **props) -> dict:
@@ -19,6 +19,13 @@ _ARR = {"type": "array", "items": _NUM}
 # of JSON schemas rejects both (checked 2026-11-15 on the Lichtblick of `make viewers`).
 _POINTS = {"type": "array", "items": {"type": "object", "properties": {"x": _NUM, "y": _NUM}, "required": ["x", "y"]}}
 _RAW = {"type": "object", "description": "every source field the record has no field of its own for"}
+_DECISION = _obj(["rule", "reason", "values"], rule=_STR, reason=_STR, values={"type": "object"})
+# What a replay needs of the robot's state to re-derive a depth frame's points (ADR-0014): the trunk's orientation, its height
+# from odometry and the sensor's pose in the trunk; and what the navigator derived and decided on from that frame.
+_STATE = _obj(["quat", "odom_z", "tof"], quat=_ARR, odom_z=_NUM, tof=_obj(["pos", "quat"], pos=_ARR, quat=_ARR))
+_XYZK = {"type": "array", "items": _obj(["x", "y", "z", "k"], x=_NUM, y=_NUM, z=_NUM, k=_STR)}
+_DROPS = {"type": "array", "items": _obj(["ahead", "left", "h"], ahead=_NUM, left=_NUM, h=_NUM)}
+_DERIVED = _obj(["points"], points=_XYZK, drop_points=_DROPS, block_m=_NUM)
 
 MINIVIEW = {
     "run": _obj(["format", "key", "uuid", "robot", "scene", "kind", "started_at_ns", "started_at_source", "writer"],
@@ -26,7 +33,10 @@ MINIVIEW = {
                 started_at_ns=_INT, started_at_source=_STR, writer={"type": "object"}, source={"type": "object"}),
     "segment": _obj(["index", "t_start", "t_end"], index=_INT, goal=_ARR, outcome=_STR, origin_src=_NUM,
                     t_start=_NUM, t_end=_NUM),
-    "event": _obj(["kind", "text"], kind=_STR, text=_STR, notable={"type": "boolean"}, t_src=_NUM, raw=_RAW),
+    "event": _obj(["kind", "text"], kind=_STR, text=_STR, notable={"type": "boolean"}, t_src=_NUM, raw=_RAW,
+                  decision=_DECISION),
+    "depth_frame": _obj(["rows", "cols", "frame_t_ns"], rows=_INT, cols=_INT, seq=_INT, frame_t_ns=_INT, state_t_ns=_INT,
+                        pair_dt_ms=_NUM, t_src=_NUM, state=_STATE, pose=_ARR, derived=_DERIVED),
     "plan": _obj(["path"], path=_POINTS, t_src=_NUM, raw=_RAW),
     "command": _obj(["vx", "vyaw"], vx=_NUM, vyaw=_NUM),
     "tilt": _obj(["pitch_deg", "roll_deg"], pitch_deg=_NUM, roll_deg=_NUM),

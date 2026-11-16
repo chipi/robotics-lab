@@ -38,6 +38,7 @@ class DuckLog:
         self.start = json.loads(start_p.read_text()) if start_p.exists() else None
         self.offset, self.last_t = 0.0, 0.0           # source -> run time; the last run time
         self.fresh = self.start is None
+        self.reset_per_goal = self.start is None       # a goal-ending event means the next goal starts on a reset simulator (an evaluation)
         self.boundary = False                          # the last goal ended: the next record opens a segment
         self.seg = {"index": 0, "t_start": None, "origin_src": None, "goal": None}
         self.events = []
@@ -80,6 +81,10 @@ class DuckLog:
             r = json.loads(line)
         except ValueError:
             return []
+        return self.feed_row(r)
+
+    def feed_row(self, r) -> list:
+        """One log row (a dict, as the navigator writes it) -> its records: what a writer that has the row already uses."""
         if not isinstance(r, dict) or not isinstance(r.get("t"), (int, float)):
             return []
         ts = r["t"]
@@ -101,14 +106,16 @@ class DuckLog:
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
                                                                          "nearest_mm", "n"))
             e = {"kind": ev, "text": f"{ev} {detail}".strip() if notable else "", "notable": notable, "t_src": ts,
-                 "raw": rest()}
+                 "raw": rest("decision")}
+            if isinstance(r.get("decision"), dict):         # a rule that fired, with the values it compared (ADR-0014)
+                e["decision"] = r["decision"]
             out = [(t, "event", e)]
             if notable:
                 self.events.append({"kind": ev, "text": e["text"], "t": t})
             if ev in ENDS and r.get("goal") is not None:
                 out.append(self._segment(t, ev, r["goal"]))
                 self.boundary = True
-                if self.start is None:
+                if self.reset_per_goal:
                     self.fresh = True                   # the next goal starts on a reset simulator
             return out
         if "pose" not in r:

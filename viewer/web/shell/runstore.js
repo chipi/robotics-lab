@@ -19,7 +19,7 @@ const API = '/api/v1/';
 export const WINDOW_S = 60;
 export const AHEAD_S = 30;
 const SIG_WINDOW_S = 1800;
-const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'epoch', 'segment', 'end'];
+const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'depth_frame', 'epoch', 'segment', 'end'];
 const DEPTH_STREAM = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' };
 const TICK_FIELDS = ['t', 'belief', 'truth', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
 const idle = () => new Promise((r) => setTimeout(r, 0));
@@ -265,8 +265,10 @@ export class RunStore {
       }
     } else if (kind === 'event') {
       this._span(d.t);
-      r.events.push({ t: d.t, kind: d.kind, text: d.text });
+      r.events.push({ t: d.t, kind: d.kind, text: d.text, ...(d.decision && { decision: d.decision }) });
       this._count('events');
+    } else if (kind === 'depth_frame') {
+      this._count('sensors.raw');
     } else if (kind === 'epoch') {
       r.epochs.push({ from_t: d.t, map_to_world: d.map_to_world });
     } else if (kind === 'segment') {

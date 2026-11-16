@@ -38,7 +38,8 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   (`{verdict}`), then `run.mcap`, then the live file and the lock are removed. `miniview repair
   <key>` closes a dead
   writer's run with the verdict `stopped`.
-- **Messages**: the Foxglove channels (`/belief/pose`, `/truth/pose`, `/depth`, `/tf`, `/map`) are
+- **Messages**: the Foxglove channels (`/belief/pose`, `/truth/pose`, `/depth`, `/depth/raw`,
+  `/depth/status`, `/tf`, `/map`) are
   protobuf with a
   `FileDescriptorSet` schema (the `foxglove-schemas-protobuf` package); ours (`miniview.*`) are JSON
   with JSON schemas.
@@ -73,9 +74,21 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   | `/tf` | `foxglove.FrameTransform` (`world` <- `map`) | an epoch: the map to world transform from this time on |
   | `/map` + `/miniview/memory` | `foxglove.Grid` (cells as bytes) + `miniview.memory` (`{obstacles, drops, raw}`) | a map snapshot; `memory` last |
   | `/miniview/plan` | `miniview.plan` | `{path, t_src, raw}` |
-  | `/miniview/event` | `miniview.event` | `{kind, text, notable, t_src, raw}`; routine events have `notable: false` |
+  | `/depth/raw` | `foxglove.RawImage` (frame `tof`, `16UC1`, one row per sensor row) | **a depth frame** (ADR-0014): the sensor's raw distances in mm, the first message of the frame; a negative distance is kept as the int16's 16 bits |
+  | `/depth/status` | `foxglove.RawImage` (frame `tof`, `mono8`) | the frame's per-zone statuses (5 and 9 are "range valid") |
+  | `/miniview/depth_frame` | `miniview.depth_frame` | `{rows, cols, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?, t_src?, state?, pose?, derived?}`: **last** message of a depth frame. `frame_t_ns` is the sensor's own clock (CLOCK_MONOTONIC), `state_t_ns` the robot state the frame was paired with (the nearest by time among those received, as Pollen's `autod` does) and `pair_dt_ms` that state's time minus the frame's; `state` is what a replay needs of it (`quat`, `odom_z`, `tof: {pos, quat}`), `pose` the robot's map pose the frame's points were placed with, `derived` what the robot made of the frame (`points` as `{x, y, z, k}` in the map frame, `drop_points` as `{ahead, left, h}`, `block_m`) |
+  | `/miniview/event` | `miniview.event` | `{kind, text, notable, t_src, raw, decision?}`; routine events have `notable: false`; `decision` is `{rule, reason, values}`: the rule that fired and the values it compared (ADR-0014) |
   | `/miniview/segment` | `miniview.segment` | a goal's span: `{index, goal?, outcome?, origin_src, t_start, t_end}`, written when it ends (a goal-ending event with a goal) |
   | `/miniview/end` | `miniview.end` | `{verdict, source_sha256?}` |
+
+  **A depth frame** (ADR-0014) is a record of its own, not a part of a tick: `/depth/raw`,
+  `/depth/status`, `/miniview/depth_frame` in that order, nothing between, one flush; it may be
+  written between two ticks (a robot that sees 15 frames a second and moves 10 times a second writes
+  both as they come). The tick's `/depth` stays: the frame's derived points as the viewer draws them.
+  A frame another record interrupts is dropped and counted as a reject. The reader's view of a frame
+  is `{rows, cols, distance_mm, status, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?}` (`distance_mm`
+  and `status` as lists, row-major); `state`, `pose` and `derived` are for a replay (a reader with
+  `keep_raw`), not for the pages.
 
   `raw` holds every source field a message has no field of its own for; non-finite numbers in it are
   the strings
@@ -111,6 +124,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `GET /api/v1/runs/{robot}/{scene}/{run}` | the run (below), with `status` and `seq` |
 | `.../frames?from=&to=` | the ticks in the window and only the plans and worlds they refer to (below) |
 | `.../signals?from=&to=` | the signals ticks in the window, columnar (below) |
+| `.../sensor?t=` | the raw depth frame at or before t, with its number and the count and the state it was paired with (404 when the run has none) |
 | `.../state?t=` | belief, truth, distance, depth returns, the last event at t |
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
@@ -126,8 +140,8 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   vendored libraries and fonts are cached for a day; request sockets time out after 30 s except live
   streams.
 - **Live.** `live` sends one event per record, named by its kind (`tick`, `signals`, `plan`, `world`,
-  `event`, `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq` as the event
-  id; then
+  `event`, `depth_frame`, `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq`
+  as the event id; then
   `status` (`{"status", "seq", "t1", "generation"}`, with `"done": true` last, and `error` for a broken
   run). It resumes after `Last-Event-ID` (what a reconnecting client has just seen), or after `since`
   when there is no such header. A heartbeat comment every 15 s; a client that stops reading is dropped
@@ -192,6 +206,7 @@ as boxes with equal half sizes.
 
   Ids: `scene.boxes`, `scene.hazards`, `belief.pose`, `belief.track`, `truth.pose`, `truth.track`,
   `sensors.depth` with children `sensors.depth.floor|obstacle|overhead|below`, `sensors.tilt`,
+  `sensors.raw` (the raw depth frames: count, rate, spans; shown in the inspector, drawn in no view),
   `world.grid`, `world.obstacles`, `world.drops`, `plan.path`, `events`, and one per declared signal,
   `signals.<name>` (group `Signals`, frame `time`, with `kind` and `unit`, no time modes). A stream
   of a run with no pose says why in `why` (the run's `no_pose`). Time modes: `at`, `window` (the
@@ -337,7 +352,7 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 ## Commands (the agent's face)
 
 `miniview scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
-<run> --at t |
+<run> --at t | sensor <run> --at t [--json] |
 frame | film | import | repair <key> | compact <key> | index | serve`. `import --robot nxt <run>.csv
 [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web
 recording (ADR-0013); `state` of a run with signals prints them. While a service holds the

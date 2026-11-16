@@ -31,6 +31,15 @@ def signals_at(sig: dict, t: float) -> dict | None:
     return {"t": sig["t"][i], "index": i, "n": len(sig["t"]), "values": {k: col[i] for k, col in sig["v"].items()}}
 
 
+def sensor_at(raw: list, t: float) -> dict | None:
+    """The raw depth frame at or before t (the first one when t is earlier), with its number and the count: what the
+    sensor reported, and which state it was paired with (ADR-0014). None when the run has no raw frames."""
+    if not raw:
+        return None
+    i = max(0, bisect.bisect_right(raw, t, key=lambda f: f["t"]) - 1)
+    return dict(raw[i], index=i, n=len(raw))
+
+
 def epoch_at(run: dict, t: float):
     current = None
     for e in run["epochs"]:

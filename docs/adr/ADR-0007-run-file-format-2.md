@@ -66,6 +66,11 @@ reader checks:
    protobuf message built from the signals the run record declares) then `/miniview/tick_extra`,
    nothing between (`begin_signals`, `end_tick`). A robot with a pose and signals writes both at the
    same `t`.
+8. (Added by [ADR-0014](ADR-0014-replay-logging.md), proposed 2026-11-16.) A **depth frame**, the
+   sensor's raw 8 x 8 distances and statuses with their times, the state they were paired with and what
+   was derived, is a record of its own: `/depth/raw`, `/depth/status`, `/miniview/depth_frame` (last),
+   nothing between, one flush. It is not part of a tick and may be written between two. An event may
+   carry a `decision` (`{rule, reason, values}`).
 
 A reader emits a tick only when its last message has arrived. A tick or world that another message
 interrupts is dropped and counted as a reject with its reason. Frames are checked: `/belief/pose`,

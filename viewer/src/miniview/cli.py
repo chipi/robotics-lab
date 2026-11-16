@@ -18,6 +18,7 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
     uv run miniview runs apartment                      # a scene's runs
     uv run miniview events explore12 [--kinds a,b]      # what happened, when
     uv run miniview state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, last event
+    uv run miniview sensor explore12 --at 79.0 [--json]  # the raw 8x8 depth frame at t, and the state it was paired with
     uv run miniview frame explore12 --at 79.0 --view three --hide sensors.depth -o f.png
     uv run miniview film explore12 --at 79.6 --span 1.0 --n 5 -o film.png
 """
@@ -223,9 +224,31 @@ def cmd_film(args) -> None:
     print(out)
 
 
+VALID_STATUS = (5, 9)      # the depth sensor's "range valid" statuses (ST VL53L5CX)
+
+
 def cmd_sensor(args) -> None:
-    raise SystemExit("the raw depth frame is not in these runs yet: the navigator logs it from "
-                     "RFC-0008 step 1 (replay logging); `miniview state` shows the returns by kind")
+    cat = _cat(args)
+    run, _ = query.load_run(cat, args.run)
+    fr = query.sensor_at(cat.get(args.run).data.raw, args.at)
+    if fr is None:
+        raise SystemExit(f"{run['key']}: no raw depth frames in this run (the navigator writes them from RFC-0008 step 0; "
+                         "an imported ticks.jsonl has none); `miniview state` shows the returns by kind")
+    if args.json:
+        print(json.dumps(fr, indent=1))
+        return
+    rows, cols, st = fr["rows"], fr["cols"], fr["status"]
+    print(f"{run['key']} at t = {args.at:.2f} s: depth frame {fr['index'] + 1} of {fr['n']}, recorded at t = {fr['t']:.3f} s "
+          f"(sensor clock {fr['frame_t_ns']} ns, seq {fr.get('seq', '?')})")
+    pair = fr.get("pair_dt_ms")
+    print("  paired with the state at " + (f"{fr['state_t_ns']} ns ({pair:+.1f} ms from the frame)" if pair is not None else "none"))
+    print(f"  distance_mm, row 0 (top) first; '*' = status not valid ({', '.join(map(str, VALID_STATUS))} are):")
+    for r in range(rows):
+        print("   " + " ".join(f"{fr['distance_mm'][r * cols + c]:5d}" + ("*" if st[r * cols + c] not in VALID_STATUS else " ")
+                                for c in range(cols)))
+    print("  status:")
+    for r in range(rows):
+        print("   " + " ".join(f"{st[r * cols + c]:3d}" for c in range(cols)))
 
 
 def cmd_serve(args) -> None:
@@ -298,9 +321,10 @@ def main() -> None:
             p.add_argument("--span", type=float, default=2.0)
             p.add_argument("--n", type=int, default=5)
         p.set_defaults(fn=fn)
-    p = sub.add_parser("sensor", help="the raw depth frame at a moment (not yet in the runs)")
+    p = sub.add_parser("sensor", help="the raw depth frame at a moment, and the state it was paired with")
     p.add_argument("run")
     p.add_argument("--at", type=float, required=True)
+    p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_sensor)
     p = sub.add_parser("serve", help="the pages and the API (ADR-0005)")
     p.add_argument("--host", default="127.0.0.1")

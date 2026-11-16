@@ -15,7 +15,7 @@ from google.protobuf import json_format
 from miniview import schemas
 from miniview.signals import SignalSet
 
-KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "segment", "end")
+KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "segment", "end")
 
 CHANNELS = {                          # topic -> schema
     "/miniview/run": "miniview.run",
@@ -23,6 +23,9 @@ CHANNELS = {                          # topic -> schema
     "/belief/pose": "foxglove.PoseInFrame",
     "/truth/pose": "foxglove.PoseInFrame",
     "/depth": "foxglove.PointCloud",
+    "/depth/raw": "foxglove.RawImage",
+    "/depth/status": "foxglove.RawImage",
+    "/miniview/depth_frame": "miniview.depth_frame",
     "/miniview/command": "miniview.command",
     "/miniview/tilt": "miniview.tilt",
     "/miniview/tick_extra": "miniview.tick_extra",
@@ -39,7 +42,7 @@ _IDENT = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
 
 
 PROTO = {"/belief/pose": "PoseInFrame", "/truth/pose": "PoseInFrame", "/tf": "FrameTransform", "/map": "Grid",
-         "/depth": "PointCloud"}      # the Foxglove channels are protobuf (ADR-0007); our own kinds are JSON
+         "/depth": "PointCloud", "/depth/raw": "RawImage", "/depth/status": "RawImage"}      # the Foxglove channels are protobuf (ADR-0007); our own kinds are JSON
 
 
 def _pb(topic: str, obj: dict, ns: int) -> bytes:
@@ -77,6 +80,38 @@ def _xy(points) -> list:
 
 def _unxy(points) -> list:
     return [[p["x"], p["y"]] for p in points]
+
+
+SENSOR_FRAME = "tof"          # the depth sensor's own frame_id: the raw frame is an image of it, not a place in the map
+
+
+def _u16(v: int) -> int:
+    """A distance as the 16 bits an image holds (the sensor's int16: a negative value is kept, read back by `_i16`)."""
+    return v & 0xFFFF
+
+
+def _i16(v: int) -> int:
+    return v - 0x10000 if v >= 0x8000 else v
+
+
+def _raw_image(ns: int, rows: int, cols: int, encoding: str, step: int, data: bytes) -> dict:
+    return {"timestamp": _stamp(ns), "frame_id": SENSOR_FRAME, "width": cols, "height": rows, "encoding": encoding,
+            "step": step, "data": base64.b64encode(data).decode()}
+
+
+def _depth_frame_meta(p: dict) -> dict:
+    """The JSON message that completes a depth frame: its identity and times, the state it was paired with, and what the
+    navigator derived (points as {x, y, z, k}, drops as {ahead, left, h}: Lichtblick reads no arrays of arrays)."""
+    m = {k: p[k] for k in ("rows", "cols", "frame_t_ns", "seq", "state_t_ns", "pair_dt_ms", "t_src", "state", "pose")
+         if p.get(k) is not None}
+    d = p.get("derived")
+    if d is not None:
+        m["derived"] = {"points": [{"x": x, "y": y, "z": z, "k": k} for x, y, z, k in d["points"]]}
+        if d.get("drop_points") is not None:
+            m["derived"]["drop_points"] = [{"ahead": a, "left": l_, "h": h} for a, l_, h in d["drop_points"]]
+        if d.get("block_m") is not None:
+            m["derived"]["block_m"] = d["block_m"]
+    return m
 
 
 def _stamp(ns: int) -> dict:
@@ -159,8 +194,19 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
                 m("/miniview/memory", {"obstacles": _xy(p["obstacles"]), "drops": _xy(p["drops"]),
                                        "raw": _raw(p.get("raw", {}))})]
     if kind == "event":
-        return [m("/miniview/event", {"kind": p["kind"], "text": p["text"], "notable": p.get("notable", True),
-                                      "t_src": src, "raw": _raw(p.get("raw", {}))})]
+        e = {"kind": p["kind"], "text": p["text"], "notable": p.get("notable", True), "t_src": src,
+             "raw": _raw(p.get("raw", {}))}
+        if p.get("decision") is not None:
+            e["decision"] = _raw(p["decision"])
+        return [m("/miniview/event", e)]
+    if kind == "depth_frame":
+        rows, cols = p["rows"], p["cols"]
+        if len(p["distance_mm"]) != rows * cols or len(p["status"]) != rows * cols:
+            raise ValueError(f"depth frame: {len(p['distance_mm'])} distances and {len(p['status'])} statuses for {rows} x {cols}")
+        dist = struct.pack(f"<{rows * cols}H", *(_u16(v) for v in p["distance_mm"]))
+        return [m("/depth/raw", _raw_image(ns, rows, cols, "16UC1", cols * 2, dist)),
+                m("/depth/status", _raw_image(ns, rows, cols, "mono8", cols, bytes(p["status"]))),
+                m("/miniview/depth_frame", _depth_frame_meta(p))]
     if kind == "segment":
         return [m("/miniview/segment", p)]
     if kind == "end":
@@ -176,7 +222,10 @@ TICK_PARTS = ("truth", "depth", "cmd", "tilt")
 TICK_TOPICS = {"belief": "/belief/pose", "truth": "/truth/pose", "depth": "/depth", "cmd": "/miniview/command",
                "tilt": "/miniview/tilt", "extra": "/miniview/tick_extra"}
 TICK_INSIDE = {"/truth/pose", "/depth", "/miniview/command", "/miniview/tilt", "/miniview/tick_extra"}
-FRAMES = {"/belief/pose": "map", "/truth/pose": "world", "/depth": "map", "/map": "map"}     # a message's frame_id
+FRAMES = {"/belief/pose": "map", "/truth/pose": "world", "/depth": "map", "/map": "map", "/depth/raw": SENSOR_FRAME,
+          "/depth/status": SENSOR_FRAME}     # a message's frame_id
+INSIDE = {"tick": TICK_INSIDE, "world": {"/miniview/memory"}, "signals": {"/miniview/tick_extra"},   # what may follow a record's first message
+          "depth_frame": {"/depth/status", "/miniview/depth_frame"}}
 
 
 def tick_part(name: str, t: float, value, base_ns: int, t_src: float | None = None) -> tuple:
@@ -240,9 +289,7 @@ class Assembler:
         if self.base_ns is None:
             raise ValueError("a message before the run record")
         t = self._t(ns)
-        if self.pending and not (
-                (self.pending[1] == "tick" and topic in TICK_INSIDE) or (self.pending[1] == "world" and topic == "/miniview/memory")
-                or (self.pending[1] == "signals" and topic == "/miniview/tick_extra")):
+        if self.pending and topic not in INSIDE[self.pending[1]]:
             self._interrupt(topic, t)
         if self.sigs is not None and topic == self.sigs.topic:
             self.pending = (t, "signals", {"values": o})
@@ -268,6 +315,34 @@ class Assembler:
                                                   max(g["row_stride"], 1),
                                                   "cells": base64.b64decode(g["data"]).decode("ascii")}})
             return []
+        if topic == "/depth/raw":
+            w, h = o["width"], o["height"]
+            vals = struct.unpack(f"<{w * h}H", base64.b64decode(o["data"])[:w * h * 2])
+            self.pending = (t, "depth_frame", {"rows": h, "cols": w, "distance_mm": [_i16(v) for v in vals]})
+            return []
+        if topic == "/depth/status":
+            if not self.pending or self.pending[1] != "depth_frame":
+                raise ValueError("depth status outside a depth frame")
+            self.pending[2]["status"] = list(base64.b64decode(o["data"]))
+            return []
+        if topic == "/miniview/depth_frame":
+            if not self.pending or self.pending[1] != "depth_frame" or "status" not in self.pending[2]:
+                raise ValueError("depth frame metadata outside a depth frame")
+            pt, kind, d = self.pending
+            self.pending = None
+            for k in ("frame_t_ns", "seq", "state_t_ns", "pair_dt_ms"):
+                if k in o:
+                    d[k] = o[k]
+            if self.keep_raw:
+                d.update({k: o[k] for k in ("t_src", "state", "pose") if k in o})
+                if "derived" in o:
+                    der = o["derived"]
+                    d["derived"] = {"points": [[q["x"], q["y"], q["z"], q["k"]] for q in der["points"]]}
+                    if "drop_points" in der:
+                        d["derived"]["drop_points"] = [[q["ahead"], q["left"], q["h"]] for q in der["drop_points"]]
+                    if "block_m" in der:
+                        d["derived"]["block_m"] = der["block_m"]
+            return [(pt, kind, d)]
         if topic in ("/truth/pose", "/depth", "/miniview/command", "/miniview/tilt"):
             if not self.pending or self.pending[1] != "tick":
                 raise ValueError(f"{topic} outside a tick")
@@ -310,6 +385,8 @@ class Assembler:
             if not o.get("notable", True) and not self.keep_raw:
                 return []
             d = {"kind": o["kind"], "text": o["text"]}
+            if o.get("decision") is not None:
+                d["decision"] = o["decision"]
             if self.keep_raw:
                 d.update(notable=o.get("notable", True), t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "event", d)]
