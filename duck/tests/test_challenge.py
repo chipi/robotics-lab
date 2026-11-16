@@ -41,7 +41,32 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "5": "reach", "8": "refuse", "9": "refuse"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse"})
+import random  # noqa: E402
+
+blocks, goal_clear = [], []
+for s in range(20):
+    sc = CHALLENGES["4"](s, random.Random(f"4-{s}"))     # before the start's jitter: the start at the origin facing +x
+    bx = next(b for b in sc.boxes if b.name == "box")
+    blocks.append(abs(bx.cy) < bx.hy and bx.cx - bx.hx > 0.5)
+    goal_clear.append(sc.goal[0] - (bx.cx + bx.hx) >= 0.6)
+check("a box in the open: it stands across the straight line to the goal, at least 0.5 m ahead, in every seed", all(blocks), blocks)
+check("a box in the open: the goal is 0.6 m or more behind it", all(goal_clear), goal_clear)
+inside, walled_in = [], []
+for s in range(20):
+    sc = CHALLENGES["6"](s, random.Random(f"6-{s}"))
+    end = next(b for b in sc.boxes if b.name == "dead_e")
+    side = next(b for b in sc.boxes if b.name == "dead_n")
+    inside.append(side.cx - side.hx > FOOTPRINT_M and abs(sc.goal[1]) < side.cy)       # the mouth ahead of the start, the goal in line
+    walled_in.append(sc.goal[0] - end.cx >= 0.4)
+check("a dead end: its mouth ahead of the start, the goal in line with it and 0.4 m or more past its closed end",
+      all(inside) and all(walled_in), (inside, walled_in))
+wedge = []
+for s in range(20):
+    sc = build("7", s)                                    # with the start's jitter
+    near = sorted(footprint_distance((0.0, 0.0), g) for g in Judge(sc).obs)[:2]
+    wedge.append(FOOTPRINT_M < near[0] and near[1] < 0.35)
+check("wedged: in every seed two walls within 0.35 m of the start, neither inside the footprint (jitter included)", all(wedge), wedge)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3
                                                                      for ch in ("8", "9") for s in range(5)))
 

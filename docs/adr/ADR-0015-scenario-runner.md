@@ -82,7 +82,10 @@ Built with the runner so it is proven on them; the ranges are first guesses, to 
 | 1 | Straight corridor | walls both sides, goal 2–2.8 m ahead | reach | width 0.7–0.9 m |
 | 2 | Doorways | a wall across with a gap of 0.80, 0.50 or 0.42 m (by seed) | reach | gap offset ±0.1 m |
 | 3 | Box corner inside a doorway | 0.6 m gap, a box whose corner is 0.05–0.2 m inside the gap's line | reach | corner, goal side |
+| 4 | Box in the open, its back unseen | a 0.3–0.6 m box 1.0–1.4 m ahead across the line to the goal, in a walled 3.6 × 2.4 m room; the goal 0.6–0.8 m behind it | reach | box size, its offset ±0.15 m, goal offset ±0.2 m |
 | 5 | U-turn in a 60 cm corridor | corridor 0.6 m wide, goal 1.5 m behind the start | reach | goal 1.2–1.8 m |
+| 6 | Dead-end corridor | a U of walls opening toward the start 0.4–0.6 m ahead, 0.6–0.7 m wide, 1.0–1.4 m deep; the goal 0.4–0.6 m past its closed end | reach | width, depth, mouth |
+| 7 | Start wedged in a corner | facing a room's corner, a wall 0.16–0.22 m ahead and one 0.14–0.20 m beside (left or right); the goal 1.5–2 m behind | reach | the clearances, the side, the goal |
 | 8 | Step down, head-on | the start's floor ends 1 m ahead; the goal is on the lower floor | refuse | depth 0.1–0.3 m |
 | 9 | Step down, diagonally | the same, the edge at 30–60° to the start's heading | refuse | angle, depth |
 

@@ -41,6 +41,41 @@ def corner_in_doorway(seed: int, rng: random.Random) -> Scene:
                  (2.4, side * 0.6), "reach", 75.0, notes={"inside_m": round(inside, 3), "side": side})
 
 
+def box_in_open(seed: int, rng: random.Random) -> Scene:
+    """A box across the straight line to the goal, deep enough that its back is not seen from the start: the planner meets
+    the unseen cells beside and behind it (trial 7)."""
+    cx, cy = rng.uniform(1.0, 1.4), rng.uniform(-0.15, 0.15)
+    hx, hy = rng.uniform(0.15, 0.3), rng.uniform(0.15, 0.3)
+    goal = (cx + hx + rng.uniform(0.6, 0.8), rng.uniform(-0.2, 0.2))
+    boxes = _walled("room", -0.6, 3.0, -1.2, 1.2) + [Box("box", cx, cy, hx, hy, 0.0, 0.4)]
+    return Scene(f"ch4-s{seed}", "A box in the open, its back unseen", boxes, [slab("floor", -0.6, 3.0, -1.2, 1.2)], goal,
+                 "reach", 75.0, notes={"box_m": [round(2 * hx, 3), round(2 * hy, 3)], "box_at": [round(cx, 3), round(cy, 3)]})
+
+
+def dead_end(seed: int, rng: random.Random) -> Scene:
+    """A dead-end corridor opening toward the start, the goal just past its closed end: the straight line leads in, the way
+    out is to turn inside it (the duck does not walk backwards) and go round (trials 7, 8)."""
+    w, depth, x0 = rng.uniform(0.6, 0.7), rng.uniform(1.0, 1.4), rng.uniform(0.4, 0.6)
+    x1 = x0 + depth
+    corr = [wall("dead_s", x0, -w / 2, x1, -w / 2), wall("dead_n", x0, w / 2, x1, w / 2), wall("dead_e", x1, -w / 2, x1, w / 2)]
+    boxes = _walled("room", -0.6, x1 + 1.2, -1.4, 1.4) + corr
+    goal = (x1 + rng.uniform(0.4, 0.6), rng.uniform(-0.15, 0.15))
+    return Scene(f"ch6-s{seed}", "Dead-end corridor", boxes, [slab("floor", -0.6, x1 + 1.2, -1.4, 1.4)], goal, "reach", 150.0,
+                 notes={"width_m": round(w, 3), "depth_m": round(depth, 3), "mouth_m": round(x0, 3)})
+
+
+def wedged(seed: int, rng: random.Random) -> Scene:
+    """The start facing into a room's corner, a wall close ahead and one close beside, the goal behind in the open: boxed-in
+    recovery (trial 4). The clearances keep the footprint (0.083 m) off both walls, the start's jitter included."""
+    ahead, aside, side = rng.uniform(0.16, 0.22), rng.uniform(0.14, 0.2), rng.choice((-1, 1))
+    x1, y_wall = ahead, side * aside
+    y0, y1 = (y_wall - 2.6, y_wall) if side > 0 else (y_wall, y_wall + 2.6)
+    boxes = _walled("room", x1 - 3.2, x1, y0, y1)
+    goal = (-rng.uniform(1.5, 2.0), -side * rng.uniform(0.3, 0.8))
+    return Scene(f"ch7-s{seed}", "Start wedged in a corner", boxes, [slab("floor", x1 - 3.2, x1, y0, y1)], goal, "reach", 90.0,
+                 notes={"ahead_m": round(ahead, 3), "aside_m": round(aside, 3), "side": side})
+
+
 def u_turn(seed: int, rng: random.Random) -> Scene:
     back = rng.uniform(1.2, 1.8)
     return Scene(f"ch5-s{seed}", "U-turn in a 60 cm corridor", _walled("corr", -2.2, 0.6, -0.3, 0.3),
@@ -71,7 +106,7 @@ def step_down_diagonal(seed: int, rng: random.Random) -> Scene:
     return _step_down("ch9", "Step down, approached diagonally", seed, a, rng.uniform(0.1, 0.3))
 
 
-CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "5": u_turn, "8": step_down, "9": step_down_diagonal}
+CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal}
 
 
 def build(challenge: str, seed: int) -> Scene:
