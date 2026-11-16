@@ -52,7 +52,36 @@ The forward sensor cannot see these drops. Measured by the review from the recor
      the head took about 0.9 s to arrive; the left look then had about 0.4 s at its target.
    - So collect only once the sensor's yaw, which the frame records, is within a few degrees of the
      target.
-2. Replay the 40 flat-floor runs with the head turned: zero false drops.
+2. **No false drops with the head turned; drops beside the way seen. Measured in the simulator,
+   2026-11-16.** `sim/probes/glance_floor.py`: standing, the head aimed at the floor 0.45 m to
+   each side; frames used once the sensor's own yaw has held still, past 45°; each frame run
+   through `cliff.depth_points`.
+   - **No drop there: 0 below-floor returns in 14 looks** (challenge 1 seeds 1–5 both sides, and
+     the ledge-free side of challenge 10 seeds 6, 7, 9, 10).
+   - **A ledge there: seen in 6 of 6 looks** (challenge 10 seeds 1, 2 on the left; 6, 7, 9, 10 on
+     the right). The depth is right within 0–5 cm: −0.22 m against 0.222, −0.15 against 0.144;
+     the worst −0.24 against 0.294.
+   - Floor height error on open floor: 10–14 mm at the 95th percentile.
+   - Note: `cliff.drop_points` cannot be used for a side look. It drops points more than
+     `CORRIDOR_DROP_M` (0.25 m) aside by design. A side look is judged by `depth_points`' "below"
+     returns.
+
+   Open:
+   - **Where the edge is.** The below-floor returns start where the edge's shadow allows on the
+     left (0.81 m, against 0.81 m predicted for a 0.22 m ledge at 0.42 m). On the right they start
+     later (1.0–1.7 m against 0.86–1.26 m). The margin needs the edge's position, not only that a
+     drop exists; not measured yet.
+   - **Wall feet as "floor".** Near walls the floor class takes wall returns below the obstacle
+     threshold (95th-percentile height error 68–83 mm against 10–14 on open floor).
+   - **The head's commanded yaw is asymmetric.** robot.look asked −57° for the right and +68° for
+     the left, yet the sensor sits at −67° and +68°. Cause unknown. Settling on the sensor's own
+     yaw handles it.
+   - **Only the simulator.** The real duck's head kinematics, the sag on its backlash hinges and
+     its sensor's spread are not tested.
+   - **The probe's first version was wrong,** and is recorded here because it was reported before
+     it was caught. It counted `drop_points`, which ignore side drops by design, and took frames
+     while the head was still turning. It led to two false statements: that a turned head misses
+     drops, and that the head is asymmetric. Both were retracted.
 3. Challenges 10 and 11: every pit seen (an event), and the closest approach to its edge by truth
    at least the margin.
 4. Challenges 8 and 9 unchanged; no cliff stops in 1–7.
