@@ -37,7 +37,7 @@ def sensor_at(raw: list, t: float) -> dict | None:
     if not raw:
         return None
     i = max(0, bisect.bisect_right(raw, t, key=lambda f: f["t"]) - 1)
-    return dict(raw[i], index=i, n=len(raw))
+    return dict(raw[i], index=i, n=len(raw), next_t=raw[i + 1]["t"] if i + 1 < len(raw) else None)
 
 
 def epoch_at(run: dict, t: float):

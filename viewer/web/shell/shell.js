@@ -72,7 +72,7 @@ const MODE_WORD = { at: 'at t', window: 'window', upto: 'up to t' };
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 const LANE_NAME = {
   'belief.pose': 'Belief pose', 'truth.pose': 'Truth pose', 'sensors.depth.floor': 'Depth floor', 'sensors.depth.obstacle': 'Depth obstacle',
-  'sensors.depth.overhead': 'Depth overhead', 'sensors.depth.below': 'Depth below', 'sensors.tilt': 'Tilt', 'world.grid': 'Map grid', 'plan.path': 'Plan',
+  'sensors.depth.overhead': 'Depth overhead', 'sensors.depth.below': 'Depth below', 'sensors.tilt': 'Tilt', 'sensors.raw': 'Raw depth frame', 'world.grid': 'Map grid', 'plan.path': 'Plan',
 };
 
 // colour (a token) and icon of a stream, by id
@@ -88,6 +88,7 @@ function styleOf(id) {
   if (id.endsWith('.overhead')) return c('c-over', 'points');
   if (id.endsWith('.below')) return c('c-drop', 'points');
   if (id === 'sensors.tilt') return c('text-dim', 'tilt');
+  if (id === 'sensors.raw') return c('c-floor', 'grid');
   if (id === 'world.grid') return c('c-occ', 'grid');
   if (id === 'world.obstacles') return c('c-obst', 'points');
   if (id === 'world.drops') return c('c-drop', 'points');
@@ -213,6 +214,54 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!n || i < 0) return null;
     const { t, v } = store.sig;
     return { i, n, t: t[i], values: Object.fromEntries((M.run.signals || []).map((d) => [d.name, v[d.name]?.[i] ?? null])) };
+  }
+
+  // The raw depth frame at the playhead (ADR-0014), for the inspector: asked of /sensor, and kept while the playhead stays between that
+  // frame and the next (`next_t`); the last frame stays current until the stream's count (it arrives by record) says a newer one exists.
+  // One request at a time.
+  const RAW_VALID = [5, 9];          // the sensor's "range valid" statuses
+  const raw = { key: null, fr: null, busy: false, failed: 0 };
+  function rawFrame(strict = false) {
+    const s = stream('sensors.raw');
+    if (!M.runId || !M.run || s?.missing) return null;
+    const r = raw, f = r.fr, now = performance.now();
+    const fresh = f && r.key === M.runId && (f.index === 0 || M.t >= f.t) && (f.next_t != null ? M.t < f.next_t : f.index >= (s?.count ?? f.n) - 1);
+    if (!fresh && !r.busy && now - r.failed > 500) {
+      r.busy = true;
+      const key = M.runId;
+      json(`${API}runs/${key}/sensor?t=${M.t}`).then((a) => { r.fr = a; r.key = key; }, () => { r.fr = null; r.failed = performance.now(); })
+        .finally(() => { r.busy = false; if (M.runId === key) scheduleInsp(); });
+    }
+    return f && r.key === M.runId && (fresh || !strict) ? f : null;
+  }
+  // for scripts: the frame at the playhead, or null while it is still being asked for (the inspector keeps showing the last one meanwhile)
+  const rawSummary = () => { const f = rawFrame(true); return f ? { i: f.index, n: f.n, t: f.t, frame_t_ns: f.frame_t_ns, state_t_ns: f.state_t_ns ?? null, pair_dt_ms: f.pair_dt_ms ?? null } : null; };
+  // the 8 x 8 distances as an image, coloured by distance (near warm, far cool) with the mm in each zone; a zone whose status is not valid is hatched and says its status
+  function paintRaw(cv, f) {
+    const cell = cv.width / f.cols, g = cv.getContext('2d');
+    g.font = `${Math.round(cell * 0.3)}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let r = 0; r < f.rows; r++) for (let c = 0; c < f.cols; c++) {
+      const k = r * f.cols + c, x = c * cell, y = r * cell, d = f.distance_mm[k], ok = RAW_VALID.includes(f.status[k]);
+      if (ok) { g.fillStyle = `hsl(${Math.round(240 * Math.min(Math.max(d, 0) / 4000, 1))} 65% 38%)`; g.fillRect(x, y, cell, cell); g.fillStyle = '#fff'; g.fillText(String(d), x + cell / 2, y + cell / 2); }
+      else {
+        g.fillStyle = '#2c2e34'; g.fillRect(x, y, cell, cell);
+        g.strokeStyle = '#6b6f78'; g.lineWidth = 1; g.beginPath();
+        for (let o = -cell; o < cell; o += 6) { g.moveTo(x + Math.max(o, 0), y + Math.max(-o, 0)); g.lineTo(x + Math.min(o + cell, cell), y + Math.min(cell - o, cell)); }
+        g.stroke(); g.fillStyle = '#e8c070'; g.fillText('s' + f.status[k], x + cell / 2, y + cell / 2);
+      }
+      g.strokeStyle = 'rgba(0,0,0,.45)'; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+    }
+  }
+  function rawSection() {
+    if (!M.runId || stream('sensors.raw')?.missing !== false) return kv('Raw frame', 'not in this run', '', 'na');
+    const f = rawFrame();
+    if (!f) return kv('Raw frame', 'loading', '', 'na');
+    const ok = f.status.map((s, k) => (RAW_VALID.includes(s) ? f.distance_mm[k] : null)).filter((d) => d != null);
+    const dt = f.pair_dt_ms;
+    return `<canvas class="rawcv" id="rawcv" width="240" height="240" data-i="${f.index}" data-t="${f.t}" data-valid="${ok.length}" data-rows="${f.rows}" data-cols="${f.cols}" title="The sensor's ${f.rows} x ${f.cols} zones, row 0 at the top, mm; hatched = status not valid"></canvas>`
+      + kv('Raw frame', `${f.index + 1} of ${f.n}`) + kv('Recorded at', fx(f.t, 3), 's')
+      + kv('Valid zones', `${ok.length} of ${f.rows * f.cols}`) + kv('Nearest valid', ok.length ? String(Math.min(...ok)) : 'none', ok.length ? 'mm' : '', ok.length ? '' : 'na')
+      + (dt != null ? kv('State minus frame', (dt > 0 ? '+' : '') + fx(dt, 1), 'ms') : kv('Paired state', f.state_t_ns != null ? 'no time to pair by' : 'none', '', 'na'));
   }
 
   // ---- loading (ADR-0011): the run store loads by window, then by record; the renderers take appends ----------
@@ -418,7 +467,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     }
     const m = moment();
     return {
-      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }),
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1],
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -664,9 +713,13 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // the inspector's last event, and the events before and after the playhead to jump to
   function eventSections(ev) {
     const prev = [...M.run.events].reverse().find((e) => M.kinds[e.kind] !== false && e.t < M.t - 1e-6), next = M.run.events.find((e) => M.kinds[e.kind] !== false && e.t > M.t + 1e-6);
-    return isec('v', 'Last event', '', ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
+    return isec('v', 'Last event', '', (ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
+      + (ev?.decision ? decisionRows(ev.decision) : ''))
       + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
   }
+  // the rule that fired and the values it compared (ADR-0014): the reason, then each value
+  const decisionRows = (d) => `<div class="decision" data-rule="${esc(d.rule)}"><div class="why"><span class="faint">${esc(d.rule)}</span> ${esc(d.reason)}</div>`
+    + Object.entries(d.values).map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)), '', v == null ? 'na' : '')).join('') + '</div>';
   // the values of the robot's signals at the playhead (ADR-0013), one row each, in the order the run declares them
   function signalsSection(sg) {
     const rows = (M.run.signals || []).map((d) => {
@@ -697,6 +750,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
         + isec('e', 'Error', '', (map ? kv('Belief to truth', 'world frame only', '', 'na derived') : m.dist != null ? kv('Belief to truth', fx(m.dist), 'm', 'derived') + kv('Heading error', fx(m.herr, 1), '°', 'derived') : kv('Belief to truth', 'no truth', '', 'na derived')) + kv('Nearest obstacle', 'not in the data yet', '', 'na'))
         + isec('c', 'Command', '', kv('Forward', fx(m.cmd?.[0]), 'm/s') + kv('Turn', fx(m.cmd?.[1]), 'rad/s'))
         + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', `${m.depthTick + 1} of ${m.n}`) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
+        + isec('r', 'Raw depth frame', '', rawSection())
         + isec('w', 'Plan and map', '', (m.plan ? kv('Plan', `${m.plan.k} of ${m.plan.n}`) + kv('Plan made at', fx(m.plan.t, 2), 's') : kv('Plan', 'none yet', '', 'na')) + (m.world ? kv('Map', `${m.world.k} of ${m.world.n}`) + kv('Map made at', fx(m.world.t, 2), 's') : kv('Map', 'none yet', '', 'na')))
         + eventSections(ev);
     } else {
@@ -710,6 +764,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       }
     }
     bindSecs(el);
+    const rcv = $('rawcv'), rf = rcv && raw.fr;
+    if (rcv && rf) paintRaw(rcv, rf);
     el.querySelectorAll('.cp').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(b.dataset.copy.trim()).catch(() => {}); } catch (_) { /* no clipboard here */ } b.style.color = 'var(--ok)'; setTimeout(() => (b.style.color = ''), 600); }));
     el.querySelectorAll('[data-seek]').forEach((b) => (b.onclick = () => b.dataset.seek !== '' && setTime(+b.dataset.seek)));
     const jb = el.querySelector('[data-json]');
@@ -1022,7 +1078,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const m = e.target.closest('.mk');
     if (!m) { tip.hidden = true; return; }
     const ev = M.run.events[m.dataset.ev];
-    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${hasTicks() && ev.t > tickSpan()[1] ? `<br><span style="color:var(--warn)">after the last recorded tick (${tickSpan()[1].toFixed(2)} s)</span>` : ''}`;
+    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${ev.decision ? `<br><span class="dim">${esc(ev.decision.reason)}</span>` : ''}${hasTicks() && ev.t > tickSpan()[1] ? `<br><span style="color:var(--warn)">after the last recorded tick (${tickSpan()[1].toFixed(2)} s)</span>` : ''}`;
     tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
