@@ -229,7 +229,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!fresh && !r.busy && now - r.failed > 500) {
       r.busy = true;
       const key = M.runId;
-      json(`${API}runs/${key}/sensor?t=${M.t}`).then((a) => { r.fr = a; r.key = key; }, () => { r.fr = null; r.failed = performance.now(); })
+      // a failed request is asked again once the pause is over: nothing else may redraw the inspector before then
+      json(`${API}runs/${key}/sensor?t=${M.t}`).then((a) => { r.fr = a; r.key = key; },
+        () => { r.fr = null; r.failed = performance.now(); setTimeout(() => M.runId === key && scheduleInsp(), 550); })
         .finally(() => { r.busy = false; if (M.runId === key) scheduleInsp(); });
     }
     return f && r.key === M.runId && (fresh || !strict) ? f : null;

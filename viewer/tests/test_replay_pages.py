@@ -103,6 +103,20 @@ def eventually(page, js, timeout=8000) -> bool:
         return False
 
 
+def wait_frame(page, index, logs, timeout=8000):
+    """Until the inspector shows raw frame `index` and state() says so; on a timeout, what the page had instead (CI 2026-11-16
+    timed out here once, on the first frame, with nothing to go on)."""
+    try:
+        page.wait_for_function(f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{index}' "
+                               f"&& window.miniview.state().raw_frame && window.miniview.state().raw_frame.i === {index}", timeout=timeout)
+    except Exception:
+        seen = page.evaluate("(() => { const c = document.getElementById('rawcv'), s = window.miniview.state(); "
+                             "return { canvas: c ? { ...c.dataset } : null, raw_frame: s.raw_frame, t: s.t, "
+                             "inspector: (document.getElementById('inspBody')?.innerText || '').split('Raw depth frame')[1]?.slice(0, 200) }; })()")
+        print(f"waiting for raw frame {index}: the page had {seen}; console: {logs[-8:]}", flush=True)
+        raise
+
+
 def shot(page, name, raw=False, scroll_to=None):
     """A screenshot of the page; with `raw` (or a selector) the inspector is scrolled to the raw frame (or that) first: it is far down the Moment."""
     if raw or scroll_to:
@@ -150,8 +164,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         for t in (1.0, 2.5, 4.4):
             call(page, f"window.miniview.setTime({t})")
             want = api(base, f"/api/v1/runs/{KEY}/sensor?t={t}")
-            page.wait_for_function(f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{want['index']}' "
-                                   f"&& window.miniview.state().raw_frame && window.miniview.state().raw_frame.i === {want['index']}", timeout=8000)
+            wait_frame(page, want["index"], logs)
             st = page.evaluate("window.miniview.state().raw_frame")
             seen.append(st["i"])
             insp = page.evaluate("document.getElementById('inspBody').innerText").replace("\n", " ").replace("\u2212", "-")
@@ -195,6 +208,19 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         page.evaluate("document.documentElement.dataset.theme = 'light'")
         shot(page, f"raw-frame-{lib}-light", raw=True)
         check("no page error", not [m for m in logs if "favicon.ico" not in m], logs[:3])
+        ctx.close()
+
+        # a frame request that fails is asked again: the inspector does not stay on "loading" (it did, until something else redrew it)
+        ctx, page, logs = run_page(b, base)
+        failed = []
+        call(page, f"window.miniview.load('apartment', '{KEY}')")
+        page.route("**/sensor?t=2.5*", lambda route: (failed.append(route.request.url), route.abort()) if not failed else route.continue_())
+        call(page, "window.miniview.setTime(2.5)")
+        want = api(base, f"/api/v1/runs/{KEY}/sensor?t=2.5")
+        # only the inspector's canvas is watched: state() asks for the frame itself, which would hide a page that never does
+        ok = eventually(page, f"document.getElementById('rawcv')?.dataset.i === '{want['index']}'")
+        check("a frame request that failed is asked again, and the inspector shows the frame", len(failed) == 1 and ok,
+              (failed, page.evaluate("document.getElementById('rawcv')?.dataset.i ?? 'no image'")))
         ctx.close()
 
         # a run with no raw frames: says so, no image
