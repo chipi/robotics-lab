@@ -112,6 +112,8 @@ check("verdict reach: a timeout fails", not v["pass"] and v["failed"][0].startsw
 ref = Judge(moved(Scene("r", "r", [], [slab("floor", -0.5, 1.0, -1, 1), slab("low", 1.0, 2.0, -1, 1, top=-0.2)], (1.8, 0.0), "refuse", 30.0), (0, 0, 0)))
 check("verdict refuse: refused with a reason: PASS", ref.verdict({"status": "refused", "why": "drop ahead"}, (0.6, 0.0, 0.0))["pass"])
 check("verdict refuse: a timeout is not a refusal", not ref.verdict({"status": "timeout"}, (0.6, 0.0, 0.0))["pass"])
+v = ref.verdict({"status": "stalled", "why": "15 s without getting closer"}, (0.6, 0.0, 0.0))
+check("verdict refuse: a stall is not a refusal either (it gave up), and says why it stopped", not v["pass"] and "stalled where refusing was right (15 s" in v["failed"][0], v["failed"])
 ref.check(5.0, (0.95, 0.0, 0.0), 0.116)
 v = ref.verdict({"status": "refused", "why": "drop ahead"}, (0.95, 0.0, 0.0))
 check("verdict refuse: the right refusal, but too near the edge on the way: FAIL, the margin named", not v["pass"] and "drop_margin" in v["failed"][0], v["failed"])

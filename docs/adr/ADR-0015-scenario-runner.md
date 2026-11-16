@@ -69,8 +69,9 @@ is written into the run as an event, so the viewer shows the moment:
 
 A run passes when no invariant broke and the outcome is the right one: `reach` — the navigator says
 reached and truth is within `REACHED_M` (0.25 m) of the goal, inside the time limit; `refuse` — it
-refuses or stops with a stated reason, before the time limit. A challenge's result is its pass rate,
-with each failure's reason and run key.
+refuses, with its reason, before the time limit. A stall is not a refusal: it stops safely but gave
+up rather than said why not (the operator, 2026-11-16, after challenge 8's first run passed on a
+stall). A challenge's result is its pass rate, with each failure's reason and run key.
 
 ### The first six (RFC-0008 §5, step 2)
 
