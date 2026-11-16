@@ -1,9 +1,9 @@
-"""A run opens fully in all three viewers, kept compatible on purpose (ADR-0007 "Compatibility"):
-Rerun (rerun mcap check, mcap convert), Lichtblick (the image `make viewers` runs, headless: no errors but the
-transforms note, the run's real start date, the topics, and the topics draw when switched on), and miniview (the service
-loads and serves the same file). The fixture is explore9 imported into a temp folder; an NXT run (ADR-0013) also has a
-signal plotted on a chart in each: Lichtblick's Plot panel and a Rerun time series view from a blueprint.
-Needs duck/.venv (rerun-sdk: `make duck-sync`), Docker and Chromium. Run: make test-run-compat
+"""A run opens fully in Rerun and in miniview, kept compatible on purpose (ADR-0007 "Compatibility"): Rerun (rerun mcap
+check, mcap convert, rrd verify, the rows decoded) and miniview (the service loads and serves the same file). The fixture is
+explore9 imported into a temp folder; an NXT run (ADR-0013) also has a signal plotted in a Rerun time series view from a
+blueprint. Lichtblick's checks (its image, headless: alerts, start date, topics, the 3D panel, the NXT signal in
+Raw Messages and a Plot panel) are skipped unless COMPAT_LICHTBLICK=1: its UI's timing failed CI runs that were not
+ours (the operator, 2026-11-16). Needs duck/.venv (rerun-sdk: `make duck-sync`), Chromium, and Docker for Lichtblick. Run: make test-run-compat
 or: cd viewer && uv run python tests/test_run_compat.py"""
 
 import base64
@@ -27,6 +27,9 @@ from miniview.shots import launch
 check = Checks("RUN COMPAT")
 REPO = Path(__file__).resolve().parents[2]
 RERUN = REPO / "duck" / ".venv" / "bin" / "rerun"
+# Lichtblick is not tested unless COMPAT_LICHTBLICK=1 (the operator, 2026-11-16: driving its UI failed CI runs for
+# reasons in its UI, not in our files). The checks are kept for when that is fixed.
+LICHTBLICK_ON = os.environ.get("COMPAT_LICHTBLICK") == "1"
 # Pinned by digest (the version this was written against: it checked 2026-11-16); how to bump it is in ADR-0007 "Compatibility".
 LICHTBLICK = os.environ.get("LICHTBLICK_IMAGE", "ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f57737c8c5866abf75670b8dcf2ed6c2cb5ce3d64f3c63f210a5177e9")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -153,73 +156,76 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
     rc, out = run([RERUN, "rrd", "verify", rrd])
     check("Rerun: `rerun rrd verify` passes the converted file", rc == 0, out[-200:])
 
-    # ---- (b) Lichtblick ----------------------------------------------------------------------------------------
-    served = tmp / "served"
-    served.mkdir()
-    shutil.copy(mcap, served / "run.mcap")
-    os.chmod(served, 0o755)
-    os.chmod(served / "run.mcap", 0o644)
-    cid = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{served}:/src/runs:ro", LICHTBLICK], text=True).strip()
-    try:
-        port = subprocess.check_output(["docker", "port", cid, "8080/tcp"], text=True).split(":")[-1].strip()
-        base = f"http://127.0.0.1:{port}"
+    # ---- (b) Lichtblick: skipped unless COMPAT_LICHTBLICK=1 (ADR-0007 "Compatibility") ------------------------
+    if LICHTBLICK_ON:
+        served = tmp / "served"
+        served.mkdir()
+        shutil.copy(mcap, served / "run.mcap")
+        os.chmod(served, 0o755)
+        os.chmod(served / "run.mcap", 0o644)
+        cid = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{served}:/src/runs:ro", LICHTBLICK], text=True).strip()
+        try:
+            port = subprocess.check_output(["docker", "port", cid, "8080/tcp"], text=True).split(":")[-1].strip()
+            base = f"http://127.0.0.1:{port}"
 
-        def up():
-            try:
-                return urllib.request.urlopen(base, timeout=2).status == 200
-            except Exception:
-                return False
+            def up():
+                try:
+                    return urllib.request.urlopen(base, timeout=2).status == 200
+                except Exception:
+                    return False
 
-        wait_until(up, 60, every=0.3, what="Lichtblick to answer")
-        with sync_playwright() as p:
-            b = launch(p)
-            pg = b.new_page(viewport={"width": 1500, "height": 950})
-            pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
-            day = datetime.datetime.fromtimestamp(T0_NS / 1e9, datetime.timezone.utc).strftime("%Y-%m-%d")
-            lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
-            pg.get_by_text("Topics", exact=True).first.click()
-            lb_wait(pg, "document.body.innerText.includes('foxglove.PoseInFrame')", timeout=60000)
-            topics = pg.locator("body").inner_text()
-            check("Lichtblick: the topic list has the Foxglove topics with their schemas and the run's counts",
-                  all(re.search(rf"{t}\s+foxglove\.\w+", topics) for t in FOXGLOVE_TOPICS) and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+116", topics), topics[:200])
-            pg.get_by_text("Alerts", exact=False).first.click()
-            lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
-            alerts = pg.locator("body").inner_text()
-            alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
-            titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
-            check("Lichtblick: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
-            shown = "[...document.querySelectorAll('input')].map((i) => i.value).join(' ') + ' ' + document.body.innerText"
-            lb_wait(pg, f"({shown}).includes('{day}') || ({shown}).includes('1970')", timeout=30000)
-            text = pg.evaluate(shown)
-            check("Lichtblick: the timeline shows the run's real start date, not 1970", day in text and "1970" not in text, day)
-            pg.get_by_text("Panel", exact=True).first.click()
-            pg.locator("canvas").first.click(position={"x": 100, "y": 100})
-            lb_wait(pg, "document.querySelectorAll('[data-testid=VisibilityToggle]').length === 4", timeout=30000)
-            panel = pg.locator("[data-testid=settings-tree-editor]").inner_text()
-            check("Lichtblick: the 3D panel's topic list has the four topics", all(t in panel for t in ("/belief/pose", "/truth/pose", "/map", "/depth")), panel[:300])
-            bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()      # the timeline; 87% of the way in is where the data is
-            pg.mouse.click(bar["x"] + 0.87 * bar["width"], bar["y"] + bar["height"] / 2)
+            wait_until(up, 60, every=0.3, what="Lichtblick to answer")
+            with sync_playwright() as p:
+                b = launch(p)
+                pg = b.new_page(viewport={"width": 1500, "height": 950})
+                pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
+                day = datetime.datetime.fromtimestamp(T0_NS / 1e9, datetime.timezone.utc).strftime("%Y-%m-%d")
+                lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
+                pg.get_by_text("Topics", exact=True).first.click()
+                lb_wait(pg, "document.body.innerText.includes('foxglove.PoseInFrame')", timeout=60000)
+                topics = pg.locator("body").inner_text()
+                check("Lichtblick: the topic list has the Foxglove topics with their schemas and the run's counts",
+                      all(re.search(rf"{t}\s+foxglove\.\w+", topics) for t in FOXGLOVE_TOPICS) and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+116", topics), topics[:200])
+                pg.get_by_text("Alerts", exact=False).first.click()
+                lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
+                alerts = pg.locator("body").inner_text()
+                alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
+                titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
+                check("Lichtblick: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
+                shown = "[...document.querySelectorAll('input')].map((i) => i.value).join(' ') + ' ' + document.body.innerText"
+                lb_wait(pg, f"({shown}).includes('{day}') || ({shown}).includes('1970')", timeout=30000)
+                text = pg.evaluate(shown)
+                check("Lichtblick: the timeline shows the run's real start date, not 1970", day in text and "1970" not in text, day)
+                pg.get_by_text("Panel", exact=True).first.click()
+                pg.locator("canvas").first.click(position={"x": 100, "y": 100})
+                lb_wait(pg, "document.querySelectorAll('[data-testid=VisibilityToggle]').length === 4", timeout=30000)
+                panel = pg.locator("[data-testid=settings-tree-editor]").inner_text()
+                check("Lichtblick: the 3D panel's topic list has the four topics", all(t in panel for t in ("/belief/pose", "/truth/pose", "/map", "/depth")), panel[:300])
+                bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()      # the timeline; 87% of the way in is where the data is
+                pg.mouse.click(bar["x"] + 0.87 * bar["width"], bar["y"] + bar["height"] / 2)
 
-            def stage():
-                prev = pg.locator("canvas").first.screenshot()
-                for _ in range(40):
-                    pg.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
-                    cur = pg.locator("canvas").first.screenshot()
-                    if cur == prev:
-                        return cur
-                    prev = cur
-                raise TimeoutError("the 3D canvas never settled")
+                def stage():
+                    prev = pg.locator("canvas").first.screenshot()
+                    for _ in range(40):
+                        pg.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+                        cur = pg.locator("canvas").first.screenshot()
+                        if cur == prev:
+                            return cur
+                        prev = cur
+                    raise TimeoutError("the 3D canvas never settled")
 
-            frames = [stage()]
-            for i, name in enumerate(("/belief/pose", "/depth", "/map", "/truth/pose")):
-                pg.locator("[data-testid=VisibilityToggle]").nth(i).click()
-                frames.append(stage())
-            changed = [a != b_ for a, b_ in zip(frames, frames[1:])]
-            check("Lichtblick: switching on /belief/pose, /depth, /map, /truth/pose each changes what the 3D panel draws", all(changed), changed)
-            b.close()
-    finally:
-        subprocess.run(["docker", "stop", cid], capture_output=True)
+                frames = [stage()]
+                for i, name in enumerate(("/belief/pose", "/depth", "/map", "/truth/pose")):
+                    pg.locator("[data-testid=VisibilityToggle]").nth(i).click()
+                    frames.append(stage())
+                changed = [a != b_ for a, b_ in zip(frames, frames[1:])]
+                check("Lichtblick: switching on /belief/pose, /depth, /map, /truth/pose each changes what the 3D panel draws", all(changed), changed)
+                b.close()
+        finally:
+            subprocess.run(["docker", "stop", cid], capture_output=True)
 
+    else:
+        print("SKIP Lichtblick, explore9: not tested unless COMPAT_LICHTBLICK=1 (ADR-0007 Compatibility: its UI's timing failed CI runs that were not ours)", flush=True)
     # ---- (c) miniview ------------------------------------------------------------------------------------------
     cat = catalog(data)
     cat.put_scene(scene("apartment"))
@@ -261,86 +267,95 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
         rc, out = run([RERUN, "rrd", "verify", rrd])
         check(f"Rerun, NXT run {label}: `rerun rrd verify` passes the converted file", rc == 0, out[-200:])
 
-    served = tmp / "served-nxt"
-    served.mkdir()
-    shutil.copy(n_mcap, served / "run.mcap")
-    os.chmod(served, 0o755)
-    os.chmod(served / "run.mcap", 0o644)
-    cid = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{served}:/src/runs:ro", LICHTBLICK], text=True).strip()
-    try:
-        port = subprocess.check_output(["docker", "port", cid, "8080/tcp"], text=True).split(":")[-1].strip()
-        base = f"http://127.0.0.1:{port}"
+    # Rerun: a blueprint maps .tacho_B of the decoded struct to a line; a field that does not exist draws none
+    rrd = tmp / "nxt-plot.rrd"
+    rc, out = run([RERUN, "mcap", "convert", "-d", "protobuf", "--disable-raw-fallback", "--application-id", "nxt_compat", n_mcap, "-o", rrd])
+    with sync_playwright() as p:
+        b = launch(p)
+        line = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "tacho_B", tmp / "rerun-plot.png")
+        none = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "no_such_signal", tmp / "rerun-none.png")
+        b.close()
+    rows = [r.split(",") for r in nxt_csv.read_text().splitlines()[1:]]
+    rises = float(rows[-1][4]) > float(rows[0][4])           # tacho_B, the 5th column
+    check("Rerun, NXT run: a time series view plots /nxt/signals .tacho_B by name across the run, rising as the CSV does (and a field that is not there draws nothing)",
+          rc == 0 and line["columns"] > 300 and line["span"] > 0.8 and rises and line["left_y"] > line["right_y"] + 100 and none["columns"] == 0,
+          (line, none, rises))
 
-        def lb_up():
-            try:
-                return urllib.request.urlopen(base, timeout=2).status == 200
-            except Exception:
-                return False
+    # Lichtblick: skipped unless COMPAT_LICHTBLICK=1
+    if LICHTBLICK_ON:
+        served = tmp / "served-nxt"
+        served.mkdir()
+        shutil.copy(n_mcap, served / "run.mcap")
+        os.chmod(served, 0o755)
+        os.chmod(served / "run.mcap", 0o644)
+        cid = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{served}:/src/runs:ro", LICHTBLICK], text=True).strip()
+        try:
+            port = subprocess.check_output(["docker", "port", cid, "8080/tcp"], text=True).split(":")[-1].strip()
+            base = f"http://127.0.0.1:{port}"
 
-        wait_until(lb_up, 60, every=0.3, what="Lichtblick to answer")
-        nhttpd, nbase = serve(catalog(nxt_data), follow=False)
-        with sync_playwright() as p:
-            b = launch(p)
-            pg = b.new_page(viewport={"width": 1500, "height": 950}, timezone_id="UTC")   # the Plot tooltip says clock time
-            pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
-            lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
-            pg.get_by_text("Topics", exact=True).first.click()
-            lb_wait(pg, "document.body.innerText.includes('miniview.Signals')", timeout=60000)
-            topics = pg.locator("body").inner_text()
-            check("Lichtblick, NXT run: the topic list has /nxt/signals with its schema and the run's 281 samples, beside the pose",
-                  re.search(r"/nxt/signals\s+miniview\.Signals\s+[\d.]+ Hz\s+281", topics) is not None and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+281", topics) is not None, topics[:200])
-            pg.get_by_text("Alerts", exact=False).first.click()
-            lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
-            alerts = pg.locator("body").inner_text()
-            alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
-            titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
-            check("Lichtblick, NXT run: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
-            # Lichtblick's Raw Messages panel (the third panel of the default layout): the message at the playhead, decoded by name from the descriptor in the file
-            pg.get_by_placeholder("/some/topic.msgs[0].field").first.click()
-            pg.keyboard.type("/nxt/signals")
-            pg.keyboard.press("Enter")
-            lb_wait(pg, "document.body.innerText.includes('miniview.Signals @')", timeout=30000)
-            bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()
-            pg.mouse.click(bar["x"] + 0.5 * bar["width"], bar["y"] + bar["height"] / 2)
-            lb_wait(pg, "(() => { const m = /miniview\\.Signals @ (\\d+\\.\\d+)/.exec(document.body.innerText); return m && +m[1] > 1700000010; })()", timeout=30000)
-            text = pg.locator("body").inner_text()
-            msg = text[text.index("miniview.Signals @"):]
-            at = float(re.match(r"miniview\.Signals @ (\d+\.\d+)", msg).group(1)) - T0_NS / 1e9
-            shown = {m.group(1): m.group(2) for m in re.finditer(r"\n(power_left|power_right|tacho_A|tacho_B|tacho_C|s3_color|s3_color_name|s4_ultrasonic)\n(\S+)", msg)}
-            code, st, _ = get(nbase, f"/api/v1/runs/{nkey}/state?t={at + 1e-4}")
-            want = st["signals"]["values"]
-            check("Lichtblick, NXT run: the Raw Messages panel decodes the /nxt/signals message at the playhead by name, with the values miniview reads for that sample",
-                  code == 200 and abs(st["signals"]["t"] - at) < 1e-3 and set(shown) == {k for k, v in want.items() if v is not None}
-                  and all(shown[k] == (f'"{v}"' if isinstance(v, str) else f"{v:g}") for k, v in want.items() if v is not None), (shown, want))
-            # A signal on a chart: Raw Messages' "Plot this value on a line chart" on tacho_B opens a Plot panel with that path;
-            # its tooltip at two places gives the time and value under the cursor, which must be a sample miniview serves.
-            label = pg.get_by_text("tacho_B", exact=True).first.bounding_box()
-            pg.mouse.move(label["x"] + label["width"] + 30, label["y"] + label["height"] / 2)
-            pg.locator("[aria-label='Plot this value on a line chart']").first.click()
-            lb_wait(pg, "document.body.innerText.includes('/nxt/signals.tacho_B')", timeout=15000)
-            day0 = (T0_NS / 1e9) % 86400
-            for frac in (0.3, 0.7):
-                sec, val, texts = plot_tooltip(pg, frac)
-                t = sec - day0
-                code, w, _ = get(nbase, f"/api/v1/runs/{nkey}/signals?from={t - 0.3}&to={t + 0.3}")
-                near = [v for v in w["v"]["tacho_B"] if v is not None] if code == 200 else []
-                check(f"Lichtblick, NXT run: a Plot panel draws /nxt/signals.tacho_B; at {frac:.0%} of it the value is a sample miniview serves at that time",
-                      0 < t < 60 and val in near, (round(t, 3), val, near, texts))
-            pg.screenshot(path=str(tmp / "lichtblick-plot.png"))
-            # Rerun: a blueprint maps .tacho_B of the decoded struct to a line; a field that does not exist draws none
-            rrd = tmp / "nxt-plot.rrd"
-            rc, out = run([RERUN, "mcap", "convert", "-d", "protobuf", "--disable-raw-fallback", "--application-id", "nxt_compat", n_mcap, "-o", rrd])
-            line = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "tacho_B", tmp / "rerun-plot.png")
-            none = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "no_such_signal", tmp / "rerun-none.png")
-            rows = [r.split(",") for r in nxt_csv.read_text().splitlines()[1:]]
-            rises = float(rows[-1][4]) > float(rows[0][4])           # tacho_B, the 5th column
-            check("Rerun, NXT run: a time series view plots /nxt/signals .tacho_B by name across the run, rising as the CSV does (and a field that is not there draws nothing)",
-                  rc == 0 and line["columns"] > 300 and line["span"] > 0.8 and rises and line["left_y"] > line["right_y"] + 100 and none["columns"] == 0,
-                  (line, none, rises))
-            b.close()
-        nhttpd.shutdown()
-    finally:
-        subprocess.run(["docker", "stop", cid], capture_output=True)
+            def lb_up():
+                try:
+                    return urllib.request.urlopen(base, timeout=2).status == 200
+                except Exception:
+                    return False
+
+            wait_until(lb_up, 60, every=0.3, what="Lichtblick to answer")
+            nhttpd, nbase = serve(catalog(nxt_data), follow=False)
+            with sync_playwright() as p:
+                b = launch(p)
+                pg = b.new_page(viewport={"width": 1500, "height": 950}, timezone_id="UTC")   # the Plot tooltip says clock time
+                pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
+                lb_wait(pg, "document.body.innerText.includes('Topics')", timeout=60000)
+                pg.get_by_text("Topics", exact=True).first.click()
+                lb_wait(pg, "document.body.innerText.includes('miniview.Signals')", timeout=60000)
+                topics = pg.locator("body").inner_text()
+                check("Lichtblick, NXT run: the topic list has /nxt/signals with its schema and the run's 281 samples, beside the pose",
+                      re.search(r"/nxt/signals\s+miniview\.Signals\s+[\d.]+ Hz\s+281", topics) is not None and re.search(r"/belief/pose\s+foxglove\.PoseInFrame\s+[\d.]+ Hz\s+281", topics) is not None, topics[:200])
+                pg.get_by_text("Alerts", exact=False).first.click()
+                lb_wait(pg, "document.body.innerText.includes('Transform topics detected')", timeout=30000)
+                alerts = pg.locator("body").inner_text()
+                alerts = alerts[alerts.index("Layouts") + len("Layouts"):alerts.index("Sync")]
+                titles = [a for a in alerts.split("\n") if a.strip() and not a.startswith("Activating") and a.strip() not in ("3D", "Image", "Waiting for image messages…", "No topic selected")]
+                check("Lichtblick, NXT run: no alert but the note on transform topics", titles and all("Transform topics detected" in t or re.fullmatch(r"\d+x", t.strip()) for t in titles), alerts[:300])
+                # Lichtblick's Raw Messages panel (the third panel of the default layout): the message at the playhead, decoded by name from the descriptor in the file
+                pg.get_by_placeholder("/some/topic.msgs[0].field").first.click()
+                pg.keyboard.type("/nxt/signals")
+                pg.keyboard.press("Enter")
+                lb_wait(pg, "document.body.innerText.includes('miniview.Signals @')", timeout=30000)
+                bar = pg.locator("[class*=scrubberWrapper]").first.bounding_box()
+                pg.mouse.click(bar["x"] + 0.5 * bar["width"], bar["y"] + bar["height"] / 2)
+                lb_wait(pg, "(() => { const m = /miniview\\.Signals @ (\\d+\\.\\d+)/.exec(document.body.innerText); return m && +m[1] > 1700000010; })()", timeout=30000)
+                text = pg.locator("body").inner_text()
+                msg = text[text.index("miniview.Signals @"):]
+                at = float(re.match(r"miniview\.Signals @ (\d+\.\d+)", msg).group(1)) - T0_NS / 1e9
+                shown = {m.group(1): m.group(2) for m in re.finditer(r"\n(power_left|power_right|tacho_A|tacho_B|tacho_C|s3_color|s3_color_name|s4_ultrasonic)\n(\S+)", msg)}
+                code, st, _ = get(nbase, f"/api/v1/runs/{nkey}/state?t={at + 1e-4}")
+                want = st["signals"]["values"]
+                check("Lichtblick, NXT run: the Raw Messages panel decodes the /nxt/signals message at the playhead by name, with the values miniview reads for that sample",
+                      code == 200 and abs(st["signals"]["t"] - at) < 1e-3 and set(shown) == {k for k, v in want.items() if v is not None}
+                      and all(shown[k] == (f'"{v}"' if isinstance(v, str) else f"{v:g}") for k, v in want.items() if v is not None), (shown, want))
+                # A signal on a chart: Raw Messages' "Plot this value on a line chart" on tacho_B opens a Plot panel with that path;
+                # its tooltip at two places gives the time and value under the cursor, which must be a sample miniview serves.
+                label = pg.get_by_text("tacho_B", exact=True).first.bounding_box()
+                pg.mouse.move(label["x"] + label["width"] + 30, label["y"] + label["height"] / 2)
+                pg.locator("[aria-label='Plot this value on a line chart']").first.click()
+                lb_wait(pg, "document.body.innerText.includes('/nxt/signals.tacho_B')", timeout=15000)
+                day0 = (T0_NS / 1e9) % 86400
+                for frac in (0.3, 0.7):
+                    sec, val, texts = plot_tooltip(pg, frac)
+                    t = sec - day0
+                    code, w, _ = get(nbase, f"/api/v1/runs/{nkey}/signals?from={t - 0.3}&to={t + 0.3}")
+                    near = [v for v in w["v"]["tacho_B"] if v is not None] if code == 200 else []
+                    check(f"Lichtblick, NXT run: a Plot panel draws /nxt/signals.tacho_B; at {frac:.0%} of it the value is a sample miniview serves at that time",
+                          0 < t < 60 and val in near, (round(t, 3), val, near, texts))
+                pg.screenshot(path=str(tmp / "lichtblick-plot.png"))
+                b.close()
+            nhttpd.shutdown()
+        finally:
+            subprocess.run(["docker", "stop", cid], capture_output=True)
+
+    else:
+        print("SKIP Lichtblick, NXT run: not tested unless COMPAT_LICHTBLICK=1 (ADR-0007 Compatibility: its UI's timing failed CI runs that were not ours)", flush=True)
 
     # ---- (e) miniview serves the NXT run from the same file ----------------------------------------------------------------
     cat = catalog(nxt_data)

@@ -143,7 +143,7 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	@echo "test-integration PASS"
 
 .PHONY: test-run-compat
-test-run-compat: viewer-sync duck-sync ## A run opens fully in Rerun, Lichtblick and miniview (ADR-0007 Compatibility): explore9 imported, checked in each
+test-run-compat: viewer-sync duck-sync ## A run opens fully in Rerun and miniview (ADR-0007 Compatibility): explore9 and an NXT run imported, checked in each; Lichtblick's checks are skipped unless COMPAT_LICHTBLICK=1
 	$(call run_tests,$(VIEWER_DIR),tests/test_run_compat.py,)
 	@echo "test-run-compat PASS"
 

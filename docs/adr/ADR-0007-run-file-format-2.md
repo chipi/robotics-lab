@@ -134,17 +134,21 @@ which the service treats as unknown: the file's growth decides whether the run i
 A run opens fully in **Rerun, in Foxglove/Lichtblick and in miniview**, and stays so: we may drop one
 of them later, not now.
 
-The Lichtblick image is **pinned by digest** in `scripts/viewers.sh` and in
-`viewer/tests/test_run_compat.py` (`ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f…`, checked
-2026-11-16), so a new Lichtblick cannot turn the test red unannounced. To bump it: `docker pull
-ghcr.io/lichtblick-suite/lichtblick:latest`, read the digest with `docker image inspect --format
-'{{index .RepoDigests 0}}'`, put it in both files, run `make test-run-compat`, and note the date here.
-The Rerun side is whatever `duck/.venv` pins (`make duck-sync`). `make test-run-compat` (in `make
-ci`, and a CI job) imports the explore9
-fixture and checks each: Rerun's `mcap check` and `mcap convert -d protobuf` decode the poses, the
-transform, the map and the depth with the run's counts; Lichtblick's image loads it with no alert
-but the transforms note, the run's real start date and its topics, which draw when switched on; the
-service loads and serves it. A change to the file that breaks one of them fails that test.
+**Rerun and miniview are tested; Lichtblick's checks are skipped** (the operator, 2026-11-16).
+Driving Lichtblick's UI in CI failed runs for reasons in its UI, not in our files (its transforms
+note did not show in 2 of 5 runs), and its failures must not become ours. The checks are kept, to
+fix later: `COMPAT_LICHTBLICK=1 make test-run-compat` runs them (they passed so on 2026-11-16).
+`make test-run-compat` (in `make ci`, and a CI job) imports the explore9 fixture and an NXT run
+and checks Rerun (`mcap check`, `mcap convert -d protobuf` decoding the poses, the transform, the
+map and the depth with the run's counts, `rrd verify`, a signal plotted from a blueprint) and the
+service (loads and serves it). A change to the file that breaks one of them fails that test.
+
+What Lichtblick did read was checked on 2026-11-16 with the image `make viewers` pins by digest in
+`scripts/viewers.sh` (`ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f…`): it loaded the file
+with no alert but the transforms note, the run's real start date and its topics, which drew when
+switched on. That is a record of that day; CI does not run it. The schema rules Lichtblick's
+reader imposes (no untyped arrays, no arrays of arrays) stay a unit test of our own schemas
+(`test_mcapio.py`), which runs no Lichtblick.
 
 ## Alternatives considered
 

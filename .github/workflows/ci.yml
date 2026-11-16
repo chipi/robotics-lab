@@ -5,7 +5,7 @@
 # the target named in its step:
 #   unit   → make ci-fast            lint + every project's unit tests
 #   pages  → make test-viewer-pages  miniview's two pages in headless Chromium
-#   compat → make test-run-compat    a run opens in Rerun, Lichtblick and miniview
+#   compat → make test-run-compat    a run opens in Rerun and miniview (Lichtblick's checks skipped)
 #   images → make test-integration test-viewer-image nxt-programs   the Docker images, the NXC programs
 
 name: ci
@@ -56,7 +56,7 @@ jobs:
         run: make test-viewer-pages
 
   compat:
-    name: A run opens in Rerun, Lichtblick and miniview
+    name: A run opens in Rerun and miniview (Lichtblick skipped)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,7 +67,7 @@ jobs:
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
         run: make viewer-sync && cd viewer && uv run --frozen playwright install --with-deps chromium
-      - name: make test-run-compat (Rerun from duck/.venv, Lichtblick's image, miniview)
+      - name: make test-run-compat (Rerun from duck/.venv, miniview)
         run: make test-run-compat
 
   images:

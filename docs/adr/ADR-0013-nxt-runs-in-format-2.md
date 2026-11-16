@@ -187,7 +187,8 @@ named Float64 or Utf8 column per signal (the first sample's values match the CSV
 (`miniview.Signals`, 281 messages) with no alert but the transforms note, and its Raw Messages panel
 decodes the message at the playhead by name, equal to what miniview reads for that sample.
 
-**A signal on a chart (scripted 2026-11-16, same test):**
+**A signal on a chart (scripted 2026-11-16, same test).** Lichtblick's checks were set to skip the
+same day (ADR-0007 "Compatibility"); `COMPAT_LICHTBLICK=1` runs them, CI does not.
 
 - **Lichtblick:** Raw Messages' "Plot this value on a line chart" on `tacho_B` opens a Plot panel on
   `/nxt/signals.tacho_B`. Its tooltip at 30 % and 70 % of the chart gives a time and a value; each is
