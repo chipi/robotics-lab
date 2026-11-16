@@ -222,6 +222,17 @@ video: viewer-sync ## A run as a video with the robot's model (ADR-0017): make v
 	cd $(VIEWER_DIR) && uv run --frozen miniview --data $(MINIVIEW_DATA) video $(RUN) --engine $(ENGINE) --size $(VIDEO_SIZE) \
 	  -o $(abspath $(or $(OUT),$(MINIVIEW_STATE)/videos/$(subst /,-,$(RUN))-$(ENGINE).mp4))
 
+MUJOCO_PYTHON ?= /work/pollen/microduck_rl/.venv/bin/python
+.PHONY: robots rerun-export
+robots: ## The robots' descriptions (RFC-0011): the duck's URDF and meshes from Pollen's MuJoCo model (MUJOCO_PYTHON)
+	$(MUJOCO_PYTHON) robots/duck/from_mjcf.py
+
+rerun-export: duck-sync ## A run in Rerun with the robot drawn as itself (RFC-0011): make rerun-export RUN=<robot/scene/run> [OUT=file.rrd]
+	@test -n "$(RUN)" || { echo "rerun-export: RUN=<robot/scene/run> is needed"; exit 2; }
+	@test -d robots/$(firstword $(subst /, ,$(RUN)))/meshes || { echo "no meshes for that robot: make robots"; exit 2; }
+	$(DUCK_DIR)/.venv/bin/python $(VIEWER_DIR)/src/miniview/export/rerun_robot.py $(MINIVIEW_DATA) $(RUN) \
+	  robots/$(firstword $(subst /, ,$(RUN)))/robot.urdf $(abspath $(or $(OUT),$(MINIVIEW_STATE)/rerun/$(subst /,-,$(RUN)).rrd))
+
 MINIVIEW_PORT ?= 8070
 MINIVIEW_DATA ?= /work/robotics-lab/data
 MINIVIEW_STATE ?= /work/robotics-lab/state/miniview

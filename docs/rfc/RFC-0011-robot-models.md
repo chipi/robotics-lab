@@ -74,6 +74,26 @@ description.
   select a link, see it highlighted on the body.
 - Shown at the playhead with the window the page has; scrubbing asks the API for link poses in
   windows, as it does for frames.
+- **The Robot view** (the operator, 2026-11-16: "a basic robot body explorer"): a view mode beside
+  Top, 3D and Map with the robot alone, centred, to orbit, zoom and pan. Click a part (a link): its
+  name, the joint that moves it and the joint's limits, its meshes, its place in the tree;
+  highlight, isolate or hide any part. Two poses: **as recorded** (the body at the playhead) and
+  **by hand** (a slider per joint, within its limits). A robot with a description and no run can
+  be explored too.
+
+### 3.4 Which robot, and where from (the operator: "we need to know what is in the sim and what we are looking at")
+
+- **One registry**, `robots/<robot>/robot.json` beside its description: the description (the URDF),
+  the **simulator model** when it has one (the duck: Pollen's MuJoCo model; the NXT: none yet), the
+  **real robot's backend** (the duck's `robotd`, the NXT's `nxt-web`), its joint names. The video
+  registry moves here. The simulator, the video engines, the exports, the API and the pages read it.
+- **Every run says which robot and from where.** The robot is the key's first part already; the run
+  record gains its **origin** (`sim` or `real`) and the description's hash, and a simulated run the
+  model the simulator loaded. miniview's header shows it: "duck · simulated · challenge 3".
+- **Choosing a robot:** a run's robot is the run's (shown, not chosen). The Robot view can open any
+  robot of the registry, with or without a run. The render menu offers what the render service can
+  draw; `GET /api/v1/robots` lists them all with what each has (a description, a simulator model,
+  a backend).
 
 ## 4. Order
 
@@ -81,7 +101,8 @@ description.
    against MuJoCo itself: every link's pose from our FK equals MuJoCo's `xpos`/`xquat` for the same
    joint values.
 2. The API (description, link windows) and the Rerun export, checked in Rerun (the duck moving).
-3. The Robot layer in miniview's 3D view, the link/joint tree, the joint lanes.
+3. The Robot layer in miniview's 3D view, the link/joint tree, the joint lanes; the Robot view
+   (explore the body, as recorded or by hand).
 4. The Foxglove export; the Blender engine on link poses (ADR-0017).
 5. The NXT's description; then the EV3's when it arrives.
 
