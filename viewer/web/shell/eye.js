@@ -44,3 +44,15 @@ export function axes(q) {
   const f = qrot(q, [1, 0, 0]), u = qrot(q, [0, 0, 1]), l = qrot(q, [0, 1, 0]);
   return { forward: f, up: u, right: [-l[0], -l[1], -l[2]] };
 }
+
+// What the robot did that the HUD alerts on (RFC-0012's first trigger as the navigator now has it): a cliff stop, and a glance with the head
+// at a suspected drop. An event is recorded when it ends, so a glance is "looking" for the time_s it took, before its event; either one is
+// held for ATTENTION_HOLD_S after. Recorded events only, never what a rule would have done. Oldest first: a glance follows its stop at once.
+export const ATTENTION_KINDS = ['glance', 'cliff_stop'];
+export const ATTENTION_HOLD_S = 4;
+export function attentionAt(events, t) {
+  const startOf = (ev) => ev.t - (ev.kind === 'glance' ? ev.decision?.values?.time_s ?? 0 : 0);
+  return events.filter((ev) => ATTENTION_KINDS.includes(ev.kind) && t >= startOf(ev) - 1e-9 && t <= ev.t + ATTENTION_HOLD_S)
+    .sort((a, b) => startOf(a) - startOf(b))
+    .map((ev) => ({ ev, phase: t < ev.t - 1e-9 ? 'looking' : ev.kind === 'glance' ? 'looked' : 'stopped' }));
+}

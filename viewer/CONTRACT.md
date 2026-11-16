@@ -212,7 +212,9 @@ as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, 
 - `epochs`: the map to world transform from a time on (a reset simulator starts a new map; phase-1
   evaluations have one
   epoch per goal). The data view ignores epochs and draws the map frame as it is.
-- `events`: the notable ones only (stops, refusals, recoveries, ends); every event is in the file.
+- `events`: the notable ones only (stops, refusals, recoveries, ends, the navigator's glances); every
+  event is in the file. A recording that wrote a `glance` as not notable is read as notable all the
+  same (`wire.ALWAYS_NOTABLE`).
 - `streams`: what the run holds, one entry per stream in tree order, counts kept as records arrive:
 
   ```json
@@ -301,7 +303,7 @@ explore(robot?)             explorePart(link|null)      explorePose("recorded|ha
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
 state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
                 loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
-                last_event, selection, t_range, hidden, eye, decided}
+                last_event, selection, t_range, hidden, eye, alerts, decided}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
 exploreState() -> {robot, kind, pose, selected, hidden, isolated, why, links, drawn, values, poses}   (null before Explore opens)
@@ -340,7 +342,13 @@ exploreSnapshot() -> the body as a PNG data URL
   - **The HUD** (`#eyehud`, over `eye` and `watch`): `#hudtxt` (pace = the tick's `cmd`, the newest
     event with its rule and reason, the numbers of its `decision.values`, this frame's returns by
     kind, where the sensor pose came from) and `#hudcv` (the 8 x 8 distances, one pixel per zone).
-    Recorded values and values computed from them only.
+    Recorded values and values computed from them only. Over them, an **alert** (`.alert` in
+    `#hudtxt`, `state().alerts` `[{kind, phase, t, rule, html}]`, the two newest) for what the
+    navigator did that RFC-0012 calls attention: a `cliff_stop` (STOPPED) and a `glance` (a look
+    with the head at a suspected drop). An event is written when it ends, so a glance is LOOKING for
+    its decision's `values.time_s` before its event (bearing and distance only, no result yet) and
+    LOOKED after (what it saw and the edge); both are held 4 s after (`eye.js` `attentionAt`). Only
+    recorded events, never what a rule would have done.
   - **Gaps** (`world.gaps`, in the World model group, drawn by the three.js page only): the map
     in force's unknown cells within `GAP_MARGIN_M` = 0.45 m (RFC-0012's drop margin,
     `web/shell/gaps.js`, which also holds the pure `gapCells(grid, path, margin)`) of the plan in
@@ -431,6 +439,7 @@ project([x, y, z]) -> [clientX, clientY] | null   where a world point falls in t
 eye() -> {source, frame_t, position, forward, up, fov} | null   the eye camera as drawn (three.js page; the shell gives it `shell.eyePose()` and
                            is called back with `shell.drawn()` after each draw)
 eyeView() -> {fov, h} | null   the eye camera's field of view and its pane's height in pixels      gaps() -> {gap, fog, visible} | null
+returns(i) -> {f, o, v, b: [[x, y, z]]} | null   tick i's returns as drawn, by class, in the world frame
 ```
 
 `setRun(run, frames)` gives the run and the frames loaded so far (ticks by their number in the run,

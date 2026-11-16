@@ -312,6 +312,12 @@ export function buildRun(run, fr, world) {
     return c;
   };
 
+  // tick i's returns as drawn, by kind: [x, y, z] in this layer's frame (for this repository's tests)
+  L.returnsAt = (i) => {
+    const c = chunks.find((q) => i >= q.i0 && i < q.i1);
+    return c && Object.fromEntries(Object.entries(c.D).map(([k, B]) => [k, Array.from({ length: B.cum.a[i - c.i0 + 1] - B.cum.a[i - c.i0] }, (_, n) => [...B.pos.a.slice((B.cum.a[i - c.i0] + n) * 3, (B.cum.a[i - c.i0] + n) * 3 + 3)])]));
+  };
+
   const psG = new Grow(Float32Array, 3), pStart = [], pCount = [];
   let psN = 0;
   const plan = add('plan.path', new ThickLine(C.plan, 2, 0.07, 0.05));

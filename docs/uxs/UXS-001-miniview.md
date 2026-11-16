@@ -231,7 +231,10 @@ Prototype for review, on the three.js page only.
   following it.
 - **The eye's HUD** (over the Eye view): pace (the tick's command), what the newest event decided
   (its rule and reason), the numbers that decision compared, this frame's returns by kind and the
-  8 x 8 distances. Only recorded values or values computed from them.
+  8 x 8 distances. Only recorded values or values computed from them. An **alert** above them says
+  what the navigator did that RFC-0012 calls attention: STOPPED for a cliff stop, LOOKING while
+  the head looks at a suspected drop (its bearing and distance), LOOKED after it (what it saw, where
+  the edge is); held 4 s. It shows what the robot did, never what a rule would have done.
 - **Gaps** (stream `world.gaps`, in the World model group): the unknown cells of the map in force within
   0.45 m of the plan in force, tinted orange with a hatch; the other unknown cells as a faint fog.
   **Real hazards over the model** (an overlay, off by default) draws the scene's hazards again as a

@@ -464,3 +464,6 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
 .tlink { height: 24px; display: inline-flex; align-items: center; padding: 0 8px; border: 1px solid var(--border); border-radius: 3px; color: var(--text); background: var(--bg-field); text-decoration: none; white-space: nowrap; }
 .tlink:hover { background: var(--bg-hover); }
 .app.scenes .tlink { display: none; }
+.hudbox .alert { margin: 2px 0 5px; padding: 4px 6px; border: 1px solid #e0a030; background: rgba(224, 160, 48, .16); color: #ffe2a8; }
+.hudbox .alert.cliff_stop { border-color: #e05a4f; background: rgba(224, 90, 79, .2); color: #ffd0cb; }
+.hudbox .alert .ah { color: #fff; letter-spacing: .08em; }

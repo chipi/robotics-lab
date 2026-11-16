@@ -245,6 +245,8 @@ const adapter = {
   eyeView: () => views.eyeView(),
   // the gaps as drawn at the playhead: the unknown cells near the plan, and the other unknown cells
   gaps: () => (RW ? { ...RW.gapCount, visible: RW.obj['world.gaps'].visible && S.shown('world.gaps') } : null),
+  // tick i's returns as drawn in the world frame, by kind
+  returns: (i) => RW?.returnsAt(i) ?? null,
   cursor: (x, y) => views.cursorAt(x, y),
   scale: () => views.scale(),
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,

@@ -75,10 +75,16 @@ def state_of(k):
     return {"quat": list(q), "odom_z": 0.118 + 0.0005 * k, "tof": {"pos": [0.08, 0.02, 0.11], "quat": list(qy(0.2 + 0.001 * k))}}
 
 
+def points(k):
+    """What the cliff check made of frame k, in map metres: a floor return and an obstacle (the tick's `depth` and the frame's `derived.points`)."""
+    b = belief(k)
+    return [[round(b[0] + 0.5, 3), round(b[1], 3), 0.0, "f"], [round(b[0] + 0.6, 3), round(b[1] + 0.1, 3), 0.3, "o"]]
+
+
 def frame(k, with_state):
     t = round(1.0 + 0.1 * k + 0.01, 3)
     p = {"rows": 8, "cols": 8, "distance_mm": [300 + 20 * i for i in range(64)], "status": [5] * 64, "seq": k, "frame_t_ns": 1_000_000_000 + k,
-         "state_t_ns": 1_000_000_000 + k - 1000, "pair_dt_ms": -0.001, "t_src": t}
+         "state_t_ns": 1_000_000_000 + k - 1000, "pair_dt_ms": -0.001, "t_src": t, "derived": {"points": points(k)}}
     if with_state:
         p.update(state=state_of(k), pose=belief(k))
     return (t, "depth_frame", p)
@@ -96,7 +102,7 @@ def records(with_state):
         t = round(1.0 + 0.1 * k, 3)
         b = belief(k)
         out.append(tick(t, b[0], belief=b, truth=[b[0] + EPOCH[0], b[1] + EPOCH[1], b[2] + EPOCH[2]], cmd=[0.3, 0.05 * (k % 3)],
-                        depth=[[b[0] + 0.5, b[1], 0.0, "f"], [b[0] + 0.6, b[1] + 0.1, 0.3, "o"]],
+                        depth=points(k),
                         truth_3d={"z": 0.12, "quat": list(qmul(qz(b[2] + EPOCH[2]), qy(0.03)))}))
         if k % 2 == 0:
             out.append(frame(k, with_state))
@@ -109,12 +115,29 @@ def records(with_state):
     return sorted(out, key=lambda r: r[0])
 
 
+def attention_records():
+    """The same run with what RFC-0012's first trigger makes the navigator do: a cliff stop, then a glance at the drop it stopped for (the
+    recording writes a glance as not notable, as the first ones were), then a second glance that finds the floor."""
+    rs = [r for r in records(True) if r[1] != "end"]
+    rs += [(1.55, "event", {"kind": "cliff_stop", "text": "cliff_stop drop_m 0.538", "notable": True, "t_src": 1.55, "raw": {},
+                            "decision": decision("cliff_stop", "a drop ahead seen in 3 frames in a row", drop_m=0.538, stop_m=0.6, zones=3, streak=3)}),
+           (2.35, "event", {"kind": "glance", "text": "", "notable": False, "t_src": 2.35, "raw": {},
+                            "decision": decision("glance", "a suspected drop near the way: looked at it with the head and saw its edge", bearing_deg=-7, distance_m=0.611,
+                                                 status="drop", edge_m=0.545, time_s=0.6)}),
+           (3.3, "event", {"kind": "glance", "text": "", "notable": False, "t_src": 3.3, "raw": {},
+                           "decision": decision("glance", "a suspected drop near the way: looked at it with the head, nothing seen", bearing_deg=-2, distance_m=0.672,
+                                                status="floor", edge_m=None, time_s=0.5)}),
+           (3.95, "end", {"verdict": "reached"})]
+    return sorted(rs, key=lambda r: r[0])
+
+
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp) / "data"
     cat = catalog(data)
     cat.put_scene(SCENE)
     make_run(data, "duck/room/eye1", records(True), started_at_ns=1_800_000_000 * 10**9)            # frames with their state: the newest run
     make_run(data, "duck/room/eye0", records(False), started_at_ns=1_700_000_000 * 10**9)           # frames without it: the eye is estimated
+    make_run(data, "duck/room/eye2", attention_records(), started_at_ns=1_600_000_000 * 10**9)     # the oldest: with a cliff stop and glances
     httpd, base = serve(cat, follow=False)
 
     # ---- the watch URLs ---------------------------------------------------------------------------------------------
@@ -214,6 +237,20 @@ with tempfile.TemporaryDirectory() as tmp:
         check("the 8 x 8 distances are drawn", page.evaluate("[document.getElementById('hudcv').width, document.getElementById('hudcv').height]") == [8, 8])
         shot(page, "eye")
 
+        # ---- the returns where the cliff check put them ------------------------------------------------------------
+        check("the playhead is on tick 10, the frame the eye was placed from", page.evaluate("window.miniview.state().tick") == 10)
+        c, sn = math.cos(EPOCH[2]), math.sin(EPOCH[2])
+        want = {"f": [], "o": [], "v": [], "b": []}
+        for x, y, z, kind in points(10):                                          # the frame's derived.points, through the run's epoch
+            want[kind].append([EPOCH[0] + c * x - sn * y, EPOCH[1] + sn * x + c * y, z])
+        drawn = page.evaluate("window.miniview.internals.adapter.returns(10)")
+        check("each return is drawn where the cliff check put it (the frame's derived.points, through the epoch), with its class",
+              {k: len(v) for k, v in drawn.items()} == {k: len(v) for k, v in want.items()}
+              and all(near(a, w, 1e-4) for k in want for a, w in zip(drawn[k], want[k])), (drawn, want))
+        check("a return is not where the map frame alone would put it (the epoch shows)", not near(drawn["f"][0], points(10)[0][:3], 0.05), drawn["f"])
+        check("the HUD alerts on what the robot did, not on every event: a refusal and a tight pivot raise none",
+              all(page.evaluate(f"(window.miniview.setTime({t}), window.miniview.state().alerts)") == [] for t in (1.6, 2.4)))
+
         # ---- an estimate where the run records no frame state ----------------------------------------------------
         page0 = open_page(b, f"{base}/web/three/#scene=room&run=duck/room/eye0&view=eye")
         e = eye_at(page0, 2.05, "estimated", 2.0)
@@ -278,6 +315,36 @@ with tempfile.TemporaryDirectory() as tmp:
         shot(page, "decided")
         b_state_logs = list(page.logs)
 
+        # ---- the attention alert: what the robot did (a cliff stop, a glance), from the recorded events --------------
+        att = open_page(b, f"{base}/web/three/#scene=room&run=duck/room/eye2&view=eye")
+
+        def alerts(t):
+            call(att, f"window.miniview.setTime({t})")
+            return (att.evaluate("window.miniview.state().alerts.map((a) => [a.kind, a.phase])"),
+                    att.evaluate("[...document.querySelectorAll('#hudtxt .alert')].map((a) => a.textContent)"))
+
+        check("nothing the robot did, no alert", alerts(1.2) == ([], []))
+        st, txt = alerts(1.6)
+        check("a cliff stop: STOPPED, with the recorded reason and the numbers", st == [["cliff_stop", "stopped"]] and len(txt) == 1
+              and all(w in txt[0] for w in ("STOPPED", "a drop ahead seen in 3 frames in a row", "0.538", "0.60", "3 frames in a row")), (st, txt))
+        st, txt = alerts(2.0)
+        check("during the glance (its event comes when it ends): the stop and LOOKING, with the bearing and the distance, no result yet",
+              st == [["cliff_stop", "stopped"], ["glance", "looking"]] and "LOOKING" in txt[1] and "saw" not in txt[1] and "−7°" in txt[1] and "0.61 m ahead" in txt[1] and "edge" not in txt[1], (st, txt))
+        st, txt = alerts(2.4)
+        check("after it: LOOKED, what it saw and where the edge is, from the glance's values",
+              st == [["cliff_stop", "stopped"], ["glance", "looked"]] and "LOOKED" in txt[1] and "saw drop" in txt[1] and "edge 0.545 m" in txt[1], (st, txt))
+        shot(att, "attention")
+        st, txt = alerts(3.0)
+        check("at most the two newest: the first glance's result and the second glance under way", st == [["glance", "looked"], ["glance", "looking"]], (st, txt))
+        st, txt = alerts(3.5)
+        check("a glance that found only floor says so and has no edge", st[-1] == ["glance", "looked"] and "saw floor" in txt[-1] and "edge" not in txt[-1], (st, txt))
+        check("the alert goes after 4 s (the pure rule): held to 4 s after the event, gone after",
+              att.evaluate("import('/web/shell/eye.js').then((m) => { const ev = [{kind: 'cliff_stop', t: 1.55}]; return [m.attentionAt(ev, 5.5).length, m.attentionAt(ev, 5.6).length, m.attentionAt(ev, 1.5).length]; })") == [1, 0, 0])
+        att.click("#tabDecided")
+        check("the Decided tab lists the glances, though the recording wrote them as not notable, with their decision's reason",
+              att.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["tight_pivot", "cliff_stop", "refused", "glance", "invariant", "glance", "verdict"]
+              and "saw its edge" in att.evaluate("document.querySelector('#inspBody .dec:nth-child(5)').textContent"))
+
         # ---- the links, both ways, at the same moment --------------------------------------------------------------
         call(page, "window.miniview.setTime(2.05)")
         wl = page.evaluate("document.getElementById('watchLink').getAttribute('href')")
@@ -307,7 +374,7 @@ with tempfile.TemporaryDirectory() as tmp:
         # `latest` is the scene's newest run
         lw = open_page(b, f"{base}/watch/duck/room/latest", whole=False)
         check("/watch/<robot>/<scene>/latest opens the scene's newest run", lw.evaluate("window.miniview.state().run") == "duck/room/eye1", lw.evaluate("window.miniview.state().run"))
-        check("no page errors on any page", not (page.logs or b_state_logs or w.logs or back.logs or lw.logs or page0.logs), (page.logs, w.logs, back.logs, lw.logs, page0.logs))
+        check("no page errors on any page", not (page.logs or b_state_logs or w.logs or back.logs or lw.logs or page0.logs or att.logs), (page.logs, w.logs, back.logs, lw.logs, page0.logs, att.logs))
         b.close()
     httpd.shutdown()
 

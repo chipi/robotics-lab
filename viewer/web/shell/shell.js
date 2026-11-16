@@ -24,7 +24,7 @@ import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { chainsOf } from './robot.js';
-import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG } from './eye.js';
+import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -348,15 +348,27 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const valText = (v) => (v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)));
   // the HUD shows only recorded values or values computed from them: the tick's command, the newest event and the numbers its
   // decision compared, this frame's returns by kind, the raw distances
+  // the alert: what the robot did that RFC-0012 would call attention, from the recorded event and its decision's values
+  function alertOut() {
+    return (M.run ? attentionAt(M.run.events, M.t) : []).slice(-2).map(({ ev, phase }) => {
+      const d = ev.decision, v = d?.values || {};
+      const head = phase === 'looking' ? 'LOOKING' : phase === 'looked' ? 'LOOKED' : 'STOPPED';
+      const body = ev.kind === 'glance'
+        ? `bearing <b>${sgn(v.bearing_deg ?? 0, 0)}°</b> · ${fx(v.distance_m, 2)} m ahead${phase === 'looking' ? '' : ` · saw <b>${esc(String(v.status))}</b>${v.edge_m == null ? '' : ` · edge <b>${fx(v.edge_m, 3)} m</b>`}`}`
+        : `drop <b>${fx(v.drop_m, 3)} m</b> ahead, stops at ${fx(v.stop_m, 2)} m · ${valText(v.streak)} frames in a row`;
+      return { kind: ev.kind, phase, t: ev.t, rule: d?.rule ?? ev.kind, html: `<b class="ah">${head}</b> ${phase === 'looking' ? 'with the head' : esc(d?.reason || ev.kind)}<br>${body}` };
+    });
+  }
   function paintHud() {
     const on = eyeOn() && !!M.run && hasTicks();
     $('eyehud').hidden = $('eyecone').hidden = !on;
     if (!on) return;
-    const m = moment(), ev = m.ev, d = ev?.decision, live = M.run.status === 'live';
+    const m = moment(), ev = m.ev, d = ev?.decision, live = M.run.status === 'live', al = alertOut();
     const view = adapter.eyeView?.();
     if (view) { const side = (view.h * Math.tan((FOV_DEG * Math.PI) / 360)) / Math.tan((view.fov * Math.PI) / 360); Object.assign($('eyecone').firstChild.style, { width: side + 'px', height: side + 'px' }); }
     const ep = adapter.eye?.();
     $('hudtxt').innerHTML = `<h4>${esc((M.run.robot?.name || 'robot').toUpperCase())} · EYE</h4>`
+      + al.map((a) => `<div class="alert ${a.kind}">${a.html}</div>`).join('')
       + `<div>${esc(M.sceneId)} · t <b>${m.t.toFixed(1)} s</b> · ${live ? (M.follow ? 'LIVE' : 'live') : 'REPLAY'}</div>`
       + `<div><span class="hk">PACE</span><b>${fx(m.cmd?.[0], 2)} m/s</b> · turn <b>${m.cmd ? sgn(m.cmd[1]) : '—'} rad/s</b></div>`
       + `<div><span class="hk">DOING</span>${ev ? `<b>${esc(d?.rule || ev.kind)}</b> · ${esc(d?.reason || (ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trim())} · ${Math.max(0, M.t - ev.t).toFixed(1)} s ago` : 'nothing decided yet'}</div>`
@@ -633,7 +645,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     return {
       ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
-      selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), decided: decidedOut(),
+      selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), alerts: eyeOn() ? alertOut() : [], decided: decidedOut(),
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
     };
   }
