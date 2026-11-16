@@ -127,6 +127,8 @@ def stub_engine(tmp: Path, kind: str = "ok") -> Path:
     gate = Path(tmp) / "gate"
     gate.unlink(missing_ok=True)
     os.environ["VIDEO_MUJOCO_SCRIPT"], os.environ["VIDEO_MUJOCO_PYTHON"] = str(script), sys.executable
+    # the machine's own Blender (~/opt/blender, when installed) must not decide what a test sees: no Blender unless a test says
+    os.environ["VIDEO_BLENDER"] = str(Path(tmp) / "no-blender")
     for k in ("STUB_GATE", "STUB_FAIL"):
         os.environ.pop(k, None)
     if kind == "gated":

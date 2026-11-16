@@ -277,17 +277,21 @@ with sync_playwright() as p:
                 check("the Robot layer in the world frame: the trunk at the truth's whole pose (x, y, z and tilt), the joint at its value at t",
                       bd["visible"] and near(bd["pos"], [1.4, 0.5, 0.2]) and near(bd["quat"], [math.cos(0.1), math.sin(0.1), 0, 0])
                       and near(bd["joint_upper_quat"], [math.cos(a / 2), math.sin(a / 2)]), bd)
+                check("with the body shown no marker fills its cylinder; the truth's (the body stands in for it) drops its outline, the belief's keeps it",
+                      bd["cylinders"] == {"truth": [False, False], "belief": [False, True]}, bd["cylinders"])
                 call(page, "window.miniview.setFrame('map')")
                 bd = page.evaluate("window.miniview.internals.adapter.body()")
+                check("in the map frame it stands in for the belief's marker: no fill, no outline", bd["cylinders"]["belief"] == [False, False], bd["cylinders"])
                 p_, r_ = math.radians(2.0) / 2, math.radians(-1.0) / 2
                 want_q = [math.cos(p_) * math.cos(r_), math.cos(p_) * math.sin(r_), math.sin(p_) * math.cos(r_), -math.sin(p_) * math.sin(r_)]
                 check("in the map frame (no truth there): at the belief, at the robot's standing height, tilted by the IMU",
                       bd["visible"] and near(bd["pos"], [0.4, 0.0, 0.05]) and near(bd["quat"], want_q), (bd, want_q))
                 call(page, "window.miniview.setFrame('world')")
                 page.click('#tree .row[data-id="body.model"] .eye')
-                hidden = page.evaluate("window.miniview.internals.adapter.body().visible")
+                off = page.evaluate("window.miniview.internals.adapter.body()")
                 page.click('#tree .row[data-id="body.model"] .eye')
-                check("the 3D model row's eye hides the body and shows it again", hidden is False and page.evaluate("window.miniview.internals.adapter.body().visible") is True)
+                check("the 3D model row's eye hides the body and shows it again", off["visible"] is False and page.evaluate("window.miniview.internals.adapter.body().visible") is True)
+                check("with the body hidden, every marker has its cylinder back (fill and outline)", off["cylinders"] == {"truth": [True, True], "belief": [True, True]}, off["cylinders"])
                 shot(page, "robot-layer-3d")
                 call(page, "window.miniview.setView('top')")
 

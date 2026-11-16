@@ -78,8 +78,17 @@ function placeBody() {
   if (!body) return;
   const on = !!fr && !!RW && S.shown('body.model');
   body.root.visible = on;
+  const i = M.i, t3 = on && M.frame === 'world' ? fr.truth_3d?.[i] : null;
+  // with the body shown no marker fills its cylinder (the body would sit inside a coloured haze: belief and truth are often
+  // where it is); the marker it stands in for drops the outline too, keeping its heading line and dot. Hidden parts stay
+  // pickable (the raycaster does not skip them)
+  const standIn = !on ? null : t3 && RW.tpose ? RW.obj['truth.pose'] : R().obj['belief.pose'];
+  for (const m of [RW?.obj['truth.pose'], RW?.obj['belief.pose'], RM?.obj['belief.pose']]) {
+    if (!m) continue;
+    m.children[0].visible = !on;
+    m.children[1].visible = m !== standIn;
+  }
   if (!on) return;
-  const i = M.i, t3 = M.frame === 'world' ? fr.truth_3d?.[i] : null;
   if (t3 && RW.tpose) body.place([RW.tpose[i * 3], RW.tpose[i * 3 + 1], t3.z], t3.quat);
   else {
     const P = R().pose, tl = fr.tilt?.[i];
@@ -202,7 +211,9 @@ const adapter = {
   // the Robot layer as drawn: shown, where its root is, how many parts (for this repository's tests)
   body: () => (body ? { visible: body.root.visible, pos: body.root.position.toArray().map((v) => +v.toFixed(5)),
     quat: [body.root.quaternion.w, body.root.quaternion.x, body.root.quaternion.y, body.root.quaternion.z].map((v) => +v.toFixed(5)), drawn: body.drawn(),
-    joint_upper_quat: body.links.upper ? [body.links.upper.quaternion.w, body.links.upper.quaternion.y].map((v) => +v.toFixed(5)) : null } : null),
+    joint_upper_quat: body.links.upper ? [body.links.upper.quaternion.w, body.links.upper.quaternion.y].map((v) => +v.toFixed(5)) : null,
+    // per marker: [fill shown, outline shown]
+    cylinders: Object.fromEntries([['truth', RW?.obj['truth.pose']], ['belief', R()?.obj['belief.pose']]].map(([k, m]) => [k, m ? [m.children[0].visible, m.children[1].visible] : null])) } : null),
   cursor: (x, y) => views.cursorAt(x, y),
   scale: () => views.scale(),
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,
