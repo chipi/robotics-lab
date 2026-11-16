@@ -1,7 +1,6 @@
 # ADR-0017 — A run as a video, with any rendering engine and the robot's own model
 
-**Status:** Proposed (2026-11-16) — the export as built, for the operator's review; the UI trigger
-(below) has an open question
+**Status:** Accepted (2026-11-16, the operator)
 **Date:** 2026-11-16
 **Context documents:** [ADR-0016](ADR-0016-joints-and-whole-truth-pose.md) (joints and the whole
 truth pose), [RFC-0011](../rfc/RFC-0011-robot-models.md) (robot descriptions),

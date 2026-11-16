@@ -1,6 +1,6 @@
 # RFC-0011 — Robots drawn as themselves: a link/joint description, moved by the recorded joints
 
-**Status:** Proposed (2026-11-16) — for the operator's review
+**Status:** Accepted (2026-11-16, the operator)
 **Builds on:** [ADR-0016](../adr/ADR-0016-joints-and-whole-truth-pose.md) (a run records the
 joints and the truth's whole pose), [ADR-0007](../adr/ADR-0007-run-file-format-2.md) (format 2, Foxglove
 channels), [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md) (ROS terms and shapes),
