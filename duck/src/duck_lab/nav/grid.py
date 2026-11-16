@@ -33,9 +33,10 @@ SHADOW_COST = 60.0
 FREE_COST = 1.0
 
 
-# Drops get more room than walls: as much as the cliff check's stop distance (45 cm), so a plan never
-# walks into stopping range of a drop it already knows - which is what made trial 2 stop, replan and
-# stop again. (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the
+# Drops get more room than walls: set to the cliff check's stop distance of the time (45 cm), so a plan never
+# walked into stopping range of a drop it already knew - which is what made trial 2 stop, replan and
+# stop again. The stop distance is now 0.60 (run.CLIFF_STOP_M), so that coupling no longer holds; the margin is
+# to be sized with the drop work (docs/wip/CLEARANCE-MODEL.md, the review of 2026-11-16). (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the
 # cliff check over the unremembered part of the same staircase, and the duck fell. Never again: the
 # cliff check stops for every drop it sees.)
 DROP_LETHAL_M = 0.45
@@ -130,6 +131,9 @@ class CostGrid:
             raise EmptyMap("map.grid is empty: mapd has no stop yet")
         if len(cells) != w * h:
             raise ValueError(f"map.grid has {len(cells)} cells for {w}x{h}")
+        # every wall mapd saw, explained or not, still casts its shadow: the unseen side of a face the duck saw up close is
+        # the case SHADOW_COST is for (exploration trial 7)
+        seen_walls = [(i % w, i // w) for i, c in enumerate(cells) if c == "#"]
         if explained_by:
             near = {}
             for px, py in explained_by:                  # bucket the points by cell, so each wall cell checks a few
@@ -150,7 +154,7 @@ class CostGrid:
         reach = math.ceil(SHADOW_M / res) + 1
         ring = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1)
                 if math.hypot(dx, dy) * res - res / 2 < SHADOW_M]
-        for cx, cy in walls:
+        for cx, cy in seen_walls:
             for dx, dy in ring:
                 x, y = cx + dx, cy + dy
                 if 0 <= x < w and 0 <= y < h and cells[y * w + x] == "?":

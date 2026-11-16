@@ -322,6 +322,12 @@ class Navigator:
                 new.append(q)
         return new
 
+    def _remember_frame(self, fv, tick_pose: tuple) -> list:
+        """Remember a frame's obstacle points within LAYER_M, placed with the pose of the state the frame was paired with
+        (fv.pose), the tick's only when the frame has none: frames come at 15 Hz and ticks at 10 Hz, and during a pivot at
+        0.8 rad/s the tick's pose is up to 0.08 rad off, a point at 0.6 m some 5 cm (the review of 2026-11-16)."""
+        return self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), fv.pose or tick_pose)
+
     def _on_state(self, s: dict) -> None:
         """Every robot state (the state stream's thread): odometry to the localizer, the state to the pairing history, the IMU and
         the navigator's values to the run's signals."""
@@ -489,7 +495,7 @@ class Navigator:
                 if fv is not None and fv.ok:
                     # what the sensor sees now is in the memory before the plan and the pivot gate use it: a
                     # duck that has not moved yet had none (challenge 7: the room read from whole cells alone)
-                    self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), pose)
+                    self._remember_frame(fv, pose)
                 try:
                     grid = self.grid()
                 except EmptyMap:
@@ -556,8 +562,7 @@ class Navigator:
                     self._drop_streak = self._drop_streak + 1 if pts else 0
                 if self._drop_streak < DROP_FRAMES:
                     pts = []
-                seen = obstacle_points(fv.frame, fv.state, within_m=LAYER_M)
-                new = self._remember(seen, pose)
+                new = self._remember_frame(fv, pose)
                 ahead = path[st.target_index:] if path else []
                 if new and any(math.dist(q, w) < LETHAL_M + 0.05 for q in new for w in ahead):
                     self.record(event="replan_new_obstacle", points=len(new), pose=pose,
@@ -567,12 +572,13 @@ class Navigator:
                     continue
             if tw.vx > 0 and pts and min(p[2] for p in pts) < CLIFF_STOP_M:
                 self.move(Twist())
-                c, s_ = math.cos(pose[2]), math.sin(pose[2])
-                edge = [(pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay) for ax, ay, _ in pts]
+                at = fv.pose or pose        # the drops were seen in that frame: placed with its state's pose
+                c, s_ = math.cos(at[2]), math.sin(at[2])
+                edge = [(at[0] + c * ax - s_ * ay, at[1] + s_ * ax + c * ay) for ax, ay, _ in pts]
                 for ax, ay, h in pts:
                     for extra in (0.0,) + BEYOND_M:
                         k = (h + extra) / h if h > 0 else 1.0
-                        self.drops.append((pose[0] + k * (c * ax - s_ * ay), pose[1] + k * (s_ * ax + c * ay)))
+                        self.drops.append((at[0] + k * (c * ax - s_ * ay), at[1] + k * (s_ * ax + c * ay)))
                 self.drops.extend(extend_edge(edge, EDGE_EXTEND_M))
                 self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose,
                             drops=[[round(v, 2) for v in d] for d in self.drops],
@@ -612,7 +618,7 @@ class Navigator:
                 reflex_stops += 1
                 self.move(Twist())
                 seen = obstacle_points(fv.frame, fv.state) if fv is not None and fv.ok else []
-                self._remember(seen, pose)
+                self._remember(seen, (fv.pose or pose) if fv is not None else pose)    # placed with the frame's pose
                 if not seen:   # no geometry (no state yet): the nearest return straight ahead
                     ahead = near / 1000.0
                     self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))

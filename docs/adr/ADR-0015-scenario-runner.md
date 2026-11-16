@@ -89,7 +89,7 @@ Built with the runner so it is proven on them; the ranges are first guesses, to 
 | 8 | Step down, head-on | the start's floor ends 1 m ahead; the goal is on the lower floor | refuse | depth 0.1–0.3 m |
 | 9 | Step down, diagonally | the same, the edge at 30–60° to the start's heading | refuse | angle, depth |
 | 10 | Walking along a ledge | the start's floor ends in a drop 0.1–0.3 m deep running beside the way, 0.4–0.6 m from it (left or right); the other side walled 0.8 m out; the goal 2.4–2.8 m ahead on the upper floor. A straight walk does not show the drop to the sensor (9 of the first 10 runs saw none): it tests not drifting toward a ledge, not drop memory | reach | ledge distance, depth, side |
-| 11 | A narrow passage beside a hole | a pit 0.1–0.3 m deep, 0.8–1.0 m long, from the passage to the room's wall on one side; a block from the passage to the wall on the other, so the passage is the only way; 0.65–0.8 m wide (block face to pit edge), the duck's line 0.3–0.4 m from the edge; the goal beyond | reach | width, edge, depth, side |
+| 11 | A narrow passage beside a hole | a pit 0.1–0.3 m deep, 0.8–1.0 m long, from the passage to the room's wall on one side; a block from the passage to the wall on the other, so the passage is the only way; 0.65–0.8 m wide (block face to pit edge), the duck's line 0.3–0.4 m from the edge; the goal beyond. A pass is not yet evidence of drop handling: the forward sensor cannot see a pit 0.3 m or more to the side, and 7 of the first 10 runs passed without seeing it (docs/wip/CLEARANCE-MODEL.md, the review of 2026-11-16) | reach | width, edge, depth, side |
 
 Every scene also gets the start's jitter: ±0.05 m, ±10°.
 

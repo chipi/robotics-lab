@@ -259,6 +259,24 @@ one = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 10, 
 check("clearance to a cell is to its square from the position itself, not from the position's cell centre",
       abs(clearance(one, (0.20, 0.27), 0.3) - 0.05) < 1e-9 and abs(clearance(one, (0.24, 0.27), 0.3) - 0.01) < 1e-9,
       (clearance(one, (0.20, 0.27), 0.3), clearance(one, (0.24, 0.27), 0.3)))
+wall_map = {"res_m": 0.05, "origin": [0.0, 0.0], "width": 10, "height": 10,      # a wall column at x cell 4, unknown beyond it
+            "cells": "".join(("#" if x == 4 else "?" if x > 4 else ".") for y in range(10) for x in range(10))}
+on_wall = [(0.22, 0.025 + 0.05 * j) for j in range(10)]
+shaded = CostGrid.from_map_grid(wall_map, explained_by=on_wall)
+check("an explained wall still casts its shadow: the unknown cell behind it costs SHADOW_COST (exploration trial 7)",
+      shaded.at(5, 5) == SHADOW_COST and not math.isinf(shaded.at(4, 5)), (shaded.at(5, 5), shaded.at(4, 5)))
+mixed = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 20, "height": 20,
+                                "cells": "".join("#" if (i % 20, i // 20) == (10, 12) else "." for i in range(400))},
+                               ).with_points([(0.525, 0.30)])
+room_m = clearance(mixed, (0.525, 0.50), 0.3)                    # the wall cell's square 0.10 m away, the point 0.20 m
+check("clearance on a mixed grid: an unexplained wall cell nearer than any point is the room, not the point",
+      abs(room_m - 0.10) < 1e-9, room_m)
+lone = {"res_m": 0.05, "origin": [0.0, 0.0], "width": 10, "height": 10,
+        "cells": "".join("#" if (i % 10, i // 10) == (5, 5) else "." for i in range(100))}
+inside_tol = CostGrid.from_map_grid(lone, explained_by=[(0.30 + 0.4 * 0.05, 0.275)])     # 0.4 of a cell past its edge
+beyond_tol = CostGrid.from_map_grid(lone, explained_by=[(0.30 + 0.6 * 0.05, 0.275)])     # 0.6 of a cell past it
+check("a point within half a cell of a wall cell explains it; one further out does not",
+      not math.isinf(inside_tol.at(5, 5)) and math.isinf(beyond_tol.at(5, 5)), (inside_tol.at(5, 5), beyond_tol.at(5, 5)))
 grown = exact.covering([(-2.0, -2.0)])
 check("covering() keeps the points and moves their cells with the grid's new origin",
       grown.points == exact.points and all(math.isinf(grown.at(*c)) for c in grown.point_cells)

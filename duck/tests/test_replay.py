@@ -95,6 +95,13 @@ with tempfile.TemporaryDirectory() as tmp:
           pl["distance_mm"] == fr["distance_mm"] and pl["frame_t_ns"] == fr["t_ns"] and pl["state_t_ns"] == s0["t_ns"] and pl["pair_dt_ms"] == -20.0
           and pl["seq"] == 7 and pl["state"]["odom_z"] == 0.118 and pl["pose"] == [1.0, 2.0, 0.0]
           and pl["derived"]["points"] == fv.points and len(pl["derived"]["drop_points"]) == len(fv.drops), sorted(pl))
+    wall = {"seq": 8, "t_ns": fr["t_ns"], "rows": 8, "cols": 8, "distance_mm": [300] * 64, "status": [5] * 64}
+    fw = FrameView(wall, s0, -20.0, (1.0, 2.0, math.pi / 2))          # the frame's pose: at (1, 2), facing +y
+    mem = navigator()
+    mem._seen, mem.blocked = set(), []
+    got = mem._remember_frame(fw, (0.0, 0.0, 0.0))                     # the tick's pose, some way off
+    check("a frame's obstacle points are remembered with the pose of the state it was paired with, not the tick's",
+          got and all(q[1] > 2.1 and abs(q[0] - 1.0) < 0.3 for q in got), got[:3])
     check("a state without what the cliff check needs gives a frame that is logged but not derived",
           not FrameView(fr, {"t_ns": 1}, None, None).ok and "state" not in FrameView(fr, {"t_ns": 1}, None, None).payload())
 
