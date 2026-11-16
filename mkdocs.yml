@@ -81,6 +81,7 @@ nav:
     - RFC-0008 — The challenge course: rfc/RFC-0008-challenge-course.md
     - RFC-0009 — miniview: rfc/RFC-0009-miniview.md
     - RFC-0010 — Runs, version 2: rfc/RFC-0010-run-store-v2.md
+    - RFC-0011 — Robots drawn as themselves: rfc/RFC-0011-robot-models.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md
@@ -104,6 +105,8 @@ nav:
     - ADR-0013 — NXT runs in format 2: adr/ADR-0013-nxt-runs-in-format-2.md
     - ADR-0014 — Replay logging, the duck writes format 2: adr/ADR-0014-replay-logging.md
     - ADR-0015 — The scenario runner: adr/ADR-0015-scenario-runner.md
+    - ADR-0016 — Joints and the whole truth pose: adr/ADR-0016-joints-and-whole-truth-pose.md
+    - ADR-0017 — Video export: adr/ADR-0017-video-export.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

@@ -45,6 +45,8 @@ Required sections:
   layout](ADR-0013-nxt-runs-in-format-2.md) (Proposed, 2026-11-16)
 - [ADR-0014 — The duck writes its runs itself, with what a replay needs](ADR-0014-replay-logging.md)
 - [ADR-0015 — The scenario runner: small generated scenes, scored by truth, as pass rates](ADR-0015-scenario-runner.md)
+- [ADR-0016 — A run records the robot's joints and the truth's whole pose](ADR-0016-joints-and-whole-truth-pose.md)
+- [ADR-0017 — A run as a video, with any rendering engine and the robot's own model](ADR-0017-video-export.md)
   (Proposed, 2026-11-16)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

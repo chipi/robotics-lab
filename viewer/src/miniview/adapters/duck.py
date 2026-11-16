@@ -136,11 +136,17 @@ class DuckLog:
             self.fresh = False
         self.ticks += 1
         self.seg_ticks += 1
-        out.append((t, "tick", {"belief": [_r(v, 4) for v in r["pose"][:3]],
-                                "truth": [_r(v, 4) for v in r["truth"][:3]] if "truth" in r else None,
-                                "tilt": r.get("tilt"), "cmd": [r.get("vx", 0.0), r.get("vyaw", 0.0)],
-                                "depth": r.get("depth"), "t_src": ts,
-                                "raw": rest("pose", "truth", "tilt", "vx", "vyaw", "depth")}))
+        # the trunk's height and whole orientation, when the log has them (ADR-0016): the truth's full pose, not a raw field
+        full = ("truth" in r and isinstance(r.get("truth_quat"), list) and len(r["truth_quat"]) == 4
+                and isinstance(r.get("truth_z"), (int, float)))
+        tick = {"belief": [_r(v, 4) for v in r["pose"][:3]],
+                "truth": [_r(v, 4) for v in r["truth"][:3]] if "truth" in r else None,
+                "tilt": r.get("tilt"), "cmd": [r.get("vx", 0.0), r.get("vyaw", 0.0)],
+                "depth": r.get("depth"), "t_src": ts,
+                "raw": rest("pose", "truth", "tilt", "vx", "vyaw", "depth", *(("truth_z", "truth_quat") if full else ()))}
+        if full:
+            tick["truth_3d"] = {"z": _r(r["truth_z"], 4), "quat": [_r(v, 6) for v in r["truth_quat"]]}
+        out.append((t, "tick", tick))
         return out
 
     def ended(self) -> bool:

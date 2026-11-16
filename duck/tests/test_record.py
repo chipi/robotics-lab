@@ -72,5 +72,19 @@ r = rows(follow)
 check("path following adds its own fields to the same row, one row per command",
       len(r) == 1 and r[0]["nearest_mm"] == 400 and r[0]["turning"] is False and r[0]["vx"] == 0.2, r)
 
+# The measured joint angles (ADR-0016): robotd's 15, in its order, become the run's joint_* signals; a state with another
+# count says nothing about them (a joint guessed into the wrong name is worse than none).
+from duck_lab.nav.runlog import JOINTS, SIGNALS  # noqa: E402
+
+nav = Navigator.__new__(Navigator)
+nav._fv, nav.tof, nav.sense = None, None, {}
+angles = [round(0.01 * i, 2) for i in range(15)]
+v = nav._signal_values({"joints": angles})
+check("robotd's 15 measured joint angles become joint_<name> signals, in its order",
+      [v.get(f"joint_{n}") for n in JOINTS] == angles and v["joint_left_hip_yaw"] == 0.0 and v["joint_right_ankle"] == 0.14, v)
+check("a state with another number of joints gives no joint signals", not any(k.startswith("joint_") for k in nav._signal_values({"joints": angles[:14]})))
+check("the run declares the 15 joint signals, in radians", [s["name"] for s in SIGNALS if s["name"].startswith("joint_")] == [f"joint_{n}" for n in JOINTS]
+      and all(s.get("unit") == "rad" for s in SIGNALS if s["name"].startswith("joint_")))
+
 print("RECORD", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

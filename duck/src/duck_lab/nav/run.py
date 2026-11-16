@@ -29,7 +29,7 @@ from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, extend
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.runlog import RunLog, add_args, open_from_args
+from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, path_length, plan, thin
 
 TICK_S = 0.1
@@ -191,6 +191,7 @@ class Body:
         r = json.loads(self._f.readline())
         w, x, y, z = r["imu"]["quat"]
         self.height = r["trunk"][2]
+        self.quat = (w, x, y, z)          # the trunk's whole orientation, for the run's full truth pose (ADR-0016)
         return r["trunk"][0], r["trunk"][1], math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
 
@@ -321,6 +322,9 @@ class Navigator:
             v.update(pitch_deg=math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))),
                      roll_deg=math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))),
                      pitch_rate_dps=math.degrees(imu["gyro"][1]), qw=w, qx=x, qy=y, qz=z)
+        joints = s.get("joints") or []           # the measured angles robotd reports, in its JOINT_NAMES order (ADR-0016)
+        if len(joints) == len(JOINTS):
+            v.update({f"joint_{n}": a for n, a in zip(JOINTS, joints)})
         fv = self._fv
         v.update(nearest_mm=self.tof.nearest_mm if self.tof else None, block_m=fv.block if fv else None, **self.sense)
         return {k: x for k, x in v.items() if x is not None and math.isfinite(x)}
@@ -425,6 +429,7 @@ class Navigator:
             if self.body:
                 row["truth"] = [round(v, 4) for v in self.body.pose()]
                 row["truth_z"] = round(self.body.height, 4)
+                row["truth_quat"] = [round(v, 6) for v in self.body.quat]
             if self._log:
                 self._log.write(json.dumps(row) + "\n")
                 self._log.flush()

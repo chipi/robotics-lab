@@ -45,3 +45,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   robot](RFC-0009-miniview.md) (Proposed; with PRD-001 and UXS-001)
 - [RFC-0010 — Runs, version 2: how they are stored, read, served and
   loaded](RFC-0010-run-store-v2.md) (Accepted, 2026-11-15; ADR-0006 to ADR-0012)
+- [RFC-0011 — Robots drawn as themselves: a link/joint description, moved by the recorded
+  joints](RFC-0011-robot-models.md) (Proposed, 2026-11-16)

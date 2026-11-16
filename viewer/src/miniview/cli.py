@@ -261,6 +261,14 @@ def cmd_serve(args) -> None:
     httpd.serve_forever()
 
 
+def cmd_video(args) -> None:
+    from miniview import video
+    if not args.data:
+        raise SystemExit("no data folder: MINIVIEW_DATA or --data")
+    w, h = (int(v) for v in args.size.lower().split("x"))
+    print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (MINIVIEW_DATA)")
@@ -330,6 +338,15 @@ def main() -> None:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8070)
     p.set_defaults(fn=cmd_serve)
+    p = sub.add_parser("video", help="a run rendered as a video by an engine, with the robot's model (ADR-0017)")
+    p.add_argument("run")
+    p.add_argument("--engine", default="mujoco")
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--fps", type=float, default=30.0)
+    p.add_argument("--size", default="1280x720", help="WIDTHxHEIGHT")
+    p.add_argument("--from", dest="t_from", type=float)
+    p.add_argument("--to", dest="t_to", type=float)
+    p.set_defaults(fn=cmd_video)
     args = ap.parse_args()
     args.fn(args)
 

@@ -296,6 +296,39 @@ def lichtblick_problems(node, path="$"):
     return out
 
 
+# ---- the truth's whole pose (ADR-0016): its height and orientation on /truth/pose, read back; a plane pose is as before ----
+with tempfile.TemporaryDirectory() as tmp:
+    q = [0.9659, 0.0436, -0.0262, 0.2534]                 # a heading of ~29.6 deg with a little roll and pitch
+    full = {"z": 0.1157, "quat": q}
+    for how in ("add", "parts"):
+        d = keys.run_dir(Path(tmp) / how, "duck/room/full3d")
+        rec = Recorder(d, run_record("duck/room/full3d"))
+        if how == "add":
+            rec.add(1.0, "tick", {"belief": [0.0, 0.0, 0.0], "truth": [1.0, 2.0, 0.5], "truth_3d": full})
+            rec.add(2.0, "tick", {"belief": [0.0, 0.0, 0.0], "truth": [1.0, 2.0, 0.5]})
+        else:
+            rec.begin_tick(1.0, [0.0, 0.0, 0.0])
+            rec.tick_truth([1.0, 2.0, 0.5], truth_3d=full)
+            rec.end_tick()
+            rec.begin_tick(2.0, [0.0, 0.0, 0.0])
+            rec.tick_truth([1.0, 2.0, 0.5])
+            rec.end_tick()
+        rec.close()
+        ticks = [p for _, k, p in Follower(d).poll() if k == "tick"]
+        with open(d / "run.mcap", "rb") as fh:
+            from google.protobuf.json_format import MessageToDict
+            from foxglove_schemas_protobuf.PoseInFrame_pb2 import PoseInFrame
+            msgs = [MessageToDict(PoseInFrame.FromString(m.data)) for _, _, m in make_reader(fh).iter_messages(topics=["/truth/pose"])]
+        p0 = msgs[0]["pose"]
+        heading = 2 * __import__("math").atan2(q[3], q[0])          # near enough: the tilt is small
+        check(f"truth's whole pose ({how}): /truth/pose carries its height and orientation (what Rerun and Foxglove show)",
+              abs(p0["position"]["z"] - 0.1157) < 1e-9 and abs(p0["orientation"]["x"] - q[1]) < 1e-9 and abs(p0["orientation"]["w"] - q[0]) < 1e-9, p0)
+        check(f"truth's whole pose ({how}): read back as truth_3d, with the plane pose's heading from the whole orientation",
+              ticks[0].get("truth_3d") == full and abs(ticks[0]["truth"][2] - wire._yaw({"w": q[0], "x": q[1], "y": q[2], "z": q[3]})) < 1e-4
+              and abs(ticks[0]["truth"][2] - heading) < 0.01, (ticks[0].get("truth_3d"), ticks[0]["truth"]))
+        check(f"truth's whole pose ({how}): a tick without it reads back as before (no truth_3d, the plane pose)",
+              "truth_3d" not in ticks[1] and ticks[1]["truth"] == [1.0, 2.0, 0.5], ticks[1])
+
 bad = {name: lichtblick_problems(json.loads(schemas.schema_bytes(f"miniview.{name}"))) for name in schemas.MINIVIEW}
 check("our schemas use only what Lichtblick reads (no untyped arrays, no arrays of arrays)",
       not any(bad.values()), {k: v for k, v in bad.items() if v})

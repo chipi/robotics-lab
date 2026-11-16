@@ -97,5 +97,19 @@ with tempfile.TemporaryDirectory() as tmp:
     check("the run's span covers every event, not only the poses",
           meta3["t0"] == 24.962 and meta3["t1"] == 83.44 and frames3["t"] == [26.992, 79.655], (meta3["t0"], meta3["t1"]))
 
+# The trunk's height and whole orientation (ADR-0016): a row with truth_z and truth_quat gives the tick's truth_3d, and they
+# leave the raw extras; a row with only truth_z (a log from before) keeps it raw, as it was.
+from miniview.adapters.duck import DuckLog  # noqa: E402
+
+with tempfile.TemporaryDirectory() as tmp:
+    lg = DuckLog(Path(tmp) / "explore-x", "apartment")
+    lg.start, lg.fresh = None, False
+    new = lg.feed_row(tick(1.0, [0.0, 0.0, 0.0], [0.5, 0.2, 0.1], truth_z=0.1157, truth_quat=[0.9987, 0.01, -0.02, 0.05]))
+    old = lg.feed_row(tick(2.0, [0.0, 0.0, 0.0], [0.5, 0.2, 0.1], truth_z=0.1157))
+    tn, to = [p for _, k, p in new if k == "tick"][0], [p for _, k, p in old if k == "tick"][0]
+    check("a row with the trunk's height and quaternion: the tick's truth_3d, not raw fields",
+          tn.get("truth_3d") == {"z": 0.1157, "quat": [0.9987, 0.01, -0.02, 0.05]} and "truth_z" not in tn["raw"] and "truth_quat" not in tn["raw"], tn)
+    check("a row with only truth_z (before ADR-0016): no truth_3d, truth_z stays raw", "truth_3d" not in to and to["raw"].get("truth_z") == 0.1157, to)
+
 print("ADAPTER", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

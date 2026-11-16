@@ -1,0 +1,15 @@
+{
+  "duck": {
+    "mujoco": {
+      "python": "/work/pollen/microduck_rl/.venv/bin/python",
+      "python_env": "VIDEO_MUJOCO_PYTHON",
+      "model_root": "/work/pollen/microduck_rl/src/mjlab_microduck/robot/microduck",
+      "model_root_env": "DUCK_SIM_RL_MODELS",
+      "model": "robot_allcollisions_backlash.xml",
+      "free_joint": "trunk_base_freejoint",
+      "home_keyframe": "STAND",
+      "keyframes_from": "scene_backlash.xml",
+      "stand_z": 0.116
+    }
+  }
+}

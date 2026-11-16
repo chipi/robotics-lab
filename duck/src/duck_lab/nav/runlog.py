@@ -34,6 +34,12 @@ SIGNALS = [
     {"name": "room_m", "kind": "number", "unit": "m"},
     {"name": "turning", "kind": "number"},
 ]
+# The measured joint angles (ADR-0016), in robotd's order (duck-ipc-proto JOINT_NAMES; the body server's is the same): the
+# legs, neck, head and mouth, so a run can be drawn with the robot's own model, moving as it moved.
+JOINTS = ("left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle",
+          "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth",
+          "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle")
+SIGNALS += [{"name": f"joint_{n}", "kind": "number", "unit": "rad"} for n in JOINTS]
 NOWHERE = Path("/nonexistent/duck-run")        # no folder of a log: nothing to read start.json or results.json from
 
 

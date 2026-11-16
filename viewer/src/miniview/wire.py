@@ -123,10 +123,16 @@ def _quat(yaw: float) -> dict:
 
 
 def _yaw(q: dict) -> float:
-    return 2 * math.atan2(q["z"], q["w"])
+    """The heading of any orientation (for a pure yaw the same as 2·atan2(z, w))."""
+    return math.atan2(2 * (q["w"] * q["z"] + q["x"] * q["y"]), 1 - 2 * (q["y"] ** 2 + q["z"] ** 2))
 
 
-def _pose(ns: int, frame: str, p) -> dict:
+def _pose(ns: int, frame: str, p, full: dict | None = None) -> dict:
+    """A pose in the plane; with `full` ({z, quat: [w, x, y, z]}, ADR-0016) its height and whole orientation instead."""
+    if full:
+        w, x, y, z = full["quat"]
+        return {"timestamp": _stamp(ns), "frame_id": frame,
+                "pose": {"position": {"x": p[0], "y": p[1], "z": full["z"]}, "orientation": {"x": x, "y": y, "z": z, "w": w}}}
     return {"timestamp": _stamp(ns), "frame_id": frame,
             "pose": {"position": {"x": p[0], "y": p[1], "z": 0.0}, "orientation": _quat(p[2])}}
 
@@ -156,7 +162,7 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
     if kind == "tick":
         out = [m("/belief/pose", _pose(ns, "map", p["belief"]))]
         if p.get("truth"):
-            out.append(m("/truth/pose", _pose(ns, "world", p["truth"])))
+            out.append(m("/truth/pose", _pose(ns, "world", p["truth"], p.get("truth_3d"))))
         if p.get("depth") is not None:
             data = b"".join(POINT.pack(x, y, z, ord(k)) for x, y, z, k in p["depth"])
             out.append(m("/depth", {
@@ -228,9 +234,10 @@ INSIDE = {"tick": TICK_INSIDE, "world": {"/miniview/memory"}, "signals": {"/mini
           "depth_frame": {"/depth/status", "/miniview/depth_frame"}}
 
 
-def tick_part(name: str, t: float, value, base_ns: int, t_src: float | None = None) -> tuple:
-    """The one message (topic, log_ns, publish_ns, data) of a part of a tick: belief, truth, depth, cmd, tilt or extra."""
-    p = {"belief": [0.0, 0.0, 0.0], "t_src": t_src, "raw": value if name == "extra" else {}}
+def tick_part(name: str, t: float, value, base_ns: int, t_src: float | None = None, truth_3d: dict | None = None) -> tuple:
+    """The one message (topic, log_ns, publish_ns, data) of a part of a tick: belief, truth (with its whole pose when given,
+    ADR-0016), depth, cmd, tilt or extra."""
+    p = {"belief": [0.0, 0.0, 0.0], "t_src": t_src, "raw": value if name == "extra" else {}, "truth_3d": truth_3d}
     if name not in ("belief", "extra"):
         p[name] = value
     elif name == "belief":
@@ -349,7 +356,11 @@ class Assembler:
             d = self.pending[2]
             if topic == "/truth/pose":
                 p = o["pose"]
-                d["truth"] = [round(p["position"]["x"], 4), round(p["position"]["y"], 4), round(_yaw(p["orientation"]), 4)]
+                q = p["orientation"]
+                d["truth"] = [round(p["position"]["x"], 4), round(p["position"]["y"], 4), round(_yaw(q), 4)]
+                if p["position"].get("z") or q.get("x") or q.get("y"):     # a height or a tilt: the whole pose (ADR-0016)
+                    d["truth_3d"] = {"z": round(p["position"].get("z", 0.0), 4),
+                                     "quat": [round(q.get(k, 0.0), 6) for k in ("w", "x", "y", "z")]}
             elif topic == "/depth":
                 raw = base64.b64decode(o["data"])
                 d["depth"] = [[round(x, 4), round(y, 4), round(z, 4), chr(k)]

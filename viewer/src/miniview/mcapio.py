@@ -141,7 +141,7 @@ class Recorder:
         self.last_t = max(self.last_t, t)
         self._write([msg])
 
-    def _part(self, name: str, value) -> None:
+    def _part(self, name: str, value, **kw) -> None:
         tk = self._tick
         if tk is None:
             raise ValueError(f"{name} outside a tick: begin_tick first")
@@ -149,10 +149,11 @@ class Recorder:
         if order.index(name) < tk["next"]:
             raise ValueError(f"{name} out of order or twice in a tick (the order is {', '.join(order)})")
         tk["next"] = order.index(name) + 1
-        self._write([wire.tick_part(name, tk["t"], value, self.base_ns, tk["src"])])
+        self._write([wire.tick_part(name, tk["t"], value, self.base_ns, tk["src"], **kw)])
 
-    def tick_truth(self, pose) -> None:
-        self._part("truth", pose)
+    def tick_truth(self, pose, truth_3d: dict | None = None) -> None:
+        """The truth's [x, y, yaw]; with `truth_3d` ({z, quat: [w, x, y, z]}, ADR-0016) its height and whole orientation too."""
+        self._part("truth", pose, truth_3d=truth_3d)
 
     def tick_depth(self, points) -> None:
         self._part("depth", points)

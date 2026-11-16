@@ -213,6 +213,14 @@ viewers: viewer-up ## The viewers on loopback: miniview (:8070), Rerun (:9090) a
 viewers-down: viewer-down ## Stop the viewers started by make viewers
 	@scripts/viewers.sh down
 
+ENGINE ?= mujoco
+VIDEO_SIZE ?= 1280x720
+.PHONY: video
+video: viewer-sync ## A run as a video with the robot's model (ADR-0017): make video RUN=<robot/scene/run> [ENGINE=mujoco] [OUT=file.mp4, default the state folder's videos/] [VIDEO_SIZE=1280x720]
+	@test -n "$(RUN)" || { echo "video: RUN=<robot/scene/run> is needed"; exit 2; }
+	cd $(VIEWER_DIR) && uv run --frozen miniview --data $(MINIVIEW_DATA) video $(RUN) --engine $(ENGINE) --size $(VIDEO_SIZE) \
+	  -o $(abspath $(or $(OUT),$(MINIVIEW_STATE)/videos/$(subst /,-,$(RUN))-$(ENGINE).mp4))
+
 MINIVIEW_PORT ?= 8070
 MINIVIEW_DATA ?= /work/robotics-lab/data
 MINIVIEW_STATE ?= /work/robotics-lab/state/miniview
