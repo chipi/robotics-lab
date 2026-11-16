@@ -7,6 +7,13 @@
 <link rel="stylesheet" href="../fonts/fonts.css">
 <link rel="stylesheet" href="../shell/shell.css">
 <script src="vendor/deck.min.js"></script>
+<!-- three.js for the Explore tab's robot body, loaded only when Explore opens (the 3D page's vendored copy) -->
+<script type="importmap">
+{"imports": {
+  "three": "../three/vendor/three.module.js",
+  "three/addons/": "../three/vendor/"
+}}
+</script>
 </head>
 <body>
 <script type="module" src="app.js"></script>

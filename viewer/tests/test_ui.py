@@ -17,7 +17,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import catalog
+from helpers import OPEN_SECTIONS, catalog
 
 from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
@@ -199,9 +199,11 @@ def run_page(b, base, rid, other):
     check("Inter and JetBrains Mono are loaded from the service when the page says it is ready", f[:4] == [True, True, True, True], f)
     check("no request left this machine (no CDN at runtime)", not EXTERNAL, EXTERNAL[:3])
 
-    # outliner
-    nrows = ev("document.querySelectorAll('#tree .row').length")
-    check("outliner has rows with 22px height", nrows >= 14 and ev("document.querySelector('#tree .row').getBoundingClientRect().height") == 22, nrows)
+    # outliner (its sections opened, as a viewer would)
+    call(OPEN_SECTIONS)
+    nrows = ev("document.querySelectorAll('#tree .row:not(.section)').length")
+    check("outliner has rows with 22px height, under section headers of 26px", nrows >= 14 and ev("document.querySelector('#tree .row:not(.section)').getBoundingClientRect().height") == 22
+          and ev("document.querySelector('#tree .row.section').getBoundingClientRect().height") == 26, nrows)
     check("the outliner header's filter and collapse buttons sit inside the left column", ev("(() => { const l = document.getElementById('left').getBoundingClientRect(), c = document.getElementById('collapseBtn').getBoundingClientRect(); return c.right <= l.right + 0.5 && c.left >= l.left; })()"))
     page.click("#tree .row[data-id='sensors.depth.obstacle'] .eye")
     check("clicking an eye hides the stream (state().hidden)", "sensors.depth.obstacle" in state()["hidden"])

@@ -23,6 +23,7 @@
 import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
+import { chainsOf } from './robot.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -58,7 +59,10 @@ const AXES = {
   back: { x: [0, 0, -1], y: [-1, 0, 0], z: [0, 1, 0] }, left: { x: [-1, 0, 0], y: [0, 0, 1], z: [0, 1, 0] },
   right: { x: [1, 0, 0], y: [0, 0, -1], z: [0, 1, 0] },
 };
-const GROUP_IDS = { Scene: 'g.scene', 'Robot (belief)': 'g.belief', Truth: 'g.truth', Sensors: 'g.sensors', 'World model': 'g.world', Plan: 'g.plan', Robot: 'g.robot' };
+// a group's name (and the names before the sections, 2026-11-16) to its node
+const GROUP_IDS = { Scene: 'g.scene', 'Robot (belief)': 'g.belief', Belief: 'g.belief', Truth: 'g.truth', 'World model': 'g.world', IMU: 'g.imu',
+  World: 'sec.world', Body: 'sec.body', Senses: 'sec.senses', Mind: 'sec.mind', 'Other values': 'sec.other',
+  Sensors: 'sec.senses', Robot: 'sec.body', Signals: 'sec.other', 'g.sensors': 'sec.senses', 'g.robot': 'sec.body', 'g.Signals': 'sec.other', Plan: 'plan.path', 'g.plan': 'plan.path' };
 
 // drawn size per stream, in pixels: a point's diameter or a line's width (Display > Point size / Line width)
 const SIZE_KIND = {
@@ -106,30 +110,50 @@ function styleOf(id) {
   return c('text-dim', 'points');
 }
 
-// ---- the outliner's tree, from the run's stream list (D3: Belief and Truth under Robot) ----------
-function buildTree(run) {
-  const S = run.streams || [], taken = new Set();
+// ---- the outliner's tree, from the run's stream list: sections by what a stream means for the robot (UXS-001, operator
+// 2026-11-16): World (what was there), Body (what the robot is: its model and joints by chain), Senses, Mind (what it
+// believed and decided), Other values. The groups inside keep their ids (g.scene, g.truth, g.belief, g.world, ...). ----------
+const IMU_SIGNALS = ['pitch_deg', 'roll_deg', 'pitch_rate_dps'];
+const SECTION_SUB = { 'sec.world': 'what was really there', 'sec.body': 'what the robot is', 'sec.senses': 'what it perceived',
+  'sec.mind': 'what it believed and decided', 'sec.other': 'the robot’s other values' };
+function buildTree(run, desc = null) {
+  const S = run.streams || [], taken = new Set(), byId = Object.fromEntries(S.map((s) => [s.id, s]));
   const mk = (s) => {
     taken.add(s.id);
     const kids = S.filter((x) => x.parent === s.id).map(mk);
     return kids.length ? { id: s.id, s, kids, i: 'points', sfx: s.frame } : { id: s.id, s, leaf: true };
   };
-  const top = (groups) => S.filter((s) => groups.includes(s.group) && !s.parent && !taken.has(s.id)).map(mk);
+  const ids = (list) => list.filter((id) => byId[id] && !taken.has(id)).map((id) => mk(byId[id]));
+  const ofGroup = (groups) => S.filter((s) => groups.includes(s.group) && !s.parent && !taken.has(s.id)).map(mk);
   const frameOf = (kids) => { const fr = new Set(); const walk = (k) => k.forEach((n) => (n.kids ? walk(n.kids) : fr.add(n.s.frame))); walk(kids); return fr.size === 1 ? [...fr][0] : ''; };
-  const grp = (id, name, groups, sfx) => { const kids = top(groups); return kids.length ? { id, name, kids, i: 'group', sfx: sfx ?? frameOf(kids) } : null; };
-  const belief = grp('g.belief', 'Belief', ['Robot (belief)']), truth = grp('g.truth', 'Truth', ['Truth'], 'world · sim only');
-  const robotKids = [belief, truth].filter(Boolean);
-  const tree = [
-    grp('g.scene', 'Scene', ['Scene']),
-    robotKids.length ? { id: 'g.robot', name: 'Robot', sfx: run.robot?.name || '', i: 'robot', kids: robotKids } : null,
-    grp('g.sensors', 'Sensors', ['Sensors'], ''), grp('g.world', 'World model', ['World model']), grp('g.plan', 'Plan', ['Plan']),
-  ].filter(Boolean);
-  for (const s of S) {
-    if (taken.has(s.id) || s.parent) continue;
-    const same = S.filter((x) => x.group === s.group && !taken.has(x.id) && !x.parent);
-    if (same.length === 1 && s.group.toLowerCase() === s.name.toLowerCase()) tree.push(mk(s));
-    else tree.push({ id: 'g.' + s.group, name: s.group, i: 'group', kids: same.map(mk), sfx: '' });
+  const grp = (id, name, kids, sfx, i = 'group') => (kids.length ? { id, name, kids, i, sfx: sfx ?? frameOf(kids) } : null);
+  const section = (id, name, kids, sfx = '') => { const k = kids.filter(Boolean); return k.length ? { id, name, kids: k, i: 'group', sfx, section: true } : null; };
+  const sig = (name) => `signals.${name}`;
+
+  // the joints (ADR-0016's joint_* signals), by the chains of the robot's description; a joint it does not name, or a robot
+  // with none, goes in one Joints group. Their names are the robot's own (technical names only, for now).
+  const jointIds = S.filter((s) => s.id.startsWith('signals.joint_')).map((s) => s.id);
+  const jointNode = (id) => { taken.add(id); return { id, s: byId[id], leaf: true, label: id.slice('signals.joint_'.length), joint: id.slice('signals.joint_'.length) }; };
+  const chainGroups = [];
+  if (desc) for (const c of chainsOf(desc)) {
+    const kids = c.joints.map((j) => sig('joint_' + j.name)).filter((id) => byId[id] && !taken.has(id)).map(jointNode);
+    if (kids.length) chainGroups.push({ id: 'g.chain.' + c.name.toLowerCase().replace(/[^a-z0-9]+/g, '_'), name: c.name, kids, i: 'group', sfx: `${kids.length} joints` });
   }
+  const rest = jointIds.filter((id) => !taken.has(id)).map(jointNode);
+  if (rest.length) chainGroups.push({ id: 'g.joints', name: 'Joints', kids: rest, i: 'group', sfx: `${rest.length} joints` });
+  const model = desc ? { id: 'body.model', name: '3D model', leaf: true, model: true, sfx: `${desc.links.length} parts`, i: 'robot' } : null;
+
+  const tree = [
+    section('sec.world', 'World', [grp('g.scene', 'Scene', ofGroup(['Scene'])), grp('g.truth', 'Truth', ofGroup(['Truth']), 'world · sim only')]),
+    section('sec.body', 'Body', [model, ...chainGroups], run.robot?.name || ''),
+    section('sec.senses', 'Senses', [...ids(['sensors.depth', 'sensors.raw']),
+      grp('g.imu', 'IMU', [...ids(['sensors.tilt']), ...ids(IMU_SIGNALS.map(sig))], '')]),
+    section('sec.mind', 'Mind', [grp('g.belief', 'Belief', ofGroup(['Robot (belief)'])), grp('g.world', 'World model', ofGroup(['World model'])),
+      ...ids(['plan.path', 'events'])]),
+  ].filter(Boolean);
+  const others = S.filter((s) => !taken.has(s.id) && !s.parent);
+  const other = section('sec.other', 'Other values', others.map(mk), others.length ? `${others.length}` : '');
+  if (other) tree.push(other);
   const nodes = {}, parents = {}, order = [];
   const walk = (list, ps) => list.forEach((n) => {
     if (nodes[n.id]) return;
@@ -137,9 +161,20 @@ function buildTree(run) {
     if (n.kids) walk(n.kids, [...ps, n.id]);
   });
   walk(tree, []);
-  const leaves = (id) => { const n = nodes[id], out = []; const w = (x) => (x.kids ? x.kids.forEach(w) : out.push(x.id)); if (n) w(n); return out; };
+  // a group's streams (the Body's 3D model row is not a stream)
+  const leaves = (id) => { const n = nodes[id], out = []; const w = (x) => (x.kids ? x.kids.forEach(w) : x.s && out.push(x.id)); if (n) w(n); return out; };
   return { tree, nodes, parents, order, leaves };
 }
+
+// the left panel's sections a viewer left open, and whether the joints show their angles: remembered in this browser only
+function prefs() { try { return JSON.parse(localStorage.getItem('miniview.left') || '{}'); } catch (_) { return {}; } }
+function savePrefs(p) { try { localStorage.setItem('miniview.left', JSON.stringify({ ...prefs(), ...p })); } catch (_) { /* no storage */ } }
+// a robot's description (RFC-0011), asked for only when the robots listing has it: a robot with none (the NXT) is no 404
+const robotCache = {};
+let robotList = null;
+const robotNames = () => (robotList ||= fetch(`${API}robots`).then((r) => (r.ok ? r.json() : [])).then((ls) => new Set(ls.map((x) => x.name))).catch(() => new Set()));
+const robotDesc = async (name) => ((await robotNames()).has(name)
+  ? (robotCache[name] ||= fetch(`${API}robots/${encodeURIComponent(name)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)) : null);
 
 export function createShell(adapter, { title = 'miniview' } = {}) {
   document.title = title;
@@ -149,6 +184,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     t: 0, i: 0, view: 'top', frame: 'world', on: {}, vv: {}, modes: {}, rel: { belief_truth: true, depth_pose: false },
     size: {}, sel: null, selNode: null, ov: { coords: true, gizmo: true, legend: true }, open: {}, query: '', hideMissing: false,
     tab: 'moment', secOpen: {}, kinds: {}, rows: true, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true,
+    angles: prefs().angles !== false, robot: null,
   };
   let T = { tree: [], nodes: {}, parents: {}, order: [], leaves: () => [] };
   const sceneCache = {};
@@ -328,10 +364,14 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (M.sceneId !== sc.id || M.scene !== scene) { M.scene = scene; adapter.setScene(scene); }
       M.sceneId = sc.id; M.runId = r0.key;
       M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {};
-      T = buildTree(run);
-      const live0 = (id) => T.nodes[id]?.leaf && !T.nodes[id].s.missing;
-      M.selNode = live0('belief.pose') || !run.signals?.length ? (T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null) : T.order.find((id) => id.startsWith('signals.') && live0(id)) || 'g.Signals';
-      M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, true]));
+      M.robot = run.robot?.name ? await robotDesc(run.robot.name) : null;
+      T = buildTree(run, M.robot);
+      const live0 = (id) => T.nodes[id]?.leaf && T.nodes[id].s && !T.nodes[id].s.missing;
+      M.selNode = live0('belief.pose') || !run.signals?.length ? (T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null) : T.order.find((id) => id.startsWith('signals.') && live0(id)) || 'sec.other';
+      // sections closed until the viewer opens them (remembered); the groups inside open
+      const open = prefs().open || {};
+      M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, T.nodes[id].section ? !!open[id] : true]));
+      for (const p of T.parents[M.selNode] || []) M.open[p] = true;                // the selected stream is in view
       M.modes = Object.fromEntries((run.streams || []).map((s) => [s.id, { mode: s.default_mode || 'at', n: 2 }]));
       M.run = run; M.fr = store.fr; M.pres = pres;
       if (hasSignals() && !hasTicks()) M.hideMissing = true;                   // what the run has is the signals: the streams it lacks are a click away ("Show them")
@@ -380,7 +420,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (M.follow && live && (hasTicks() || hasSignals())) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
       M.i = hasTicks() ? tickAt(M.t) : 0;
       for (const sx of M.run.streams || []) M.modes[sx.id] ||= { mode: sx.default_mode || 'at', n: 2 };
-      T = buildTree(M.run);
+      T = buildTree(M.run, M.robot);
+      // a group new in this tree (a stream that arrived) opens as at load: a section as the viewer left it, a group open
+      const open = prefs().open || {};
+      for (const id of T.order) if (T.nodes[id].kids && !(id in M.open)) M.open[id] = T.nodes[id].section ? !!open[id] : true;
       renderAll();
       if (live || presStatus !== M.run.status) { presStatus = M.run.status; wantPresence(); }
     }, 250);
@@ -471,7 +514,10 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const { p, ...rest } = d;
     return { kind: M.sel.kind, index: M.sel.index, ...(M.sel.world !== undefined && { world: M.sel.world }), ...rest, position: [f3(p[0]), f3(p[1])], height: f3(d.height) };
   };
-  const identity = () => ({ run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
+  // the left panel's sections (open or closed, what each holds) and the right panel's tab
+  const panels = () => ({ tab: M.tab, angles: M.angles, robot: M.robot ? M.robot.name : null,
+    sections: T.tree.filter((n) => n.section).map((n) => ({ id: n.id, name: n.name, open: !!M.open[n.id], streams: T.leaves(n.id) })) });
+  const identity = () => ({ ...panels(), run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
     seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]), samples: sampleN() } : null });
   function state() {
     if (!M.run || !hasTicks()) {
@@ -628,7 +674,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
 
   // ---- rendering: the outliner ------------------------------------------------------------------------
   const hl = (s) => { const q = M.query; if (!q) return esc(s); const i = s.toLowerCase().indexOf(q); return i < 0 ? esc(s) : esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length)); };
-  const nodeName = (n) => (n.s ? cap(n.s.name) : n.name);
+  const nodeName = (n) => n.label || (n.s ? cap(n.s.name) : n.name);
   const matches = (n) => !M.query || nodeName(n).toLowerCase().includes(M.query) || n.id.toLowerCase().includes(M.query) || (n.kids || []).some(matches);
   function triState(n) {
     if (M.on[n.id] === false) return 'off';
@@ -647,7 +693,14 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       if (miss) nMiss++;
       const ps = T.parents[n.id], opened = M.open[n.id] || (M.query && n.kids);
       const st = triState(n), inh = !ps.every((x) => M.on[x] !== false), sty = styleOf(n.id);
-      const meta = s ? rate(s) : '';
+      if (n.section) return sectionRow(n, opened, st);
+      if (n.model) {
+        h += `<div class="row model" role="treeitem" data-id="${esc(n.id)}" aria-level="${d + 1}" aria-selected="${M.selNode === n.id}" title="Explore the robot's body (the Explore tab)" style="padding-left:${4 + d * 14}px">`
+          + `<span class="caret"></span><span class="ti" style="color:var(--accent)">${svgI('robot', 13)}</span><span class="name">${esc(n.name)}</span><span class="sfx">${esc(n.sfx)}</span>`
+          + `<span class="extra"><button class="mini" data-explore="1">Explore</button></span></div>`;
+        return;
+      }
+      const meta = n.joint ? (M.angles ? angleText(n.joint) : '') : s ? rate(s) : '';
       const title = s ? `${n.id}\n${miss ? s.why || 'missing' : s.count + ' records' + (s.rate_hz ? ', ' + s.rate_hz + ' Hz' : '')}\nframe ${s.frame}` : n.id;
       const na = !n.kids && notDrawnHere(n.id);
       h += `<div class="row ${n.kids ? 'group' : ''} ${st === 'off' ? 'off' : ''} ${inh ? 'inh' : ''} ${miss ? 'missing' : ''} ${na ? 'na' : ''}" role="treeitem" data-id="${esc(n.id)}" aria-level="${d + 1}"`
@@ -655,7 +708,16 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
         + `<span class="caret">${n.kids ? svgI('chev', 12) : ''}</span>`
         + `<span class="ti" style="color:${s && !miss && !n.kids ? sty.c : ''}">${svgI(miss ? 'hazard' : s ? sty.i : n.i, 13)}</span>`
         + `<span class="name">${hl(nodeName(n))}</span>${n.sfx ? `<span class="sfx">${esc(n.sfx)}</span>` : ''}`
-        + `<span class="extra"><span class="meta">${esc(meta)}</span><button class="eye" data-eye="${esc(n.id)}" ${miss ? 'disabled' : ''} aria-pressed="${st !== 'off'}" aria-label="Show ${esc(nodeName(n))}">`
+        + `<span class="extra"><span class="meta${n.joint ? ' angle' : ''}"${n.joint ? ` data-angle="${esc(n.joint)}"` : ''}>${esc(meta)}</span><button class="eye" data-eye="${esc(n.id)}" ${miss ? 'disabled' : ''} aria-pressed="${st !== 'off'}" aria-label="Show ${esc(nodeName(n))}">`
+        + `${svgI(st === 'on' ? 'eye' : st === 'mix' ? 'eyemix' : 'eyeoff', 13)}</button></span></div>`;
+    };
+    // a section's header: what it answers, how much it holds when closed, the Body's switch for the joints' angles
+    const sectionRow = (n, opened, st) => {
+      const count = T.leaves(n.id).length, angles = n.id === 'sec.body' && opened && T.leaves(n.id).some((l) => T.nodes[l].joint);
+      h += `<div class="row section ${st === 'off' ? 'off' : ''}" role="treeitem" data-id="${esc(n.id)}" aria-level="1" aria-expanded="${!!opened}" aria-selected="${M.selNode === n.id}" title="${esc(n.id)}">`
+        + `<span class="caret">${svgI('chev', 12)}</span><span class="name">${esc(n.name)}</span><span class="sub">${esc(SECTION_SUB[n.id] || '')}</span>`
+        + `<span class="extra">${angles ? `<button class="mini" data-angles="1" aria-pressed="${M.angles}" title="Show or hide the joints' angles">${M.angles ? 'hide angles' : 'show angles'}</button>` : ''}`
+        + `${opened ? '' : `<span class="meta">${count || ''}</span>`}<button class="eye" data-eye="${esc(n.id)}" aria-pressed="${st !== 'off'}" aria-label="Show ${esc(n.name)}">`
         + `${svgI(st === 'on' ? 'eye' : st === 'mix' ? 'eyemix' : 'eyeoff', 13)}</button></span></div>`;
     };
     const walk = (list, d) => list.forEach((n) => {
@@ -669,6 +731,35 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     h += `<div class="tfoot">${missing} streams missing in this run${missing ? ` · <button id="hm">${M.hideMissing ? 'Show them' : 'Hide them'}</button>` : ''}</div>`;
     $('tree').innerHTML = h;
     $('hm') && ($('hm').onclick = () => { M.hideMissing = !M.hideMissing; renderTree(); });
+  }
+
+  // ---- Explore (the right panel's third tab): what is explored, its first kind the robot's body (RFC-0011) ----------------
+  let explore = null;
+  async function openExplore(robot) {
+    M.tab = 'explore'; renderInsp();
+    if (!explore) {
+      const { createExplore } = await import('./explore.js');
+      explore ||= createExplore($('explore'), {
+        api: API, robotDesc,
+        recorded: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
+        hasRun: () => !!M.run, t: () => M.t,
+      });
+    }
+    await explore.open(robot || M.run?.robot?.name || null);
+    return explore.state();
+  }
+  function toggleOpen(id) { M.open[id] = !M.open[id]; if (T.nodes[id]?.section) saveOpen(); renderTree(); }
+  function saveOpen() { savePrefs({ open: Object.fromEntries(T.order.filter((id) => T.nodes[id].section).map((id) => [id, !!M.open[id]])) }); }
+  function setAngles(on) { M.angles = !!on; savePrefs({ angles: M.angles }); renderTree(); return M.angles; }
+  // a joint's angle at the playhead (its joint_* signal, radians), in degrees
+  function angleText(joint) {
+    const v = hasSignals() ? sigMoment()?.values?.['joint_' + joint] : null;
+    return typeof v === 'number' ? `${(v * 180 / Math.PI).toFixed(1)}°` : '';
+  }
+  // the joints' angles follow the playhead without rebuilding the tree
+  function paintAngles() {
+    if (!M.angles) return;
+    document.querySelectorAll('#tree [data-angle]').forEach((el) => { el.textContent = angleText(el.dataset.angle); });
   }
 
   function eyeClick(id) {
@@ -703,6 +794,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!M.run) { el.innerHTML = '<div class="empty">No run open.</div>'; return; }
     const n = T.nodes[M.selNode];
     if (!n) { el.innerHTML = '<div class="empty">Select a stream in the list.</div>'; return; }
+    if (n.model) { el.innerHTML = '<div class="empty">The robot’s 3D model: open it in the Explore tab.</div>'; return; }
     const s = n.s, sty = s ? styleOf(n.id) : null, group = !!n.kids;
     const leafIds = group ? T.leaves(n.id) : [n.id], live = leafIds.filter((l) => !stream(l).missing);
     let h;
@@ -810,9 +902,11 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   // the rule that fired and the values it compared (ADR-0014): the reason, then each value
   const decisionRows = (d) => `<div class="decision" data-rule="${esc(d.rule)}"><div class="why"><span class="faint">${esc(d.rule)}</span> ${esc(d.reason)}</div>`
     + Object.entries(d.values).map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)), '', v == null ? 'na' : '')).join('') + '</div>';
-  // the values of the robot's signals at the playhead (ADR-0013), one row each, in the order the run declares them
+  // the values of the robot's signals at the playhead (ADR-0013), one row each, in the left panel's order (a joint in Body,
+  // the IMU in Senses, then the rest)
   function signalsSection(sg) {
-    const rows = (M.run.signals || []).map((d) => {
+    const rank = Object.fromEntries(T.order.map((id, i) => [id, i]));
+    const rows = [...(M.run.signals || [])].sort((a, b) => (rank['signals.' + a.name] ?? 1e9) - (rank['signals.' + b.name] ?? 1e9)).map((d) => {
       const v = sg?.values[d.name];
       return v == null ? kv(esc(d.name), 'none', '', 'na') : kv(esc(d.name), typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 2) : esc(v), esc(d.unit || ''));
     }).join('');
@@ -822,6 +916,9 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   function renderInsp() {
     const el = $('inspBody');
     $('tabMoment').setAttribute('aria-selected', M.tab === 'moment'); $('tabSel').setAttribute('aria-selected', M.tab === 'sel');
+    $('tabExplore').setAttribute('aria-selected', M.tab === 'explore');
+    el.hidden = M.tab === 'explore'; $('explore').hidden = M.tab !== 'explore';
+    if (M.tab === 'explore') return;
     if (!M.run || (!hasTicks() && !hasSignals())) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
     if (M.tab === 'moment' && !hasTicks()) {
       const sg = sigMoment(), ev = lastEvent();
@@ -964,7 +1061,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && (M.pres?.streams?.[id] || stream(id)?.missing)
       && (hasTicks() || !hasSignals() || !stream(id)?.missing));
     const quant = (t) => Math.round(pct(t) * 20) / 20;
-    $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || cap(s.name))}</div>`; }).join('');
+    $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || T.nodes[id]?.label || cap(s.name))}</div>`; }).join('');
     const gaps = depthGaps().map(([a, b]) => `<span class="gap" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="No depth frames ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`).join('');
     $('dlanes').innerHTML = gaps + ids.map((id) => {
       const s = stream(id), p = M.pres?.streams?.[id], miss = s.missing || !p;
@@ -1013,6 +1110,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (document.activeElement !== ki) ki.value = hasTicks() ? M.i + 1 : bySample ? Math.max(0, sampleIdx(M.t) + 1) : 0;
     $('kn').textContent = 'of ' + (hasTicks() ? M.run.ticks : bySample ? sampleN() : 0);
     renderBand();
+    paintAngles();
+    if (M.tab === 'explore') explore?.pose();
     if (M.tab === 'moment' || M.sel) scheduleInsp();
   }
   // the inspector follows the time at most once a frame; a script call flushes it before it says it is ready
@@ -1077,9 +1176,21 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
     select: (sel) => select(sel),
+    // the left panel (UXS-001): a section open or closed, the joints' angles shown or not
+    setSection: (id, open = true) => { const k = nodeId(id); if (!T.nodes[k]?.section) return false; M.open[k] = !!open; saveOpen(); renderTree(); return M.open[k]; },
+    setAngles: (on) => setAngles(on),
+    // Explore (the right panel's third tab): open it on a robot (the run's when none is named) and act on its body
+    explore: (robot) => openExplore(robot),
+    explorePart: (link) => (explore ? explore.select(link) : null),
+    explorePose: (mode) => (explore ? explore.setPose(mode) : false),
+    exploreJoint: (name, radians) => (explore ? explore.setJoint(name, radians) : false),
+    exploreHide: (link, on = true) => (explore ? explore.hide(link, on) : false),
+    exploreIsolate: (link) => (explore ? explore.isolate(link) : false),
   };
   window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
   window.miniview.state = state;
+  window.miniview.exploreState = () => (explore ? explore.state() : null);
+  window.miniview.exploreSnapshot = () => (explore ? explore.snapshot() : null);
   // the settings a script can have changed, as plain data: per-stream time modes, visibility (global and per view), drawn
   // sizes, event kinds, the playback state, overlays, the relation flag
   window.miniview.config = () => JSON.parse(JSON.stringify({ modes: M.modes, on: M.on, vv: M.vv, size: M.size, kinds: M.kinds, play: M.play, rel: M.rel, overlays: M.ov,
@@ -1126,19 +1237,22 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   $('helpBtn').onclick = () => help();
   $('filterBtn').onclick = (e) => popover(e.currentTarget, `<h6>Show in the list</h6><label class="cb"><input type="checkbox" id="fm" ${M.hideMissing ? '' : 'checked'}>Missing streams</label>`,
     (p) => (p.querySelector('#fm').onchange = (ev) => { M.hideMissing = !ev.target.checked; renderTree(); }));
-  $('collapseBtn').onclick = () => { for (const k in M.open) M.open[k] = false; renderTree(); };
+  $('collapseBtn').onclick = () => { for (const k in M.open) M.open[k] = false; saveOpen(); renderTree(); };
   $('q').oninput = (e) => { M.query = e.target.value.trim().toLowerCase(); renderTree(); };
   $('tree').onclick = (e) => {
     const eye = e.target.closest('[data-eye]');
     if (eye) { eyeClick(eye.dataset.eye); return; }
+    if (e.target.closest('[data-angles]')) { setAngles(!M.angles); return; }
     const row = e.target.closest('.row'); if (!row) return;
     const id = row.dataset.id, n = T.nodes[id];
-    if (e.target.closest('.caret') && n.kids) { M.open[id] = !M.open[id]; renderTree(); return; }
+    if (n.model || e.target.closest('[data-explore]')) { openExplore(); return; }
+    if (n.section || (e.target.closest('.caret') && n.kids)) { toggleOpen(id); if (!n.section) return; }
     M.selNode = id; renderTree(); renderProps(); renderLanesSel();
   };
-  $('tree').ondblclick = (e) => { const row = e.target.closest('.row'); if (row && T.nodes[row.dataset.id].kids) { M.open[row.dataset.id] = !M.open[row.dataset.id]; renderTree(); } };
+  $('tree').ondblclick = (e) => { const row = e.target.closest('.row'); const n = row && T.nodes[row.dataset.id]; if (n?.kids && !n.section) toggleOpen(row.dataset.id); };
   $('tabMoment').onclick = () => { M.tab = 'moment'; renderInsp(); };
   $('tabSel').onclick = () => { M.tab = 'sel'; renderInsp(); };
+  $('tabExplore').onclick = () => openExplore();
   $('lanesL').onclick = (e) => { const l = e.target.closest('[data-lane]'); if (l) selectNode(l.dataset.lane); };
   $('lanesBtn').onclick = () => { M.rows = !M.rows; renderLanes(); };
   $('loopBtn').onclick = () => { M.play.loop = !M.play.loop; renderTransport(); };
@@ -1321,9 +1435,11 @@ const TEMPLATE = `
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" aria-selected="true" id="tabMoment">Moment</button>
       <button class="tab" role="tab" aria-selected="false" id="tabSel">Selection</button>
+      <button class="tab" role="tab" aria-selected="false" id="tabExplore">Explore</button>
       <span class="grow"></span>
     </div>
     <div class="props" id="inspBody"></div>
+    <div class="explore" id="explore" hidden></div>
   </aside>
 
   <section class="tl" id="tl" aria-label="Timeline">

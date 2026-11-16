@@ -1,5 +1,5 @@
 """An NXT run in both pages (ADR-0013), in headless Chromium: a run with signals and no pose shows the Signals view (a chart per
-numeric signal, a band per text signal, the playhead, a click or drag seeks), the Signals group in the outliner with an eye
+numeric signal, a band per text signal, the playhead, a click or drag seeks), the section Other values in the outliner with an eye
 per signal, the values at t in the inspector, a row per signal in the timeline; a run with a pose from odometry keeps the
 spatial views and shows its signals beside them; a run being written follows live; a duck run has none of it. Screenshots of
 what the page shows go to /tmp/claude-1000/nxt-runs/ (NXT_SHOTS=0 turns it off).
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import FIXTURE, T0_NS, import_fixture, catalog, scene, serve, wait_until
+from helpers import FIXTURE, OPEN_SECTIONS, T0_NS, import_fixture, catalog, scene, serve, wait_until
 from miniview import keys
 from miniview.adapters import nxt
 from miniview.mcapio import Recorder
@@ -108,6 +108,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("the scenes page lists the scene `unmapped` with the NXT runs although it has no scene.json",
               {A, B} <= set(rows) and "unmapped" in page.evaluate("document.getElementById('scenespage').innerText"), rows)
         call(page, f"window.miniview.load('unmapped', '{A}')")
+        call(page, OPEN_SECTIONS)
         check("the run opens: the workbench shows, the Signals view takes the viewport, no layout/frame buttons",
               page.evaluate("!document.getElementById('app').classList.contains('scenes') && document.getElementById('app').classList.contains('signals-only')")
               and page.evaluate("getComputedStyle(document.getElementById('sigview')).display !== 'none'")
@@ -115,10 +116,10 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         chip = page.evaluate("document.getElementById('runinfo').textContent").replace("\xa0", " ")
         check("the status chip says robot, kind, verdict, length and the samples", "nxt" in chip and "recording" in chip and "recorded" in chip and f"{run['samples']} samples" in chip, chip)
 
-        # the outliner: a Signals group, a row per signal with an eye
-        grp = page.evaluate("document.querySelector('#tree .row[data-id=\"g.Signals\"]') !== null")
+        # the outliner: the section Other values, a row per signal with an eye
+        grp = page.evaluate("document.querySelector('#tree .row[data-id=\"sec.other\"]') !== null")
         sig_rows = page.evaluate("[...document.querySelectorAll('#tree .row[data-id^=\"signals.\"]')].map((r) => [r.dataset.id, !!r.querySelector('.eye')])")
-        check("the outliner has a group Signals with a row and an eye for each signal the run has values for",
+        check("the outliner has the section Other values with a row and an eye for each signal the run has values for",
               grp and sorted(i for i, _ in sig_rows) == sorted(s["id"] for s in shown) and all(e for _, e in sig_rows), sig_rows)
         n_missing = page.evaluate("window.miniview.internals.M.run.streams.filter((s) => s.missing).length")
         check("the streams the run lacks are hidden behind 'Show them' (a run that is its signals), and the footer says how many (the scene's two included: no layout)",
@@ -187,10 +188,10 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               and page.evaluate("document.querySelectorAll('#sigview .sg').length") == len(shown) - 1)
         page.evaluate("document.querySelector('#tree .row[data-id=\"signals.tacho_A\"] .eye').click()")
         check("the eye in the outliner brings it back", page.evaluate("document.querySelector('#sigview .sg[data-sig=\"signals.tacho_A\"]') !== null"))
-        page.evaluate("document.querySelector('#tree .row[data-id=\"g.Signals\"] .eye').click()")
+        page.evaluate("document.querySelector('#tree .row[data-id=\"sec.other\"] .eye').click()")
         check("the group's eye hides every chart, and the view says why it is empty",
               page.evaluate("document.querySelectorAll('#sigview .sg').length") == 0 and "No signal is shown" in page.evaluate("document.getElementById('sigview').innerText"))
-        page.evaluate("document.querySelector('#tree .row[data-id=\"g.Signals\"] .eye').click()")
+        page.evaluate("document.querySelector('#tree .row[data-id=\"sec.other\"] .eye').click()")
         check("and brings them all back", page.evaluate("document.querySelectorAll('#sigview .sg').length") == len(shown))
 
         # the timeline: a data row per signal, no row for the streams the run lacks
@@ -245,6 +246,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         # a run with a pose from the odometry keeps the spatial views and has its signals beside them
         ctx, page, logs = run_page(b, odom_base)
         call(page, f"window.miniview.load('unmapped', '{A}')")
+        call(page, OPEN_SECTIONS)
         st = page.evaluate("window.miniview.state()")
         oapi = api(odom_base, f"/api/v1/runs/{A}")
         call(page, "window.miniview.setTime(21.3)")
@@ -297,12 +299,12 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("the live page logged no error", not [m for m in logs if "favicon.ico" not in m], logs[:3])
         ctx.close()
 
-        # a duck run looks as before: no Signals view, no Signals group
+        # a duck run looks as before: no Signals view, no Other values (it has no signals)
         ctx, page, logs = run_page(b, base)
         call(page, "window.miniview.load('apartment', 'duck/apartment/explore9')")
-        check("a duck run: no Signals view, no Signals group, the spatial views, its chip still counts ticks",
+        check("a duck run: no Signals view, no section Other values, the spatial views, its chip still counts ticks",
               page.evaluate("document.getElementById('sigview').hidden") and not page.evaluate("document.getElementById('app').classList.contains('signals-only')")
-              and page.evaluate("document.querySelector('#tree .row[data-id=\"g.Signals\"]') === null")
+              and page.evaluate("document.querySelector('#tree .row[data-id=\"sec.other\"]') === null")
               and "116 ticks" in page.evaluate("document.getElementById('runinfo').textContent").replace("\xa0", " ")
               and "samples" not in page.evaluate("document.getElementById('runinfo').textContent"))
         ctx.close()

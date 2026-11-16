@@ -15,7 +15,13 @@ services:
     environment:
       MINIVIEW_DATA: /data
       MINIVIEW_INDEX: /index/index.sqlite
+      MINIVIEW_ROBOTS: /robots
     volumes:
+      # the robots' descriptions and meshes (RFC-0011), read only like the runs
+      - type: bind
+        source: ../robots
+        target: /robots
+        read_only: true
       - type: bind
         source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/runs"
         target: /data/runs

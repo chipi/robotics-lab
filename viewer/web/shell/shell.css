@@ -373,3 +373,53 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
 .sg-p .band { fill-opacity: .5; stroke: var(--hair-3); stroke-width: 1; }
 .sg-p .bandl { fill: var(--text); font: 11px var(--ui); pointer-events: none; }
 .sg-r { position: absolute; left: 4px; top: 2px; bottom: 2px; display: flex; flex-direction: column; justify-content: space-between; font: 9.5px var(--mono); color: var(--text-faint); pointer-events: none; }
+
+/* the left panel's sections (World, Body, Senses, Mind, Other values) and the Body's rows (UXS-001, 2026-11-16) */
+.row.section { height: 26px; background: var(--bg-shead); border-top: 1px solid var(--border); padding-left: 2px; cursor: pointer; }
+.row.section:hover { background: var(--bg-shead-hover); }
+.row.section .name { font-weight: 600; }
+.row.section .sub { color: var(--text-faint); font-size: 11px; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; }
+.row .meta.angle { opacity: 1; font: 11px var(--mono); color: var(--text); min-width: 46px; text-align: right; }
+.row.section .meta { opacity: 1; }
+.row.model { cursor: pointer; }
+.mini { height: 18px; padding: 0 6px; border: 1px solid var(--border); border-radius: 3px; color: var(--text-dim); background: var(--bg-field); font-size: 11px; }
+.mini:hover { color: var(--text); border-color: var(--border-hover); }
+.mini[aria-pressed="true"] { color: var(--on-accent); }
+
+/* Explore: the right panel's detail view, its first kind the robot's body */
+.app.xwide { --right: 520px; }
+.right .explore[hidden] { display: none; }
+.explore { display: flex; flex-direction: column; min-height: 0; height: calc(100% - 28px); overflow: auto; }
+.explore .btn { height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 3px; color: var(--text-dim); background: var(--bg-field); white-space: nowrap; }
+.explore .btn:hover:not(:disabled) { color: var(--text); border-color: var(--border-hover); }
+.explore .btn:disabled { opacity: .4; }
+.explore .grow { flex: 1; }
+.xtop { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.xtop select { background: var(--bg-field); color: var(--text); border: 1px solid var(--border); border-radius: 3px; height: 22px; font: inherit; max-width: 100%; }
+.xbody { position: relative; flex: none; height: 280px; background: var(--bg-viewport); border-bottom: 1px solid var(--border); }
+.app.xwide .xbody { height: 56%; min-height: 280px; }
+.xbody canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.xover { position: absolute; left: 6px; right: 6px; top: 6px; display: flex; gap: 4px; align-items: center; pointer-events: none; }
+.xover > * { pointer-events: auto; }
+.xover .hint { color: var(--text-faint); font-size: 11px; background: var(--veil); padding: 1px 5px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.xmsg { padding: 14px 10px; color: var(--warn); }
+.xpart { padding: 8px 0 6px; border-bottom: 1px solid var(--border); }
+.xpart .xs { padding: 0 10px; display: block; }
+.xpart .kv { grid-template-columns: 110px minmax(0, 1fr); padding: 0 10px; height: auto; min-height: 20px; }
+.xpart .kv .v { white-space: normal; word-break: break-word; }
+.xt { font-weight: 600; padding: 0 10px 2px; font-family: var(--mono); }
+.xs { color: var(--text-dim); font-size: 11.5px; }
+.xs b { color: var(--text); font-weight: 500; }
+.xacts { display: flex; gap: 4px; padding: 6px 10px 0; flex-wrap: wrap; }
+.xsec { padding: 6px 0; border-bottom: 1px solid var(--hair); }
+.xsec > .xs { padding: 0 10px; }
+.xh { font-weight: 600; padding: 2px 10px 4px; display: flex; gap: 6px; align-items: baseline; }
+.xg { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 6px 10px 2px; }
+.xsl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px; padding: 1px 10px; font-size: 11.5px; color: var(--text-dim); }
+.xsl input { grid-column: 1 / 3; width: 100%; }
+.xsl .mono { font-family: var(--mono); color: var(--text); }
+.xrow { height: 22px; display: flex; align-items: center; gap: 4px; padding-right: 8px; cursor: pointer; font-family: var(--mono); font-size: 11.5px; }
+.xrow:hover { background: var(--bg-hover); }
+.xrow.sel { background: var(--bg-selected); }
+.xrow.hid .nm { color: var(--text-faint); text-decoration: line-through; }
+.xrow .mini { margin-left: auto; }

@@ -86,6 +86,11 @@ def make_run(data: Path, key: str, records, close: bool = True, **kw):
     return rec.close() if close else rec
 
 
+# The left panel's sections are closed until a viewer opens them (UXS-001, 2026-11-16); a page test about the outliner's
+# rows opens them all first, as a viewer would (test_explore_pages checks the closed default itself).
+OPEN_SECTIONS = "window.miniview.state().sections.forEach((s) => window.miniview.setSection(s.id, true))"
+
+
 def scene(room="room"):
     return {"id": room, "name": "A room", "kind": "test", "bounds": [-1, 1, -1, 1], "boxes": [], "hazards": []}
 

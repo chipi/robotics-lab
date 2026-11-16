@@ -129,6 +129,9 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
 | `.../live?since=SEQ` | Server-Sent Events, below |
+| `GET /api/v1/robots` | the robots with a description (`robots/<robot>/robot.urdf` under `MINIVIEW_ROBOTS`, default the repository's `robots/`): `[{"name", "label", "description": true, "links", "joints", "meshes", "meshes_missing", "simulator", "backend"}]` (RFC-0011 §3.4; the rest from `robot.json`) |
+| `GET /api/v1/robots/{robot}` | its description: `{"name", "label", "root", "links": [{"name", "visuals": [{"mesh", "url", "origin": {"pos", "quat"}, "rgba"}]}], "joints": [{"name", "type", "parent", "child", "origin", "axis", "lower", "upper"}] (from the root out), "meshes_missing": [...]}`; 404 for an unknown robot |
+| `GET /api/v1/robots/{robot}/meshes/{file}.stl` | a mesh of the description (`model/stl`, with an ETag); 404 for a missing mesh, a file that is not a mesh or a path out of the robot's folder |
 | `GET /api/v1/render` | the render service's `GET /engines` (`{"engines": [{"name", "available", "why", "robots"}]}`), or `{"available": false, "why": "no render service configured" \| "render service not answering: ..."}` |
 | `POST /api/v1/runs/{robot}/{scene}/{run}/video` | body `{"engine", "from"?, "to"?, "size"?: "1280x720"}`; 202 `{"id"}`; the render service's 400, 404, 409 (one job at a time) and 503 come through with its reason |
 | `GET /api/v1/videos/{id}` | the job: `{"id", "run", "engine", "status": "queued" \| "running" \| "done" \| "failed", "error", "file"}` |
@@ -286,14 +289,43 @@ load(scene, run)            setTime(t)                  setView("top|front|back|
 setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "at|window|upto", seconds)
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
 select({kind, index})       scenes()
-state()     -> {run, scene, status, seq, follow, loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief,
-                belief_map, truth, distance, last_event, selection, t_range, hidden}
+setSection(id, open)        setAngles(bool)
+explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
+exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
+state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
+                loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
+                last_event, selection, t_range, hidden}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
+exploreState() -> {robot, kind, pose, selected, hidden, isolated, why, links, drawn, values, poses}   (null before Explore opens)
+exploreSnapshot() -> the body as a PNG data URL
 ```
 
-- **Signals** (ADR-0013). A run with `signals` has a Signals group in the outliner (a row and an eye
-  per signal), the values at the playhead in the inspector's Moment (the sample at or before it,
+- **The left panel by meaning** (UXS-001, 2026-11-16). The outliner's top level is five sections:
+  World (`sec.world`: the scene's `g.scene`, the truth's `g.truth`), Body (`sec.body`: the robot's
+  3D model `body.model`, its joints by chain `g.chain.<chain>`, from the robot's description, or
+  `g.joints`), Senses (`sec.senses`: depth, the raw frame, `g.imu`), Mind (`sec.mind`: `g.belief`,
+  `g.world` the world model, the plan, the events) and Other values (`sec.other`: the signals that
+  belong to none). A joint is the signal `joint_<name>` (ADR-0016), shown by its name with its
+  angle at the playhead in degrees (`[data-angle]`; `setAngles(false)` hides them). Sections are
+  closed until a viewer opens them, except the one holding the selected stream; what a viewer
+  opened and the angles switch are remembered in the browser (`localStorage` `miniview.left`).
+  The timeline's rows and the Moment's signals follow the same order. `setVisible` and
+  `setSection` take a node id or a name; the names before the sections still resolve (`Sensors`
+  is Senses, `Robot` Body, `Signals` Other values).
+- **Explore** (RFC-0011 §3.3): the right panel's third tab (`#tabExplore`, `#explore`), a detail
+  view whose first kind is a robot's body (the run's robot, or any of `GET /api/v1/robots`). The
+  description's meshes placed by the pages' forward kinematics (`web/shell/robot.js`, the same as
+  `miniview.kinematics`, checked against `robots/duck/fk_fixture.json`), posed **as recorded** (the
+  joints' values at the playhead, following it) or **by hand** (a slider per joint by chain, within
+  its limits; it starts from the recorded pose). A part is picked in the body or in the list of
+  parts; its details: what moves it (joint, type, axis, angle, limits) or what it is fixed to, what
+  it hangs from and carries, where it is from the root, its meshes (no mass: the description has
+  none). Isolate, hide, show all, focus; "Expand" widens the right panel. three.js is loaded when
+  Explore first opens (the deck.gl page has the same import map as the three.js page).
+- **Signals** (ADR-0013). A run with `signals` has a row and an eye per signal in the outliner
+  (in its section; a run with signals only selects the first, so its section is open), the values
+  at the playhead in the inspector's Moment (the sample at or before it,
   with its number), and a data row per signal in the timeline. A run with signals and **no pose**
   has no spatial view: the viewport is the **Signals view** (`#sigview`, `web/shell/signals.js`): a
   chart per numeric signal and a band per text signal on one time axis with the playhead; a click
@@ -319,7 +351,7 @@ whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
   "depth", index}`, the index being `tick * 100000` plus
   the point's place in its tick), a robot (`{kind: "robot", index: 0 belief | 1 truth}`) or a map cell
   (`{kind: "cell", index, world}`); `select(null)` clears.
-  `setVisible` takes a stream id or a group (`g.sensors`, `Sensors`, ...).
+  `setVisible` takes a stream id, a group or a section (`g.belief`, `Senses`, `sec.mind`, ...).
 - `miniview.internals` (the model, the store and the renderer adapter) is **for this repository's
   tests only**; scripts use
   the functions above.

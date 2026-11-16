@@ -14,6 +14,9 @@
         .../presence                                  when each stream has data (the timeline's rows)
         .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
                                                       then `status`; resumes after `since` or Last-Event-ID
+    GET /api/v1/robots                                the robots with a description, and what each has (RFC-0011 §3.4)
+    GET /api/v1/robots/{robot}                        its description: links, visuals (mesh URLs), joints from the root out
+        .../meshes/{file}.stl                         a mesh of the description
     GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
     GET /api/v1/render                                the render service's engines (MINIVIEW_RENDER), or {"available": false, "why"}
     POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
@@ -41,7 +44,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from miniview import keys, query
+from miniview import keys, query, robots
 from miniview.catalog import Catalog
 
 log = logging.getLogger("miniview")
@@ -278,20 +281,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             p = p / "index.html"
         if not p.is_file():
             raise HttpError(404, "not found")
-        st = p.stat()
-        etag = f'"{st.st_size:x}-{st.st_mtime_ns:x}"'
         cache = ONE_DAY if ("vendor" in p.relative_to(WEB).parts or p.relative_to(WEB).parts[0] == "fonts") else "no-cache"
-        if self.headers.get("If-None-Match") == etag:
-            return self._send(304, b"", "text/plain", {"ETag": etag}, cache)
         ctype = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
         if p.suffix == ".js":
             ctype = "text/javascript"
         elif p.suffix == ".woff2":
             ctype = "font/woff2"
-        extra = {"ETag": etag}
-        if p.suffix == ".html":
-            extra["Content-Security-Policy"] = CSP
-        self._send(200, p.read_bytes(), ctype, extra, cache)
+        self._file(p, ctype, cache, {"Content-Security-Policy": CSP} if p.suffix == ".html" else {})
+
+    def _file(self, p: Path, ctype: str, cache: str = "no-cache", extra: dict | None = None) -> None:
+        """A file with an ETag (304 when the client has it)."""
+        st = p.stat()
+        etag = f'"{st.st_size:x}-{st.st_mtime_ns:x}"'
+        if self.headers.get("If-None-Match") == etag:
+            return self._send(304, b"", "text/plain", {"ETag": etag}, cache)
+        self._send(200, p.read_bytes(), ctype, {"ETag": etag, **(extra or {})}, cache)
 
     # ---- the API ---------------------------------------------------------------------------------
     def _api(self, parts: list, q: dict) -> None:
@@ -323,6 +327,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if what == "live":
                 return self._live(ld, q)
             return self._run_answer(ld, what, q)
+        if parts == ["robots"]:
+            return self._json(robots.listing())
+        if len(parts) == 2 and parts[0] == "robots":
+            desc = robots.description(parts[1])
+            if desc is None:
+                raise HttpError(404, f"no robot {parts[1]!r}")
+            return self._json(desc)
+        if len(parts) > 2 and parts[0] == "robots":
+            p = robots.mesh(parts[1], parts[2:])
+            if p is None:
+                raise HttpError(404, "no such mesh")
+            return self._file(p, "model/stl")
         if parts == ["render"]:
             return self._render()
         if parts[:1] == ["videos"] and len(parts) in (2, 3) and (len(parts) == 2 or parts[2] == "file"):

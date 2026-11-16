@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import T0_NS, catalog, import_fixture, make_run, run_record, scene, serve, tick, wait_until
+from helpers import OPEN_SECTIONS, T0_NS, catalog, import_fixture, make_run, run_record, scene, serve, tick, wait_until
 from miniview import keys
 from miniview.mcapio import Recorder
 from miniview.shots import launch
@@ -165,6 +165,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     for lib in ("three", "deck"):
         ctx, page, logs = run_page(b, base)
         call(page, f"window.miniview.load('apartment', '{KEY}')")
+        call(page, OPEN_SECTIONS)
         row = page.evaluate("(() => { const r = document.querySelector('#tree .row[data-id=\"sensors.raw\"]'); return r ? [r.classList.contains('missing'), r.innerText] : null; })()")
         check("the outliner has the stream sensors.raw, not missing, with the run's frame count", row and not row[0] and str(n_frames) in row[1].replace(",", ""), row)
         check("its row is in the timeline", eventually(page, "document.querySelector('#lanesL .lane-l[data-lane=\"sensors.raw\"]') !== null"))
