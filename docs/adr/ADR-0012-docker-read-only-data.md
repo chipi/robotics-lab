@@ -1,4 +1,4 @@
-# ADR-0012 — Docker: the data read only, the index on its own volume
+# ADR-0012 — Docker: the data read only, the index in the host's state folder
 
 **Status:** Accepted (2026-11-15, by the operator)
 **Date:** 2026-11-15

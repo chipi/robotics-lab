@@ -40,7 +40,7 @@ Required sections:
   - [ADR-0009 — The index, run states and a bounded cache](ADR-0009-index-and-lifecycle.md)
   - [ADR-0010 — The API, version 2](ADR-0010-api-2.md)
   - [ADR-0011 — Loading a run into the UI: by window, then by record](ADR-0011-loading-into-the-ui.md)
-  - [ADR-0012 — Docker: the data read only, the index on its own volume](ADR-0012-docker-read-only-data.md)
+  - [ADR-0012 — Docker: the data read only, the index in the host's state folder](ADR-0012-docker-read-only-data.md)
 - [ADR-0013 — NXT runs in format 2: signals, odometry, a scene with no
   layout](ADR-0013-nxt-runs-in-format-2.md) (Proposed, 2026-11-16)
 
