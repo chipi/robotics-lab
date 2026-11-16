@@ -82,6 +82,8 @@ def _unxy(points) -> list:
     return [[p["x"], p["y"]] for p in points]
 
 
+# kinds a recording from before the adapter listed them as notable wrote as not notable, but that are decisions a page shows (RFC-0013)
+ALWAYS_NOTABLE = ("glance",)
 SENSOR_FRAME = "tof"          # the depth sensor's own frame_id: the raw frame is an image of it, not a place in the map
 
 
@@ -394,7 +396,7 @@ class Assembler:
                 d.update(t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "plan", d)]
         if topic == "/miniview/event":
-            if not o.get("notable", True) and not self.keep_raw:
+            if not o.get("notable", True) and o["kind"] not in ALWAYS_NOTABLE and not self.keep_raw:
                 return []
             d = {"kind": o["kind"], "text": o["text"]}
             if o.get("decision") is not None:

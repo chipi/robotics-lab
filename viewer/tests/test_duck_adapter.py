@@ -111,5 +111,13 @@ with tempfile.TemporaryDirectory() as tmp:
           tn.get("truth_3d") == {"z": 0.1157, "quat": [0.9987, 0.01, -0.02, 0.05]} and "truth_z" not in tn["raw"] and "truth_quat" not in tn["raw"], tn)
     check("a row with only truth_z (before ADR-0016): no truth_3d, truth_z stays raw", "truth_3d" not in to and to["raw"].get("truth_z") == 0.1157, to)
 
+# A glance (the navigator's look with the head at a suspected drop, RFC-0012) is a notable event with its decision (RFC-0013's HUD alerts on it).
+with tempfile.TemporaryDirectory() as tmp:
+    lg = DuckLog(Path(tmp) / "explore-y", "apartment")
+    lg.start, lg.fresh = None, False
+    dec = {"rule": "glance", "reason": "a suspected drop near the way: looked at it with the head and saw its edge", "values": {"bearing_deg": -7, "edge_m": 0.545}}
+    ge = [p for _, k, p in lg.feed_row({"event": "glance", "status": "drop", "target": [0.8, -0.3], "t": 16.265, "decision": dec}) if k == "event"][0]
+    check("a glance is a notable event and keeps its decision", ge["notable"] is True and ge["kind"] == "glance" and ge["decision"] == dec and ge["text"] == "glance status drop", ge)
+
 print("ADAPTER", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

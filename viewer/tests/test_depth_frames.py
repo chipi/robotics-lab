@@ -83,6 +83,16 @@ with tempfile.TemporaryDirectory() as tmp:
     ev = [x for x in Follower(run_dir).poll() if x[1] == "event"][0][2]
     check("an event keeps its decision (rule, reason, values) in the viewer's reading too", ev["decision"] == DECISION, ev)
 
+    # ---- a glance is a decision a page shows, even in a recording that wrote it as not notable (RFC-0013) ----------
+    rec = Recorder(keys.run_dir(data, "duck/room/g1"), run_record("duck/room/g1"))
+    glance = {"rule": "glance", "reason": "a suspected drop near the way: looked at it with the head", "values": {"bearing_deg": -7, "time_s": 1.9}}
+    rec.add(0.5, "event", {"kind": "glance", "text": "", "notable": False, "raw": {}, "decision": glance})
+    rec.add(0.6, "event", {"kind": "plan_kept", "text": "", "notable": False, "raw": {}})
+    rec.close()
+    kept = [p for _, k, p in Follower(rec.dir).poll() if k == "event"]
+    check("a glance written as not notable is still in the viewer's reading, with its decision; another un-notable event is not",
+          [e["kind"] for e in kept] == ["glance"] and kept[0]["decision"] == glance, kept)
+
     # ---- the tick protocol: nothing between the first and the last message -------------------------------------
     rec = Recorder(keys.run_dir(data, "duck/room/r2"), run_record("duck/room/r2"))
     rec.add(0.5, "depth_frame", frame(0.5)[2])
