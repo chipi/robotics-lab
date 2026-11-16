@@ -5,7 +5,12 @@ description = "Our tools around Pollen's Microduck: simulator scenes, probes, MC
 requires-python = ">=3.10"
 dependencies = [
     "mcap>=1.2",
+    "miniview",
 ]
+
+# The navigator writes its runs as miniview runs (ADR-0014): the viewer package is a path source, not a release.
+[tool.uv.sources]
+miniview = { path = "../viewer", editable = true }
 
 [project.scripts]
 duck-record = "duck_lab.record:main"
@@ -13,6 +18,7 @@ duck-to-rerun = "duck_lab.to_rerun:main"
 duck-go = "duck_lab.nav.run:main"
 duck-eval = "duck_lab.nav.evaluate:main"
 duck-explore = "duck_lab.nav.explore_run:main"
+duck-replay = "duck_lab.replay:main"
 duck-rooms = "duck_lab.nav.rooms:main"
 duck-world = "duck_lab.world:main"
 miniview = "duck_lab.miniview:main"

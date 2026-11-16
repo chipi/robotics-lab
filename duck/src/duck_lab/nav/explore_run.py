@@ -2,6 +2,9 @@
 explores"). The simulator's truth is logged for scoring only; the brain never reads it.
 
     uv run duck-explore --minutes 20 --out runs/explore
+    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # a live miniview run too
+
+The format 2 run (miniview, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 """
 
 import argparse
@@ -14,7 +17,8 @@ from pathlib import Path
 from duck_lab.nav.explore import frontiers, pick
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
-from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator
+from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
+from duck_lab.nav.runlog import add_args, open_from_args
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
 SURVEY_STEP_RAD = math.pi / 2
@@ -58,7 +62,8 @@ class Explorer:
         """Turn on the spot by about angle (odometry yaw), unless a remembered drop is too close."""
         pose = self.nav.loc.pose()
         if pose and any(math.dist(pose[:2], d) < PIVOT_DROP_M for d in self.nav.drops):
-            self.note(event="no_survey_turn", why="drop within turn clearance")
+            self.note(event="no_survey_turn", why="drop within turn clearance",
+                      decision=decision("no_survey_turn", "a remembered drop within turn clearance", drop_clear_m=PIVOT_DROP_M))
             return False
         if pose:
             try:
@@ -66,7 +71,9 @@ class Explorer:
             except EmptyMap:
                 room = PIVOT_OBSTACLE_M
             if room < PIVOT_OBSTACLE_M:
-                self.note(event="no_survey_turn", why=f"obstacle {room:.2f} m away")
+                self.note(event="no_survey_turn", why=f"obstacle {room:.2f} m away",
+                          decision=decision("no_survey_turn", "an obstacle within turn clearance", room_m=round(room, 3),
+                                            min_room_m=PIVOT_OBSTACLE_M))
                 return False
         start, began = self.yaw(), time.monotonic()
         while time.monotonic() - began < 8.0:
@@ -124,7 +131,8 @@ class Explorer:
                     self.survey()
                     surveyed_here = True
                     continue
-                self.note(event="no_frontier_left", legs=legs)
+                self.note(event="no_frontier_left", legs=legs,
+                          decision=decision("no_frontier_left", "no reachable frontier after a survey", legs=legs))
                 break
             surveyed_here = False
             legs += 1
@@ -133,7 +141,9 @@ class Explorer:
                       why=out.get("why"))
             if out.get("why") == "start boxed in" and not cleared_here:
                 gone = self.nav.forget_blocked_near(pose, CLEAR_M)
-                self.note(event="cleared", points=gone)
+                self.note(event="cleared", points=gone,
+                          decision=decision("cleared", "the start was boxed in: obstacle points near it forgotten", points=gone,
+                                            radius_m=CLEAR_M))
                 cleared_here = True
                 continue          # the same frontier again: the start was the problem, not the target
             if out["status"] != "reached":
@@ -142,7 +152,9 @@ class Explorer:
                 if refusals >= MAX_REFUSALS:
                     # Trial 4: one boxed-in start refused 37 frontiers in a second and ended the run as
                     # "no frontier left". A run of refusals says the duck is stuck, not that the map is done.
-                    self.note(event="trapped", legs=legs, refusals=refusals)
+                    self.note(event="trapped", legs=legs, refusals=refusals,
+                              decision=decision("trapped", f"{refusals} refusals in a row", legs=legs, refusals=refusals,
+                                                max_refusals=MAX_REFUSALS))
                     break
                 continue
             refusals, cleared_here = 0, False
@@ -156,9 +168,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--minutes", type=float, default=20.0)
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
+    add_args(ap)
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    nav = Navigator(log=args.out / "ticks.jsonl")
+    runlog = open_from_args(args, args.out.name, "exploration", args.out)
+    nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
 
     def guard():
         while not nav.abort:
@@ -177,6 +191,8 @@ def main() -> None:
         print(json.dumps(result))
     finally:
         nav.close()
+        if runlog:
+            runlog.finish()
 
 
 if __name__ == "__main__":

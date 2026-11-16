@@ -2,6 +2,11 @@
 
     uv run duck-go 1.5 0.5            # one goal in map coordinates, simulator sockets
     uv run duck-go 1.5 0.5 --log run.jsonl
+    uv run duck-go 1.5 0.5 --miniview-data /work/robotics-lab/data   # also written as a live miniview run (ADR-0014)
+
+With a miniview data folder (--miniview-data or MINIVIEW_DATA) the run is also written in format 2, while it runs: that run
+is the record, with every depth frame and the IMU (`duck-replay` checks it is complete); ticks.jsonl is kept during the
+transition, for the importer and the older tools.
 
 Loop at 10 Hz: pose = map ← odom (frames.py) on the latest odometry; twist from follow.step; robot.move
 with every tick (the deadman wants one every 100 ms); replan on a fresh map.grid every few seconds.
@@ -11,9 +16,11 @@ keeps the last request after its deadman trips, and mapd then never sees a stop 
 """
 
 import argparse
+import collections
 import json
 import math
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
@@ -22,6 +29,7 @@ from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, extend
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step
 from duck_lab.nav.frames import Localizer
+from duck_lab.nav.runlog import RunLog, add_args, open_from_args
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, path_length, plan, thin
 
 TICK_S = 0.1
@@ -71,6 +79,57 @@ FLOOR_CELL_M = 0.05
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
+STATE_KEEP = 40          # robot states held to pair depth frames with: two seconds at 20 Hz (autod holds the last second)
+
+
+def decision(rule: str, reason: str, **values) -> dict:
+    """A rule that fired, for the log (ADR-0014): which rule, why, and the numbers it compared with its thresholds."""
+    return {"rule": rule, "reason": reason, "values": values}
+
+
+class FrameView:
+    """One depth frame, the robot state it was paired with and what the navigator makes of it, derived once: the points
+    (map metres, for the viewer and the floor memory), the drop points, the blocking distance. Everything that reads the
+    frame (the cliff check, the reflex, the obstacle memory, the log) reads this, so what is logged is what was used."""
+
+    def __init__(self, frame: dict, state: dict | None, dt_ms: float | None, pose: tuple | None):
+        self.frame, self.state, self.dt_ms, self.pose = frame, state, dt_ms, pose
+        self.rel = self.drops = self.block = self.points = None
+        self.ok = False
+        if state is None:
+            return
+        try:
+            self.rel = depth_points(frame, state)
+            self.drops = drop_points(frame, state)
+        except (KeyError, TypeError, ValueError):
+            return
+        self.ok = True
+        self.block = blocking_ahead(self.rel, REFLEX_HALF_W_M)
+        if pose is not None:
+            c, s_ = math.cos(pose[2]), math.sin(pose[2])
+            self.points = [[round(pose[0] + c * ax - s_ * ay, 3), round(pose[1] + s_ * ax + c * ay, 3), round(z, 3), kind[0]]
+                           for ax, ay, z, kind in self.rel]
+
+    def payload(self) -> dict:
+        """The depth_frame record (miniview.wire): the raw frame, its times, the paired state's replay fields, the pose and
+        what was derived."""
+        fr = self.frame
+        p = {"rows": fr["rows"], "cols": fr["cols"], "distance_mm": list(fr["distance_mm"]), "status": list(fr["status"]),
+             "frame_t_ns": int(fr.get("t_ns") or 0), "seq": fr.get("seq")}
+        if self.state is not None and "t_ns" in self.state:
+            p["state_t_ns"] = int(self.state["t_ns"])
+            if self.dt_ms is not None:
+                p["pair_dt_ms"] = round(self.dt_ms, 3)
+        if self.ok:
+            st = self.state
+            p["state"] = {"quat": list(st["imu"]["quat"]), "odom_z": st["odom"]["position"][2],
+                          "tof": {"pos": list(st["frames"]["tof"]["pos"]), "quat": list(st["frames"]["tof"]["quat"])}}
+            if self.pose is not None:
+                p["pose"] = list(self.pose[:3])          # as it was used, not rounded: a replay places the points with it
+                p["derived"] = {"points": self.points, "drop_points": [list(d) for d in self.drops]}
+                if self.block is not None:
+                    p["derived"]["block_m"] = self.block
+        return p
 
 
 class TofStream:
@@ -146,21 +205,29 @@ def load_scale(robot: str | None) -> float:
 
 
 class Navigator:
+    runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
+
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
-                 calibration: str | None = "sim"):
+                 calibration: str | None = "sim", runlog: RunLog | None = None):
         # Odometry, mapd's poses and mapd's grid all come from robotd's odometry; one scale corrects
         # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
         # first stop, so scaling about it keeps the duck where it is.
         self.scale = load_scale(calibration)
         self.loc = Localizer()
+        self._t0 = time.monotonic()
+        self.runlog = runlog
+        self._sid = runlog.new_session() if runlog else None
+        self._states = collections.deque(maxlen=STATE_KEEP)     # (t_ns, robot state), newest last: what a frame is paired with
+        self._fv = None          # the newest depth frame, paired and derived (FrameView)
+        self.sense = {}          # what go_to decides on this tick (room_m, turning), for the signals; empty outside go_to
+        self._logging_failed = False
+        self.tof = None
         self.robot = Rpc(sim_dir / "duck-a.sock")
         self.mapd = Rpc(sim_dir / "duck-a-map.sock")
-        self.state = StateStream(sim_dir / "duck-a.sock", hz=20,
-                                 on_state=lambda s: self.loc.on_odom(s["t_ns"], self._scaled(odom_pose(s))))
+        self.state = StateStream(sim_dir / "duck-a.sock", hz=20, on_state=self._on_state)
         self.tof = TofStream(sim_dir / "duck-a-tof.sock")
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
-        self._t0 = time.monotonic()
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
         self._drop_streak = 0
@@ -233,21 +300,66 @@ class Navigator:
                 new.append(q)
         return new
 
+    def _on_state(self, s: dict) -> None:
+        """Every robot state (the state stream's thread): odometry to the localizer, the state to the pairing history, the IMU and
+        the navigator's values to the run's signals."""
+        self.loc.on_odom(s["t_ns"], self._scaled(odom_pose(s)))
+        self._states.append((s["t_ns"], s))
+        if self.runlog and not self._logging_failed:
+            try:
+                self.runlog.signals(self._sid, time.monotonic() - self._t0, self._signal_values(s))
+            except Exception as e:  # noqa: BLE001 - an observer must not stop the state stream
+                self._logging_failed = True
+                print(f"signals not logged: {type(e).__name__}: {e}", file=sys.stderr)
+
+    def _signal_values(self, s: dict) -> dict:
+        v = {}
+        imu = s.get("imu")
+        if imu:
+            w, x, y, z = imu["quat"]
+            v.update(pitch_deg=math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))),
+                     roll_deg=math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))),
+                     pitch_rate_dps=math.degrees(imu["gyro"][1]), qw=w, qx=x, qy=y, qz=z)
+        fv = self._fv
+        v.update(nearest_mm=self.tof.nearest_mm if self.tof else None, block_m=fv.block if fv else None, **self.sense)
+        return {k: x for k, x in v.items() if x is not None and math.isfinite(x)}
+
+    def _pair(self, t_ns: int) -> tuple:
+        """(state, state time minus frame time in ms): the state nearest the frame's capture among those received, as Pollen's
+        autod pairs them; the newest state, with no time difference, for a frame that carries no time."""
+        states = self._states.copy()
+        if not states:
+            return None, None
+        if not t_ns:
+            return states[-1][1], None
+        t, st = min(states, key=lambda e: abs(e[0] - t_ns))
+        return st, (t - t_ns) / 1e6
+
     def _on_frame(self, frame: dict) -> None:
         """Every depth frame, whatever the duck is doing (surveys and turns too: trial 11 surveyed
-        first and found no frontier with seen floor): the floor it shows joins floor_seen."""
-        pose, state = self.loc.pose(), self.state.latest
-        if pose is None or state is None:
-            return
-        try:
-            pts = depth_points(frame, state)
-        except (KeyError, TypeError, ValueError):
-            return
-        c, s_ = math.cos(pose[2]), math.sin(pose[2])
-        for ax, ay, _, kind in pts:
-            if kind == "floor":
-                x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
-                self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+        first and found no frontier with seen floor): paired with a state and derived once (FrameView), logged, and the
+        floor it shows joins floor_seen."""
+        arrived = time.monotonic() - self._t0
+        state, dt_ms = self._pair(frame.get("t_ns") or 0)
+        pose = None
+        if state is not None:
+            try:
+                pose = self.loc.to_map(self._scaled(odom_pose(state)))
+            except (KeyError, TypeError, ValueError):
+                pass
+        fv = self._fv = FrameView(frame, state, dt_ms, pose)
+        if fv.ok and pose is not None:
+            c, s_ = math.cos(pose[2]), math.sin(pose[2])
+            for ax, ay, _, kind in fv.rel:
+                if kind == "floor":
+                    x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
+                    self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+        if self.runlog and not self._logging_failed:
+            try:
+                self.runlog.frame(self._sid, arrived, fv.payload())
+            except Exception as e:  # noqa: BLE001 - an observer must not stop the depth stream
+                self._logging_failed = True
+                print(f"depth frames not logged: {type(e).__name__}: {e}", file=sys.stderr)
 
     def _tilt(self) -> list | None:
         """The trunk's pitch and roll (deg) by the IMU: trial 12's false drop needs a 5 deg pitch
@@ -307,15 +419,24 @@ class Navigator:
         return gone
 
     def record(self, **row) -> None:
-        if self._log:
+        if self._log or self.runlog:
             row["t"] = round(time.monotonic() - self._t0, 3)
             if self.body:
                 row["truth"] = [round(v, 4) for v in self.body.pose()]
                 row["truth_z"] = round(self.body.height, 4)
-            self._log.write(json.dumps(row) + "\n")
-            self._log.flush()
+            if self._log:
+                self._log.write(json.dumps(row) + "\n")
+                self._log.flush()
+            if self.runlog:
+                self.runlog.row(self._sid, row)
 
     def go_to(self, goal: tuple, timeout_s: float = 90.0) -> dict:
+        try:
+            return self._go_to(goal, timeout_s)
+        finally:
+            self.sense = {}
+
+    def _go_to(self, goal: tuple, timeout_s: float) -> dict:
         start = time.monotonic()
         if self.loc.pose() is None and not self.fix():
             self.survey()
@@ -329,7 +450,7 @@ class Navigator:
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
-                self.record(event="aborted", why=self.abort)
+                self.record(event="aborted", why=self.abort, decision=decision("aborted", self.abort))
                 return {"status": "aborted", "why": self.abort}
             now = time.monotonic()
             pose = self.loc.pose()
@@ -345,12 +466,14 @@ class Navigator:
                 if raw is None:
                     self.move(Twist())
                     start_cost, goal_cost = grid.at(*grid.cell(*pose[:2])), grid.at(*grid.cell(*goal))
+                    boxed = start_cost >= LETHAL_COST and goal_cost < LETHAL_COST
+                    why = "start boxed in" if boxed else "no path on the map"
                     self.record(event="refused", goal=goal, pose=pose,
                                 start_cost=start_cost, goal_cost=goal_cost,
                                 drops=[[round(v, 2) for v in d] for d in self.drops],
-                                blocked=[[round(v, 2) for v in b] for b in self.blocked])
-                    boxed = start_cost >= LETHAL_COST and goal_cost < LETHAL_COST
-                    why = "start boxed in" if boxed else "no path on the map"
+                                blocked=[[round(v, 2) for v in b] for b in self.blocked],
+                                decision=decision("refused", why, start_cost=start_cost, goal_cost=goal_cost,
+                                                  lethal_cost=LETHAL_COST))
                     return {"status": "refused", "why": why, "time_s": round(now - start, 1)}
                 ahead = following[st.target_index:] if following else []
                 if keep_current(grid, ahead, pose, raw):
@@ -368,7 +491,10 @@ class Navigator:
                 elif now - best_at > NO_PROGRESS_S:
                     self.move(Twist())
                     self.record(event="stalled", goal=goal, pose=pose, path_left_m=round(left, 2),
-                                best_left_m=round(best_left, 2))
+                                best_left_m=round(best_left, 2),
+                                decision=decision("stalled", f"{NO_PROGRESS_S:.0f} s without getting closer",
+                                                  path_left_m=round(left, 2), best_left_m=round(best_left, 2),
+                                                  progress_m=PROGRESS_M, no_progress_s=NO_PROGRESS_S))
                     return {"status": "stalled", "why": f"{NO_PROGRESS_S:.0f} s without getting closer",
                             "time_s": round(now - start, 1), "reflex_stops": reflex_stops}
                 st.target_index = 0
@@ -377,6 +503,7 @@ class Navigator:
             room = clearance(costs, pose[:2], PIVOT_OBSTACLE_M)
             pivot_ok = room >= PIVOT_OBSTACLE_M and nearest_drop >= PIVOT_DROP_M
             tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok)
+            self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
                 self.move(Twist())
                 self.record(event="reached", goal=goal, pose=pose)
@@ -384,23 +511,23 @@ class Navigator:
 
                         "pose": [round(v, 3) for v in pose]}
             pts = []
-            if self.tof.last is not None and self.state.latest is not None:
-                pts = drop_points(self.tof.last, self.state.latest)
-                if self.tof.last is not self._drop_frame:      # count frames, not ticks
-                    self._drop_frame = self.tof.last
-                    c, s_ = math.cos(pose[2]), math.sin(pose[2])
-                    seen_all = depth_points(self.tof.last, self.state.latest)
-                    self._block = blocking_ahead(seen_all, REFLEX_HALF_W_M)
-                    self._depth = [[round(pose[0] + c * ax - s_ * ay, 3), round(pose[1] + s_ * ax + c * ay, 3),
-                                    round(z, 3), kind[0]] for ax, ay, z, kind in seen_all]
+            fv = self._fv       # the newest frame with the state it was paired with, derived once (FrameView)
+            if fv is not None and fv.ok:
+                pts = fv.drops
+                if fv is not self._drop_frame:      # count frames, not ticks
+                    self._drop_frame = fv
+                    self._block = fv.block
+                    self._depth = fv.points
                     self._drop_streak = self._drop_streak + 1 if pts else 0
                 if self._drop_streak < DROP_FRAMES:
                     pts = []
-                seen = obstacle_points(self.tof.last, self.state.latest, within_m=LAYER_M)
+                seen = obstacle_points(fv.frame, fv.state, within_m=LAYER_M)
                 new = self._remember(seen, pose)
                 ahead = path[st.target_index:] if path else []
                 if new and any(math.dist(q, w) < LETHAL_M + 0.05 for q in new for w in ahead):
-                    self.record(event="replan_new_obstacle", points=len(new), pose=pose)
+                    self.record(event="replan_new_obstacle", points=len(new), pose=pose,
+                                decision=decision("replan_new_obstacle", "new obstacle points on the path ahead",
+                                                  points=len(new), margin_m=LETHAL_M + 0.05))
                     path = None
                     continue
             if tw.vx > 0 and pts and min(p[2] for p in pts) < CLIFF_STOP_M:
@@ -413,7 +540,10 @@ class Navigator:
                         self.drops.append((pose[0] + k * (c * ax - s_ * ay), pose[1] + k * (s_ * ax + c * ay)))
                 self.drops.extend(extend_edge(edge, EDGE_EXTEND_M))
                 self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose,
-                            drops=[[round(v, 2) for v in d] for d in self.drops])
+                            drops=[[round(v, 2) for v in d] for d in self.drops],
+                            decision=decision("cliff_stop", f"a drop ahead seen in {self._drop_streak} frames in a row",
+                                              drop_m=round(min(p[2] for p in pts), 3), stop_m=CLIFF_STOP_M, zones=len(pts),
+                                              streak=self._drop_streak, frames_needed=DROP_FRAMES, vx=tw.vx))
                 self.survey()
                 path = None
                 continue
@@ -424,14 +554,21 @@ class Navigator:
                 tw, done = step(path, pose, now, st, near=near, pivot_ok=True)
                 if not tight:
                     tight = True
-                    self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm)
+                    self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm,
+                                decision=decision("tight_pivot", "no clear floor for an arc; pivoting while the room lasts",
+                                                  room_m=round(room, 3), min_room_m=TIGHT_PIVOT_M,
+                                                  nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M,
+                                                  nearest_mm=self.tof.nearest_mm, arc_clear_mm=ARC_CLEAR_MM))
             if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose):
                 self.move(Twist())
                 self.record(event="refused", why="no room to turn", pose=pose, room_m=round(room, 3),
                             nearest_drop_m=round(nearest_drop, 3), nearest_mm=self.tof.nearest_mm,
                             blocked=[[round(v, 2) for v in b] for b in self.blocked if math.dist(b, pose[:2]) < 0.5],
                             drops=[[round(v, 2) for v in d] for d in self.drops],
-                            path=[[round(v, 2) for v in q] for q in (path or [])[:8]])
+                            path=[[round(v, 2) for v in q] for q in (path or [])[:8]],
+                            decision=decision("refused", "no room to turn", room_m=round(room, 3), min_room_m=TIGHT_PIVOT_M,
+                                              nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M,
+                                              nearest_mm=self.tof.nearest_mm, arc_clear_mm=ARC_CLEAR_MM))
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm
@@ -439,12 +576,17 @@ class Navigator:
             if tw.vx > 0 and (blocked_ahead or (near is not None and near < EMERGENCY_MM)):
                 reflex_stops += 1
                 self.move(Twist())
-                seen = obstacle_points(self.tof.last, self.state.latest) if self.state.latest else []
+                seen = obstacle_points(fv.frame, fv.state) if fv is not None and fv.ok else []
                 self._remember(seen, pose)
                 if not seen:   # no geometry (no state yet): the nearest return straight ahead
                     ahead = near / 1000.0
                     self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
-                self.record(event="reflex_stop", nearest_mm=near, block_m=self._block, pose=pose)
+                emergency = near is not None and near < EMERGENCY_MM
+                self.record(event="reflex_stop", nearest_mm=near, block_m=self._block, pose=pose,
+                            decision=decision("reflex_stop", f"a return within {EMERGENCY_MM} mm" if emergency and not blocked_ahead
+                                              else f"an obstacle in the corridor within {REFLEX_AHEAD_M} m",
+                                              block_m=self._block, ahead_limit_m=REFLEX_AHEAD_M, nearest_mm=near,
+                                              emergency_mm=EMERGENCY_MM, corridor_half_m=REFLEX_HALF_W_M))
                 self.survey()
                 path = None
                 continue
@@ -468,12 +610,17 @@ def main() -> None:
     ap.add_argument("y", type=float)
     ap.add_argument("--log", type=Path)
     ap.add_argument("--timeout", type=float, default=90.0)
+    add_args(ap)
     args = ap.parse_args()
-    nav = Navigator(log=args.log)
+    stamp = time.strftime("go-%Y%m%d-%H%M%S")
+    runlog = open_from_args(args, args.log.stem if args.log else stamp, "go-to", args.log.parent if args.log else None)
+    nav = Navigator(log=args.log, runlog=runlog)
     try:
         print(json.dumps(nav.go_to((args.x, args.y), args.timeout)))
     finally:
         nav.close()
+        if runlog:
+            runlog.finish()
 
 
 if __name__ == "__main__":

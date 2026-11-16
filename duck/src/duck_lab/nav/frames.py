@@ -38,6 +38,10 @@ class Localizer:
         self.map_from_odom = compose(map_pose, inverse(near[1]))
         return True
 
+    def to_map(self, odom_pose: tuple) -> tuple | None:
+        """An odometry pose on the map (None before the first fix): the pose at the odometry's own instant, not the latest."""
+        return None if self.map_from_odom is None else compose(self.map_from_odom, odom_pose)
+
     def pose(self) -> tuple | None:
         """The latest pose on the map, or None before the first fix."""
         if self.map_from_odom is None or not self._odom:

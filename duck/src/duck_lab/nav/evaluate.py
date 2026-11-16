@@ -1,6 +1,9 @@
 """Phase 1's test (RFC-0002 §3.4): go-to goals, each reached or refused, no contacts, all logged.
 
     uv run duck-eval --goals 20 --out runs/phase1     # simulator with mapd running
+    uv run duck-eval --goals 20 --out runs/phase1 --miniview-data /work/robotics-lab/data   # goals are the miniview run's segments
+
+The format 2 run (miniview, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 
 Goals are drawn once, with a fixed seed, from free floor in the apartment layout (sim/apartment_layout.json,
 from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom and the staircase. Every goal starts
@@ -26,6 +29,7 @@ from pathlib import Path
 from duck_lab.nav.frames import compose, inverse
 from duck_lab.nav import simreset
 from duck_lab.nav.run import Navigator
+from duck_lab.nav.runlog import add_args, open_from_args
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 # The duck as the simulator models it (duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every
@@ -107,16 +111,18 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=90.0)
     ap.add_argument("--out", type=Path, default=Path("runs/phase1"))
     ap.add_argument("--chain", action="store_true", help="goal after goal, no reset (not the bar)")
+    add_args(ap)
     args = ap.parse_args()
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)
     goals = draw_goals(layout, args.goals, args.seed)
     args.out.mkdir(parents=True, exist_ok=True)
+    runlog = open_from_args(args, args.out.name, "go-to evaluation", args.out, evaluation=not args.chain)
     results = []
     nav = None
 
     def start():
-        n_ = Navigator(log=args.out / "ticks.jsonl")
+        n_ = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
         if n_.loc.pose() is None and not n_.fix():
             n_.survey()
         return n_, compose(n_.loc.pose(), inverse(n_.body.pose()))
@@ -157,6 +163,8 @@ def main() -> None:
         if nav is not None:
             nav.close()
         (args.out / "results.json").write_text(json.dumps(results, indent=1))
+        if runlog:
+            runlog.finish()
     n = len(results)
     said = sum(r["status"] == "reached" for r in results)
     true_ok = sum(r["reached_truth"] for r in results)
