@@ -15,6 +15,9 @@
         .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
                                                       then `status`; resumes after `since` or Last-Event-ID
     GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
+    GET /api/v1/render                                the render service's engines (MINIVIEW_RENDER), or {"available": false, "why"}
+    POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
+    GET /api/v1/videos/{id}  and  .../file            the job's progress; the finished video (the render service's, passed through)
 
 Errors are JSON ({"error": ...}): 400 bad input, 404, 405, 409 (no ticks yet, a broken run), 500 with an id that is
 also in the log. gzip for JSON over 1 KB when accepted; static files carry an ETag.
@@ -27,9 +30,14 @@ import json
 import logging
 import math
 import mimetypes
+import os
+import re
+import shutil
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -44,6 +52,7 @@ STREAM_TIMEOUT_S = 60.0     # a live stream whose client stops reading is droppe
 GZIP_OVER = 1024
 PER_TICK = ("t", "belief", "truth", "tilt", "cmd", "depth", "plan_at", "world_at")
 ONE_DAY = "public, max-age=86400"
+JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
 # the pages load only from their own origin (the libraries are vendored, the fonts served, no CDN); inline scripts and
 # styles are the import map and the shell's own, eval is what deck.gl's shaders need
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; "
@@ -55,6 +64,34 @@ class HttpError(Exception):
     def __init__(self, code: int, msg: str):
         super().__init__(msg)
         self.code, self.msg = code, msg
+
+
+def render_open(method: str, path: str, body: dict | None = None, timeout: float = 5.0):
+    """The render service's response (MINIVIEW_RENDER, read at each request) to be used as a context manager. Its own errors come
+    back as HttpError with its code and reason; one that does not answer is a 503 saying so."""
+    base = os.environ.get("MINIVIEW_RENDER", "").rstrip("/")
+    if not base:
+        raise HttpError(503, "no render service configured")
+    req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json"} if body is not None else {})
+    try:
+        return urllib.request.urlopen(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read()).get("error") or e.reason
+        except (ValueError, AttributeError):
+            msg = e.reason
+        raise HttpError(e.code, str(msg)) from None
+    except (urllib.error.URLError, OSError) as e:
+        raise HttpError(503, f"render service not answering: {getattr(e, 'reason', e)}") from None
+
+
+def render_json(method: str, path: str, body: dict | None = None, timeout: float = 5.0):
+    try:
+        with render_open(method, path, body, timeout) as r:
+            return json.loads(r.read())
+    except (ValueError, OSError) as e:      # an answer that is not JSON, or a connection lost while reading it
+        raise HttpError(503, f"render service not answering: {e}") from None
 
 
 def number(q: dict, k: str) -> float | None:
@@ -186,24 +223,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._json({"error": f"{self.command} is not allowed here", "allow": "GET, HEAD"}, 405, {"Connection": "close", "Allow": "GET, HEAD"})
         self.close_connection = True       # the body of the request, if any, was not read
 
-    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
 
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
+        self._guarded(self._route)
+
+    def do_POST(self):
+        parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
+        if len(parts) == 7 and parts[:3] == ["api", "v1", "runs"] and parts[6] == "video":     # the only POST there is
+            self._guarded(self._start_video)
+        else:
+            self._not_allowed()
+
+    def _route(self) -> None:
+        url = urllib.parse.urlsplit(self.path)
+        q = {k: v[-1] for k, v in urllib.parse.parse_qs(url.query, errors="strict").items()}
+        parts = [urllib.parse.unquote(p, errors="strict") for p in url.path.split("/") if p]
+        if not parts:
+            self._send(302, b"", "text/plain", {"Location": "/web/three/"})
+        elif parts[0] == "web":
+            self._static(parts[1:])
+        elif parts[:2] == ["api", "v1"]:
+            self._api(parts[2:], q)
+        else:
+            raise HttpError(404, "not found")
+
+    def _guarded(self, fn) -> None:
         try:
-            url = urllib.parse.urlsplit(self.path)
-            q = {k: v[-1] for k, v in urllib.parse.parse_qs(url.query, errors="strict").items()}
-            parts = [urllib.parse.unquote(p, errors="strict") for p in url.path.split("/") if p]
-            if not parts:
-                self._send(302, b"", "text/plain", {"Location": "/web/three/"})
-            elif parts[0] == "web":
-                self._static(parts[1:])
-            elif parts[:2] == ["api", "v1"]:
-                self._api(parts[2:], q)
-            else:
-                raise HttpError(404, "not found")
+            fn()
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except HttpError as e:
@@ -273,7 +323,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if what == "live":
                 return self._live(ld, q)
             return self._run_answer(ld, what, q)
+        if parts == ["render"]:
+            return self._render()
+        if parts[:1] == ["videos"] and len(parts) in (2, 3) and (len(parts) == 2 or parts[2] == "file"):
+            if not JOB_ID.match(parts[1]):
+                raise HttpError(404, f"no video {parts[1]!r}")
+            return self._video_file(parts[1]) if len(parts) == 3 else self._json(render_json("GET", f"/jobs/{parts[1]}"))
         raise HttpError(404, "not found")
+
+    # ---- the render service (ADR-0017): miniview passes through, writes nothing -------------------------------
+    def _render(self) -> None:
+        try:
+            return self._json(render_json("GET", "/engines", timeout=3))
+        except HttpError as e:
+            self._json({"available": False, "why": e.msg if e.code == 503 else f"render service not answering: {e.msg}"})
+
+    def _start_video(self) -> None:
+        parts = [urllib.parse.unquote(p, errors="strict") for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
+        try:
+            key = keys.make_key(*parts[3:6])
+        except ValueError as e:
+            raise HttpError(400, str(e)) from None
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if not 0 <= n <= 65536:
+            self.close_connection = True
+            raise HttpError(400, "the request body is missing or too large")
+        try:
+            req = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            raise HttpError(400, "the body is not JSON") from None
+        if not isinstance(req, dict):
+            raise HttpError(400, "the body is not a JSON object")
+        self._json(render_json("POST", "/jobs", dict(req, run=key)), 202)
+
+    def _video_file(self, jid: str) -> None:
+        with render_open("GET", f"/jobs/{jid}/file", timeout=30) as r:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", r.headers["Content-Length"])
+            self.send_header("Content-Disposition", r.headers.get("Content-Disposition", "inline"))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            if self.command != "HEAD":
+                shutil.copyfileobj(r, self.wfile)
 
     def _snapshot(self, ld):
         """(run copy, n ticks, seq) taken under the run's lock; what is served is built after it is released."""

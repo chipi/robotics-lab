@@ -11,6 +11,7 @@
     uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run miniview index                  # rebuild index.sqlite from the run files
     uv run miniview serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
+    uv run miniview render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by MINIVIEW_RENDER
 
 The agent's face (UXS-001 "The commands"): answers from the data, pictures from the real page.
 
@@ -26,6 +27,7 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
 import argparse
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -269,8 +271,19 @@ def cmd_video(args) -> None:
     print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to))
 
 
+def cmd_render_serve(args) -> None:
+    from miniview.video import service
+
+    state = args.state or os.environ.get("MINIVIEW_STATE")
+    if not args.data:
+        raise SystemExit("no data folder: MINIVIEW_DATA or --data")
+    if not state:
+        raise SystemExit("no state folder for the videos: MINIVIEW_STATE or --state")
+    service.serve(Path(args.data), Path(state), args.host, args.port)
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap =argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (MINIVIEW_DATA)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("scene", help="write a scene from a simulator layout")
@@ -347,6 +360,11 @@ def main() -> None:
     p.add_argument("--from", dest="t_from", type=float)
     p.add_argument("--to", dest="t_to", type=float)
     p.set_defaults(fn=cmd_video)
+    p = sub.add_parser("render-serve", help="the render service: runs to videos for the pages, one job at a time (ADR-0017)")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8071)
+    p.add_argument("--state", help="where the videos go, in videos/ (MINIVIEW_STATE)")
+    p.set_defaults(fn=cmd_render_serve)
     args = ap.parse_args()
     args.fn(args)
 

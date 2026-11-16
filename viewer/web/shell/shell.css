@@ -64,6 +64,8 @@ svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-widt
   background: var(--bg-field); border: 1px solid var(--border); }
 .pick-btn:hover { border-color: var(--border-hover); }
 .pick-btn .k { color: var(--text-faint); font-size: 11px; }
+.pick-btn:disabled { opacity: .45; }
+.pick-btn:disabled:hover { border-color: var(--border); }
 .sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
 .seg { display: inline-flex; height: 24px; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--bg-field); }
 .seg button { padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; color: var(--text-dim); border-right: 1px solid var(--border); }
@@ -97,6 +99,14 @@ svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-widt
 .pop h6 { margin: 4px 8px 4px; font: 600 10px/1 var(--ui); letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); }
 .pop label { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
 .pop label:hover { background: var(--bg-hover); }
+.xp { display: flex; flex-direction: column; gap: 2px; min-width: 300px; padding-bottom: 4px; }
+.xp select, .xp input { margin-left: auto; height: 22px; padding: 0 4px; background: var(--bg-field); color: var(--text); border: 1px solid var(--border); border-radius: 3px; font: 11.5px var(--mono); }
+.xp input { width: 84px; }
+.xp > button { margin: 6px 8px 2px; justify-content: center; }
+.xs { padding: 4px 8px; color: var(--text-dim); }
+.xs .err { color: var(--error); }
+.xp video { display: block; width: calc(100% - 16px); margin: 4px 8px; background: #000; border-radius: 3px; }
+.xp .dl { margin: 2px 8px; color: var(--accent); }
 
 /* region chrome */
 .region { display: flex; flex-direction: column; min-height: 0; }

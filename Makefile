@@ -84,8 +84,8 @@ DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
-                       tests/test_kinematics.py
-VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py
+                       tests/test_kinematics.py tests/test_render_service.py
+VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py
 
 .PHONY: test-duck test-viewer test-viewer-pages
 test-duck: duck-sync ## The duck's navigator and tools, no simulator
@@ -236,6 +236,11 @@ rerun-export: duck-sync ## A run in Rerun with the robot drawn as itself (RFC-00
 MINIVIEW_PORT ?= 8070
 MINIVIEW_DATA ?= /work/robotics-lab/data
 MINIVIEW_STATE ?= /work/robotics-lab/state/miniview
+RENDER_PORT ?= 8071
+.PHONY: render-up
+render-up: viewer-sync ## The render service on 127.0.0.1:$(RENDER_PORT), in the foreground (ADR-0017): reads $(MINIVIEW_DATA), writes videos to $(MINIVIEW_STATE)/videos; miniview offers Export video when started with MINIVIEW_RENDER=http://127.0.0.1:$(RENDER_PORT)
+	cd $(VIEWER_DIR) && MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(MINIVIEW_STATE) exec uv run --frozen miniview render-serve --host 127.0.0.1 --port $(RENDER_PORT)
+
 MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(MINIVIEW_STATE) MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g)
 
 .PHONY: viewer-up viewer-down

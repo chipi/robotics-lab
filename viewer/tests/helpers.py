@@ -98,9 +98,44 @@ def serve(cat, follow=True):
     return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
 
 
-def get(base: str, path: str, headers=None, timeout: float = 10):
-    """(status, parsed JSON body or text, response headers); HTTP errors come back as values, not raised."""
-    req = urllib.request.Request(base + path, headers=headers or {})
+STUB_ENGINE = '''
+import json, os, sys, time
+job = json.load(open(sys.argv[1]))
+if os.environ.get("STUB_FAIL"):
+    sys.stderr.write("stub engine: told to fail\\n")
+    sys.exit(1)
+gate, end = os.environ.get("STUB_GATE"), time.monotonic() + 30
+while gate and not os.path.exists(gate) and time.monotonic() < end:
+    time.sleep(0.02)
+fr = job["track"]["frames"]
+info = {"run": job["title"], "robot": job["robot"]["name"], "size": job["size"], "frames": len(fr), "t0": fr[0]["t"], "t1": fr[-1]["t"]}
+open(job["out"], "wb").write(b"\\0\\0\\0\\x18ftypmp42STUB" + json.dumps(info).encode())
+'''
+
+
+def stub_engine(tmp: Path, kind: str = "ok") -> Path:
+    """Point the video export's "mujoco" at a stand-in script (no MuJoCo, no rendering) that writes a tiny file whose body says what
+    job it was given. kind: "ok"; "gated" (waits until the returned file exists: a job that is running as long as the test wants);
+    "fail" (exits 1). The script and the python are chosen by VIDEO_MUJOCO_SCRIPT and VIDEO_MUJOCO_PYTHON, read at each job."""
+    script = Path(tmp) / "stub_engine.py"
+    script.write_text(STUB_ENGINE)
+    gate = Path(tmp) / "gate"
+    gate.unlink(missing_ok=True)
+    os.environ["VIDEO_MUJOCO_SCRIPT"], os.environ["VIDEO_MUJOCO_PYTHON"] = str(script), sys.executable
+    for k in ("STUB_GATE", "STUB_FAIL"):
+        os.environ.pop(k, None)
+    if kind == "gated":
+        os.environ["STUB_GATE"] = str(gate)
+    elif kind == "fail":
+        os.environ["STUB_FAIL"] = "1"
+    return gate
+
+
+def get(base: str, path: str, headers=None, timeout: float = 10, body=None):
+    """(status, parsed JSON body or text, response headers); HTTP errors come back as values, not raised. `body` (a JSON value)
+    makes it a POST."""
+    req = urllib.request.Request(base + path, headers=headers or {}, data=None if body is None else json.dumps(body).encode(),
+                                 method="GET" if body is None else "POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body, code, hdrs = r.read(), r.status, r.headers

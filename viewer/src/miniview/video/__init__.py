@@ -23,6 +23,16 @@ ROBOTS = json.loads((HERE / "robots.json").read_text())
 ENGINES = {"mujoco": HERE / "engines" / "mujoco_engine.py"}
 
 
+def engine_script(engine: str) -> Path | None:
+    """The engine's script; VIDEO_<ENGINE>_SCRIPT replaces it (the render service's tests point it at a stub)."""
+    env = os.environ.get(f"VIDEO_{engine.upper()}_SCRIPT")
+    return Path(env) if env else ENGINES.get(engine)
+
+
+def python_of(model: dict) -> str:
+    return os.environ.get(model["python_env"], model["python"]) if model.get("python_env") else model["python"]
+
+
 def _quat_yaw(yaw: float) -> list:
     return [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
 
@@ -133,8 +143,7 @@ def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size
         job = Path(tmp) / "job.json"
         job.write_text(json.dumps({"track": tr, "scene": scene, "robot": dict(model, name=robot), "size": list(size),
                                    "out": str(Path(out).resolve()), "title": key}))
-        python = os.environ.get(model["python_env"], model["python"]) if model.get("python_env") else model["python"]
-        r = subprocess.run([python, str(ENGINES[engine]), str(job)])
+        r = subprocess.run([python_of(model), str(engine_script(engine)), str(job)])
         if r.returncode != 0:
             raise SystemExit(f"the {engine} engine failed (exit {r.returncode})")
     return Path(out)

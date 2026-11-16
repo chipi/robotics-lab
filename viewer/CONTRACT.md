@@ -129,6 +129,10 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
 | `.../live?since=SEQ` | Server-Sent Events, below |
+| `GET /api/v1/render` | the render service's `GET /engines` (`{"engines": [{"name", "available", "why", "robots"}]}`), or `{"available": false, "why": "no render service configured" \| "render service not answering: ..."}` |
+| `POST /api/v1/runs/{robot}/{scene}/{run}/video` | body `{"engine", "from"?, "to"?, "size"?: "1280x720"}`; 202 `{"id"}`; the render service's 400, 404, 409 (one job at a time) and 503 come through with its reason |
+| `GET /api/v1/videos/{id}` | the job: `{"id", "run", "engine", "status": "queued" \| "running" \| "done" \| "failed", "error", "file"}` |
+| `GET /api/v1/videos/{id}/file` | the finished video, `video/mp4`; 409 until the job is done |
 
 - **Errors are JSON** (`{"error": ...}`): 400 (a number that is not one, `from` after `to`, a key
   with other
@@ -149,6 +153,12 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   status): the stream sends `rewritten` and ends, and the client starts over. `HEAD` answers with the
   headers only.
 
+- **Video (ADR-0017).** The four routes above pass through to the render service
+  (`miniview render-serve`, `GET /engines`, `POST /jobs`, `GET /jobs/{id}[/file]`) whose address is
+  the environment variable `MINIVIEW_RENDER` (read at each request; unset: no render service).
+  miniview writes nothing: the service reads the runs from the same data folder and keeps the videos
+  in its own `<state>/videos/`. One job at a time. `from` and `to` are run times in seconds (the
+  whole run when absent); `size` is `1280x720` or any `WIDTHxHEIGHT`.
 - **A run of a scene with no `scene.json`** (the NXT's `unmapped`, ADR-0013) is listed under its scene
   (`kind` `no layout`); `GET /scenes/{id}` for it is a 404 and the pages draw none of a scene.
 - **Signals.** `.../signals?from=&to=` (time window, both optional; 400 for `from` after `to`)
@@ -248,8 +258,10 @@ renderer adapter each (`web/three/app.js`, `web/deck/app.js`). The view area is 
 `#stage`; the status chip
 `#runinfo` reads "robot · kind · verdict · length · N ticks"; `#follow` (with `#follow-on`) shows
 only while the run is
-live. Fonts (Inter, JetBrains Mono; OFL, licences in `web/fonts/`) are served by the service: no
-request leaves the machine.
+live. `#exportBtn` ("Export video") is enabled when the render service lists an available engine
+for the run's robot (its title says why when not); it opens a panel (engine, from, to, size, Start;
+then the job's status, a `<video>` and a download link). Fonts (Inter, JetBrains Mono; OFL, licences
+in `web/fonts/`) are served by the service: no request leaves the machine.
 
 **The run store** (`web/shell/runstore.js`, shared by both renderers): the run's summary; then the
 window of ticks

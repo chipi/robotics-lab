@@ -345,6 +345,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       app.classList.remove('scenes');
       M.loading = false;
       layout();
+      askRender();
       renderAll();
       return state();
     } finally { M.loading = false; }
@@ -547,6 +548,83 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   }
   const outside = (e) => { if (popEl && !popEl.contains(e.target)) closePop(); };
   function closePop() { popEl?.remove(); popEl = null; document.removeEventListener('pointerdown', outside); }
+
+  // ---- export video (ADR-0017): the render service's engines, asked when a run opens; a job, polled once a second ----------
+  let render = null;                      // /api/v1/render's answer, null while it is asked
+  let xjob = null, xtimer = null;         // the export started here: { run, engine, id, status, error }
+  const SIZES = ['1280x720', '960x540'];
+  const BUSY = ['starting', 'queued', 'running'];
+  const exportEngines = () => (render?.engines || []).filter((e) => e.available && e.robots.includes(M.runId.split('/')[0]));
+  function exportWhy() {
+    if (!M.runId) return 'open a run first';
+    if (!render) return 'asking the render service';
+    if (!render.engines) return render.why || 'no render service';
+    if (exportEngines().length) return null;
+    const robot = M.runId.split('/')[0];
+    return `no engine can render ${robot} runs (${render.engines.map((e) => `${e.name}: ${e.why || 'no model for ' + robot}`).join('; ')})`;
+  }
+  function renderExport() {
+    const why = exportWhy(), b = $('exportBtn');
+    b.disabled = !!why;
+    b.title = why ? `Export video: ${why}` : 'Render this run as a video';
+    paintExport();
+  }
+  function askRender() {
+    const key = M.runId;
+    render = null;
+    fetch(API + 'render').then((r) => r.json()).catch((e) => ({ available: false, why: `miniview not answering: ${e.message}` }))
+      .then((j) => { if (M.runId === key) { render = j; renderExport(); } });
+  }
+  function openExport(anchor) {
+    const engines = exportEngines();
+    popover(anchor, `<h6>Export video</h6><div class="xp" id="xp">
+      <label>Engine<select id="xEngine">${engines.map((e) => `<option>${esc(e.name)}</option>`).join('')}</select></label>
+      <label>From<input id="xFrom" type="number" step="0.1" value="${M.run.t0.toFixed(2)}"><span class="faint">s</span></label>
+      <label>To<input id="xTo" type="number" step="0.1" value="${M.run.t1.toFixed(2)}"><span class="faint">s</span></label>
+      <label>Size<select id="xSize">${SIZES.map((s) => `<option>${s}</option>`).join('')}</select></label>
+      <button class="pick-btn" id="xGo">Start</button>
+      <div class="xs" id="xStatus" role="status"></div><div id="xResult"></div></div>`,
+    (p) => { p.querySelector('#xGo').onclick = startExport; paintExport(); });
+  }
+  async function startExport() {
+    const key = M.runId, v = (id) => popEl.querySelector(id).value;
+    const from = parseFloat(v('#xFrom')), to = parseFloat(v('#xTo'));
+    const job = xjob = { run: key, engine: v('#xEngine'), id: null, status: 'starting', error: null };
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) { job.status = 'failed'; job.error = 'From must be a number, not after To'; return paintExport(); }
+    const body = { engine: job.engine, size: v('#xSize') };
+    if (Math.abs(from - M.run.t0) > 0.01) body.from = from;               // the whole run is the default: send a span only when it was changed
+    if (Math.abs(to - M.run.t1) > 0.01) body.to = to;
+    paintExport();
+    try {
+      const r = await fetch(`${API}runs/${key}/video`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      job.id = j.id; job.status = 'queued';
+      pollExport(job);
+    } catch (e) { job.status = 'failed'; job.error = e.message; }
+    if (job === xjob) paintExport();
+  }
+  function pollExport(job) {
+    clearTimeout(xtimer);
+    xtimer = setTimeout(async () => {
+      try { Object.assign(job, await json(API + 'videos/' + job.id)); } catch (e) { job.status = 'failed'; job.error = e.message; }
+      if (job === xjob) paintExport();
+      if (BUSY.includes(job.status)) pollExport(job);
+    }, 1000);
+  }
+  function paintExport() {
+    const p = popEl?.querySelector('#xp');
+    if (!p) return;
+    const j = xjob && xjob.run === M.runId ? xjob : null;
+    p.querySelector('#xGo').disabled = !!j && BUSY.includes(j.status);
+    p.querySelector('#xStatus').innerHTML = !j ? '' : j.status === 'failed' ? `<span class="err">Failed: ${esc(j.error)}</span>` : `Status: <b>${esc(j.status)}</b>`;
+    const res = p.querySelector('#xResult'), want = j?.status === 'done' ? j.id : '';
+    if (res.dataset.id !== want) {                                          // drawn once: a new innerHTML every second would restart the video
+      res.dataset.id = want;
+      const url = `${API}videos/${want}/file`;
+      res.innerHTML = want ? `<video controls preload="metadata" src="${url}"></video><a class="dl" href="${url}" download="${esc(j.run.replace(/\//g, '-'))}-${esc(j.engine)}.mp4">Download</a>` : '';
+    }
+  }
 
   // ---- rendering: the outliner ------------------------------------------------------------------------
   const hl = (s) => { const q = M.query; if (!q) return esc(s); const i = s.toLowerCase().indexOf(q); return i < 0 ? esc(s) : esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + q.length)) + '</mark>' + esc(s.slice(i + q.length)); };
@@ -812,7 +890,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     $('legend').style.display = M.ov.legend ? '' : 'none';
     $('themeBtn').innerHTML = svgI(M.theme === 'dark' ? 'sun' : 'moon', 14);
     $('themeBtn').title = M.theme === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme';
-    renderLegend(); updateGizmo(); updateScale();
+    renderLegend(); updateGizmo(); updateScale(); renderExport();
   }
   function legendHtml() {
     if (!M.run) return '';
@@ -1043,6 +1121,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   (p) => p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
     if (c.dataset.ov === 'rel') setRelation('belief_truth', c.checked); else { M.ov[c.dataset.ov] = c.checked; renderChrome(); if (hasTicks()) adapter.draw(); }
   })));
+  $('exportBtn').onclick = (e) => openExport(e.currentTarget);
   $('fitBtn').onclick = () => fit();
   $('helpBtn').onclick = () => help();
   $('filterBtn').onclick = (e) => popover(e.currentTarget, `<h6>Show in the list</h6><label class="cb"><input type="checkbox" id="fm" ${M.hideMissing ? '' : 'checked'}>Missing streams</label>`,
@@ -1206,6 +1285,7 @@ const TEMPLATE = `
     <span class="grow"></span>
     <label id="follow" class="follow" hidden><input type="checkbox" id="follow-on" checked> Follow live</label>
     <span class="chip" id="runinfo"></span>
+    <button class="pick-btn" id="exportBtn" disabled aria-haspopup="dialog">Export video</button>
     <button class="icon-btn" id="themeBtn" title="Theme"></button>
     <button class="icon-btn" id="helpBtn" title="Keyboard shortcuts (?)"><svg class="i" data-i="key"></svg></button>
   </header>
