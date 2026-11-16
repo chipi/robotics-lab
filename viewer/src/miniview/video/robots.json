@@ -10,6 +10,12 @@
       "home_keyframe": "STAND",
       "keyframes_from": "scene_backlash.xml",
       "stand_z": 0.116
+    },
+    "blender": {
+      "blender": "~/opt/blender/blender",
+      "blender_env": "VIDEO_BLENDER",
+      "urdf": "robots/duck/robot.urdf",
+      "stand_z": 0.116
     }
   }
 }

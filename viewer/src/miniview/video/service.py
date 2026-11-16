@@ -26,29 +26,24 @@ from miniview import keys, video
 log = logging.getLogger("miniview.render")
 SIZE = re.compile(r"^(\d{2,5})x(\d{2,5})$")
 MAX_BODY = 65536
-OTHER_ENGINES = ("blender",)         # listed, with why not, until their engine script exists (ADR-0017: engines plug in)
-
-
 def engines() -> list:
     """Every engine the service knows of: its name, whether it can render now, why not, and the robots it can render."""
     out = []
-    for name in dict.fromkeys((*video.ENGINES, *OTHER_ENGINES)):
+    for name in video.ENGINES:
         robots, whys = [], []
         script = video.engine_script(name)
-        if name == "blender" and shutil.which("blender") is None:
-            whys.append("blender not installed")
-        elif script is None or not Path(script).is_file():
+        if script is None or not Path(script).is_file():
             whys.append(f"the {name} engine script is not there")
         else:
             for robot, models in video.ROBOTS.items():
                 model = models.get(name)
                 if not model:
                     continue
-                python = video.python_of(model)
-                if Path(python).is_file():
+                prog = video.program(name, model)       # the model's Python, or Blender's binary for blender
+                if Path(prog).is_file():
                     robots.append(robot)
                 else:
-                    whys.append(f"{robot}: the {name} python {python} does not exist")
+                    whys.append(f"{robot}: the {name} program {prog} does not exist")
         out.append({"name": name, "available": bool(robots), "why": None if robots else (whys[0] if whys else f"no robot has a {name} model"),
                     "robots": robots})
     return out

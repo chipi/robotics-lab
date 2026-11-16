@@ -69,6 +69,11 @@ are not built into miniview.
   the next one (the operator: "anticipate we can plug Blender in"): `blender --background --python
   blender_engine.py -- job.json`, the meshes placed per link from RFC-0011's link poses. The render
   service lists every engine it finds runnable; miniview offers what it lists.
+- **Blender, in use (2026-11-16):** Blender's official build in the user's home (`~/opt/blender`,
+  the registry's default; `VIDEO_BLENDER` overrides it), not a system package: the distribution's
+  package needed a system upgrade it did not get (it would not start). Run with
+  `--python-exit-code 1` so a script that fails is a failed job (Blender exits 0 otherwise), and a
+  job that wrote no video fails too. The duck's 2 s at 1280x720: about 30 s, EEVEE, Blender 5.2.4.
 
 ## Consequences
 

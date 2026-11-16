@@ -20,7 +20,8 @@ from miniview.mcapio import Follower
 
 HERE = Path(__file__).resolve().parent
 ROBOTS = json.loads((HERE / "robots.json").read_text())
-ENGINES = {"mujoco": HERE / "engines" / "mujoco_engine.py"}
+ENGINES = {"mujoco": HERE / "engines" / "mujoco_engine.py", "blender": HERE / "engines" / "blender_engine.py"}
+REPO = HERE.parents[3]
 
 
 def engine_script(engine: str) -> Path | None:
@@ -31,6 +32,22 @@ def engine_script(engine: str) -> Path | None:
 
 def python_of(model: dict) -> str:
     return os.environ.get(model["python_env"], model["python"]) if model.get("python_env") else model["python"]
+
+
+def program(engine: str, model: dict) -> str:
+    """The program the engine runs in: Blender's own binary (VIDEO_BLENDER, else the registry's), else the model's Python."""
+    if engine == "blender":
+        return os.path.expanduser(os.environ.get(model.get("blender_env", ""), model.get("blender", "blender")))
+    return python_of(model)
+
+
+def command(engine: str, model: dict, job: Path) -> list:
+    """How the engine runs: Blender runs its script itself (its own Python, with bpy); the others with the model's Python."""
+    if engine == "blender":
+        # --python-exit-code: a script that fails exits non-zero (Blender's own default is 0, a failure reported as success)
+        return [program(engine, model), "--background", "--factory-startup", "--python-exit-code", "1", "--python", str(engine_script(engine)),
+                "--", str(job)]
+    return [program(engine, model), str(engine_script(engine)), str(job)]
 
 
 def _quat_yaw(yaw: float) -> list:
@@ -141,9 +158,14 @@ def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="video-") as tmp:
         job = Path(tmp) / "job.json"
-        job.write_text(json.dumps({"track": tr, "scene": scene, "robot": dict(model, name=robot), "size": list(size),
+        rb = dict(model, name=robot)
+        if rb.get("urdf"):
+            rb["urdf"] = str((REPO / rb["urdf"]).resolve())        # the description, from the repository's robots/
+        job.write_text(json.dumps({"track": tr, "scene": scene, "robot": rb, "size": list(size),
                                    "out": str(Path(out).resolve()), "title": key}))
-        r = subprocess.run([python_of(model), str(engine_script(engine)), str(job)])
+        r = subprocess.run(command(engine, model, job))
         if r.returncode != 0:
             raise SystemExit(f"the {engine} engine failed (exit {r.returncode})")
+        if not Path(out).is_file() or Path(out).stat().st_size == 0:
+            raise SystemExit(f"the {engine} engine exited 0 but wrote no video at {out}")
     return Path(out)

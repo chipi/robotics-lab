@@ -5,7 +5,7 @@ Run: cd viewer && uv run python tests/test_render_service.py"""
 
 import json
 import os
-import shutil
+import sys
 import tempfile
 import threading
 import urllib.error
@@ -52,9 +52,14 @@ with tempfile.TemporaryDirectory() as tmp:
     code, body, _ = get(R, "/engines")
     eng = {e["name"]: e for e in body["engines"]}
     check("/engines lists mujoco as available for the duck, with no reason", code == 200 and eng["mujoco"] == {"name": "mujoco", "available": True, "why": None, "robots": ["duck"]}, body)
-    check("... and blender as not available, saying why (blender not installed)",
-          eng["blender"]["available"] is False and eng["blender"]["robots"] == []
-          and (eng["blender"]["why"] == "blender not installed" if shutil.which("blender") is None else bool(eng["blender"]["why"])), eng["blender"])
+    os.environ["VIDEO_BLENDER"] = str(tmp / "nowhere" / "blender")
+    bl = {e["name"]: e for e in get(R, "/engines")[1]["engines"]}["blender"]
+    check("blender whose program (VIDEO_BLENDER, else robots.json's) does not exist: not available, and says which",
+          bl["available"] is False and bl["robots"] == [] and "nowhere/blender does not exist" in bl["why"], bl)
+    os.environ["VIDEO_BLENDER"] = sys.executable                                # a program that exists: the engine is listed as available
+    bl = {e["name"]: e for e in get(R, "/engines")[1]["engines"]}["blender"]
+    check("blender whose program exists: available for the duck (its URDF)", bl["available"] is True and bl["robots"] == ["duck"], bl)
+    os.environ["VIDEO_BLENDER"] = str(tmp / "nowhere" / "blender")
     good_python = os.environ["VIDEO_MUJOCO_PYTHON"]
     os.environ["VIDEO_MUJOCO_PYTHON"] = str(tmp / "nowhere" / "python")
     mj = {e["name"]: e for e in get(R, "/engines")[1]["engines"]}["mujoco"]
@@ -71,7 +76,7 @@ with tempfile.TemporaryDirectory() as tmp:
                             ("an engine there is not", {"run": K, "engine": "povray"}, 400), ("a robot the engine has no model for", {"run": "rover/apartment/explore9", "engine": "mujoco"}, 400),
                             ("a run that is not there", {"run": "duck/apartment/nope", "engine": "mujoco"}, 404), ("from after to", {"run": K, "engine": "mujoco", "from": 5, "to": 1}, 400),
                             ("a size that is not one", {"run": K, "engine": "mujoco", "size": "big"}, 400), ("from that is not a number", {"run": K, "engine": "mujoco", "from": "x"}, 400),
-                            ("blender, which is not installed", {"run": K, "engine": "blender"}, 503 if shutil.which("blender") is None else 400)):
+                            ("blender, whose program is not there", {"run": K, "engine": "blender"}, 503)):
         code, body, _ = get(R, "/jobs", body=req)
         check(f"POST /jobs with {what} is a {want} with a reason", code == want and isinstance(body, dict) and body.get("error"), (code, body))
     check("GET /jobs/{id} of no job is a 404", get(R, "/jobs/0000000000")[0] == 404)
