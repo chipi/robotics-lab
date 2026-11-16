@@ -4,7 +4,7 @@ import math
 import sys
 
 from duck_lab.nav.follow import FollowState, step
-from duck_lab.nav.grid import LETHAL_COST, MARGIN_COST, CostGrid, plan, thin
+from duck_lab.nav.grid import LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, plan, thin
 
 failures = []
 
@@ -105,7 +105,7 @@ check("room to pivot: the turn stays on the spot", tw_piv.vx == 0.0, tw_piv)
 st_b = FollowState()
 tw_b, _ = step(path, (0.0, 0.0, math.radians(120)), 60.0, st_b, pivot_vx=-0.06)
 tw_b2, _ = step(path, (0.0, 0.0, math.radians(100)), 61.5, st_b, pivot_vx=-0.06)
-check("a pivot is sent with the robot's pivot speed, kick and hold", tw_b.vx == -0.06 and tw_b2.vx == -0.06
+check("a pivot kicks standing (vx 0) and holds with the robot's pivot speed", tw_b.vx == 0.0 and tw_b2.vx == -0.06
       and (tw_b.vyaw, tw_b2.vyaw) == (-1.2, -0.8), (tw_b, tw_b2))
 tw_ba, _ = step(path, (0.0, 0.0, math.radians(120)), 62.0, FollowState(), pivot_ok=False, pivot_vx=-0.06)
 tw_bw, _ = step(path, (0.0, 0.0, 0.0), 63.0, FollowState(), pivot_vx=-0.06)
@@ -209,6 +209,60 @@ from duck_lab.nav.grid import clearance  # noqa: E402
 check("clearance: 5 cm cells, a point 5 cells from a wall cell is 0.225 m from its edge; open floor reads the search radius",
       abs(clearance(gap_grid(9), (0.775, 0.1), 0.3) - 0.225) < 0.03 and clearance(fine, (1.5, 1.0), 0.3) == 0.3,
       (clearance(gap_grid(9), (0.775, 0.1), 0.3), clearance(fine, (1.5, 1.0), 0.3)))
+
+# The clearance model (docs/wip/CLEARANCE-MODEL.md): exact obstacle points over mapd's whole cells.
+RES = 0.0455                                      # the simulator's 5 cm cells, scaled by its odometry (0.91)
+
+
+def corridor_map(half_m, length_m=1.0, ox=-0.3, below_m=0.2):
+    """mapd's view of a corridor along x: the cells holding the two wall surfaces at y = ±half_m, as mapd marks
+    them, and the exact points on those surfaces every 3 cm (the navigator's memory)."""
+    w, h = int((length_m + 0.6) / RES) + 1, int((2 * half_m + 0.4) / RES) + 3
+    origin = (ox, -half_m - below_m)
+    rows = [["."] * w for _ in range(h)]
+    pts = []
+    for i in range(int(length_m / 0.03) + 1):
+        x = 0.03 * i
+        for y in (-half_m, half_m):
+            pts.append((x, y))
+            rows[math.floor((y - origin[1]) / RES)][math.floor((x - origin[0]) / RES)] = "#"
+    g = {"res_m": RES, "origin": list(origin), "width": w, "height": h, "cells": "".join("".join(r) for r in rows)}
+    return g, pts
+
+
+g45, p45 = corridor_map(0.205)                    # a 45 cm corridor's walls (4 cm thick): surfaces 0.205 m out
+cells_only = CostGrid.from_map_grid(g45).with_blocked(p45)          # the navigator before: cells, and points rounded to cells
+exact = CostGrid.from_map_grid(g45, explained_by=p45).with_points(p45)
+explained = CostGrid.from_map_grid(g45, explained_by=p45)
+partly = CostGrid.from_map_grid(g45, explained_by=[p for p in p45 if p[0] < 0.3])
+check("a mapd wall cell with an exact point in it is left to the points; one without stays",
+      not any(math.isinf(v) for v in explained.cost)
+      and math.isinf(partly.at(*partly.cell(0.8, 0.205))) and not math.isinf(partly.at(*partly.cell(0.1, 0.205))))
+g40, p40 = corridor_map(0.18, below_m=0.183)      # a 40 cm corridor, its walls where the cells fall worst
+check("a 40 cm corridor: cells and rounded points close it at this alignment, exact points keep it open (LETHAL_M unchanged)",
+      plan(CostGrid.from_map_grid(g40).with_blocked(p40), (-0.2, 0.0), (0.9, 0.0)) is None
+      and plan(CostGrid.from_map_grid(g40, explained_by=p40).with_points(p40), (-0.2, 0.0), (0.9, 0.0)) is not None)
+check("an exact point's own cell is never crossed, and its lethal zone is measured from the point",
+      math.isinf(exact.at(*exact.cell(0.3, 0.205))) and exact.at(*exact.cell(0.3, 0.205 - LETHAL_M + 0.03)) >= LETHAL_COST
+      and exact.at(*exact.cell(0.3, 0.0)) < LETHAL_COST)
+empty = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 20, "height": 20, "cells": "." * 400})
+dot = empty.with_points([(0.51, 0.5)])
+just_out = [(x, y) for x in range(20) for y in range(20)
+            if LETHAL_M + 0.003 < math.dist(empty.centre(x, y), (0.51, 0.5)) < LETHAL_M + 0.025]
+check("a cell whose centre is just beyond LETHAL_M of an exact point is passable (the point is not rounded to its cell)",
+      just_out and all(dot.at(*c) < LETHAL_COST for c in just_out), len(just_out))
+room_c, room_e = clearance(cells_only, (0.3, 0.07), 0.3), clearance(exact, (0.3, 0.07), 0.3)
+check("clearance to exact points is the distance itself (0.135 m); from cells and rounded points it read short (0.116)",
+      abs(room_e - 0.135) < 1e-6 and room_c < room_e - 0.01, (round(room_c, 3), round(room_e, 3)))
+one = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 10, "height": 10,
+                              "cells": "".join("#" if (i % 10, i // 10) == (5, 5) else "." for i in range(100))})
+check("clearance to a cell is to its square from the position itself, not from the position's cell centre",
+      abs(clearance(one, (0.20, 0.27), 0.3) - 0.05) < 1e-9 and abs(clearance(one, (0.24, 0.27), 0.3) - 0.01) < 1e-9,
+      (clearance(one, (0.20, 0.27), 0.3), clearance(one, (0.24, 0.27), 0.3)))
+grown = exact.covering([(-2.0, -2.0)])
+check("covering() keeps the points and moves their cells with the grid's new origin",
+      grown.points == exact.points and all(math.isinf(grown.at(*c)) for c in grown.point_cells)
+      and grown.cell(0.3, 0.205) in grown.point_cells)
 
 # Frames: map <- odom from one fix, then odometry carries the pose.
 from duck_lab.nav.frames import Localizer, compose, inverse  # noqa: E402

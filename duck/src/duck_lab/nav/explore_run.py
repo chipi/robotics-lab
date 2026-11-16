@@ -67,7 +67,7 @@ class Explorer:
             return False
         if pose:
             try:
-                room = clearance(self.nav.grid().with_blocked(self.nav.blocked), pose[:2], PIVOT_OBSTACLE_M)
+                room = clearance(self.nav.grid().with_points(self.nav.blocked), pose[:2], PIVOT_OBSTACLE_M)
             except EmptyMap:
                 room = PIVOT_OBSTACLE_M
             if room < PIVOT_OBSTACLE_M:
@@ -110,7 +110,7 @@ class Explorer:
                 # covering() as the navigator does: a drop beyond mapd's grid still grows its zone into it
                 # (trial 6 picked a goal the navigator then scored lethal).
                 costs = self.nav.grid()
-                costs = costs.covering([pose[:2]] + self.nav.blocked + self.nav.drops).with_blocked(self.nav.blocked)
+                costs = costs.covering([pose[:2]] + self.nav.blocked + self.nav.drops).with_points(self.nav.blocked)
                 costs = costs.with_blocked(self.nav.drops, DROP_LETHAL_M, DROP_INFLATE_M)
             except EmptyMap:
                 self.survey()

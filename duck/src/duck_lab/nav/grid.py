@@ -72,6 +72,43 @@ class EmptyMap(ValueError):
     pass
 
 
+def _grow_points(cost: list, w: int, h: int, origin: tuple, res: float, points: list,
+                 lethal_m: float = None, inflate_m: float = None) -> set:
+    """Mark the lethal disc and the margin ring around each exact obstacle point, in place, by the distance
+    from a cell's centre to the point itself (the clearance model, docs/wip/CLEARANCE-MODEL.md): a point is
+    not rounded to its cell, which cost up to a cell of room. The point's own cell is infinite. Returns
+    the cells that hold points."""
+    lethal_m = LETHAL_M if lethal_m is None else lethal_m
+    inflate_m = INFLATE_M if inflate_m is None else inflate_m
+    reach = math.ceil(inflate_m / res) + 1
+    own = set()
+    for px, py in points:
+        cx, cy = math.floor((px - origin[0]) / res + 1e-9), math.floor((py - origin[1]) / res + 1e-9)
+        for dx in range(-reach, reach + 1):
+            for dy in range(-reach, reach + 1):
+                x, y = cx + dx, cy + dy
+                if not (0 <= x < w and 0 <= y < h):
+                    continue
+                i = y * w + x
+                if dx == 0 and dy == 0:
+                    cost[i] = math.inf
+                    own.add((x, y))
+                    continue
+                d = math.hypot(origin[0] + (x + 0.5) * res - px, origin[1] + (y + 0.5) * res - py)
+                if d < lethal_m:
+                    cost[i] = max(cost[i], LETHAL_COST)
+                elif d < inflate_m:
+                    cost[i] = max(cost[i], MARGIN_COST)
+    return own
+
+
+def _near_square(px: float, py: float, x0: float, y0: float, res: float, within_m: float) -> bool:
+    """Whether (px, py) lies in the square [x0, x0+res] x [y0, y0+res] or within within_m of it."""
+    dx = max(x0 - px, 0.0, px - (x0 + res))
+    dy = max(y0 - py, 0.0, py - (y0 + res))
+    return math.hypot(dx, dy) <= within_m
+
+
 @dataclass
 class CostGrid:
     res: float
@@ -79,15 +116,34 @@ class CostGrid:
     width: int
     height: int
     cost: list   # row-major from the lowest y; inf on obstacles, LETHAL_COST round them
+    points: tuple = ()           # exact obstacle points (map metres) the zones were grown from
+    point_cells: frozenset = frozenset()     # the cells holding them: their room is the points', not the cells'
 
     @classmethod
-    def from_map_grid(cls, grid: dict) -> "CostGrid":
+    def from_map_grid(cls, grid: dict, explained_by: list = ()) -> "CostGrid":
+        """The cost grid from mapd's map.grid. explained_by: exact obstacle points (map metres); a wall cell
+        with one inside it or within half a cell of it is left out, as the points describe that obstacle
+        more precisely (with_points adds them). A cell without one stays, grown as a whole cell."""
         res, (ox, oy) = grid["res_m"], grid["origin"]
         w, h, cells = grid["width"], grid["height"], grid["cells"]
         if res <= 0 or w == 0 or h == 0:
             raise EmptyMap("map.grid is empty: mapd has no stop yet")
         if len(cells) != w * h:
             raise ValueError(f"map.grid has {len(cells)} cells for {w}x{h}")
+        if explained_by:
+            near = {}
+            for px, py in explained_by:                  # bucket the points by cell, so each wall cell checks a few
+                near.setdefault((math.floor((px - ox) / res), math.floor((py - oy) / res)), []).append((px, py))
+            listed = list(cells)
+            for i, c in enumerate(cells):
+                if c != "#":
+                    continue
+                cx, cy = i % w, i // w
+                x0, y0 = ox + cx * res, oy + cy * res
+                if any(_near_square(px, py, x0, y0, res, res / 2)
+                       for dx in (-1, 0, 1) for dy in (-1, 0, 1) for px, py in near.get((cx + dx, cy + dy), ())):
+                    listed[i] = "."
+            cells = "".join(listed)
         cost = [UNKNOWN_COST if c == "?" else FREE_COST for c in cells]
         walls = [(i % w, i // w) for i, c in enumerate(cells) if c == "#"]
         _grow(cost, w, h, walls, res)
@@ -123,7 +179,17 @@ class CostGrid:
             return self
         cost = list(self.cost)
         _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res, lethal_m, inflate_m)
-        return CostGrid(self.res, self.origin, self.width, self.height, cost)
+        return CostGrid(self.res, self.origin, self.width, self.height, cost, self.points, self.point_cells)
+
+    def with_points(self, points: list) -> "CostGrid":
+        """This grid with exact obstacle points added, their zones grown from the points themselves (the
+        clearance model): the navigator's own memory of depth hits, as from_map_grid's explained_by."""
+        if not points:
+            return self
+        cost = list(self.cost)
+        own = _grow_points(cost, self.width, self.height, self.origin, self.res, points)
+        return CostGrid(self.res, self.origin, self.width, self.height, cost,
+                        self.points + tuple(tuple(p[:2]) for p in points), self.point_cells | frozenset(own))
 
     def covering(self, points: list, margin_m: float = 0.5) -> "CostGrid":
         """This grid grown with unknown cells until it covers every point (plus a margin): a goal
@@ -143,7 +209,8 @@ class CostGrid:
             start = (cy + down) * w + left
             cost[start:start + self.width] = row
         origin = (self.origin[0] - left * self.res, self.origin[1] - down * self.res)
-        return CostGrid(self.res, origin, w, h, cost)
+        return CostGrid(self.res, origin, w, h, cost, self.points,
+                        frozenset((x + left, y + down) for x, y in self.point_cells))
 
 
 ESCAPE_M = 0.5          # a duck stopped at the cliff-stop distance (45 cm) is inside a drop's lethal zone
@@ -195,16 +262,22 @@ def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
 
 
 def clearance(grid: CostGrid, xy: tuple, max_m: float) -> float:
-    """Distance (m) from xy to the nearest obstacle cell's edge (an infinite cell: mapd's walls and
-    the remembered obstacle points), searching max_m around it; max_m when none is that close."""
+    """Distance (m) from xy to the nearest obstacle within max_m, max_m when none is that close: to an exact
+    obstacle point where the grid has them (with_points), else to an obstacle cell's square from xy itself,
+    not from its cell's centre (the clearance model, docs/wip/CLEARANCE-MODEL.md)."""
     cx, cy = grid.cell(*xy)
     r = math.ceil(max_m / grid.res) + 1
     best = max_m
     for dx in range(-r, r + 1):
         for dy in range(-r, r + 1):
             n = (cx + dx, cy + dy)
-            if grid.inside(*n) and math.isinf(grid.at(*n)):
-                best = min(best, max(0.0, math.hypot(dx, dy) * grid.res - grid.res / 2))
+            if grid.inside(*n) and math.isinf(grid.at(*n)) and n not in grid.point_cells:
+                x0, y0 = grid.origin[0] + n[0] * grid.res, grid.origin[1] + n[1] * grid.res
+                gx = max(x0 - xy[0], 0.0, xy[0] - (x0 + grid.res))
+                gy = max(y0 - xy[1], 0.0, xy[1] - (y0 + grid.res))
+                best = min(best, math.hypot(gx, gy))
+    for p in grid.points:
+        best = min(best, math.dist(xy, p))
     return best
 
 

@@ -88,7 +88,9 @@ def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = Fals
             if st.check_t is not None and now - st.turn_started >= KICK_S and abs(wrap(yaw - st.check_yaw)) < RESTEP_RAD:
                 st.turn_started = now
             st.check_t, st.check_yaw = now, yaw
-        rate = KICK_RAD_S if now - st.turn_started < KICK_S else TURN_RAD_S
-        return Twist(pivot_vx, math.copysign(rate, err)), False
+        kicking = now - st.turn_started < KICK_S
+        # The kick stands still: stepping back while the gait starts sometimes left the turn unstarted (old
+        # challenge 6 seed 3: 13 deg in 15 s; sim/probes/pivot_start.py, 1 slow start in 5 at -0.06, none at 0).
+        return Twist(0.0 if kicking else pivot_vx, math.copysign(KICK_RAD_S if kicking else TURN_RAD_S, err)), False
     vyaw = max(-MAX_YAW_RAD_S, min(MAX_YAW_RAD_S, YAW_GAIN * err))
     return Twist(WALK_MPS, vyaw), False

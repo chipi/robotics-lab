@@ -306,7 +306,7 @@ class Navigator:
             g["res_m"] *= self.scale
             g["origin"] = [v * self.scale for v in g["origin"]]
         self._map_raw = g
-        return CostGrid.from_map_grid(g)
+        return CostGrid.from_map_grid(g, explained_by=self.blocked)       # the clearance model: exact points over whole cells
 
     def _remember(self, pts: list, pose: tuple) -> list:
         """Add obstacle points (relative to the sensor, trunk-heading frame) to the memory, a few cm
@@ -485,12 +485,17 @@ class Navigator:
             now = time.monotonic()
             pose = self.loc.pose()
             if path is None or now - planned_at > REPLAN_S:
+                fv = self._fv
+                if fv is not None and fv.ok:
+                    # what the sensor sees now is in the memory before the plan and the pivot gate use it: a
+                    # duck that has not moved yet had none (challenge 7: the room read from whole cells alone)
+                    self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), pose)
                 try:
                     grid = self.grid()
                 except EmptyMap:
                     self.survey()
                     continue
-                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_blocked(self.blocked)
+                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_points(self.blocked)
                 grid = grid.with_blocked(self.drops, DROP_LETHAL_M, DROP_INFLATE_M)
                 raw = plan(grid, pose[:2], goal)
                 if raw is None:
