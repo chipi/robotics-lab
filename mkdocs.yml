@@ -82,6 +82,8 @@ nav:
     - RFC-0009 — miniview: rfc/RFC-0009-miniview.md
     - RFC-0010 — Runs, version 2: rfc/RFC-0010-run-store-v2.md
     - RFC-0011 — Robots drawn as themselves: rfc/RFC-0011-robot-models.md
+    - RFC-0012 — Look far, get ready early: rfc/RFC-0012-look-far.md
+    - RFC-0013 — The robot's eye: rfc/RFC-0013-robot-eye.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md
@@ -119,6 +121,7 @@ nav:
     - Robot brain phase 1, the navigator: wip/PHASE1-RESULTS.md
     - Robot brain phase 2, exploring: wip/PHASE2-RESULTS.md
     - "One clearance model (RFC-0008 §4)": wip/CLEARANCE-MODEL.md
+    - Drops beside the way, unseen floor and a glance: wip/SIDE-DROPS.md
     - Viewer spike: wip/VIEWER-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md

@@ -47,3 +47,7 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   loaded](RFC-0010-run-store-v2.md) (Accepted, 2026-11-15; ADR-0006 to ADR-0012)
 - [RFC-0011 — Robots drawn as themselves: a link/joint description, moved by the recorded
   joints](RFC-0011-robot-models.md) (Accepted, 2026-11-16)
+- [RFC-0012 — Look far, get ready early: where to look and how fast to
+  go](RFC-0012-look-far.md) (Proposed, 2026-11-16)
+- [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
+  it](RFC-0013-robot-eye.md) (Proposed, 2026-11-16)
