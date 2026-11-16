@@ -222,15 +222,17 @@ with tempfile.TemporaryDirectory() as tmp:
     for k in real:
         setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {})())
     try:
-        Navigator(calibration="sim", truth=False)
+        sim_nav = Navigator(calibration="sim", truth=False)
         sim_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(2.5), "radial")
-        Navigator(calibration=None, truth=False)
+        real_nav = Navigator(calibration=None, truth=False)
         default_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(3.0), "axial")
     finally:
         for k, v in real.items():
             setattr(nav_run, k, v)
     check("a navigator configures the cliff check with its robot's mounting when it starts (and the real duck's without one)",
           sim_applied and default_applied, (sim_applied, default_applied))
+    check("a navigator pivots with its robot's calibrated speed: the simulator steps back (-0.06), the real duck stands (0)",
+          (sim_nav.pivot_vx, real_nav.pivot_vx) == (-0.06, 0.0), (sim_nav.pivot_vx, real_nav.pivot_vx))
     cal_rl = RunLog(data, "apartment", "calib1", "exploration", None)
     cal_sid = cal_rl.new_session()
     cal_rl.row(cal_sid, {"t": 0.0, "event": "calibration", "tof": load_tof("sim"), "odom_scale": 0.91})

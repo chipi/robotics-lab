@@ -1,0 +1,42 @@
+"""Does a backward speed during a pivot cancel the duck's creep? In a challenge scene (fresh simulator per case): a half
+turn on the spot to the right at TURN_RAD_S with vx = each given value, and how far the trunk moved (from the truth),
+along the start heading and sideways, and how far it turned. Takes the simulator down at the end.
+
+    uv run python sim/probes/pivot_counter.py ch5-s3 0 -0.035 -0.05
+"""
+
+import math
+import sys
+import time
+from pathlib import Path
+
+from duck_lab.nav import simreset
+from duck_lab.nav.follow import KICK_RAD_S, KICK_S, TURN_RAD_S
+from duck_lab.nav.run import Navigator
+
+scene_id = sys.argv[1]
+scene_xml = Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"
+for vx in [float(v) for v in sys.argv[2:]]:
+    simreset.reset(str(scene_xml))
+    try:
+        nav = Navigator(calibration="sim", truth=True)
+        time.sleep(3.0)
+        x0, y0, a0 = nav.body.pose()
+        turned, last, start = 0.0, a0, time.monotonic()
+        while turned < math.pi and time.monotonic() - start < 15.0:
+            rate = KICK_RAD_S if time.monotonic() - start < KICK_S else TURN_RAD_S
+            nav.robot.call("robot.move", {"vx": vx, "vy": 0.0, "vyaw": -rate})
+            time.sleep(0.05)
+            a = nav.body.pose()[2]
+            turned += -math.atan2(math.sin(a - last), math.cos(a - last))
+            last = a
+        nav.robot.call("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0})
+        time.sleep(1.0)
+        x, y, _ = nav.body.pose()
+        dx, dy = x - x0, y - y0
+        along = dx * math.cos(a0) + dy * math.sin(a0)
+        side = -dx * math.sin(a0) + dy * math.cos(a0)
+        print(f"vx {vx:+.3f}: turned {math.degrees(turned):4.0f} deg in {time.monotonic() - start:4.1f} s; moved {math.hypot(dx, dy):.3f} m "
+              f"(along the start heading {along:+.3f}, to the left {side:+.3f})", flush=True)
+    finally:
+        simreset.down()

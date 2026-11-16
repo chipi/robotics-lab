@@ -213,6 +213,13 @@ def load_tof(robot: str | None) -> dict:
     return {"pitch_offset_deg": float(tof.get("pitch_offset_deg", 3.0)), "range_kind": tof.get("range", "axial")}
 
 
+def load_pivot_vx(robot: str | None) -> float:
+    """The forward speed a turn on the spot is sent with (calibration/<robot>.json "pivot" "vx_mps"); 0 when the robot or
+    its file says nothing. The simulator's pivot creeps forward, the real duck's backward by upstream (RFC-0008 §4)."""
+    pivot = json.loads((CALIBRATION / f"{robot}.json").read_text()).get("pivot", {}) if robot else {}
+    return float(pivot.get("vx_mps", 0.0))
+
+
 class Navigator:
     runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
     watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
@@ -225,6 +232,7 @@ class Navigator:
         self.scale = load_scale(calibration)
         self.tof_cal = load_tof(calibration)
         cliff.configure(**self.tof_cal)
+        self.pivot_vx = load_pivot_vx(calibration)
         self.loc = Localizer()
         self._t0 = time.monotonic()
         self.runlog = runlog
@@ -255,7 +263,7 @@ class Navigator:
         self.drops = []      # where the cliff check found no floor, in map metres
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
-        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale)
+        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.pivot_vx)
 
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
@@ -524,7 +532,7 @@ class Navigator:
             nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
             room = clearance(costs, pose[:2], PIVOT_OBSTACLE_M)
             pivot_ok = room >= PIVOT_OBSTACLE_M and nearest_drop >= PIVOT_DROP_M
-            tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok)
+            tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok, pivot_vx=self.pivot_vx)
             self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
                 self.move(Twist())
@@ -573,7 +581,7 @@ class Navigator:
                     room >= TIGHT_PIVOT_M and nearest_drop >= PIVOT_DROP_M:
                 # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
-                tw, done = step(path, pose, now, st, near=near, pivot_ok=True)
+                tw, done = step(path, pose, now, st, near=near, pivot_ok=True, pivot_vx=self.pivot_vx)
                 if not tight:
                     tight = True
                     self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm,

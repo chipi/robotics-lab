@@ -61,10 +61,12 @@ def lookahead(path: list, pose: tuple, start_index: int, dist_m: float = LOOKAHE
     return len(path) - 1, path[-1]
 
 
-def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = False, pivot_ok: bool = True) -> tuple:
+def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = False, pivot_ok: bool = True,
+         pivot_vx: float = 0.0) -> tuple:
     """One control step. pose = (x, y, yaw) in the path's frame; near = the duck is within an obstacle's
     margin (shorter lookahead); pivot_ok = there is room to turn on the spot (else a turn is an arc at
-    ARC_MPS, which the caller must check has clear floor ahead). Returns (Twist, done)."""
+    ARC_MPS, which the caller must check has clear floor ahead); pivot_vx = the forward speed a turn on the spot
+    is sent with, against the robot's own creep (calibration/<robot>.json "pivot"). Returns (Twist, done)."""
     x, y, yaw = pose
     if math.dist(path[-1], (x, y)) <= GOAL_TOL_M:
         st.turning, st.turn_started = False, None
@@ -87,6 +89,6 @@ def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = Fals
                 st.turn_started = now
             st.check_t, st.check_yaw = now, yaw
         rate = KICK_RAD_S if now - st.turn_started < KICK_S else TURN_RAD_S
-        return Twist(0.0, math.copysign(rate, err)), False
+        return Twist(pivot_vx, math.copysign(rate, err)), False
     vyaw = max(-MAX_YAW_RAD_S, min(MAX_YAW_RAD_S, YAW_GAIN * err))
     return Twist(WALK_MPS, vyaw), False

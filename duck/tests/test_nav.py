@@ -100,6 +100,16 @@ for i, t in enumerate((50.0, 50.5, 51.0, 51.5, 52.0, 52.5)):
 check("a pivot that turns holds at 0.8 after its kick", abs(tw_m.vyaw) == 0.8, tw_m)
 tw_piv, _ = step(path, (0.0, 0.0, math.radians(120)), 30.0, FollowState())
 check("room to pivot: the turn stays on the spot", tw_piv.vx == 0.0, tw_piv)
+# A robot whose pivot creeps forward (the simulator: calibration/sim.json "pivot") turns stepping back against it; an arc
+# and a walk are not changed by it.
+st_b = FollowState()
+tw_b, _ = step(path, (0.0, 0.0, math.radians(120)), 60.0, st_b, pivot_vx=-0.06)
+tw_b2, _ = step(path, (0.0, 0.0, math.radians(100)), 61.5, st_b, pivot_vx=-0.06)
+check("a pivot is sent with the robot's pivot speed, kick and hold", tw_b.vx == -0.06 and tw_b2.vx == -0.06
+      and (tw_b.vyaw, tw_b2.vyaw) == (-1.2, -0.8), (tw_b, tw_b2))
+tw_ba, _ = step(path, (0.0, 0.0, math.radians(120)), 62.0, FollowState(), pivot_ok=False, pivot_vx=-0.06)
+tw_bw, _ = step(path, (0.0, 0.0, 0.0), 63.0, FollowState(), pivot_vx=-0.06)
+check("an arc and a walk ignore the pivot speed", tw_ba.vx == 0.2 and tw_bw.vx == 0.3, (tw_ba, tw_bw))
 
 # A goal beyond what mapd has seen: unknown ground, not refused.
 small = CostGrid.from_map_grid(room(w=10, h=10))
