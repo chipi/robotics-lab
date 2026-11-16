@@ -1,0 +1,24 @@
+{
+  "source": "31313-1_Spike3r.mpd",
+  "name": "ev3-spike3r",
+  "yaw_deg": 0,
+  "drop": [{"submodel": "ev3cable*"}, {"submodel": "beaconbug"}, {"part": "72156"}],
+  "root": "chassis",
+  "links": {
+    "chassis": {"rest": true},
+    "claws": {"include": [{"submodel": "spike3r", "lines": [11, 14]}]},
+    "left_crank": {"include": [[{"submodel": "body", "lines": [119, 119]}, {"submodel": "midleg"}]]},
+    "right_crank": {"include": [[{"submodel": "body", "lines": [118, 118]}, {"submodel": "midleg"}]]},
+    "tail_hub": {"include": [[{"submodel": "tail", "lines": [12, 12]}], [{"submodel": "tail", "lines": [52, 53]}], [{"submodel": "tail", "lines": [61, 62]}]]}
+  },
+  "joints": [
+    {"name": "claws", "type": "continuous", "parent": "chassis", "child": "claws",
+     "axis": {"part": [{"submodel": "body", "lines": [37, 37]}, {"part": "99455"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}},
+    {"name": "left_crank", "type": "continuous", "parent": "chassis", "child": "left_crank",
+     "axis": {"part": [{"submodel": "body", "lines": [7, 7]}, {"part": "95658"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}},
+    {"name": "right_crank", "type": "continuous", "parent": "chassis", "child": "right_crank",
+     "axis": {"part": [{"submodel": "body", "lines": [7, 7]}, {"part": "95658"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}},
+    {"name": "tail_hub", "type": "continuous", "parent": "chassis", "child": "tail_hub",
+     "axis": {"part": [{"submodel": "tail", "lines": [12, 12]}], "origin": [0, 0, 0], "dir": [1, 0, 0]}}
+  ]
+}

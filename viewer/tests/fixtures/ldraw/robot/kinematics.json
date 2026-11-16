@@ -1,0 +1,14 @@
+{
+  "source": "model.ldr",
+  "name": "twolink",
+  "drop": [{"submodel": "cable*"}],
+  "root": "base",
+  "links": {
+    "base": {"rest": true},
+    "arm": {"include": [{"submodel": "arm"}]}
+  },
+  "joints": [
+    {"name": "elbow", "type": "revolute", "parent": "base", "child": "arm",
+     "axis": {"ldraw_origin": [0, -40, 100], "ldraw_dir": [1, 0, 0]}, "limit": [-1.0, 1.0]}
+  ]
+}

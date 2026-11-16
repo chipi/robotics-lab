@@ -1,0 +1,7 @@
+{
+  "label": "EV3 Spike3r",
+  "description": "robot.urdf from LEGO's 31313 model (LDraw OMR, Philo) by robots/ldraw/from_ldraw.py; meshes by `make robots-lego`. The legs are rigid (crank-driven linkages are not representable); see kinematics.json",
+  "backend": "ev3dev or LEGO firmware, not wired yet",
+  "stand_z": 0.1338,
+  "stand_z_why": "the root link's bounding-box centre above the floor, from the model"
+}

@@ -84,7 +84,7 @@ DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
-                       tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py
+                       tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py
 VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py
 
 .PHONY: test-duck test-viewer test-viewer-pages
@@ -226,6 +226,12 @@ MUJOCO_PYTHON ?= /work/pollen/microduck_rl/.venv/bin/python
 .PHONY: robots rerun-export
 robots: ## The robots' descriptions (RFC-0011): the duck's URDF and meshes from Pollen's MuJoCo model (MUJOCO_PYTHON)
 	$(MUJOCO_PYTHON) robots/duck/from_mjcf.py
+
+LDRAW_DIR ?= $(HOME)/opt/ldraw/ldraw
+.PHONY: robots-lego
+robots-lego: viewer-sync ## The LEGO robots' descriptions (RFC-0011): the EV3 Track3r and Spike3r (LDraw OMR 31313) and the NXT Shooterbot, URDF and meshes by robots/ldraw/from_ldraw.py; needs the LDraw parts library in $(LDRAW_DIR) (ldraw.org complete.zip, unpacked in ~/opt/ldraw)
+	@test -f $(LDRAW_DIR)/LDConfig.ldr || { echo "robots-lego: no LDraw library in $(LDRAW_DIR); unpack ldraw.org's complete.zip into ~/opt/ldraw or set LDRAW_DIR"; exit 2; }
+	LDRAW_DIR=$(LDRAW_DIR) $(VIEWER_DIR)/.venv/bin/python robots/ldraw/from_ldraw.py ev3-track3r ev3-spike3r nxt-shooterbot
 
 rerun-export: duck-sync ## A run in Rerun with the robot drawn as itself (RFC-0011): make rerun-export RUN=<robot/scene/run> [OUT=file.rrd]
 	@test -n "$(RUN)" || { echo "rerun-export: RUN=<robot/scene/run> is needed"; exit 2; }

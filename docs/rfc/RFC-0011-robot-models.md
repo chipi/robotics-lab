@@ -42,8 +42,13 @@ under `/work/pollen` (searched 2026-11-16).
   hash of the description). The video registry (`robots.json`) moves here.
 - **The duck's is generated** from Pollen's MJCF by `robots/duck/from_mjcf.py`, through MuJoCo's
   compiled model (the body tree, each joint's axis and position, each visual geom's mesh, pose and
-  colour), so it follows upstream and is rebuilt, not edited. The NXT's and the EV3's are written
-  by hand: a few links, wheels as continuous joints.
+  colour), so it follows upstream and is rebuilt, not edited. The LEGO robots' are generated from
+  LDraw models by `robots/ldraw/from_ldraw.py` (the LDraw parts library, `make robots-lego`), with a
+  hand-written `kinematics.json` per robot that says which parts move with which joint (wheels and
+  motor-driven parts as continuous joints). The EV3 Track3r and Spike3r come from the LDraw OMR's
+  set 31313 files. The NXT Shooterbot's model is written by hand and is an approximation: its
+  building instructions ship only inside the NXT software, so it is built from the 8547 User Guide's
+  Quick Start model, with the sensors and the shooter placed by eye.
 - Meshes are not copied into runs (the duck's are 23 MB): a run names its robot and the
   description's hash; the description is served by the service like a scene.
 
@@ -108,7 +113,8 @@ description.
 3. The Robot layer in miniview's 3D view, the left panel by meaning (the Body section: the joints
    by chain), the joint lanes; the Explore tab with the robot's body (as recorded or by hand).
 4. The Foxglove export; the Blender engine on link poses (ADR-0017).
-5. The NXT's description; then the EV3's when it arrives.
+5. The NXT's description; then the EV3's when it arrives. Done 2026-11-16 from LDraw: the NXT
+   Shooterbot (an approximation), the EV3 Track3r and Spike3r.
 
 ## 5. Open questions
 

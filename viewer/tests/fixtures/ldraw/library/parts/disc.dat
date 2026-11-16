@@ -1,0 +1,4 @@
+0 Test part made of the primitive cyl.dat
+0 Name: disc.dat
+0 !LDRAW_ORG Part
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 cyl.dat

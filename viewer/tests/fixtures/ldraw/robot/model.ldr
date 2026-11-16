@@ -1,0 +1,12 @@
+0 FILE model.ldr
+0 A two-link test robot: a yellow base cube, a red arm cube 40 LDU above it and 100 LDU along +z, an arm part that is mirrored, a cable
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 base.ldr
+1 4 0 -40 0 1 0 0 0 1 0 0 0 1 arm.ldr
+1 0 0 0 0 1 0 0 0 1 0 0 0 1 cable.ldr
+0 FILE base.ldr
+1 14 0 0 0 1 0 0 0 1 0 0 0 1 BOX.DAT
+0 FILE arm.ldr
+1 16 0 0 100 1 0 0 0 1 0 0 0 1 box.dat
+1 16 0 0 100 1 0 0 0 1 0 0 0 1 mirror.dat
+0 FILE cable.ldr
+1 0 50 0 50 1 0 0 0 1 0 0 0 1 box.dat

@@ -1,0 +1,29 @@
+{
+  "source": "31313-1_Track3r.mpd",
+  "name": "ev3-track3r",
+  "yaw_deg": 180,
+  "pitch_deg": -4.01,
+  "pitch_why": "the OMR file poses the whole robot nose-down by 4.01 degrees (main.ldr's matrix); on the floor both track wheels are level",
+  "drop": [{"submodel": "ev3cable*"}, {"part": "72156"}],
+  "root": "chassis",
+  "links": {
+    "chassis": {"rest": true},
+    "left_wheel": {"include": [[{"submodel": "track3r", "lines": [40, 40]}, {"submodel": "track", "lines": [14, 16]}]]},
+    "right_wheel": {"include": [[{"submodel": "track3r", "lines": [39, 39]}, {"submodel": "track", "lines": [14, 16]}]]},
+    "left_idler": {"include": [[{"submodel": "track3r", "lines": [40, 40]}, {"submodel": "track", "lines": [28, 30]}]]},
+    "right_idler": {"include": [[{"submodel": "track3r", "lines": [39, 39]}, {"submodel": "track", "lines": [28, 30]}]]},
+    "rotor": {"include": [{"submodel": "rotor"}]}
+  },
+  "joints": [
+    {"name": "left_wheel", "type": "continuous", "parent": "chassis", "child": "left_wheel",
+     "axis": {"part": [{"submodel": "track3r", "lines": [26, 26]}, {"part": "95658"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}},
+    {"name": "right_wheel", "type": "continuous", "parent": "chassis", "child": "right_wheel",
+     "axis": {"part": [{"submodel": "track3r", "lines": [36, 36]}, {"part": "95658"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}},
+    {"name": "left_idler", "type": "continuous", "parent": "chassis", "child": "left_idler",
+     "axis": {"part": [{"submodel": "track3r", "lines": [40, 40]}, {"submodel": "track", "lines": [30, 30]}], "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "right_idler", "type": "continuous", "parent": "chassis", "child": "right_idler",
+     "axis": {"part": [{"submodel": "track3r", "lines": [39, 39]}, {"submodel": "track", "lines": [30, 30]}], "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "rotor", "type": "continuous", "parent": "chassis", "child": "rotor",
+     "axis": {"part": [{"submodel": "track3r", "lines": [65, 65]}, {"part": "99455"}], "origin": [0, 0, 0], "dir": [1, 0, 0]}}
+  ]
+}

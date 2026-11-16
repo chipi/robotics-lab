@@ -1,0 +1,8 @@
+{
+  "label": "NXT Shooterbot (approximation)",
+  "description": "APPROXIMATION of the NXT 2.0 (8547) Shooterbot, placed by hand in shooterbot.ldr from the 8547 User Guide's Quick Start model (pp. 5-15) and nxt/README.md; the sensors, the shooter's arms and the ball are not from instructions. robot.urdf by robots/ldraw/from_ldraw.py; meshes by `make robots-lego`",
+  "backend": "nxt-web",
+  "ports": {"A": "shooter", "B": "right", "C": "left"},
+  "stand_z": 0.052,
+  "stand_z_why": "the root link's bounding-box centre above the floor, from the model"
+}

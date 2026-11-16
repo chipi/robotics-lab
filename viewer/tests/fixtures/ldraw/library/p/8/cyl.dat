@@ -1,0 +1,5 @@
+0 Test primitive, low resolution: two triangles
+0 Name: 8\cyl.dat
+0 !LDRAW_ORG 8_Primitive
+3 16 0 0 0 10 0 0 0 0 10
+3 16 0 0 0 -10 0 0 0 0 -10

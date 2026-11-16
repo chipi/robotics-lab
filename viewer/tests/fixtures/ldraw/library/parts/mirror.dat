@@ -1,0 +1,7 @@
+0 Test part: a subpart mirrored in x (the winding must follow) and a clockwise triangle
+0 Name: mirror.dat
+0 !LDRAW_ORG Part
+0 BFC CERTIFY CCW
+1 16 30 0 0 -1 0 0 0 1 0 0 0 1 S\TRI.DAT
+0 BFC CW
+3 24 0 0 0 0 0 20 20 0 0

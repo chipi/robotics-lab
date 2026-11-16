@@ -1,0 +1,27 @@
+{
+  "source": "shooterbot.ldr",
+  "name": "nxt-shooterbot",
+  "yaw_deg": 0,
+  "drop": [],
+  "root": "chassis",
+  "links": {
+    "chassis": {"rest": true},
+    "left": {"include": [{"submodel": "shooterbot", "lines": [18, 18]}, {"submodel": "shooterbot", "lines": [22, 22]}]},
+    "right": {"include": [{"submodel": "shooterbot", "lines": [20, 20]}, {"submodel": "shooterbot", "lines": [23, 23]}]},
+    "left_idler": {"include": [{"submodel": "shooterbot", "lines": [19, 19]}, {"submodel": "shooterbot", "lines": [24, 24]}]},
+    "right_idler": {"include": [{"submodel": "shooterbot", "lines": [21, 21]}, {"submodel": "shooterbot", "lines": [25, 25]}]},
+    "shooter": {"include": [{"submodel": "shooterbot", "lines": [34, 36]}]}
+  },
+  "joints": [
+    {"name": "left", "type": "continuous", "parent": "chassis", "child": "left",
+     "axis": {"part": {"submodel": "shooterbot", "lines": [18, 18]}, "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "right", "type": "continuous", "parent": "chassis", "child": "right",
+     "axis": {"part": {"submodel": "shooterbot", "lines": [20, 20]}, "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "left_idler", "type": "continuous", "parent": "chassis", "child": "left_idler",
+     "axis": {"part": {"submodel": "shooterbot", "lines": [19, 19]}, "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "right_idler", "type": "continuous", "parent": "chassis", "child": "right_idler",
+     "axis": {"part": {"submodel": "shooterbot", "lines": [21, 21]}, "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}},
+    {"name": "shooter", "type": "continuous", "parent": "chassis", "child": "shooter",
+     "axis": {"part": {"submodel": "shooterbot", "lines": [34, 34]}, "origin": [0, 0, 0], "robot_dir": [0, 1, 0]}}
+  ]
+}
