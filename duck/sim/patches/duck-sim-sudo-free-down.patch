@@ -1,0 +1,16 @@
+diff --git i/scripts/duck-sim w/scripts/duck-sim
+index 935bdc94..01990cd5 100755
+--- i/scripts/duck-sim
++++ w/scripts/duck-sim
+@@ -814,7 +814,10 @@ down_containers() {
+     i=0
+     while [ "$i" -lt 16 ]; do
+         name="$(duck_name "$i")"
+-        if sudo systemctl is-active --quiet "$name" 2>/dev/null; then
++        # Asking whether a unit runs needs no root. With `sudo` and no terminal (a script's `down`)
++        # each of the sixteen asks fails a password conversation, and pam_faillock counts each one:
++        # sixteen per `down` locked the user's sudo out (robotics-lab, 2026-11-16).
++        if systemctl is-active --quiet "$name" 2>/dev/null; then
+             sudo systemctl stop "$name" 2>/dev/null || true
+         fi
+         merged="$STATE/ducks/$name/merged"

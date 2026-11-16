@@ -109,7 +109,9 @@ Node/npm, 32 cores, 124 GB RAM, about 1 TB free disk. Missing: a **Rust toolchai
 
 Run it (window): `PATH=$HOME/.cargo/bin:$PATH DUCK_SIM_RL=/work/pollen/microduck_rl
 /work/pollen/microduck/scripts/duck-sim`, then `scripts/duck-sim drive 0.3 0`, and
-`scripts/duck-sim down` when done. Add `DUCK_SIM_VIEWER=0` for no window.
+`scripts/duck-sim down` when done. Add `DUCK_SIM_VIEWER=0` for no window. From an agent or a
+script, read [Running the simulated duck from an agent](DUCK-SIM-FOR-AGENTS.md) first: unpatched,
+every `down` locks the user's sudo.
 
 ### Training on the DGX (homelab, 2026-11-13)
 

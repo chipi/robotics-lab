@@ -18,6 +18,8 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
   projects, eval-harness and flotilla ideas.
 - [Long-term direction](ECOSYSTEM.md) — the robotics ecosystem.
 - [Microduck](MICRODUCK.md) — upstream repos, simulator, arena, DGX training, policies and skills.
+- [Running the simulated duck from an agent](DUCK-SIM-FOR-AGENTS.md) — the sudo lockout, the
+  local patch, the guards.
 - [eval-harness for robot trials](EVAL-HARNESS-ROBOTS.md) — what fits, the friction.
 - [Stretching eval-harness and flotilla](STRETCH-EVAL-FLOTILLA.md) — the full idea list behind
   [RFC-0005](../rfc/RFC-0005-missions.md).

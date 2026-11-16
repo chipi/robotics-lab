@@ -114,6 +114,7 @@ nav:
     - Ideas: wip/IDEAS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md
+    - Running the simulated duck from an agent: wip/DUCK-SIM-FOR-AGENTS.md
     - Robot brain phase 0, the spike: wip/PHASE0-SPIKE.md
     - Robot brain phase 1, the navigator: wip/PHASE1-RESULTS.md
     - Robot brain phase 2, exploring: wip/PHASE2-RESULTS.md

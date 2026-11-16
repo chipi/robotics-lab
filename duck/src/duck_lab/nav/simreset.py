@@ -13,6 +13,18 @@ from pathlib import Path
 REPO = Path(os.environ.get("DUCK_SIM_REPO", "/work/pollen/microduck"))
 RL = os.environ.get("DUCK_SIM_RL", "/work/pollen/microduck_rl")
 STATE = Path(os.path.expanduser("~/.cache/duck-sim"))
+# duck-sim is written for a person at a terminal. Unpatched, every `down` asks sudo sixteen times whether a container
+# unit runs; from a script there is no terminal to ask on, each ask is a failed login, and ten lock the user's sudo
+# (2026-11-16: locked all day by the challenge runs). docs/wip/DUCK-SIM-FOR-AGENTS.md has the patch and the check.
+SUDO_ASK = 'if sudo systemctl is-active --quiet "$name"'
+
+
+def duck_sim() -> str:
+    script = REPO / "scripts" / "duck-sim"
+    if SUDO_ASK in script.read_text():
+        raise RuntimeError(f"{script} still asks sudo on every down, which locks the user's sudo when run from a script: "
+                           "apply duck/sim/patches/duck-sim-sudo-free-down.patch (docs/wip/DUCK-SIM-FOR-AGENTS.md)")
+    return str(script)
 
 
 def _env(scene: str) -> dict:
@@ -42,16 +54,16 @@ def stop_mapd() -> None:
 def down(scene: str = "apartment_backlash") -> None:
     """mapd and the simulator stopped (duck-sim down stops what its pidfiles name, after checking each is what it says)."""
     stop_mapd()
-    subprocess.run([str(REPO / "scripts" / "duck-sim"), "down"], env=_env(scene), capture_output=True, timeout=120)
+    subprocess.run([duck_sim(), "down"], env=_env(scene), capture_output=True, timeout=120)
 
 
 def reset(scene: str = "apartment_backlash") -> None:
     """Down, up, fresh mapd. Raises if the duck does not stand or mapd does not answer."""
     env = _env(scene)
+    script = duck_sim()
     stop_mapd()
-    subprocess.run([str(REPO / "scripts" / "duck-sim"), "down"], env=env, capture_output=True, timeout=120)
-    up = subprocess.run([str(REPO / "scripts" / "duck-sim"), "up"], env=env, capture_output=True, text=True,
-                        timeout=300)
+    subprocess.run([script, "down"], env=env, capture_output=True, timeout=120)
+    up = subprocess.run([script, "up"], env=env, capture_output=True, text=True, timeout=300)
     if "standing" not in up.stdout:
         raise RuntimeError(f"duck-sim up did not stand the duck:\n{up.stdout[-800:]}{up.stderr[-400:]}")
     cfg = STATE / "robotd-duck-a-map.toml"
