@@ -12,7 +12,9 @@
 # 127.0.0.1 (as above) and reach it through an ssh tunnel, not on the open network.
 #
 # It runs as root inside the container: talking to the brick needs the USB or rfcomm device node,
-# which the host's udev rule grants to the logged-in user, not to a container user.
+# which the host's udev rule grants to the logged-in user, not to a container user. What it writes
+# into a mounted MINIVIEW_DATA goes to NXT_DATA_OWNER (uid:gid), which `make nxt-image-run` sets to
+# the host user; without it those files are root's.
 
 FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 

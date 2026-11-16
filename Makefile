@@ -122,8 +122,10 @@ nxt-programs: ## Compile every NXC program for the brick (nbc in Docker) into nx
 
 .PHONY: test-integration
 test-integration: nxt-image ## The packaged image: start it with the simulated brick, check it answers
-	@cid=$$(docker run -d --rm -p 127.0.0.1::8000 $(NXT_IMAGE) nxt-web --fake --host 0.0.0.0 --port 8000); \
-	  trap 'docker stop $$cid >/dev/null' EXIT; \
+	@mv=$$(mktemp -d); chmod 755 $$mv; \
+	  cid=$$(docker run -d --rm -p 127.0.0.1::8000 -v $$mv:/miniview -e MINIVIEW_DATA=/miniview -e NXT_DATA_OWNER=$${NXT_TEST_OWNER-$$(id -u):$$(id -g)} \
+	    $(NXT_IMAGE) nxt-web --fake --host 0.0.0.0 --port 8000); \
+	  trap 'docker stop $$cid >/dev/null; docker run --rm -v $$mv:/d $(NXT_IMAGE) rm -rf /d/runs; rm -rf $$mv' EXIT; \
 	  port=$$(docker port $$cid 8000/tcp | head -1 | sed 's/.*://'); \
 	  for i in $$(seq 1 40); do curl -fs -m 2 http://127.0.0.1:$$port/api/status >/tmp/robotics-lab-image-status.json && break; sleep 0.25; done; \
 	  grep -q '"connected": true' /tmp/robotics-lab-image-status.json && grep -q '"link": "fake"' /tmp/robotics-lab-image-status.json \
@@ -134,7 +136,10 @@ test-integration: nxt-image ## The packaged image: start it with the simulated b
 	    && curl -fs -m 5 -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:$$port/api/record/stop >/dev/null \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/api/runs | grep -Eq '"mcap": "run-[0-9-]+\.mcap"' \
 	    && echo "PASS image records a recording as a miniview run (its .mcap is listed)" \
-	    || { echo "FAIL image did not record a miniview run"; docker logs $$cid; exit 1; }
+	    || { echo "FAIL image did not record a miniview run"; docker logs $$cid; exit 1; }; \
+	  others=$$(find $$mv -mindepth 1 ! -user $$(id -u) -printf '%u %p\n'); n=$$(find $$mv -mindepth 1 | wc -l); \
+	  test $$n -gt 0 && test -z "$$others" && echo "PASS the run it wrote into a host folder is the host user's, not root's ($$n paths)" \
+	    || { echo "FAIL files the image wrote into a host folder belong to someone else (ADR-0013):"; echo "$$others"; exit 1; }
 	@echo "test-integration PASS"
 
 .PHONY: test-run-compat
@@ -226,7 +231,7 @@ viewer-down: ## Stop miniview's service
 .PHONY: nxt-image-run
 nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only; recordings go to $(MINIVIEW_DATA) as miniview runs
 	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes
-	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data -v $(MINIVIEW_DATA):/miniview -e MINIVIEW_DATA=/miniview \
+	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data -v $(MINIVIEW_DATA):/miniview -e MINIVIEW_DATA=/miniview -e NXT_DATA_OWNER=$$(id -u):$$(id -g) \
 	  $$(test -d /dev/bus/usb && echo --device /dev/bus/usb) \
 	  $$(for d in /dev/rfcomm*; do test -e $$d && echo --device $$d; done) \
 	  $(NXT_IMAGE) nxt-web --host 0.0.0.0 --port 8000 --link $(NXT_LINK)

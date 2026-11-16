@@ -30,6 +30,36 @@ def default_miniview_data() -> Path:
     return Path(v) if v else DATA_DIR / "miniview"
 
 
+def data_owner() -> tuple | None:
+    """$NXT_DATA_OWNER as (uid, gid): who the runs written into the lab's data folder belong to. The image runs as root (the
+    brick's device nodes need it), so without it a host bind mount fills with root's files (ADR-0013)."""
+    v = os.environ.get("NXT_DATA_OWNER", "").strip()
+    if not v:
+        return None
+    uid, _, gid = v.partition(":")
+    return int(uid), int(gid or uid)
+
+
+def hand_over(top: Path, path: Path, owner: tuple | None) -> None:
+    """Give `owner` what this process created at `path` (everything in it) and in the folders between `top` and it. Only
+    paths this process's user owns are changed: a folder that was already someone's stays theirs."""
+    if owner is None:
+        return
+    me = os.geteuid()
+    paths = [path, *path.rglob("*")] if path.is_dir() else [path]
+    parent = path.parent
+    while parent != top and top in parent.parents:
+        paths.append(parent)
+        parent = parent.parent
+    for p in paths:
+        try:
+            st = p.lstat()
+        except FileNotFoundError:
+            continue
+        if st.st_uid == me and (st.st_uid, st.st_gid) != owner:
+            os.chown(p, *owner, follow_symlinks=False)
+
+
 class Recorder:
     def __init__(self, controller, runs_dir: Path = RUNS_DIR, miniview_data: Path | None = None):
         self.controller = controller
@@ -137,6 +167,15 @@ class Recorder:
             self._run = {"key": key, "writer": writer, "odom": nxt_run.Odometry(geometry) if geometry else None, "error": None}
         except Exception as exc:
             self._run = {"key": None, "writer": None, "odom": None, "error": f"{type(exc).__name__}: {exc}"}
+            return
+        self._hand_over()
+
+    def _hand_over(self) -> None:
+        """The run's folder and files to $NXT_DATA_OWNER; a failure is the run's error, never the recording's."""
+        try:
+            hand_over(self.miniview_data, keys.run_dir(self.miniview_data, self._run["key"]), data_owner())
+        except (OSError, ValueError) as exc:
+            self._run["error"] = f"owner: {type(exc).__name__}: {exc}"
 
     def stop(self) -> dict | None:
         with self._lock:
@@ -158,6 +197,7 @@ class Recorder:
             run["writer"].close()
         except Exception as exc:
             run["error"] = f"{type(exc).__name__}: {exc}"           # the live file stays: `miniview repair` closes it
+        self._hand_over()                                            # run.mcap is new
 
     def _run_time(self, now: float) -> float:
         """Run time for a moment: seconds since the recording began, never behind what was already written."""

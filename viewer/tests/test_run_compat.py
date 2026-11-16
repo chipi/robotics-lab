@@ -1,14 +1,18 @@
 """A run opens fully in all three viewers, kept compatible on purpose (ADR-0007 "Compatibility"):
 Rerun (rerun mcap check, mcap convert), Lichtblick (the image `make viewers` runs, headless: no errors but the
 transforms note, the run's real start date, the topics, and the topics draw when switched on), and miniview (the service
-loads and serves the same file). The fixture is explore9 imported into a temp folder.
+loads and serves the same file). The fixture is explore9 imported into a temp folder; an NXT run (ADR-0013) also has a
+signal plotted on a chart in each: Lichtblick's Plot panel and a Rerun time series view from a blueprint.
 Needs duck/.venv (rerun-sdk: `make duck-sync`), Docker and Chromium. Run: make test-run-compat
 or: cd viewer && uv run python tests/test_run_compat.py"""
 
+import base64
 import datetime
 import os
 import re
 import shutil
+import signal
+import socket
 import subprocess
 import tempfile
 import urllib.request
@@ -37,6 +41,81 @@ def run(cmd, **kw):
 def entities(text):
     m = re.search(r"Entities: \{(.*?)\}", text, re.S)
     return {e.strip().rstrip(",") for e in m.group(1).split("\n") if e.strip()} if m else set()
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+# Rerun draws on a canvas: the line is found by its colour in a screenshot (the blueprint makes it pure red), decoded by the
+# browser, as no image library is a dependency here.
+LINE_STATS = """async (png) => {
+  const img = new Image(); img.src = 'data:image/png;base64,' + png; await img.decode();
+  const c = new OffscreenCanvas(img.width, img.height), g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, img.width, img.height).data, cols = new Map();
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    const k = (y * img.width + x) * 4;
+    if (d[k] > 200 && d[k + 1] < 60 && d[k + 2] < 60) cols.set(x, Math.min(cols.get(x) ?? 1e9, y));
+  }
+  const xs = [...cols.keys()].sort((a, b) => a - b), w = img.width, ys = (f) => xs.filter(f).map((x) => cols.get(x));
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / Math.max(a.length, 1);
+  return { columns: xs.length, span: xs.length ? (xs[xs.length - 1] - xs[0]) / w : 0,
+           left_y: mean(ys((x) => x < w * 0.3)), right_y: mean(ys((x) => x > w * 0.7)) };
+}"""
+
+
+def rerun_plot(browser, rrd, app, entity, component, field, shot):
+    """`field` of the struct on `entity` in Rerun's web viewer, plotted by a blueprint: the red line's columns (screen x
+    with a red pixel), its horizontal span (a fraction of the width) and its mean screen y on the left and on the right."""
+    rbl = rrd.with_name(f"{field}.rbl")
+    rc, out = run([REPO / "duck" / ".venv" / "bin" / "python", Path(__file__).with_name("rerun_blueprint.py"), app, rbl, entity, component, field])
+    assert rc == 0, out
+    web, grpc = free_port(), free_port()
+    # bin/rerun is a wrapper that starts the viewer as a child: its own process group, so stopping the group stops both
+    proc = subprocess.Popen([str(RERUN), str(rrd), str(rbl), "--web-viewer", "--bind", "127.0.0.1", "--web-viewer-port", str(web), "--port", str(grpc)],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        def up():
+            try:
+                return urllib.request.urlopen(f"http://127.0.0.1:{web}", timeout=1).status == 200
+            except OSError:
+                return False
+
+        wait_until(up, 30, every=0.2, what="Rerun's web viewer")
+        pg = browser.new_page(viewport={"width": 1400, "height": 900})
+        pg.goto(f"http://127.0.0.1:{web}/?url=rerun%2Bhttp://127.0.0.1:{grpc}/proxy")
+        stats = {}
+        for _ in range(60):                         # the viewer loads the recording, then draws: until the line stops growing
+            pg.wait_for_timeout(500)
+            png = pg.screenshot()
+            now = pg.evaluate(LINE_STATS, base64.b64encode(png).decode())
+            if now["columns"] and now == stats:
+                break
+            stats = now
+        shot.write_bytes(png)
+        pg.close()
+        return stats
+    finally:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(10)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+
+
+def plot_tooltip(pg, x_frac):
+    """Hover Lichtblick's Plot panel at a fraction of its width: (seconds since midnight UTC, value) from its tooltip."""
+    cv = pg.locator("canvas").last.bounding_box()
+    pg.mouse.move(cv["x"] + x_frac * cv["width"] - 20, cv["y"] + 0.5 * cv["height"])
+    pg.mouse.move(cv["x"] + x_frac * cv["width"], cv["y"] + 0.5 * cv["height"], steps=8)    # the chart's hover wants movement over it
+    pg.wait_for_function("[...document.querySelectorAll('[role=tooltip],[class*=ooltip]')].some((e) => /\\d\\d:\\d\\d:\\d\\d\\.\\d+/.test(e.innerText))", timeout=10000)
+    texts = pg.evaluate("[...document.querySelectorAll('[role=tooltip],[class*=ooltip]')].map((e) => e.innerText)")
+    m = next(m for m in (re.search(r"(\d+):(\d\d):(\d\d\.\d+) (AM|PM)", t) for t in texts) if m)
+    v = next(float(t.split("\n")[0].replace(",", "")) for t in texts if re.fullmatch(r"-?[\d.,]+", t.split("\n")[0].strip()))
+    h = int(m.group(1)) % 12 + (12 if m.group(4) == "PM" else 0)
+    return h * 3600 + int(m.group(2)) * 60 + float(m.group(3)), v, texts
 
 
 with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
@@ -191,7 +270,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
         nhttpd, nbase = serve(catalog(nxt_data), follow=False)
         with sync_playwright() as p:
             b = launch(p)
-            pg = b.new_page(viewport={"width": 1500, "height": 950})
+            pg = b.new_page(viewport={"width": 1500, "height": 950}, timezone_id="UTC")   # the Plot tooltip says clock time
             pg.goto(f"{base}/?ds=remote-file&ds.url={base}/runs/run.mcap")
             pg.wait_for_function("document.body.innerText.includes('Topics')", timeout=60000)
             pg.get_by_text("Topics", exact=True).first.click()
@@ -222,6 +301,31 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
             check("Lichtblick, NXT run: the Raw Messages panel decodes the /nxt/signals message at the playhead by name, with the values miniview reads for that sample",
                   code == 200 and abs(st["signals"]["t"] - at) < 1e-3 and set(shown) == {k for k, v in want.items() if v is not None}
                   and all(shown[k] == (f'"{v}"' if isinstance(v, str) else f"{v:g}") for k, v in want.items() if v is not None), (shown, want))
+            # A signal on a chart: Raw Messages' "Plot this value on a line chart" on tacho_B opens a Plot panel with that path;
+            # its tooltip at two places gives the time and value under the cursor, which must be a sample miniview serves.
+            label = pg.get_by_text("tacho_B", exact=True).first.bounding_box()
+            pg.mouse.move(label["x"] + label["width"] + 30, label["y"] + label["height"] / 2)
+            pg.locator("[aria-label='Plot this value on a line chart']").first.click()
+            pg.wait_for_function("document.body.innerText.includes('/nxt/signals.tacho_B')", timeout=15000)
+            day0 = (T0_NS / 1e9) % 86400
+            for frac in (0.3, 0.7):
+                sec, val, texts = plot_tooltip(pg, frac)
+                t = sec - day0
+                code, w, _ = get(nbase, f"/api/v1/runs/{nkey}/signals?from={t - 0.3}&to={t + 0.3}")
+                near = [v for v in w["v"]["tacho_B"] if v is not None] if code == 200 else []
+                check(f"Lichtblick, NXT run: a Plot panel draws /nxt/signals.tacho_B; at {frac:.0%} of it the value is a sample miniview serves at that time",
+                      0 < t < 60 and val in near, (round(t, 3), val, near, texts))
+            pg.screenshot(path=str(tmp / "lichtblick-plot.png"))
+            # Rerun: a blueprint maps .tacho_B of the decoded struct to a line; a field that does not exist draws none
+            rrd = tmp / "nxt-plot.rrd"
+            rc, out = run([RERUN, "mcap", "convert", "-d", "protobuf", "--disable-raw-fallback", "--application-id", "nxt_compat", n_mcap, "-o", rrd])
+            line = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "tacho_B", tmp / "rerun-plot.png")
+            none = rerun_plot(b, rrd, "nxt_compat", "/nxt/signals", "miniview.Signals:message", "no_such_signal", tmp / "rerun-none.png")
+            rows = [r.split(",") for r in nxt_csv.read_text().splitlines()[1:]]
+            rises = float(rows[-1][4]) > float(rows[0][4])           # tacho_B, the 5th column
+            check("Rerun, NXT run: a time series view plots /nxt/signals .tacho_B by name across the run, rising as the CSV does (and a field that is not there draws nothing)",
+                  rc == 0 and line["columns"] > 300 and line["span"] > 0.8 and rises and line["left_y"] > line["right_y"] + 100 and none["columns"] == 0,
+                  (line, none, rises))
             b.close()
         nhttpd.shutdown()
     finally:

@@ -124,8 +124,11 @@ truth and a map.
   `--miniview-data $(MINIVIEW_DATA)` (the workstation's `/work/robotics-lab/data` that
   `make viewer-up` serves), so a real recording is live in the running service; `make nxt-web-fake`
   does not, so a simulated drive does not land in the lab data. The image writes to the mounted
-  `MINIVIEW_DATA` (`make nxt-image-run`), else `/data/miniview` in its volume; as the container
-  runs as root, runs written there are root's.
+  `MINIVIEW_DATA` (`make nxt-image-run`), else `/data/miniview` in its volume. The container runs
+  as root (udev's `uaccess` grants the brick's device nodes to the logged-in user, not to a container
+  user), so it gives what it creates there to `NXT_DATA_OWNER` (`uid:gid`; `make nxt-image-run`
+  passes the host user's);
+  `make test-integration` records through the image into a host folder and checks no path is root's.
 - A run's name is the CSV's (`run-YYYYMMDD-HHMMSS`, local time); a name taken by a CSV or by a run
   gets `-2`, `-3`, and so on. Run time is the monotonic clock since the recording began, never behind
   what was already written. `started_at` is the writer's clock.
@@ -171,8 +174,8 @@ button, read the tacho counts from the CSV (first and last rows) or from
   is generic (any robot with named values can use it) and self-describing in the file.
 - **Negative:** nxt-web now depends on the viewer package; the per-run descriptor means the signal
   set is fixed when a run starts (a sensor changed mid-run is a new run); a run of the old kind
-  (`nxt/runs/*.mcap`) is not read by miniview, only imported from its CSV; the image's runs are
-  root's.
+  (`nxt/runs/*.mcap`) is not read by miniview, only imported from its CSV; the image runs as root and
+  hands what it writes to `NXT_DATA_OWNER` when a run opens and when it closes (without it, root's).
 - **Neutral:** the pose is dead reckoning from the tracks and drifts; the run says how it was made.
 
 ## Compatibility (checked 2026-11-16)
@@ -182,8 +185,19 @@ button, read the tacho counts from the CSV (first and last rows) or from
 named Float64 or Utf8 column per signal (the first sample's values match the CSV); `/belief/pose` and
 `/tf` decode for the run with odometry. Lichtblick (the pinned image) lists `/nxt/signals`
 (`miniview.Signals`, 281 messages) with no alert but the transforms note, and its Raw Messages panel
-decodes the message at the playhead by name, equal to what miniview reads for that sample. That a
-Rerun time series view or a Lichtblick Plot panel draws a signal was **not** scripted.
+decodes the message at the playhead by name, equal to what miniview reads for that sample.
+
+**A signal on a chart (scripted 2026-11-16, same test):**
+
+- **Lichtblick:** Raw Messages' "Plot this value on a line chart" on `tacho_B` opens a Plot panel on
+  `/nxt/signals.tacho_B`. Its tooltip at 30 % and 70 % of the chart gives a time and a value; each is
+  a sample miniview serves at that time. Lichtblick's `layoutUrl` parameter and its layout import
+  did not load a layout in this web build, so the panel is opened the way a user opens it.
+- **Rerun 0.43.2:** a blueprint (`viewer/tests/rerun_blueprint.py`) gives a time series view a
+  `SeriesLines` visualizer whose `Scalars:scalars` comes from `miniview.Signals:message` with the
+  selector `.tacho_B` (a component mapping, marked experimental by Rerun). In the web viewer the
+  line, drawn pure red, spans the run and rises as the CSV does; with a field that is not in the
+  struct, nothing is drawn. It is drawn by Chromium's software rasterizer, as on a CI runner.
 
 ## Alternatives considered
 

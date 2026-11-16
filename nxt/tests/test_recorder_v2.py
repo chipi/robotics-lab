@@ -203,5 +203,35 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+# The image runs as root: what it writes into a host bind mount goes to $NXT_DATA_OWNER (ADR-0013). Recorded, not done:
+# this test does not run as root.
+from nxt_lab import recorder as rmod  # noqa: E402
+
+own = Path(tempfile.mkdtemp())
+calls, real_chown = [], os.chown
+os.chown = lambda p, uid, gid, follow_symlinks=True: calls.append((Path(p).relative_to(own).as_posix(), uid, gid))
+try:
+    run_dir = own / "runs" / "nxt" / "unmapped" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run.mcap").write_bytes(b"x")
+    rmod.hand_over(own, run_dir, (4242, 4343))
+    check("hand_over gives the owner the run, its files and the folders it created, not the data folder itself",
+          sorted(c[0] for c in calls) == ["runs", "runs/nxt", "runs/nxt/unmapped", "runs/nxt/unmapped/run-1",
+                                          "runs/nxt/unmapped/run-1/run.mcap"] and all(c[1:] == (4242, 4343) for c in calls), calls)
+    calls.clear()
+    rmod.hand_over(own, run_dir, None)
+    st = run_dir.stat()
+    rmod.hand_over(own, run_dir / "run.mcap", (st.st_uid, st.st_gid))
+    check("without NXT_DATA_OWNER, or when the owner is already right, nothing is changed", calls == [], calls)
+    os.environ["NXT_DATA_OWNER"] = "1000:1001"
+    a = rmod.data_owner()
+    os.environ["NXT_DATA_OWNER"] = "1000"
+    b = rmod.data_owner()
+    del os.environ["NXT_DATA_OWNER"]
+    check("NXT_DATA_OWNER is uid:gid (or uid alone, gid the same)", (a, b, rmod.data_owner()) == ((1000, 1001), (1000, 1000), None), (a, b))
+finally:
+    os.chown = real_chown
+    shutil.rmtree(own, ignore_errors=True)
+
 print("test_recorder_v2", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
