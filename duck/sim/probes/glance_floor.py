@@ -54,9 +54,17 @@ for scene_id in sys.argv[1:]:
                 time.sleep(0.03)
             # drop_points ignores drops more than CORRIDOR_DROP_M aside (the cliff stop is for the way ahead), so a side look
             # is judged by depth_points: "below" returns are the hole seen; floor height error only on open floor
-            below, lat, zerr = [], [], []
+            below, lat, zerr, edges, rim = [], [], [], [], []
             for fv in used:
-                for ax, ay, z, kind in cliff.depth_points(fv.frame, fv.state):
+                pts = cliff.depth_points(fv.frame, fv.state)
+                b_lat = [side * ay for ax, ay, z, kind in pts if kind == "below"]
+                if b_lat:      # the edge, this frame: the farthest floor seen short of the nearest below-floor return
+                    f_pts = [(ax, side * ay) for ax, ay, z, kind in pts if kind == "floor" and side * ay < min(b_lat)]
+                    if f_pts:
+                        far = max(p[1] for p in f_pts)
+                        edges.append(far)
+                        rim.extend(p for p in f_pts if p[1] > far - 0.04)     # the floor's boundary points, for a line
+                for ax, ay, z, kind in pts:
                     if kind == "below":
                         below.append((side * ay, z))
                     elif kind == "floor":
@@ -71,6 +79,18 @@ for scene_id in sys.argv[1:]:
                 bl = sorted(b[0] for b in below)
                 print(f"   {scene_id} {name} below-floor returns: {len(below)}, aside {bl[0]:.2f}-{bl[-1]:.2f} m, depth median "
                       f"{sorted(b[1] for b in below)[len(below) // 2]:+.2f} m", flush=True)
+            if edges:
+                edges.sort()
+                line = ""
+                if len(rim) >= 3:      # a line through the boundary (least squares, aside on ahead) and the trunk's distance to it
+                    n = len(rim)
+                    mx, my = sum(p[0] for p in rim) / n, sum(p[1] for p in rim) / n
+                    sxx = sum((p[0] - mx) ** 2 for p in rim)
+                    k = sum((p[0] - mx) * (p[1] - my) for p in rim) / sxx if sxx > 1e-9 else 0.0
+                    b = my - k * mx                                    # aside = k * ahead + b
+                    line = f"; edge line: trunk {abs(b) / math.sqrt(1 + k * k):.3f} m from it, at {math.degrees(math.atan(k)):+.1f} deg"
+                print(f"   {scene_id} {name} edge estimate: median {edges[len(edges) // 2]:.3f} m aside "
+                      f"(range {edges[0]:.3f}-{edges[-1]:.3f}, {len(edges)} frames){line}", flush=True)
             if not used:
                 print(f"   {scene_id} {name} no frames: head {head}, last sensor yaw {prev_yaw}", flush=True)
             print(f"{scene_id} {name}: clamped {ans.get('clamped')} sensor yaw {yaw:+.0f} deg, {len(used)} frames; below-floor returns {drops}; "

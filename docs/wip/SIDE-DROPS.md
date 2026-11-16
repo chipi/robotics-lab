@@ -66,11 +66,27 @@ The forward sensor cannot see these drops. Measured by the review from the recor
      `CORRIDOR_DROP_M` (0.25 m) aside by design. A side look is judged by `depth_points`' "below"
      returns.
 
+   - **Where the edge is: within −4.7 cm / +0.6 cm.** A line is fitted through the floor's
+     boundary points (the farthest floor short of the first below-floor return, frame by frame),
+     and the trunk's distance to it is compared with the truth (from the scene file, in the
+     duck's start frame, jitter included):
+
+     | Seed | Side | Glance (line) | Truth | Error |
+     | --- | --- | --- | --- | --- |
+     | 1 | left | 0.417 m | 0.438 m | −21 mm |
+     | 2 | left | 0.331 m | 0.373 m | −42 mm |
+     | 6 | right | 0.607 m | 0.609 m | −2 mm |
+     | 7 | right | 0.460 m | 0.507 m | −47 mm |
+     | 9 | right | 0.458 m | 0.458 m | 0 mm |
+     | 10 | right | 0.521 m | 0.515 m | +6 mm |
+
+     Negative means nearer than it is, which is safe. A first estimator, the farthest floor point
+     wherever along the edge, read the right side 6–8 cm too far. That was the estimator, not the
+     sensor.
+
    Open:
-   - **Where the edge is.** The below-floor returns start where the edge's shadow allows on the
-     left (0.81 m, against 0.81 m predicted for a 0.22 m ledge at 0.42 m). On the right they start
-     later (1.0–1.7 m against 0.86–1.26 m). The margin needs the edge's position, not only that a
-     drop exists; not measured yet.
+   - **The edge's direction from a right look.** It fits at +8–9° whatever the true angle (+0.3° to
+     +7.7°). The distance is right; the line's direction cannot be trusted yet.
    - **Wall feet as "floor".** Near walls the floor class takes wall returns below the obstacle
      threshold (95th-percentile height error 68–83 mm against 10–14 on open floor).
    - **The head's commanded yaw is asymmetric.** robot.look asked −57° for the right and +68° for
