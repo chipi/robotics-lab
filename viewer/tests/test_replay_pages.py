@@ -106,14 +106,23 @@ def eventually(page, js, timeout=8000) -> bool:
 def wait_frame(page, index, logs, timeout=8000):
     """Until the inspector shows raw frame `index` and state() says so; on a timeout, what the page had instead (CI 2026-11-16
     timed out here once, on the first frame, with nothing to go on)."""
+    wait_raw(page, f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{index}' "
+                   f"&& window.miniview.state().raw_frame && window.miniview.state().raw_frame.i === {index}", logs, f"raw frame {index}", timeout)
+
+
+def wait_raw(page, js, logs, what, timeout=15000):
+    """page.wait_for_function, and on a timeout what the inspector's raw frame had: the canvas, the request state (busy, last
+    failure), the stream's count, the playhead, the inspector's text, the console."""
     try:
-        page.wait_for_function(f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{index}' "
-                               f"&& window.miniview.state().raw_frame && window.miniview.state().raw_frame.i === {index}", timeout=timeout)
+        page.wait_for_function(js, timeout=timeout)
     except Exception:
-        seen = page.evaluate("(() => { const c = document.getElementById('rawcv'), s = window.miniview.state(); "
-                             "return { canvas: c ? { ...c.dataset } : null, raw_frame: s.raw_frame, t: s.t, "
-                             "inspector: (document.getElementById('inspBody')?.innerText || '').split('Raw depth frame')[1]?.slice(0, 200) }; })()")
-        print(f"waiting for raw frame {index}: the page had {seen}; console: {logs[-8:]}", flush=True)
+        seen = page.evaluate("(() => { const c = document.getElementById('rawcv'), i = window.miniview.internals, r = i.raw, "
+                             "s = i.M.run?.streams?.find((x) => x.id === 'sensors.raw'); "
+                             "return { canvas: c ? { ...c.dataset } : null, busy: r.busy, failed_ms_ago: r.failed ? performance.now() - r.failed : null, "
+                             "key: r.key, run: i.M.runId, have: r.fr ? { i: r.fr.index, n: r.fr.n, t: r.fr.t, next_t: r.fr.next_t } : null, "
+                             "stream: s ? { count: s.count, missing: s.missing } : null, t: i.M.t, status: i.M.run?.status, "
+                             "inspector: (document.getElementById('inspBody')?.innerText || '').split('Raw depth frame')[1]?.slice(0, 160) }; })()")
+        print(f"waiting for {what}: the page had {seen}; console: {logs[-8:]}", flush=True)
         raise
 
 
@@ -223,6 +232,17 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               (failed, page.evaluate("document.getElementById('rawcv')?.dataset.i ?? 'no image'")))
         ctx.close()
 
+        # a frame request never answered is given up after 5 s and asked again (it held `busy` for good before)
+        ctx, page, logs = run_page(b, base)
+        held = []
+        call(page, f"window.miniview.load('apartment', '{KEY}')")
+        page.route("**/sensor?t=2.5*", lambda route: held.append(route) if not held else route.continue_())
+        call(page, "window.miniview.setTime(2.5)")
+        ok = eventually(page, f"document.getElementById('rawcv')?.dataset.i === '{want['index']}'", timeout=12000)
+        check("a frame request never answered is given up and asked again, and the inspector shows the frame", len(held) == 1 and ok,
+              (len(held), page.evaluate("document.getElementById('rawcv')?.dataset.i ?? 'no image'")))
+        ctx.close()
+
         # a run with no raw frames: says so, no image
         ctx, page, logs = run_page(b, base)
         call(page, "window.miniview.load('apartment', 'duck/apartment/explore9')")
@@ -242,7 +262,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         wait_until(lambda: api(live_base, f"/api/v1/runs/{lkey}")["seq"] >= 7, 10, every=0.1, what="the live run's first records")
         ctx, page, logs = run_page(b, live_base)
         call(page, f"window.miniview.load('apartment', '{lkey}')")
-        page.wait_for_function("document.getElementById('rawcv') !== null", timeout=15000)
+        wait_raw(page, "document.getElementById('rawcv') !== null", logs, "the live run's first raw frame")
         n0 = api(live_base, f"/api/v1/runs/{lkey}/sensor")["n"]
         for r in records(10)[8:30]:
             rec.add(*r)
@@ -250,7 +270,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         wait_until(lambda: api(live_base, f"/api/v1/runs/{lkey}/sensor")["n"] == n1, 15, every=0.1, what="the service to read the new frames")
         page.wait_for_function(f"window.miniview.internals.M.run.streams.find((s) => s.id === 'sensors.raw').count === {n1}", timeout=15000)
         check("frames written while the page is open arrive by record: the stream's count is the file's", n1 > n0, (n0, n1))
-        page.wait_for_function(f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{n1 - 1}'", timeout=15000)
+        wait_raw(page, f"document.getElementById('rawcv') && document.getElementById('rawcv').dataset.i === '{n1 - 1}'", logs, "the live run's newest raw frame")
         check("following the live run, the inspector shows the newest frame", page.evaluate("window.miniview.state().follow") is True
               and page.evaluate("window.miniview.state().raw_frame.i") == n1 - 1, page.evaluate("window.miniview.state().raw_frame"))
         # The newest frame stays current while no newer one is known; state() went null 300 ms after each fetch (2026-11-16, deck run).

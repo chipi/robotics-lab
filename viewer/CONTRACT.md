@@ -171,7 +171,9 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 
 `boxes` are oriented boxes (centre, half sizes in x and y, bottom and top z, yaw). Cylinders are
 given
-as boxes with equal half sizes.
+as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, turned by an optional
+`yaw` (radians) about its centre: a challenge scene's drop is turned with the start's jitter
+(ADR-0015).
 
 ### `GET /api/v1/runs/{key}` — the run's summary
 

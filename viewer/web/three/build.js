@@ -182,7 +182,7 @@ export function buildScene(sc, cut = 0.5) {
   }
   const fill = [];
   for (const h of sc.hazards) {
-    const r = [[h.x0, h.y0], [h.x1, h.y0], [h.x1, h.y1], [h.x0, h.y1]];
+    const r = h.corners;
     for (let k = 0; k < 4; k++) {
       const [ax, ay] = r[k], [bx, by] = r[(k + 1) % 4];
       hz.push(ax, ay, 0, bx, by, 0, ax, ay, -h.depth, bx, by, -h.depth, ax, ay, 0, ax, ay, -h.depth);

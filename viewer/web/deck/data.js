@@ -33,11 +33,11 @@ export function prepareScene(sc) {
     for (let k = 0; k < 4; k++) paths.push({ path: [lo[k], hi[k]], stair });
   }
   const hz = sc.hazards.flatMap((h) => {
-    const r = (z) => [[h.x0, h.y0, z], [h.x1, h.y0, z], [h.x1, h.y1, z], [h.x0, h.y1, z], [h.x0, h.y0, z]];
+    const r = (z) => [...h.corners, h.corners[0]].map(([x, y]) => [x, y, z]);
     const lo = r(-h.depth), hi = r(0);
     return [{ path: hi }, { path: lo }, ...[0, 1, 2, 3].map((k) => ({ path: [lo[k], hi[k]] }))];
   });
-  const pits = sc.hazards.map((h) => ({ poly: [[h.x0, h.y0], [h.x1, h.y0], [h.x1, h.y1], [h.x0, h.y1]], z0: -h.depth, z1: 0 }));
+  const pits = sc.hazards.map((h) => ({ poly: h.corners, z0: -h.depth, z1: 0 }));
   return { ...sc, boxPaths: paths, boxFill: fill, stairFill: stairs, hazardPaths: hz, pitFill: pits };
 }
 

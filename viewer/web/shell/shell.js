@@ -25,8 +25,16 @@ import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 
 const API = '/api/v1/';
-const json = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
+const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
 const noScene = (id) => ({ id, name: id, kind: 'no layout', frame: 'world', bounds: [-4, 4, -3, 3], boxes: [], hazards: [] });   // a run whose scene has no layout (ADR-0013 `unmapped`)
+// each hazard's outline for the renderers: its rectangle, turned by `yaw` about its centre when it has one (ADR-0015's scenes)
+function withCorners(sc) {
+  for (const h of sc.hazards) {
+    const cx = (h.x0 + h.x1) / 2, cy = (h.y0 + h.y1) / 2, c = Math.cos(h.yaw || 0), s = Math.sin(h.yaw || 0);
+    h.corners = [[h.x0, h.y0], [h.x1, h.y0], [h.x1, h.y1], [h.x0, h.y1]].map(([x, y]) => [cx + c * (x - cx) - s * (y - cy), cy + s * (x - cx) + c * (y - cy)]);
+  }
+  return sc;
+}
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -229,8 +237,8 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
     if (!fresh && !r.busy && now - r.failed > 500) {
       r.busy = true;
       const key = M.runId;
-      // a failed request is asked again once the pause is over: nothing else may redraw the inspector before then
-      json(`${API}runs/${key}/sensor?t=${M.t}`).then((a) => { r.fr = a; r.key = key; },
+      // a failed request (or one unanswered for 5 s) is asked again once the pause is over: nothing else may redraw the inspector before then
+      json(`${API}runs/${key}/sensor?t=${M.t}`, { signal: AbortSignal.timeout(5000) }).then((a) => { r.fr = a; r.key = key; },
         () => { r.fr = null; r.failed = performance.now(); setTimeout(() => M.runId === key && scheduleInsp(), 550); })
         .finally(() => { r.busy = false; if (M.runId === key) scheduleInsp(); });
     }
@@ -309,7 +317,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
       const r0 = runId === undefined ? sc.runs[0] : findRun(sc, runId);
       if (!r0) throw new Error(runId === undefined ? `scene ${sc.id} has no runs` : `unknown run ${runId} in scene ${sc.id}`);
       // the index says which scenes have no layout (their runs are listed, nothing of the scene is drawn): no request for one
-      const scene = sceneCache[sc.id] ||= sc.kind === 'no layout' ? noScene(sc.id) : await json(`${API}scenes/${sc.id}`).catch((e) => { if (/ 404$/.test(String(e))) return noScene(sc.id); throw e; });
+      const scene = sceneCache[sc.id] ||= withCorners(sc.kind === 'no layout' ? noScene(sc.id) : await json(`${API}scenes/${sc.id}`).catch((e) => { if (/ 404$/.test(String(e))) return noScene(sc.id); throw e; }));
       built = false;
       const first = await store.open(r0.key, M.follow && r0.status === 'live' ? 'end' : 'start');
       if (!first) return null;                                           // another load took over
@@ -1001,7 +1009,7 @@ export function createShell(adapter, { title = 'miniview' } = {}) {
   window.miniview.scenes = () => { scenesPage(); };
   window.miniview.setData = (d) => window.miniview.setFrame(d ? 'map' : 'world');
   // FOR THE TESTS OF THIS REPOSITORY ONLY: the model and the renderer's probes. Scripts use the functions above (load, state, config, ...).
-  window.miniview.internals = { M, adapter, store, shell: () => shell };
+  window.miniview.internals = { M, adapter, store, raw, shell: () => shell };
 
   // ---- wiring ---------------------------------------------------------------------------------------
   const shell = {
