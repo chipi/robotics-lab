@@ -41,7 +41,7 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -52,16 +52,16 @@ for s in range(20):
     goal_clear.append(sc.goal[0] - (bx.cx + bx.hx) >= 0.6)
 check("a box in the open: it stands across the straight line to the goal, at least 0.5 m ahead, in every seed", all(blocks), blocks)
 check("a box in the open: the goal is 0.6 m or more behind it", all(goal_clear), goal_clear)
-inside, walled_in = [], []
+in_corr, walled_in = [], []
 for s in range(20):
     sc = CHALLENGES["6"](s, random.Random(f"6-{s}"))
     end = next(b for b in sc.boxes if b.name == "dead_e")
     side = next(b for b in sc.boxes if b.name == "dead_n")
     mouth = side.cx - side.hx
-    inside.append(mouth < -0.5 and 0.2 <= end.cx - TRUNK_START[0] <= 0.3 and 2 * side.cy <= 0.55)     # in the corridor, the end just ahead
+    in_corr.append(mouth < -0.5 and 0.2 <= end.cx - TRUNK_START[0] <= 0.3 and 2 * side.cy <= 0.55)     # in the corridor, the end just ahead
     walled_in.append(sc.goal[0] < mouth - 0.5 and abs(sc.goal[1]) > side.cy)           # the goal in the room, beside the mouth
 check("a dead end: the start inside a corridor 0.55 m or narrower, its closed end 0.2-0.3 m ahead, the mouth behind",
-      all(inside), inside)
+      all(in_corr), in_corr)
 check("a dead end: the goal is out of the corridor, in the room beside its mouth", all(walled_in), walled_in)
 # The pivot gate's budget (docs/wip/CLEARANCE-MODEL.md): footprint 0.083 + belief error in the kick ~0.013 + kick creep
 # ~0.01, under the 0.11 m gate; a wall nearer than this at the start is a right refusal, not a wedge to get out of.
@@ -82,8 +82,21 @@ for s in range(20):
                  and abs(sc.goal[1]) + DROP_MARGIN_M < abs(edge))
 check("a ledge: a drop 0.4-0.6 m beside the whole way from the start to the goal, the goal clear of its margin",
       all(along), along)
+gapless, only_way = [], []
+for s in range(20):
+    sc = CHALLENGES["11"](s, random.Random(f"11-{s}"))
+    pit, block = sc.drops()[0], next(b for b in sc.boxes if b.name == "block")
+    xs = [-0.55 + 0.05 * i for i in range(int((pit.cx + pit.hx + 1.3) / 0.05))]
+    gapless.append(all(any(inside((x, y), f) for f in sc.floors) for x in xs for y in [-1.15 + 0.05 * j for j in range(47)]))
+    across = [-1.15 + 0.01 * j for j in range(231)]                           # across the room at the pit's middle
+    free = [y for y in across if not inside((pit.cx, y), pit) and not inside((pit.cx, y), block)]
+    width = (max(free) - min(free)) if free else 0.0
+    only_way.append(0.64 <= width + 0.02 <= 0.81 and min(free) <= 0.0 <= max(free))
+check("a passage by a hole: the floors cover the room with no gap (the pit is the only lower floor)", all(gapless), gapless)
+check("a passage by a hole: across the pit, only the passage (0.65-0.8 m, the duck's line in it) is neither pit nor block",
+      all(only_way), only_way)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3
-                                                                     for ch in ("8", "9", "10") for s in range(5)))
+                                                                     for ch in ("8", "9", "10", "11") for s in range(5)))
 
 # ---- the start's jitter: the world moves, the duck stays at the origin ----------------------------------------------
 base = Scene("t", "t", [Box("box", 1.0, 0.0, 0.1, 0.1, 0.0, 0.3)], [slab("floor", -1, 2, -1, 1)], (2.0, 0.0), "reach", 10.0)

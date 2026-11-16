@@ -126,7 +126,27 @@ def ledge(seed: int, rng: random.Random) -> Scene:
                  notes={"ledge_m": round(off, 3), "depth_m": round(depth, 3), "side": side})
 
 
-CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge}
+def passage_by_hole(seed: int, rng: random.Random) -> Scene:
+    """A narrow passage beside a hole: a pit running from the passage to the room's wall on one side, a block from the
+    passage to the room's wall on the other, so the passage is the only way to the goal. It is 0.65-0.8 m from the
+    block's face to the pit's edge, wide enough for a drop's margin (0.45 m) plus a wall's (0.12 m), with the duck's line
+    0.3-0.4 m from the edge: drop zones against passage width (trial 6)."""
+    w, e, side = rng.uniform(0.65, 0.8), rng.uniform(0.3, 0.4), rng.choice((-1, 1))
+    depth, length, hx0 = rng.uniform(0.1, 0.3), rng.uniform(0.8, 1.0), rng.uniform(0.8, 1.0)
+    hx1, x0, x1, y_room = hx0 + length, -0.6, hx0 + length + 1.4, 1.2
+    edge, face = side * e, -side * (w - e)                        # the pit's edge and the block's face, across the way
+    pit_lo, pit_hi = sorted((edge, side * y_room))
+    blk_lo, blk_hi = sorted((face, -side * y_room))
+    pass_lo, pass_hi = sorted((edge, -side * y_room))              # the upper floor beside the pit, under the block too
+    floors = [slab("floor_w", x0, hx0, -y_room, y_room), slab("floor_e", hx1, x1, -y_room, y_room),
+              slab("floor_passage", hx0, hx1, pass_lo, pass_hi), slab("pit", hx0, hx1, pit_lo, pit_hi, top=-depth)]
+    block = Box("block", (hx0 + hx1) / 2, (blk_lo + blk_hi) / 2, length / 2, (blk_hi - blk_lo) / 2, 0.0, 0.4)
+    boxes = _walled("room", x0, x1, -y_room, y_room) + [block]
+    return Scene(f"ch11-s{seed}", "A narrow passage beside a hole", boxes, floors, (x1 - 0.6, rng.uniform(-0.2, 0.2)),
+                 "reach", 90.0, notes={"passage_m": round(w, 3), "edge_m": round(e, 3), "depth_m": round(depth, 3), "side": side})
+
+
+CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge, "11": passage_by_hole}
 
 
 def build(challenge: str, seed: int) -> Scene:
