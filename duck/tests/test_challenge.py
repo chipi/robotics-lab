@@ -9,7 +9,7 @@ from pathlib import Path
 
 from duck_lab.challenge.challenges import CHALLENGES, build
 from duck_lab.challenge.judge import DROP_MARGIN_M, Judge
-from duck_lab.challenge.scene import Box, Scene, layout, miniview_scene, mjcf, moved, slab
+from duck_lab.challenge.scene import TRUNK_START, Box, Scene, layout, miniview_scene, mjcf, moved, slab
 from duck_lab.nav.evaluate import FOOTPRINT_M, footprint_distance
 
 failures = []
@@ -36,7 +36,7 @@ for ch in CHALLENGES:
     check(f"challenge {ch}: another seed varies it", (c.boxes, c.floors, c.goal) != (a.boxes, a.floors, a.goal))
     check(f"challenge {ch}: its id is the challenge and the seed, a valid miniview scene id", a.id == f"ch{ch}-s3", a.id)
     on_start = any(abs(f.z1) < 1e-6 and inside((0.0, 0.0), f) for f in a.floors)
-    clear = min((footprint_distance((0.0, 0.0), g) for g in Judge(a).obs), default=math.inf)
+    clear = min((footprint_distance(TRUNK_START, g) for g in Judge(a).obs), default=math.inf)
     check(f"challenge {ch}: the duck starts on the start's floor (level 0), clear of every box", on_start and clear > FOOTPRINT_M,
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
@@ -57,14 +57,16 @@ for s in range(20):
     sc = CHALLENGES["6"](s, random.Random(f"6-{s}"))
     end = next(b for b in sc.boxes if b.name == "dead_e")
     side = next(b for b in sc.boxes if b.name == "dead_n")
-    inside.append(side.cx - side.hx > FOOTPRINT_M and abs(sc.goal[1]) < side.cy)       # the mouth ahead of the start, the goal in line
-    walled_in.append(sc.goal[0] - end.cx >= 0.4)
-check("a dead end: its mouth ahead of the start, the goal in line with it and 0.4 m or more past its closed end",
-      all(inside) and all(walled_in), (inside, walled_in))
+    mouth = side.cx - side.hx
+    inside.append(mouth < -0.5 and 0.2 <= end.cx - TRUNK_START[0] <= 0.3 and 2 * side.cy <= 0.55)     # in the corridor, the end just ahead
+    walled_in.append(sc.goal[0] < mouth - 0.5 and abs(sc.goal[1]) > side.cy)           # the goal in the room, beside the mouth
+check("a dead end: the start inside a corridor 0.55 m or narrower, its closed end 0.2-0.3 m ahead, the mouth behind",
+      all(inside), inside)
+check("a dead end: the goal is out of the corridor, in the room beside its mouth", all(walled_in), walled_in)
 wedge = []
 for s in range(20):
     sc = build("7", s)                                    # with the start's jitter
-    near = sorted(footprint_distance((0.0, 0.0), g) for g in Judge(sc).obs)[:2]
+    near = sorted(footprint_distance(TRUNK_START, g) for g in Judge(sc).obs)[:2]
     wedge.append(FOOTPRINT_M < near[0] and near[1] < 0.35)
 check("wedged: in every seed two walls within 0.35 m of the start, neither inside the footprint (jitter included)", all(wedge), wedge)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3

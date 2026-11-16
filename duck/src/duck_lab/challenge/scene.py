@@ -16,6 +16,9 @@ from duck_lab.nav.frames import compose, inverse
 UPSTREAM = Path(os.environ.get("DUCK_SIM_RL", "/work/pollen/microduck_rl")) / "src" / "mjlab_microduck" / "robot" / "microduck"
 SCENARIOS = Path(os.path.expanduser("~/.cache/duck-sim/scenarios"))
 SLAB_M = 0.05                 # a floor slab's thickness
+# The trunk stands this far ahead of the start once the duck has settled (truth at a run's start, 2026-11-16's challenge
+# runs: x 0.044-0.058 m, y about 0); contacts are judged from the trunk, so a wall close ahead is placed from here.
+TRUNK_START = (0.05, 0.0)
 WALL_RGBA = "0.75 0.75 0.78 1"
 FLOOR_RGBA = "0.45 0.5 0.55 1"
 LOW_RGBA = "0.35 0.25 0.35 1"

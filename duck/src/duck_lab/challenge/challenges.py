@@ -6,7 +6,7 @@ that is not the challenge's drop is walled: the only drop is the one being teste
 import math
 import random
 
-from duck_lab.challenge.scene import Box, Scene, moved, slab, wall
+from duck_lab.challenge.scene import TRUNK_START, Box, Scene, moved, slab, wall
 
 START_JITTER = (0.05, math.radians(10))     # ±m, ±rad
 
@@ -53,22 +53,26 @@ def box_in_open(seed: int, rng: random.Random) -> Scene:
 
 
 def dead_end(seed: int, rng: random.Random) -> Scene:
-    """A dead-end corridor opening toward the start, the goal just past its closed end: the straight line leads in, the way
-    out is to turn inside it (the duck does not walk backwards) and go round (trials 7, 8)."""
-    w, depth, x0 = rng.uniform(0.6, 0.7), rng.uniform(1.0, 1.4), rng.uniform(0.4, 0.6)
-    x1 = x0 + depth
-    corr = [wall("dead_s", x0, -w / 2, x1, -w / 2), wall("dead_n", x0, w / 2, x1, w / 2), wall("dead_e", x1, -w / 2, x1, w / 2)]
-    boxes = _walled("room", -0.6, x1 + 1.2, -1.4, 1.4) + corr
-    goal = (x1 + rng.uniform(0.4, 0.6), rng.uniform(-0.15, 0.15))
-    return Scene(f"ch6-s{seed}", "Dead-end corridor", boxes, [slab("floor", -0.6, x1 + 1.2, -1.4, 1.4)], goal, "reach", 150.0,
-                 notes={"width_m": round(w, 3), "depth_m": round(depth, 3), "mouth_m": round(x0, 3)})
+    """The start inside a dead-end corridor narrower than challenge 5's, its closed end just ahead; the corridor opens behind
+    into a room with the goal beside the mouth: out without walking backwards (trials 7, 8). A dead end the duck walks into
+    from outside does not work as a test: the depth sensor reaches 4 m, so its closed end is on the map before it enters."""
+    w, end, length = rng.uniform(0.45, 0.55), TRUNK_START[0] + rng.uniform(0.2, 0.3), rng.uniform(0.9, 1.1)
+    mouth = end - length
+    corr = [wall("dead_s", mouth, -w / 2, end, -w / 2), wall("dead_n", mouth, w / 2, end, w / 2),
+            wall("dead_e", end, -w / 2, end, w / 2)]
+    room = _walled("room", mouth - 1.8, mouth, -1.2, 1.2, skip=("e",)) + [wall("room_e1", mouth, -1.2, mouth, -w / 2),
+                                                                          wall("room_e2", mouth, w / 2, mouth, 1.2)]
+    goal = (mouth - rng.uniform(0.6, 0.9), rng.choice((-1, 1)) * rng.uniform(0.5, 0.8))
+    floors = [slab("floor", mouth - 1.8, mouth, -1.2, 1.2), slab("corridor", mouth, end, -w / 2, w / 2)]
+    return Scene(f"ch6-s{seed}", "Dead-end corridor", room + corr, floors, goal, "reach", 120.0,
+                 notes={"width_m": round(w, 3), "end_ahead_m": round(end - TRUNK_START[0], 3), "length_m": round(length, 3)})
 
 
 def wedged(seed: int, rng: random.Random) -> Scene:
     """The start facing into a room's corner, a wall close ahead and one close beside, the goal behind in the open: boxed-in
     recovery (trial 4). The clearances keep the footprint (0.083 m) off both walls, the start's jitter included."""
     ahead, aside, side = rng.uniform(0.16, 0.22), rng.uniform(0.14, 0.2), rng.choice((-1, 1))
-    x1, y_wall = ahead, side * aside
+    x1, y_wall = TRUNK_START[0] + ahead, side * aside             # from the trunk, where contacts are judged
     y0, y1 = (y_wall - 2.6, y_wall) if side > 0 else (y_wall, y_wall + 2.6)
     boxes = _walled("room", x1 - 3.2, x1, y0, y1)
     goal = (-rng.uniform(1.5, 2.0), -side * rng.uniform(0.3, 0.8))
