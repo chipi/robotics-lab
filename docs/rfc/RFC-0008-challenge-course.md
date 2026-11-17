@@ -95,7 +95,8 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
 
 ## 6. Open questions
 
-- The bar's numbers: pass rate per challenge (100 % for drops and contacts; less for reaching?).
+- ~~The bar's numbers~~ — decided 2026-11-17 (§8): 100 % on the safety invariants, at least 8/10
+  reach or refuse per challenge.
 - How many runs per challenge are enough to trust a rate.
 - Which challenges need the real duck's sensor quirks that the simulator does not model.
 
@@ -110,3 +111,9 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
 
 - 2026-11-15, operator: re-consolidate, step back, generalize; subgoals that compose into the whole;
   as many challenges as needed; passing them is phase 2's bar, the apartment the final exam.
+- 2026-11-17, operator: "close all challenges we did not start and move to the apartment rather than
+  trying to score 10/10 for all first 11". The bar: 100 % on the safety invariants (no fall, no
+  contact, never under 0.15 m from a drop), at least 8/10 reach or refuse per challenge. Challenges
+  1–11 become the regression gate run before each commit; next 12–16, then 17, 18–20, the apartment.
+  A fall during a simulator state-stream stall is logged apart, out of our control for now
+  (`duck/sim/probes/state_stalls.py`: 2 stalls over 200 ms in 132 runs, one a fall in challenge 9).

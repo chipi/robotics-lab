@@ -6,7 +6,7 @@ that is not the challenge's drop is walled: the only drop is the one being teste
 import math
 import random
 
-from duck_lab.challenge.scene import TRUNK_START, Box, Scene, moved, slab, wall
+from duck_lab.challenge.scene import TOF_RANGE_M, TRUNK_START, Box, Scene, moved, slab, wall
 
 START_JITTER = (0.05, math.radians(10))     # ±m, ±rad
 
@@ -146,7 +146,89 @@ def passage_by_hole(seed: int, rng: random.Random) -> Scene:
                  "reach", 90.0, notes={"passage_m": round(w, 3), "edge_m": round(e, 3), "depth_m": round(depth, 3), "side": side})
 
 
-CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge, "11": passage_by_hole}
+def table_edge(seed: int, rng: random.Random) -> Scene:
+    """A table edge with no return at all: the start's floor ends 0.9-1.1 m ahead, met at 0-45 deg, and the floor beyond
+    is out of the sensor's range, so every beam that crosses the edge returns "no target" instead of a floor below. The
+    goal is down there: a refusal. A real table over a dark carpet, or a stairwell, can look like this; the cliff check
+    has only below-floor returns to go by (RFC-0008 §3, challenge 12)."""
+    angle, near = math.radians(rng.uniform(0, 45)) * rng.choice((-1, 1)), rng.uniform(0.9, 1.1)
+    edge = (near, 0.0, angle)
+
+    def turned(b: Box) -> Box:
+        return b.moved(edge)
+    back = near * math.cos(angle) + 0.6                # behind the edge far enough for the start (and its jitter)
+    depth = TOF_RANGE_M + 0.5
+    up, low = slab("table", -back, 0.0, -1.5, 1.5), slab("below", 0.0, 1.6, -1.5, 1.5, top=-depth)
+    boxes = _walled("table", -back, 0.0, -1.5, 1.5, skip=("e",))
+    gx, gy = near + 0.8 * math.cos(angle), 0.8 * math.sin(angle)
+    return Scene(f"ch12-s{seed}", "A table edge with no return", [turned(b) for b in boxes], [turned(up), turned(low)],
+                 (gx, gy), "refuse", 60.0,
+                 notes={"edge_m": round(near, 3), "angle_deg": round(math.degrees(angle), 1), "depth_m": depth})
+
+
+def _room(goal_x: float) -> list:
+    """A walled room from behind the start to past the goal, 3 m across: room to go round what is on the way."""
+    return _walled("room", -0.6, goal_x + 0.6, -1.5, 1.5)
+
+
+def overhang(seed: int, rng: random.Random) -> Scene:
+    """A low overhang: a shelf 0.6 m deep right across the straight way to the goal, 1.0-1.3 m ahead. Its underside is
+    above the duck's head (0.32-0.40 m: walk under it, it is not a wall) or below it (0.15-0.22 m: go round), by seed
+    (RFC-0008 §3: overhead classification)."""
+    high = seed % 2 == 0
+    under = rng.uniform(0.32, 0.40) if high else rng.uniform(0.15, 0.22)
+    x, goal_x = rng.uniform(1.0, 1.3), rng.uniform(2.6, 3.0)
+    shelf = Box("shelf", x + 0.3, rng.uniform(-0.1, 0.1), 0.3, 0.5, under, under + 0.03)
+    return Scene(f"ch13-s{seed}", "A low overhang", _room(goal_x) + [shelf], [slab("floor", -0.6, goal_x + 0.6, -1.5, 1.5)],
+                 (goal_x, rng.uniform(-0.2, 0.2)), "reach", 90.0, notes={"underside_m": round(under, 3), "walk_under": high})
+
+
+def thin_legs(seed: int, rng: random.Random) -> Scene:
+    """A thin pole, or a chair's legs: legs 2-4 cm across on the way to the goal, one pole or four in a 0.38 m square
+    under a seat above the duck's head, by seed: small obstacles for an 8x8 sensor (RFC-0008 §3)."""
+    goal_x, x, y = rng.uniform(2.4, 2.8), rng.uniform(1.0, 1.4), rng.uniform(-0.1, 0.1)
+    w = rng.uniform(0.02, 0.04)
+    if seed % 2 == 0:
+        legs = [Box("leg", x, y, w / 2, w / 2, 0.0, 0.5)]
+    else:
+        legs = [Box(f"leg{i}", x + dx, y + dy, w / 2, w / 2, 0.0, 0.42) for i, (dx, dy) in
+                enumerate(((-0.19, -0.19), (0.19, -0.19), (0.19, 0.19), (-0.19, 0.19)))]
+        legs.append(Box("seat", x, y, 0.22, 0.22, 0.42, 0.45))
+    return Scene(f"ch14-s{seed}", "A thin pole, a chair's legs", _room(goal_x) + legs,
+                 [slab("floor", -0.6, goal_x + 0.6, -1.5, 1.5)], (goal_x, rng.uniform(-0.2, 0.2)), "reach", 90.0,
+                 notes={"legs": 1 if seed % 2 == 0 else 4, "leg_m": round(w, 3)})
+
+
+def small_boxes(seed: int, rng: random.Random) -> Scene:
+    """A field of small boxes: 6-10 boxes 8-20 cm across and 5-25 cm tall scattered between the start and the goal, at
+    least 0.45 m apart, none within 0.3 m of the start or the goal: replanning and the reflex (RFC-0008 §3)."""
+    goal_x, goal_y = rng.uniform(2.6, 3.0), rng.uniform(-0.3, 0.3)
+    want, centres, tries = rng.randint(6, 10), [], 0
+    while len(centres) < want and tries < 2000:
+        tries += 1
+        c = (rng.uniform(0.4, goal_x - 0.2), rng.uniform(-1.2, 1.2))
+        if math.dist(c, (0.0, 0.0)) > 0.3 and math.dist(c, (goal_x, goal_y)) > 0.3 and \
+                all(math.dist(c, o) >= 0.45 for o in centres):
+            centres.append(c)
+    boxes = [Box(f"small{i}", cx, cy, rng.uniform(0.04, 0.1), rng.uniform(0.04, 0.1), 0.0, rng.uniform(0.05, 0.25),
+                 rng.uniform(-math.pi, math.pi)) for i, (cx, cy) in enumerate(centres)]
+    return Scene(f"ch15-s{seed}", "A field of small boxes", _room(goal_x) + boxes,
+                 [slab("floor", -0.6, goal_x + 0.6, -1.5, 1.5)], (goal_x, goal_y), "reach", 90.0, notes={"boxes": len(boxes)})
+
+
+def threshold(seed: int, rng: random.Random) -> Scene:
+    """A threshold or bump that tilts the duck: a bar 1-3 cm high and 4 cm deep across a 0.8 m corridor, 0.8-1.2 m
+    ahead, stepped over on the way to the goal 1.4-1.8 m beyond it. A raised floor strip, not an obstacle: the duck
+    walks on it. Tests false drops from pitch (RFC-0008 §3, trial 12)."""
+    x, h, beyond = rng.uniform(0.8, 1.2), rng.uniform(0.01, 0.03), rng.uniform(1.4, 1.8)
+    end = x + beyond + 0.6
+    floors = [slab("floor", -0.6, end, -0.4, 0.4), slab("threshold", x - 0.02, x + 0.02, -0.4, 0.4, top=h)]
+    return Scene(f"ch16-s{seed}", "A threshold to step over", _walled("corr", -0.6, end, -0.4, 0.4), floors,
+                 (x + beyond, 0.0), "reach", 75.0, notes={"height_m": round(h, 3), "at_m": round(x, 3)})
+
+
+CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge, "11": passage_by_hole, "12": table_edge,
+              "13": overhang, "14": thin_legs, "15": small_boxes, "16": threshold}
 
 
 def build(challenge: str, seed: int) -> Scene:

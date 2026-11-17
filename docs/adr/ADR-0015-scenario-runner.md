@@ -90,6 +90,11 @@ Built with the runner so it is proven on them; the ranges are first guesses, to 
 | 9 | Step down, diagonally | the same, the edge at 30–60° to the start's heading | refuse | angle, depth |
 | 10 | Walking along a ledge | the start's floor ends in a drop 0.1–0.3 m deep running beside the way, 0.4–0.6 m from it (left or right); the other side walled 0.8 m out; the goal 2.4–2.8 m ahead on the upper floor. A straight walk does not show the drop to the sensor (9 of the first 10 runs saw none): it tests not drifting toward a ledge, not drop memory | reach | ledge distance, depth, side |
 | 11 | A narrow passage beside a hole | a pit 0.1–0.3 m deep, 0.8–1.0 m long, from the passage to the room's wall on one side; a block from the passage to the wall on the other, so the passage is the only way; 0.65–0.8 m wide (block face to pit edge), the duck's line 0.3–0.4 m from the edge; the goal beyond. A pass is not yet evidence of drop handling: the forward sensor cannot see a pit 0.3 m or more to the side, and 7 of the first 10 runs passed without seeing it (docs/wip/CLEARANCE-MODEL.md, the review of 2026-11-16) | reach | width, edge, depth, side |
+| 12 | A table edge with no return | the start's floor ends 0.9–1.1 m ahead, met at 0–45°; the floor beyond is 4.5 m down, out of the sensor's 4 m range, so every beam past the edge returns "no target"; the goal is down there | refuse | edge distance, angle |
+| 13 | A low overhang | a shelf 0.6 m deep right across the straight way, 1.0–1.3 m ahead, in a 3 m wide room; its underside 0.32–0.40 m (walk under it) or 0.15–0.22 m (go round), by seed; the goal 2.6–3.0 m ahead | reach | underside, position |
+| 14 | A thin pole, a chair's legs | legs 2–4 cm across on the way to the goal, 1.0–1.4 m ahead: one pole, or four in a 0.38 m square under a seat at 0.42 m, by seed | reach | leg size, position |
+| 15 | A field of small boxes | 6–10 boxes 8–20 cm across and 5–25 cm tall between the start and the goal, 0.45 m apart or more, none within 0.3 m of the start or the goal | reach | count, sizes, positions |
+| 16 | A threshold to step over | a bar 1–3 cm high, 4 cm deep, across a 0.8 m corridor 0.8–1.2 m ahead: a raised floor, walked over (not a contact); the goal 1.4–1.8 m beyond | reach | height, position |
 
 Every scene also gets the start's jitter: ±0.05 m, ±10°.
 
@@ -104,8 +109,8 @@ Every scene also gets the start's jitter: ±0.05 m, ±10°.
 
 ## Not decided here (the operator's)
 
-- The bar: RFC-0008 §6 asks the pass rate per challenge. Proposed: 100 % for the invariants (no
-  contact, no fall, drop margin), a rate for reaching to be set after the first measured runs.
+- The bar: decided 2026-11-17 (RFC-0008 §8): 100 % for the invariants (no contact, no fall, drop
+  margin) and at least 8/10 reach or refuse per challenge; challenges 1–11 are the regression gate.
 - `DROP_MARGIN_M` (0.15 m proposed) and the ranges above.
 - **The brain's invariant** (RFC-0008 §2: "some allowed action always exists") needs the navigator to
   report its allowed actions each tick; not in this step.

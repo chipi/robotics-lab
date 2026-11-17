@@ -41,7 +41,7 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -97,6 +97,41 @@ check("a passage by a hole: across the pit, only the passage (0.65-0.8 m, the du
       all(only_way), only_way)
 check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(ch, s).drops()) == 1 and 0.1 <= -build(ch, s).drops()[0].z1 <= 0.3
                                                                      for ch in ("8", "9", "10", "11") for s in range(5)))
+
+# challenge 12: a table edge with no return. Past the edge the floor is out of the sensor's range (4 m), so every beam
+# that crosses it returns "no target" (the simulator's status 255): the drop the cliff check must stop for without one
+# below-floor return (RFC-0008 §3).
+from duck_lab.challenge.scene import TOF_RANGE_M  # noqa: E402
+
+t12 = [build("12", s) for s in range(10)]
+check("challenge 12: one lower floor, beyond the sensor's range, and the goal on it (a refusal)",
+      all(len(sc.drops()) == 1 and -sc.drops()[0].z1 > TOF_RANGE_M and inside(sc.goal, sc.drops()[0]) for sc in t12),
+      [(round(sc.drops()[0].z1, 2), sc.goal) for sc in t12[:2]])
+check("challenge 12: the edge 0.9-1.1 m ahead, met at 0-45 deg", all(0.9 <= sc.notes["edge_m"] <= 1.1 and
+                                                                      0 <= abs(sc.notes["angle_deg"]) <= 45 for sc in t12))
+
+# challenges 13-16 (RFC-0008 §3), before the start's jitter: the start at the origin facing +x
+from duck_lab.nav.evaluate import OVERHEAD_CLEAR_M  # noqa: E402
+
+c13 = [CHALLENGES["13"](s, random.Random(f"13-{s}")) for s in range(10)]
+shelves = [next(b for b in sc.boxes if b.name == "shelf") for sc in c13]
+check("challenge 13: a shelf across the straight way, its underside above the duck's head or below it, both drawn",
+      all(sh.cx - sh.hx < sc.goal[0] and abs(sh.cy) < sh.hy for sh, sc in zip(shelves, c13))
+      and {sh.z0 > OVERHEAD_CLEAR_M for sh in shelves} == {True, False}, [round(sh.z0, 2) for sh in shelves])
+c14 = [CHALLENGES["14"](s, random.Random(f"14-{s}")) for s in range(10)]
+check("challenge 14: legs 2-4 cm across on the way to the goal, a pole or a chair's four, both drawn",
+      all(all(0.02 <= 2 * b.hx <= 0.04 and 0.02 <= 2 * b.hy <= 0.04 for b in sc.boxes if b.name.startswith("leg"))
+          for sc in c14) and {sum(b.name.startswith("leg") for b in sc.boxes) for sc in c14} == {1, 4})
+c15 = [CHALLENGES["15"](s, random.Random(f"15-{s}")) for s in range(10)]
+small = [[b for b in sc.boxes if b.name.startswith("small")] for sc in c15]
+check("challenge 15: 6-10 small boxes, 0.45 m apart or more, none within 0.3 m of the start or the goal",
+      all(6 <= len(bs) <= 10 and all(math.dist((a.cx, a.cy), (b.cx, b.cy)) >= 0.45 for i, a in enumerate(bs) for b in bs[i + 1:])
+          and all(math.dist((b.cx, b.cy), (0.0, 0.0)) > 0.3 and math.dist((b.cx, b.cy), sc.goal) > 0.3 for b in bs)
+          for bs, sc in zip(small, c15)), [len(bs) for bs in small])
+c16 = [CHALLENGES["16"](s, random.Random(f"16-{s}")) for s in range(10)]
+bars = [next(f for f in sc.floors if f.name == "threshold") for sc in c16]
+check("challenge 16: a threshold 1-3 cm high across the corridor, a floor (stepped over, not touched), the goal beyond",
+      all(0.01 <= b.z1 <= 0.03 and b.cx < sc.goal[0] and not sc.drops() for b, sc in zip(bars, c16)), [round(b.z1, 3) for b in bars])
 
 # ---- the start's jitter: the world moves, the duck stays at the origin ----------------------------------------------
 base = Scene("t", "t", [Box("box", 1.0, 0.0, 0.1, 0.1, 0.0, 0.3)], [slab("floor", -1, 2, -1, 1)], (2.0, 0.0), "reach", 10.0)
