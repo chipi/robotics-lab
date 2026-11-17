@@ -82,7 +82,26 @@ def _tilt_with_yaw(imu: list, yaw: float) -> list:
     return [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy]
 
 
-def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: float | None = None, stand_z: float = 0.1) -> dict:
+def _hud_at(t: float, cmd_t: list, cmds: list, dec_t: list, decisions: list, dep_t: list, depths: list) -> dict:
+    """What the Eye's HUD shows at t (web/shell/shell.js paintHud): the command, the last decision (its rule, reason and
+    values, how long ago), the newest depth frame's classes and its raw zones. *_t: the lists' times, ascending."""
+    out = {"t": round(t, 2)}
+    k = bisect.bisect_right(cmd_t, t) - 1
+    if k >= 0:
+        out["cmd"] = cmds[k][1]
+    k = bisect.bisect_right(dec_t, t) - 1
+    if k >= 0:
+        dt, d = decisions[k]
+        out["doing"] = {"rule": d.get("rule"), "reason": d.get("reason"), "ago": round(t - dt, 1),
+                        "values": d.get("values") or {}}
+    k = bisect.bisect_right(dep_t, t) - 1
+    if k >= 0:
+        out["depth"] = depths[k][1]
+    return out
+
+
+def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: float | None = None, stand_z: float = 0.1,
+          hud: bool = False) -> dict:
     """The run as frames: {"run", "fps", "source", "frame", "map", "frames": [{t, pos: [x, y, z], quat: [w, x, y, z],
     joints: {name: rad}}]}.
 
@@ -92,7 +111,16 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     `map` is then the robot's last map grid, the only picture of the room there is. Joints come from the `joint_*` signals
     (ADR-0016) on both; a joint never sampled is left out (the engine holds the model's own pose for it)."""
     truth, belief, sig_t, sig_v, imu_t, imu_v, run, grid = [], [], [], [], [], [], None, None
-    for t, kind, p in Follower(Path(run_dir)).poll():
+    cmds, decisions, depths = [], [], []          # for the HUD (hud=True)
+    for t, kind, p in Follower(Path(run_dir), keep_raw=hud).poll():
+        if hud and kind == "tick" and p.get("cmd") is not None:
+            cmds.append((t, p["cmd"]))
+        if hud and kind == "event" and isinstance(p.get("decision"), dict):
+            decisions.append((t, p["decision"]))
+        if hud and kind == "depth_frame" and p.get("distance_mm"):
+            classes = [q[3] for q in ((p.get("derived") or {}).get("points") or [])]
+            depths.append((t, {"rows": p.get("rows", 8), "cols": p.get("cols", 8), "mm": p["distance_mm"],
+                               "status": p.get("status", []), "counts": {c: classes.count(c) for c in "fovb"}}))
         if kind == "run":
             run = p
         elif kind == "tick":
@@ -125,6 +153,7 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     if not poses:
         return out
     pt = [p[0] for p in poses]
+    cmd_t, dec_t, dep_t = [c[0] for c in cmds], [d[0] for d in decisions], [d[0] for d in depths]
     t0 = max(pt[0], t_from if t_from is not None else pt[0])
     t1 = min(pt[-1], t_to if t_to is not None else pt[-1])
     frames = []
@@ -137,20 +166,25 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
             j, g = _at(sig_t, t)
             ja, jb = sig_v[j], sig_v[min(j + 1, len(sig_v) - 1)]
             frame["joints"] = {n: v + (jb.get(n, v) - v) * g for n, v in ja.items()}
+        if hud:
+            frame["hud"] = _hud_at(t, cmd_t, cmds, dec_t, decisions, dep_t, depths)
         frames.append(frame)
     out["frames"] = frames
     return out
 
 
 def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size: tuple = (1280, 720),
-           t_from: float | None = None, t_to: float | None = None) -> Path:
+           t_from: float | None = None, t_to: float | None = None, insets: tuple = (), inset_frac: float = 0.28) -> Path:
     """The run `key` of the data folder rendered by `engine` to `out` (a video file). Raises for a robot with no model for that
-    engine, a run with no truth, or an engine that fails (its own message)."""
+    engine, a run with no truth, or an engine that fails (its own message). insets: small squares in the bottom corners,
+    "eye" (the robot's own camera, robots.json eye_camera), "top" (the room from above, the robot and its trail), each
+    inset_frac of the video's height, and "hud" (the Eye's HUD: what it does, why, its pace, its depth frame) top-left
+    (the MuJoCo engine; others ignore them)."""
     robot, scene_id, _ = keys.split_key(key)
     model = ROBOTS.get(robot, {}).get(engine)
     if not model:
         raise SystemExit(f"no {engine} model for the robot {robot!r} in {HERE / 'robots.json'}")
-    tr = track(keys.run_dir(Path(data), key), fps, t_from, t_to, model.get("stand_z", 0.1))
+    tr = track(keys.run_dir(Path(data), key), fps, t_from, t_to, model.get("stand_z", 0.1), hud="hud" in insets)
     if not tr["frames"]:
         raise SystemExit(f"{key} has no poses to draw (no truth and no belief in the time asked)")
     scene_p = Path(data) / "scenes" / (tr["run"] or {}).get("scene", scene_id) / "scene.json"
@@ -161,7 +195,8 @@ def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size
         rb = dict(model, name=robot)
         if rb.get("urdf"):
             rb["urdf"] = str((REPO / rb["urdf"]).resolve())        # the description, from the repository's robots/
-        job.write_text(json.dumps({"track": tr, "scene": scene, "robot": rb, "size": list(size),
+        job.write_text(json.dumps({"track": tr, "scene": scene, "robot": rb, "size": list(size), "insets": list(insets),
+                                   "inset_frac": inset_frac,
                                    "out": str(Path(out).resolve()), "title": key}))
         r = subprocess.run(command(engine, model, job))
         if r.returncode != 0:

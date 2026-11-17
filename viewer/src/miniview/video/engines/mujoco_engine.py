@@ -26,6 +26,7 @@ import numpy as np  # noqa: E402
 BOX_RGBA = "0.78 0.78 0.80 0.45"         # see-through: a wall between the camera and the robot must not hide it
 DROP_RGBA = "0.30 0.10 0.32 1"
 MAP_RGBA = "0.55 0.45 0.35 1"
+EYE_AHEAD_M = 0.04        # the eye inset's camera, ahead of the head camera (out of the head's shell)
 FLOOR = '<geom name="floor" size="0 0 0.05" pos="0 0 0" type="plane" material="groundplane" />'
 
 
@@ -74,6 +75,116 @@ def build(job: dict, work: Path) -> mujoco.MjModel:
     return mujoco.MjModel.from_xml_path(str(work / "render.xml"))
 
 
+def _square_top(job: dict) -> tuple:
+    """The top view's look-at point and distance: straight down over the scene's bounds (the whole room), or the track's
+    own extent when the scene has none."""
+    b = (job.get("scene") or {}).get("bounds")
+    if not b:
+        xs = [f["pos"][0] for f in job["track"]["frames"]]
+        ys = [f["pos"][1] for f in job["track"]["frames"]]
+        b = [min(xs) - 1, max(xs) + 1, min(ys) - 1, max(ys) + 1]
+    cx, cy = (b[0] + b[1]) / 2, (b[2] + b[3]) / 2
+    half = max(b[1] - b[0], b[3] - b[2]) / 2
+    return np.array([cx, cy, 0.0]), half / math.tan(math.radians(45.0 / 2)) * 1.1
+
+
+def _mark(renderer, pos, radius: float, rgba) -> None:
+    """A sphere drawn into the renderer's scene after update_scene (the top view's duck and its trail)."""
+    scn = renderer.scene
+    if scn.ngeom < scn.maxgeom:
+        mujoco.mjv_initGeom(scn.geoms[scn.ngeom], mujoco.mjtGeom.mjGEOM_SPHERE, np.array([radius, 0, 0]),
+                            np.array(pos, dtype=float), np.eye(3).flatten(), np.array(rgba, dtype=np.float32))
+        scn.ngeom += 1
+
+
+def _paste(frame, inset, corner: str, border: int = 2) -> None:
+    """inset into frame's corner ("bl" bottom-left, "br" bottom-right), framed with a light border, in place."""
+    h, w = frame.shape[:2]
+    s = inset.shape[0]
+    y0 = h - s - 8
+    x0 = 8 if corner == "bl" else w - s - 8
+    frame[y0 - border:y0 + s + border, x0 - border:x0 + s + border] = 235
+    frame[y0:y0 + s, x0:x0 + s] = inset
+
+
+HUD_FONTS = ("/usr/share/fonts/liberation/LiberationMono-Regular.ttf", "/usr/share/fonts/TTF/DejaVuSansMono.ttf",
+             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf")
+RAW_VALID = (5, 9)                 # the depth sensor's valid zone statuses, as the Eye's canvas reads them
+
+
+def _font(size: int):
+    from PIL import ImageFont
+    for p in HUD_FONTS:
+        if Path(p).exists():
+            return ImageFont.truetype(p, size)
+    return ImageFont.load_default()
+
+
+def _wrap(text: str, n: int, lines: int) -> list:
+    words, out, cur = str(text).split(), [], ""
+    for wd in words:
+        if len(cur) + len(wd) + 1 > n and cur:
+            out.append(cur)
+            cur = wd
+        else:
+            cur = (cur + " " + wd).strip()
+    out.append(cur)
+    return out[:lines] if len(out) <= lines else out[:lines - 1] + [out[lines - 1][: n - 1] + "…"]
+
+
+def _val(v) -> str:
+    return f"{v:.3g}" if isinstance(v, float) else str(v)
+
+
+def _hud(frame, hud: dict, robot: str, scene: str, font, fsize: int) -> None:
+    """The Eye's HUD (web/shell/shell.js paintHud) as a dark panel top-left, in place: the robot, the time, its pace, what
+    it is doing and why with the values the rule compared, the newest depth frame's classes, and its 8 x 8 zones."""
+    import colorsys
+    from PIL import Image, ImageDraw
+    h, w = frame.shape[:2]
+    pw, cols = int(w * 0.46), max(24, int(w * 0.46 / (fsize * 0.6)) - 12)
+    lines = [(f"{robot.upper()} · EYE", (255, 214, 102))]
+    lines.append((f"{scene} · t {hud['t']:.1f} s · REPLAY", (210, 215, 222)))
+    c = hud.get("cmd")
+    lines.append((f"PACE  {c[0]:.2f} m/s · turn {c[1]:+.2f} rad/s" if c else "PACE  —", (230, 235, 240)))
+    d = hud.get("doing")
+    if d:
+        for i, ln in enumerate(_wrap(f"{d.get('rule')} · {d.get('reason')} · {d['ago']:.1f} s ago", cols, 3)):
+            lines.append((("DOING " if i == 0 else "      ") + ln, (255, 255, 255)))
+        vals = " · ".join(f"{k} {_val(v)}" for k, v in (d.get("values") or {}).items())
+        for i, ln in enumerate(_wrap(vals, cols, 2) if vals else []):
+            lines.append((("NUMBERS " if i == 0 else "        ") + ln, (170, 180, 192)))
+    else:
+        lines.append(("DOING nothing decided yet", (200, 200, 200)))
+    dp = hud.get("depth")
+    if dp:
+        n = dp["counts"]
+        lines.append((f"FRAME floor {n.get('f', 0)} · obstacle {n.get('o', 0)} · overhead {n.get('v', 0)} · below "
+                      f"{n.get('b', 0)}", (210, 215, 222)))
+    lh = int(fsize * 1.35)
+    ph = 10 + lh * len(lines) + 8
+    cell = max(5, int(ph / 12))
+    grid_w = (dp["cols"] * cell + 10) if dp else 0
+    panel = Image.new("RGBA", (pw + grid_w, ph), (12, 14, 18, 190))
+    g = ImageDraw.Draw(panel)
+    for i, (txt, col) in enumerate(lines):
+        g.text((10, 6 + i * lh), txt, font=font, fill=col + (255,))
+    if dp:
+        x0, y0 = pw, (ph - dp["rows"] * cell) // 2
+        for k, mm in enumerate(dp["mm"]):
+            ok = dp["status"][k] in RAW_VALID if k < len(dp["status"]) else True
+            if ok:
+                r, gg, b = colorsys.hls_to_rgb(240 / 360 * min(max(mm, 0) / 4000, 1), 0.45, 0.65)
+                col = (int(r * 255), int(gg * 255), int(b * 255), 255)
+            else:
+                col = (44, 46, 52, 255)
+            cx, cy = x0 + (k % dp["cols"]) * cell, y0 + (k // dp["cols"]) * cell
+            g.rectangle([cx, cy, cx + cell - 2, cy + cell - 2], fill=col)
+    base = Image.fromarray(frame).convert("RGBA")
+    base.alpha_composite(panel, (8, 8))
+    frame[:] = np.asarray(base.convert("RGB"))
+
+
 def render(job: dict) -> None:
     import tempfile
     tr, rb = job["track"], job["robot"]
@@ -93,6 +204,29 @@ def render(job: dict) -> None:
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
     cam.distance, cam.elevation = 1.3, -40.0
+    # Insets (the operator, 2026-11-17): the duck's own view (the model's head camera) and the room from above, as small
+    # squares in the bottom corners.
+    insets = [i for i in job.get("insets", []) if i in ("eye", "top", "hud")]
+    side = max(64, int(h * float(job.get("inset_frac", 0.28))))
+    small = mujoco.Renderer(m, height=side, width=side) if {"eye", "top"} & set(insets) else None
+    fsize = max(10, h // 40)
+    font = _font(fsize) if "hud" in insets else None
+    scene_name = (job.get("title") or "").split("/")[1] if "/" in (job.get("title") or "") else ""
+    eye_cam = None
+    if "eye" in insets:
+        cid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, rb.get("eye_camera", ""))
+        if cid >= 0:
+            eye_cam = mujoco.MjvCamera()
+            eye_cam.type, eye_cam.fixedcamid = mujoco.mjtCamera.mjCAMERA_FIXED, cid
+        else:
+            print(f"no eye camera {rb.get('eye_camera')!r} in the model: the eye inset is left out", flush=True)
+    top_cam = None
+    if "top" in insets:
+        top_cam = mujoco.MjvCamera()
+        top_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        top_cam.lookat[:], top_cam.distance = _square_top(job)
+        top_cam.elevation, top_cam.azimuth = -89.9, 90.0          # straight down, +y up in the image
+    trail = []
     look, heading = None, None
     frames = []
     for f in tr["frames"]:
@@ -111,8 +245,34 @@ def render(job: dict) -> None:
         cam.lookat[:] = look
         cam.azimuth = heading + 150.0
         renderer.update_scene(d, cam)
-        frames.append(renderer.render())
+        frame = renderer.render().copy()
+        if eye_cam is not None:
+            # From the head camera's pose, EYE_AHEAD_M in front of it: the camera itself sits inside the head's shell and
+            # rendered the shell (the first test showed grey where the stairwell was).
+            cid = eye_cam.fixedcamid
+            fwd = -d.cam_xmat[cid].reshape(3, 3)[:, 2]                  # a MuJoCo camera looks along its -z
+            free_eye = mujoco.MjvCamera()
+            free_eye.type = mujoco.mjtCamera.mjCAMERA_FREE
+            free_eye.distance = 1.0
+            free_eye.lookat[:] = d.cam_xpos[cid] + fwd * (EYE_AHEAD_M + free_eye.distance)
+            free_eye.azimuth = math.degrees(math.atan2(fwd[1], fwd[0]))
+            free_eye.elevation = math.degrees(math.asin(max(-1.0, min(1.0, fwd[2]))))
+            small.update_scene(d, free_eye)
+            _paste(frame, small.render(), "bl")
+        if top_cam is not None:
+            if not trail or math.dist(trail[-1], f["pos"][:2]) > 0.1:
+                trail.append(tuple(f["pos"][:2]))
+            small.update_scene(d, top_cam)
+            for p in trail[-400:]:
+                _mark(small, (p[0], p[1], 0.02), 0.03, (0.35, 0.55, 0.95, 1))
+            _mark(small, (f["pos"][0], f["pos"][1], 0.05), 0.09, (0.95, 0.25, 0.2, 1))
+            _paste(frame, small.render(), "br")
+        if font is not None and f.get("hud"):
+            _hud(frame, f["hud"], rb.get("name", "robot"), scene_name, font, fsize)
+        frames.append(frame)
     renderer.close()
+    if small is not None:
+        small.close()
     mediapy.write_video(job["out"], frames, fps=tr["fps"])
     print(f"video {job['out']}: {len(frames)} frames at {tr['fps']:g} fps, {w}x{h}, joints {len(joint_adr)} of the model's, "
           f"pose from the {tr.get('source', 'truth')}", flush=True)

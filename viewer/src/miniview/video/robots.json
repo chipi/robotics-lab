@@ -9,6 +9,7 @@
       "free_joint": "trunk_base_freejoint",
       "home_keyframe": "STAND",
       "keyframes_from": "scene_backlash.xml",
+      "eye_camera": "head_camera",
       "stand_z": 0.116
     },
     "blender": {

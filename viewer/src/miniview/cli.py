@@ -268,7 +268,9 @@ def cmd_video(args) -> None:
     if not args.data:
         raise SystemExit("no data folder: MINIVIEW_DATA or --data")
     w, h = (int(v) for v in args.size.lower().split("x"))
-    print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to))
+    insets = tuple(i.strip() for i in (args.inset or "").split(",") if i.strip())
+    print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to,
+                       insets, args.inset_size))
 
 
 def cmd_render_serve(args) -> None:
@@ -359,6 +361,8 @@ def main() -> None:
     p.add_argument("--size", default="1280x720", help="WIDTHxHEIGHT")
     p.add_argument("--from", dest="t_from", type=float)
     p.add_argument("--to", dest="t_to", type=float)
+    p.add_argument("--inset", help="small views in the bottom corners: eye (the robot's camera), top (the room from above), comma-separated")
+    p.add_argument("--inset-size", type=float, default=0.28, help="an inset's side as a share of the video's height")
     p.set_defaults(fn=cmd_video)
     p = sub.add_parser("render-serve", help="the render service: runs to videos for the pages, one job at a time (ADR-0017)")
     p.add_argument("--host", default="127.0.0.1")
