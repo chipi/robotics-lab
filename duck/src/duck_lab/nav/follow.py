@@ -26,6 +26,12 @@ WALK_MPS = 0.3
 # trial 5, a contact in phase 1 run 12). Close to an obstacle or a drop the duck turns while walking at
 # the slowest speed it walks at instead, as upstream's brain creeps forward rather than pivot by a wall.
 ARC_MPS = 0.2
+# Turning this hard within an obstacle's margin, the duck walks at ARC_MPS (RFC-0012's caution pace): the apartment's
+# goal 12 (2026-11-17) cut the office cabinet's corner at WALK_MPS turning 0.5-0.8 rad/s, 7 cm from it (margin 12 cm).
+SLOW_YAW_RAD_S = 0.4
+# The margin's cost alone missed goal 11 of run apartment-1117b (0.3 m/s at 0.7-1.0 rad/s, 17 to 7 cm off the cabinet, the
+# pose's cell under MARGIN_COST): measured clearance under this slows a hard turn too.
+SLOW_CLEAR_M = 0.25
 MAX_YAW_RAD_S = 1.0
 YAW_GAIN = 1.5
 
@@ -62,9 +68,9 @@ def lookahead(path: list, pose: tuple, start_index: int, dist_m: float = LOOKAHE
 
 
 def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = False, pivot_ok: bool = True,
-         pivot_vx: float = 0.0) -> tuple:
+         pivot_vx: float = 0.0, close: bool = False) -> tuple:
     """One control step. pose = (x, y, yaw) in the path's frame; near = the duck is within an obstacle's
-    margin (shorter lookahead); pivot_ok = there is room to turn on the spot (else a turn is an arc at
+    margin (shorter lookahead); close = an obstacle is within SLOW_CLEAR_M (a hard turn slows); pivot_ok = there is room to turn on the spot (else a turn is an arc at
     ARC_MPS, which the caller must check has clear floor ahead); pivot_vx = the forward speed a turn on the spot
     is sent with, against the robot's own creep (calibration/<robot>.json "pivot"). Returns (Twist, done)."""
     x, y, yaw = pose
@@ -93,4 +99,4 @@ def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = Fals
         # challenge 6 seed 3: 13 deg in 15 s; sim/probes/pivot_start.py, 1 slow start in 5 at -0.06, none at 0).
         return Twist(0.0 if kicking else pivot_vx, math.copysign(KICK_RAD_S if kicking else TURN_RAD_S, err)), False
     vyaw = max(-MAX_YAW_RAD_S, min(MAX_YAW_RAD_S, YAW_GAIN * err))
-    return Twist(WALK_MPS, vyaw), False
+    return Twist(ARC_MPS if (near or close) and abs(vyaw) >= SLOW_YAW_RAD_S else WALK_MPS, vyaw), False

@@ -94,6 +94,32 @@ check("returns from inside a hole are 'below', never 'floor' (the explorer trust
       any(p[3] == "below" for p in hole_pts) and not any(p[3] == "floor" and p[1] > 0.14 for p in hole_pts),
       sorted({p[3] for p in hole_pts}))
 
+# A drop with no return at all (challenge 12: a table edge over a floor out of range). Where a beam that should meet the
+# floor within the sensor's range returns nothing, there is no floor that near: the floor is at least as far down as the
+# beam's lowest point in range. depth_points gives that as a "below" point where the floor should have been, so a glance
+# traces the edge and the forward sensor suspects it (challenge 12 seed 1: every glance read "floor", and the duck
+# walked the edge for 60 s instead of refusing).
+from duck_lab.nav.cliff import EXTRA_M, NO_TARGET_RANGE_M  # noqa: E402
+
+none_beyond = frame_for(st)
+h0, q0 = sensor_pose(st)
+for i, beam in enumerate(BEAMS):
+    dd = rotate(q0, beam)
+    if dd[2] < -0.01 and (-h0 / dd[2]) * math.hypot(dd[0], dd[1]) > 0.45:
+        none_beyond["distance_mm"][i], none_beyond["status"][i] = 0, 255
+nb = _dp(none_beyond, st)
+below_nb = [p for p in nb if p[3] == "below"]
+check("no return where the floor should be: 'below' points, placed where the floor should have been (beyond 0.45 m)",
+      below_nb and all(math.hypot(p[0] - 0.08, p[1]) > 0.42 for p in below_nb), [tuple(round(v, 2) for v in p[:3]) for p in below_nb[:3]])
+check("... at least as far down as the beam's lowest point in range, past cliff.EXTRA_M",
+      all(p[2] < -EXTRA_M for p in below_nb), sorted(round(p[2], 2) for p in below_nb)[-3:])
+check("... and the floor before the edge is still floor", any(p[3] == "floor" for p in nb))
+up = {"distance_mm": [0] * 64, "status": [255] * 64}
+level_up = state(pitch_deg=-30.0)                  # the head pitched up: no beam meets the floor in range
+check("no return from beams that never meet the floor in range says nothing (not a drop)",
+      not any(p[3] == "below" for p in _dp(up, level_up)), sorted({p[3] for p in _dp(up, level_up)}))
+check("the range used is the simulated sensor's", NO_TARGET_RANGE_M == 4.0)
+
 from duck_lab.nav.cliff import extend_edge  # noqa: E402
 
 seen = [(0.0, -0.7), (0.1, -0.71), (0.2, -0.7)]          # 20 cm of a stairwell's edge, along x

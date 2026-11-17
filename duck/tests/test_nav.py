@@ -110,6 +110,20 @@ check("a pivot kicks standing (vx 0) and holds with the robot's pivot speed", tw
 tw_ba, _ = step(path, (0.0, 0.0, math.radians(120)), 62.0, FollowState(), pivot_ok=False, pivot_vx=-0.06)
 tw_bw, _ = step(path, (0.0, 0.0, 0.0), 63.0, FollowState(), pivot_vx=-0.06)
 check("an arc and a walk ignore the pivot speed", tw_ba.vx == 0.2 and tw_bw.vx == 0.3, (tw_ba, tw_bw))
+# Turning hard within an obstacle's margin, the duck walks slower (RFC-0012's caution pace): the apartment's goal 12
+# (2026-11-17) cut the office cabinet's corner at 0.3 m/s turning 0.5-0.8 rad/s, 7 cm from it against the 12 cm margin.
+off = (0.0, 0.0, math.radians(-20))       # walking with the path 20 deg to the left: 0.52 rad/s, under the 45 deg pivot
+tw_hard_near, _ = step(path, off, 70.0, FollowState(), near=True)
+tw_hard_far, _ = step(path, off, 71.0, FollowState(), near=False)
+tw_straight_near, _ = step(path, (0.0, 0.0, 0.0), 72.0, FollowState(), near=True)
+check("turning hard near an obstacle: the slow pace", abs(tw_hard_near.vyaw) >= 0.4 and tw_hard_near.vx == 0.2,
+      tw_hard_near)
+check("... not in the open, nor walking straight near one", tw_hard_far.vx == 0.3 and tw_straight_near.vx == 0.3,
+      (tw_hard_far, tw_straight_near))
+# The margin's cost missed it: the apartment's goal 11 (2026-11-17, run apartment-1117b) turned 0.7-1.0 rad/s at 0.3 m/s
+# from 17 to 7 cm off the cabinet with near false. Measured clearance under SLOW_CLEAR_M slows a hard turn too.
+tw_hard_close, _ = step(path, off, 73.0, FollowState(), close=True)
+check("turning hard close to an obstacle by clearance: the slow pace", tw_hard_close.vx == 0.2, tw_hard_close)
 
 # A goal beyond what mapd has seen: unknown ground, not refused.
 small = CostGrid.from_map_grid(room(w=10, h=10))

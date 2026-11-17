@@ -35,6 +35,8 @@ def along_beam(mm: float, beam: tuple) -> float:
     """A zone's reading (mm) as the distance along its beam (m)."""
     return mm / 1000.0 if RANGE == "radial" else mm / 1000.0 / beam[0]
 VALID = {5, 9}
+NO_TARGET = 255           # the sensor's "nothing out there" status (VL53L5CX; the simulator's too)
+NO_TARGET_RANGE_M = 4.0   # its range: no target means nothing nearer along the beam (microduck_rl sim/tof.py MAX_RANGE)
 LOOK_M = 0.7           # only floor expected within this horizontal distance is checked
 EXTRA_M = 0.06         # a return this much further than the floor (along the beam's drop) is a drop
 MIN_ZONES = 2          # zones that must agree, in the central columns
@@ -139,10 +141,18 @@ def depth_points(frame: dict, state: dict) -> list:
     c, s_ = math.cos(-yaw), math.sin(-yaw)
     out = []
     for i, beam in enumerate(BEAMS):
+        d = rotate(q, beam)
         if frame["status"][i] not in VALID or frame["distance_mm"][i] <= 0:
+            # no return where the beam meets the floor within range: no floor that near (challenge 12, a table edge
+            # over a floor out of range). The floor is at least as far down as the beam's lowest point in range; the
+            # point is put where the floor should have been, the near side of the hole.
+            if frame["status"][i] == NO_TARGET and d[2] < 0 and -height / d[2] <= NO_TARGET_RANGE_M and \
+                    height + NO_TARGET_RANGE_M * d[2] < -EXTRA_M:
+                t = -height / d[2]
+                hx, hy = t * d[0], t * d[1]
+                out.append((sx + c * hx - s_ * hy, sy + s_ * hx + c * hy, height + NO_TARGET_RANGE_M * d[2], "below"))
             continue
         r = along_beam(frame["distance_mm"][i], beam)
-        d = rotate(q, beam)
         hx, hy = r * d[0], r * d[1]
         h = math.hypot(hx, hy)
         zz = height + r * d[2]

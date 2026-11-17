@@ -28,7 +28,7 @@ from pathlib import Path
 from duck_lab.nav import cliff
 from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
-from duck_lab.nav.follow import FollowState, Twist, step, wrap
+from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
@@ -774,9 +774,10 @@ class Navigator:
                     continue
             near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) >= MARGIN_COST
             nearest_drop = min((math.dist(pose[:2], d) for d in self.drops + self.edges), default=math.inf)
-            room = clearance(costs, pose[:2], PIVOT_OBSTACLE_M)
+            room = clearance(costs, pose[:2], max(PIVOT_OBSTACLE_M, SLOW_CLEAR_M))
             pivot_ok = room >= PIVOT_OBSTACLE_M and self._pivot_clear_of_drops(pose)
-            tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok, pivot_vx=self.pivot_vx)
+            tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok, pivot_vx=self.pivot_vx,
+                            close=room < SLOW_CLEAR_M)
             self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
                 self.move(Twist())
@@ -827,7 +828,8 @@ class Navigator:
                     room >= TIGHT_PIVOT_M and self._pivot_clear_of_drops(pose):
                 # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
-                tw, done = step(path, pose, now, st, near=near, pivot_ok=True, pivot_vx=self.pivot_vx)
+                tw, done = step(path, pose, now, st, near=near, pivot_ok=True, pivot_vx=self.pivot_vx,
+                                close=room < SLOW_CLEAR_M)
                 if not tight:
                     tight = True
                     self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm,
