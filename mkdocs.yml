@@ -84,6 +84,7 @@ nav:
     - RFC-0011 — Robots drawn as themselves: rfc/RFC-0011-robot-models.md
     - RFC-0012 — Look far, get ready early: rfc/RFC-0012-look-far.md
     - RFC-0013 — The robot's eye: rfc/RFC-0013-robot-eye.md
+    - RFC-0014 — Mission Control: rfc/RFC-0014-mission-control.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md
