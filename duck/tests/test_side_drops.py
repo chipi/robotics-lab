@@ -3,7 +3,7 @@
 import math
 import sys
 
-from duck_lab.nav.side_drops import (SUSPECT_FRAMES, SuspectMemory, continuation, continues, edge_axis, edge_from_glance,
+from duck_lab.nav.side_drops import (SUSPECT_FRAMES, SuspectMemory, below_counts, continuation, continues, edge_axis, edge_from_glance,
                                      head_settled, in_the_way, look_targets)
 
 failures = []
@@ -22,6 +22,15 @@ check("a cell is suspected on its SUSPECT_FRAMES-th below-floor frame, not befor
       all(not g for g in got[:-1]) and got[-1] == [(20, 10)], got)
 check("its point is the cell's centre", m.points() == [(1.0, 0.5)], m.points())
 check("a suspected cell is not reported again", m.add_frame([(1.0, 0.5, "below")]) == [])
+
+# A below-floor return counts toward a suspicion only when it is deep enough for its range: a far floor return read just
+# past cliff.EXTRA_M (6 cm) is the trunk's pitch, not a hole (the false suspicions that closed challenge 10's goal: 6.6-7.9
+# cm below, 1.1-2.4 m away). Replayed over 2 days of runs, 3.5 cm a metre: false cells 92 -> 17, drops suspected before
+# the closest approach 157 -> 151 of 180, the lead unchanged (17 s).
+check("a return 8 cm below the floor 0.5 m away counts (it needs 6 + 1.75 cm)", below_counts(-0.08, 0.5))
+check("... 1.5 m away it does not (it needs 6 + 5.25 cm)", not below_counts(-0.08, 1.5))
+check("a real drop's floor (11 cm and deeper) counts 1.4 m away", below_counts(-0.11, 1.4))
+check("the threshold at the duck is cliff.EXTRA_M", below_counts(-0.0601, 0.0) and not below_counts(-0.0599, 0.0))
 
 # The ratio: a cell seen as floor about as often as below is not suspected.
 r = SuspectMemory()

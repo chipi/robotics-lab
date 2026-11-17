@@ -31,9 +31,9 @@ from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
-from duck_lab.nav.side_drops import (SuspectMemory, continuation, continues, edge_from_glance, head_settled, in_the_way,
+from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, path_length, plan, thin
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
 
 TICK_S = 0.1
 REPLAN_S = 3.0
@@ -122,6 +122,10 @@ EDGE_INFLATE_M = 0.50
 SUSPECT_LETHAL_M = EDGE_LETHAL_M
 SUSPECT_INFLATE_M = EDGE_INFLATE_M
 CONFIRM_M = 0.9
+# a goal inside a drop's ring is held off at the nearest place out of it this near; farther, it is across the drop
+# (challenges 8 and 9: refused). Under the judge's REACHED_M 0.25 with room for the following.
+HOLD_OFF_M = 0.20
+HOLD_DETOUR = 1.25         # and only on this side of the drop: the way there no longer than this times the straight line, + 0.3 m
 GLANCED_M = 0.4              # a suspicion this near one already looked at is not looked at again
 # A suspicion this near a measured edge is that drop going on, confirmed without a look (challenge 10 seed 1 looked 7
 # times walking along one ledge); new suspicions join one by one as the duck walks, so the drop grows along its length.
@@ -545,8 +549,8 @@ class Navigator:
         if fv.ok and pose is not None:
             c, s_ = math.cos(pose[2]), math.sin(pose[2])
             seen = []
-            for ax, ay, _, kind in fv.rel:
-                if kind in ("floor", "below"):
+            for ax, ay, h, kind in fv.rel:
+                if kind == "floor" or (kind == "below" and below_counts(h, math.hypot(ax, ay))):
                     x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
                     seen.append((x, y, kind))
                     if kind == "floor":
@@ -665,6 +669,7 @@ class Navigator:
         tight = False        # a tight pivot was logged this leg
         reflex_stops = 0
         progress = Progress(start)
+        held_at = None       # where a goal inside a drop's ring is held off at (nearest_free), once aimed at
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
@@ -688,9 +693,23 @@ class Navigator:
                 grid = grid.with_blocked(self.edges, EDGE_LETHAL_M, EDGE_INFLATE_M)   # edges a glance measured
                 suspected = self.suspects.points()        # suspected drops: a smaller ring until a glance confirms them
                 unsuspected = grid
+                # a goal inside a known drop's ring: aim at the nearest place out of it, within HOLD_OFF_M (the
+                # operator, 2026-11-17: go as close as is safe and say so); farther, it is across the drop: refused
+                gc = unsuspected.cell(*goal)
+                inside = unsuspected.inside(*gc) and unsuspected.at(*gc) >= LETHAL_COST
+                aim = (nearest_free(unsuspected, goal, HOLD_OFF_M) or goal) if inside else goal
+                if aim != goal and aim != held_at:
+                    held_at = aim
+                    self.record(event="held_off", goal=goal, aim=[round(v, 3) for v in aim],
+                                decision=decision("held_off", "the goal is inside a drop's ring: going as close as is safe",
+                                                  held_off_m=round(math.dist(aim, goal), 3), hold_off_max_m=HOLD_OFF_M))
                 if suspected:
                     grid = grid.covering(suspected).with_blocked(suspected, SUSPECT_LETHAL_M, SUSPECT_INFLATE_M)
-                raw = plan(grid, pose[:2], goal)
+                raw = plan(grid, pose[:2], aim)
+                if raw and aim != goal and path_length([pose[:2]] + raw) > HOLD_DETOUR * math.dist(pose[:2], aim) + 0.3:
+                    # the way to the held-off place goes round the drop: that place is across it, not this side of it
+                    # (challenges 8 and 9: 13 of 20 refusals would have walked 2.4-7 m round the drop instead)
+                    raw = None
                 if raw is None and suspected:
                     # no way with the suspicions, one without them: the ones in that way not looked at yet are to be
                     # looked at, not a reason to refuse (challenge 11 seed 3: a false one 0.15 m from the goal). Within
@@ -761,8 +780,10 @@ class Navigator:
             self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
                 self.move(Twist())
-                self.record(event="reached", goal=goal, pose=pose)
+                held = round(math.dist(held_at, goal), 3) if held_at else None
+                self.record(event="reached", goal=goal, pose=pose, held_off_m=held)
                 return {"status": "reached", "time_s": round(now - start, 1), "reflex_stops": reflex_stops,
+                        **({"held_off_m": held, "why": "held off: the goal is inside a drop's ring"} if held else {}),
 
                         "pose": [round(v, 3) for v in pose]}
             pts = []

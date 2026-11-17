@@ -321,6 +321,20 @@ check("... and the edge gate less the pivot drift (7.9 cm max, today's runs) kee
       PIVOT_EDGE_M - 0.079 >= 0.15 + 0.025 - 1e-9, PIVOT_EDGE_M)
 check("the cliff stop's gate is unchanged", PIVOT_DROP_M == 0.30)
 
+# ---- the forward sensor's suspicions use the range-dependent threshold (side_drops.below_counts) -----------------------
+def suspicions_after(drop_m):
+    nv = navigator()
+    for k in range(5):
+        nv._on_state(robot_state(1_000_000_000 + k * 50 * MS))
+    for k in range(8):
+        nv._on_frame(frame_for(robot_state(0), 1_000_000_000 + 200 * MS, 300 + k, floor_until_m=0.4, drop_m=drop_m))
+    return len(nv.suspects.suspected)
+
+
+check("floor that falls 7 cm beyond 0.4 m raises no suspicion (it reads as below, but not for its range)",
+      suspicions_after(0.07) == 0, suspicions_after(0.07))
+check("a 30 cm drop there does", suspicions_after(0.3) > 0, suspicions_after(0.3))
+
 # ---- the stall rule: progress is measured on the map as it is now ----------------------------------------------------
 pr = Progress(0.0)
 check("a leg getting shorter is progress", not pr.update(2.5, 1.0, 0) and not pr.update(2.3, 10.0, 0))

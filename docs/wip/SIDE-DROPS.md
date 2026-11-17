@@ -199,6 +199,35 @@ The failures left:
 - Challenges 6 seed 2, 7 seed 3: refused for no room to turn; both fail the same way on the
   16th's code.
 
+## Measured, then two more fixes (2026-11-17, afternoon)
+
+- **The belief drifts in open scenes.** `sim/probes/belief_drift.py`: |belief − truth| p95 13–14 cm
+  and up to 20 cm in challenges 10 and 11 (its change over 10 s p95 10 cm), against 1.6–3.9 cm in
+  challenges 1, 5 and 8. It grows with distance walked, along the heading, with no jumps
+  (`sim/probes/scale_by_speed.py`: truth / belief 0.987–0.998 walking straight in challenges 1 and 5,
+  1.029–1.071 in 10 and 11). The same gait in every scene, so mapd's corrections are the likely cause,
+  not the odometry scale; raw odometry is not recorded, so this is not proven. The error budget's
+  2.5 cm belief holds in the short scenes only; open, for challenge 17.
+- **False suspicions** (`sim/probes/false_suspects.py`): none in 40 drop-free runs; the ones that
+  closed challenge 10's goal came from floor 1.1–2.4 m away read 6.6–7.9 cm "below", just past
+  cliff.EXTRA_M (6 cm), most likely the trunk's pitch. **Fix:** a below return feeds a suspicion only
+  when 6 cm + 3.5 cm per metre of range under the floor (`side_drops.below_counts`). Replayed over 2
+  days of runs: false cells 92 → 17, drops suspected before the closest approach 157 → 151 of 180,
+  the lead unchanged (17 s).
+- **A goal inside a drop's ring** (the operator: go as close as is safe and say so). **Fix:** the
+  nearest free place within 0.20 m of the goal is aimed at and reported ("reached, held off"); only
+  when the way there is no longer than 1.25 × the straight line + 0.3 m, so a goal across a drop is
+  still refused (`sim/probes/hold_off_replay.py`: all 20 recorded refusals of challenges 8 and 9 stay
+  refusals; 1.5 × let one walk 2.4 m round the drop).
+- **A fall during a state-stream stall** (challenge 9 seed 10): the robot's state stopped for 655 ms
+  just after a cliff stop, while the physics ran on. `sim/probes/state_stalls.py`: 2 stalls over
+  200 ms in 132 runs. Cause unknown, outside the navigator; logged apart for now (the operator).
+
+All 11 challenges with both fixes, 10 seeds each: 1–4 10/10, 5 9/10, 6 8/10, 7 8/10, 8 10/10,
+9 9/10 (the stall's fall), 10 10/10, 11 10/10: 104/110, every challenge at the bar (RFC-0008 §8:
+100 % safety, the stall apart; at least 8/10 reach or refuse). The other failures are reflex loops
+and turn refusals near walls (challenges 5–7): the planner's work, not the drops'.
+
 ## Not covered
 
 - False suspicions near walls (challenge 10 seeds 5 and 8: 0.28–0.6 m from the drop, 0.15–0.25 m

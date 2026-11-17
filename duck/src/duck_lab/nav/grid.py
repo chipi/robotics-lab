@@ -222,6 +222,26 @@ ESCAPE_M = 0.5          # a duck stopped at the cliff-stop distance (45 cm) is i
 ESCAPE_COST = 100.0
 
 
+def nearest_free(grid: CostGrid, goal: tuple, within_m: float) -> tuple | None:
+    """The centre of the cell nearest goal (map metres) that is not lethal, within within_m of it; None if there is none.
+    A goal inside a drop's ring is held off at it (the operator, 2026-11-17)."""
+    g = grid.cell(*goal)
+    if grid.inside(*g) and grid.at(*g) < LETHAL_COST:
+        return grid.centre(*g)
+    reach = math.ceil(within_m / grid.res)
+    best = None
+    for dx in range(-reach, reach + 1):
+        for dy in range(-reach, reach + 1):
+            c = (g[0] + dx, g[1] + dy)
+            if not grid.inside(*c) or grid.at(*c) >= LETHAL_COST:
+                continue
+            p = grid.centre(*c)
+            d = math.dist(p, goal)
+            if d <= within_m and (best is None or d < best[0]):
+                best = (d, p)
+    return best[1] if best else None
+
+
 def plan(grid: CostGrid, start: tuple, goal: tuple) -> list | None:
     """A* from start to goal (map metres), 8-connected. The path as cell centres in metres, from the
     start's cell to the goal's, or None when the goal cannot be reached. The goal may not be lethal;

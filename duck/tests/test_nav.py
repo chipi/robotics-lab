@@ -298,5 +298,18 @@ x, y, yaw = loc.pose()
 check("1 m along odom x is 1 m along map y when the map is turned 90 deg",
       abs(x - 3.0) < 1e-9 and abs(y - 2.0) < 1e-9 and abs(yaw - math.pi / 2) < 1e-9, (x, y, yaw))
 
+# A goal inside a drop's ring: the duck goes as close as is safe (the operator, 2026-11-17), so the planner needs the free
+# cell nearest the goal within reach; none within it (a goal across a drop) leaves the refusal.
+from duck_lab.nav.grid import nearest_free  # noqa: E402
+
+ring = CostGrid.from_map_grid({"res_m": 0.05, "origin": [0.0, 0.0], "width": 40, "height": 20, "cells": "." * 800})
+ring = ring.with_blocked([(1.0, 0.75)], 0.32, 0.5)              # a drop point; the goal 0.3 m from it, inside its ring
+held = nearest_free(ring, (1.0, 0.45), 0.2)
+check("a goal inside a ring: the nearest free cell, within reach of it, out of the ring",
+      held is not None and math.dist(held, (1.0, 0.45)) <= 0.2 and ring.at(*ring.cell(*held)) < LETHAL_COST
+      and math.dist(held, (1.0, 0.75)) > 0.32, held)
+check("none within reach: no hold-off (refused as before)", nearest_free(ring, (1.0, 0.75), 0.2) is None)
+check("a free goal is its own nearest free cell", math.dist(nearest_free(ring, (0.3, 0.3), 0.2), (0.3, 0.3)) < 0.05)
+
 print("NAV", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
