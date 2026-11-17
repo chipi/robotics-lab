@@ -51,3 +51,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   go](RFC-0012-look-far.md) (Proposed, 2026-11-16)
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
+- [RFC-0015 — Nav2 on the simulated duck: learn how the standard stack works, and
+  compare](RFC-0015-nav2-comparison.md) (Accepted, 2026-11-18)

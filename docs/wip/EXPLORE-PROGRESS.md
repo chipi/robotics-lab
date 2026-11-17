@@ -209,3 +209,20 @@ navigator's memory (24 s old) held no obstacle point within 0.55 m of the duck a
 cell at 0.25 m, the truth 0.08 m: next, the depth frames before each contact, to tell a corner never
 seen up close (a look before turning past it, scanning beside the way) from one seen but misplaced
 (the drift).
+
+## The gate on the branch: challenge 11 below the bar, no merge (2026-11-18)
+
+Challenges 1-11, ten seeds each, on the branch with the graded margin ring (`grid.margin_cost`,
+edge cost 100): safety held (no contact, no fall), 6, 7 and 10 at 8 of 10, **challenge 11 at 6 of
+10**: three "reached" 0.26-0.30 m from the goal (over the 0.25 m bar) and one refusal. My reading,
+not yet checked: the graded ring keeps the plan farther from walls, so the walks are longer and the
+belief has drifted more by the end. Edge cost 40 instead of 100, challenge 11 again
+(`runs/gate3-ch11`): **7 of 10** — two "reached" at 0.27 and 0.32 m, one stall 2.66 m out (s2).
+Main's last run of challenge 11: 8 of 10.
+
+So the branch is not merged. What the bar says here is the trade the margin ring makes: more room
+from walls (the contacts in b3-b5) for more drift at the goal. Edge 40 is kept on the branch (better
+than 100 on the only challenge that failed). Not yet looked at: s2's stall, and whether the misses
+are the drift (belief vs truth at the end) or the hold-off (the goal moved out of the ring). That is
+the next check before another gate; the fix for the drift itself is the localization work of
+challenge 21, not a navigator constant.

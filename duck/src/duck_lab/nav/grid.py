@@ -20,18 +20,21 @@ INFLATE_M = 0.28
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a
 # long detour through unmapped corridor toward the stairs rather than pass the office cabinet.
 MARGIN_COST = 10.0
-MARGIN_EDGE_COST = 100.0   # the margin ring's cost at the lethal edge (margin_cost)
+# 40, not 100: at 100 challenge 11 (ten seeds) walked longer round the hole (seed 6: 5.5 m against 4.4 m flat), drifted
+# more, and three seeds stopped 0.26-0.30 m from the goal (6 of 10 passed, against 8 flat).
+MARGIN_EDGE_COST = 40.0    # the margin ring's cost at the lethal edge (margin_cost)
 
 
 def margin_cost(d: float, lethal_m: float, inflate_m: float) -> float:
     """The margin ring's cost at d from an obstacle: MARGIN_EDGE_COST at the lethal edge, falling quadratically to
-    FREE_COST at inflate_m, as Nav2's inflation decays. A flat ring (MARGIN_COST everywhere in it) gave the shortest path no
-    reason to keep off an obstacle once it was in the ring, so plans hugged the lethal edge round corners: exploring b5 r2's
-    plans passed the corridor console's corner at 0.115 m, the following added ~3 cm, and the trunk touched it at 0.075 m
-    (sim/probes/corner_seen.py: the corner had been seen within 1 cm). Replayed on 109 recorded plans
-    (sim/probes/margin_replay.py): plans within 0.15 m of an obstacle 32 flat, 24 with the edge at 10, 13 at 40, 7 at 100;
-    none became unreachable; median length unchanged, the worst +75 %. The lethal zone, and with it what fits through a
-    doorway, does not change."""
+    FREE_COST at inflate_m. Nav2's inflation layer decays exponentially (its docs; docs/wip/PRIOR-ART.md) and has an
+    inscribed level this ring does not; the shape is ours, the idea theirs. A flat ring (MARGIN_COST everywhere in it) gave
+    the shortest path no reason to keep off an obstacle once it was in the ring, so plans hugged the lethal edge round
+    corners: exploring b5 r2's plans passed the corridor console's corner at 0.115 m, the following added ~3 cm, and the
+    trunk touched it at 0.075 m (sim/probes/corner_seen.py: the corner had been seen within 1 cm). Replayed on 109 recorded
+    plans (sim/probes/margin_replay.py): plans within 0.15 m of an obstacle 32 flat, 24 with the edge at 10, 13 at 40, 7 at
+    100; none became unreachable; median length unchanged, the worst +62 % at 40. The lethal zone, and with it what fits
+    through a doorway, does not change."""
     u = (inflate_m - d) / (inflate_m - lethal_m)
     return FREE_COST + (MARGIN_EDGE_COST - FREE_COST) * max(0.0, min(1.0, u)) ** 2
 # An obstacle's own cell is infinite: never crossed. The lethal zone grown round it is LETHAL_COST:
