@@ -3,7 +3,9 @@ challenge's runs: every stretch of ticks commanded as a pivot (no forward speed,
 with how far the trunk moved, how much it turned, and how its distance to the nearest wall changed; and the last seconds
 before each refusal, tick by tick.
 
-    uv run python sim/probes/turn_drift.py /work/robotics-lab/data ch5
+    uv run python sim/probes/turn_drift.py /work/robotics-lab/data ch5 [run-20261117]
+
+The optional third argument keeps only runs named from it on (runs recorded with the pivot's creep compensation).
 """
 
 import json
@@ -32,8 +34,11 @@ def kind_of(cmd) -> str:
 
 def main() -> None:
     data, prefix = Path(sys.argv[1]), sys.argv[2]
+    since = sys.argv[3] if len(sys.argv) > 3 else ""
     stretches = {"pivot": [], "arc": []}
     for run_dir in sorted((data / "runs" / "duck").glob(f"{prefix}-*/*")):
+        if run_dir.name < since:
+            continue
         scene = json.loads((data / "scenes" / run_dir.parent.name / "scene.json").read_text())
         walls = [b for b in scene.get("boxes", []) if b.get("z1", 1) > 0.02]
         near = lambda tr: min(box_distance(tr[0], tr[1], b) for b in walls)  # noqa: E731
@@ -70,6 +75,9 @@ def main() -> None:
         print(f"\n{kd}: {len(ss)} stretches; moved per full turn (turns of 20 deg or more): "
               f"p50 {rate[len(rate) // 2]:.3f} m, p95 {rate[int(len(rate) * 0.95)]:.3f} m" if rate else f"\n{kd}: {len(ss)} stretches")
         print(f"   closer to the wall by: p50 {closer[len(closer) // 2]:+.3f} m, p95 {closer[int(len(closer) * 0.95)]:+.3f} m, max {closer[-1]:+.3f} m")
+        moved = sorted(s["moved_m"] for s in ss)
+        print(f"   moved per stretch: p50 {moved[len(moved) // 2]:.3f} m, p95 {moved[int(len(moved) * 0.95)]:.3f} m, "
+              f"max {moved[-1]:.3f} m")
 
 
 if __name__ == "__main__":

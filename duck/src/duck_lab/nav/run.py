@@ -26,11 +26,13 @@ import time
 from pathlib import Path
 
 from duck_lab.nav import cliff
-from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, extend_edge, obstacle_points
+from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
-from duck_lab.nav.follow import FollowState, Twist, step
+from duck_lab.nav.follow import FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
+from duck_lab.nav.side_drops import (SuspectMemory, continuation, continues, edge_from_glance, head_settled, in_the_way,
+                                     look_targets)
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, path_length, plan, thin
 
 TICK_S = 0.1
@@ -40,6 +42,26 @@ REPLAN_S = 3.0
 # length, not straight-line distance, so a detour that first leads away is still progress.
 PROGRESS_M = 0.10
 NO_PROGRESS_S = 15.0
+
+
+class Progress:
+    """The stall rule's bookkeeping. `known` counts what the map remembers of drops: when it grows, the best path length so
+    far was measured on a map without them and progress counts again from the path as it is (challenge 11 seed 5: a pit
+    found ahead made the way 4.15 m against a 2.54 m best, and the leg stalled while walking round it)."""
+
+    def __init__(self, start: float):
+        self.best, self.at, self.known = math.inf, start, None
+
+    def update(self, left: float, now: float, known: int) -> bool:
+        """True: stalled."""
+        if known != self.known and self.known is not None:
+            self.best, self.at = left, now
+        elif left < self.best - PROGRESS_M:
+            self.best, self.at = left, now
+        elif now - self.at > NO_PROGRESS_S:
+            return True
+        self.known = known
+        return False
 FOLLOW_SPACING_M = 0.10
 # The depth reflex: an obstacle return inside the corridor the duck sweeps (its 8.3 cm radius and 4 cm)
 # within REFLEX_AHEAD_M of the trunk stops it; so does any return at all within EMERGENCY_MM of the
@@ -55,6 +77,10 @@ CLIFF_STOP_M = 0.60
 # few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
 # does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
 DROP_FRAMES = 3
+# After a cliff stop the duck looks along the edge, LOOK_ALONG_M past each end of what it saw (side_drops.look_targets);
+# where the drop goes on there, or the look saw nothing, the hole is taken to go on CONTINUE_M past the seen end.
+LOOK_ALONG_M = 0.4
+CONTINUE_M = 1.0
 # The obstacle layer: what the depth sensor sees this close, every tick, joins the memory, and a new
 # point near the remaining path replans at once. mapd maps only at stops, so a face first seen while
 # walking (the cabinet's side, passed while turning into the office: run 6's touches) was not on the map.
@@ -71,12 +97,39 @@ PIVOT_DROP_M = 0.30
 PIVOT_OBSTACLE_M = LETHAL_M + 0.05
 ARC_CLEAR_MM = 300      # a 0.2 m radius arc (0.2 m/s at 1 rad/s) reaches ~0.2 m ahead, + the 8.3 cm footprint
 ARC_AHEAD_M = 0.25
+# The floor a turn while walking sweeps, for drops: the arc's reach (ARC_AHEAD_M and the footprint's 0.083 m and the
+# following's error, rounded up) from just outside the heading to well round the side it turns to.
+ARC_REACH_M = 0.45
+ARC_OUTER_DEG, ARC_INNER_DEG = 20.0, 120.0
 # No room for either: a pivot is still allowed while the clearance stays above this, rechecked every tick
 # - 2.5 cm more than the 8.3 cm footprint radius. Below it the duck stands and the leg is refused.
 TIGHT_PIVOT_M = 0.11
 BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
-EDGE_EXTEND_M = 0.15
 FLOOR_CELL_M = 0.05
+# Drop rings by what is known of the drop (docs/wip/SIDE-DROPS.md; the advisor's split, the operator's choice 2026-11-17).
+# Each is the turn gate of its kind plus the following's (~3 cm) and the belief's (~2.5 cm) error, so the duck can turn
+# on the spot wherever the planner may put it; each gate less the pivot's drift (max 7.9 cm over 87 pivots on 2026-11-17,
+# sim/probes/turn_drift.py) keeps the judge's 0.15 m and the belief. A cliff stop's rough points: grid.DROP_LETHAL_M (0.35)
+# and PIVOT_DROP_M (0.30). A drop edge a glance measured (-14/+6.4 cm aside, -18/+3 cm ahead, 54 glances): PIVOT_EDGE_M
+# 0.26 and 0.32 round it, which also keeps a path held at it out of the cliff check's 0.25 m corridor (0.305 with the
+# errors). 0.22 put such a path inside that corridor: the duck was stopped for the edge it had measured, and stood where
+# it was not allowed to turn. A suspected drop (side_drops.SuspectMemory) costs what it becomes when a glance confirms it
+# (a smaller ring, 0.25, let the duck walk where the confirmed ring then put it inside, unable to turn: challenge 11 seed
+# 1); one within CONFIRM_M triggers that glance, and a false one that closes the way is looked at, not refused for.
+PIVOT_EDGE_M = 0.26
+EDGE_LETHAL_M = 0.32
+EDGE_INFLATE_M = 0.50
+SUSPECT_LETHAL_M = EDGE_LETHAL_M
+SUSPECT_INFLATE_M = EDGE_INFLATE_M
+CONFIRM_M = 0.9
+GLANCED_M = 0.4              # a suspicion this near one already looked at is not looked at again
+# A suspicion this near a measured edge is that drop going on, confirmed without a look (challenge 10 seed 1 looked 7
+# times walking along one ledge); new suspicions join one by one as the duck walks, so the drop grows along its length.
+ABSORB_M = 0.15
+LOOK_FLOOR_Z_M = -0.116      # the floor in the trunk frame (stand height), where the glance aims
+LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG = 5, 3.0   # the sensor's yaw held this still over this many frames: the head is there
+LOOK_MAX_S, LOOK_COLLECT_S, HEAD_BACK_S = 3.0, 1.0, 2.0
+HEAD_JOINTS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
@@ -257,10 +310,15 @@ class Navigator:
         # Floor the depth sensor itself has seen, as FLOOR_CELL_M cells: mapd draws a stairwell as free
         # floor (upstream #599), and exploration trial 10 took a target inside one.
         self.floor_seen = set()
+        # Drops beside the way (docs/wip/SIDE-DROPS.md): suspected from the forward sensor's below-floor returns, then
+        # confirmed (into drops) or cleared by a glance; the places already looked at.
+        self.suspects = SuspectMemory()
+        self.glanced = []
         self._map_raw = None     # mapd's last grid (scaled), for the world record
         self._world_key = None
         self.tof.on_frame = self._on_frame
         self.drops = []      # where the cliff check found no floor, in map metres
+        self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.pivot_vx)
@@ -299,6 +357,111 @@ class Navigator:
             time.sleep(TICK_S)
         self.fix()
         return collecting_since is not None
+
+    @staticmethod
+    def _sensor_yaw(state: dict) -> float:
+        """The depth sensor's yaw against the trunk (deg), from the state the frame was paired with."""
+        w, x, y, z = state["frames"]["tof"]["quat"]
+        return math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
+
+    @staticmethod
+    def _sensor_dir(state: dict) -> tuple:
+        """The depth sensor's (yaw, pitch) against the trunk (deg)."""
+        w, x, y, z = state["frames"]["tof"]["quat"]
+        return Navigator._sensor_yaw(state), math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x)))))
+
+    def glance_at(self, target: tuple, pose: tuple) -> dict:
+        """Stand and look at the floor at target (map metres) with the head, to confirm or clear a suspected drop there
+        (docs/wip/SIDE-DROPS.md). The head is aimed with robot.look and held by resending; frames are used once the
+        sensor's own yaw has held still (the old glance read short from frames taken while the head was still turning),
+        for LOOK_COLLECT_S. What it saw: floor joins floor_seen and clears the suspicions it covers; a floor boundary with
+        below-floor returns beyond it (side_drops.edge_from_glance) is a drop, remembered with its edge extended. The head
+        then goes back to the joint angles it had (robot.head keeps a pose until told otherwise)."""
+        t0 = time.monotonic()
+        bearing = math.atan2(target[1] - pose[1], target[0] - pose[0])
+        rel = wrap(bearing - pose[2])
+        dist = math.dist(target, pose[:2])
+        before = (self._states[-1][1].get("joints") if self._states else None) or []
+        home = dict(zip(HEAD_JOINTS, before[5:9])) if len(before) == len(JOINTS) else None
+        fv0 = self._fv
+        yaw0 = self._sensor_yaw(fv0.state) if fv0 is not None and fv0.ok else 0.0   # where the sensor faced before
+        self.glanced.append(tuple(target))
+        try:
+            ans = self.robot.call("robot.look", {"x": dist * math.cos(rel), "y": dist * math.sin(rel),
+                                                 "z": LOOK_FLOOR_Z_M, "neck_pitch": 0.0}) or {}
+        except (RuntimeError, OSError) as e:
+            self.record(event="glance", decision=decision("glance", f"robot.look failed: {e}", target=list(target)))
+            return {"status": "failed"}
+        head = ans.get("head")
+        frames, seen, dirs, settled = [], None, [], None
+        while time.monotonic() - t0 < LOOK_MAX_S and (settled is None or time.monotonic() - settled < LOOK_COLLECT_S):
+            if head:
+                self.robot.call("robot.head", head)
+            self.move(Twist())
+            fv = self._fv
+            if fv is not None and fv is not seen and fv.ok and fv.pose is not None:
+                seen = fv
+                dirs.append(self._sensor_dir(fv.state))
+                if settled is None and head_settled(dirs, LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG):
+                    settled = time.monotonic()
+                if settled is not None:
+                    c, s_ = math.cos(fv.pose[2]), math.sin(fv.pose[2])
+                    frames.append([(fv.pose[0] + c * ax - s_ * ay, fv.pose[1] + s_ * ax + c * ay, kind)
+                                   for ax, ay, _, kind in fv.rel if kind in ("floor", "below")])
+            time.sleep(TICK_S)
+        rim, below, floor = edge_from_glance(frames, tuple(pose[:2]), bearing)
+        for x, y in floor:
+            self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+        cleared = self.suspects.clear(floor)
+        if rim:
+            cells = {(round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)) for x, y in rim + below}
+            self.edges.extend((cx * FLOOR_CELL_M, cy * FLOOR_CELL_M) for cx, cy in sorted(cells))
+            # what the look saw, not extended past it: a line fitted through a rim ran diagonally where the rim held the
+            # pit's far wall (challenge 10 seed 1) or went round a corner (challenge 11 seed 2), and its extension put the
+            # goal or the passage inside the ring. Rims are too noisy to tell a corner from a line (rms 3-4 cm round a
+            # corner, 8-10 cm along a straight ledge).
+        edge_m = min((math.dist(p, pose[:2]) for p in rim), default=None)
+        # back to where the head was, held until the sensor faces as it did
+        if home:
+            back = time.monotonic()
+            while time.monotonic() - back < HEAD_BACK_S:
+                self.robot.call("robot.head", home)
+                self.move(Twist())
+                fv = self._fv
+                if fv is not None and fv.ok and abs(self._sensor_yaw(fv.state) - yaw0) < LOOK_YAW_TOL_DEG:
+                    break
+                time.sleep(TICK_S)
+        # no frames: the head never settled, so nothing was seen; not floor (challenge 11 seed 5 recorded such a look as floor)
+        out = {"status": "drop" if rim else ("floor" if frames else "unseen"), "frames": len(frames), "rim": len(rim), "below": len(below),
+               "cleared": cleared, "edge_m": round(edge_m, 3) if edge_m is not None else None,
+               "time_s": round(time.monotonic() - t0, 2)}
+        self.record(event="glance", target=[round(v, 3) for v in target], pose=pose, **out,
+                    rim_points=[[round(v, 3) for v in p] for p in rim],      # what the edge was traced from, to trace it back
+                    decision=decision("glance", "a suspected drop near the way: looked at it with the head"
+                                      + (" and saw its edge" if rim else (" and saw floor" if floor else ", nothing seen")),
+                                      bearing_deg=round(math.degrees(rel)), distance_m=round(dist, 3), **out))
+        return {**out, "rim_points": rim}
+
+    def look_along(self, edge: list, heading: float, pose: tuple) -> list:
+        """After a cliff stop: look along the edge it saw, LOOK_ALONG_M past each end (side_drops.look_targets). Where the
+        look's rim reaches its target, or the look saw nothing, the hole is taken to go on CONTINUE_M past the seen end
+        (challenge 9's drop spans the room: the duck must still refuse); where it saw floor there, the hole ends before
+        it (challenge 11's pit: the way beside it stays open). The glances' own edges join self.edges. Returns, per side,
+        whether the hole was taken to go on."""
+        if not edge:
+            return []
+        out = []
+        for side, target in zip((-1, 1), look_targets(edge, heading, LOOK_ALONG_M)):
+            g = self.glance_at(target, pose)
+            goes_on = g.get("status") in ("failed", "unseen") or continues(g.get("rim_points") or [], target)
+            if goes_on:
+                self.drops.extend(continuation(edge, heading, side, CONTINUE_M))
+            out.append(goes_on)
+        self.record(event="edge_ends", pose=pose, goes_on=out,
+                    decision=decision("edge_ends", "looked along the edge of the drop it stopped at",
+                                      goes_on=out, look_along_m=LOOK_ALONG_M,
+                                      continue_m=CONTINUE_M))
+        return out
 
     def grid(self) -> CostGrid:
         g = self.mapd.call("map.grid", {"res_m": 0.05})   # mapd's finest: doorways stay open
@@ -381,10 +544,14 @@ class Navigator:
         fv = self._fv = FrameView(frame, state, dt_ms, pose)
         if fv.ok and pose is not None:
             c, s_ = math.cos(pose[2]), math.sin(pose[2])
+            seen = []
             for ax, ay, _, kind in fv.rel:
-                if kind == "floor":
+                if kind in ("floor", "below"):
                     x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
-                    self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+                    seen.append((x, y, kind))
+                    if kind == "floor":
+                        self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
+            self.suspects.add_frame(seen)
         if self.runlog and not self._logging_failed:
             try:
                 self.runlog.frame(self._sid, arrived, fv.payload())
@@ -410,19 +577,34 @@ class Navigator:
         return any((cx + dx, cy + dy) in self.floor_seen for dx in range(-r, r + 1) for dy in range(-r, r + 1)
                    if math.hypot(dx, dy) * FLOOR_CELL_M <= radius_m)
 
-    def _arc_clear(self, costs: CostGrid, pose: tuple) -> bool:
-        """Clear floor for a slow turn while walking: the depth sensor, the grid and the drop memory."""
+    def _pivot_clear_of_drops(self, pose: tuple) -> bool:
+        """Room to turn on the spot, as far as drops go: PIVOT_DROP_M from a cliff stop's points, PIVOT_EDGE_M from a
+        measured edge (each its ring less the following's and belief's error, so the duck can turn wherever the planner
+        may put it)."""
+        xy = pose[:2]
+        return all(math.dist(xy, d) >= PIVOT_DROP_M for d in self.drops) and \
+            all(math.dist(xy, d) >= PIVOT_EDGE_M for d in self.edges)
+
+    def _arc_clear(self, costs: CostGrid, pose: tuple, turn: float) -> bool:
+        """Clear floor for a slow turn while walking, turn > 0 to the left: the depth sensor, the grid ahead (for walls:
+        a cell lethal only for a drop's ring is left to the drop check) and the drop memory, where the arc sweeps: within
+        ARC_REACH_M, from ARC_OUTER_DEG on the outer side to ARC_INNER_DEG on the inner side. A drop anywhere ahead vetoed
+        every turn before (challenge 11 seed 1: a turn away from a pit at the side was refused)."""
         near = self.tof.nearest_mm
         if near is None or near < ARC_CLEAR_MM:
             return False
+        drops = self.drops + self.edges + self.suspects.points()
         ahead = (pose[0] + ARC_AHEAD_M * math.cos(pose[2]), pose[1] + ARC_AHEAD_M * math.sin(pose[2]))
         c = costs.cell(*ahead)
-        if costs.inside(*c) and costs.at(*c) >= LETHAL_COST:
+        if costs.inside(*c) and costs.at(*c) >= LETHAL_COST and \
+                all(math.dist(ahead, d) > DROP_LETHAL_M for d in drops):
             return False
-        for d in self.drops:
-            dist = math.dist(pose[:2], d)
-            bearing = math.atan2(d[1] - pose[1], d[0] - pose[0]) - pose[2]
-            if dist < CLIFF_STOP_M and math.cos(bearing) > math.cos(math.radians(60)):
+        side = 1.0 if turn >= 0 else -1.0
+        for d in drops:
+            if math.dist(pose[:2], d) >= ARC_REACH_M:
+                continue
+            b = math.degrees(wrap(math.atan2(d[1] - pose[1], d[0] - pose[0]) - pose[2])) * side
+            if -ARC_OUTER_DEG <= b <= ARC_INNER_DEG:
                 return False
         return True
 
@@ -432,13 +614,13 @@ class Navigator:
         g = self._map_raw
         if not g:
             return
-        key = (hash(g["cells"]), g["width"], g["height"], len(self.blocked), len(self.drops))
+        key = (hash(g["cells"]), g["width"], g["height"], len(self.blocked), len(self.drops), len(self.edges))
         if key == self._world_key:
             return
         self._world_key = key
         self.record(event="world", grid={k: g[k] for k in ("res_m", "origin", "width", "height", "cells")},
                     blocked=[[round(v, 3) for v in b] for b in self.blocked],
-                    drops=[[round(v, 3) for v in d] for d in self.drops])
+                    drops=[[round(v, 3) for v in d] for d in self.drops + self.edges])
 
     def forget_blocked_near(self, pose: tuple, radius_m: float) -> int:
         """Nav2's "clear around the robot" recovery, for the obstacle memory only: mapd's map stays, and
@@ -482,7 +664,7 @@ class Navigator:
         following = None     # the path being followed; a replan keeps it unless it is blocked or much longer
         tight = False        # a tight pivot was logged this leg
         reflex_stops = 0
-        best_left, best_at = math.inf, start
+        progress = Progress(start)
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
@@ -501,9 +683,30 @@ class Navigator:
                 except EmptyMap:
                     self.survey()
                     continue
-                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops).with_points(self.blocked)
+                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops + self.edges).with_points(self.blocked)
                 grid = grid.with_blocked(self.drops, DROP_LETHAL_M, DROP_INFLATE_M)
+                grid = grid.with_blocked(self.edges, EDGE_LETHAL_M, EDGE_INFLATE_M)   # edges a glance measured
+                suspected = self.suspects.points()        # suspected drops: a smaller ring until a glance confirms them
+                unsuspected = grid
+                if suspected:
+                    grid = grid.covering(suspected).with_blocked(suspected, SUSPECT_LETHAL_M, SUSPECT_INFLATE_M)
                 raw = plan(grid, pose[:2], goal)
+                if raw is None and suspected:
+                    # no way with the suspicions, one without them: the ones in that way not looked at yet are to be
+                    # looked at, not a reason to refuse (challenge 11 seed 3: a false one 0.15 m from the goal). Within
+                    # CONFIRM_M, now; farther, walk on that way and the trigger looks when near enough to see (challenge
+                    # 10 seed 5: a look from 1.4 m saw floor but cleared none of them, and the leg was refused).
+                    free = plan(unsuspected, pose[:2], goal)
+                    look = [p for p in in_the_way(free or [], suspected, SUSPECT_LETHAL_M)
+                            if all(math.dist(p, g) > GLANCED_M for g in self.glanced)]
+                    near_ = [p for p in look if math.dist(p, pose[:2]) <= CONFIRM_M]
+                    if near_:
+                        self.move(Twist())
+                        self.glance_at(min(near_, key=lambda p: math.dist(p, pose[:2])), pose)
+                        path = None
+                        continue
+                    if look:
+                        raw = free
                 if raw is None:
                     self.move(Twist())
                     start_cost, goal_cost = grid.at(*grid.cell(*pose[:2])), grid.at(*grid.cell(*goal))
@@ -512,6 +715,8 @@ class Navigator:
                     self.record(event="refused", goal=goal, pose=pose,
                                 start_cost=start_cost, goal_cost=goal_cost,
                                 drops=[[round(v, 2) for v in d] for d in self.drops],
+                                edges=[[round(v, 2) for v in d] for d in self.edges],
+                                suspected=[[round(v, 2) for v in d] for d in suspected],
                                 blocked=[[round(v, 2) for v in b] for b in self.blocked],
                                 decision=decision("refused", why, start_cost=start_cost, goal_cost=goal_cost,
                                                   lethal_cost=LETHAL_COST))
@@ -527,22 +732,31 @@ class Navigator:
                 following, planned_at, costs = path, now, grid
                 self._record_world()
                 left = path_length([pose[:2]] + path)
-                if left < best_left - PROGRESS_M:
-                    best_left, best_at = left, now
-                elif now - best_at > NO_PROGRESS_S:
+                if progress.update(left, now, len(self.drops) + len(self.edges)):
                     self.move(Twist())
                     self.record(event="stalled", goal=goal, pose=pose, path_left_m=round(left, 2),
-                                best_left_m=round(best_left, 2),
+                                best_left_m=round(progress.best, 2),
                                 decision=decision("stalled", f"{NO_PROGRESS_S:.0f} s without getting closer",
-                                                  path_left_m=round(left, 2), best_left_m=round(best_left, 2),
+                                                  path_left_m=round(left, 2), best_left_m=round(progress.best, 2),
                                                   progress_m=PROGRESS_M, no_progress_s=NO_PROGRESS_S))
                     return {"status": "stalled", "why": f"{NO_PROGRESS_S:.0f} s without getting closer",
                             "time_s": round(now - start, 1), "reflex_stops": reflex_stops}
                 st.target_index = 0
+            if self.edges and self.suspects.suspected:
+                self.edges.extend(self.suspects.confirm_near(self.edges, ABSORB_M))
+            if not st.turning:
+                # RFC-0012's first trigger: a suspected drop near the way, not yet looked at: stop and look at it
+                look = [p for p in self.suspects.near(pose[:2], CONFIRM_M)
+                        if all(math.dist(p, g) > GLANCED_M for g in self.glanced)]
+                if look:
+                    self.move(Twist())
+                    self.glance_at(min(look, key=lambda p: math.dist(p, pose[:2])), pose)
+                    path = None
+                    continue
             near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) >= MARGIN_COST
-            nearest_drop = min((math.dist(pose[:2], d) for d in self.drops), default=math.inf)
+            nearest_drop = min((math.dist(pose[:2], d) for d in self.drops + self.edges), default=math.inf)
             room = clearance(costs, pose[:2], PIVOT_OBSTACLE_M)
-            pivot_ok = room >= PIVOT_OBSTACLE_M and nearest_drop >= PIVOT_DROP_M
+            pivot_ok = room >= PIVOT_OBSTACLE_M and self._pivot_clear_of_drops(pose)
             tw, done = step(path, pose, now, st, near=near, pivot_ok=pivot_ok, pivot_vx=self.pivot_vx)
             self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
@@ -579,17 +793,17 @@ class Navigator:
                     for extra in (0.0,) + BEYOND_M:
                         k = (h + extra) / h if h > 0 else 1.0
                         self.drops.append((at[0] + k * (c * ax - s_ * ay), at[1] + k * (s_ * ax + c * ay)))
-                self.drops.extend(extend_edge(edge, EDGE_EXTEND_M))
                 self.record(event="cliff_stop", drop_m=round(min(p[2] for p in pts), 3), zones=len(pts), pose=pose,
                             drops=[[round(v, 2) for v in d] for d in self.drops],
                             decision=decision("cliff_stop", f"a drop ahead seen in {self._drop_streak} frames in a row",
                                               drop_m=round(min(p[2] for p in pts), 3), stop_m=CLIFF_STOP_M, zones=len(pts),
                                               streak=self._drop_streak, frames_needed=DROP_FRAMES, vx=tw.vx))
+                self.look_along(edge, at[2], pose)
                 self.survey()
                 path = None
                 continue
-            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose) and \
-                    room >= TIGHT_PIVOT_M and nearest_drop >= PIVOT_DROP_M:
+            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose, tw.vyaw) and \
+                    room >= TIGHT_PIVOT_M and self._pivot_clear_of_drops(pose):
                 # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
                 tw, done = step(path, pose, now, st, near=near, pivot_ok=True, pivot_vx=self.pivot_vx)
@@ -598,9 +812,9 @@ class Navigator:
                     self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm,
                                 decision=decision("tight_pivot", "no clear floor for an arc; pivoting while the room lasts",
                                                   room_m=round(room, 3), min_room_m=TIGHT_PIVOT_M,
-                                                  nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M,
+                                                  nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M, edge_clear_m=PIVOT_EDGE_M,
                                                   nearest_mm=self.tof.nearest_mm, arc_clear_mm=ARC_CLEAR_MM))
-            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose):
+            if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose, tw.vyaw):
                 self.move(Twist())
                 self.record(event="refused", why="no room to turn", pose=pose, room_m=round(room, 3),
                             nearest_drop_m=round(nearest_drop, 3), nearest_mm=self.tof.nearest_mm,
@@ -608,7 +822,7 @@ class Navigator:
                             drops=[[round(v, 2) for v in d] for d in self.drops],
                             path=[[round(v, 2) for v in q] for q in (path or [])[:8]],
                             decision=decision("refused", "no room to turn", room_m=round(room, 3), min_room_m=TIGHT_PIVOT_M,
-                                              nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M,
+                                              nearest_drop_m=round(nearest_drop, 3), drop_clear_m=PIVOT_DROP_M, edge_clear_m=PIVOT_EDGE_M,
                                               nearest_mm=self.tof.nearest_mm, arc_clear_mm=ARC_CLEAR_MM))
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}

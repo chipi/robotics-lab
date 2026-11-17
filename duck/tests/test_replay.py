@@ -20,8 +20,9 @@ from duck_lab import replay
 from duck_lab.nav import cliff
 from duck_lab.nav.cliff import BEAMS, rotate, sensor_pose
 from duck_lab.nav.frames import Localizer
-from duck_lab.nav.run import FrameView, Navigator, decision, load_tof
+from duck_lab.nav.run import NO_PROGRESS_S, FrameView, Navigator, Progress, decision, load_tof
 from duck_lab.nav.runlog import RunLog, SIGNALS
+from duck_lab.nav.side_drops import SuspectMemory
 
 failures = []
 
@@ -65,6 +66,7 @@ def navigator(runlog=None):
     nav._states, nav._fv, nav.sense, nav._logging_failed = collections.deque(maxlen=40), None, {}, False
     nav.tof = type("Tof", (), {"nearest_mm": 410})()
     nav.floor_seen = set()
+    nav.suspects = SuspectMemory()
     return nav
 
 
@@ -261,6 +263,75 @@ with tempfile.TemporaryDirectory() as tmp:
     except Exception as e:  # noqa: BLE001
         refused = "already exists" in str(e)
     check("a run that exists is refused, not overwritten", refused)
+
+# ---- after a cliff stop, the duck looks along the edge to see where the hole ends ------------------------------------
+def along(answers):
+    nv = navigator()
+    nv.drops, looked = [], []
+    nv.record = lambda **kw: None
+    nv.glance_at = lambda target, pose: looked.append(target) or answers[len(looked) - 1](target)
+    edge = [(1.0, y) for y in (-0.1, -0.05, 0.0, 0.05, 0.1)]       # an edge along y, 1 m ahead of a duck facing +x
+    return nv, looked, nv.look_along(edge, 0.0, (0.0, 0.0, 0.0))
+
+
+goes = lambda t: {"status": "drop", "rim_points": [(t[0], t[1] - 0.05), (t[0], t[1] + 0.05)]}   # noqa: E731
+ends = lambda t: {"status": "floor", "rim_points": []}                                          # noqa: E731
+nv, looked, out = along([ends, goes])
+check("it looks at both ends of the edge it stopped at, past what it saw",
+      len(looked) == 2 and sorted(round(t[1], 2) for t in looked) == [-0.5, 0.5], looked)
+check("the hole goes on where a look saw it go on, and ends where a look saw floor (challenge 11's pit)",
+      out == [False, True] and nv.drops and all(p[1] > 0.1 for p in nv.drops), (out, nv.drops[:3]))
+nv, _, out = along([lambda t: {"status": "unseen"}, lambda t: {"status": "failed"}])
+check("a look that saw nothing or failed: the hole is taken to go on (challenge 9 must still refuse)",
+      out == [True, True] and any(p[1] < -0.1 for p in nv.drops) and any(p[1] > 0.1 for p in nv.drops), out)
+
+# ---- a turn while walking, beside a drop: refused only for a drop where the turn goes ---------------------------------
+# challenge 11 seed 1 (2026-11-17): a glance confirmed the pit 0.30 m to the duck's right; turning left, away from it,
+# was refused because any drop within 0.6 m in a 60 deg cone ahead vetoed every turn.
+from duck_lab.nav.grid import CostGrid as _CG  # noqa: E402
+
+open_floor = _CG.from_map_grid({"res_m": 0.05, "origin": [-1.0, -1.0], "width": 40, "height": 40, "cells": "." * 1600})
+nv = navigator()
+nv.tof.nearest_mm = 900
+nv.drops, nv.edges = [], [(0.3, -0.3), (0.4, -0.3), (0.5, -0.3)]            # a drop's edge ahead and to the right
+check("a turn away from a drop beside the duck is clear", nv._arc_clear(open_floor, (0.0, 0.0, 0.0), +1.0))
+check("a turn toward it is not", not nv._arc_clear(open_floor, (0.0, 0.0, 0.0), -1.0))
+nv.edges = [(0.3, 0.0), (0.3, 0.1), (0.3, -0.1)]                           # a drop straight ahead, 0.3 m
+check("a drop straight ahead within the arc's reach refuses either turn",
+      not nv._arc_clear(open_floor, (0.0, 0.0, 0.0), +1.0) and not nv._arc_clear(open_floor, (0.0, 0.0, 0.0), -1.0))
+nv.edges = [(0.55, 0.0)]
+check("one beyond the arc's reach does not", nv._arc_clear(open_floor, (0.0, 0.0, 0.0), +1.0))
+
+# ---- turning on the spot near drops: the gate by kind of drop (the operator's choice 2026-11-17, the advisor's split) --
+# a measured edge is kept PIVOT_EDGE_M off, a cliff stop's rough points PIVOT_DROP_M: the planner may put the duck at its
+# ring less the following's and belief's error, and from there it must still be allowed to turn.
+from duck_lab.nav.run import EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_EDGE_M  # noqa: E402
+
+nv = navigator()
+nv.drops, nv.edges = [], [(PIVOT_EDGE_M + 0.005, 0.0)]
+check("a measured edge just past PIVOT_EDGE_M allows a turn on the spot", nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+nv.edges = [(PIVOT_EDGE_M - 0.005, 0.0)]
+check("... just inside it does not", not nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+nv.drops, nv.edges = [(PIVOT_EDGE_M + 0.005, 0.0)], []
+check("a cliff stop's point at that distance does not either (its gate is PIVOT_DROP_M)",
+      not nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+check("the planner's closest place to an edge (its ring less following 3 cm and belief 2.5 cm) is past the edge gate",
+      EDGE_LETHAL_M - 0.055 >= PIVOT_EDGE_M - 1e-9, (EDGE_LETHAL_M, PIVOT_EDGE_M))
+check("... and the edge gate less the pivot drift (7.9 cm max, today's runs) keeps the judge's 0.15 m and belief",
+      PIVOT_EDGE_M - 0.079 >= 0.15 + 0.025 - 1e-9, PIVOT_EDGE_M)
+check("the cliff stop's gate is unchanged", PIVOT_DROP_M == 0.30)
+
+# ---- the stall rule: progress is measured on the map as it is now ----------------------------------------------------
+pr = Progress(0.0)
+check("a leg getting shorter is progress", not pr.update(2.5, 1.0, 0) and not pr.update(2.3, 10.0, 0))
+check("NO_PROGRESS_S without getting PROGRESS_M shorter is a stall", pr.update(2.3, 10.0 + NO_PROGRESS_S + 0.1, 0))
+# challenge 11 seed 5: a cliff stop and a glance found the pit ahead; the way round it is 4.15 m against the 2.54 m
+# best on the map that did not have the pit, and the leg stalled 15 s later while walking that way round
+pr = Progress(0.0)
+pr.update(2.54, 12.0, 0)
+check("a longer way after the map learned a drop is not a stall: progress counts from it",
+      not pr.update(4.15, 20.0, 5) and not pr.update(4.0, 28.0, 5) and not pr.update(3.9, 34.0, 5))
+check("and a stall on the new way is still a stall", pr.update(3.9, 34.0 + NO_PROGRESS_S + 0.1, 5))
 
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

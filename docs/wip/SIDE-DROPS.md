@@ -138,7 +138,70 @@ Not verified: any of it closed loop; the real duck.
    at least the margin.
 4. Challenges 8 and 9 unchanged; no cliff stops in 1–7.
 
+## Built, closed loop (2026-11-17)
+
+Suspect early from the forward sensor, confirm with a glance, as planned. What the batches found on
+the way, and what the code does now:
+
+- **The glance's edge.** Traced per direction, all frames together, ending where the floor's run from
+  the duck has a gap. Not extended past what was seen: a line fitted through a rim ran diagonally
+  when the rim held the pit's far wall (challenge 10 seed 1) or went round a corner (challenge 11
+  seed 2), and its extension put the goal or the passage inside the ring. A direction with only
+  below-floor returns is a drop, its rim the nearest of them, and the floor before it unknown, not
+  floor: a look had cleared a true suspicion that way and the duck then passed 0.141 m from the pit.
+- **Suspicions.** One next to a measured edge joins it without a look (ten looks along one ledge
+  before). One that blocks the way is walked toward and looked at, not refused for. Floor 10 cm
+  from it clears it.
+- **After a cliff stop the duck looks along the edge**, 0.4 m past each end (the operator's choice).
+  Where the drop goes on, or the look saw nothing, the hole is taken to go on; where it saw floor, it
+  ends. This is what lets the ring shrink: 0.45 had stood in for the hole's unmeasured length.
+- **Rings from the error budget** (the advisor's review, the operator's choice of its split). Each
+  ring is its kind's turn-on-the-spot gate plus the following's (~3 cm) and the belief's (~2.5 cm)
+  error, so the duck may turn wherever the planner may put it. Each gate less the pivot's drift
+  keeps the judge's 0.15 m and the belief.
+
+  | Drop known from | Ring | Turn gate |
+  | --- | --- | --- |
+  | a cliff stop's points | 0.35 | 0.30 |
+  | a glance's edge | 0.32 | 0.26 |
+  | a suspicion | 0.32 (what it becomes) | — |
+
+  Pivot drift, 87 pivots on 2026-11-17 (`sim/probes/turn_drift.py`): p95 5.1–7.9 cm, max 7.9 cm.
+  The glance's error since the rim fix, 54 glances: −14/+6.4 cm looking aside, −18/+3 cm ahead.
+  The 0.32 ring also keeps a path held at it out of the cliff check's corridor (0.305 with errors).
+- **A turn while walking** is refused only for a drop within 0.45 m where it turns (from 20° outside
+  to 120° inside), not for any drop ahead.
+- **The stall rule** counts again from the path as it is when the map learns a drop.
+- **Not done, and why:** a filter that let the cliff check ignore a drop near a measured edge was
+  built and removed: it is trial 3's "do not stop again for a remembered drop" (grid.py), and the
+  edges it relied on were sparser than the replay that seemed to support it.
+
+Results, 10 seeds each, simulator:
+
+| Challenge | Gate 3 (16th) | One ring 0.35 | Split rings |
+| --- | --- | --- | --- |
+| 1–5 | — | 50/50 | 50/50 |
+| 6, 7 | — | 8, 8 | 9, 9 |
+| 8, 9 (refuse) | — | 10, 10 | 10, 10 |
+| 10 | 10 | 8 | 9 |
+| 11 | 8 | 8 | 8 |
+
+Closest approach to a drop over the 40 drop runs with the split rings: 0.299 m (judge 0.15).
+The failures left:
+
+- Challenge 11 seed 2: one edge point 17 cm outside the pit closes the 0.66 m passage at the 0.32
+  ring. Its source is not found: a replay of the glance does not reproduce it (it pools more frames
+  than the duck took). Glance records now keep their rim points to trace it next time.
+- Challenge 11 seed 7: a loop of reflex stops on the block. A path at the wall's 0.12 m ring sits
+  inside the obstacle reflex's corridor (0.123 m half width): the same mismatch as the drop rings
+  had, for walls.
+- Challenge 10 seed 2: refused near the goal (not read yet).
+- Challenges 6 seed 2, 7 seed 3: refused for no room to turn; both fail the same way on the
+  16th's code.
+
 ## Not covered
 
+- False suspicions near walls (challenge 10 seeds 5 and 8: 0.28–0.6 m from the drop, 0.15–0.25 m
+  from the room's east wall, with the belief 17 cm off). Cause not found.
 - The real duck: its head-yaw kinematics, how much the head sags on its backlash, and its sensor's
   range spread at a slant. The simulator's 1 cm agreement does not transfer.

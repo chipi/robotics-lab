@@ -33,14 +33,15 @@ SHADOW_COST = 60.0
 FREE_COST = 1.0
 
 
-# Drops get more room than walls: set to the cliff check's stop distance of the time (45 cm), so a plan never
-# walked into stopping range of a drop it already knew - which is what made trial 2 stop, replan and
-# stop again. The stop distance is now 0.60 (run.CLIFF_STOP_M), so that coupling no longer holds; the margin is
-# to be sized with the drop work (docs/wip/CLEARANCE-MODEL.md, the review of 2026-11-16). (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the
-# cliff check over the unremembered part of the same staircase, and the duck fell. Never again: the
-# cliff check stops for every drop it sees.)
-DROP_LETHAL_M = 0.45
-DROP_INFLATE_M = 0.65
+# Drops get more room than walls, sized from the error budget (docs/wip/SIDE-DROPS.md, 2026-11-17): the cliff check's
+# corridor (cliff.CORRIDOR_DROP_M, 0.25 m aside) plus the following's (~3 cm) and the belief's (~2.5 cm) error, rounded up,
+# so a path held at the ring keeps a known drop out of the corridor and the duck is not stopped again for it (trial 2's
+# stop, replan and stop again). 0.45 (the stop distance of the time) also stood in for how far a hole met head-on goes,
+# and closed challenge 11's passage beside a pit; the duck now looks along the edge for that (run.Navigator.look_along).
+# (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the cliff check over the
+# unremembered part of the same staircase, and the duck fell. Never again: the cliff check stops for every drop it sees.)
+DROP_LETHAL_M = 0.35
+DROP_INFLATE_M = 0.55
 
 
 def _grow(cost: list, w: int, h: int, centres: list, res: float,
