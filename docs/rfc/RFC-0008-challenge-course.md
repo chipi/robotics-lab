@@ -50,13 +50,21 @@ As many as it takes (the operator); this is the first list, from the trials so f
 | 13 | A low overhang | overhead classification | — |
 | 14 | A thin pole, a chair leg | small obstacles for an 8×8 sensor | — |
 | 15 | A field of small boxes | replanning, the reflex | phase 1 runs 11, 16 |
-| 16 | A threshold or bump that tilts the duck | false drops from pitch | trial 12 |
-| 17 | Ten goals in a row without a reset | localization drift | phase 1 run 4 |
-| 18 | One room, mapped completely | exploration coverage | — |
-| 19 | A T-junction with two rooms | frontier choice | trial 6 |
-| 20 | Two rooms joined by a door | room segmentation and area | trials 4–6 |
+| 16 | A home door's threshold | stepping over it, false drops from pitch | trial 12 |
+| 17 | Things on the floor: a cable, a rug's edge, a book | stepping over, not round | — |
+| 18 | A step up and a step down | walking up and down, not refusing | — |
+| 19 | A short flight of small steps, up | climbing | — |
+| 20 | A short flight of small steps, down | descending | — |
+| 21 | Ten goals in a row without a reset | localization drift | phase 1 run 4 |
+| 22 | One room, mapped completely | exploration coverage | — |
+| 23 | A T-junction with two rooms | frontier choice | trial 6 |
+| 24 | Two rooms joined by a door | room segmentation and area | trials 4–6 |
 
-1–16 are getting around safely; 17–20 build to exploring.
+1–20 are getting around safely; 21–24 build to exploring. 16–20 follow what the robot's body can
+do: each draws its heights under the robot's measured step height (`calibration/<robot>.json`), with
+a variant just over it where refusing (or going round, where there is a way) is right; ordinary home
+stairs stay refusals (8, 9). Under the step height the robot walks over, never round (the operator,
+2026-11-17).
 
 ## 4. What changes in the brain
 
@@ -90,7 +98,7 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
 1. The scenario runner: scene generation with jitter, truth scoring, invariants, pass rates; the
    world-model viewer on every run (`duck-world`). No more 20-minute apartment runs until it is green.
 2. Challenges 1, 2, 3, 5, 8, 9 first — the ones behind the failures so far.
-3. The clearance model and measured margins; then the rest of 1–16; then 17–20.
+3. The clearance model and measured margins; then the rest of 1–20; then 21–24.
 4. The course in sequence, mixed, and the apartment.
 
 ## 6. Open questions
@@ -114,6 +122,13 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
 - 2026-11-17, operator: "close all challenges we did not start and move to the apartment rather than
   trying to score 10/10 for all first 11". The bar: 100 % on the safety invariants (no fall, no
   contact, never under 0.15 m from a drop), at least 8/10 reach or refuse per challenge. Challenges
-  1–11 become the regression gate run before each commit; next 12–16, then 17, 18–20, the apartment.
+  1–11 become the regression gate run before each commit; next 12–16, then 17, 18–20, the apartment
+  (numbered before the renumbering below: now 12–20, then 21, 22–24).
   A fall during a simulator state-stream stall is logged apart, out of our control for now
   (`duck/sim/probes/state_stalls.py`: 2 stalls over 200 ms in 132 runs, one a fall in challenge 9).
+- 2026-11-17, operator, after challenge 16 (a 1.4–2.5 cm bar across a corridor) failed 10/10 (the
+  duck stalled at it or tripped): the duck should walk over such a bar, not go round it; the same for
+  anything it can step over, a step up and down, and a short flight of small steps up and down; a home
+  door is the model. Challenges follow the robot's physical capabilities. Renumbered with whole
+  numbers: the walking-over family is 16–20, the exploring challenges 21–24. The navigator must notice
+  it is stuck (walking, the depth ahead not changing) whatever the cause.

@@ -114,6 +114,7 @@ nav:
     - Status and open decisions: wip/STATUS.md
     - Roadmap: wip/ROADMAP.md
     - Ideas: wip/IDEAS.md
+    - Mission control, requirements: wip/MISSION-CONTROL-REQUIREMENTS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md
     - Running the simulated duck from an agent: wip/DUCK-SIM-FOR-AGENTS.md
@@ -122,6 +123,7 @@ nav:
     - Robot brain phase 2, exploring: wip/PHASE2-RESULTS.md
     - "One clearance model (RFC-0008 §4)": wip/CLEARANCE-MODEL.md
     - Drops beside the way, unseen floor and a glance: wip/SIDE-DROPS.md
+    - Walking over and up (parked): wip/STEPS.md
     - Viewer spike: wip/VIEWER-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md

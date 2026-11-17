@@ -232,3 +232,25 @@ repeated runs → the operator approves promoting it.
   positive power forward on both.
 - Microduck: the official repositories are read and the simulator runs here (MICRODUCK.md); the
   real robot is not in hand yet.
+
+## Noted not pursued (from 2026-11-17)
+
+The operator, 2026-11-17: the goal is the apartment; good ideas that do not move toward it are noted
+here in a line and left. One line each; the date it was noted; where its detail lives, if anywhere.
+
+- **Turn-aware planner with per-robot moves** (heading, room to turn, reversing for LEGO): agreed as
+  an RFC when a challenge or the apartment needs it. 2026-11-17.
+- **Evidence-weighing drop layer** (log-odds, observations re-anchored to corrected poses): agreed
+  as an RFC when needed. 2026-11-17.
+- **Steps and bars** (challenges 16–20): parked, the measurements in `STEPS.md`. 2026-11-17.
+- **Stuck detection** (walking, the depth ahead not changing): agreed regardless; build when the
+  apartment or a challenge shows it. 2026-11-17.
+- **The belief drifts 3–7 % in open scenes** (challenges 10, 11): mapd's corrections the likely
+  cause; challenge 21 (ten goals in a row). 2026-11-17, `SIDE-DROPS.md`.
+- **State-stream stalls** (2 in 132 runs, one fall): outside the navigator, `state_stalls.py`.
+  2026-11-17.
+- **A results ledger per batch** (code commit, seeds, pass/fail, conclusion) feeding the hard-seed
+  set and the replay tool. 2026-11-17.
+- **Parallel simulators**: check whether the machine can run two. 2026-11-17.
+- **The settle-before-look wait** after a cliff stop (the head moved while the body still braked).
+  2026-11-17.

@@ -42,7 +42,7 @@ trigger is a rule with a reason, logged as an event, and has a challenge that te
 | A large turn coming | What is on the side the robot is about to face? | 5, 7 |
 | An opening: a doorway, the end of a box, a junction | What is just past the edge? | 2, 3, 4 |
 | Something ahead that is not floor or wall | How high is it, how far does it go? | 12, 13, 14 |
-| New ground, while exploring | What is around, for the map? | 18–20 |
+| New ground, while exploring | What is around, for the map? | 22–24 |
 
 Rules for every look:
 
@@ -112,7 +112,7 @@ from pace.
 2. Pace: caution near known drops, unknown ground within reach and narrow passages, with the
    odometry scale per speed. Measured on 6, 7, 10 and 11: refusals, closest approach, time.
 3. Turn and opening triggers (5, 7, 2–4), then the vertical look with challenges 12–14.
-4. Exploration looks with 18–20.
+4. Exploration looks with 22–24.
 5. The real duck's numbers; then a second robot's, to check that nothing duck-specific is left in
    the policy.
 

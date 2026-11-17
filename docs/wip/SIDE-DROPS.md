@@ -207,7 +207,7 @@ The failures left:
   (`sim/probes/scale_by_speed.py`: truth / belief 0.987–0.998 walking straight in challenges 1 and 5,
   1.029–1.071 in 10 and 11). The same gait in every scene, so mapd's corrections are the likely cause,
   not the odometry scale; raw odometry is not recorded, so this is not proven. The error budget's
-  2.5 cm belief holds in the short scenes only; open, for challenge 17.
+  2.5 cm belief holds in the short scenes only; open, for challenge 21 (ten goals in a row).
 - **False suspicions** (`sim/probes/false_suspects.py`): none in 40 drop-free runs; the ones that
   closed challenge 10's goal came from floor 1.1–2.4 m away read 6.6–7.9 cm "below", just past
   cliff.EXTRA_M (6 cm), most likely the trunk's pitch. **Fix:** a below return feeds a suspicion only
