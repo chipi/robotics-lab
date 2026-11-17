@@ -31,9 +31,10 @@ from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
+from duck_lab.nav.step_check import unseen_ahead
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, LETHAL_M, MARGIN_COST, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, FREE_COST, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
 
 TICK_S = 0.1
 REPLAN_S = 3.0
@@ -62,6 +63,13 @@ class Progress:
             return True
         self.known = known
         return False
+
+    def pause(self, seconds: float) -> None:
+        """Time spent standing to look is not time without progress (exploring b3 r1 leg 4: four looks before stepping,
+        all floor, ~3 s each, and the leg stalled 0.2 m from its target)."""
+        self.at += seconds
+
+
 FOLLOW_SPACING_M = 0.10
 # The depth reflex: an obstacle return inside the corridor the duck sweeps (its 8.3 cm radius and 4 cm)
 # within REFLEX_AHEAD_M of the trunk stops it; so does any return at all within EMERGENCY_MM of the
@@ -318,6 +326,7 @@ class Navigator:
         # confirmed (into drops) or cleared by a glance; the places already looked at.
         self.suspects = SuspectMemory()
         self.glanced = []
+        self.step_looked = []    # spots looked at before stepping on them (step_check), not looked at again
         self._map_raw = None     # mapd's last grid (scaled), for the world record
         self._world_key = None
         self.tof.on_frame = self._on_frame
@@ -410,8 +419,13 @@ class Navigator:
                     settled = time.monotonic()
                 if settled is not None:
                     c, s_ = math.cos(fv.pose[2]), math.sin(fv.pose[2])
+                    # below-floor returns by the same range-dependent threshold as every other frame (_on_frame,
+                    # side_drops.below_counts): far floor reads a few cm low, and a glance into an open room counted it
+                    # (challenge 7 seed 1: floor 1.7-2.5 m away read 6-9 cm low, the glance said "drop", the start was
+                    # fenced in; sim/probes/glance_distance.py)
                     frames.append([(fv.pose[0] + c * ax - s_ * ay, fv.pose[1] + s_ * ax + c * ay, kind)
-                                   for ax, ay, _, kind in fv.rel if kind in ("floor", "below")])
+                                   for ax, ay, h, kind in fv.rel
+                                   if kind == "floor" or (kind == "below" and below_counts(h, math.hypot(ax, ay)))])
             time.sleep(TICK_S)
         rim, below, floor = edge_from_glance(frames, tuple(pose[:2]), bearing)
         for x, y in floor:
@@ -574,6 +588,12 @@ class Navigator:
         roll = math.degrees(math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)))
         return [round(pitch, 1), round(roll, 1)]
 
+    def floor_seen_at(self, xy: tuple) -> bool:
+        """Has the depth sensor seen floor in xy's own FLOOR_CELL_M cell? Exact, not near: at a drop's edge a few cm of
+        tolerance is the whole margin (the step_check replay of b2 r2: with one cell of tolerance the floor seen at the
+        stairwell's south edge passed spots inside the opening)."""
+        return (round(xy[0] / FLOOR_CELL_M), round(xy[1] / FLOOR_CELL_M)) in self.floor_seen
+
     def floor_seen_near(self, xy: tuple, radius_m: float = FLOOR_NEAR_M) -> bool:
         """Has the depth sensor seen floor within radius_m of xy?"""
         cx, cy = round(xy[0] / FLOOR_CELL_M), round(xy[1] / FLOOR_CELL_M)
@@ -697,7 +717,7 @@ class Navigator:
                 # operator, 2026-11-17: go as close as is safe and say so); farther, it is across the drop: refused
                 gc = unsuspected.cell(*goal)
                 inside = unsuspected.inside(*gc) and unsuspected.at(*gc) >= LETHAL_COST
-                aim = (nearest_free(unsuspected, goal, HOLD_OFF_M) or goal) if inside else goal
+                aim = (nearest_free(unsuspected, goal, HOLD_OFF_M, room_m=PIVOT_OBSTACLE_M) or goal) if inside else goal
                 if aim != goal and aim != held_at:
                     held_at = aim
                     self.record(event="held_off", goal=goal, aim=[round(v, 3) for v in aim],
@@ -772,7 +792,7 @@ class Navigator:
                     self.glance_at(min(look, key=lambda p: math.dist(p, pose[:2])), pose)
                     path = None
                     continue
-            near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) >= MARGIN_COST
+            near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) > FREE_COST    # in a margin ring, unknown or shadow
             nearest_drop = min((math.dist(pose[:2], d) for d in self.drops + self.edges), default=math.inf)
             room = clearance(costs, pose[:2], max(PIVOT_OBSTACLE_M, SLOW_CLEAR_M))
             pivot_ok = room >= PIVOT_OBSTACLE_M and self._pivot_clear_of_drops(pose)
@@ -850,6 +870,23 @@ class Navigator:
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
             near = self.tof.nearest_mm
+            if tw.vx > 0 and path:
+                spot = unseen_ahead(path[st.target_index:], pose, self.floor_seen_at, skip=self.step_looked)
+                if spot is not None:
+                    # Look before you step (step_check.py): floor about to be walked on that the depth sensor never saw
+                    # as floor (exploring b2 r2 cut a stairwell corner it had never had in view).
+                    self.move(Twist())
+                    self.step_looked.append(spot)
+                    self.record(event="step_look", spot=[round(v, 3) for v in spot], pose=pose,
+                                decision=decision("step_look", "floor about to be walked on was never seen: look first",
+                                                  spot=[round(v, 3) for v in spot]))
+                    looked_at = time.monotonic()
+                    seen = self.glance_at(spot, pose)
+                    progress.pause(time.monotonic() - looked_at)
+                    if seen.get("status") != "drop" and not self.floor_seen_at(spot):
+                        self.blocked.append(tuple(spot))    # still not seen as floor: not walked on (an obstacle point)
+                    path = None
+                    continue
             blocked_ahead = self._block is not None and self._block < REFLEX_AHEAD_M
             if tw.vx > 0 and (blocked_ahead or (near is not None and near < EMERGENCY_MM)):
                 reflex_stops += 1
@@ -866,6 +903,12 @@ class Navigator:
                                               block_m=self._block, ahead_limit_m=REFLEX_AHEAD_M, nearest_mm=near,
                                               emergency_mm=EMERGENCY_MM, corridor_half_m=REFLEX_HALF_W_M))
                 self.survey()
+                # Face the path before walking again: the reflex watches straight ahead, the path may bend past what
+                # stopped it (exploring b3 r2: the cabinet's corner 0.11 m to the side of the heading, the path clear
+                # past it, plan kept and reflex stop again 28 times). With the plan kept, the follower turns on the spot
+                # to the lookahead first (follow.step's turn, within TURN_DONE_RAD) and the reflex then looks the way
+                # the duck will walk; a path really blocked is replanned as before.
+                st.turning, st.turn_started, st.check_t = True, time.monotonic(), None
                 path = None
                 continue
             self.move(tw, nearest_mm=near, turning=st.turning)

@@ -346,6 +346,12 @@ pr.update(2.54, 12.0, 0)
 check("a longer way after the map learned a drop is not a stall: progress counts from it",
       not pr.update(4.15, 20.0, 5) and not pr.update(4.0, 28.0, 5) and not pr.update(3.9, 34.0, 5))
 check("and a stall on the new way is still a stall", pr.update(3.9, 34.0 + NO_PROGRESS_S + 0.1, 5))
+# exploring b3 r1 leg 4: four looks before stepping (~3 s each) inside one leg; standing to look is not a stall
+pr = Progress(0.0)
+pr.update(1.0, 1.0, 0)
+pr.pause(12.0)
+check("time spent looking does not count toward a stall", not pr.update(1.0, 1.0 + NO_PROGRESS_S - 1.0 + 12.0, 0))
+check("... the rest of the time still does", pr.update(1.0, 1.0 + NO_PROGRESS_S + 0.1 + 12.0, 0))
 
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

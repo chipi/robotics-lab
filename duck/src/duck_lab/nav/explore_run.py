@@ -26,6 +26,7 @@ KICK_RAD_S, HOLD_RAD_S, KICK_S = 1.2, 0.8, 1.0   # PHASE0-SPIKE.md: no start bel
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
 MAX_REFUSALS = 6       # refusals in a row before the run stops as trapped
+RETIRE_M = 0.6         # a target with no path on the map retires the frontier within this of it
 # The test harness's kill switch, not the brain's: the simulator's truth aborts the run when the duck
 # comes within GUARD_M of the staircase opening or its trunk drops - so a failing cliff check ends in an
 # abort, not another fall. The brain never reads it.
@@ -125,7 +126,16 @@ class Explorer:
                 return self.nav.floor_seen_near(goal)
 
             avoid = self.failed + self.nav.drops
-            target = pick(frontiers(grid, self.nav.scale), pose, avoid, ok=reachable)
+            blocked = list(self.nav.blocked)
+            clusters = frontiers(grid, self.nav.scale, obstacles=blocked)
+            target = pick(clusters, pose, avoid, ok=reachable)
+            # The choice's inputs, so a replay of it is faithful (sim/probes/frontier_replay.py; the "world" events
+            # are the navigator's grid at its plans, not the map read here).
+            self.note(event="pick", grid={k: grid[k] for k in ("res_m", "origin", "width", "height", "cells")},
+                      scale=self.nav.scale, pose=[round(v, 4) for v in pose],
+                      avoid=[[round(v, 3) for v in a[:2]] for a in avoid],
+                      obstacles=[[round(v, 3) for v in b[:2]] for b in blocked],
+                      target=[round(v, 3) for v in target] if target else None)
             if target is None:
                 if not surveyed_here:
                     self.survey()
@@ -148,7 +158,18 @@ class Explorer:
                 continue          # the same frontier again: the start was the problem, not the target
             if out["status"] != "reached":
                 self.failed.append(target)
-                refusals = refusals + 1 if out["status"] == "refused" else 0
+                unreachable = out["status"] == "refused" and out.get("why") == "no path on the map"
+                if unreachable and clusters:
+                    # That stretch of the frontier is out of reach, not only this point of it (b2 r3: six targets in
+                    # the same stairwell frontier, within 0.5 m of each other, refused in one second, and the run ended
+                    # "trapped" at the dock). Only the stretch near it: the whole cluster ran along the corridor in b4
+                    # (124 and 201 points retired by one refusal) and took the ways north and south with it.
+                    near = min(clusters, key=lambda c: min(math.dist(p, target) for p in c))
+                    self.failed.extend(p for p in near if math.dist(p, target) <= RETIRE_M)
+                # A run of refusals says the duck is stuck; a target with no path says only that the target is out of
+                # reach (b2 r3, b3 r2: "trapped" at the dock, free to walk north).
+                if not unreachable:
+                    refusals = refusals + 1 if out["status"] == "refused" else 0
                 if refusals >= MAX_REFUSALS:
                     # Trial 4: one boxed-in start refused 37 frontiers in a second and ended the run as
                     # "no frontier left". A run of refusals says the duck is stuck, not that the map is done.

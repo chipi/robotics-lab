@@ -80,7 +80,7 @@ define run_tests
 	done; exit $$fail
 endef
 
-DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py \
+DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \

@@ -13,10 +13,16 @@ STANDOFF_M = 0.15          # stop this far back from the frontier, on the seen s
 # nearest "frontier" is always underfoot: the first trial's first leg went 5 cm.
 MIN_DIST_M = 0.6
 GAIN_PER_M = 1.0           # a metre of frontier is worth a metre of walking (explore_lite's gain/potential)
+# Unknown beside a wall or an object the map has seen is most often that wall going on: its face along the duck's way
+# was never in the depth sensor's 45 deg wedge. Exploring baseline b1 (EXPLORE-PROGRESS.md): 18 of 34 targets were in
+# or within 15 cm of a wall, the cabinet, the stairs or the office landmark, and every run ended trapped beside one.
+WALL_M = 0.30              # frontier cells this close to an occupied cell are not a way on
 
 
-def frontiers(grid: dict, scale: float = 1.0) -> list:
-    """Clusters (8-connected) of free cells with an unknown neighbour, as lists of map points."""
+def frontiers(grid: dict, scale: float = 1.0, wall_m: float = WALL_M, obstacles: list = ()) -> list:
+    """Clusters (8-connected) of free cells with an unknown neighbour and no occupied cell, nor any of obstacles (map
+    points: the navigator's remembered obstacle points), within wall_m, as lists of map points. A 0.8 m doorway keeps its
+    middle 0.2 m."""
     res, (ox, oy) = grid["res_m"] * scale, (grid["origin"][0] * scale, grid["origin"][1] * scale)
     w, h, cells = grid["width"], grid["height"], grid["cells"]
     if not res or not w or not h:
@@ -25,12 +31,20 @@ def frontiers(grid: dict, scale: float = 1.0) -> list:
     def at(x, y):
         return cells[y * w + x] if 0 <= x < w and 0 <= y < h else "?"
 
+    r = math.ceil(wall_m / res) if wall_m > 0 else 0
+    occupied = {(i % w, i // w) for i, c in enumerate(cells) if c == "#"}
+    occupied |= {(math.floor((p[0] - ox) / res), math.floor((p[1] - oy) / res)) for p in obstacles}
+
+    def by_wall(x, y):
+        return r and any((x + dx, y + dy) in occupied for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+                         if math.hypot(dx, dy) * res <= wall_m + 1e-9)
+
     front = set()
     for y in range(h):
         for x in range(w):
             if at(x, y) != ".":
                 continue
-            if any(at(x + dx, y + dy) == "?" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            if any(at(x + dx, y + dy) == "?" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))) and not by_wall(x, y):
                 front.add((x, y))
     clusters, seen = [], set()
     for start in front:

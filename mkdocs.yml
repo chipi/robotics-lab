@@ -124,6 +124,7 @@ nav:
     - "One clearance model (RFC-0008 §4)": wip/CLEARANCE-MODEL.md
     - Drops beside the way, unseen floor and a glance: wip/SIDE-DROPS.md
     - Walking over and up (parked): wip/STEPS.md
+    - Exploring the apartment, progress: wip/EXPLORE-PROGRESS.md
     - Viewer spike: wip/VIEWER-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md

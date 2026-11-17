@@ -20,6 +20,20 @@ INFLATE_M = 0.28
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a
 # long detour through unmapped corridor toward the stairs rather than pass the office cabinet.
 MARGIN_COST = 10.0
+MARGIN_EDGE_COST = 100.0   # the margin ring's cost at the lethal edge (margin_cost)
+
+
+def margin_cost(d: float, lethal_m: float, inflate_m: float) -> float:
+    """The margin ring's cost at d from an obstacle: MARGIN_EDGE_COST at the lethal edge, falling quadratically to
+    FREE_COST at inflate_m, as Nav2's inflation decays. A flat ring (MARGIN_COST everywhere in it) gave the shortest path no
+    reason to keep off an obstacle once it was in the ring, so plans hugged the lethal edge round corners: exploring b5 r2's
+    plans passed the corridor console's corner at 0.115 m, the following added ~3 cm, and the trunk touched it at 0.075 m
+    (sim/probes/corner_seen.py: the corner had been seen within 1 cm). Replayed on 109 recorded plans
+    (sim/probes/margin_replay.py): plans within 0.15 m of an obstacle 32 flat, 24 with the edge at 10, 13 at 40, 7 at 100;
+    none became unreachable; median length unchanged, the worst +75 %. The lethal zone, and with it what fits through a
+    doorway, does not change."""
+    u = (inflate_m - d) / (inflate_m - lethal_m)
+    return FREE_COST + (MARGIN_EDGE_COST - FREE_COST) * max(0.0, min(1.0, u)) ** 2
 # An obstacle's own cell is infinite: never crossed. The lethal zone grown round it is LETHAL_COST:
 # not planned through, except to escape from where the duck already stands (ESCAPE_M) - which must not
 # let a path through the obstacle itself (a 50 cm escape walked through a wall in a test).
@@ -58,16 +72,16 @@ def _grow(cost: list, w: int, h: int, centres: list, res: float,
         for dy in range(-reach, reach + 1):
             gap = math.hypot(dx, dy) * res - res / 2
             if gap < inflate_m:
-                rings.append((dx, dy, gap < lethal_m))
+                rings.append((dx, dy, gap < lethal_m, gap))
     for cx, cy in centres:
-        for dx, dy, is_lethal in rings:
+        for dx, dy, is_lethal, gap in rings:
             x, y = cx + dx, cy + dy
             if 0 <= x < w and 0 <= y < h:
                 i = y * w + x
                 if dx == 0 and dy == 0:
                     cost[i] = math.inf
                 else:
-                    cost[i] = max(cost[i], LETHAL_COST if is_lethal else MARGIN_COST)
+                    cost[i] = max(cost[i], LETHAL_COST if is_lethal else margin_cost(gap, lethal_m, inflate_m))
 
 
 class EmptyMap(ValueError):
@@ -100,7 +114,7 @@ def _grow_points(cost: list, w: int, h: int, origin: tuple, res: float, points: 
                 if d < lethal_m:
                     cost[i] = max(cost[i], LETHAL_COST)
                 elif d < inflate_m:
-                    cost[i] = max(cost[i], MARGIN_COST)
+                    cost[i] = max(cost[i], margin_cost(d, lethal_m, inflate_m))
     return own
 
 
@@ -222,18 +236,20 @@ ESCAPE_M = 0.5          # a duck stopped at the cliff-stop distance (45 cm) is i
 ESCAPE_COST = 100.0
 
 
-def nearest_free(grid: CostGrid, goal: tuple, within_m: float) -> tuple | None:
-    """The centre of the cell nearest goal (map metres) that is not lethal, within within_m of it; None if there is none.
-    A goal inside a drop's ring is held off at it (the operator, 2026-11-17)."""
+def nearest_free(grid: CostGrid, goal: tuple, within_m: float, room_m: float = 0.0) -> tuple | None:
+    """The centre of the cell nearest goal (map metres) that is not lethal and has room_m clear of obstacles round it,
+    within within_m of it; None if there is none. A goal inside a drop's ring is held off at it (the operator, 2026-11-17).
+    room_m: the duck must be able to turn where it stops (exploring b1 r3, b2 r1, b3 r1: held off 9-11 cm from the cabinet
+    or the shelf, every next leg refused with no room to turn, the run trapped)."""
     g = grid.cell(*goal)
-    if grid.inside(*g) and grid.at(*g) < LETHAL_COST:
+    if grid.inside(*g) and grid.at(*g) < LETHAL_COST and (not room_m or clearance(grid, grid.centre(*g), room_m) >= room_m):
         return grid.centre(*g)
     reach = math.ceil(within_m / grid.res)
     best = None
     for dx in range(-reach, reach + 1):
         for dy in range(-reach, reach + 1):
             c = (g[0] + dx, g[1] + dy)
-            if not grid.inside(*c) or grid.at(*c) >= LETHAL_COST:
+            if not grid.inside(*c) or grid.at(*c) >= LETHAL_COST or (room_m and clearance(grid, grid.centre(*c), room_m) < room_m):
                 continue
             p = grid.centre(*c)
             d = math.dist(p, goal)
