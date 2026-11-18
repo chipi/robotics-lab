@@ -185,8 +185,11 @@ FILE = {
     "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
     "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": nav.address, "mapd_socket": str(tmp / "mapd.sock"),
                 "observatory": "http://127.0.0.1:8070"},
+    "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED"},
+                  "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}},
+    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
     "capabilities": {
-        "drive": {"max_vx": 0.3, "max_vyaw": 1.5, "deadman_s": 0.5}, "sensors": [],
+        "sensors": [],
         "recognisers": [{"name": "sim-camera", "kinds": ["fridge"], "frame": "site"}],
         "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
         "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
@@ -219,6 +222,8 @@ def run_of(rid):
 
 
 check("the duck is online: robotd's stream, through the gate, is its state", wait_for(lambda: robot()["online"]), robot())
+# online is the first state; the pose follows the navigator's first fix, a moment later (CI's runner read between them)
+wait_for(lambda: (robot().get("status") or {}).get("pose") is not None)
 st = robot()["status"]
 check("its state is in the page's shape: pose in the site frame, mode, flags, battery from robot.health",
       st["pose"]["frame"] == "site" and st["mode"] == "idle" and st["flags"]["fall"] is False and st["battery_pct"] == 63.0 and st["link"] == "duck-gate", st)
