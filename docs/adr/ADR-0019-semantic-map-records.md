@@ -1,6 +1,6 @@
 # ADR-0019 — The semantic map in a run: `objects` and `look` records, and what the pages and the video draw of them
 
-**Status:** Proposed (2026-11-18), for the operator's decision
+**Status:** Accepted (the operator, 2026-11-18)
 **Date:** 2026-11-18
 **Context documents:** [ADR-0007](ADR-0007-run-file-format-2.md) (the run file, our own kinds),
 [ADR-0014](ADR-0014-replay-logging.md) (decisions as events), [ADR-0017](ADR-0017-video-export.md)
