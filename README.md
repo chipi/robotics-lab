@@ -8,6 +8,7 @@ with its own `.venv`.
 | [nxt/](nxt/) | LEGO Mindstorms NXT 2.0 driven from our own Python code: web UI, NXC programs |
 | [duck/](duck/) | Pollen's Microduck in simulation: the navigator, exploration, probes, recording |
 | [viewer/](viewer/) | miniview: runs as MCAP, an API with live runs, the workbench pages (`make viewer-up`) |
+| [control/](control/) | Mission Control (RFC-0014): robots, goals, sites and areas behind one API, against a fake robot so far (`make test-control`, `make control-run`; [CONTRACT.md](control/CONTRACT.md)) |
 
 ## Checks and CI
 

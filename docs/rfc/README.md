@@ -52,7 +52,8 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
 - [RFC-0014 — Mission Control: one API for every robot, goals in words, places and
-  objects](RFC-0014-mission-control.md) (Proposed, revision 2, 2026-11-18; for the operator's review)
+  objects](RFC-0014-mission-control.md) (Accepted, revision 2, 2026-11-18; first slice built: the
+  fake robot, the core and the API)
 - [RFC-0017 — Robot access: who may watch, who may drive, and one driver at a
   time](RFC-0017-robot-access.md)
   (Proposed, 2026-11-18; for the operator's review)

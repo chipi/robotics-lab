@@ -180,8 +180,9 @@ label is never touched by a merge.
 `GET /api/v1/events` is server-sent events. Each event is `id: <seq>`, `event: <kind>` and `data:` the
 JSON `{seq, t, kind, robot, ...}`. Query:
 
-- `since=<seq>`: replay what the ring (the latest 5000) still holds after it, then go live. Without it the
-  stream starts from now. When the ring no longer holds all of it, an `event: gap` comes first.
+- `since=<seq>`: replay what the ring (the latest 5000) still holds after it, then go live.
+  Without it the stream starts from now. When the ring no longer holds all of it, an
+  `event: gap` comes first.
 - `robots=a,b`, `goal_run=<id>`: filters.
 - `state_hz=<n>`: lowers the state rate of this subscription. It cannot raise it above the robot's.
 

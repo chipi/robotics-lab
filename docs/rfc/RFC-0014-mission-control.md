@@ -1,6 +1,14 @@
 # RFC-0014 — Mission Control: one API for every robot, goals in words, places and objects
 
-**Status:** Proposed, revision 2 (2026-11-18), for the operator's review
+**Status:** Accepted, revision 2 (2026-11-18). The operator, 2026-11-18: "goal is to deliver all
+ideas we wrote down". Built, in `control/` (eb6a560): of step 1 the API contract and its tests, the
+fake robot with its fake site, the registry from robot files, the lock through the gate for the fake
+robot, the goal library with ad-hoc runs, `must_not` at robot, site and goal level, goal runs with
+every outcome, and rates that are settings; of step 3, against the fake robot only, the site and
+area library, objects with stable ids, naming, `inventory`, `go_to_object`, `explore`, `not_found`,
+`done` and `result`; and, ahead of its turn, `go_to_area` and `explore {area}` of step 9. Not built:
+the page, the MCP server and the `/watch` link of step 1, the objects and areas layers on a map, export
+and import, and steps 0, 2, 4 to 8 and 10 to 12. The container files are written and not built.
 **Builds on:** [RFC-0006](RFC-0006-mission-control.md) (the vision, superseded in part, §2.1),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
 [RFC-0002](RFC-0002-robot-brain.md) §3.9 to §3.10 (several robots, the brain's API),
@@ -1024,3 +1032,40 @@ kept to record where each answer went.
   drive); a goal run ends `interrupted` on takeover and `cancelled` on STOP; a STOP latches; the
   MCP no-fire rule is enforced by Mission Control; the NXT's lock lives in `nxt-web`'s Controller
   (`/api/lock`); the first build runs in home-lab mode, with no pairing, keys, TLS or discovery.
+- 2026-11-18 — Accepted, and the first slice built (eb6a560, `control/`, tests `make test-control`).
+  The operator: "goal is to deliver all ideas we wrote down". What the RFC left open, and what the
+  slice chose (each is open to the operator's correction):
+  - **`must_not` names.** §3.4.1's example writes `["contact", "drop"]` and `stall`, §3.3.2's
+    capability list `fall`, `drop_clearance` and `stuck`. The slice stores the capability names and
+    accepts `drop` as `fall` and `stall` as `stuck`.
+  - **The lock over HTTP.** A lease is tied to a connection, and an HTTP call has none. The lease is
+    tied to a session id that `POST /lock` returns and every drive sends, as nxt-web's `/api/lock`
+    does; "Mission Control's own name" is the `client` the caller gives. Release on disconnect does
+    not exist over HTTP: expiry (20 s) covers it. Drive without a session is refused ("no lease, no
+    motion").
+  - **Merge and split of areas** (§3.2.1 names the calls, not the geometry). Merge folds `other` into
+    the first area with the convex hull of both outlines unless the caller gives `outline`; split
+    cuts by a line that crosses the outline in exactly two places and misses its corners, the area
+    keeps the left half. An area a guardrail names is not deleted, merged away or split (a new half
+    would escape it). Nested areas: the smallest holds the point.
+  - **Association gates** (§3.5.2 says "the navigator's own rule"): 0.5 m, and 1.5 m for a unique kind,
+    read from `ASSOC_M` and `UNIQUE_M` in `semantic_map.py` on the branch `explore-apartment`.
+  - **The navigator's `seed`** (§3.7 says the site's objects) also carries the areas' outlines: a
+    navigator cannot go to or stay out of an area without them.
+  - **§3.3.2's rule** is applied as written to every goal that names an object or an area (so an area
+    goal is accepted for a robot with a recogniser that is not localised in the site frame, which is
+    doubtful: the outlines are in the site frame). `explore` needs a map, `inventory` a recogniser
+    (§3.4.1's "Needs" column).
+  - **A goal a robot cannot take is a run in the state `refused`** with the reason, not an HTTP error;
+    an offline robot is an error (503) and creates no run (§3.2.1's two rules, read together).
+  - **`explore`'s parameters** are `{area}` or `{site: true}`; `site` is the run's site, which is the
+    robot's site (`PUT /robots/{id}/site`, an addition to §3.2.1) unless the run names one.
+  - **The robot file** is JSON for now (question 21 stays open), and the slice depends on the duck
+    package for the gate library (a path source, as nxt-web depends on the viewer package), which pulls
+    `mcap` and `miniview` into Mission Control's environment.
+  - **The fake robot's navigator** goes in straight lines, so a no-go area on the way is refused ("no
+    path that avoids it") and its waypoints inside one are skipped; it confirms an object at two
+    sightings and looks twice at each stop. The real navigator plans round a no-go area.
+  - **Not checked here:** anything on a real robot, the simulator, a browser, the MCP server, Docker
+    (`docker compose config` parses the compose files; no image was built or run), the stream under
+    load beyond five clients, and the order of events across threads beyond what the tests show.

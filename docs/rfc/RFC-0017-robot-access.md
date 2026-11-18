@@ -2,8 +2,9 @@
 
 **Status:** Accepted, revision 2 (2026-11-18). Built: §5 step 1 (the gate library,
 `duck/src/duck_lab/gate.py`, 6a39053) and step 4's `nxt-web` side (`/api/lock`,
-`nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter does not exist yet). Not built:
-steps 2 and 3.
+`nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter does not exist yet) and step 2
+(the gate stands in front of RFC-0014's fake robot, `control/`, eb6a560: its tests run the real
+rules). Not built: step 3.
 **Builds on:** [RFC-0014](RFC-0014-mission-control.md) (§3.3.3 the exclusive control lock, §3.8
 safety, §3.9 access, §3.10 swarm),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface, the deadman),
