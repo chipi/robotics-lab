@@ -10,9 +10,10 @@ area library, objects with stable ids, naming, `inventory`, `go_to_object`, `exp
 the next commit (920cc90): the page of step 1 (robots, the map with the objects and areas layers, the
 library, point goals by tapping the map, goal runs from the event stream, STOP and STOP ALL, a Watch
 link that is disabled while the run key is null), the areas the operator draws, renames and deletes
-on that map, and site export and import. Not built: the MCP server of step 1 (it needs a dependency
-decision), a working `/watch` link (the fake robot writes no Observatory run), and steps 0, 2, 4 to
-8 and 10 to 12. The container files are written and not built.
+on that map, and site export and import. Then the MCP server of step 1 (62de2f0; the operator
+approved the official `mcp` SDK for `control/` only), so step 1 is built except the `/watch` link,
+which needs a run key (the fake robot writes no Observatory run). Not built: steps 0, 2, 4 to 8 and
+10 to 12. The container files are written and not built.
 **Builds on:** [RFC-0006](RFC-0006-mission-control.md) (the vision, superseded in part, §2.1),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
 [RFC-0002](RFC-0002-robot-brain.md) §3.9 to §3.10 (several robots, the brain's API),
@@ -1094,3 +1095,38 @@ kept to record where each answer went.
   - **Checked in a browser now:** headless Chromium at 390 px and 1500 px, dark and light, on the
     fake robot. **Not checked:** a phone, another browser, a screen reader, a touch screen's tap
     (the test clicks), a real robot, a long-running page.
+- 2026-11-18 — The MCP server built (62de2f0). The operator's answers: `control/` may depend on the
+  duck-lab and miniview packages as path sources; the official Python `mcp` SDK is approved for
+  `control/` only; the NXT lock covers file upload and delete (1ded610). Choices:
+  - **`mcp` 2.3.0** (`uv add mcp` in `control/`): the lock gains 31 packages, annotated-types 0.8.0,
+    anyio 4.16.0, attrs 26.1.0, cffi 2.1.1, click 8.5.1, cryptography 50.0.2, exceptiongroup 1.3.1,
+    h11 0.16.0, httpcore2 2.16.2, httpx2 2.16.2, httpx2-jsfetch 1.0, idna 3.20, jsonschema 4.26.0,
+    jsonschema-specifications 2025.9.1, mcp 2.3.0, mcp-types 2.3.0, opentelemetry-api 1.45.2,
+    pycparser 3.12, pydantic 2.14.3, pydantic-core 2.50.4, pyjwt 2.15.1, python-multipart 0.0.34,
+    pywin32 312, referencing 0.37.0, rpds-py 2026.9.1, sse-starlette 3.7.0, starlette 1.10.0,
+    truststore 0.10.5, typing-extensions 4.16.0, typing-inspection 0.4.5, uvicorn 0.54.0. Three of
+    them (exceptiongroup, httpx2-jsfetch, pywin32) are for other Python versions or Windows and are
+    not installed on this machine. No locked package changed; the duck and viewer locks are
+    untouched. The Dockerfile's `pip install ./control` reads no lock, so an image gets whatever
+    `mcp>=2.3.0` resolves to on the day it is built.
+  - **The server is a client of the HTTP API with an allow-list of 29 routes** (the page's rule,
+    §3.2: no private path), over stdio. HTTP transport was not built: the RFC does not ask for it.
+  - **What an agent may not do** (§3.8, O21, RFC-0017 §3.5.7, §3.5.3, RFC-0002 §3.5): fire (no
+    tool, no route), take a robot another client holds (no tool; one client name, fixed by the
+    operator), draw, change or delete areas, make or delete sites, import, set a site's guardrails
+    or assign a robot to a site (the operator's; read only), run on a real robot unless the
+    operator started the server with `--allow-real`. The last is this slice's reading of "real runs
+    need the operator in the room"; §3.8 says it of the real duck, and no real robot exists yet.
+  - **A departure from §3.2:** "the MCP server exposes every resource and action, not a subset
+    (O11)". Writes on sites and areas (§3.2.1, §3.5.3) are left out on purpose, so the operator's
+    areas stay the operator's. If an agent should draw areas, that is one more allowed route and
+    tool.
+  - **`nxt-web`:** the upload's session is the `session` query parameter (its body is the file); a
+    delete's is in its JSON body. With nobody holding the lock a call with no session still works,
+    as for drive, because the page does not take the lock yet; so while another client holds it,
+    the page's upload and delete are refused.
+  - **The page test's flake** was found by running it under CPU load (2 of 6 runs failed): the test
+    read the area list before the page had drawn it, and the two-press delete lived on the button,
+    so a redraw disarmed it. Both fixed (16e5e7d); 8 of 8 passed under the same load.
+  - **Not checked:** the MCP server with a real agent (Claude or another client) rather than the
+    SDK's own client; the HTTP transport; the nxt-web lock against a real brick.
