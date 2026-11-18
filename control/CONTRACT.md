@@ -21,7 +21,8 @@ is `{"ok": false, "error": {"code", "message", ...data}}` with an honest status 
 | 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use` |
 | 413 | `too_large` |
 | 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline`, `bad_bundle` |
-| 501 | `not_built` (teams, RFC-0014 step 5), `no_planner` |
+| 501 | `not_built` (`share: split`, RFC-0014 step 10) |
+| 502 | `planner_failed` (the LLM planner did not answer, or not with goals) |
 | 503 | `robot_offline` |
 
 A command to an offline robot is an error and nothing is queued. A goal that a robot cannot take is
@@ -91,13 +92,48 @@ a 422.
 | `POST /goals/{id}/runs` | `{robots: [id], target?: "sim" \| "real", site?}`: 201, a goal run |
 | `POST /goal-runs` | `{goal, robots, target?, site?}`: a goal that is not in the library; saves none |
 | `POST /goal-runs/{id}/save` | `{name, folder?}`: the run's goal goes in the library and the run links to it |
-| `GET /goal-runs?robot=&state=&goal=` | runs, newest first |
-| `GET /goal-runs/{id}` | one run, with its `decisions` |
-| `POST /goal-runs/{id}/cancel` | the navigator stops, the robot is stopped |
-| `POST /plan` | `501 no_planner`: no planner is configured |
+| `GET /goal-runs?robot=&state=&goal=&parent=` | runs, newest first; the children of a group are listed on their own only with `robot` or `parent` |
+| `GET /goal-runs/{id}` | one run, with its `decisions`; a group with its `children` |
+| `POST /goal-runs/{id}/cancel` | the navigator stops, the robot is stopped; a group's children are all cancelled |
+| `POST /plan` | `{text, robot?, site?}`: words in, goals out, nothing run (below) |
 
-`robots` names one robot; two or more, or `team`, is `501 not_built` (RFC-0014 step 5). `site`
-defaults to the robot's site. A `target` of `real` is refused for the fake robot.
+`robots` names one robot, or several, or `team` names a team (the robots whose files list it in
+`teams`); `share` (below) applies to several. `site` defaults to the robot's site. A `target` of
+`real` is refused for the fake robot.
+
+### One goal on several robots
+
+`share: "each"` (the default) has every robot do the whole goal, independently; `share: "any"` ends
+the goal when the first robot reaches it and cancels and stops the others; `share: "split"` is
+`501 not_built`. The reply is a **group run**: a parent with `share`, `robots` and `children`, one
+child run per robot, each an ordinary goal run with `parent_id`. The children start in the order of
+the robot ids.
+
+- A robot that cannot take part (offline, busy, or refused by its capabilities) is left out: its child
+  is a run in the state `refused` with the reason. If no robot can, the group is `refused`.
+- If a robot is **held** by another client, the children already started are cancelled and the
+  group is `refused`, naming the robot (RFC-0017 §3.5.3).
+- The group ends when its children have. `each`: `reached` or `done` when every robot that took part
+  did, one state for all when they ended alike, else `failed` with each robot's state in `reason`;
+  `result` is `{robot: {state, reason, result, run}}`. `any`: the winner's state, `result` is
+  `{winner, result, robots}`; when no robot reaches it, as for `each`.
+- STOP of one robot ends its child `cancelled` and the group goes on with the others.
+
+### Goals in words
+
+`POST /plan` returns `{plan: {goals: [{goal, read_back}], dropped, source, llm_configured,
+confirm_required, message, site}}`. The goals are proposals: each is a valid goal, read back in
+words, and nothing runs until the operator starts it (`POST /goal-runs` with the goal). The
+**phrase matcher** (no model, always there) understands "go to the kitchen" (an area), "go to my
+desk" (a label), "go to the fridge" (a kind), "go to 1.5, 0.5", "explore" and "explore the
+kitchen", "take an inventory" and "inventory of the study", with "without touching anything" adding
+the guardrail `contact`. It matches against the site's own areas, labels and kinds and the kinds
+the robots' recognisers know. Only when it finds nothing, and an **LLM planner is configured**, is
+the model asked. The LLM is off unless `planner.json` sits beside the robot files:
+`{"base_url", "model", "api_key_env" | "api_key_file", "timeout_s"}`, an OpenAI-compatible chat
+completions endpoint. What the model says is validated like any goal: an unknown kind, field or
+guardrail is dropped (listed in `dropped`), and a plan's guardrails only add to the site's and the
+robot's. The planner module imports no robot code: it cannot drive, stop or fire.
 
 ### A goal run
 
@@ -290,7 +326,8 @@ JSON, one per robot, `<id>.json`. The format is provisional (RFC-0014 §5 questi
 and Open-RMF specs are not read yet). Fields: `id`, `label`, `kind`, `adapter {type, call_timeout_s?}`,
 `capabilities {drive, sensors, recognisers, localisation, map, navigator, guardrails, skills,
 description}`, `guardrails` (the robot's own, each of them in `capabilities.guardrails`),
-`rates {state_hz, map_hz, max_state_hz}`, `lease_s`, `online_after_s`, `takeover [client names]`.
+`rates {state_hz, map_hz, max_state_hz}`, `lease_s`, `online_after_s`, `takeover [client names]`,
+`teams [names]`.
 `state_hz` may not exceed `max_state_hz`, which is what the robot's interface allows. A call that
 does not answer within `adapter.call_timeout_s` is abandoned on its own thread and counts as an error;
 a late answer may still arrive, and the robot's deadman covers it.

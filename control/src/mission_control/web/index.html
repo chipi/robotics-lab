@@ -46,6 +46,11 @@
     <h2>Goal</h2>
     <div class="stack">
       <div class="row">
+        <input id="say" class="grow" placeholder="Say it in words: go to the kitchen" aria-label="A goal in words">
+        <button id="say-go" class="btn" type="button">Plan</button>
+      </div>
+      <div id="plan-out" aria-live="polite"></div>
+      <div class="row">
         <select id="g-kind" aria-label="Goal kind">
           <option value="point">Point</option>
           <option value="go_to_object">Go to an object</option>

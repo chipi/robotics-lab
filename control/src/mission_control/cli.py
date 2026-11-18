@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .api import serve
 from .core import MissionControl
+from .planner import load_planner
 from .robots import ConfigError, load_robot_files
 
 
@@ -29,6 +30,8 @@ def main(argv=None) -> int:
                    help="folder for the SQLite store and the gates' logs (env MC_STATE)")
     s.add_argument("--host", default=os.environ.get("MC_HOST", "127.0.0.1"))
     s.add_argument("--port", type=int, default=int(os.environ.get("MC_PORT", "8060")))
+    s.add_argument("--planner", type=Path, default=os.environ.get("MC_PLANNER"),
+                   help="the LLM planner's settings (default planner.json beside the robot files; none: no LLM) (env MC_PLANNER)")
     m = sub.add_parser("mcp", help="the MCP server for an agent, over stdio, a client of a running API")
     m.add_argument("--url", default=os.environ.get("MC_URL", "http://127.0.0.1:8060"), help="Mission Control's address (env MC_URL)")
     m.add_argument("--client", default=os.environ.get("MC_MCP_CLIENT", "mcp-agent"), help="the name the agent's calls carry")
@@ -50,7 +53,8 @@ def main(argv=None) -> int:
     except ConfigError as exc:
         print(f"mission-control: {exc}", file=sys.stderr)
         return 2
-    mc = MissionControl(configs, state_dir=args.state)
+    llm = load_planner(args.planner or args.robots / "planner.json")     # none: the LLM is off; the phrase matcher is always there
+    mc = MissionControl(configs, state_dir=args.state, planner=llm)
     server = serve(mc, args.host, args.port)
     mc.start()
     signal.signal(signal.SIGTERM, _terminate)

@@ -40,7 +40,7 @@ class RobotConfig:
         if not isinstance(raw, dict):
             raise ConfigError("a robot file is a JSON object")
         extra = set(raw) - {"id", "label", "kind", "adapter", "capabilities", "guardrails", "rates", "lease_s",
-                            "online_after_s", "takeover"}
+                            "online_after_s", "takeover", "teams"}
         if extra:
             raise ConfigError(f"unknown fields {sorted(extra)}")
         self.id = raw.get("id")
@@ -77,6 +77,9 @@ class RobotConfig:
             raise ConfigError(f"{self.id}: lease_s is 10 to 30 s (RFC-0017 §3.3)")
         self.online_after_s = float(raw.get("online_after_s", max(2.0, 3.0 / rates["state_hz"])))
         self.takeover = list(raw.get("takeover", []))
+        self.teams = list(raw.get("teams", []))
+        if not all(isinstance(t, str) and t for t in self.teams):
+            raise ConfigError(f"{self.id}: teams is a list of team names")
         if not all(isinstance(n, str) for n in self.takeover):
             raise ConfigError(f"{self.id}: takeover is a list of client names")
         self.call_timeout_s = self.adapter.get("call_timeout_s")
@@ -86,6 +89,8 @@ def load_robot_files(directory) -> list:
     """Every robots/*.json of a directory, in file order; a bad file is an error naming it."""
     out, seen = [], set()
     for path in sorted(Path(directory).glob("*.json")):
+        if path.name == "planner.json":      # the planner's settings (planner.py) sit beside the robot files, not in them
+            continue
         try:
             cfg = RobotConfig(json.loads(path.read_text()))
         except (ConfigError, json.JSONDecodeError) as exc:

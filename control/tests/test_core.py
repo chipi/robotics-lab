@@ -350,8 +350,9 @@ try:
     check("a robot file whose own guardrail it cannot enforce is a config error", False)
 except ConfigError as exc:
     check("a robot file whose own guardrail it cannot enforce is a config error", "not in capabilities.guardrails" in str(exc), str(exc))
-check("several robots on one goal is not built, and says so", refusal(mc3.run_adhoc, {"goal": POINT, "robots": ["blind", "x"]}).status == 501
-      and refusal(mc3.run_adhoc, {"goal": POINT, "team": "all"}).code == "not_built")
+check("several robots need robots that exist, and a team that exists (the groups themselves are in test_teams.py)",
+      refusal(mc3.run_adhoc, {"goal": POINT, "robots": ["blind", "x"]}).status == 404
+      and refusal(mc3.run_adhoc, {"goal": POINT, "team": "all"}).status == 404)
 check("a bad goal is a 422 and creates no run", refusal(mc3.run_adhoc, {"goal": {"kind": "fetch"}, "robots": ["blind"]}).code == "unknown_kind"
       and mc3.list_runs(robot="blind") != [] and all(r["goal"]["kind"] != "fetch" for r in mc3.list_runs()))
 check("the fake is not a real robot", refusal(start, mc3, POINT, rid="blind", target="real").status == 422)

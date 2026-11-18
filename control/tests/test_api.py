@@ -153,9 +153,11 @@ ticks(1.0)
 st, b = call("POST", f"/goal-runs/{long_run}/cancel")
 check("POST /goal-runs/{id}/cancel: cancelled, robot stopped", st == 200 and b["run"]["state"] == "cancelled")
 check("cancelling an ended run is 409", call("POST", f"/goal-runs/{long_run}/cancel")[0] == 409)
-check("a team is 501 not_built", call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 0, "y": 0}}, "team": "all"})[1]["error"]["code"] == "not_built")
-st, b = call("POST", "/plan", {"text": "go to the fridge"})
-check("POST /plan with no planner configured says there is none", st == 501 and b["error"]["code"] == "no_planner")
+check("a team that does not exist is a 404; share: split is 501 not_built (RFC-0014 step 10)",
+      call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 0, "y": 0}}, "team": "all"})[0] == 404
+      and call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 0, "y": 0}}, "robots": ["fake-1", "blind"], "share": "split"})[1]["error"]["code"] == "not_built")
+st, b = call("POST", "/plan", {"text": "make me a sandwich"})
+check("POST /plan with nothing to propose and no LLM configured: 200, no goals, saying why (the phrase matcher is always there)", st == 200 and b["plan"]["goals"] == [] and "no LLM planner" in b["plan"]["message"], b)
 
 # --- sites, areas, objects --------------------------------------------------------------------------
 st, b = call("POST", "/sites", {"name": "Home", "kind": "apartment"})

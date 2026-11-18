@@ -7,7 +7,11 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# version -> what takes a store of that version to the next. 2: one goal on several robots (RFC-0014 section 3.4.4): a run
+# may have a parent (the group) and a group says how its robots share the goal.
+MIGRATIONS = {1: "ALTER TABLE goal_runs ADD COLUMN parent_id INTEGER; ALTER TABLE goal_runs ADD COLUMN share TEXT;"}
 
 SCHEMA = """
 CREATE TABLE sites (
@@ -32,7 +36,8 @@ CREATE TABLE goal_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, goal_id INTEGER REFERENCES goals(id), goal TEXT NOT NULL,
   robot TEXT NOT NULL, site_id TEXT, target TEXT NOT NULL, state TEXT NOT NULL, reason TEXT,
   progress TEXT, result TEXT, broken TEXT, guardrails TEXT NOT NULL, conditions TEXT NOT NULL,
-  run_key TEXT, as_expected INTEGER, created_at REAL NOT NULL, started_at REAL, ended_at REAL);
+  run_key TEXT, as_expected INTEGER, created_at REAL NOT NULL, started_at REAL, ended_at REAL,
+  parent_id INTEGER, share TEXT);
 CREATE TABLE decisions (
   run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,
   text TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, n));
@@ -62,8 +67,12 @@ class Store:
             if version == 0:
                 self._db.executescript(SCHEMA)
                 self._db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-            elif version != SCHEMA_VERSION:
+            elif version > SCHEMA_VERSION:
                 raise RuntimeError(f"{path}: schema version {version}, this build knows {SCHEMA_VERSION}")
+            else:
+                for v in range(version, SCHEMA_VERSION):       # an older store is brought up, one version at a time
+                    self._db.executescript(MIGRATIONS[v])
+                    self._db.execute(f"PRAGMA user_version = {v + 1}")
 
     def execute(self, sql: str, args=()) -> int:
         with self.lock:

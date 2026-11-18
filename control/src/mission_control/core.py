@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import goals, guardrails
+from . import goals, guardrails, planner
 from .errors import ApiError, conflict, invalid, not_found
 from .events import EventBus
 from .robots import RobotRuntime, make_adapter
@@ -41,8 +41,9 @@ def _map_ids(value, ids: dict):
 
 
 class MissionControl:
-    def __init__(self, robot_configs: list, *, state_dir=None, clock=time.monotonic, wall=time.time):
+    def __init__(self, robot_configs: list, *, state_dir=None, clock=time.monotonic, wall=time.time, planner=None):
         self.clock, self.wall = clock, wall
+        self.planner = planner         # an LLM planner (planner.LlmPlanner) or None: off
         self.state_dir = Path(state_dir) if state_dir else None
         self.store = Store(self.state_dir / "mission-control.sqlite" if self.state_dir else None)
         self.bus = EventBus(wall)
@@ -57,6 +58,8 @@ class MissionControl:
             self.robots[cfg.id] = rt
         self._threads: list = []
         self._stopping = threading.Event()
+        self._group_lock = threading.RLock()
+        self._cancelling: set = set()
 
     # --- running -------------------------------------------------------------------------------------
 
@@ -260,13 +263,13 @@ class MissionControl:
     def _start_run(self, goal_spec, body, goal_id) -> dict:
         if not isinstance(body, dict):
             raise invalid("body is {robots, target, site?}")
-        if body.get("team") is not None:
-            raise ApiError(501, "not_built", "teams are RFC-0014 step 5; name one robot in robots")
+        if body.get("team") is not None or (isinstance(body.get("robots"), list) and len(body["robots"]) > 1):
+            return self._start_group(goal_spec, body, goal_id)
         robots = body.get("robots")
         if not isinstance(robots, list) or not robots or not all(isinstance(r, str) for r in robots):
-            raise invalid("robots is a list with the id of the robot to run on")
-        if len(robots) > 1:
-            raise ApiError(501, "not_built", "one goal on several robots (share: each, any) is RFC-0014 step 5")
+            raise invalid("robots is a list with the ids of the robots to run on, or team names a team")
+        if body.get("share") is not None:
+            raise invalid("share says how several robots share a goal: name several robots or a team")
         rt = self.robot(robots[0])
         target = body.get("target", "sim")
         if target not in ("sim", "real"):
@@ -282,7 +285,136 @@ class MissionControl:
                 raise conflict("robot_busy", f"goal run {rt.active.id} holds {rt.cfg.id}", goal_run=rt.active.id)
             return self._create_and_start(rt, goal, goal_id, site_id, target)
 
-    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target) -> dict:
+    # --- one goal on several robots (RFC-0014 §3.4.4) ----------------------------------------------------------
+
+    def _group_ids(self, body: dict) -> list:
+        if body.get("team") is not None:
+            if body.get("robots") is not None:
+                raise invalid("name robots or a team, not both")
+            name = body["team"]
+            ids = sorted(rid for rid, rt in self.robots.items() if name in rt.cfg.teams)
+            if not ids:
+                raise not_found("team", name)
+            return ids
+        robots = body.get("robots")
+        if not all(isinstance(r, str) for r in robots) or len(set(robots)) != len(robots):
+            raise invalid("robots is a list of different robot ids")
+        for rid in robots:
+            self.robot(rid)
+        return sorted(robots)
+
+    def _start_group(self, goal_spec, body: dict, goal_id) -> dict:
+        """A goal run for several robots: a parent run and one child run per robot. `each`: every robot does the whole goal,
+        independently, and the parent holds one result per robot. `any`: the first robot to reach it ends the goal and the
+        others are cancelled. A robot that cannot take part is left out with its reason (a child run in the state refused); if none
+        can, the group is refused. The leases are taken in the order of the robot ids and, if a robot is held by another client,
+        the ones already taken are released and the group fails naming it (RFC-0017 §3.5.3)."""
+        ids = self._group_ids(body)
+        share = body.get("share", "each")
+        if share == "split":
+            raise ApiError(501, "not_built", "share: split (dividing the goal's area between robots) is RFC-0014 step 10")
+        if share not in ("each", "any"):
+            raise invalid("share is 'each' or 'any'")
+        target = body.get("target", "sim")
+        if target not in ("sim", "real"):
+            raise invalid("target is 'sim' or 'real'")
+        rts = [self.robot(i) for i in ids]
+        if target == "real" and any(rt.cfg.kind == "fake" for rt in rts):
+            raise invalid("the fake robot is not a real robot")
+        goal = goals.validate(goal_spec, require_name=False)
+        sites = {self._site_of(body, rt) for rt in rts}
+        now = self.wall()
+        parent_id = self.store.execute(
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, started_at, share)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (goal_id, dumps(goal), ",".join(ids), sites.pop() if len(sites) == 1 else None, target, "running", "[]",
+             dumps({"done_when": goal["done_when"], "not_checkable": []}), now, now, share))
+        self.bus.emit("goal-run", goal_run=parent_id, state="running", share=share, robots=ids)
+        held = None
+        for rt in rts:
+            site_id = self._site_of(body, rt)
+            if not rt.online():
+                self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"{rt.cfg.id} is offline: left out")
+                continue
+            with rt.mutex:
+                if rt.active:
+                    self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"goal run {rt.active.id} holds {rt.cfg.id}: left out")
+                    continue
+                child = self._create_and_start(rt, goal, goal_id, site_id, target, parent_id)
+            if child["state"] == "refused" and str(child["reason"]).startswith("driven by"):
+                held = (rt.cfg.id, child["reason"])
+                break
+        if held is not None:
+            for k in self.store.all("SELECT id, state FROM goal_runs WHERE parent_id = ?", (parent_id,)):
+                if k["state"] in goals.ACTIVE:
+                    self.cancel_run(k["id"])
+            self._finish_group(parent_id, "refused", f"{held[0]} is held ({held[1]}): the robots already taken were released", None)
+        else:
+            self._refresh_group(parent_id)
+        return self.get_run(parent_id)
+
+    def _refuse_child(self, rt: RobotRuntime, goal: dict, goal_id, parent_id: int, site_id, target, reason: str) -> int:
+        now = self.wall()
+        run_id = self.store.execute(
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, reason, guardrails, conditions, as_expected, created_at,"
+            " ended_at, parent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "refused", reason, "[]", dumps({"done_when": goal["done_when"], "not_checkable": []}),
+             int(goal["expect"] == "refuse"), now, now, parent_id))
+        self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="refused", reason=reason)
+        return run_id
+
+    def _refresh_group(self, parent_id: int) -> None:
+        """Called whenever a child run changes: end the group when its children have ended, and for `any` send the others home as
+        soon as one has reached the goal."""
+        with self._group_lock:
+            parent = self.store.one("SELECT * FROM goal_runs WHERE id = ?", (parent_id,))
+            if parent is None or parent["state"] in goals.TERMINAL:
+                return
+            kids = self.store.all("SELECT * FROM goal_runs WHERE parent_id = ? ORDER BY id", (parent_id,))
+            active = [k for k in kids if k["state"] in goals.ACTIVE]
+            winner = min((k for k in kids if k["state"] in goals.SUCCESS), key=lambda k: k["ended_at"], default=None)
+            if parent["share"] == "any" and winner is not None and active:
+                if parent_id not in self._cancelling:
+                    self._cancelling.add(parent_id)
+                    threading.Thread(target=lambda: [self._cancel_quietly(k["id"]) for k in active], daemon=True).start()
+                return
+            if active:
+                return
+            self._cancelling.discard(parent_id)
+            took_part = [k for k in kids if k["state"] != "refused"]
+            if not took_part:
+                reasons = "; ".join(f"{k['robot']}: {k['reason']}" for k in kids)
+                self._finish_group(parent_id, "refused", f"no robot could take the goal: {reasons}", None)
+                return
+            results = {k["robot"]: {"state": k["state"], "reason": k["reason"], "result": loads(k["result"]), "run": k["id"]} for k in kids}
+            if parent["share"] == "any" and winner is not None:
+                self._finish_group(parent_id, winner["state"], None, {"winner": winner["robot"], "result": loads(winner["result"]), "robots": results})
+                return
+            states = {k["state"] for k in took_part}
+            if all(k["state"] in goals.SUCCESS for k in took_part):
+                state, reason = ("done" if states == {"done"} else "reached"), None
+            elif len(states) == 1:
+                state, reason = states.pop(), "; ".join(f"{k['robot']}: {k['reason']}" for k in took_part if k["reason"])
+            else:
+                state = "failed"
+                reason = "; ".join(f"{k['robot']}: {k['state']}" + (f" ({k['reason']})" if k["reason"] else "") for k in took_part
+                                   if k["state"] not in goals.SUCCESS)
+            self._finish_group(parent_id, state, reason or None, results)
+
+    def _finish_group(self, parent_id: int, state: str, reason, result) -> None:
+        goal = loads(self.store.one("SELECT goal FROM goal_runs WHERE id = ?", (parent_id,))["goal"])
+        as_expected = state in goals.SUCCESS if goal["expect"] == "reach" else state == "refused"
+        self.store.execute("UPDATE goal_runs SET state = ?, reason = ?, result = ?, as_expected = ?, ended_at = ? WHERE id = ?",
+                           (state, reason, dumps(result), int(as_expected), self.wall(), parent_id))
+        self.bus.emit("goal-run", goal_run=parent_id, state=state, reason=reason, result=result, as_expected=as_expected)
+
+    def _cancel_quietly(self, run_id: int) -> None:
+        try:
+            self.cancel_run(run_id)
+        except ApiError:
+            pass                                   # it ended by itself in the meantime
+
+    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target, parent_id=None) -> dict:
         reason = None
         goal_guards = []
         for g in goal["must_not"]:
@@ -301,9 +433,9 @@ class MissionControl:
         conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal)}
         now = self.wall()
         run_id = self.store.execute(
-            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now))
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id))
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued")
         reason = reason or goals.capability_refusal(caps, goal, merged, has_site=site_id is not None)
         params = None
@@ -372,6 +504,9 @@ class MissionControl:
             rt.active = None
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state=state, reason=reason, result=result,
                       broken=broken, as_expected=as_expected)
+        parent = self.store.one("SELECT parent_id FROM goal_runs WHERE id = ?", (run_id,))["parent_id"]
+        if parent is not None:
+            self._refresh_group(parent)
 
     def _decision(self, rt: RobotRuntime, text: str, data: dict) -> None:
         act = rt.active
@@ -414,7 +549,11 @@ class MissionControl:
             "conditions": loads(row["conditions"]), "run_key": row["run_key"], "watch": self._watch(row),
             "expect": expected, "as_expected": None if row["as_expected"] is None else bool(row["as_expected"]),
             "created_at": row["created_at"], "started_at": row["started_at"], "ended_at": row["ended_at"],
+            "parent_id": row["parent_id"], "share": row["share"],
         }
+        if row["share"]:
+            view["robots"] = row["robot"].split(",")
+            view["children"] = [self._run_view(k) for k in self.store.all("SELECT * FROM goal_runs WHERE parent_id = ? ORDER BY id", (row["id"],))]
         if with_decisions:
             view["decisions"] = [{"n": d["n"], "at": d["at"], "text": d["text"], **loads(d["data"])}
                                  for d in self.store.all("SELECT * FROM decisions WHERE run_id = ? ORDER BY n", (row["id"],))]
@@ -426,12 +565,15 @@ class MissionControl:
             raise not_found("goal run", run_id)
         return self._run_view(row, with_decisions=True)
 
-    def list_runs(self, robot=None, state=None, goal_id=None, limit: int = 100) -> list:
+    def list_runs(self, robot=None, state=None, goal_id=None, parent=None, limit: int = 100) -> list:
+        """Newest first. Without a robot or a parent, the children of a group are not listed on their own: the group is."""
         where, args = [], []
-        for col, val in (("robot", robot), ("state", state), ("goal_id", goal_id)):
+        for col, val in (("robot", robot), ("state", state), ("goal_id", goal_id), ("parent_id", parent)):
             if val is not None:
                 where.append(f"{col} = ?")
                 args.append(val)
+        if robot is None and parent is None:
+            where.append("parent_id IS NULL")
         sql = "SELECT * FROM goal_runs" + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY id DESC LIMIT ?"
         return [self._run_view(r) for r in self.store.all(sql, (*args, limit))]
 
@@ -439,12 +581,31 @@ class MissionControl:
         row = self.get_run(run_id)
         if row["state"] in goals.TERMINAL:
             raise conflict("run_ended", f"goal run {run_id} already ended {row['state']}")
+        if row["share"]:
+            for kid in row["children"]:
+                if kid["state"] in goals.ACTIVE:
+                    self._cancel_quietly(kid["id"])
+            self._refresh_group(run_id)
+            return self.get_run(run_id)
         rt = self.robot(row["robot"])
         with rt.mutex:
             if rt.active and rt.active.id == run_id and rt.navigator is not None:
                 rt.navigator.goal_cancel()
                 self._sync(rt, rt.active)
         return self.get_run(run_id)
+
+    def plan(self, text, robot: str | None = None, site: str | None = None) -> dict:
+        """Words in, goals out (§3.4.5): proposals read back for the operator to confirm. Nothing runs, and no robot is touched."""
+        rt = self.robot(robot) if robot else None
+        site = site or (self.sites.robot_site(rt.cfg.id) if rt else None)
+        if site is None and len(self.sites.list()) == 1:
+            site = self.sites.list()[0]["id"]
+        areas = self.sites.areas(site) if site else []
+        objects = self.sites.objects(site) if site else []
+        kinds = {k for r in ([rt] if rt else self.robots.values()) for rec in r.cfg.capabilities.get("recognisers", []) for k in rec.get("kinds", [])}
+        out = planner.plan(text, planner.Context(areas, objects, kinds, site), self.planner)
+        out["site"] = site
+        return out
 
     def save_run(self, run_id: int, body) -> dict:
         """Put the goal of a run in the library (§3.4.2); the run keeps the link."""

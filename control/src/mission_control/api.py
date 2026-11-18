@@ -186,9 +186,10 @@ def adhoc_run(c: Ctx):
 
 @route("GET", "/goal-runs")
 def runs_list(c: Ctx):
-    goal = c.q("goal")
+    goal, parent = c.q("goal"), c.q("parent")
     return {"ok": True, "runs": c.mc.list_runs(robot=c.q("robot"), state=c.q("state"),
-                                               goal_id=_int(goal, "goal") if goal is not None else None)}
+                                               goal_id=_int(goal, "goal") if goal is not None else None,
+                                               parent=_int(parent, "goal run") if parent is not None else None)}
 
 
 @route("GET", "/goal-runs/{id}")
@@ -208,7 +209,9 @@ def run_save(c: Ctx):
 
 @route("POST", "/plan")
 def plan(c: Ctx):
-    raise ApiError(501, "no_planner", "no planner is configured: goals are defined by hand, from the library or by an agent")
+    """Words in, goals out: proposals to confirm, nothing run (§3.4.5). The phrase matcher answers the simple ones with no model;
+    an LLM is asked only when planner.json configured one."""
+    return {"ok": True, "plan": c.mc.plan(c.body.get("text"), c.body.get("robot"), c.body.get("site"))}
 
 
 # --- sites, areas, objects ---------------------------------------------------------------------------

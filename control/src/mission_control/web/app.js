@@ -304,6 +304,22 @@ $("g-run").addEventListener("click", guard(async () => {
   if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
 }));
 
+// A goal in words (§3.4.5): the planner proposes, the operator reads it back and presses Run. Nothing runs before.
+$("say-go").addEventListener("click", guard(async () => {
+  const r = robot();
+  const p = (await api("POST", "/plan", { text: $("say").value, ...(r ? { robot: r.id } : {}), ...(S.site ? { site: S.site } : {}) })).plan;
+  setKids($("plan-out"),
+    p.goals.map((x) => h("div", { class: "row", "data-plan": "1" },
+      h("span", { class: "grow" }, x.read_back), h("span", { class: "faint", style: "font-size:12px" }, p.source),
+      h("button", { class: "btn sm primary", type: "button", "data-action": "run-plan", onclick: guard(async () => {
+        const j = await api("POST", "/goal-runs", { goal: x.goal, robots: [r.id], ...(S.site ? { site: S.site } : {}) });
+        S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
+        if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
+      }) }, "Run"))),
+    p.goals.length ? null : h("div", { class: "dim", id: "plan-none" }, p.message),
+    p.dropped.length ? h("div", { class: "faint", style: "font-size:12px" }, `${p.dropped.length} part(s) of the plan were not valid goals and were dropped.`) : null);
+}));
+
 $("g-save").addEventListener("click", guard(async () => {
   const goal = formGoal();
   if (!goal.name) throw new Error("Give the goal a name to save it.");
