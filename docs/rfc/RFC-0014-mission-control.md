@@ -858,8 +858,11 @@ kept to record where each answer went.
     suggested area names should be created as areas automatically, or only when the operator
     accepts them (proposed: only when accepted); how an area's extent is stored (polygon on the
     site frame, proposed); what an outdoor "zone" needs beyond a name and an extent.
-26. **The per-site-kind hints in the catalogue (§3.5.1).** Open: where they live (in
-    `kinds.json`, which is the navigator's, RFC-0016) and who changes it.
+26. **The per-site-kind hints in the catalogue (§3.5.1).** Answered (the operator, 2026-11-18: "Ok
+    on q26"): in the kinds catalogue (`kinds.json`, RFC-0016): each kind keeps general area hints
+    and optional hints per site kind (`rooms_by_site`; a fridge at an office says break room), one
+    catalogue for every robot; Mission Control reads it to show and edit the hints, it keeps no copy
+    of its own. Built on branch `site-map` (explore), with a test.
 
 ## 6. Alternatives considered
 
