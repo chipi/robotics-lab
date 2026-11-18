@@ -2,6 +2,7 @@
 # the Dockerfile copies goes in.
 *
 !control/pyproject.toml
+!control/uv.lock
 !control/src
 !duck/pyproject.toml
 !duck/src

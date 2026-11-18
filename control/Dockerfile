@@ -5,24 +5,25 @@
 #
 # `make`'s control-up / control-down wrap control/compose.yml. Configuration (the robot files) and data (the SQLite store, the gates'
 # logs) come in by volumes, the listen address and folders by MC_* variables; nothing is tied to a host. Robots are reached over the
-# network, never through a device on this host. The API has no login: publish the port on loopback (as above) or on the tailnet's
-# address, never on a public interface (RFC-0014 §3.9).
+# network, never through a device on this host. The API has no login by default: publish the port on loopback (as above) or on the
+# tailnet's address, never on a public interface (RFC-0014 §3.9); `--require-tokens` adds per-client tokens.
 #
-# The gate (RFC-0017) is a library in the duck package, and the duck package depends on the viewer package: pip does not read
-# [tool.uv.sources], so they are installed first, from the paths, and mission-control finds them satisfied.
+# The versions are control/uv.lock's, installed with `uv sync --frozen`. The gate (RFC-0017) is a library in the duck package and the
+# duck package depends on the viewer package: both are path sources in control/pyproject.toml, so the three folders sit side by side
+# as they do in the repository, and the two are installed editable from there.
 
 FROM python:3.12-slim
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
 
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
 WORKDIR /app
 COPY viewer/pyproject.toml ./viewer/pyproject.toml
 COPY viewer/src ./viewer/src
 COPY duck/pyproject.toml ./duck/pyproject.toml
 COPY duck/src ./duck/src
-COPY control/pyproject.toml ./control/pyproject.toml
+COPY control/pyproject.toml control/uv.lock ./control/
 COPY control/src ./control/src
-RUN pip install --no-cache-dir ./viewer \
- && pip install --no-cache-dir ./duck \
- && pip install --no-cache-dir ./control \
+RUN cd control && uv sync --frozen --no-dev \
  && mission-control serve --help >/dev/null
 
 ENV MC_ROBOTS=/config/robots MC_STATE=/state MC_HOST=0.0.0.0 MC_PORT=8060 PYTHONUNBUFFERED=1

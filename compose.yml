@@ -1,8 +1,9 @@
-# The Observatory (miniview) and Mission Control together (RFC-0014 §3.13): `docker compose up -d` from the repository root
-# starts both, each from its own compose file, on loopback (miniview :8070, Mission Control :8060). Each file also works on its own
-# (`make viewer-up`, control/compose.yml). Needs Docker Compose 2.20 or newer for `include`.
-# This project is `robotics-lab`; `make viewer-up` runs the project `miniview`. Do not start both while one holds :8070.
-# Parsed with `docker compose config` only: never built or run in the work that wrote it.
+# The Observatory (miniview) and Mission Control together (RFC-0014 §3.13): `make stack-up` / `make stack-down` (or `docker compose up -d`
+# from the repository root) starts both, each from its own compose file, on loopback (miniview :8070, Mission Control :8060).
+# Each file also works on its own (`make viewer-up`, `make control-up`). Needs Docker Compose 2.20 or newer for `include`.
+# This project is `robotics-lab`; `make viewer-up` runs the project `miniview`. Do not start both while one holds :8070: the ports
+# are MINIVIEW_PORT and MC_PORT (the Makefile's STACK_VIEWER_PORT and STACK_CONTROL_PORT), the image tags MINIVIEW_IMAGE_TAG and
+# MC_IMAGE_TAG, and each service's memory is capped (MINIVIEW_MEM 768m, MC_MEM 512m).
 name: robotics-lab
 include:
   - viewer/compose.yml

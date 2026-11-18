@@ -8,7 +8,7 @@ name: miniview
 services:
   miniview:
     build: .
-    image: miniview:local
+    image: "miniview:${MINIVIEW_IMAGE_TAG:-local}"
     user: "${MINIVIEW_UID:-1000}:${MINIVIEW_GID:-1000}"
     ports:
       - "127.0.0.1:${MINIVIEW_PORT:-8070}:8070"
@@ -33,4 +33,5 @@ services:
       - type: bind
         source: "${MINIVIEW_STATE:-/work/robotics-lab/state/miniview}"
         target: /index
+    mem_limit: "${MINIVIEW_MEM:-768m}"
     restart: unless-stopped

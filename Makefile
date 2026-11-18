@@ -247,6 +247,39 @@ control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the
 	@mkdir -p $(CONTROL_STATE)
 	cd $(CONTROL_DIR) && exec uv run --frozen mission-control serve --robots robots.example --state $(CONTROL_STATE) --host 127.0.0.1 --port $(CONTROL_PORT)
 
+CONTROL_ROBOTS ?= $(abspath $(CONTROL_DIR)/robots.example)
+CONTROL_ENV     = MC_PORT=$(CONTROL_PORT) MC_STATE_DIR=$(CONTROL_STATE) MC_ROBOTS_DIR=$(CONTROL_ROBOTS) MC_UID=$$(id -u) MC_GID=$$(id -g)
+
+.PHONY: control-up control-down
+control-up: ## Mission Control in Docker on 127.0.0.1:$(CONTROL_PORT): robot files from $(CONTROL_ROBOTS) (the fake robot), state in $(CONTROL_STATE); waits for the health check
+	@mkdir -p $(CONTROL_STATE)
+	@$(CONTROL_ENV) docker compose -f $(CONTROL_DIR)/compose.yml up -d --build --wait \
+	  && echo "mission-control at http://127.0.0.1:$(CONTROL_PORT)/" \
+	  || { echo "control-up FAIL"; $(CONTROL_ENV) docker compose -f $(CONTROL_DIR)/compose.yml logs --tail 40; exit 1; }
+
+control-down: ## Stop and remove Mission Control's container (the state folder stays)
+	@$(CONTROL_ENV) docker compose -f $(CONTROL_DIR)/compose.yml down
+
+# The Observatory and Mission Control from the root compose file. Ports, state folders and image tags are variables so a second stack can
+# run beside one already holding :8070 (make stack-up STACK_VIEWER_PORT=8170 STACK_CONTROL_PORT=8160 STACK_TAG=test STACK_VIEWER_STATE=... ).
+STACK_VIEWER_PORT  ?= $(MINIVIEW_PORT)
+STACK_CONTROL_PORT ?= $(CONTROL_PORT)
+STACK_VIEWER_STATE ?= $(MINIVIEW_STATE)
+STACK_TAG          ?= local
+STACK_ENV           = MINIVIEW_PORT=$(STACK_VIEWER_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(STACK_VIEWER_STATE) MINIVIEW_IMAGE_TAG=$(STACK_TAG) \
+	MC_PORT=$(STACK_CONTROL_PORT) MC_STATE_DIR=$(CONTROL_STATE) MC_ROBOTS_DIR=$(CONTROL_ROBOTS) MC_IMAGE_TAG=$(STACK_TAG) \
+	MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g) MC_UID=$$(id -u) MC_GID=$$(id -g)
+
+.PHONY: stack-up stack-down
+stack-up: ## The Observatory ($(STACK_VIEWER_PORT)) and Mission Control ($(STACK_CONTROL_PORT)) together from compose.yml, both on loopback, memory capped; waits for both health checks
+	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes $(STACK_VIEWER_STATE) $(CONTROL_STATE)
+	@$(STACK_ENV) docker compose up -d --build --wait \
+	  && echo "observatory at http://127.0.0.1:$(STACK_VIEWER_PORT)/  mission-control at http://127.0.0.1:$(STACK_CONTROL_PORT)/" \
+	  || { echo "stack-up FAIL"; $(STACK_ENV) docker compose logs --tail 40; exit 1; }
+
+stack-down: ## Stop and remove the stack's two containers (project robotics-lab); the state folders and the images stay
+	@$(STACK_ENV) docker compose down
+
 .PHONY: viewers viewers-down
 viewers: viewer-up ## The viewers on loopback: miniview (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)
 	@MINIVIEW_DATA=$(MINIVIEW_DATA) scripts/viewers.sh up
