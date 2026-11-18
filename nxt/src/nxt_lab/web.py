@@ -18,6 +18,7 @@ from pathlib import Path
 from nxt_lab import config as config_mod
 from nxt_lab import deadman, diag
 from nxt_lab.config import SENSOR_TYPES, Config
+from nxt_lab.lock import Lock, LockError, load_names
 from nxt_lab.recorder import RUNS_DIR, Recorder
 from nxt_lab.robot import LINK_BACKENDS, FakeRobot, NxtRobot
 
@@ -28,10 +29,13 @@ INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_bytes()
 WATCHDOG_SECONDS = 0.6
 MAX_UPLOAD_BYTES = 256 * 1024
 EVENTS_FILE = "events.jsonl"  # the simulated brick logs to events-fake.jsonl instead
+# Commands that move the robot or start something that does: they pass the exclusive lock (RFC-0017).
+LOCKED_PATHS = ("/api/drive", "/api/fire", "/api/program/start", "/api/program/stop")
 
 
 class Controller:
-    def __init__(self, config: Config, fake: bool, config_path: Path, link: str = "auto", miniview_data: Path | None = None):
+    def __init__(self, config: Config, fake: bool, config_path: Path, link: str = "auto", miniview_data: Path | None = None,
+                 takeover_names=()):
         self.config = config
         self.config_path = config_path
         self.fake = fake
@@ -52,6 +56,12 @@ class Controller:
         self._events_lock = threading.Lock()
         self._last_drive_logged = (0, 0)
         self.events_path = RUNS_DIR / ("events-fake.jsonl" if fake else EVENTS_FILE)
+        self.lock = Lock(self._stop_motors, takeover_names=takeover_names, event=self.event)
+
+    def _stop_motors(self) -> None:
+        if self.robot is not None:
+            self.call(lambda r: r.stop())
+            self._last_drive_logged = (0, 0)
 
     def event(self, kind: str, ok: bool = True, **detail) -> None:
         """One line in the command log: shown in the UI, appended to runs/events.jsonl."""
@@ -241,6 +251,7 @@ class Controller:
     def watchdog(self) -> None:
         while True:
             time.sleep(0.1)
+            self.lock.tick()
             robot = self.robot
             if robot is None or (robot.left == 0 and robot.right == 0):
                 continue
@@ -315,6 +326,8 @@ def make_handler(controller: Controller):
                     self._json(200, {"samples": c.recorder.since(int(since))})
                 else:
                     self._json(200, {"events": [e for e in list(c.events) if e["seq"] > int(since)]})
+            elif path == "/api/lock":
+                self._json(200, c.lock.who())
             elif path == "/api/config":
                 self._json(200, {"config": c.config.to_dict(), "sensor_types": SENSOR_TYPES})
             elif path == "/api/runs":
@@ -354,8 +367,12 @@ def make_handler(controller: Controller):
                 if path == "/api/files/upload":
                     detail.update(name=q.get("name"), bytes=len(body))
                 elif data:
-                    detail.update({k: v for k, v in data.items() if k != "sensors"})
-                if path == "/api/connect":
+                    detail.update({k: v for k, v in data.items() if k not in ("sensors", "session")})
+                if path in LOCKED_PATHS:
+                    c.lock.check(data.get("session"), path)
+                if path == "/api/lock":
+                    result.update(lock_action(c.lock, data))
+                elif path == "/api/connect":
                     c.connect(data.get("link"))
                     result["connected"] = c.robot is not None
                     if c.robot is None:
@@ -366,6 +383,7 @@ def make_handler(controller: Controller):
                 elif path == "/api/drive":
                     c.drive(int(data.get("left", 0)), int(data.get("right", 0)))
                 elif path == "/api/stop":
+                    c.lock.stop_from(data.get("client") or "unnamed client")
                     c.call(lambda r: r.stop())
                     c._last_drive_logged = (0, 0)
                 elif path == "/api/fire":
@@ -412,12 +430,34 @@ def make_handler(controller: Controller):
                 if path not in ("/api/drive", "/api/connect"):
                     c.event(kind, ok=False, error=f"not found: {exc}", **detail)
                 self._json(404, {"ok": False, "error": f"not found: {exc}"})
+            except LockError as exc:
+                if path not in ("/api/drive", "/api/connect"):
+                    c.event(kind, ok=False, error=str(exc), lock=exc.code, **detail)
+                self._json(409, {"ok": False, "error": str(exc), "lock": exc.code, **exc.data})
             except Exception as exc:
                 if path not in ("/api/drive", "/api/connect"):
                     c.event(kind, ok=False, error=f"{type(exc).__name__}: {exc}", **detail)
                 self._json(409, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
     return Handler
+
+
+def lock_action(lock: Lock, data: dict) -> dict:
+    """POST /api/lock {action: acquire | release | takeover | keepalive, client, session}."""
+    action = data.get("action")
+    client = data.get("client")
+    if action in ("acquire", "takeover") and not (isinstance(client, str) and client):
+        raise ValueError("client (the name of the program asking) is needed")
+    if action == "acquire":
+        return lock.acquire(client)
+    if action == "takeover":
+        return lock.takeover(client)
+    if action == "release":
+        lock.release(data.get("session"))
+        return {}
+    if action == "keepalive":
+        return lock.keepalive(data.get("session"))
+    raise ValueError("action must be acquire, release, takeover or keepalive")
 
 
 def _raise_keyboard_interrupt(signum, frame):
@@ -431,11 +471,13 @@ def main() -> None:
     parser.add_argument("--fake", action="store_true", help="simulated brick, nothing moves")
     parser.add_argument("--config", type=Path, default=config_mod.CONFIG_PATH, help="port setup file")
     parser.add_argument("--miniview-data", type=Path, help="the lab data folder the recordings are written to as miniview runs (default: $MINIVIEW_DATA, else miniview/ in this program's data folder)")
+    parser.add_argument("--takeover-names", type=Path, help="file of client names (one per line) that may take the control lock from its holder; empty: nobody")
     parser.add_argument("--link", choices=sorted(LINK_BACKENDS), default="auto",
                         help="auto tries USB, then Bluetooth (/dev/rfcomm*)")
     args = parser.parse_args()
 
-    controller = Controller(config_mod.load(args.config), fake=args.fake, config_path=args.config, link=args.link, miniview_data=args.miniview_data)
+    controller = Controller(config_mod.load(args.config), fake=args.fake, config_path=args.config, link=args.link, miniview_data=args.miniview_data,
+                            takeover_names=load_names(args.takeover_names))
     controller.connect()
     threading.Thread(target=controller.watchdog, daemon=True).start()
     threading.Thread(target=controller.recorder.run_forever, daemon=True).start()

@@ -113,6 +113,9 @@ test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a
 	@$(NXT_PY) $(NXT_DIR)/tests/test_recorder_v2.py >/tmp/robotics-lab-test_recorder_v2.log 2>&1 \
 	  && echo "PASS nxt/tests/test_recorder_v2.py" \
 	  || { echo "FAIL nxt/tests/test_recorder_v2.py"; cat /tmp/robotics-lab-test_recorder_v2.log; exit 1; }
+	@$(NXT_PY) $(NXT_DIR)/tests/test_lock.py >/tmp/robotics-lab-test_lock.log 2>&1 \
+	  && echo "PASS nxt/tests/test_lock.py" \
+	  || { echo "FAIL nxt/tests/test_lock.py"; cat /tmp/robotics-lab-test_lock.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
 	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
 	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
