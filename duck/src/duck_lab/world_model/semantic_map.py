@@ -22,7 +22,8 @@ ROOM_RADIUS_M = 1.2        # objects within this vote for the room the duck is i
 ROOM_TICKS = 3             # looks a new room must win in a row before the duck says it is there
 STAND_M = 0.25             # where to stand to reach an object: this far from its outline (lethal 0.12 + room)
 EVIDENCE_KEEP = 3          # evidence (frames) kept per object
-FORGET_N = 8               # looks an object was expected in view and not seen, in a row, before it is gone (or flagged)
+LANDMARK_MIN = 0.7         # a landmark value (kinds.json) this high, and fixed in place: it can correct the duck's position
+FORGET_N = 8              # looks an object was expected in view and not seen, in a row, before it is gone (or flagged)
 FORGET_DECAY = 0.85        # its confidence's factor per such look
 FORGET_FOV = 0.8           # "in view" for forgetting: this fraction of the field's half-angle and of the range (the
                            # belief's drift and the camera's falling chance near its edge must not count as a miss)
@@ -115,6 +116,20 @@ class SemanticMap:
         self._next = {}
         self._room, self._lead, self._lead_n = None, None, 0
         self._matched = set()
+        self.anchors = {}               # a landmark's oid -> where it is anchored (never follows the belief; Relocaliser makes them)
+
+    def is_landmark(self, kind: str) -> bool:
+        """A kind that can correct the duck's position: a landmark value of LANDMARK_MIN or more, fixed in place."""
+        props = self.kinds.get(kind, {})
+        return props.get("landmark", 0.0) >= LANDMARK_MIN and props.get("permanence") == "fixed"
+
+    def anchor_landmarks(self) -> int:
+        """Make every confirmed landmark object an anchor at its place now (a site's map at the start of a run: the
+        run's belief is then checked against where those landmarks were kept). Returns how many."""
+        for o in self.confirmed():
+            if self.is_landmark(o.kind):
+                self.anchors.setdefault(o.oid, (o.x, o.y))
+        return len(self.anchors)
 
     def new_id(self, kind: str) -> str:
         k = self._next.get(kind, 0) + 1

@@ -217,5 +217,89 @@ check("an object the operator named is flagged missing, never forgotten", fm.obj
 fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 99.0)
 check("... and seen again, the flag clears", not fm.objects[0].missing and fm.objects[0].misses == 0)
 
+# ---- landmark relocalisation (RFC-0016 §4) ---------------------------------------------------------------------------
+from duck_lab.world_model.relocalise import MAX_STEP_M, Relocaliser  # noqa: E402
+
+
+def fridge_site():
+    """A site map whose fridge (a landmark, unique) was kept at (1.0, 0.5), and a relocaliser over it."""
+    sm = SemanticMap(kinds, "apartment")
+    for k in range(CONFIRM_N):
+        sm.integrate([det("fridge", 1.0, 0.5, 0.3, 1.8)], ORIGIN, float(k))
+    check("a fridge is a landmark, a stool is not", sm.is_landmark("fridge") and not sm.is_landmark("stool")
+          and not sm.is_landmark("bed_that_does_not_exist"))
+    return sm, Relocaliser(sm)
+
+
+def look_at_fridge(rel, err, n=6, rng=1.1, t0=10.0, noise=0.0):
+    """n sightings of the fridge from the true pose (0, 0, 0), the belief off by err (x, y); returns what observe said."""
+    said = []
+    for k in range(n):
+        d = det("fridge", 1.0 + (noise if k % 2 else -noise), 0.5, 0.3, 1.8)
+        d.range_m = rng
+        pose = (err[0], err[1], 0.0)
+        said.append(rel.observe([d], pose, t0 + 0.5 * k))
+    return [s for s in said if s]
+
+
+sm, rel = fridge_site()
+check("no anchors until the site's landmarks are anchored", sm.anchors == {} and look_at_fridge(rel, (0.3, -0.2)) == [])
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+check("a site's confirmed landmarks become anchors", list(sm.anchors) == ["fridge_1"], sm.anchors)
+said = look_at_fridge(rel, (0.3, -0.2))
+check("the belief 0.36 m off: corrected back, toward the anchor, within MAX_STEP_M", said and said[0]["status"] == "corrected"
+      and said[0]["dx"] < 0 < said[0]["dy"] and math.hypot(said[0]["dx"], said[0]["dy"]) <= MAX_STEP_M + 1e-9
+      and said[0]["landmarks"] == ["fridge_1"], said)
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+check("a belief 5 cm off is noise: no correction", look_at_fridge(rel, (0.05, 0.0)) == [])
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+said = look_at_fridge(rel, (0.3, -0.2), noise=0.2)
+check("residuals that disagree (a noisy placement): refused, with why", said and said[0]["status"] == "refused"
+      and "disagree" in said[0]["why"], said)
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+check("a landmark 1.5 m from where the belief puts it is no match: nothing", look_at_fridge(rel, (1.5, 0.0)) == [])
+check("seen from beyond RANGE_M: not used", look_at_fridge(rel, (0.3, -0.2), rng=2.5) == [])
+sm.objects[0].gone = True
+check("a forgotten landmark is not an anchor", look_at_fridge(rel, (0.3, -0.2), t0=100.0) == [])
+
+# closed loop: the belief's error shrinks as the corrections are taken
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+err = [0.6, -0.4]
+for k in range(40):
+    d = det("fridge", 1.0, 0.5, 0.3, 1.8)
+    d.range_m = 1.1
+    out = rel.observe([d], (err[0], err[1], 0.0), 10.0 + 0.5 * k)
+    if out and out["status"] == "corrected":
+        err[0], err[1] = err[0] + out["dx"], err[1] + out["dy"]
+check("closed loop: a 0.72 m error is under 0.15 m after the corrections", math.hypot(*err) < 0.15, err)
+
+# a run without a site: an anchor is made from close sightings that agree, and does not follow the belief
+sm = SemanticMap(kinds)
+for k in range(CONFIRM_N):
+    sm.integrate([det("fridge", 1.0, 0.5, 0.3, 1.8)], ORIGIN, float(k))
+rel = Relocaliser(sm)
+look_at_fridge(rel, (0.0, 0.0), n=3)
+check("three close sightings are not yet an anchor", sm.anchors == {})
+look_at_fridge(rel, (0.0, 0.0), n=2, t0=20.0)
+anchor = sm.anchors.get("fridge_1")
+check("four close sightings that agree make the anchor, at where they placed it", anchor is not None
+      and math.dist(anchor, (1.0, 0.5)) < 1e-9, anchor)
+for k in range(10):                  # the belief drifts 0.4 m; the object follows it, the anchor does not
+    sm.integrate([det("fridge", 1.0, 0.5, 0.3, 1.8)], (0.4, 0.0, 0.0), 30.0 + k)
+check("the object follows the belief's drift, its anchor stays", sm.objects[0].x > 1.2 and sm.anchors["fridge_1"] == anchor,
+      (sm.objects[0].x, sm.anchors))
+sm2 = SemanticMap(kinds)
+for k in range(CONFIRM_N):
+    sm2.integrate([det("fridge", 1.0, 0.5, 0.3, 1.8)], ORIGIN, float(k))
+rel2 = Relocaliser(sm2)
+look_at_fridge(rel2, (0.0, 0.0), n=1)
+look_at_fridge(rel2, (0.3, 0.0), n=3, t0=20.0)
+check("sightings that disagree make no anchor", sm2.anchors == {})
+
 print("WORLD-MODEL", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

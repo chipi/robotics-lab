@@ -35,6 +35,7 @@ from duck_lab.nav.step_check import unseen_ahead
 from duck_lab.nav.stuck import MOVED_MAX_M as STUCK_MOVED_M, WINDOW_S as STUCK_WINDOW_S, StuckWatch
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
+from duck_lab.world_model.relocalise import Relocaliser
 from duck_lab.world_model.semantic_map import SemanticMap
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, FREE_COST, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
 
@@ -87,6 +88,9 @@ CLIFF_STOP_M = 0.60
 # few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
 # does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
 DROP_FRAMES = 3
+FIX_JUMP_M = 0.3         # a mapd fix that would move the belief more than this is held (frames.Localizer); the 33 recorded
+                         # exploring runs hold one such jump (explore-b10a-r1: 0.9 m in one tick, belief error 0.2 -> 0.7 m)
+FIX_RECORD_M = 0.1       # every fix that moves the belief more than this is recorded with its raw pose and paired odometry
 SNAPSHOT_S, SNAPSHOT_MOVED_M = 2.0, 0.05    # the objects re-recorded every 2 s while any moved more than 5 cm
 LOW_FRAMES, LOW_CELL_M = 3, 0.05    # a low-band cell is an obstacle once this many frames saw it (sim/probes/low_persistence.py)
 # After a cliff stop the duck looks along the edge, LOOK_ALONG_M past each end of what it saw (side_drops.look_targets);
@@ -324,7 +328,7 @@ class Navigator:
         self.tof_cal = load_tof(calibration)
         cliff.configure(**self.tof_cal)
         self.pivot_vx = load_pivot_vx(calibration)
-        self.loc = Localizer()
+        self.loc = Localizer(max_jump_m=FIX_JUMP_M, hold_n=None)
         self._t0 = time.monotonic()
         self.runlog = runlog
         self._sid = runlog.new_session() if runlog else None
@@ -355,6 +359,7 @@ class Navigator:
         self.glanced = []
         self.step_looked = []    # spots looked at before stepping on them (step_check), not looked at again
         self._map_raw = None     # mapd's last grid (scaled), for the world record
+        self.fix_fault = None    # (t_s, dx, dy): from t_s on, mapd's raw pose is shifted by (dx, dy) — a test of the fix gate and the landmarks
         self._world_key = None
         self.tof.on_frame = self._on_frame
         self.drops = []      # where the cliff check found no floor, in map metres
@@ -393,7 +398,22 @@ class Navigator:
         st = self.mapd.call("map.status")
         pose = (st.get("state") or {}).get("pose")
         t_ns = (st.get("state") or {}).get("t_ns")
-        return bool(pose and t_ns and self.loc.on_fix(t_ns, self._scaled((pose["x"], pose["y"], pose["yaw"]))))
+        raw = self._scaled((pose["x"], pose["y"], pose["yaw"])) if pose else None
+        if raw and self.fix_fault and time.monotonic() - self._t0 >= self.fix_fault[0]:
+            raw = (raw[0] + self.fix_fault[1], raw[1] + self.fix_fault[2], raw[2])
+        if not (pose and t_ns and self.loc.on_fix(t_ns, raw)):
+            return False
+        f = self.loc.last_fix
+        if (f["status"] != "taken" and (self.loc.rejected <= 3 or self.loc.rejected % 20 == 0)) or (f["status"] == "taken"
+                                                                                              and f["moved_m"] > FIX_RECORD_M):
+            # the next jump shows its source: mapd's raw pose and its t_ns, and the odometry it was paired with
+            self.record(event="fix", **f, rejected=self.loc.rejected,
+                        decision=decision("fix", {"held": "a fix that would move the belief "
+                                                  f"{f['moved_m']:.2f} m is held, not taken (limit {FIX_JUMP_M})",
+                                                  "late": f"a jump of {f['moved_m']:.2f} m taken: held fixes agreed",
+                                                  "taken": f"a fix moved the belief {f['moved_m']:.2f} m"}[f["status"]],
+                                          moved_m=f["moved_m"], limit_m=FIX_JUMP_M))
+        return True
 
     def survey(self) -> bool:
         """Stand still with explicit zeros until mapd is collecting this stop, then a little longer."""
@@ -1020,7 +1040,7 @@ class Navigator:
                 "pose": [round(v, 3) for v in self.loc.pose()]}
 
     def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None,
-                       area_at=None) -> None:
+                       area_at=None, relocalise: bool = True) -> None:
         """Objects (RFC-0016): every camera period, what the camera recognises joins the semantic map, placed with the
         belief taken right after the camera's truth (50 ms apart at most: 1.5 cm walking, under the camera's noise); a
         "semantic" event when an object is new or confirmed, a "room" event when the room the objects say the duck is in
@@ -1029,6 +1049,9 @@ class Navigator:
         points closed passages and fed "no room to turn" (the advisor's review; RFC-0016 §5, to be measured)."""
         self.semantic = semantic if semantic is not None else SemanticMap(kinds)     # a site's map, or a fresh one
         self.object_costs = costs
+        self.reloc = Relocaliser(self.semantic)
+        if semantic is not None:
+            self.semantic.anchor_landmarks()      # a site's landmarks, where they were kept: the run's belief is checked against them
         period = camera.cfg["period_s"]
 
         def watch():
@@ -1058,6 +1081,18 @@ class Navigator:
                                "confidence": d.confidence, "source": d.source,
                                **({"evidence": d.evidence} if d.evidence else {})} for d in found])
             now = time.monotonic() - self._t0
+            fixed = self.reloc.observe(found, pose, now) if relocalise else None
+            if fixed and fixed["status"] == "corrected":
+                step = self.loc.nudge(fixed["dx"], fixed["dy"])
+                fixed["step"] = [round(v, 3) for v in step]
+                fixed["offset"] = [round(v, 3) for v in self.loc.offset]
+                pose = self.loc.pose() or pose
+            if fixed:
+                self.record(event="relocalise", **fixed, pose=[round(v, 4) for v in pose],
+                            decision=decision("relocalise", fixed.get("why") or
+                                              f"landmarks {fixed['landmarks']} place the duck {fixed['median']} m off: "
+                                              f"belief moved {fixed.get('step')}", **{k: v for k, v in fixed.items()
+                                                                                      if k in ("n", "median", "spread_m")}))
             with self._sem_lock:
                 changes = self.semantic.integrate(found, pose, now)
                 forgot = self.semantic.forget(pose, camera.cfg["hfov_deg"], camera.cfg["range_m"], self._map_raw, now)

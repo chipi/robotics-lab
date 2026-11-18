@@ -140,6 +140,23 @@ def semantic_score(run: Path, rows: list) -> dict:
     return out
 
 
+def belief_score(run: Path, rows: list) -> dict:
+    """The belief against the truth (the truth is used for scoring only): |belief - truth| over every tick, with the truth put
+    into the map frame by the run's start, and what the fix gate and the landmarks did (events "fix" held or late,
+    "relocalise" corrected or refused)."""
+    start = json.loads((run / "start.json").read_text())
+    map_from_world = compose(tuple(start["map"]), inverse(tuple(start["truth"])))
+    errs = [math.dist(r["pose"][:2], compose(map_from_world, tuple(r["truth"]))[:2])
+            for r in rows if "pose" in r and "truth" in r and "event" not in r]
+    ev = [r for r in rows if r.get("event") in ("fix", "relocalise")]
+    return {"mean_m": round(statistics.fmean(errs), 3) if errs else None, "max_m": round(max(errs), 3) if errs else None,
+            "final_m": round(errs[-1], 3) if errs else None,
+            "fixes_held": sum(1 for r in ev if r["event"] == "fix" and r["status"] == "held"),
+            "fixes_late": sum(1 for r in ev if r["event"] == "fix" and r["status"] == "late"),
+            "corrected": sum(1 for r in ev if r["event"] == "relocalise" and r["status"] == "corrected"),
+            "refused": sum(1 for r in ev if r["event"] == "relocalise" and r["status"] == "refused")}
+
+
 def score_run(run: Path, obs: list) -> dict:
     rows = [json.loads(line) for line in open(run / "ticks.jsonl")]
     rooms = rooms_score(run)
@@ -183,7 +200,7 @@ def score_run(run: Path, obs: list) -> dict:
             "end": end, "minutes": round((end_t or last_t) / 60, 1), "walked_m": round(walked, 1),
             "contacts": contacts, "falls": int(end == "aborted"), "legs": legs, "reflex_kept": reflex_kept,
             "looks": looks, "look_min": round(glance_s / 60, 1),
-            "blockers": blockers, "semantic": semantic_score(run, rows)}
+            "blockers": blockers, "semantic": semantic_score(run, rows), "belief": belief_score(run, rows)}
 
 
 def main() -> None:
@@ -200,6 +217,9 @@ def main() -> None:
               f"falls {o['falls']}, legs {o['legs']}, reflex stops answered by the same plan {o['reflex_kept']}, "
               f"looks before stepping {o['looks']} ({o['look_min']} min)")
         print(f"    coverage: {cov}")
+        b = o["belief"]
+        print(f"    belief error: mean {b['mean_m']} m, max {b['max_m']} m, at the end {b['final_m']} m; fixes held "
+              f"{b['fixes_held']}, taken late {b['fixes_late']}; landmarks corrected {b['corrected']}, refused {b['refused']}")
         s = o["semantic"]
         if "objects" in s:
             ob = s["objects"]

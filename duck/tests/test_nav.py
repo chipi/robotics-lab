@@ -320,6 +320,62 @@ x, y, yaw = loc.pose()
 check("1 m along odom x is 1 m along map y when the map is turned 90 deg",
       abs(x - 3.0) < 1e-9 and abs(y - 2.0) < 1e-9 and abs(yaw - math.pi / 2) < 1e-9, (x, y, yaw))
 
+# A fix that would jump the belief is held (explore-b10a-r1: 0.9 m in one tick while pivoting), taken when 5 agree; the
+# landmarks' offset survives the next fix and fades.
+from duck_lab.nav.frames import HOLD_N, OFFSET_HALF_S  # noqa: E402
+
+NS = 1_000_000_000
+g = Localizer(max_jump_m=0.3)
+for k in range(30):
+    g.on_odom(k * NS, (0.1 * k, 0.0, 0.0))
+check("the first fix is taken, whatever it is", g.on_fix(0, (5.0, 5.0, 0.0)) and g.last_fix["status"] == "taken"
+      and g.last_fix["before"] is None)
+check("a fix next to the belief is taken", g.on_fix(1 * NS, (5.1, 5.0, 0.0)) and g.last_fix["status"] == "taken"
+      and g.last_fix["moved_m"] < 0.01, g.last_fix)
+g.on_fix(2 * NS, (5.2, 5.9, 0.0))                     # 0.9 m sideways in one fix
+check("a fix that moves the belief 0.9 m is held: the belief stays, the record has its raw pose, t_ns, odometry",
+      g.last_fix["status"] == "held" and abs(g.pose()[1] - 5.0) < 1e-9
+      and g.last_fix["raw"] == [5.2, 5.9, 0.0] and g.last_fix["t_ns"] == 2 * NS and g.last_fix["odom_t_ns"] == 2 * NS
+      and g.last_fix["odom"] == [0.2, 0.0, 0.0] and abs(g.last_fix["moved_m"] - 0.9) < 0.01 and g.rejected == 1,
+      g.last_fix)
+for k in range(3, 2 + HOLD_N):
+    g.on_fix(k * NS, (5.0 + 0.1 * k, 5.9, 0.0))
+check(f"{HOLD_N} fixes in a row that agree: the jump is taken, late", g.last_fix["status"] == "late"
+      and abs(g.pose()[1] - 5.9) < 0.01, g.last_fix)
+nl = Localizer(max_jump_m=0.3, hold_n=None)
+for k in range(30):
+    nl.on_odom(k * NS, (0.0, 0.0, 0.0))
+nl.on_fix(0, (1.0, 1.0, 0.0))
+for k in range(1, 25):
+    nl.on_fix(k * NS, (1.0, 5.0, 0.0))              # mapd lost itself 4 m away and says so, steadily, for 24 s
+check("hold_n None (the navigator's): a persistent jump is never taken, the belief stays", nl.last_fix["status"] == "held"
+      and abs(nl.pose()[1] - 1.0) < 1e-9 and nl.rejected == 24, nl.last_fix)
+h = Localizer(max_jump_m=0.3)
+for k in range(30):
+    h.on_odom(k * NS, (0.0, 0.0, 0.0))
+h.on_fix(0, (1.0, 1.0, 0.0))
+for k, y in enumerate((2.0, 3.0, 2.0, 3.0, 2.0, 3.0), start=1):    # 1 m jumps that disagree with each other: never taken
+    h.on_fix(k * NS, (1.0, y, 0.0))
+check("held fixes that disagree are never taken", h.last_fix["status"] == "held" and abs(h.pose()[1] - 1.0) < 1e-9, h.last_fix)
+free = Localizer()
+free.on_odom(0, (0.0, 0.0, 0.0))
+free.on_fix(0, (0.0, 0.0, 0.0))
+free.on_fix(0, (9.0, 9.0, 0.0))
+check("without a limit every fix is taken (the old behaviour)", abs(free.pose()[0] - 9.0) < 1e-9)
+n = Localizer()
+for k in range(200):
+    n.on_odom(k * NS, (0.0, 0.0, 0.0))
+n.on_fix(0, (1.0, 1.0, 0.0))
+step = n.nudge(0.0, 0.3)
+check("a nudge moves the belief now", abs(n.pose()[1] - 1.3) < 1e-9 and step == (0.0, 0.3), n.pose())
+n.on_fix(1 * NS, (1.0, 1.0, 0.0))
+check("... and survives the next fix (mapd's pose is replaced each second, the landmarks' correction is not)",
+      abs(n.pose()[1] - 1.3) < 0.01, n.pose())
+n.on_fix(int(OFFSET_HALF_S * NS) + 1 * NS, (1.0, 1.0, 0.0))
+check("... and halves in OFFSET_HALF_S", abs(n.pose()[1] - 1.15) < 0.01, n.pose())
+n.nudge(0.0, 5.0)
+check("the total correction is capped", math.hypot(*n.offset) <= 1.0 + 1e-9, n.offset)
+
 # A goal inside a drop's ring: the duck goes as close as is safe (the operator, 2026-11-17), so the planner needs the free
 # cell nearest the goal within reach; none within it (a goal across a drop) leaves the refusal.
 from duck_lab.nav.grid import nearest_free  # noqa: E402

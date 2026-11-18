@@ -266,6 +266,9 @@ def main() -> None:
     ap.add_argument("--site", help="a site's id: start from its map, save it back at the end (duck-site create first)")
     ap.add_argument("--sites", type=Path, default=SITES, help=f"the sites' folder (default {SITES})")
     ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
+    ap.add_argument("--no-relocalise", action="store_true", help="landmarks do not correct the belief (the run before relocalisation)")
+    ap.add_argument("--fix-fault", help="T,DX,DY: from T s on, mapd's pose is shifted by (DX, DY) m, a persistent jump like explore-b10a-r1 (a test)")
+    ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (the run before the fix gate)")
     add_args(ap)
     args = ap.parse_args()
     if args.find and args.find not in load_kinds():
@@ -275,6 +278,10 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "exploration", args.out)
     nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
+    if args.no_fix_gate:
+        nav.loc.max_jump_m = None
+    if args.fix_fault:
+        nav.fix_fault = tuple(float(v) for v in args.fix_fault.split(","))
 
     def guard():
         while not nav.abort:
@@ -300,7 +307,7 @@ def main() -> None:
                            objects=len(site.semantic.objects), areas=[a.to_json() for a in site.areas])
             nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs,
                                semantic=site.semantic if site else None,
-                               area_at=site.area_at if site and site.areas else None)
+                               area_at=site.area_at if site and site.areas else None, relocalise=not args.no_relocalise)
         explorer = Explorer(nav, args.out)
         explorer.find = args.find
         result = explorer.run(args.minutes)
