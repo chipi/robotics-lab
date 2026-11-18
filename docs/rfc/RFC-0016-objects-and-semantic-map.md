@@ -1,6 +1,6 @@
 # RFC-0016 — Objects, landmarks and a semantic map: "this is the kitchen", "go to the fridge"
 
-**Status:** Accepted, revision 2 (the operator, 2026-11-18: "let's fully implement this … at least
+**Status:** Accepted, revision 3 (the operator, 2026-11-18: "let's fully implement this … at least
 an MVP and a good starting point"); being built.
 **Builds on:** [RFC-0002](RFC-0002-robot-brain.md) (the robot brain),
 [RFC-0004](RFC-0004-perception-and-planning.md) (the world model: this is its object layer; a VLM
@@ -29,7 +29,7 @@ properties:
 | Shape and height | parts (boxes in plan, each with a bottom and a top) | moving: avoid, walk over, pass under |
 | Traversal (from shape) | over (≤ walk-over height), under (bottom above the head), around | the cost map |
 | Permanence | fixed, movable, moving | how long the map trusts it |
-| Landmark value | 0-1: how distinctive and how well seen | correcting position (later), naming places |
+| Landmark value | 0-1: how distinctive and how well seen; a landmark at 0.7 or more | correcting position (later), naming places |
 | Kind and room hints | "fridge" → kitchen 0.95 | rooms by their contents; goals by name |
 
 Kinds and their defaults live in one catalogue (`duck/src/duck_lab/world_model/kinds.json`), not in
@@ -75,7 +75,39 @@ drift (not in the first build). The mission: rooms named, goals by object.
    and evidence); scored by recall, the scene's objects found by room.
 9. **In the Observatory and the video:** the objects in the 3D scene, the camera's field of view and
    what it sees now in the eye view, the room and its votes in the thinking panel (records `objects`
-   and `look`; built on the `mission-control` branch).
+   and `sighting`, ADR-0019; built on the `mission-control` branch).
+
+### Revision 3: the home map, names, landmarks (the operator, 2026-11-18: "B yes", "C yes", "D yes")
+
+- **A home's semantic map kept between runs.** A home has an id and a home frame. In the simulator
+  every run starts at the dock, so a run's map frame is the home frame. Each run starts from the
+  home's stored map, adds to it, and writes it back. Objects keep stable ids across runs: a run's
+  object is matched to the stored one of the same kind by the same association rule (`ASSOC_M`,
+  `UNIQUE_M` for unique kinds). In a real home the robot must first recognise where it is
+  (correcting its position from landmarks), so that part comes later. Mission Control owns the
+  stored map (RFC-0014); until it exists, a file per home.
+- **Naming objects by hand.** An object can carry a label given by the operator ("my desk"), with
+  `named_by` and `pinned` (a named object is not merged away or forgotten by a recogniser). `find`
+  takes a kind, a label or an id.
+- **Kind names and aliases.** Each kind lists aliases (a fridge is a "refrigerator" to COCO, a sofa
+  a "couch"), so a goal or a detector's class finds the kind.
+- **A landmark is an object whose landmark value is 0.7 or more** (the fridge, the bed, the toilet,
+  the bathtub, the sofa, the vanity and the six markers). The Observatory colours them the same way.
+- **The camera's record is `sighting`** (was `look`, which already meant the head's glance and the
+  "looks before stepping").
+- **Rooms have a name, not an extent.** The duck says which room it is in from the objects near it;
+  where a room ends is not known yet, so "explore the kitchen" and "go to the kitchen" wait on room
+  regions.
+- **Results in the run file.** A find's outcome (including `not_found`, when the time or the
+  frontiers run out first) and the inventory are recorded in the run, not only in side files, and an
+  object's position is re-recorded as it moves (every 2 s when one moved more than 5 cm), not only
+  when an object is new.
+
+Glossary: **home** (a place the robot lives, with its frame and map), **room** (named by its
+contents), **place** (a named point a goal can go to: an object or a room), **object** (anything in
+a room), **kind** (what an object is, from `kinds.json`), **landmark** (an object with landmark
+value ≥ 0.7), **sighting** (one camera look's recognised objects), **the Observatory** (the run
+viewer; its package and command are still `miniview` until the rename).
 
 ### Recognisers, and a real home
 
@@ -101,8 +133,9 @@ confidence (not built yet).
 - A real camera, a rendered camera image or a detector network; doors as objects; moving objects.
 - Rooms segmented from the map alone (rooms here come from objects; the map's segmentation stays the
   scoreboard's).
-- Objects in Mission Control (goals by object there, naming objects by hand).
+- Objects in Mission Control (goals by object there; RFC-0014 revision 2).
 - Forgetting an object expected in view and not seen (needed with a real detector).
+- The home map in a real home (it needs relocalisation first); room regions.
 
 ## 5. Open questions
 
