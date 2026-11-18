@@ -353,5 +353,35 @@ pr.pause(12.0)
 check("time spent looking does not count toward a stall", not pr.update(1.0, 1.0 + NO_PROGRESS_S - 1.0 + 12.0, 0))
 check("... the rest of the time still does", pr.update(1.0, 1.0 + NO_PROGRESS_S + 0.1 + 12.0, 0))
 
+# ---- after a glance the head gets back the command it had, not the angles it was measured at --------------------------
+# challenge 11, gate3 (2026-11-18): robot.head is a command to the walking policy, whose head sits at neck ~13°, pitch
+# ~20° under the default command of zeros; sending those measured angles back as the command ratcheted the head down
+# glance by glance (neck 44°, pitch 83° for the rest of the walk) and the odometry then read 10-14 % short
+# (sim/probes/head_after_glance.py)
+import duck_lab.nav.run as _run  # noqa: E402
+
+_run.LOOK_MAX_S, _run.HEAD_BACK_S = 0.05, 0.05
+nv = navigator()
+nv.glanced, nv.edges, nv.record = [], [], lambda **kw: None
+walking = [0.0] * 5 + [math.radians(13), math.radians(20), 0.0, 0.0] + [0.0] * 6
+nv._states.append((1, {"joints": walking}))
+heads = []
+
+
+class _Robot:
+    def call(self, method, params=None):
+        if method == "robot.head":
+            heads.append(dict(params))
+        if method == "robot.look":
+            return {"head": {"neck_pitch": 0.6, "head_pitch": 1.2, "head_yaw": 0.3, "head_roll": 0.0}}
+        return {}
+
+
+nv.robot = _Robot()
+nv.glance_at((0.5, 0.2), (0.0, 0.0, 0.0))
+check("a glance ends by sending the head command it found (the default zeros), not the measured angles",
+      heads and heads[-1] == {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0},
+      heads[-1] if heads else None)
+
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

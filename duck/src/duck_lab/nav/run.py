@@ -142,6 +142,7 @@ LOOK_FLOOR_Z_M = -0.116      # the floor in the trunk frame (stand height), wher
 LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG = 5, 3.0   # the sensor's yaw held this still over this many frames: the head is there
 LOOK_MAX_S, LOOK_COLLECT_S, HEAD_BACK_S = 3.0, 1.0, 2.0
 HEAD_JOINTS = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
+HEAD_WALK_CMD = dict.fromkeys(HEAD_JOINTS, 0.0)    # robotd's default head command: how the duck walks when nothing moves the head
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 VALID_STATUS = {5, 9}    # ST's "range valid" statuses
@@ -389,13 +390,15 @@ class Navigator:
         sensor's own yaw has held still (the old glance read short from frames taken while the head was still turning),
         for LOOK_COLLECT_S. What it saw: floor joins floor_seen and clears the suspicions it covers; a floor boundary with
         below-floor returns beyond it (side_drops.edge_from_glance) is a drop, remembered with its edge extended. The head
-        then goes back to the joint angles it had (robot.head keeps a pose until told otherwise)."""
+        then gets back the command it had (robot.head keeps a command until told otherwise)."""
         t0 = time.monotonic()
         bearing = math.atan2(target[1] - pose[1], target[0] - pose[0])
         rel = wrap(bearing - pose[2])
         dist = math.dist(target, pose[:2])
-        before = (self._states[-1][1].get("joints") if self._states else None) or []
-        home = dict(zip(HEAD_JOINTS, before[5:9])) if len(before) == len(JOINTS) else None
+        # robot.head is a command to the walking policy, not a joint target: under robotd's default command (zeros) the
+        # head walks at neck ~13°, pitch ~20°, so sending the measured angles back pitched it further down at every
+        # glance (challenge 11, 2026-11-18: neck 44°, pitch 83° after three, the odometry 10-14 % short)
+        home = HEAD_WALK_CMD
         fv0 = self._fv
         yaw0 = self._sensor_yaw(fv0.state) if fv0 is not None and fv0.ok else 0.0   # where the sensor faced before
         self.glanced.append(tuple(target))
@@ -439,16 +442,15 @@ class Navigator:
             # goal or the passage inside the ring. Rims are too noisy to tell a corner from a line (rms 3-4 cm round a
             # corner, 8-10 cm along a straight ledge).
         edge_m = min((math.dist(p, pose[:2]) for p in rim), default=None)
-        # back to where the head was, held until the sensor faces as it did
-        if home:
-            back = time.monotonic()
-            while time.monotonic() - back < HEAD_BACK_S:
-                self.robot.call("robot.head", home)
-                self.move(Twist())
-                fv = self._fv
-                if fv is not None and fv.ok and abs(self._sensor_yaw(fv.state) - yaw0) < LOOK_YAW_TOL_DEG:
-                    break
-                time.sleep(TICK_S)
+        # back to the walking command, held until the sensor faces as it did
+        back = time.monotonic()
+        while time.monotonic() - back < HEAD_BACK_S:
+            self.robot.call("robot.head", home)
+            self.move(Twist())
+            fv = self._fv
+            if fv is not None and fv.ok and abs(self._sensor_yaw(fv.state) - yaw0) < LOOK_YAW_TOL_DEG:
+                break
+            time.sleep(TICK_S)
         # no frames: the head never settled, so nothing was seen; not floor (challenge 11 seed 5 recorded such a look as floor)
         out = {"status": "drop" if rim else ("floor" if frames else "unseen"), "frames": len(frames), "rim": len(rim), "below": len(below),
                "cleared": cleared, "edge_m": round(edge_m, 3) if edge_m is not None else None,

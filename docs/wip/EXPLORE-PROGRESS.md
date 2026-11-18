@@ -226,3 +226,65 @@ than 100 on the only challenge that failed). Not yet looked at: s2's stall, and 
 are the drift (belief vs truth at the end) or the hold-off (the goal moved out of the ring). That is
 the next check before another gate; the fix for the drift itself is the localization work of
 challenge 21, not a navigator constant.
+
+**Checked the same day: neither — a glance left the head pitched down.** From the recordings
+(`sim/probes/head_after_glance.py`, plus truth against belief per run): no miss was a hold-off
+(`held_off` none in every run); at "reached" the belief was 0.20-0.40 m behind the truth on the
+branch, 0.00-0.04 m on main's runs without a glance, and each glance added drift. The odometry read
+0.97-1.00 of the true distance on main and 0.89-0.91 on the branch, at the same 0.3 m/s, straight or
+turning, long after a stop — and only after the glances: in ch11 s7 it read 0.98-1.02 until the
+third glance, 0.87-0.89 after it. The head joints say why: walking under robotd's default head
+command (zeros) the head sits at neck ~13°, pitch ~20°; `glance_at` restored "the joint angles it
+had" by sending those measured angles as the command, and `robot.head` is a command to the walking
+policy, not a joint target, so each glance pitched the head further down — after three, neck 44°,
+pitch 83° for the rest of the walk. A duck walking with its head on its chest strides differently
+from the one the odometry scale was measured on, and its depth sensor looks at its feet.
+
+Main has the same glance code (1-4 glances a run there, odometry 0.95-0.97); look before you step
+multiplied it (3-13 glances a run). Fixed: a glance ends by sending robotd's default command
+(`HEAD_WALK_CMD`), with a test in `test_replay.py` that failed before the fix (it sent 13°/20°).
+
+Challenge 11 again on the fix (`runs/gate4-ch11`): **9 of 10**, every reach 0.12-0.18 m from the
+goal, belief 0.03-0.05 m from the truth (was 0.20-0.40), the odometry 0.98-1.03 of the truth.
+Seed 2, which stalled before, went round the pit after a long detour. The one failure, seed 4, a
+timeout: at the pit's edge, facing it, the plan needed a 75° turn; the turn on the spot was refused
+because the room to turn read 0.123 m (needs 0.17), so the follower arced, the cliff check stopped
+the arc, and the same stop came back every 7 s for 70 s. The drops' own gate passed (0.52 m from the
+cliff points, 0.33 m from the edges). What read 0.123 m: one of mapd's whole occupied cells, at
+(0.72-0.77, 0.23-0.28), while the nearest remembered obstacle point was 0.221 m away and the truth's
+nearest obstacle 0.215 m — the block's cell placed about 9 cm closer than the block
+(`sim/probes/room_replay.py`). I first blamed the drops' rings and changed the room to leave them
+out; the replay showed the room was 0.123 m without them too, so that change was reverted before any
+result was counted. Open: a mapd cell placed a few cm off reads as no room to turn (the relative
+error again), and a cliff stop that comes back unchanged should end the leg, not run to the timeout.
+
+The order agreed with the operator (2026-11-18): a full sweep is a big commitment, run only when
+confident. So: hard seeds first — challenge 11 seed 4, the gate2 failures (10 s2, s8; 6 s3; 7 s3),
+drops (8 and 9, seeds 1-3: with its head up the duck sees drops sooner and from farther) and 12-16
+(seeds 1-3, never run on this branch) — and the full 1-16 sweep only if those hold
+(`runs/gate6-hard`, on the head fix alone).
+
+**The hard seeds (gate6, 2026-11-18): not enough to sweep.**
+
+| Run | Result | Reading |
+| --- | --- | --- |
+| 10 s2, 10 s8, 6 s3 | pass | all three failed in gate2 |
+| 7 s3 | refused, no room to turn (0.11 m) | the same as main |
+| 11 s4 | timeout | the mapd cell above, again |
+| 8, 12 (s1-3) | 6/6 right (refused across the drop) | |
+| 9 s1 | right | then s2 **crashed**: `Set changed size during iteration` |
+| 13, 14 (s1-3) | 6/6 | |
+| 15 s1-3 | 2/3: s1 **contact** 0.075 m with small2 | safety |
+| 16 s1-3 | 0/3: two refusals, one fall | walk-over family, parked; main 0/10 |
+
+- **The crash** (fixed): the depth-frame thread adds suspected drops while a glance's
+  `SuspectMemory.clear` iterates over them. Now over a copy; a test in `test_side_drops.py` does the
+  add inside the iteration and failed with the crash's message before the fix. Very likely also the
+  unexplained challenge 9 crash in the first gate.
+- **The contact, not fixed:** small2 is 6.6 cm tall. Every return lower than `FLOOR_MARGIN_M`
+  (8 cm, plus 3 cm per metre of range) is floor (`cliff.py`), so the box was floor to the duck: no
+  point remembered, passed 0.156 m from its centre. Main has the same limit: its `challenges-new1`
+  run of 15 s1 touched small2 (0.058 m), `challenges-margin1` passed it at 0.109 m. Boxes of 5-8 cm
+  are in challenge 15 by design (5-25 cm), so this is a sensing gap, and it is a decision: lower the
+  margin (and measure what floor reads above the floor first), or treat low things as the walk-over
+  family's.
