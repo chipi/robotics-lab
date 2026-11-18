@@ -94,7 +94,7 @@ Built with the runner so it is proven on them; the ranges are first guesses, to 
 | 13 | A low overhang | a shelf 0.6 m deep right across the straight way, 1.0–1.3 m ahead, in a 3 m wide room; its underside 0.32–0.40 m (walk under it) or 0.15–0.22 m (go round), by seed; the goal 2.6–3.0 m ahead | reach | underside, position |
 | 14 | A thin pole, a chair's legs | legs 2–4 cm across on the way to the goal, 1.0–1.4 m ahead: one pole, or four in a 0.38 m square under a seat at 0.42 m, by seed | reach | leg size, position |
 | 15 | A field of small boxes | 6–10 boxes 8–20 cm across and 5–25 cm tall between the start and the goal, 0.45 m apart or more, none within 0.3 m of the start or the goal | reach | count, sizes, positions |
-| 16 | A threshold to step over (as built; to be redone as a home door's threshold, RFC-0008 §3) | a bar 1–3 cm high, 4 cm deep, across a 0.8 m corridor 0.8–1.2 m ahead: a raised floor, walked over (not a contact); the goal 1.4–1.8 m beyond | reach | height, position |
+| 16 | A threshold to step over (a home door's, at what the walking crosses: RFC-0008 §3, docs/wip/STEPS.md) | a bar 0.5–1.0 cm high (1–3 cm until 2026-11-18), built edge to edge, 4 cm deep, across a 0.8 m corridor 0.8–1.2 m ahead: a raised floor, walked over (not a contact); the goal 1.4–1.8 m beyond | reach | height, position |
 
 Every scene also gets the start's jitter: ±0.05 m, ±10°.
 

@@ -3,9 +3,10 @@
 **Status:** Accepted, revision 2 (the operator, 2026-11-18: "let's fully implement this … at least
 an MVP and a good starting point"); being built.
 **Builds on:** [RFC-0002](RFC-0002-robot-brain.md) (the robot brain),
-[RFC-0013](RFC-0013-robot-eye.md) (the robot's eye), [docs/wip/PRIOR-ART.md](../wip/PRIOR-ART.md)
-(semantic maps, scene graphs), [docs/wip/EXPLORE-PROGRESS.md](../wip/EXPLORE-PROGRESS.md) (b7:
-trapped beside a landmark).
+[RFC-0004](RFC-0004-perception-and-planning.md) (the world model: this is its object layer; a VLM
+would be one more recogniser), [RFC-0013](RFC-0013-robot-eye.md) (the robot's eye),
+[docs/wip/PRIOR-ART.md](../wip/PRIOR-ART.md) (semantic maps, scene graphs),
+[docs/wip/EXPLORE-PROGRESS.md](../wip/EXPLORE-PROGRESS.md) (b7: trapped beside a landmark).
 
 ## 1. Why
 
@@ -59,33 +60,33 @@ drift (not in the first build). The mission: rooms named, goals by object.
    truth, on purpose and only through this sensor model; its detections are relative to the duck and
    placed on the map with the duck's belief, as a real camera's would be.
 4. The navigator and the explorer: the camera every 0.5 s, the semantic map updated and recorded (a
-   `semantic` event when it changes; `semantic_map.json` at the end); confirmed objects' blocking
-   parts join the cost map as obstacle points (a semantic layer). Exploring in the apartment only;
-   the challenge course is unchanged (no catalogue there).
+   `semantic` event when it changes; `semantic_map.json` at the end); an optional semantic layer in
+   the cost map, off by default (`--object-costs`; §6, §5 question 2). Exploring in the apartment
+   only; the challenge course is unchanged (no catalogue there).
 5. Rooms: a `room` event when the room the duck believes it is in changes; the scoreboard compares
    it with the truth's room.
-6. **Goals by object:** `duck-find fridge` explores until a fridge is confirmed, then goes to stand
-   in front of it; judged by the truth (the duck within 0.35 m of the fridge's outline, facing it
-   within 45°).
+6. **Goals by object:** `duck-explore --find fridge` explores until a fridge is confirmed, then goes
+   to stand in front of it; judged by the truth (the duck within 0.35 m of the fridge's outline,
+   facing it within 45°).
 7. The judge and the scoreboard count the six `lm_*` landmarks as obstacles: the depth sensor sees
    them, so in this world they are things the duck would hit.
-8. **The inventory, "find all objects"** (`duck-explore --inventory`): explore, then say what is where
-   (`inventory.json`: the confirmed objects by room, with sightings, confidence, recognisers and
-   evidence); scored by recall, the scene's objects found by room.
+8. **The inventory, "find all objects"** (`duck-explore --inventory`): explore, then say what is
+   where (`inventory.json`: the confirmed objects by room, with sightings, confidence, recognisers
+   and evidence); scored by recall, the scene's objects found by room.
 9. **In the Observatory and the video:** the objects in the 3D scene, the camera's field of view and
    what it sees now in the eye view, the room and its votes in the thinking panel (records `objects`
    and `look`; built on the `mission-control` branch).
 
 ### Recognisers, and a real home
 
-Anything that recognises objects feeds the semantic map through one record, a `Detection`: a kind,
-a disc relative to the duck, a height band, a range, a confidence, the recogniser's name, and
-evidence (from a real camera: the frame's time and the box in the image, so an inventory can show
-the picture). The simulated camera is one recogniser; a detector on real video (the duck's camera,
-or a camera on the NXT's Raspberry Pi) is the next, with no change to the map.
+Anything that recognises objects feeds the semantic map through one record, a `Detection`: a kind, a
+disc relative to the duck, a height band, a range, a confidence, the recogniser's name, and evidence
+(from a real camera: the frame's time and the box in the image, so an inventory can show the
+picture). The simulated camera is one recogniser; a detector on real video (the duck's camera, or a
+camera on the NXT's Raspberry Pi) is the next, with no change to the map.
 
-For a real home nobody writes the home's objects down: the **kinds catalogue** (`kinds.json`, what
-a fridge is) is shared by every home; the **home's objects** (which fridge, where) are the semantic
+For a real home nobody writes the home's objects down: the **kinds catalogue** (`kinds.json`, what a
+fridge is) is shared by every home; the **home's objects** (which fridge, where) are the semantic
 map, filled in by the robot while it explores and kept between runs. A detector trained on household
 objects (the COCO set's classes include refrigerator, couch, bed, toilet, chair and TV — from
 memory) or an open-vocabulary one (prompted with the catalogue's kind names) recognises the kinds;

@@ -22,19 +22,19 @@ batch to confirm.
 
 In the bar's order — safety first, then reach, then quality:
 
-1. **Safety floor.** Falls: look before you step (b3: no falls; challenges 5-11, ten seeds each:
-   no contact, no fall). Contacts: remembered obstacles kept consistent with the duck (the relative
+1. **Safety floor.** Falls: look before you step (b3: no falls; challenges 5-11, ten seeds each: no
+   contact, no fall). Contacts: remembered obstacles kept consistent with the duck (the relative
    error's worst tenth, 4-21 cm, is past the 12 cm margin); its replay check is
    `sim/probes/map_relative_error.py`, the worst tenth under the margin.
 2. **Reach all six rooms.** Fixes 2-5 (loops and traps that ended runs), measured by b4; then the
    scoreboard's top blockers: the bedroom never entered, targets chased through the bath-office
    wall, stalls (the largest time cost in b3).
 3. **Map quality: the areas within ±25 %.** Not worked on yet: the best run saw 10-35 % of each
-   room's floor. Exploring that finishes a room (a survey inside each room, frontiers ranked by
-   what they would reveal) within the 20 min budget.
-4. **Speed: scanning beside the way** (RFC-0012 §2.1, the operator's "maybe both"): the head looks at
-   unseen floor beside the path while walking, so look before you step stops less (b3 r3: 40 looks,
-   1.9 of 10.8 min).
+   room's floor. Exploring that finishes a room (a survey inside each room, frontiers ranked by what
+   they would reveal) within the 20 min budget.
+4. **Speed: scanning beside the way** (RFC-0012 §2.1, the operator's "maybe both"): the head looks
+   at unseen floor beside the path while walking, so look before you step stops less (b3 r3: 40
+   looks, 1.9 of 10.8 min).
 5. **Land and connect.** Challenges 1-4 rechecked, then commit (push on the operator's go); "explore
    the apartment" as a Mission Control library goal with this scoreboard as its pass condition; the
    real duck later, rehearsed on the simulator first.
@@ -43,13 +43,18 @@ In the bar's order — safety first, then reach, then quality:
 
 | Batch | Code | Runs | Rooms visited (median / best) | Areas within 25 % (best) | Contacts / falls | Top blocker |
 | --- | --- | --- | --- | --- | --- | --- |
-| b1 (baseline) | `c9c24f8` | 3 | 2 / 2 | 0/6 | 0 / 0 | refused: no room to turn |
+| b1 (baseline) | `c9c24f8` | 3 | 2 / 2 | 0/6 | 0 (4) / 0 | refused: no room to turn |
 | b2 (fix 1) | `c9c24f8` + fix 1 | 3 | 2 / 2 | 0/6 | 0 / **1** | refused: no path on the map |
 | b3 (fix 1 + look before you step) | `c9c24f8` + both | 3 | 2 / **4** | 0/6 | **2** / 0 | stalled: reflex stop answered by the same plan |
 | b4 (+ fixes 2-5, glance) | `c9c24f8` + all | 3 | 2 / 2 | 0/6 | **7** / 0 | no frontier left (fix 5 retired too much) |
-| b5 (fix 5 local, 0.6 m) | `c9c24f8` + all | 3 | 2 / 3 | 0/6 | **2** / 0 | stalled: reflex stop answered by the same plan |
-| b6 (head fix, low band) | `f06d48f` | 3 | **3 / 5** | **1/6** | 0 / 0 | refused: no room to turn |
-| b7 (+ retired cells only) | `f06d48f` + retire | 3 | 2 / 3 | 0/6 | 0 / 0 | refused: no room to turn (`lm_office`, 3/3) |
+| b5 (fix 5 local, 0.6 m) | `c9c24f8` + all | 3 | 2 / 3 | 0/6 | **2** (5) / 0 | stalled: reflex stop answered by the same plan |
+| b6 (head fix, low band) | `f06d48f` | 3 | **3 / 5** | **1/6** | 0 (3) / 0 | refused: no room to turn |
+| b7 (+ retired cells only) | `f06d48f` + retire | 3 | 2 / 3 | 0/6 | 0 (3) / 0 | refused: no room to turn (`lm_office`, 3/3) |
+| b8 (+ objects on, one tight pivot per spot) | `3ceef19` | 3 | 2 / 3 | 0/6 | 2 / 0 | refused: no room to turn |
+
+Contacts in brackets: re-scored on 2026-11-18 by the judge that counts the six `lm_*` landmarks
+(RFC-0016: the depth sensor sees them, so here they are things the duck would hit): b1 0 → 4, b5 2 →
+5, b6 0 → 3, b7 0 → 3; b2-b4 unchanged. From b8 on the judge counts them.
 
 ## b1, the baseline (2026-11-17)
 
@@ -146,7 +151,8 @@ to turn" 3.
 Next, safety first:
 
 1. The door-frame contact (r1).
-2. The reflex loop: after a reflex stop with the plan still clear, turn to face the path before walking.
+2. The reflex loop: after a reflex stop with the plan still clear, turn to face the path before
+   walking.
 3. The stall clock runs during looks (b3 r1 leg 4 stalled while looking 4 times, all floor).
 4. Hold-off picks a stand-in point without room to turn (b3 r1: 11 cm from the shelf; b1 r3, b2 r1).
 5. A refused target retires its whole frontier; refusals for unreachable targets do not count toward
@@ -168,9 +174,9 @@ Fixes, built (uncommitted, `make test-duck` PASS):
   before walking, so the reflex looks the way the duck will walk (`run.py`, reflex branch).
 - **3, the stall clock:** time spent looking before a step is not time without progress
   (`Progress.pause`; tested in `test_replay.py`).
-- **4, hold-off with room to turn:** `grid.nearest_free(..., room_m=PIVOT_OBSTACLE_M)`; no such point
-  within reach leaves the goal refused (tested in `test_nav.py`: without the rule 0.15 m from the
-  object, with it 0.17 m).
+- **4, hold-off with room to turn:** `grid.nearest_free(..., room_m=PIVOT_OBSTACLE_M)`; no such
+  point within reach leaves the goal refused (tested in `test_nav.py`: without the rule 0.15 m from
+  the object, with it 0.17 m).
 - **5, an unreachable frontier:** a target refused with "no path on the map" retires its whole
   frontier cluster, and those refusals do not count toward "trapped" (`explore_run.py`).
 
@@ -190,8 +196,8 @@ contact entries in three episodes.
 - **Fix 5 retired too much.** One "no path" refusal near the stairwell retired a 124-point frontier
   cluster (r1), 201 points by r2's first logged pick: the cluster ran along the corridor, so the
   ways north and south went with it, and nothing was left. Fix 5 is changed to retire only the
-  cluster's part within 0.6 m of the refused target (b2 r3's six stairwell targets were within
-  0.5 m of each other).
+  cluster's part within 0.6 m of the refused target (b2 r3's six stairwell targets were within 0.5 m
+  of each other).
 - **Contacts.** The office door frame's south end twice (walking at 0.3 m/s, 7.6-8.2 cm; then
   turning on the spot, 7.3-8.0 cm — fix 2's turn after a reflex stop, permitted by room measured on
   a map a few cm off) and a desk leg once (standing, 8.1-8.2 cm). All three are the relative error
@@ -214,13 +220,13 @@ seen up close (a look before turning past it, scanning beside the way) from one 
 
 ## The gate on the branch: challenge 11 below the bar, no merge (2026-11-18)
 
-Challenges 1-11, ten seeds each, on the branch with the graded margin ring (`grid.margin_cost`,
-edge cost 100): safety held (no contact, no fall), 6, 7 and 10 at 8 of 10, **challenge 11 at 6 of
-10**: three "reached" 0.26-0.30 m from the goal (over the 0.25 m bar) and one refusal. My reading,
-not yet checked: the graded ring keeps the plan farther from walls, so the walks are longer and the
-belief has drifted more by the end. Edge cost 40 instead of 100, challenge 11 again
-(`runs/gate3-ch11`): **7 of 10** — two "reached" at 0.27 and 0.32 m, one stall 2.66 m out (s2).
-Main's last run of challenge 11: 8 of 10.
+Challenges 1-11, ten seeds each, on the branch with the graded margin ring (`grid.margin_cost`, edge
+cost 100): safety held (no contact, no fall), 6, 7 and 10 at 8 of 10, **challenge 11 at 6 of 10**:
+three "reached" 0.26-0.30 m from the goal (over the 0.25 m bar) and one refusal. My reading, not yet
+checked: the graded ring keeps the plan farther from walls, so the walks are longer and the belief
+has drifted more by the end. Edge cost 40 instead of 100, challenge 11 again (`runs/gate3-ch11`):
+**7 of 10** — two "reached" at 0.27 and 0.32 m, one stall 2.66 m out (s2). Main's last run of
+challenge 11: 8 of 10.
 
 So the branch is not merged. What the bar says here is the trade the margin ring makes: more room
 from walls (the contacts in b3-b5) for more drift at the goal. Edge 40 is kept on the branch (better
@@ -247,12 +253,12 @@ multiplied it (3-13 glances a run). Fixed: a glance ends by sending robotd's def
 (`HEAD_WALK_CMD`), with a test in `test_replay.py` that failed before the fix (it sent 13°/20°).
 
 Challenge 11 again on the fix (`runs/gate4-ch11`): **9 of 10**, every reach 0.12-0.18 m from the
-goal, belief 0.03-0.05 m from the truth (was 0.20-0.40), the odometry 0.98-1.03 of the truth.
-Seed 2, which stalled before, went round the pit after a long detour. The one failure, seed 4, a
-timeout: at the pit's edge, facing it, the plan needed a 75° turn; the turn on the spot was refused
-because the room to turn read 0.123 m (needs 0.17), so the follower arced, the cliff check stopped
-the arc, and the same stop came back every 7 s for 70 s. The drops' own gate passed (0.52 m from the
-cliff points, 0.33 m from the edges). What read 0.123 m: one of mapd's whole occupied cells, at
+goal, belief 0.03-0.05 m from the truth (was 0.20-0.40), the odometry 0.98-1.03 of the truth. Seed
+2, which stalled before, went round the pit after a long detour. The one failure, seed 4, a timeout:
+at the pit's edge, facing it, the plan needed a 75° turn; the turn on the spot was refused because
+the room to turn read 0.123 m (needs 0.17), so the follower arced, the cliff check stopped the arc,
+and the same stop came back every 7 s for 70 s. The drops' own gate passed (0.52 m from the cliff
+points, 0.33 m from the edges). What read 0.123 m: one of mapd's whole occupied cells, at
 (0.72-0.77, 0.23-0.28), while the nearest remembered obstacle point was 0.221 m away and the truth's
 nearest obstacle 0.215 m — the block's cell placed about 9 cm closer than the block
 (`sim/probes/room_replay.py`). I first blamed the drops' rings and changed the room to leave them
@@ -283,31 +289,30 @@ drops (8 and 9, seeds 1-3: with its head up the duck sees drops sooner and from 
   `SuspectMemory.clear` iterates over them. Now over a copy; a test in `test_side_drops.py` does the
   add inside the iteration and failed with the crash's message before the fix. Very likely also the
   unexplained challenge 9 crash in the first gate.
-- **The contact, not fixed:** small2 is 6.6 cm tall. Every return lower than `FLOOR_MARGIN_M`
-  (8 cm, plus 3 cm per metre of range) is floor (`cliff.py`), so the box was floor to the duck: no
-  point remembered, passed 0.156 m from its centre. Main has the same limit: its `challenges-new1`
-  run of 15 s1 touched small2 (0.058 m), `challenges-margin1` passed it at 0.109 m. Boxes of 5-8 cm
-  are in challenge 15 by design (5-25 cm), so this is a sensing gap, and it is a decision: lower the
-  margin (and measure what floor reads above the floor first), or treat low things as the walk-over
+- **The contact, not fixed:** small2 is 6.6 cm tall. Every return lower than `FLOOR_MARGIN_M` (8 cm,
+  plus 3 cm per metre of range) is floor (`cliff.py`), so the box was floor to the duck: no point
+  remembered, passed 0.156 m from its centre. Main has the same limit: its `challenges-new1` run of
+  15 s1 touched small2 (0.058 m), `challenges-margin1` passed it at 0.109 m. Boxes of 5-8 cm are in
+  challenge 15 by design (5-25 cm), so this is a sensing gap, and it is a decision: lower the margin
+  (and measure what floor reads above the floor first), or treat low things as the walk-over
   family's.
 
-**The low band (the operator, 2026-11-18: measure, then lower the margin; what to walk over
-depends on how tall a thing is, 1 cm and 7 cm are different; adjusting challenge 15 is
-acceptable).** Measured
-first (`sim/probes/floor_heights.py`, `low_persistence.py`; 27 runs since the head fix, 20 min of
-depth frames, 10 low boxes): flat floor reads within +2 cm in 99 % of returns but +4.5-7 cm in one of
-a thousand; low boxes read +5-6.5 cm, so a single return cannot tell them apart. A 5 cm cell read in
-3 different frames can: at 3.5 cm + 2 cm/m, 0 phantom cells in 20 min and 8 of 10 boxes caught (5 at
-the 8 cm margin); missed: 6.5 and 7.0 cm. Built: `cliff.low_points` (the band between that and the
-floor margin; a 2 cm top stays floor, a 6 cm top is low, 15 cm an obstacle, `test_cliff.py`) and the
-navigator remembers a low cell once `LOW_FRAMES` 3 different frames saw it (`test_replay.py`). The
-map takes it; the reflex still stops on the obstacle class only.
+**The low band (the operator, 2026-11-18: measure, then lower the margin; what to walk over depends
+on how tall a thing is, 1 cm and 7 cm are different; adjusting challenge 15 is acceptable).**
+Measured first (`sim/probes/floor_heights.py`, `low_persistence.py`; 27 runs since the head fix, 20
+min of depth frames, 10 low boxes): flat floor reads within +2 cm in 99 % of returns but +4.5-7 cm
+in one of a thousand; low boxes read +5-6.5 cm, so a single return cannot tell them apart. A 5 cm
+cell read in 3 different frames can: at 3.5 cm + 2 cm/m, 0 phantom cells in 20 min and 8 of 10 boxes
+caught (5 at the 8 cm margin); missed: 6.5 and 7.0 cm. Built: `cliff.low_points` (the band between
+that and the floor margin; a 2 cm top stays floor, a 6 cm top is low, 15 cm an obstacle,
+`test_cliff.py`) and the navigator remembers a low cell once `LOW_FRAMES` 3 different frames saw it
+(`test_replay.py`). The map takes it; the reflex still stops on the obstacle class only.
 
-Rerun (`runs/gate7-low`): **challenge 15 10/10**, no contact (s1 0.123 m from the boxes, was
-0.075). Doorways not closed by phantoms: 1, 2, 3 seeds 1-3 9/9. The hard seeds all passed this time:
-11 s4, 10 s2, 10 s8, 6 s3, 7 s3; 8, 9, 12 9/9 refused across the drop as they should; 13, 14 6/6.
-Challenge 16 0/3 (two falls at the bar, one refusal): the walk-over family, parked, main 0/10. The
-6.5-7 cm boxes the band can miss stay open; challenge 15's smallest box is not changed yet.
+Rerun (`runs/gate7-low`): **challenge 15 10/10**, no contact (s1 0.123 m from the boxes, was 0.075).
+Doorways not closed by phantoms: 1, 2, 3 seeds 1-3 9/9. The hard seeds all passed this time: 11 s4,
+10 s2, 10 s8, 6 s3, 7 s3; 8, 9, 12 9/9 refused across the drop as they should; 13, 14 6/6. Challenge
+16 0/3 (two falls at the bar, one refusal): the walk-over family, parked, main 0/10. The 6.5-7 cm
+boxes the band can miss stay open; challenge 15's smallest box is not changed yet.
 
 ## b6, the head fix and the low band (2026-11-18)
 
@@ -320,28 +325,28 @@ contact and no fall in 146 m walked.
 | r2 | 5 (kitchen, living, office, bath, corridor) | 1/6 | no frontier left, 15.5 min | 102 m | 44 / 3 / 5 / 4 |
 | r3 | 2 (office, corridor) | 0/6 | trapped, 3.7 min | 20 m | 19 / 7 / 0 / 0 |
 
-Blockers by time lost: timeouts 4x (4.0 min; bath, corridor, living), stalls 6x (2.9 min), "no
-path on the map" 6x (1.7 min; bedroom, corridor), "no room to turn" 7x (0.5 min, but it ended two
-runs: r3 trapped, r1's office). r1 and r2 ended "no frontier left" with rooms unvisited (r1: kitchen
-and living at 0 %): the frontier list ran out before the apartment did. Not yet looked at: why each
-of those frontiers went (retired, walled off by `WALL_M`, or never seen), and r3's seven refusals.
+Blockers by time lost: timeouts 4x (4.0 min; bath, corridor, living), stalls 6x (2.9 min), "no path
+on the map" 6x (1.7 min; bedroom, corridor), "no room to turn" 7x (0.5 min, but it ended two runs:
+r3 trapped, r1's office). r1 and r2 ended "no frontier left" with rooms unvisited (r1: kitchen and
+living at 0 %): the frontier list ran out before the apartment did. Not yet looked at: why each of
+those frontiers went (retired, walled off by `WALL_M`, or never seen), and r3's seven refusals.
 
-Looked at the same day (`sim/probes/last_frontiers.py`): at r1's last pick 11 frontier clusters
-(446 cells, one of 194) were left, every cell within `AVOID_M` 0.4 m of an avoided point — and 188
-of the 214 avoided points were frontier cells retired by fix 5 (three "no path" refusals), each
-avoided like a failed target, a 0.4 m disc each. Changed: retired cells go to their own list and
-take out only frontier cells within `RETIRED_M` 0.07 m of them (`explore.without_retired`, tests
-in `test_explore.py`); failed targets keep `AVOID_M`. Replayed at the same pick: 56 usable cells and
-a target in the corridor (r2's last pick: 5; `reachable()` not replayed).
+Looked at the same day (`sim/probes/last_frontiers.py`): at r1's last pick 11 frontier clusters (446
+cells, one of 194) were left, every cell within `AVOID_M` 0.4 m of an avoided point — and 188 of the
+214 avoided points were frontier cells retired by fix 5 (three "no path" refusals), each avoided
+like a failed target, a 0.4 m disc each. Changed: retired cells go to their own list and take out
+only frontier cells within `RETIRED_M` 0.07 m of them (`explore.without_retired`, tests in
+`test_explore.py`); failed targets keep `AVOID_M`. Replayed at the same pick: 56 usable cells and a
+target in the corridor (r2's last pick: 5; `reachable()` not replayed).
 
 ## b7, retired cells only (2026-11-18)
 
 Worse, and not for the change's reason: all three runs ended **trapped in the office at 2.2-3.8
 min** by "no room to turn" (18 refusals), at the same spot as b6 r3 and b1 — beside `lm_office`, the
 office's landmark, a standing capsule (about 4-66 cm high) the depth sensor sees and the duck can
-walk through (`collides: false`; the judge does not count it). At the refusals the map gave
-0.05-0.10 m of room, 10-18 remembered points within 0.2 m, the sensor's nearest return 2-10 cm; the
-truth's clearance to anything that collides was 0.24-0.28 m, and the duck 3 cm from the capsule's
-surface. What decides it: the duck got 3 cm from a thing it sees — with a real pillar that is a
-contact. There are six such landmarks, one per room (`lm_*`). The retire change itself is not
-measured by b7: no run lived long enough to need it.
+walk through (`collides: false`; the judge did not count it then — it does since RFC-0016). At the
+refusals the map gave 0.05-0.10 m of room, 10-18 remembered points within 0.2 m, the sensor's
+nearest return 2-10 cm; the truth's clearance to anything that collides was 0.24-0.28 m, and the
+duck 3 cm from the capsule's surface. What decides it: the duck got 3 cm from a thing it sees — with
+a real pillar that is a contact. There are six such landmarks, one per room (`lm_*`). The retire
+change itself is not measured by b7: no run lived long enough to need it.
