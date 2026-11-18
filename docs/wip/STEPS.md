@@ -63,3 +63,19 @@ The operator took up challenge 16 again and agreed (2026-11-18, "OK on all sugge
    has no door thresholds (2026-11-18).
 6. Challenges 17–20 (cables, rug edges, a step up and down, small flights) on the measured heights,
    every floor in edge-to-edge pieces.
+
+## Parked again, 2026-11-18
+
+The operator: "ok on parked 16". What was measured:
+
+- Challenge 16 as rebuilt: 2 of 10 (gate10), then 1 of 10 with a straight push on stuck
+  (gate11, reverted). Every failure is "stuck: walking without moving" with a foot at the bar;
+  bars of 0.6 cm stalled as well as 0.9 cm.
+- The probe with turning (`step_height.py --yaw`, 1 cm, 0.3 m/s, 5 each): straight 4 of 5, turning
+  ±0.18 rad/s 2 of 5. The navigator turns 0.1–0.34 rad/s on the way to the bar (correcting the
+  walk's drift), more than the probe's turning.
+- Once a foot is caught, walking straight does not free it (1.5 s at 0.3 m/s, no motion), and the
+  duck does not walk backwards.
+
+Not tried: capping the turn while walking (touches every challenge: a full gate after), seeing the
+bar (the low band starts at 3.5 cm) and squaring up to it.
