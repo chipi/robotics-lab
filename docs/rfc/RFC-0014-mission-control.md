@@ -12,8 +12,15 @@ library, point goals by tapping the map, goal runs from the event stream, STOP a
 link that is disabled while the run key is null), the areas the operator draws, renames and deletes
 on that map, and site export and import. Then the MCP server of step 1 (62de2f0; the operator
 approved the official `mcp` SDK for `control/` only), so step 1 is built except the `/watch` link,
-which needs a run key (the fake robot writes no Observatory run). Not built: steps 0, 2, 4 to 8 and
-10 to 12. The container files are written and not built.
+which needs a run key (the fake robot writes no Observatory run). Then, against the simulated duck:
+step 2 (44686d5: the navigator API as its own process, `duck-nav-server`, and the `duck-sim` adapter
+in Mission Control with run keys, the Watch link and the goal run's id and name in the Observatory
+run, `viewer/CONTRACT.md`), the guardrails enforced in the real navigator with the loop's decisions
+relayed per goal run (3d8ac35, O17), step 5 and 6 (1a13fa0: one goal on several robots with `share`
+each or any; goals in words by a phrase matcher, with an optional LLM planner that is off unless
+`planner.json` exists and has never been called against a real endpoint) and step 7 (c1339e1:
+per-client tokens, off unless `--require-tokens`). Not built: steps 0, 4, 8 and 10 to 12, and
+`share: split`. The container files are written and not built.
 **Builds on:** [RFC-0006](RFC-0006-mission-control.md) (the vision, superseded in part, §2.1),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
 [RFC-0002](RFC-0002-robot-brain.md) §3.9 to §3.10 (several robots, the brain's API),
