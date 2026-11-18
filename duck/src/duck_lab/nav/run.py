@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 from duck_lab.nav import cliff
-from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, obstacle_points
+from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, low_points, obstacle_points
 from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
@@ -85,6 +85,7 @@ CLIFF_STOP_M = 0.60
 # few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
 # does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
 DROP_FRAMES = 3
+LOW_FRAMES, LOW_CELL_M = 3, 0.05    # a low-band cell is an obstacle once this many frames saw it (sim/probes/low_persistence.py)
 # After a cliff stop the duck looks along the edge, LOOK_ALONG_M past each end of what it saw (side_drops.look_targets);
 # where the drop goes on there, or the look saw nothing, the hole is taken to go on CONTINUE_M past the seen end.
 LOOK_ALONG_M = 0.4
@@ -316,6 +317,7 @@ class Navigator:
         self._log = open(log, "a") if log else None
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
+        self._low = {}       # low-band cells (LOW_CELL_M) -> the frames that saw them, until LOW_FRAMES remember them
         self._drop_streak = 0
         self._drop_frame = None
         self._depth = None       # the newest depth frame's returns in map metres, for the next tick record
@@ -509,7 +511,24 @@ class Navigator:
         """Remember a frame's obstacle points within LAYER_M, placed with the pose of the state the frame was paired with
         (fv.pose), the tick's only when the frame has none: frames come at 15 Hz and ticks at 10 Hz, and during a pivot at
         0.8 rad/s the tick's pose is up to 0.08 rad off, a point at 0.6 m some 5 cm (the review of 2026-11-16)."""
-        return self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), fv.pose or tick_pose)
+        pose = fv.pose or tick_pose
+        return self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), pose) + \
+            self._remember_low(low_points(fv.frame, fv.state, within_m=LAYER_M), pose,
+                               (fv.frame.get("seq"), fv.frame.get("t_ns")))
+
+    def _remember_low(self, pts: list, pose: tuple, frame_key) -> list:
+        """Low-band points (cliff.low_points) join the memory once LOW_FRAMES different frames saw their LOW_CELL_M
+        cell: one frame's low return is floor noise as often as not, a low box is there in every frame. frame_key tells
+        frames apart (go_to calls this every tick, with the newest frame, often the same one)."""
+        c, s_ = math.cos(pose[2]), math.sin(pose[2])
+        keep = []
+        for ax, ay in pts:
+            q = (pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay)
+            frames = self._low.setdefault((round(q[0] / LOW_CELL_M), round(q[1] / LOW_CELL_M)), set())
+            frames.add(frame_key)
+            if len(frames) >= LOW_FRAMES:
+                keep.append((ax, ay))
+        return self._remember(keep, pose)
 
     def _on_state(self, s: dict) -> None:
         """Every robot state (the state stream's thread): odometry to the localizer, the state to the pairing history, the IMU and
@@ -655,6 +674,8 @@ class Navigator:
         gone = len(self.blocked) - len(keep)
         self.blocked = keep
         self._seen = {(round(b[0] / LAYER_SPACING_M), round(b[1] / LAYER_SPACING_M)) for b in keep}
+        self._low = {k: v for k, v in self._low.items()
+                     if math.dist((k[0] * LOW_CELL_M, k[1] * LOW_CELL_M), pose[:2]) >= radius_m}
         return gone
 
     def record(self, **row) -> None:

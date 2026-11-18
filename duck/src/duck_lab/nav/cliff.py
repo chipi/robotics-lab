@@ -103,12 +103,19 @@ def sensor_offset(state: dict) -> tuple:
 FLOOR_MARGIN_M = 0.08      # a return lower than this (+3 cm per metre of range) is floor
 FLOOR_MARGIN_PER_M = 0.03
 OVERHEAD_M = 0.30          # above the duck's head (27.2 cm): passes over it
+# Below the floor margin, above this: the low band, things a few cm tall that the floor margin reads as floor (a 6.6 cm
+# box, challenge 15 seed 1). One return there is noise as often as not, so the navigator keeps a low cell only once
+# several frames saw it. Flat floor since the head fix (27 runs, 20 min, sim/probes/low_persistence.py): 0 cells/min
+# seen in 3 frames at 3.5 cm + 2 cm/m, 8 of 10 low boxes caught (5 at the floor margin alone).
+LOW_MARGIN_M = 0.035
+LOW_MARGIN_PER_M = 0.02
 
 
-def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
+def obstacle_points(frame: dict, state: dict, within_m: float = 0.8, low: bool = False) -> list:
     """(ahead, left) of every valid return that is an obstacle — above the floor, below the duck's
     head, within within_m of the sensor — relative to the trunk and turned to its heading. The
-    reflex's memory takes all of them, not one point: a wall seen once is a wall, not a dot."""
+    reflex's memory takes all of them, not one point: a wall seen once is a wall, not a dot.
+    low: the returns in the low band instead (above LOW_MARGIN_M, below the floor margin)."""
     height, q = sensor_pose(state)
     sx, sy = sensor_offset(state)
     w, x, y, z = state["imu"]["quat"]
@@ -123,10 +130,18 @@ def obstacle_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
         hx, hy = r * d[0], r * d[1]
         h = math.hypot(hx, hy)
         z = height + r * d[2]
-        if h > within_m or z < FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h or z > OVERHEAD_M:
+        floor_top = FLOOR_MARGIN_M + FLOOR_MARGIN_PER_M * h
+        if h > within_m or z > OVERHEAD_M:
+            continue
+        if (low and not LOW_MARGIN_M + LOW_MARGIN_PER_M * h <= z < floor_top) or (not low and z < floor_top):
             continue
         out.append((sx + c * hx - s_ * hy, sy + s_ * hx + c * hy))
     return out
+
+
+def low_points(frame: dict, state: dict, within_m: float = 0.8) -> list:
+    """obstacle_points' low band: returns a few cm above the floor that the floor margin takes for floor."""
+    return obstacle_points(frame, state, within_m, low=True)
 
 
 def depth_points(frame: dict, state: dict) -> list:

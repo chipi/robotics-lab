@@ -288,3 +288,21 @@ drops (8 and 9, seeds 1-3: with its head up the duck sees drops sooner and from 
   are in challenge 15 by design (5-25 cm), so this is a sensing gap, and it is a decision: lower the
   margin (and measure what floor reads above the floor first), or treat low things as the walk-over
   family's.
+
+**The low band (the operator, 2026-11-18: measure, then lower the margin; what to walk over
+depends on how tall a thing is, 1 cm and 7 cm are different; adjusting challenge 15 is
+acceptable).** Measured
+first (`sim/probes/floor_heights.py`, `low_persistence.py`; 27 runs since the head fix, 20 min of
+depth frames, 10 low boxes): flat floor reads within +2 cm in 99 % of returns but +4.5-7 cm in one of
+a thousand; low boxes read +5-6.5 cm, so a single return cannot tell them apart. A 5 cm cell read in
+3 different frames can: at 3.5 cm + 2 cm/m, 0 phantom cells in 20 min and 8 of 10 boxes caught (5 at
+the 8 cm margin); missed: 6.5 and 7.0 cm. Built: `cliff.low_points` (the band between that and the
+floor margin; a 2 cm top stays floor, a 6 cm top is low, 15 cm an obstacle, `test_cliff.py`) and the
+navigator remembers a low cell once `LOW_FRAMES` 3 different frames saw it (`test_replay.py`). The
+map takes it; the reflex still stops on the obstacle class only.
+
+Rerun (`runs/gate7-low`): **challenge 15 10/10**, no contact (s1 0.123 m from the boxes, was
+0.075). Doorways not closed by phantoms: 1, 2, 3 seeds 1-3 9/9. The hard seeds all passed this time:
+11 s4, 10 s2, 10 s8, 6 s3, 7 s3; 8, 9, 12 9/9 refused across the drop as they should; 13, 14 6/6.
+Challenge 16 0/3 (two falls at the bar, one refusal): the walk-over family, parked, main 0/10. The
+6.5-7 cm boxes the band can miss stay open; challenge 15's smallest box is not changed yet.

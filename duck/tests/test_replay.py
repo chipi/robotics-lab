@@ -67,6 +67,7 @@ def navigator(runlog=None):
     nav.tof = type("Tof", (), {"nearest_mm": 410})()
     nav.floor_seen = set()
     nav.suspects = SuspectMemory()
+    nav._low = {}
     return nav
 
 
@@ -382,6 +383,23 @@ nv.glance_at((0.5, 0.2), (0.0, 0.0, 0.0))
 check("a glance ends by sending the head command it found (the default zeros), not the measured angles",
       heads and heads[-1] == {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0},
       heads[-1] if heads else None)
+
+# ---- a low cell is remembered once LOW_FRAMES different frames saw it (cliff.LOW_MARGIN_M) ---------------------------
+from duck_lab.nav.run import LOW_FRAMES  # noqa: E402
+
+nv = navigator()
+nv.blocked, nv._seen, nv._low = [], set(), {}
+box_side = [(0.5, 0.0), (0.5, 0.02)]
+for _ in range(LOW_FRAMES + 2):
+    nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=7)
+check("one frame read again and again: not remembered", nv.blocked == [], nv.blocked)
+for k in range(8, 8 + LOW_FRAMES - 2):
+    nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=k)
+check(f"{LOW_FRAMES - 1} different frames: not yet", nv.blocked == [], nv.blocked)
+new = nv._remember_low(box_side, (1.0, 0.0, 0.0), frame_key=99)
+check("a different cell in the next frame: not remembered", new == [] and nv.blocked == [], nv.blocked)
+new = nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=100)
+check(f"{LOW_FRAMES} different frames: remembered, as obstacle points", len(new) >= 1 and nv.blocked == new, new)
 
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
