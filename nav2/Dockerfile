@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /ws
 RUN git clone --depth 1 https://github.com/robo-friends/m-explore-ros2.git src/m-explore-ros2 \
     && . /opt/ros/jazzy/setup.sh \
-    && colcon build --packages-select explore_lite --cmake-args -DCMAKE_BUILD_TYPE=Release
+    && colcon build --packages-up-to explore_lite --cmake-args -DCMAKE_BUILD_TYPE=Release
 
 RUN echo '. /opt/ros/jazzy/setup.sh && . /ws/install/setup.sh' >> /root/.bashrc
 CMD ["bash"]

@@ -237,3 +237,74 @@ challenge set of 11 × 10 is about 3.5-4 h per row.
   outside the trained band, 50 Hz state. Its unsure points (the clearing height filter,
   `clearable_layers`, the monitor's band, slam_toolbox with 8 beams, explore_lite's units) are read
   in the Jazzy sources during the spike.
+
+## 8. Spike results (step 2, 2026-11-18, first version)
+
+Built and run: `nav2/Dockerfile`, `nav2/bridge.py`, `nav2/params_overrides.yaml` with
+`nav2/merge_params.py`, `nav2/costmap_probe.py`, `nav2/first_drive.sh`. Image
+`robotics-lab-nav2:spike` (5.1 GB), run `--network host` with the simulator's sockets mounted.
+The bridge is the first version: odometry and tf, the depth sensor as an obstacle cloud, a floor
+cloud for clearing and a drops cloud (all from `duck_lab.nav.cliff`, the geometry our navigator
+uses), `/cmd_vel` to `robot.move` through the adapter's steps (d), (c) and (b). `base_link` is the
+trunk's level frame on the floor (z 0 is the floor), not the trunk's centre: the clouds' heights
+are heights above the floor, so every height band below is in floor metres, not §3.4's.
+
+### What works
+
+- The image builds. The Dockerfile's `colcon build --packages-select explore_lite` failed
+  (`explore_lite_msgs` not built); `--packages-up-to` fixed it. `explore_lite` and
+  `explore_lite_msgs` build from source; there is no `ros-jazzy-explore-lite` apt package
+  (`apt-cache policy` empty). Nav2 is 1.3.14, `slam_toolbox` is installed.
+- Nav2's lifecycle comes up on the bridge's topics (60 s after the launch in the drive script)
+  with the closed parameter list merged onto the Jazzy defaults. The bridge published about 15
+  depth frames a second.
+- Costmap checks (`nav2/costmap_probe.py`, the duck standing at the dock, floor of the dock room
+  ahead and the apartment's object 0.4 to 0.75 m ahead):
+  - **Check 1, floor not marked:** yes. The local costmap has 13 to 16 lethal cells, all in the box
+     x 0.40-0.75, y -0.35-0.20 (the object), none on the floor.
+  - **Check 2, obstacles marked:** yes (the same cells).
+  - **Check 3, clearing:** partly. With the floor-band cloud as the clearing source, 54 to 180 of the
+     local window's 3600 cells are free and 3309 to 3367 unknown: the 64 rays clear lines, not
+     the area, as §3.2 expected. Not tried: the level scan as the other clearing source, and
+     clearing when an obstacle leaves the wedge (the duck turning or the head turned).
+  - **Check 5, unknown cells in the global costmap:** yes, 39772 of 40000 are -1 (`track_unknown_space`).
+- Read in the Jazzy sources (`navigation2` branch `jazzy`, `m-explore-ros2` main):
+  - the observation buffer's height filter is applied to every source, clearing ones too, in the
+    costmap's global frame (`observation_buffer.cpp`): a clearing cloud needs its points inside
+    `[min_obstacle_height, max_obstacle_height]`, as §3.2 said;
+  - **there is no `clearable_layers` parameter in Jazzy.** `ClearCostmapService` clears every
+    layer whose `isClearable()` is true: `ObstacleLayer` and `VoxelLayer` true, `StaticLayer` and
+    `InflationLayer` false. §3.4's plan (a second `ObstacleLayer` for drops, never cleared by the
+    recoveries) does not work as written: the `ClearCostmap` recoveries would clear the drops.
+    Open: drop the clearing recoveries from the behaviour tree, or feed drops through a layer that
+    is not clearable;
+  - the collision monitor takes a source's heights in `base_frame_id`'s coordinates
+    (`pointcloud.cpp`, defaults 0.05 and 0.5), so with a floor-level `base_link` they are floor
+    heights; `StopPolygon.points` is a string parameter;
+  - `explore_lite`'s `min_frontier_size` is in metres (cells times resolution), default 0.5;
+  - Jazzy's default controller is MPPI, not Regulated Pure Pursuit (the overrides name the
+    plugin and replace its parameters); the Smac 2D plugin is `nav2_smac_planner::SmacPlanner2D`;
+    the defaults name `base_footprint`.
+
+### What does not work yet
+
+- **No goal has been reached.** Two goals, one run each, on a freshly reset simulator: (1.0, 0.0)
+  and (1.2, 0.6). Nav2 accepted both and planned (a path of 22 poses to the first); the duck
+  walked 0.5 to 0.7 m, then stood while the controller logged "Failed to make progress" (7 and 4
+  times) until the 90 s limit. The (1.0, 0.0) goal lies behind the object 0.4-0.75 m ahead, a poor
+  first goal; (1.2, 0.6) is free in the mapd map of an earlier run. The cause is not known. Seen
+  and not tied to it: `/cmd_vel_nav` carries up to 1.68 rad/s before the velocity smoother (set to
+  1.0), samples of `/cmd_vel` after the smoother and the collision monitor show 1.0 rad/s
+  turns and vx 0 for much of the time, and the adapter counted 84 pivots and 13 raises to 0.2 m/s
+  in the second run. The adapter's kick (§3.3 a: a pivot from a stand does not start below about
+  1.1 rad/s) is not built, and the controller's pivots at 1.0 rad/s are below that: a candidate,
+  not a finding. Whether the collision monitor stopped the duck beside the object is not known.
+- In the second run the global costmap's counts after the drive (61 free, 14 lethal) equal those
+  before it, while the local costmap changed: whether the global costmap stopped updating or the
+  probe read an old message is not known.
+- Not done: check 4 (the 15 cm box and the collision monitor), the level scan as a clearing source,
+  `explore_lite`, `slam_toolbox`, the host `brain.*` socket, the `Brain` interface, the shared
+  recorder, the ceiling controls, challenge 1 as a scored run, any scoring. The run's data are not
+  kept in the Observatory (a bridge run writes no run record).
+- Not stopped here, for the operator: whether to go on (the first drive does not pass), and the
+  `clearable_layers` question above, which changes §3.4.
