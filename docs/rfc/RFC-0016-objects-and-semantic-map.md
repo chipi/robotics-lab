@@ -77,15 +77,25 @@ drift (not in the first build). The mission: rooms named, goals by object.
    what it sees now in the eye view, the room and its votes in the thinking panel (records `objects`
    and `sighting`, ADR-0019; built on the `mission-control` branch).
 
-### Revision 3: the home map, names, landmarks (the operator, 2026-11-18: "B yes", "C yes", "D yes")
+### Revision 3: the site map, names, landmarks (the operator, 2026-11-18: "B yes", "C yes", "D yes")
 
-- **A home's semantic map kept between runs.** A home has an id and a home frame. In the simulator
-  every run starts at the dock, so a run's map frame is the home frame. Each run starts from the
-  home's stored map, adds to it, and writes it back. Objects keep stable ids across runs: a run's
+**Sites and areas, not homes** (the operator: "there should be nothing hard-coded to a home … we
+should support multiple terrains, and home is just one terrain being named"; "I'm okay that we adopt
+terminology site and area"). A **site** is a named place robots work in, with a kind (apartment,
+office, warehouse, garden, the simulated challenge course), its own frame and maps. An
+**area** is a part of a site: a room is one kind of area (outdoors, a zone). The operator keeps a
+library of sites and names their areas ("Home", and its rooms); the robot's area names (from the
+objects' votes, "kitchen") are suggestions the operator can accept or rename (RFC-0014). A site's
+kind may change the kinds' area hints (a fridge says kitchen in a home, break room in an office):
+`kinds.json` keeps a general default, with optional hints per site kind.
+
+- **A site's semantic map kept between runs.** A site has an id and a site frame. In the simulator
+  every run starts at the dock, so a run's map frame is the site frame. Each run starts from the
+  site's stored map, adds to it, and writes it back. Objects keep stable ids across runs: a run's
   object is matched to the stored one of the same kind by the same association rule (`ASSOC_M`,
-  `UNIQUE_M` for unique kinds). In a real home the robot must first recognise where it is
+  `UNIQUE_M` for unique kinds). At a real site the robot must first recognise where it is
   (correcting its position from landmarks), so that part comes later. Mission Control owns the
-  stored map (RFC-0014); until it exists, a file per home.
+  stored map (RFC-0014); until it exists, a file per site.
 - **Naming objects by hand.** An object can carry a label given by the operator ("my desk"), with
   `named_by` and `pinned` (a named object is not merged away or forgotten by a recogniser). `find`
   takes a kind, a label or an id.
@@ -103,13 +113,14 @@ drift (not in the first build). The mission: rooms named, goals by object.
   object's position is re-recorded as it moves (every 2 s when one moved more than 5 cm), not only
   when an object is new.
 
-Glossary: **home** (a place the robot lives, with its frame and map), **room** (named by its
-contents), **place** (a named point a goal can go to: an object or a room), **object** (anything in
-a room), **kind** (what an object is, from `kinds.json`), **landmark** (an object with landmark
-value ≥ 0.7), **sighting** (one camera look's recognised objects), **the Observatory** (the run
-viewer; its package and command are still `miniview` until the rename).
+Glossary: **site** (a named place robots work in, of a kind, with its frame and maps; "Home" is
+one), **area** (a part of a site; a room is one kind, named by its contents and by the operator),
+**place** (a named point a goal can go to: an object or an area), **object** (anything in an area),
+**kind** (what an object is, from `kinds.json`), **landmark** (an object with landmark value ≥ 0.7),
+**sighting** (one camera look's recognised objects), **the Observatory** (the run viewer; its
+package and command are still `miniview` until the rename).
 
-### Recognisers, and a real home
+### Recognisers, and a real site
 
 Anything that recognises objects feeds the semantic map through one record, a `Detection`: a kind, a
 disc relative to the duck, a height band, a range, a confidence, the recogniser's name, and evidence
@@ -117,9 +128,9 @@ disc relative to the duck, a height band, a range, a confidence, the recogniser'
 picture). The simulated camera is one recogniser; a detector on real video (the duck's camera, or a
 camera on the NXT's Raspberry Pi) is the next, with no change to the map.
 
-For a real home nobody writes the home's objects down: the **kinds catalogue** (`kinds.json`, what a
-fridge is) is shared by every home; the **home's objects** (which fridge, where) are the semantic
-map, filled in by the robot while it explores and kept between runs. A detector trained on household
+For a real site nobody writes its objects down: the **kinds catalogue** (`kinds.json`, what a fridge
+is) is shared by every site; the **site's objects** (which fridge, where) are the semantic map,
+filled in by the robot while it explores and kept between runs. A detector trained on household
 objects (the COCO set's classes include refrigerator, couch, bed, toilet, chair and TV — from
 memory) or an open-vocabulary one (prompted with the catalogue's kind names) recognises the kinds;
 anything it does not know is still an obstacle by its shape, and can be named later (in Mission
@@ -135,7 +146,7 @@ confidence (not built yet).
   scoreboard's).
 - Objects in Mission Control (goals by object there; RFC-0014 revision 2).
 - Forgetting an object expected in view and not seen (needed with a real detector).
-- The home map in a real home (it needs relocalisation first); room regions.
+- The site map at a real site (it needs relocalisation first); area regions.
 
 ## 5. Open questions
 
@@ -157,7 +168,7 @@ confidence (not built yet).
     no world coordinate (a test checks it). The simulated camera moved to `nav/sim_camera.py`,
     beside the truth (`Body`), out of the brain's `world_model` package; `Body` serialises its
     socket (the record, the truth guard and the camera read it from three threads).
-  - **Association**: kinds a home has one of are `unique` in the catalogue and merge across 1.5 m
+  - **Association**: kinds a site has one of are `unique` in the catalogue and merge across 1.5 m
     (the fridge seen again after drift is the same fridge); positions follow recent detections.
   - **Rooms**: objects within 1.2 m, weighted 1/(1+d)², and not behind a wall of the duck's own map
     vote; a new room only after it leads three looks in a row; none named while no object near says
