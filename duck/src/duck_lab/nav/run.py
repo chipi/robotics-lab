@@ -32,6 +32,7 @@ from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.step_check import unseen_ahead
+from duck_lab.nav.stuck import MOVED_MAX_M as STUCK_MOVED_M, WINDOW_S as STUCK_WINDOW_S, StuckWatch
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
 from duck_lab.world_model.semantic_map import SemanticMap
@@ -86,6 +87,7 @@ CLIFF_STOP_M = 0.60
 # few tens of ms apart, mid-turn, put a "drop" on flat corridor floor (run 7, goal 15). A staircase
 # does not vanish between frames; 3 frames is 0.2 s, ~6 cm of walking against the 45 cm stop distance.
 DROP_FRAMES = 3
+SNAPSHOT_S, SNAPSHOT_MOVED_M = 2.0, 0.05    # the objects re-recorded every 2 s while any moved more than 5 cm
 LOW_FRAMES, LOW_CELL_M = 3, 0.05    # a low-band cell is an obstacle once this many frames saw it (sim/probes/low_persistence.py)
 # After a cliff stop the duck looks along the edge, LOOK_ALONG_M past each end of what it saw (side_drops.look_targets);
 # where the drop goes on there, or the look saw nothing, the hole is taken to go on CONTINUE_M past the seen end.
@@ -740,6 +742,7 @@ class Navigator:
         if self.loc.pose() is None:
             return {"status": "refused", "why": "no pose on the map yet"}
         path, planned_at, st = None, 0.0, FollowState()
+        stuck = StuckWatch()
         following = None     # the path being followed; a replan keeps it unless it is blocked or much longer
         tight = False        # a tight pivot was logged this leg
         reflex_stops = 0
@@ -967,6 +970,18 @@ class Navigator:
                 st.turning, st.turn_started, st.check_t = True, time.monotonic(), None
                 path = None
                 continue
+            seen = stuck.update(now, tw.vx > 0.05, pose[:2])
+            if seen:
+                # walking asked, the belief going nowhere (nav/stuck.py; challenge 16's first build stalled 15 s at a bar
+                # before the stall rule spoke): stop, and remember something just ahead, so the next plan goes elsewhere
+                self.move(Twist())
+                ahead = 0.20     # beyond LETHAL_M, so the duck's own cell stays out of the point's lethal ring
+                self.blocked.append((pose[0] + ahead * math.cos(pose[2]), pose[1] + ahead * math.sin(pose[2])))
+                self.record(event="stuck", pose=pose, **seen,
+                            decision=decision("stuck", "walking without getting anywhere", **seen,
+                                              window_s=STUCK_WINDOW_S, moved_max_m=STUCK_MOVED_M))
+                return {"status": "stalled", "why": "stuck: walking without moving", "time_s": round(now - start, 1),
+                        **seen}
             self.move(tw, nearest_mm=near, turning=st.turning)
             if int(now / 1.0) != int((now - TICK_S) / 1.0):
                 self.fix()
@@ -997,22 +1012,34 @@ class Navigator:
                         said.add(why)
                         self.record(event="camera_failed", why=why)
 
+        recorded = {"t": 0.0, "at": {}}       # the last objects snapshot: when, and where each object was then
+
         def look():
             pose = self.loc.pose()
             if pose is None or self.body is None:
                 return
             found = camera.detect(self.body.pose())
-            # every look, what it recognised, relative to the duck (the Observatory's eye view and video; RFC-0016)
-            self.record(event="look", pose=[round(v, 4) for v in pose], hfov_deg=camera.cfg["hfov_deg"],
+            # every look, what it recognised, relative to the duck: a "sighting" (RFC-0016 rev. 3; the Observatory's eye
+            # view and video, ADR-0019), with each recogniser's evidence when it has any (a real camera's frame and box)
+            self.record(event="sighting", pose=[round(v, 4) for v in pose], hfov_deg=camera.cfg["hfov_deg"],
                         range_m=camera.cfg["range_m"],
                         seen=[{"kind": d.kind, "x": round(d.x, 3), "y": round(d.y, 3), "radius": d.radius,
                                "z0": round(d.z0, 3), "z1": round(d.z1, 3), "range_m": round(d.range_m, 3),
-                               "confidence": d.confidence, "source": d.source} for d in found])
+                               "confidence": d.confidence, "source": d.source,
+                               **({"evidence": d.evidence} if d.evidence else {})} for d in found])
+            now = time.monotonic() - self._t0
             with self._sem_lock:
-                changes = self.semantic.integrate(found, pose, time.monotonic() - self._t0)
+                changes = self.semantic.integrate(found, pose, now)
                 room, votes = self.semantic.room_at(pose, self._map_raw)
-                objects = [o.summary() for o in self.semantic.objects] if changes else None
-            if changes:
+                moved = any(math.dist((o.x, o.y), recorded["at"].get(o.oid, (math.inf, math.inf))) > SNAPSHOT_MOVED_M
+                            for o in self.semantic.objects)
+                due = changes or (moved and now - recorded["t"] >= SNAPSHOT_S)
+                objects = [o.summary() for o in self.semantic.objects] if due else None
+                if due:
+                    recorded["t"], recorded["at"] = now, {o.oid: (o.x, o.y) for o in self.semantic.objects}
+            if due:
+                # the whole map when an object is new or confirmed, and every SNAPSHOT_S while any moved (they follow
+                # the belief's drift): the Observatory then draws where they are, not where they were first seen
                 self.record(event="semantic", changes=[[c, o.oid] for c, o in changes], objects=objects)
             if room != self.room:
                 self.room = room
@@ -1028,8 +1055,9 @@ class Navigator:
         then the one it built before objects existed."""
         if self.semantic is None or not self.object_costs:
             return []
+        seen = list(self.blocked)
         with self._sem_lock:
-            return self.semantic.blocking_points()
+            return self.semantic.blocking_points(seen=seen)     # only where the depth sensor has no points
 
     def close(self) -> None:
         self._closing.set()

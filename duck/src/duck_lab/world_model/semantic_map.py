@@ -22,6 +22,7 @@ ROOM_RADIUS_M = 1.2        # objects within this vote for the room the duck is i
 ROOM_TICKS = 3             # looks a new room must win in a row before the duck says it is there
 STAND_M = 0.25             # where to stand to reach an object: this far from its outline (lethal 0.12 + room)
 EVIDENCE_KEEP = 3          # evidence (frames) kept per object
+SEEN_M = 0.10              # a part with a depth point this close to its outline is the depth sensor's (cost layer)
 
 
 @dataclass
@@ -184,17 +185,35 @@ class SemanticMap:
                 self._room, self._lead, self._lead_n = lead, None, 0
         return self._room, votes
 
-    def blocking_points(self, spacing: float = 0.03) -> list:
+    def blocking_points(self, spacing: float = 0.03, seen: list = (), seen_m: float = SEEN_M) -> list:
         """Outline points of the confirmed objects' parts the duck must go around (the semantic cost layer, off by
-        default: RFC-0016 §5)."""
-        return [p for o in self.confirmed() for q in blocking(o.parts) for p in q.outline(spacing)]
+        default: RFC-0016 §5). With seen (the depth sensor's remembered points): only the parts it has no point within
+        seen_m of — the camera fills what the depth sensor missed (b8 r1: no depth point on the 18 cm wide lm_office
+        passing it at 0.5 m, then 3 placed 20 cm off; the duck grazed it) and does not double what it saw."""
+        cell = seen_m
+        near = {}
+        for p in seen:
+            near.setdefault((round(p[0] / cell), round(p[1] / cell)), []).append(p)
 
-    def approach(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float = STAND_M, step_deg: int = 10):
-        """Where to stand to reach object o: on a ring stand_m from its outline, a point free() accepts (the caller's
-        cost map, with room to turn), the nearest to the duck; with the heading that faces the object. None when no
-        point on the ring is free."""
+        def seen_by_depth(q) -> bool:
+            for x, y in q.outline(spacing):
+                cx, cy = round(x / cell), round(y / cell)
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if any(math.dist((x, y), p) <= seen_m for p in near.get((cx + dx, cy + dy), ())):
+                            return True
+            return False
+
+        return [p for o in self.confirmed() for q in blocking(o.parts) if not (seen and seen_by_depth(q))
+                for p in q.outline(spacing)]
+
+    def approaches(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float = STAND_M,
+                   step_deg: int = 10) -> list:
+        """Where to stand to reach object o: the points on a ring stand_m from its outline that free() accepts (the
+        caller's cost map, with room to turn), nearest to the duck first, each with the heading that faces the object.
+        The caller takes the first it can plan a way to (find-fridge-4: the nearest one was in unmapped space)."""
         parts = blocking(o.parts) or o.parts
-        best = None
+        out = []
         for k in range(0, 360, step_deg):
             a = math.radians(k)
             r, p = 0.0, None
@@ -203,13 +222,14 @@ class SemanticMap:
                 if distance(parts, p) >= stand_m:
                     break
                 r += 0.02
-            if r >= 3.0 or not free(p):
-                continue
-            if best is None or math.dist(p, pose[:2]) < math.dist(best, pose[:2]):
-                best = p
-        if best is None:
-            return None
-        return best[0], best[1], math.atan2(o.y - best[1], o.x - best[0])
+            if r < 3.0 and free(p):
+                out.append((p[0], p[1], math.atan2(o.y - p[1], o.x - p[0])))
+        return sorted(out, key=lambda s: math.dist(s[:2], pose[:2]))
+
+    def approach(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float = STAND_M, step_deg: int = 10):
+        """The nearest of approaches(), or None when no point on the ring is free."""
+        found = self.approaches(o, pose, free, stand_m, step_deg)
+        return found[0] if found else None
 
     def to_json(self) -> dict:
         return {"objects": [o.summary() for o in self.objects]}

@@ -83,6 +83,13 @@ for _ in range(CONFIRM_N):
 said = [k.room_at((-0.2, 0.0, 0.0))[0] for _ in range(3)]
 check("a new room leads: the old one held for ROOM_TICKS - 1 looks, then the new", said == ["kitchen", "kitchen", "living"], said)
 
+fridge_outline = m.blocking_points()
+depth_on_fridge = [(o.x + 0.31, o.y)]            # the depth sensor saw the fridge's east face
+check("the cost layer fills only what the depth sensor missed: a part with a depth point near it adds nothing",
+      m.blocking_points(seen=depth_on_fridge) != fridge_outline
+      and not [p for p in m.blocking_points(seen=depth_on_fridge) if math.dist(p, (o.x, o.y)) < 0.45],
+      len(m.blocking_points(seen=depth_on_fridge)))
+check("... and a depth point far from it changes nothing", m.blocking_points(seen=[(50.0, 50.0)]) == fridge_outline)
 check("the cost layer's points lie on the fridge's outline", len(m.blocking_points()) > 0
       and all(abs(math.dist(p, (o.x, o.y)) - 0.3) < 0.13 for p in m.blocking_points()))
 # a fridge against a wall above it: where to stand is in front of it, facing it
@@ -139,7 +146,7 @@ import threading  # noqa: E402
 from duck_lab.nav.run import Navigator  # noqa: E402
 
 nav = Navigator.__new__(Navigator)
-nav.semantic, nav._sem_lock = None, threading.Lock()
+nav.semantic, nav._sem_lock, nav.blocked = None, threading.Lock(), []
 check("no semantic map: no points for the cost map", nav.semantic_points() == [])
 nav.semantic = m
 check("a semantic map with confirmed objects, costs off (the default): still none", nav.semantic_points() == [])

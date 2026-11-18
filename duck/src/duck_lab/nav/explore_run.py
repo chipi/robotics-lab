@@ -16,7 +16,7 @@ from pathlib import Path
 
 from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
+from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.nav.run import CALIBRATION
@@ -30,6 +30,7 @@ GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
 MAX_REFUSALS = 6       # refusals in a row before the run stops as trapped
 RETIRE_M = 0.6         # a target with no path on the map retires the frontier within this of it
+FIND_RETRY_LEGS = 5    # an object found but out of reach is tried again after this many more legs
 # The test harness's kill switch, not the brain's: the simulator's truth aborts the run when the duck
 # comes within GUARD_M of the staircase opening or its trunk drops - so a failing cliff check ends in an
 # abort, not another fall. The brain never reads it.
@@ -54,7 +55,7 @@ class Explorer:
         self.retired = []         # frontier cells near a target with no path: those cells only (explore.without_retired)
         self.reached = []         # frontier targets reached: the frontier within STANDOFF_M of each is done
         self.find = None          # a kind of object to find and go to (RFC-0016: "go to the fridge"); None: explore
-        self.find_failed = set()  # objects found but out of reach
+        self.find_failed = {}     # objects found but out of reach -> the leg count when it was last tried
         self.events = []
 
     def note(self, **e) -> None:
@@ -103,12 +104,16 @@ class Explorer:
             return (not costs.inside(*c) or costs.at(*c) < LETHAL_COST) and \
                 clearance(costs, p, PIVOT_OBSTACLE_M) >= PIVOT_OBSTACLE_M
         with self.nav._sem_lock:
-            stand = self.nav.semantic.approach(obj, pose, free)
+            stands = self.nav.semantic.approaches(obj, pose, free)
             summary = obj.summary()
+        # the nearest stand the planner can reach (find-fridge-4: the nearest one was in unmapped space, "no path on
+        # the map", and the fridge was never tried again)
+        stand = next((s for s in stands if plan(costs, pose[:2], s[:2]) is not None), None)
         if stand is None:
-            self.note(event="found", kind=obj.kind, object=summary, status="refused", why="nowhere free to stand",
-                      decision=decision("found", f"a {obj.kind} is known, but nowhere near it is free"))
-            return {"status": "refused", "why": "nowhere free to stand"}
+            why = "nowhere free to stand" if not stands else f"no way to any of {len(stands)} places to stand"
+            self.note(event="found", kind=obj.kind, object=summary, status="refused", why=why,
+                      decision=decision("found", f"a {obj.kind} is known, but {why}", stands=len(stands)))
+            return {"status": "refused", "why": why}
         out = self.nav.go_to(stand[:2], GO_TIMEOUT_S)
         if out["status"] == "reached":
             now = self.nav.loc.pose()
@@ -161,12 +166,14 @@ class Explorer:
             if self.find and self.nav.semantic is not None:
                 with self.nav._sem_lock:
                     obj = self.nav.semantic.find(self.find, pose)
-                if obj is not None and obj.oid not in self.find_failed:
+                # an object out of reach is tried again after FIND_RETRY_LEGS more legs: the map grows meanwhile
+                # (find-fridge-4 crossed the only fridge off for good at 119 s and explored on for 20 min)
+                if obj is not None and legs >= self.find_failed.get(obj.oid, -FIND_RETRY_LEGS) + FIND_RETRY_LEGS:
                     out = self.go_to_object(obj, pose, costs)
                     if out["status"] == "reached":
                         return {"legs": legs, "found": out,
                                 "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}
-                    self.find_failed.add(obj.oid)    # that one was out of reach: keep exploring for another
+                    self.find_failed[obj.oid] = legs
 
             avoid = self.failed + self.nav.drops
             blocked = list(self.nav.blocked)
@@ -233,6 +240,13 @@ class Explorer:
             self.nav.survey()
         grid = self.nav.mapd.call("map.grid", {"res_m": 0.05})
         (self.out / "map_grid.json").write_text(json.dumps(grid))
+        if self.find:
+            # the goal's outcome in the run itself, not only by its absence (RFC-0016 rev. 3; RFC-0014 `not_found`)
+            with self.nav._sem_lock:
+                known = self.nav.semantic.find(self.find) if self.nav.semantic is not None else None
+            why = "known but never reached" if known is not None else "never seen"
+            self.note(event="found", kind=self.find, status="not_found", why=why,
+                      decision=decision("found", f"no {self.find}: {why}", legs=legs))
         return {"legs": legs, "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}
 
 
@@ -283,6 +297,10 @@ def main() -> None:
                 (args.out / "semantic_map.json").write_text(json.dumps(nav.semantic.to_json(), indent=1))
                 inventory = nav.semantic.inventory(nav._map_raw)
             (args.out / "inventory.json").write_text(json.dumps(inventory, indent=1))
+            # the inventory in the run too (RFC-0016 rev. 3): the Observatory and Mission Control read runs, not files
+            nav.record(event="inventory", objects=inventory["objects"], rooms=inventory["rooms"],
+                       decision=decision("inventory", f"{inventory['objects']} objects found",
+                                         objects=inventory["objects"]))
             if args.inventory:
                 print(f"INVENTORY {inventory['objects']} objects: " + "; ".join(
                     f"{room}: {', '.join(o['kind'] for o in objs)}" for room, objs in inventory["rooms"].items()))
