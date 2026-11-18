@@ -5,7 +5,10 @@
 `nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter does not exist yet; file upload
 and delete pass the lock too since 1ded610, config and connect stay open) and step 2
 (the gate stands in front of RFC-0014's fake robot, `control/`, eb6a560: its tests run the real
-rules). Not built: step 3.
+rules) and step 3 (`duck-gate`, `duck/src/duck_lab/gate_proxy.py`, e3aaa54: the socket proxy in
+front of the simulator's `robotd`, the navigator's robot socket a setting, and the three
+scenarios, which `make sim-gate-scenarios` runs on the real simulator: all pass, 2026-11-18).
+Not built: the real duck's gate on its computer (RFC-0014 step 8), the EV3, pairing.
 **Builds on:** [RFC-0014](RFC-0014-mission-control.md) (§3.3.3 the exclusive control lock, §3.8
 safety, §3.9 access, §3.10 swarm),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface, the deadman),
@@ -459,6 +462,7 @@ All twelve of revision 1 are answered (§7). Left:
 2. **The hardware test for the NXT** (visibility off after pairing, the on-brick confirmation, a
    second host refused) and the check of robotd-lite's deadman on the real brick. Needs the
    operator at the brick. Recommend: before step 4 is called done.
-3. **Whether `mapd` reads `robotd`'s socket in a way a proxy would change.** The gate proxies the
-   navigator's robot socket only; `mapd` is untouched. Recommend: confirm in the simulator in
-   step 3.
+3. **Whether `mapd` reads `robotd`'s socket in a way a proxy would change.** Answered in step 3
+   (2026-11-18): `mapd` is not behind the gate; it keeps reading `robotd`'s own socket, and mapped
+   normally in all three scenarios while the navigators drove through the gate. The takeover
+   list is a plain file, one name per line (question 1), as `duck-gate --takeover-names` reads it.
