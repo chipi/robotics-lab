@@ -11,8 +11,8 @@ Observatory), [ADR-0015](../adr/ADR-0015-scenario-runner.md) (goals as challenge
 (objects and a semantic map; it lives on the branch `explore-apartment`, so this link is absolute
 and becomes relative when that branch merges),
 [ADR-0019](../adr/ADR-0019-semantic-map-records.md) (the `objects` and sighting records),
-[RFC-0017](RFC-0017-robot-access.md) (robot access: pairing, permission and exclusive control; it
-generalises the lock of §3.3.3).
+[RFC-0017](RFC-0017-robot-access.md) (Accepted, 2026-11-18: robot access, pairing, permission and
+exclusive control; it generalises the lock of §3.3.3).
 **Requirements:** [MISSION-CONTROL-REQUIREMENTS.md](../wip/MISSION-CONTROL-REQUIREMENTS.md)
 (O1 to O12 are the operator's first round, 2026-11-17; O13 to O30 the second round and the decisions
 of 2026-11-17/18; C1 to C8 the conflicts with earlier RFCs).
@@ -251,23 +251,38 @@ in:
 - **One controller at a time.** Mission Control, `nxt-web`, an agent, a script: whoever holds the
   lock may drive the robot or run a goal on it. Any other that asks to drive that robot is refused
   with who holds it ("driven by Mission Control since 14:02").
-- **It lives where every command to the robot passes**, not in a client: the robot's own interface
-  process (for the duck, its robotd connection behind the navigator API; for the NXT, the bridge
-  that `nxt-web` and Mission Control both use). No client can bypass it. Where exactly the NXT's
-  lock lives until that bridge is settled is open (§5, question 3).
-- **It is a lease.** The holder renews it; if the holder goes silent it expires after the robot's
-  deadman time, so a crashed client does not lock a robot for ever. Releasing is explicit.
+- **It lives where every command to the robot passes**, not in a client: a gate at the robot's own
+  interface process (for the duck, in front of robotd, behind the navigator API; for the NXT, in
+  `nxt-web`'s Controller, below). The gate is a pass-through: it never resends a command, so a
+  stalled client cannot replay old moves. No client can bypass it. The design is
+  [RFC-0017](RFC-0017-robot-access.md) (Accepted, the advisor's version, the operator,
+  2026-11-18); this RFC takes its lock as the core.
+- **It is a lease tied to the connection.** It lasts 10 to 30 seconds, the holder renews it, and it
+  is released at once when the connection drops, so a crashed client does not lock a robot for
+  ever. Releasing is also explicit. The deadman (0.5 s on the duck) stays the safety stop; the
+  lease is not a safety mechanism. On the duck, losing the lease stops the robot: `robot.stop`,
+  then an explicit zero move.
+- **Who holds it** is the process that sends `robot.move`. For a duck goal that is the navigator
+  server: it acquires at `goal.start` and releases at the end of the run. Mission Control's manual
+  drive holds it in Mission Control's own name. Mission Control's `lock` field mirrors the gate's
+  "who"; it never keeps a second copy.
+- **A goal run that loses its lease:** a takeover ends it `interrupted`; a STOP ends it `cancelled`.
+  The navigator server reports the loss on the event stream of §3.2.
 - **Takeover.** The operator can force a takeover from Mission Control: it ends the other holder's
   control and is recorded (who, from whom, when). This is for one operator with several of his own
   clients. Between different people's clients nobody may eject another while connected: that is
   RFC-0017's rule, and it may remove or restrict takeover (§5, question 3).
+- **The NXT:** its lock lives in `nxt-web`'s Controller (`/api/lock`), the only process on the
+  brick's link; Mission Control's NXT adapter uses it.
+- **No pairing yet.** The first build has no pairing, keys, TLS or discovery: it runs in home-lab
+  mode, where a client's identity is its `hello {client}`, the tailnet is the authentication, and
+  the lease is enforced. Pairing and the rest come later, per RFC-0017.
 - **Watching needs no lock.** Reading state, the map and the stream is open to every client. STOP
   never needs the lock (§3.8).
 
 The API has `POST /robots/{id}/lock` (acquire, with the holder's name), `.../lock/renew`,
 `DELETE .../lock` (release), `POST .../lock/takeover` (operator only) and the `lock` field of
-`GET /robots/{id}` (who holds it, since when, when it expires). A goal run takes the lock for its
-robot at start and releases it at its end.
+`GET /robots/{id}` (who holds it, since when, when it expires), mirrored from the gate.
 
 ### 3.4 Goals
 
@@ -629,8 +644,10 @@ adapter.
 - **STOP goes straight to the robot** (`robot.stop`, or the NXT's `/api/stop`), never through a
   planner, an LLM or a goal run (RFC-0002 §3.5). `POST /robots/{id}/stop` and `POST /stop` are
   accepted in every state, need no lock, no confirmation and no token beyond the tailnet, and stop
-  all robots concurrently (a failing robot is reported, the others still stop). After a STOP the
-  goal run is `cancelled` and the robot is not driven again until a client drives or runs a goal.
+  all robots concurrently (a failing robot is reported, the others still stop). A STOP
+  **latches**: it ends the holder's lease, the holder's next move is refused until it acquires the
+  lock again, and the goal run is `cancelled`. STOP is accepted from any connection, always, and is
+  logged; there is no flag to turn that off.
 - **The deadman is the backstop.** Drive commands carry a lifetime; Mission Control stops sending
   them and the robot's own watchdog stops it: the duck's 500 ms (upstream), the NXT's 0.6 s in the
   web UI and robotd-lite on the brick (RFC-0001 §3.3, RFC-0003 §2.3). The page's STOP works with
@@ -641,8 +658,9 @@ adapter.
 - **Real-duck goals** need the operator in the room with a STOP at hand (RFC-0002 §3.5).
 - **Firing** (the NXT shooter) is irreversible: always proposed, never automatic, and the API offers
   it only as an explicit call by the operator (RFC-0003 §2.3, RFC-0005 §2.3). **An agent over MCP may
-  not fire** (the operator, 2026-11-17: decided). It can drive, run goals and STOP, with the same
-  limits as the operator. The planner (§3.4.5) has no `fire` either.
+  not fire** (the operator, 2026-11-17: decided). Mission Control itself enforces it: the agent is
+  Mission Control's client and the robot's gate sees only Mission Control. The agent can drive, run
+  goals and STOP, with the same limits as the operator. The planner (§3.4.5) has no `fire` either.
 
 ### 3.9 Access
 
@@ -818,9 +836,13 @@ kept to record where each answer went.
    RFC-0006 §6 question 3 (one Slack app or two) stays open.
 3. **Two controllers on one robot.** Answered (the operator, 2026-11-18, replacing "ask `nxt-web`
    first"): "we should not allow two things to drive the same robot, so there should be some kind of
-   exclusivity lock built in." An exclusive control lease per robot, held at the robot's own
-   interface process, with takeover by the operator (§3.3.3). **Open:** where exactly the NXT's lock
-   lives until the NXT bridge is settled.
+   exclusivity lock built in." One controller per robot, an exclusive lease tied to the connection,
+   held in a gate at the robot's own interface, with takeover by the operator (§3.3.3). The
+   operator widened it beyond Mission Control and the NXT: five laptops and five robots in one
+   room, three ducks and three laptops, each person driving only the robot they are allowed to
+   connect to and not ejectable while connected. That is [RFC-0017](RFC-0017-robot-access.md),
+   Accepted. The NXT's lock lives in `nxt-web`'s Controller (`/api/lock`): answered. **Open:**
+   whether the operator's takeover survives RFC-0017's no-ejection rule.
 4. **The navigator API:** answered, its own process (§3.7).
 5. **The goal store:** answered, SQLite (§3.4.6), with export and import as files (question 23).
 6. **The first list of `must_not` conditions.** Answered, and made first-class (the operator,
@@ -992,3 +1014,11 @@ kept to record where each answer went.
   geometry once the operator has drawn the outlines. In the simulator a test site's areas are drawn
   from the scoreboard's true room outlines, so the answer and the guess are both measured. Question
   19 (regions from objects and walls) is replaced by this.
+- 2026-11-18 — Revision 2, RFC-0017 accepted ("Take the advisor version, all is good feedback").
+  Matching changes here (§3.3.3, §3.8, §5 question 3): the lease is tied to the connection, lasts
+  10 to 30 s and is released when the connection drops; the deadman stays the safety stop; the gate
+  never resends commands; on the duck, lease loss is `robot.stop` then a zero move; the holder is
+  the process that sends `robot.move` (the navigator server for a goal, Mission Control for manual
+  drive); a goal run ends `interrupted` on takeover and `cancelled` on STOP; a STOP latches; the
+  MCP no-fire rule is enforced by Mission Control; the NXT's lock lives in `nxt-web`'s Controller
+  (`/api/lock`); the first build runs in home-lab mode, with no pairing, keys, TLS or discovery.
