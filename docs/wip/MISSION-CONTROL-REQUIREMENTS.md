@@ -31,32 +31,37 @@ operator to read before anything is built.
 ### 1.1 Round 2 (2026-11-17/18), folded into RFC-0014 revision 2
 
 Given while the operator reviewed the page mockup and the next day; revision 1 of the RFC did not
-include them. O24 to O26 follow the decisions of 2026-11-18.
+include them. O24 to O26 follow the decisions of 2026-11-18; O27 to O29 come from the operator's
+review of revision 2 (2026-11-18). "Home" is now **site** and "room" is one kind of **area** (RFC-0014
+§1.1).
 
 | # | Requirement | Operator's words, condensed |
 | --- | --- | --- |
 | O13 | **Goals at the centre:** a goal library in folders; ad-hoc runs without saving; the good ones saved | goals are what the app is about |
 | O14 | **Goals in words;** an optional LLM breaks them into a plan, over an OpenAI-compatible API (default LiteLLM on the DGX, an OpenRouter key also). The LLM is never mandatory; the planner is an independent module | missions in words, with the model optional |
-| O15 | **Places and rooms instead of coordinates** | "maps and coordinates make no sense" as the way to give goals |
+| O15 | **Places and areas (rooms) instead of coordinates** | "maps and coordinates make no sense" as the way to give goals |
 | O16 | **One goal on several robots;** the Lego NXT, the Lego EV3 and the Pollen duck collaborating on one goal | see also O8, O10 |
 | O17 | **Observing the loop:** see what the robot decides, and why, while a goal runs | the mockup review |
 | O18 | **Robots configured by files:** the body as URDF plus an own file that borrows the VDA 5050 factsheet and Open-RMF task kinds | agreed "for now", 2026-11-17 |
 | O19 | **Mission Control and the Observatory** (renamed from miniview) separate, but well connected | answer: Observatory |
-| O20 | **SQLite** for goals, runs and homes | answer, 2026-11-17 |
+| O20 | **SQLite** for goals, runs and sites | answer, 2026-11-17 |
 | O21 | **No firing over MCP:** an agent cannot fire | answer, 2026-11-17 |
 | O22 | **The navigator API is its own process** | answer, 2026-11-17 |
 | O23 | **Lean toward VDA 5050 long term** | "better support for VDA 5050-type robots" |
-| O24 | **Goals by object, room, explore and inventory,** not only points; recognisers among a robot's capabilities; objects and rooms in the map and the API | "A yes", 2026-11-18 |
+| O24 | **Goals by object, area, explore and inventory,** not only points; recognisers among a robot's capabilities; objects and rooms in the map and the API | "A yes", 2026-11-18 |
 | O25 | **Objects are landmarks at a landmark value of 0.7 or more;** the camera record is called `sighting` (was `look`) | "C yes", "D yes", 2026-11-18 |
-| O26 | **A home's semantic map kept between runs,** anchored to the dock in the simulator (every run starts there), stable object ids, objects named by the operator ("this is my desk"), the stored map owned by Mission Control. In a real home the robot must first recognise where it is (landmark position correction, later) | "B yes", 2026-11-18 |
+| O26 | **A site's semantic map kept between runs,** anchored to the dock in the simulator (every run starts there), stable object ids, objects named by the operator ("this is my desk"), the stored map owned by Mission Control. In a real home the robot must first recognise where it is (landmark position correction, later) | "B yes", 2026-11-18 |
+| O27 | **A library of sites and of areas:** the operator names sites ("Home" is one), and within each site names and manages its areas ("I would name areas like my rooms, so I can manage those"): create, rename, give an extent later, merge, split; the robot's own area names (from object votes) are suggestions to accept or rename. Nothing is fixed to a home: "it's a terrain", several sites from the start | the operator, 2026-11-18 |
+| O28 | **An exclusive control lock per robot,** built in at the robot's own interface: one controller at a time, others refused with who holds it; a lease that expires when the holder goes silent; no ejection by peers. Beyond Mission Control and the NXT: five laptops and five robots, three ducks and three laptops (generalised in RFC-0017) | "we should not allow two things to drive the same robot" |
+| O29 | **Guardrails:** a goal is what to do plus a `must_not` list, at three levels (robot, site, goal), merged, a goal adding and never removing; checked in the navigator; a broken one stops the robot | "guardrails of some sort for the robots ... we have to support that" |
 
 What they mean for the design (my reading, for the operator to confirm in the RFC):
 
-- **Goals are the centre,** so the library, the kinds (point, object, room, explore, inventory),
+- **Goals are the centre,** so the library, the kinds (point, object, area, explore, inventory), guardrails,
   the result of a run and "not found" are part of the API (O13, O15, O24).
 - **The planner and its LLM are optional modules,** never in the path to STOP or the robot (O14).
-- **A home is a thing:** an id, a frame, objects with stable ids, rooms; owned by Mission Control
-  (O26).
+- **A site is a thing:** an id, a name, a kind, a frame, objects with stable ids, areas; owned by
+  Mission Control (O26, O27).
 
 What the first round (O1 to O12) meant for the design (my reading, for the operator to confirm in
 the RFC):
@@ -166,7 +171,7 @@ Decided (D) or proposed only (P). Line numbers for RFC-0006 are given by section
 | C5 | First interfaces: page, MCP, Slack (RFC-0006 §3.1) | Page, full MCP, a remote API for a mobile app, an agent (O11, O12); Slack not mentioned | Ask whether Slack stays in the first version |
 | C6 | One driver at a time (RFC-0003) | `nxt-web` stays, so two apps can drive the NXT | A lock rule across apps |
 | C7 | Missions in words later (RFC-0004); robots collaborating on one goal deferred to phase 6 (RFC-0002 §3.9) | Both are requirements (O14, O16) | Planner as an optional module; a goal names several robots, built in steps |
-| C8 | Objects in Mission Control not in RFC-0016's first build | Wanted now (O24, O26) | Object and room goals, the home's map and naming in RFC-0014 |
+| C8 | Objects in Mission Control not in RFC-0016's first build | Wanted now (O24, O26) | Object and area goals, the site's map and naming in RFC-0014 |
 
 ## 4. What exists to build on
 
@@ -208,7 +213,7 @@ to split mission control into its own repository and its licence (RFC-0006 §6).
 
 ## 5.1 Decisions of 2026-11-18, and what stayed open
 
-Decided: A (revise RFC-0014 with object, room, explore and inventory goals), B (the home's map,
+Decided: A (revise RFC-0014 with object, area, explore and inventory goals), B (the site's map,
 O26), C (a landmark at 0.7 or more), D (`sighting`). Also answered since round 1: the viewer is
 named the Observatory, the navigator API is its own process, SQLite, no firing over MCP (O19 to
 O22). Open questions are the RFC's section 5.
@@ -219,12 +224,12 @@ O22). Open questions are the RFC's section 5.
   (only its robot descriptions). Its firmware and sensor protocol differ from the NXT's; it needs its
   own interface and deadman before it can be driven from the app.
 - **The real duck.** Not owned yet; its link (ssh-forwarded sockets, then the navigator on the
-  robot) is in RFC-0002 §3.3 but untested. In a real home it must recognise where it is first (O26).
+  robot) is in RFC-0002 §3.3 but untested. At a real site it must recognise where it is first (O26).
 - **Collaboration.** Now a requirement (O8, O10, O16). What two robots doing one goal means
   beyond running it in parallel (dividing a map, handing over, roles) is not specified anywhere;
   RFC-0014 §3.4.4 proposes `each`, `any` and `split`; RFC-0002 §3.9 defers shared maps to phase 6.
 - **VDA 5050 and Open-RMF.** The specs have not been read; RFC-0014's mapping table is from memory.
-- **Room extents.** Rooms have names, from the objects near the robot, and no regions.
+- **Area extents.** Areas have names, from the objects near the robot or from the operator, and no regions.
 - **Not read** while gathering this: PRD-001 and UXS-001 (miniview), the review notes, RFC-0010,
   RFC-0012, most ADR bodies, flotilla's and eval-harness's own repositories.
 - **Not checked by running anything:** the endpoints above as described; whether `nxt-web` and the
