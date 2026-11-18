@@ -108,9 +108,22 @@ caps = [d for d in cam.detect(truth) if d.kind == "green_capsule"]
 m2.integrate(caps, truth)
 check("with no noise and the belief = the truth, the capsule lands where it is",
       abs(m2.objects[0].x - 0.95) < 1e-6 and abs(m2.objects[0].y + 0.6) < 1e-6, (m2.objects[0].x, m2.objects[0].y))
-check("the leak test: a detection carries a kind, a disc relative to the duck, a height band and a range, nothing else",
-      set(vars(caps[0])) == {"kind", "x", "y", "radius", "z0", "z1", "range_m"}
+check("the leak test: a detection carries a kind, a disc relative to the duck, a height band, a range, a confidence,"
+      " its recogniser and (from a real camera) evidence; nothing else",
+      set(vars(caps[0])) == {"kind", "x", "y", "radius", "z0", "z1", "range_m", "confidence", "source", "evidence"}
+      and caps[0].source == "sim_camera" and caps[0].evidence is None
       and (round(caps[0].x, 3), round(caps[0].y, 3)) != (0.95, -0.6), vars(caps[0]))
+inv_map = SemanticMap(kinds)
+for _ in range(CONFIRM_N):
+    inv_map.integrate([Detection("fridge", 1.0, 0.0, 0.3, 0.0, 1.8, 1.0, 0.7, "video_detector",
+                                 {"frame_t": 12.5, "box": [10, 20, 80, 160]})], (0.0, 0.0, 0.0))
+inv_map.integrate([det("bed", 5.0, 5.0)], (0.0, 0.0, 0.0))                  # seen once: not in the inventory
+inv = inv_map.inventory()
+check("the inventory: confirmed objects by room, with sightings, confidence, recogniser and evidence",
+      inv["objects"] == 1 and inv["rooms"]["kitchen"][0]["kind"] == "fridge"
+      and inv["rooms"]["kitchen"][0]["sightings"] == CONFIRM_N and inv["rooms"]["kitchen"][0]["confidence"] == 0.7
+      and inv["rooms"]["kitchen"][0]["sources"] == ["video_detector"]
+      and inv["rooms"]["kitchen"][0]["evidence"][-1]["frame_t"] == 12.5, inv)
 check("its disc covers the capsule (radius 0.09 + its half diagonal)", 0.09 <= caps[0].radius <= 0.14, caps[0].radius)
 check("out of range (3 m): not seen", not [d for d in cam.detect((4.5, -0.6, math.pi)) if d.kind == "green_capsule"])
 check("out of the field of view (60 deg): not seen",

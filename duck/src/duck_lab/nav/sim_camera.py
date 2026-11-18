@@ -74,7 +74,8 @@ class SimCamera:
         c, s = math.cos(-truth[2]), math.sin(-truth[2])
         for _, kind, parts in self.objects:
             r = self.visible(truth, parts)
-            if r is None or self.rng.random() > self.cfg["p_detect"] * (1.0 - 0.5 * r / self.cfg["range_m"]):
+            p = self.cfg["p_detect"] * (1.0 - 0.5 * r / self.cfg["range_m"]) if r is not None else 0.0
+            if r is None or self.rng.random() > p:
                 continue
             wx, wy = centre(parts)
             radius = max(math.dist((wx, wy), (q.x, q.y)) + math.hypot(q.hx, q.hy) for q in parts)
@@ -82,8 +83,10 @@ class SimCamera:
             rx, ry = c * dx - s * dy, s * dx + c * dy
             rr = math.hypot(rx, ry) * (1.0 + self.rng.gauss(0.0, self.cfg["range_noise"]))
             b = math.atan2(ry, rx) + math.radians(self.rng.gauss(0.0, self.cfg["bearing_noise_deg"]))
+            # its confidence is its own chance of seeing the object there; no evidence (no image): a real camera's
+            # detector adds the frame and the box (RFC-0016 §4)
             out.append(Detection(kind, rr * math.cos(b), rr * math.sin(b), round(radius, 3),
-                                 min(q.z0 for q in parts), max(q.z1 for q in parts), r))
+                                 min(q.z0 for q in parts), max(q.z1 for q in parts), r, round(p, 2), "sim_camera"))
         return out
 
     def truth_objects(self, kind: str) -> list:

@@ -21,12 +21,16 @@ CONFIRM_N = 3              # detections (one per look) before an object is trust
 ROOM_RADIUS_M = 1.2        # objects within this vote for the room the duck is in (the corridor is 1.5 m wide)
 ROOM_TICKS = 3             # looks a new room must win in a row before the duck says it is there
 STAND_M = 0.25             # where to stand to reach an object: this far from its outline (lethal 0.12 + room)
+EVIDENCE_KEEP = 3          # evidence (frames) kept per object
 
 
 @dataclass
 class Detection:
-    """What a camera reports, nothing else: a kind; the object as a disc relative to the duck (x ahead, y left), its
-    radius and height band; the range it was seen at. No name and no world coordinate (the sim camera's leak test)."""
+    """What a recogniser reports, nothing else: a kind; the object as a disc relative to the duck (x ahead, y left), its
+    radius and height band; the range it was seen at; how sure the recogniser is and which one it was; and, from a real
+    camera, where the evidence is (a frame's time and the box in the image), so an inventory can show the picture. No
+    name and no world coordinate (the sim camera's leak test). Any recogniser — the simulated camera now, a detector
+    on real video later (RFC-0016 §4) — feeds the semantic map through this."""
     kind: str
     x: float
     y: float
@@ -34,6 +38,9 @@ class Detection:
     z0: float
     z1: float
     range_m: float
+    confidence: float = 1.0
+    source: str = "unknown"
+    evidence: dict | None = None
 
     def part(self) -> Part:
         return Part(self.x, self.y, self.radius, self.radius, 0.0, self.z0, self.z1)
@@ -50,6 +57,9 @@ class Tracked:
     first_t: float = 0.0
     last_t: float = 0.0
     props: dict = field(default_factory=dict)
+    confidence: float = 0.0        # the best a recogniser was about it
+    sources: list = field(default_factory=list)
+    evidence: list = field(default_factory=list)   # a few of the recognisers' evidence (frames), newest last
 
     @property
     def confirmed(self) -> bool:
@@ -59,7 +69,8 @@ class Tracked:
         return {"id": self.oid, "kind": self.kind, "x": round(self.x, 3), "y": round(self.y, 3), "n": self.n,
                 "confirmed": self.confirmed, "landmark": self.props.get("landmark", 0.0),
                 "permanence": self.props.get("permanence"), "first_t": round(self.first_t, 1),
-                "last_t": round(self.last_t, 1),
+                "last_t": round(self.last_t, 1), "confidence": round(self.confidence, 2), "sources": self.sources,
+                "evidence": self.evidence,
                 "parts": [[round(v, 3) for v in (q.x, q.y, q.hx, q.hy, q.yaw, q.z0, q.z1)] for q in self.parts]}
 
 
@@ -113,7 +124,25 @@ class SemanticMap:
                 o = Tracked(f"{d.kind}_{k}", d.kind, cx, cy, [part], 1, t, t, self.kinds.get(d.kind, {}))
                 self.objects.append(o)
                 changes.append(("new", o))
+            o.confidence = max(o.confidence, d.confidence)
+            if d.source not in o.sources:
+                o.sources.append(d.source)
+            if d.evidence:
+                o.evidence = (o.evidence + [d.evidence])[-EVIDENCE_KEEP:]
         return changes
+
+    def inventory(self, grid: dict = None) -> dict:
+        """What is where (the "find all objects" goal's answer): the confirmed objects by room — each object's room by
+        the votes at its own place (its own kind's hint counts, as a fridge says kitchen wherever it stands) — with
+        their sightings, confidence, recognisers and evidence."""
+        rooms = {}
+        for o in self.confirmed():
+            room = next(iter(self.votes((o.x, o.y), grid)), None)
+            rooms.setdefault(room or "unknown", []).append(
+                {"id": o.oid, "kind": o.kind, "x": round(o.x, 2), "y": round(o.y, 2), "sightings": o.n,
+                 "confidence": round(o.confidence, 2), "sources": o.sources, "landmark": o.props.get("landmark", 0.0),
+                 "first_t": round(o.first_t, 1), "evidence": o.evidence})
+        return {"objects": sum(len(v) for v in rooms.values()), "rooms": rooms}
 
     def confirmed(self) -> list:
         return [o for o in self.objects if o.confirmed]
@@ -191,7 +220,8 @@ class SemanticMap:
         for s in data["objects"]:
             parts = [Part(*p) for p in s["parts"]]
             o = Tracked(s["id"], s["kind"], s["x"], s["y"], parts, s["n"], s.get("first_t", 0.0), s.get("last_t", 0.0),
-                        kinds.get(s["kind"], {}))
+                        kinds.get(s["kind"], {}), s.get("confidence", 0.0), list(s.get("sources", [])),
+                        list(s.get("evidence", [])))
             m.objects.append(o)
             k = int(s["id"].rsplit("_", 1)[1])
             m._next[s["kind"]] = max(m._next.get(s["kind"], 0), k)

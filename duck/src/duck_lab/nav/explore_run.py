@@ -234,14 +234,16 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
     ap.add_argument("--find", metavar="KIND", help="explore until an object of this kind is found, then go to it "
                     "(RFC-0016; kinds: duck_lab/world_model/kinds.json), e.g. fridge")
+    ap.add_argument("--inventory", action="store_true", help="the goal is to find all objects: explore, then say what "
+                    "is where (inventory.json is written whenever the objects are on)")
     ap.add_argument("--no-objects", action="store_true", help="no simulated camera and no semantic map")
     ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
     add_args(ap)
     args = ap.parse_args()
     if args.find and args.find not in load_kinds():
         ap.error(f"no kind {args.find!r}; the kinds: {', '.join(sorted(load_kinds()))}")
-    if args.find and args.no_objects:
-        ap.error("--find needs the objects (drop --no-objects)")
+    if (args.find or args.inventory) and args.no_objects:
+        ap.error("--find and --inventory need the objects (drop --no-objects)")
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "exploration", args.out)
     nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
@@ -271,6 +273,11 @@ def main() -> None:
         if nav.semantic is not None:
             with nav._sem_lock:
                 (args.out / "semantic_map.json").write_text(json.dumps(nav.semantic.to_json(), indent=1))
+                inventory = nav.semantic.inventory(nav._map_raw)
+            (args.out / "inventory.json").write_text(json.dumps(inventory, indent=1))
+            if args.inventory:
+                print(f"INVENTORY {inventory['objects']} objects: " + "; ".join(
+                    f"{room}: {', '.join(o['kind'] for o in objs)}" for room, objs in inventory["rooms"].items()))
         if runlog:
             runlog.finish()
 

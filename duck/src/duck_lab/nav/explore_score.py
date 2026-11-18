@@ -71,17 +71,25 @@ def semantic_score(run: Path, rows: list) -> dict:
         st = json.loads(start.read_text())
         world_from_map = compose(st["truth"], inverse(st["map"]))
         conf = [o for o in json.loads(sem.read_text())["objects"] if o["confirmed"]]
-        errs, false = [], []
+        errs, false, found = [], [], set()
         for o in conf:
             wx, wy, _ = compose(world_from_map, (o["x"], o["y"], 0.0))
-            real = [math.dist((wx, wy), centre(parts)) for _, parts in cam.truth_objects(o["kind"])]
-            if real and min(real) <= MATCH_M:
-                errs.append(min(real))
+            real = [(math.dist((wx, wy), centre(parts)), oid) for oid, parts in cam.truth_objects(o["kind"])]
+            if real and min(real)[0] <= MATCH_M:
+                errs.append(min(real)[0])
+                found.add(min(real)[1])
             else:
                 false.append(o["kind"])
+        # recall, the "find all objects" goal's score: the scene's objects found, by the room they stand in
+        by_room = {}
+        for oid, kind, parts in cam.objects:
+            room = room_of(centre(parts)) or "?"
+            n, f = by_room.get(room, (0, 0))
+            by_room[room] = (n + 1, f + (oid in found))
         out["objects"] = {"confirmed": len(conf), "matched": len(errs), "false": false,
                           "mean_error_m": round(statistics.mean(errs), 3) if errs else None,
-                          "kinds": sorted({o["kind"] for o in conf})}
+                          "kinds": sorted({o["kind"] for o in conf}), "found": len(found), "in_scene": len(cam.objects),
+                          "by_room": {r: f"{f}/{n}" for r, (n, f) in sorted(by_room.items())}}
     # per tick: the room last named against the truth's, leaving out ticks within ROOM_EDGE_M of a room's walls (the
     # truth's room flips at the wall, the belief later: the doorway is not a mistake); time with no room named apart
     said, named, right, none, events = None, 0, 0, 0, 0
@@ -179,7 +187,8 @@ def main() -> None:
         if "objects" in s:
             ob = s["objects"]
             print(f"    objects: {ob['confirmed']} confirmed, {ob['matched']} real (mean error {ob['mean_error_m']} m), "
-                  f"false {ob['false'] or 'none'}; kinds {', '.join(ob['kinds'])}")
+                  f"false {ob['false'] or 'none'}; found {ob['found']} of the scene's {ob['in_scene']} "
+                  f"({', '.join(f'{r} {v}' for r, v in ob['by_room'].items())})")
         rn = s["rooms_named"]
         if rn["events"]:
             print(f"    rooms named: {rn['events']} changes; a room named in {int((rn['named_share'] or 0) * 100)}% of "
