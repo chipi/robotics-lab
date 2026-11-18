@@ -31,7 +31,7 @@ operator to read before anything is built.
 ### 1.1 Round 2 (2026-11-17/18), folded into RFC-0014 revision 2
 
 Given while the operator reviewed the page mockup and the next day; revision 1 of the RFC did not
-include them. O24 to O26 follow the decisions of 2026-11-18; O27 to O29 come from the operator's
+include them. O24 to O26 follow the decisions of 2026-11-18; O27 to O30 come from the operator's
 review of revision 2 (2026-11-18). "Home" is now **site** and "room" is one kind of **area** (RFC-0014
 §1.1).
 
@@ -54,6 +54,7 @@ review of revision 2 (2026-11-18). "Home" is now **site** and "room" is one kind
 | O27 | **A library of sites and of areas:** the operator names sites ("Home" is one), and within each site names and manages its areas ("I would name areas like my rooms, so I can manage those"): create, rename, give an extent later, merge, split; the robot's own area names (from object votes) are suggestions to accept or rename. Nothing is fixed to a home: "it's a terrain", several sites from the start | the operator, 2026-11-18 |
 | O28 | **An exclusive control lock per robot,** built in at the robot's own interface: one controller at a time, others refused with who holds it; a lease that expires when the holder goes silent; no ejection by peers. Beyond Mission Control and the NXT: five laptops and five robots, three ducks and three laptops (generalised in RFC-0017) | "we should not allow two things to drive the same robot" |
 | O29 | **Guardrails:** a goal is what to do plus a `must_not` list, at three levels (robot, site, goal), merged, a goal adding and never removing; checked in the navigator; a broken one stops the robot | "guardrails of some sort for the robots ... we have to support that" |
+| O30 | **Super important: both apps run as containers.** The Observatory and Mission Control each as an image, together from one compose file, on any of the operator's machines (workstation, Mac mini, laptop): no host-specific paths, configuration and data by volumes and environment, robots reached over the network | "so that I can run them wherever I want to run them easy. So that's super important" |
 
 What they mean for the design (my reading, for the operator to confirm in the RFC):
 

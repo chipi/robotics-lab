@@ -14,7 +14,7 @@ and becomes relative when that branch merges),
 [RFC-0017](RFC-0017-robot-access.md) (robot access: pairing, permission and exclusive control; it
 generalises the lock of §3.3.3).
 **Requirements:** [MISSION-CONTROL-REQUIREMENTS.md](../wip/MISSION-CONTROL-REQUIREMENTS.md)
-(O1 to O12 are the operator's first round, 2026-11-17; O13 to O29 the second round and the decisions
+(O1 to O12 are the operator's first round, 2026-11-17; O13 to O30 the second round and the decisions
 of 2026-11-17/18; C1 to C8 the conflicts with earlier RFCs).
 
 ## 1. Why
@@ -711,6 +711,30 @@ If this holds, a VDA 5050 robot joins by an adapter that reads its factsheet int
 and turns a goal into orders; the object and area goals work for it because Mission Control, not
 the robot, resolves places to poses.
 
+### 3.13 Containers: run it anywhere
+
+The operator, 2026-11-18: "that's why we need both Mini Explorer and Mission Control to be also
+Dockerized, so that I can run them wherever I want to run them easy. So that's super important."
+("Mini Explorer" is the Observatory, miniview.) The rule:
+
+- **Each is a container image,** and they run together from one compose file, on any of the
+  operator's machines: the workstation, the Mac mini home server, a laptop.
+- **Nothing is tied to a host.** No host-specific paths in the code or the image. Configuration (the
+  robot files, the planner's config, §3.4.5) and data (SQLite, runs) come in by mounted volumes and
+  environment variables.
+- **Robots are reached over the network,** never through a device on the container's host: the
+  robot gates of [RFC-0017](RFC-0017-robot-access.md), the duck's robotd, the NXT bridge.
+- **The Observatory already has this:** a Docker setup that mounts the data read-only and keeps its
+  index in the host's state folder ([ADR-0012](../adr/ADR-0012-docker-read-only-data.md)). Mission
+  Control gets its own image and a service in the same compose file in the first slice (§4,
+  step 1), with its SQLite in a mounted state folder.
+- **The NXT's Bluetooth link stays on the computer next to the brick.** That is the NXT bridge, its
+  own small service (§3.3.3); a container running elsewhere reaches the NXT through the bridge's
+  network address.
+
+Not written here because it is not documented in this repository: any rule for which Docker engine
+to use on the Mac mini; the operator's own setup rules apply there.
+
 ## 4. Order
 
 Where the code lives: a new top-level directory `control/` beside `duck/`, `nxt/` and `viewer/`,
@@ -719,14 +743,15 @@ target pair (`control-up`, `test-control`) like the others. Python, no new runti
 proposed here; SQLite comes with the standard library; the HTTP server and the SSE stream are
 written with the standard library as `nxt-web` is (not verified: that the standard library suffices
 for SSE under concurrency; if it does not, a framework would be a dependency to ask for, not
-assumed). A Docker image later, as `nxt-web` and miniview have.
+assumed). Mission Control ships as a container image from its first slice (§3.13).
 
 0. **Read the VDA 5050 and Open-RMF specs**, then fix the robot file's format (§3.3.1, §3.12).
 1. **A first slice that is useful.** The API contract (§3.2) and its tests; the fake robot with its
    fake site; the registry from robot files; the page with the robot list (online, status, lock), a
    map for a robot that has one, the goal library with folders and ad-hoc runs, a point goal set by
    a click with its conditions, a goal run with its progress, a big STOP and STOP-all, and the link
-   to `/watch`; the MCP server over the same API. Done when the operator can set a point goal on the
+   to `/watch`; the MCP server over the same API; its container image and a compose file shared
+   with the Observatory (§3.13). Done when the operator can set a point goal on the
    fake robot's map from the page, from `curl` and from an MCP client, watch it reach, and STOP from
    all three.
 2. **The navigator API (its own process) and the simulated duck's adapter** (§3.7), once stream A
@@ -795,10 +820,10 @@ kept to record where each answer went.
    link may ask for less), within the limits the robot's interface allows.
 8. **May an MCP agent fire?** Answered: no (§3.8).
 9. **Where it runs.** Answered: the workstation now; the home server (the Mac mini) when the mobile
-   app comes, always on, over the private network. (The brain's long-term place stays open,
-   RFC-0002 §5.5.)
+   app comes, always on, over the private network. Confirmed (the operator: "yes on
+   Q9"). (The brain's long-term place stays open, RFC-0002 §5.5.)
 10. **Licence and splitting into its own repository.** Answered: MIT; it stays in robotics-lab
-    until a second program (the mobile app) uses its API, then it splits out.
+    until a second program (the mobile app) uses its API, then it splits out. Confirmed ("yes on Q10").
 11. **One goal on several robots (§3.4.4).** Answered: `each` and `any` in v1; `split` later.
 12. **`find_all`.** Answered: dropped; "find all objects" is the `inventory` goal.
 13. **An explore goal that ends by its budget.** Answered: not a failure; outcome `done`, the
@@ -933,6 +958,9 @@ kept to record where each answer went.
     (§3.4.8). Requirement O29.
   - **Q7 is configurable** ("OK on Q7, but also configurable"): the rates are defaults, settable per
     robot and per client subscription (§3.2.2).
+  - **Q9 and Q10 confirmed** ("yes on Q10, yes on Q9"), and with them a requirement the operator
+    calls "super important": the Observatory and Mission Control both run as containers, so they
+    run wherever he wants, easily (§3.13, O30).
   - New open questions from the above: 25 (suggestions as areas, extents, zones) and 26 (where the
     per-site-kind hints live). Left open, smaller: movable and unseen objects in the merge (15),
     a moved simulator dock (22).
