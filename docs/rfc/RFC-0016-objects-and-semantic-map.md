@@ -69,6 +69,30 @@ drift (not in the first build). The mission: rooms named, goals by object.
    within 45°).
 7. The judge and the scoreboard count the six `lm_*` landmarks as obstacles: the depth sensor sees
    them, so in this world they are things the duck would hit.
+8. **The inventory, "find all objects"** (`duck-explore --inventory`): explore, then say what is where
+   (`inventory.json`: the confirmed objects by room, with sightings, confidence, recognisers and
+   evidence); scored by recall, the scene's objects found by room.
+9. **In the Observatory and the video:** the objects in the 3D scene, the camera's field of view and
+   what it sees now in the eye view, the room and its votes in the thinking panel (records `objects`
+   and `look`; built on the `mission-control` branch).
+
+### Recognisers, and a real home
+
+Anything that recognises objects feeds the semantic map through one record, a `Detection`: a kind,
+a disc relative to the duck, a height band, a range, a confidence, the recogniser's name, and
+evidence (from a real camera: the frame's time and the box in the image, so an inventory can show
+the picture). The simulated camera is one recogniser; a detector on real video (the duck's camera,
+or a camera on the NXT's Raspberry Pi) is the next, with no change to the map.
+
+For a real home nobody writes the home's objects down: the **kinds catalogue** (`kinds.json`, what
+a fridge is) is shared by every home; the **home's objects** (which fridge, where) are the semantic
+map, filled in by the robot while it explores and kept between runs. A detector trained on household
+objects (the COCO set's classes include refrigerator, couch, bed, toilet, chair and TV — from
+memory) or an open-vocabulary one (prompted with the catalogue's kind names) recognises the kinds;
+anything it does not know is still an obstacle by its shape, and can be named later (in Mission
+Control: "this is my desk"), which adds a kind or a label. What a real detector adds that the
+simulated one lacks: false sightings, so an object expected in view and not seen must lose
+confidence (not built yet).
 
 ## 4. Not in the first build
 
@@ -76,8 +100,8 @@ drift (not in the first build). The mission: rooms named, goals by object.
 - A real camera, a rendered camera image or a detector network; doors as objects; moving objects.
 - Rooms segmented from the map alone (rooms here come from objects; the map's segmentation stays the
   scoreboard's).
-- Objects in Mission Control and the Observatory (the `semantic` events are recorded so they can be
-  drawn later).
+- Objects in Mission Control (goals by object there, naming objects by hand).
+- Forgetting an object expected in view and not seen (needed with a real detector).
 
 ## 5. Open questions
 

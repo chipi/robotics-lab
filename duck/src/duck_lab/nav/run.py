@@ -1002,6 +1002,12 @@ class Navigator:
             if pose is None or self.body is None:
                 return
             found = camera.detect(self.body.pose())
+            # every look, what it recognised, relative to the duck (the Observatory's eye view and video; RFC-0016)
+            self.record(event="look", pose=[round(v, 4) for v in pose], hfov_deg=camera.cfg["hfov_deg"],
+                        range_m=camera.cfg["range_m"],
+                        seen=[{"kind": d.kind, "x": round(d.x, 3), "y": round(d.y, 3), "radius": d.radius,
+                               "z0": round(d.z0, 3), "z1": round(d.z1, 3), "range_m": round(d.range_m, 3),
+                               "confidence": d.confidence, "source": d.source} for d in found])
             with self._sem_lock:
                 changes = self.semantic.integrate(found, pose, time.monotonic() - self._t0)
                 room, votes = self.semantic.room_at(pose, self._map_raw)

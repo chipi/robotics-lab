@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.explore import frontiers, pick, without_retired
+from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
 from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
@@ -52,6 +52,7 @@ class Explorer:
         self.out = out
         self.failed = []          # frontier targets that failed: avoided from then on
         self.retired = []         # frontier cells near a target with no path: those cells only (explore.without_retired)
+        self.reached = []         # frontier targets reached: the frontier within STANDOFF_M of each is done
         self.find = None          # a kind of object to find and go to (RFC-0016: "go to the fridge"); None: explore
         self.find_failed = set()  # objects found but out of reach
         self.events = []
@@ -170,6 +171,9 @@ class Explorer:
             avoid = self.failed + self.nav.drops
             blocked = list(self.nav.blocked)
             clusters = without_retired(frontiers(grid, self.nav.scale, obstacles=blocked), self.retired)
+            # a reached target takes out only the frontier where it stood (b8 r1, r2: the 0.4 m discs of 15 reached
+            # targets covered every frontier left; with STANDOFF_M, 66 and 81 cells usable at the same pick)
+            clusters = without_retired(clusters, self.reached, STANDOFF_M)
             target = pick(clusters, pose, avoid, ok=reachable)
             # The choice's inputs, so a replay of it is faithful (sim/probes/frontier_replay.py; the "world" events
             # are the navigator's grid at its plans, not the map read here).
@@ -178,6 +182,7 @@ class Explorer:
                       avoid=[[round(v, 3) for v in a[:2]] for a in avoid],
                       obstacles=[[round(v, 3) for v in b[:2]] for b in blocked],
                       retired=[[round(v, 3) for v in r] for r in self.retired],
+                      reached=[[round(v, 3) for v in r] for r in self.reached],
                       target=[round(v, 3) for v in target] if target else None)
             if target is None:
                 if not surveyed_here:
@@ -222,7 +227,10 @@ class Explorer:
                     break
                 continue
             refusals, cleared_here = 0, False
-            self.failed.append(target)   # reached frontiers are not picked twice either
+            self.reached.append(target)  # not picked twice; it takes out only the frontier where it stood
+            # stand still for mapd at the frontier just reached: mapd maps only at stops, and without one the frontier
+            # stayed on its map, next to a target never picked again (b8: "no frontier left" at 3.3 and 3.7 min)
+            self.nav.survey()
         grid = self.nav.mapd.call("map.grid", {"res_m": 0.05})
         (self.out / "map_grid.json").write_text(json.dumps(grid))
         return {"legs": legs, "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}

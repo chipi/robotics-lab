@@ -31,9 +31,17 @@ def main() -> None:
           f"{len(clusters)} frontier clusters, {len(avoid)} avoided points (AVOID_M {explore.AVOID_M})")
     # the old run's avoid list mixed failed targets and retired frontier cells (before explore.without_retired):
     # targets are the legs' targets; the rest were retired cells
-    legs = [tuple(e["target"]) for e in map(json.loads, (run / "ticks.jsonl").open())
-            if e.get("event") == "leg" and e["t"] <= p["t"]]
+    leg_rows = [e for e in map(json.loads, (run / "ticks.jsonl").open()) if e.get("event") == "leg" and e["t"] <= p["t"]]
+    legs = [tuple(e["target"]) for e in leg_rows]
     failed = [a for a in avoid if any(math.dist(a, t) < 0.02 for t in legs)]
+    reached = [tuple(e["target"]) for e in leg_rows if e["status"] == "reached"]
+    only_failed = [a for a in failed if not any(math.dist(a, t) < 0.02 for t in reached)]
+    usable_if = sum(1 for c in explore.without_retired(clusters, p.get("retired") or []) for q in c
+                    if all(math.dist(q, a) >= explore.AVOID_M for a in only_failed)
+                    and all(math.dist(q, t) >= explore.STANDOFF_M for t in reached)
+                    and math.dist(q, p["pose"][:2]) >= explore.MIN_DIST_M)
+    print(f"of the {len(failed)} avoided targets {len(reached)} were reached; if reached ones kept only "
+          f"STANDOFF_M {explore.STANDOFF_M} m: {usable_if} usable cells")
     retired = p.get("retired") or [a for a in avoid if a not in failed]
     new = explore.without_retired(clusters, retired)
     usable = sum(1 for c in new for q in c if all(math.dist(q, a) >= explore.AVOID_M for a in failed)
