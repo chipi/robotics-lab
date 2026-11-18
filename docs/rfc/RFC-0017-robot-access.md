@@ -1,13 +1,14 @@
 # RFC-0017 — Robot access: who may watch, who may drive, and one driver at a time
 
-**Status:** Proposed (2026-11-18), for the operator's review
+**Status:** Accepted, revision 2 (2026-11-18)
 **Builds on:** [RFC-0014](RFC-0014-mission-control.md) (§3.3.3 the exclusive control lock, §3.8
 safety, §3.9 access, §3.10 swarm),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface, the deadman),
-[RFC-0002](RFC-0002-robot-brain.md) (several robots, STOP never goes through a planner),
-[RFC-0001](RFC-0001-nxt-web-ui.md) (`nxt-web`, a client that already exists).
-**Serves:** the open question of RFC-0014 §5 question 3 ("where the NXT's lock lives"), and
-RFC-0014 §3.3.3's pointer to this RFC for ejection between different people's clients.
+[RFC-0002](RFC-0002-robot-brain.md) (several robots, §3.6 situation rules, STOP never goes through
+a planner), [RFC-0001](RFC-0001-nxt-web-ui.md) (`nxt-web`, a client that already exists),
+[ADR-0015](../adr/ADR-0015-scenario-runner.md) (scenarios as tests).
+**Serves:** RFC-0014 §5 question 3 (where the NXT's lock lives, now closed, §3.2) and §3.3.3's
+pointer to this RFC for ejection between different people's clients.
 
 ## 1. Why
 
@@ -24,429 +25,435 @@ beyond Lego and actually apply to ducks. What happens if I have 3 ducks? And if 
 running this software, how would that work? So let's expand Q3 to more generalistic way about
 everything."
 
-RFC-0014 gave one lock and one operator. It does not say how a laptop gets the right to drive a
-robot in the first place, what happens when the clients belong to different people, or what stops a
-client from going around the lock. This RFC does that, for every robot kind (Lego NXT, Lego EV3,
-the duck, the simulator) with one model.
+RFC-0014 gave one lock and one operator. It does not say how a client gets the right to drive a
+robot, what happens when the clients belong to different people, or what stops a client from going
+around the lock. This RFC does that for every robot kind (Lego NXT, Lego EV3, the duck, the
+simulator) with one model.
 
-### 1.1 Words used
+### 1.1 How this revision came about
+
+Revision 1 (a first draft, same day) had the full machinery: key pairs, TLS, pairing with a
+six-digit check, roles, mDNS discovery, a fencing token in every command. The operator reviewed it
+and approved its 12 open questions with the recommendations given. An independent review (the
+advisor, a stronger model) then went through it against the code. The operator, on seeing it: "Take
+the advisor version, all is good feedback." Six of the 12 recommendations are replaced by the
+advisor's, and the rest of the machinery is cut from the first version (§3.9). Where the two differ
+this text follows the advisor. What changed, in one list:
+
+- STOP now ends the lease (§3.4).
+- The fencing token is gone: the lease is bound to the connection (§3.3).
+- On the duck the gate is the one door for our clients, not a security boundary (§3.2).
+- The lease is 10 to 30 seconds, not the deadman time (§3.3).
+- No `open_stop` flag: STOP from any connection, always (§3.4).
+- The NXT's lock lives in `nxt-web` now (§3.2).
+- Keys, TLS, the six-digit check, mDNS, roles, several owners and the idle cap wait (§3.9).
+- The claim that the gate refuses `fire` from an agent is dropped (§3.8).
+
+### 1.2 Words used
 
 | Word | Meaning here |
 | --- | --- |
-| client | Anything that sends commands or watches: Mission Control, `nxt-web`, an agent over MCP, a script, another person's laptop |
-| gate | The one process in front of a robot that every command passes (§3.2) |
-| key | A client's or a robot's secret, with its public half, that proves who it is (§3.1) |
-| pairing | A robot accepts a client once, on an explicit action; the robot writes it down |
-| role | What a paired client may do: `watch`, `drive`, `owner` |
-| lease | The right to drive one robot, for a short time, renewed by the holder |
-| token | A number that grows with every lease; every command carries it (§3.4) |
-| holder | The client that has the lease now |
+| client | Anything that sends commands or watches: Mission Control, `nxt-web`, the navigator, an agent over MCP, a script, another person's laptop |
+| gate | The one process in front of a robot that every command of our clients passes (§3.2) |
+| connection | One client's open link to the gate; a reconnect is a new connection |
+| lease | The right to drive one robot, bound to a connection |
+| holder | The connection that has the lease now |
 | deadman | The robot's own watchdog: no command for a short time stops the motors (RFC-0003 §2.3) |
+| lease id | A whole number that grows with every lease, for the log and `gate.who` (§3.3) |
 
 ## 2. Goals and non-goals
 
 ### 2.1 Goals
 
-- One driver per robot, enforced where no client can go around it.
-- A client drives only a robot that accepted it. In a room of five laptops and five robots, each
-  laptop drives only its own.
-- While a client holds a robot, no peer can eject it. Only the robot's owner can force a handover,
-  and that is recorded and announced.
-- A crashed, asleep or disconnected holder never leaves a robot driven or locked for ever, and a
+- One driver per robot, enforced where our clients cannot go around it.
+- A crashed, frozen or disconnected holder never leaves a robot driven or locked for ever, and a
   holder that wakes up late cannot act.
-- STOP is never refused to anyone who is paired.
+- While a client holds a robot, a peer cannot eject it. Only an allowed owner can take a robot, and
+  that is recorded and announced.
+- STOP is never refused to anyone.
 - The same model for the NXT, the EV3, the duck and the simulator, with Mission Control, `nxt-web`,
-  an agent and a script all being plain clients.
+  the navigator, an agent and a script all being plain clients.
 - One client may hold many robots (a swarm); many clients may run in one room.
+- Small: what the home lab needs now is built; what a room of strangers needs is designed (§3.9)
+  and waits.
 
 ### 2.2 Non-goals
 
-- **Not a full security product.** The aim is the home lab and a room of friends: a stranger on the
-  same Wi-Fi, a stale client and a mistaken click, not a state-level attacker. The keys and the
-  checks are real; a penetration test is not part of this RFC.
-- **Not a replacement for physical safety.** A power switch, a hand on the robot and the robot's own
-  deadman and obstacle stops stay (RFC-0003 §2.3, RFC-0014 §3.8).
-- **No new accounts or cloud.** No sign-in service, no server owned by anyone. The robot holds its
-  own list (the way a Bluetooth device does).
-- **No ROS, no MQTT broker, no VDA 5050 stack now.** §4 says what we borrow; RFC-0014 §3.12 holds the
-  VDA 5050 plan.
-- **Not RFC-0014's goal runs or planner.** A goal run is a client that holds leases.
+- **Not a security product.** The tailnet is the authentication in the home lab (RFC-0014 §3.9).
+  The gate is the one door for our clients, so that they cannot drive the same robot by mistake.
+  It is not a boundary against a program that opens the robot's own socket (§3.2).
+- **Not a replacement for physical safety.** A power switch, a hand on the robot and the robot's
+  own deadman and obstacle stops stay (RFC-0003 §2.3, RFC-0014 §3.8).
+- **No new accounts or cloud.** No sign-in service, no server owned by anyone.
+- **No code of ours on the duck in v1** (RFC-0002's non-goal). The duck's gate runs beside the
+  navigator, not on the duck.
+- **No ROS, no MQTT broker, no VDA 5050 stack now.** §4 says what we borrow; RFC-0014 §3.12 holds
+  the VDA 5050 plan.
+- **Not RFC-0014's goal runs or planner.** A goal run is a client that holds a lease.
 
 ## 3. Proposal
 
-### 3.1 Identity, pairing and roles
+### 3.1 The gate, and the dev / home-lab mode
 
-**Identity.** Each robot and each client has an id (a short name) and a key pair. The robot's key
-is made on its first start and never leaves it; a client's key is made on its first start and kept
-in a file readable only by its user (mode 600). An id is a label; the key is the proof. Two
-laptops with the same id are two different clients if their keys differ.
-
-**Pairing.** A robot accepts a client once, by an explicit action at the robot, the way two
-Bluetooth devices bond:
-
-1. The owner opens a pairing window on the robot (on the duck, a button or its console; on the
-   NXT, EV3 and simulator, a command at the gate's own console; a window lasts 60 seconds and
-   closes by itself).
-2. A client asks to pair. Both sides show the same six digits; the person at the robot says yes.
-3. The robot stores the client's public key, name, role and time in its **paired list** (a file at
-   the gate, mode 600). From then on the client proves itself with its key; there is no password.
-
-The **first** client to pair with a fresh robot is its **owner**. A robot has one or more owner
-keys; the operator may give a second laptop the owner role (§3.6). Unpairing is by an owner, or by
-a physical reset on the robot, which clears the list and the owner.
-
-**Roles.**
-
-| Role | May |
-| --- | --- |
-| `watch` | read state, the map and the stream; send STOP |
-| `drive` | everything `watch` may, and hold the lease, send drive commands and run goals |
-| `owner` | everything `drive` may, and pair and unpair clients, set roles, force a takeover |
-
-A role can carry limits as well as rights: a paired client may be refused `fire` (RFC-0014 §3.8),
-and that refusal is kept in its entry in the paired list. This is how "an MCP agent may not fire"
-becomes a property of the agent's pairing instead of a rule each client must remember (§3.7).
-
-### 3.2 Where it lives: the gate
-
-The check lives in **one process in front of each robot**, the gate, because only a check that every
-command passes cannot be bypassed. Clients do not enforce it; they only ask.
+The check lives in **one process in front of each robot**, the gate: it is where our clients'
+commands pass, so a client that asks for the robot is refused there and not in its own code.
 
 ```text
- Mission Control   nxt-web   agent (MCP)   script   other laptop
-        \             |          |            |         /
-         '------ authenticated JSON-RPC (RFC-0003 shapes + gate.*) ------'
-                                  |
-                               THE GATE      identity, paired list, roles,
-                                  |          lease, token, stop, log
-                                  |
-                      the robot's own interface
-                                  |
-                              the robot
+ Mission Control   nav server   nxt-web   agent (via MC)   script
+        \              |           |            |            /
+         '----- JSON-RPC (RFC-0003 shapes, unchanged) + gate.* -----'
+                                   |
+                                THE GATE      lease, who, takeover, stop, log
+                                   |
+                       the robot's own interface
+                                   |
+                                the robot
 ```
 
-| Robot | The gate | What must be true for it to be the only way in |
+In v1 the gate runs in **dev / home-lab mode**: no pairing, no keys. A client says who it is in its
+first message, `hello {client: "mission-control"}`, and the tailnet is the trust (RFC-0014 §3.9).
+The lease is still enforced in full. This is the mode the first build ships in (§5).
+
+The gate is a **pass-through**. It checks, then forwards the call unchanged (RFC-0003's method
+shapes are not touched). It never resends a command and never holds the last one: the robot's
+deadman has to see silence when the holder goes silent. The gate adds a few methods of its own:
+`gate.acquire`, `gate.release`, `gate.who`, `gate.takeover`. Reading (state, map, the stream) and
+STOP pass without a lease.
+
+### 3.2 Where the gate lives, per robot
+
+| Robot | The gate | What it is, and is not |
 | --- | --- | --- |
-| Duck (real) | A small process on the duck's computer in front of `robotd`. `robotd` is Pollen's upstream daemon and stays unchanged | `robotd`'s socket is readable by the gate's user only, and nothing else listens on a network |
-| Duck (simulator) | The same gateway, in front of the simulator's `robotd` | The same |
-| NXT | The bridge: the companion computer that owns the Bluetooth link. `nxt-web` becomes a client of it | The brick is paired over Bluetooth with the companion computer only (see §8, question 8) |
-| EV3 | The same, on the computer or small board that owns its link | The same |
-| Fake robot (RFC-0014 §3.7) | The same gateway in front of the fake, so tests cover the real rules | n/a |
+| Duck (simulator) | A socket proxy in front of the simulator's `robotd` socket, with its own socket in `~/.cache/duck-sim/`; the navigator's robot socket path becomes a setting (`nav/run.py` hard-codes `duck-a.sock`) | A **test fixture**: the simulator's sockets are plain files, any process can open them |
+| Duck (real) | The same proxy, on the computer that runs the navigator (RFC-0014 §3.7), not on the duck | The **one door for our clients**: Mission Control, the nav server, agents, scripts. **Not a security boundary**: the duck has other doors that stay (Pollen's app and WebRTC, the HF relay, the gamepad, `autod`; `mapd` also connects to `robotd`'s socket). RFC-0002 §3.6 handles them: the navigator watches `robot.state`'s `move.source` and `autonomous`, and when another source drives, the gate emits `someone_else_drives` and stops and reports |
+| NXT | `nxt-web`'s `Controller` (`nxt/src/nxt_lab/web.py`), which gets the lock now (`/api/lock`) | The only process on the link. `nxt/README.md`: "Only one program at a time may talk to the brick. A second connection on the same `/dev/rfcomm0` (or USB) scrambles replies". Mission Control's NXT adapter drives through `nxt-web`'s `/api/drive` and so passes the same lock. This closes the open part of RFC-0014 §5 question 3 |
+| EV3 | The same shape: the process that owns its link | Not designed; waits for the EV3's own interface (RFC-0014 §3.7) |
+| Fake robot (RFC-0014 §3.7) | The same gate library in front of the fake | So tests run the real rules |
 
-The gate adds a few methods to the robot interface of RFC-0003: `gate.pair`, `gate.acquire`,
-`gate.renew`, `gate.release`, `gate.takeover`, `gate.who`, `gate.unpair`. Every motion method
-(`robot.move`, `robot.skill`, a goal call) carries the **token** of the caller's lease. The gate
-refuses it unless the caller is authenticated, the token is the current one, and the lease has not
-expired. Reading and STOP carry no token.
+**Not required:** that `robotd`'s socket be readable only by the gate's user. It would break `mapd`
+(unverified) and RFC-0002's v1 non-goal "no code of ours on the duck". The gate is a convention
+that all of *our* programs follow because they have no other way to reach the robot.
 
-Mission Control's `POST /robots/{id}/lock` and its sisters (RFC-0014 §3.3.3) become thin calls to
-these methods. The `lock` field of `GET /robots/{id}` is what `gate.who` says.
+**Who holds the lease.** The process that sends `robot.move` holds it. For a duck goal that is the
+nav server (RFC-0014 §3.7): it acquires at `goal.start` and releases at the end. Mission Control's
+manual drive acquires in its own name. The `lock` field of `GET /robots/{id}` (RFC-0014 §3.3.3)
+mirrors what `gate.who` says; it is not a second lock. For the NXT, Mission Control's adapter
+and `nxt-web` both go through the Controller's lock.
 
-### 3.3 Exclusive control: the lease
+### 3.3 The lease
 
-- **Acquire.** A paired client with the `drive` role asks `gate.acquire`. If no one holds the robot,
-  it gets a lease and a token. If someone holds it, it is refused with who holds it and since when
-  ("driven by Anna's laptop since 14:02").
-- **Renew.** Every accepted drive command renews the lease. A holder that is not driving sends a
-  keepalive, `gate.renew`, at a third of the lease time.
-- **Expire.** A lease with no renewal expires after its time (§8, question 1). On expiry the gate
-  itself sends the robot a stop. The robot is then free.
-- **Release.** The holder says `gate.release`. The gate stops the robot and frees it.
-- **One client, many leases.** A lease is per robot. A client may hold several (§3.5.3).
-- **Watching needs no lease** (RFC-0014 §3.3.3). It needs a pairing (§8, question 3).
-- **Idle cap.** A holder that renews but sends no motion for ten minutes loses the lease and the
-  room is told, so a forgotten open laptop does not hold a robot all afternoon (§8, question 6).
+- **Bound to the connection.** The gate is both the lock and the resource, so no token is sent in
+  commands: the lease belongs to the connection that acquired it, and a command on any other
+  connection is refused. A frozen client's old connection is refused because its lease expired; if
+  it reconnects it is a **new session** and must acquire again, which works only if the robot is
+  free.
+- **Acquire.** `gate.acquire` on a free robot gives the lease. On a held robot it is refused with
+  who holds it and since when ("driven by mission-control since 14:02").
+- **Expire.** The lease lasts 10 to 30 seconds without a motion command or a keepalive from the
+  holder. The gate judges by its own clock, not the client's. When it ends, the gate stops the
+  robot (§3.4's stop) and the robot is free.
+- **Release on disconnect.** If the connection closes, the lease is released at once and the robot
+  is stopped. A crash of the holder frees the robot in the time it takes the socket to close, not
+  in 10 seconds; expiry is for a client that is frozen with the socket still open.
+- **Release.** `gate.release` by the holder: stop, then free.
+- **Why 10 to 30 seconds, not the deadman time.** The deadman (0.5 s) is the *safety* stop and runs
+  on the robot (RFC-0003 §2.3). The lease only decides *when someone else may take over* and
+  whether a Wi-Fi hiccup loses a goal. At 0.5 s any hiccup would lose the goal and the robot.
+- **A lease id** grows with every lease, for the log and `gate.who`. Clients do not send it back.
+- **Watching needs no lease** and no pairing: state, map and stream are open to any connection
+  (RFC-0014 §3.3.3).
+- **One client, many leases.** A lease is per robot; a client holds several (§3.5.3).
 
-**Peers cannot eject.** A second `drive` client that wants the robot may *ask* (`gate.request`): the
-holder sees "Ben asks for duck-2" and may release. Nothing else. There is no auto-grant in this
-version (§8, question 5).
+**Peers cannot eject.** There is no way for a client to take a robot another client holds, short
+of `gate.takeover`, which only some clients may call.
 
-**Only an owner can force.** `gate.takeover` needs an owner key. The gate stops the robot, ends the
-holder's lease with the reason `taken_over_by <name>`, tells the old holder at once (a `lease_lost`
-event, and the old holder's page says so), gives the new holder a fresh lease and a higher token, and
-writes the record: who, from whom, when, why. Takeover is for one operator with several of his own
-clients, as RFC-0014 §3.3.3 says. It is the only way anyone is ever ejected.
+**Takeover.** `gate.takeover` is allowed to the client names in a config file (the operator's own
+clients). It stops the robot, ends the holder's lease with the reason `taken_over_by <name>`, tells
+the old holder at once (a `lease_lost` event), gives the new caller a lease, and writes the record:
+who, from whom, when. The operator's rule, 2026-11-18: **a borrowed robot's owner may take it
+back, and among owners of different robots nobody ejects anybody.** That is the whole policy for
+a room: the list of takeover-allowed names is per robot, and each person's own laptops are on the
+list of their own robots only.
 
-### 3.4 The token: a stale holder cannot act
+### 3.4 STOP latches
 
-A lease alone is not safe. A laptop can freeze for ten seconds (it sleeps, a debugger stops it, the
-Wi-Fi stalls), wake up, and still believe it holds the robot. The remedy named in the distributed
-systems literature is a **fencing token**: a number that grows every time the lock is granted,
-which the guarded resource checks and refuses when it is not the latest
-([Kleppmann](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html)).
+A STOP is accepted **from any connection, always**, with or without a lease, and is logged with the
+connection's name. A STOP **ends the holder's lease** with the reason `stopped_by <who>`. The
+holder's next motion command is refused with that reason, and it must acquire again, which clears
+it.
 
-Here the resource and the lock service are the same process, the gate, so the check is simple:
+Why it latches: the navigator resends `robot.move` at 10 Hz (`duck/src/duck_lab/nav/run.py`) and
+`nxt-web` every 200 ms, so a STOP that only stopped the motors would last one tick. RFC-0014 §3.8
+already requires the goal run to be `cancelled` after a STOP; this gives it the way to know.
 
-- Every `gate.acquire` returns the next token for that robot, a whole number that never goes down. The
-  gate keeps the last token on disk, so a restart of the gate does not reuse numbers.
-- A new acquire always gets a new token, **even for the same client**. A holder that wakes after its
-  lease expired sends an old token, and is refused with `lease_expired`, never obeyed. It must
-  acquire again, and that works only if the robot is free.
-- A command that carries a token that is not the current one is refused with `stale_token`, and the
-  refusal is logged. This also covers a command that was in flight when a takeover happened.
-- The gate does not rely on the client's clock; it judges expiry by its own.
+**The gate's stop, everywhere a lease ends** (STOP, release, expiry, disconnect, takeover): on the
+duck it is `robot.stop`, then an explicit zero `robot.move`. `robotd` keeps the last request after
+its deadman fired, and `mapd` then never sees a stop, so the zero move is needed. On the NXT it is
+the Controller's stop, then the deadman.
 
-Two limits are named, not hidden. A command the gate already passed to the robot before the lease
-ended is not recalled; the robot's deadman and the stop the gate sends on expiry bound the damage
-to the deadman time (0.5 s). And the token protects only if the gate is the **only** way in
-(§3.2, the last column).
+**No flag to refuse a STOP.** A refused STOP risks a collision; an unwanted one stands the robot
+still. The cost is that anyone on the tailnet can stop a robot; every STOP is in the log with the
+name that sent it.
 
-### 3.5 Discovery, and the scenarios
+**Is a stop for anyone wise?** Yes. The norms treat a stop as a function that must not wait for
+permission: an industrial robot's emergency stop works in every mode, and the enabling device is
+stop-on-release, not a go (§4: from memory and a manual, the standard's text not read). VDA 5050's
+`cancelOrder` and `startPause` are instant actions (read).
 
-**Discovery.** Which robots are here and who drives them. Each gate announces itself on the local
-network with its id, kind, label, whether a pairing window is open, and whether it is free or held
-(DNS-SD over multicast DNS is the usual way; from memory, to be checked at build time). The holder's
-name is shown only to clients paired with that robot. A client lists the robots here and sees its own
-ones first. Mission Control's registry (RFC-0014 §3.3.2) stays the place for the home lab's known
-robots; discovery adds the ones in the room.
+### 3.5 The scenarios
 
-#### 3.5.1 Five laptops, five robots, one room
+#### 3.5.1 Five laptops, five robots, one room (v1 and later)
 
-Five people, five robots. Every robot is fresh or already paired with its owner.
+*In v1:* each robot has its gate; a laptop's client asks for a robot, gets it if free, and a second
+laptop is refused with who holds it. Nothing else keeps laptop 4 away from robot 3 except that
+robot 3 is held. Everyone on the tailnet sees all five robots and who drives which. That is
+adequate for the home lab, and it is not "you drive only your robot".
 
-1. Each laptop lists the five robots; all show "free" or "held".
-2. Anna's laptop asks to pair with robot 3. Robot 3's owner opens the window; the digits match; Anna
-   is `drive` on robot 3 and no other.
-3. Anna acquires robot 3 and drives it. Robots 1, 2, 4 and 5 are driven by their own people.
-4. Anna tries robot 4: refused, "not paired". Ben, paired on robot 3 as `watch`, sees Anna's robot
-   but cannot drive it, and cannot eject her. He can ask for it; Anna decides.
-5. Anna's laptop dies. After the lease time robot 3 has stopped and is free. Anna's laptop, back
-   up, must acquire again.
+*Later* (when a second person with a laptop shows up): pairing. A robot accepts a client on a
+console command plus a **pairing code**, issues the client a random secret kept in a file, and
+the client sends it in `hello`. The gate keeps the paired list. Then laptop 4 is refused at
+`hello` on robot 3. It is called a pairing code, not a "six-digit check": without a key agreement
+(§3.9) a displayed number checks nothing.
 
 #### 3.5.2 Three ducks, three laptops
 
-Each duck has its own gate, key and paired list. Laptops A, B and C are the operator's own: each is
-paired as `owner` on all three ducks.
+Each duck has its own gate. Laptops A, B and C run Mission Control. A drives duck 1; B drives
+duck 2; C drives duck 3, or none. C asks for duck 1 and A is away: C is on duck 1's takeover list
+(the operator's laptops are), takes it, it is recorded, A is told, duck 1 stops before C's first
+command. A friend's laptop D is on no list.
 
-- A drives duck 1; B drives duck 2; C drives duck 3, or none.
-- C asks for duck 1 and A is away: C takes over, as an owner. It is recorded, A is told, duck 1
-  stops before C's first command.
-- A friend's laptop D, paired as `drive` on duck 3 only, cannot touch ducks 1 and 2, cannot eject C.
+#### 3.5.3 One laptop, several robots (a swarm)
 
-#### 3.5.3 One laptop, several robots: a swarm
-
-A goal run for a team (RFC-0014 §3.4.4) is one client that acquires **one lease per robot**, in
-the order of the robot ids, so two goal runs cannot each hold half of a team and wait for the other
-(the old deadlock). If one acquire fails the run releases the ones it took and fails with the name
-of the robot that was held. Each robot keeps its own token; the run sends each command with that
-robot's token. Losing one lease interrupts that robot only; the run decides about the rest
-(RFC-0014 §3.4).
+A goal run for a team (RFC-0014 §3.4.4) runs in the nav server, which acquires **one lease per
+robot, in the order of the robot ids**, so two runs cannot each hold half a team and wait for the
+other. If one acquire fails the run releases the ones it took and fails with the name of the
+robot that was held. Losing one lease interrupts that robot's part; the run decides about the rest
+(RFC-0014 §3.4). The idle cap, if it ever comes (§3.9), applies to manual drive only, never to a
+goal run's lease.
 
 #### 3.5.4 A crashed laptop
 
-The holder goes silent. After the lease time the gate stops the robot and frees it; the robot's own
-deadman has already stopped the motors. The log says `lease_expired`. A new holder gets a higher
-token.
+Its connection closes; the gate stops the robot and frees it at once. If the laptop froze and the
+socket stays open, the lease expires in 10 to 30 s and the same happens. A laptop that wakes up
+after that is on a dead lease: its next command is refused, it reconnects, it is a new session.
 
 #### 3.5.5 The operator takes over
 
-The operator's laptop is an owner. It calls `gate.takeover`. The robot stops; the old holder is
-told; the operator holds a new lease. The record is in the gate's log and on the event stream of
-RFC-0014 §3.2.
+Mission Control calls `gate.takeover` from a takeover-allowed name. The robot stops, the old
+holder is told, the new lease starts. The record is in the gate's log and on RFC-0014 §3.2's event
+stream.
 
-#### 3.5.6 An agent over MCP
+#### 3.5.6 A running goal that loses its lease
 
-An agent is a client with its own key, paired by the operator as `drive` or `watch`, with `fire`
-refused in its entry. It may watch; it may drive and run goals if it holds the lease, with the
-limits of RFC-0014 §3.8; the gate refuses `fire` from it, whatever the agent was told. It cannot
-eject anyone and cannot take over.
+The nav server reports lease loss on RFC-0014 §3.2's event stream, and RFC-0014's situation
+rules decide the state: a **takeover** makes the goal run `interrupted`; a **STOP** makes it
+`cancelled`.
 
-### 3.6 Owners
+#### 3.5.7 An agent over MCP
 
-A robot has an owner list, not one person: the operator's laptops are all owners of his robots. An
-owner can pair and unpair clients, change roles, and force a takeover. A friend's robot has the
-friend as owner, and the operator is a `drive` client on it at most. Nobody is owner of another
-person's robot unless its owner pairs him as one.
+An agent is Mission Control's client, so it drives through Mission Control's lease and Mission
+Control enforces its limits (§3.8). It can watch, drive, run goals and STOP; it cannot take over,
+because it is on no takeover list.
 
-### 3.7 Safety
+### 3.6 The log
 
-- **Lease loss stops the robot.** When a lease ends for any reason (expiry, release, takeover) the
-  gate sends the robot a stop. The deadman stays as the backstop if the gate itself dies or the
+The gate writes a **jsonl log** beside its config: lease acquired, refused (and why), released,
+expired, taken over, stopped by (name), `someone_else_drives`. It is forwarded to Mission
+Control's event stream (RFC-0014 §3.2). The log is the record the operator asked for.
+
+### 3.7 Containers
+
+mDNS does not cross Docker bridge networks, so **discovery stays with Mission Control's registry**
+and its robot files (RFC-0014 §3.3.2); host networking is an extra, not a plan. A client's secret
+(§3.5.1, later) becomes a mounted secret. The NXT bridge stays on the host, with the Bluetooth.
+
+### 3.8 Safety
+
+- **Lease loss stops the robot** (§3.4). The deadman stays as the backstop if the gate dies or the
   link breaks.
-- **No lease, no motion.** A robot with no valid lease receives no motion command from the gate.
-- **A stale holder is refused**, by token (§3.4).
-- **STOP is always accepted from anyone paired**, including `watch`, and needs no lease or token. It
-  does not end the holder's lease; it stops the motors and leaves the robot stopped until the
-  holder drives again (RFC-0014 §3.8). Every STOP is logged with who sent it.
-- **Is that wise?** Yes, with one limit. The norms treat a stop as a function that must not wait
-  for permission: industrial robots keep their emergency stop and protective stop working in every
-  mode, and the enabling device is a stop-on-release, not a go (§4; the standard's text itself
-  not read). The cost is that a paired nuisance can stop a robot again and again. That is why the
-  paired list is the line: STOP needs only a pairing, not a role, and not a lease; and every STOP
-  is in the log. Whether an *unpaired* client on the tailnet may also STOP is §8, question 4.
-- **Fire is a skill with its own permission** (RFC-0003 §2.3): refused unless the client's entry
-  allows it, and always an explicit call.
-- **The gate failing is safe**: no gate, no commands, so the deadman stops the robot.
+- **No lease, no motion** through the gate.
+- **A stale holder is refused** because its lease is bound to a connection that is gone or dead
+  (§3.3).
+- **STOP from anyone, latching** (§3.4).
+- **Our own gate cannot see the other doors of the duck.** The gate stops *our* clients from
+  fighting; Pollen's app or a gamepad can still move the duck. RFC-0002 §3.6 is the rule for that:
+  watch `move.source`, stop and report.
+- **The NXT's 0.5 s deadman** rests on robotd-lite (RFC-0003 §2.3), **which has not yet been
+  checked on the real brick** in this RFC's work (hardware test `nxt/tests/hw_deadman.py`).
+- **Fire** is irreversible (RFC-0003 §2.3, RFC-0014 §3.8) and **"an MCP agent may not fire" is
+  enforced by Mission Control**: the agent is Mission Control's client, and Mission Control does
+  not pass `fire` to it. The gate does not do it; revision 1 wrongly said it did. An agent's
+  identity lives in Mission Control's per-client tokens (RFC-0014 §3.9) until an agent is a direct
+  client of a gate.
+- **The gate failing is safe**: no gate, no commands from us, so the deadman stops the robot.
+
+### 3.9 What is cut from v1, and what comes when
+
+The threat is a stale or second client of ours on a trusted tailnet, not a stranger. Revision 1
+built machinery for the stranger. Cut from v1:
+
+| Cut | Why it waits | When it comes |
+| --- | --- | --- |
+| Key pairs and TLS | The tailnet is the authentication. Python's `ssl` cannot generate keys or certificates: that needs the `openssl` binary or the `cryptography` package, so it is a **dependency decision** (revision 1 wrongly said "TLS from the standard library") | When a second person brings a laptop: a per-client random secret issued at pairing, sent in `hello` |
+| The six-digit check | Without a key agreement it is just a pairing code | With pairing, called a pairing code |
+| mDNS discovery | Does not cross Docker bridges (§3.7); the registry already lists robots | If a room needs it |
+| The `watch` role, any roles | Watching is open to any connection (RFC-0014 §3.3.3) | With pairing, if needed |
+| Several owners' lists, `gate.request` | A config list of takeover-allowed names does it now; ask-and-release has no user yet | Later, with the room |
+| The idle cap | Manual drive only, if kept (§3.5.3) | Only if forgotten laptops hold robots |
+| Unpair, physical reset | Irrelevant until keys exist | With pairing |
+| The fencing token | The gate is the lock and the resource; the connection-bound lease does the job (§3.3) | Not needed |
+| The `open_stop` flag | STOP always (§3.4) | Not needed |
 
 ## 4. What fits which standard
 
-"Verified" means I fetched the page or a search result for it in this session (the sources are in
-the Discussion). "Memory" means I did not read it. Where the page itself was blocked or paywalled I
-say so.
+"Verified" means I fetched the page or a search result for it (the sources are in §7). "Memory"
+means I did not read it. Where the page itself was blocked or paywalled I say so. The table is
+revision 1's research; the "our concept" column now reads against the smaller v1.
 
 | Standard | What it gives | Our concept it matches | Status |
 | --- | --- | --- | --- |
-| Bluetooth pairing and bonding | Keys made at pairing, stored by bonding "to form a trusted device pair"; a ceremony (six-digit check, passkey) | Pairing, the paired list, the six-digit check | Verified (SIG page; numeric comparison from search results) |
+| Bluetooth pairing and bonding | Keys made at pairing, stored by bonding "to form a trusted device pair"; a ceremony (passkey, numeric comparison) | Pairing and its list (later, §3.5.1) | Verified (SIG page; numeric comparison from search results) |
 | Bluetooth, who may connect | Nothing beyond the bond; the page does not address access control | None: the lease is ours | Verified (absence) |
-| ISO 10218 single point of control | Only specified devices, such as the pendant, may enable the robot to start | One driver; the others locked out while it holds | Partly: a manufacturer's manual, not the standard |
-| ISO 10218 enabling device, emergency stop | A hold-to-run switch; stops work in every mode | STOP always allowed; lease loss stops | Memory |
+| ISO 10218 single point of control | Only specified devices, such as the pendant, may enable the robot to start | One driver; others locked out while it holds | Partly: a manufacturer's manual, not the standard |
+| ISO 10218 enabling device, emergency stop | A hold-to-run switch; stops work in every mode | STOP from anyone; lease loss stops | Memory |
 | ISO 3691-4, IEC 61508 | A safe state on loss of control or link | The deadman, the stop on lease loss | Memory, no claim beyond that |
-| VDA 5050 fleet control | One fleet control assumed; no second one described; orders rejected as outdated or when another is active; `cancelOrder`, `startPause` | One controller by construction; the stale token in spirit; STOP as an instant action | Verified (text, in part) |
-| VDA 5050 operating mode | Automatic, semi-automatic, manual, service, teach-in (names only) | Roles are different: who, not what mode | Verified (names only) |
+| VDA 5050 fleet control | One fleet control assumed; no second one described; orders rejected as outdated or when another is active; `cancelOrder`, `startPause` | One controller by construction; STOP as an instant action | Verified (text, in part) |
+| VDA 5050 operating mode | Automatic, semi-automatic, manual, service, teach-in (names only) | Not used | Verified (names only) |
 | Open-RMF fleet adapter | One adapter per fleet; the fleet manager controls the robots | One controller by construction | Verified |
-| ROS 2 / DDS-Security | PKI authentication, per-topic permissions signed by a CA, encryption; no exclusive control | Identity and keys; roles as allow rules | Verified (design article); tutorials blocked |
-| MQTT ACLs (Mosquitto) | `read`, `write`, `readwrite`, `deny` per topic and user; `%u`, `%c` patterns | Roles; says who may, not who does | Verified |
-| MAVLink 2 signing | A shared 32-byte key; a timestamp that must grow per link; no per-GCS exclusivity | Keys; the token (growing number, replays refused) | Verified |
-| MAVLink operator control | A GCS requests or releases control; control status broadcast; the holder says whether takeover needs permission | The lease, `lease_lost` event, the ask-first handover | Search results of pull requests only; spec not read |
-| DJI binding | One aircraft, one bound remote; binding a new one unbinds the first | Pairing, but ours allows many paired and one holding | Forum threads, search results |
-| Leases and fencing tokens | A lease expires; a growing token, checked by the resource, refuses a stale holder | Lease and token (3.3, 3.4) | Verified (Kleppmann) |
+| ROS 2 / DDS-Security | PKI authentication, per-topic permissions signed by a CA, encryption; no exclusive control | The later secret and takeover list | Verified (design article); tutorials blocked |
+| MQTT ACLs (Mosquitto) | `read`, `write`, `readwrite`, `deny` per topic and user | Says who may, not who does | Verified |
+| MAVLink 2 signing | A shared 32-byte key; a timestamp that must grow per link; no per-GCS exclusivity | The later secret | Verified |
+| MAVLink operator control | A GCS requests or releases control; status broadcast; the holder says whether takeover needs permission | The lease, `lease_lost`, takeover | Search results of pull requests only; spec not read |
+| DJI binding | One aircraft, one bound remote; binding a new one unbinds the first | One holder | Forum threads, search results |
+| Leases and fencing tokens | A lease expires; a growing token checked by the resource refuses a stale holder | The lease (§3.3). The token is cut because lock and resource are one process | Verified (Kleppmann) |
 | Robot vacuums | Not researched; from memory the vendor's cloud account decides | The model we do not want | Memory |
 
-### 4.1 Notes on the table
+### 4.1 Notes
 
 - **Bluetooth.** Pairing "is performed to establish keys which can then be used to encrypt a
-  link"; bonding is storing them for later. The Bluetooth SIG page says nothing about who may
-  connect once paired, so Bluetooth gives us the pairing ceremony (the six-digit check is the
-  numeric comparison model) and not the lease. One device holding the other at a time is a
-  property of the device, not of the standard. Lego's NXT and EV3 use a default passkey of 1234
-  (search results of LEGO's help pages); that default is why §3.2 puts the gate between the brick
-  and everyone else. That they accept only one Bluetooth controller I could not verify.
-- **ISO 10218.** The two parts (robots; robot systems) were revised in 2025. A manufacturer's manual
-  describes "single point of control" as limiting the robot start so that only specified
-  devices, such as the teach pendant, can enable the robot. The standard itself is paywalled and
-  I did not read it; the concept, as the manual gives it, is the same as ours: one chosen source of
-  control, others locked out while it holds. ISO 3691-4 (driverless industrial trucks) and
-  IEC 61508 (functional safety) are from memory only; the one idea we take from them is that
-  loss of the control link must lead to a safe state, which is the deadman. No claim beyond that.
-- **VDA 5050.** The text read speaks of one "fleet control" and has no rule for a second.
-  What keeps a second one out in practice is the MQTT broker (who may publish to the robot's
-  `order` topic), which is a deployment matter. It does have orders that are rejected as outdated
-  or when another order is active, which matches our stale token in spirit.
-- **Open-RMF.** One fleet adapter per fleet; the adapter calls the fleet manager's API, so the
-  fleet manager is the one that controls the robot (read). RMF is "one controller, by
-  construction", not a lease.
-- **ROS 2.** DDS-Security gives authentication (PKI), access control per topic (permissions signed
-  by a CA) and encryption. It says nothing of exclusive control: two permitted nodes can both
-  publish `cmd_vel`. The SROS2 tutorial pages were blocked when I tried to read them, so I read
-  the design article.
-- **MQTT.** An ACL is "who may read or write which topic". It decides *who may*, not *who does*.
-- **MAVLink.** Signing proves a message comes from a holder of the key and refuses replays by
-  timestamp; it has no per-GCS exclusivity. A request-operator-control command with a control-status
-  message and a takeover permission flag appears in search results of pull requests; I did not read
-  the released spec.
-- **Drones and vacuums.** DJI binds an aircraft to one remote controller: binding a new one unbinds
-  the first (forum threads, search results, not DJI's own documentation). Robot vacuums: not
-  researched; from memory, the vendor's cloud account decides who may command, which is the model
-  we do not want (no accounts, no cloud).
-
-What the table says as a whole: the industrial and fleet world get one controller by **construction**
-(a single fleet control, a single pendant, a single broker user); drone and hobby links get it by
-**binding** (one paired remote); none of them has our case, many equal clients on one network, so
-the lease with a token is ours, built from the distributed-systems practice and the pairing ceremony
-from Bluetooth.
+  link"; bonding is storing them. The SIG page says nothing about who may connect once paired, so
+  Bluetooth gives a pairing ceremony and not a lease. The NXT's exclusive link is the one in
+  `nxt/README.md` (a second connection scrambles replies), and the brick has its own on-brick
+  pairing confirmation (from the coordinator's review; the brick's firmware not read by me).
+  Lego's default passkey 1234 is from search results of LEGO's help pages.
+- **ISO 10218.** A manufacturer's manual describes "single point of control" as limiting the robot
+  start so that only specified devices, such as the teach pendant, can enable the robot. The
+  standard itself is paywalled and not read; the concept matches ours: one chosen source of
+  control, others locked out while it holds.
+- **VDA 5050.** The text read speaks of one "fleet control" and has no rule for a second. What keeps
+  a second one out in practice is the MQTT broker, a deployment matter.
+- **Open-RMF.** One adapter per fleet; the fleet manager is what controls the robots (read).
+- **ROS 2.** DDS-Security has authentication, per-topic access control and encryption, and says
+  nothing of exclusive control. The SROS2 tutorial pages were blocked; I read the design article.
+- **MAVLink.** Signing refuses replays by timestamp and has no per-GCS exclusivity. The
+  operator-control command appears in search results of pull requests; the released spec not read.
+- **As a whole:** the industrial and fleet world get one controller by **construction**; drone and
+  hobby links by **binding**; none has many equal clients on one network, so the lease bound to a
+  connection is ours.
 
 ## 5. Order
 
-1. **The gate as a library** (stdlib only): paired list, roles, lease, token, takeover, stop,
-   log, with a fake clock for tests. Tests: stale token after a "sleep"; expiry; takeover mid-drive;
-   two clients; STOP from `watch`; `fire` refused; restart keeps the token. Put it in front of
-   RFC-0014's fake robot, so Mission Control's lock (RFC-0014 step 1) is this one.
-2. **The duck in the simulator**: the gateway in front of the simulator's `robotd`; Mission
-   Control gets its own client key (RFC-0014 §3.9's per-client tokens come here); the robot list
-   shows who holds each robot.
-3. **The NXT bridge**: `nxt-web` and Mission Control become clients of the same gate (RFC-0014
-   step 4); the brick is paired with the companion computer only.
-4. **Pairing and discovery in the page**: the six-digit check, the paired list, "ask for this
-   robot", takeover with its record.
-5. **The real duck and the EV3**, each behind its gate, each with its safety review (RFC-0014
-   step 8).
+The first build, the smallest slice:
 
-**Waits:** a physical pairing button on the NXT (needs robotd-lite to read the brick's button),
-agent keys and `fire` limits beyond one agent, a signed log kept outside the robot, and anything
-about a room of strangers (key revocation lists, guest passes).
+1. **A gate library, stdlib only, with a fake clock:** a per-connection lease; acquire, release,
+   who, takeover; a STOP from anyone that ends the lease; release on disconnect; expiry on silence;
+   pass-through of RFC-0003 methods; the jsonl log; takeover allowed to the client names in a
+   config file.
+2. **In front of RFC-0014's fake robot**, so Mission Control's lock (RFC-0014 step 1) is this one.
+3. **A socket proxy in front of the simulator's `robotd`**, with its socket in `~/.cache/duck-sim/`,
+   the navigator's robot socket path made configurable, and three tests through the scenario
+   runner (ADR-0015):
+   a. a second navigator is refused;
+   b. the first navigator is killed: the robot stops and is free;
+   c. a client frozen, then resumed, is refused.
+4. **The lease in `nxt-web`'s Controller** with `/api/lock`; Mission Control's NXT adapter uses it.
+
+**Later, each its own step, when a second person shows up with a laptop:** pairing with a secret and
+a pairing code, roles, discovery, `gate.request`, the idle cap; the real duck's gate on its
+computer (RFC-0014 step 8); the EV3.
 
 ## 6. Alternatives considered
 
-- **A lock in the client library only.** Rejected: `nxt-web` or a script that does not use it
-  bypasses it. The operator's rule is "built in".
-- **A lock service (a server everyone asks).** Rejected: a new thing that must be up, and a robot
-  would still obey a client that skipped it. The gate is the lock service and the checker in one,
-  so there is no gap between them.
-- **Rely on Bluetooth alone** (the robot accepts one connection at a time). Rejected: the duck
-  and the simulator are not on Bluetooth, and a link-level limit gives no owner, no roles, no
-  takeover record, no token. It stays a useful extra for the NXT.
-- **A broker with ACLs** (MQTT, as VDA 5050 does). Rejected for now: a new dependency and a new
-  server to run; the ACL decides who may, not who does, so we would still need the lease.
-- **ROS 2 / DDS-Security.** Rejected now (RFC-0014's ADR-0001 stance: ROS-shaped terms, no ROS
-  foundation); the model would carry over if it arrives.
-- **Last-writer-wins** (the newest client takes the robot). Rejected: it is exactly "two things
-  drive the same robot", one after the other, and the operator said they must not.
-- **One shared password per robot.** Rejected: it cannot tell clients apart, so no log, no
-  revoking one laptop, no `fire` limit for the agent.
-- **Locks held by the lease alone, no token.** Rejected: the frozen-laptop case (§3.4).
+- **A lock in the client library only.** Rejected: a program that does not use it bypasses it. The
+  operator's rule is "built in".
+- **A lock service (a server everyone asks).** Rejected: a new thing that must be up; the gate is
+  the lock and the check in one.
+- **Rely on Bluetooth alone** (one connection at a time). Rejected: the duck and the simulator are
+  not on Bluetooth, and a link limit gives no takeover or record. It stays a useful extra for the
+  NXT.
+- **A broker with ACLs** (MQTT, as VDA 5050 does). Rejected for now: a new server to run; an ACL
+  decides who may, not who does.
+- **ROS 2 / DDS-Security.** Rejected now (RFC-0014's ROS-shaped terms, no ROS foundation).
+- **Last-writer-wins.** Rejected: it is "two things drive the same robot", one after the other.
+- **One shared password per robot.** Rejected: it cannot tell clients apart.
+- **A fencing token in every command** (revision 1). Rejected after review: the gate is both lock
+  and resource, so binding the lease to the connection does the same with no change to RFC-0003's
+  method shapes.
+- **Key pairs and TLS now** (revision 1). Rejected after review: a home lab on a tailnet, and
+  Python's `ssl` cannot make keys or certificates (§3.9).
+- **A gate that makes `robotd`'s socket private** (revision 1). Rejected after review: it would
+  break `mapd` (unverified) and RFC-0002's "no code of ours on the duck".
+- **A flag to refuse STOP from unpaired clients** (revision 1's `open_stop`). Rejected: a refused
+  STOP risks a collision.
 
 ## 7. Discussion
 
-- 2026-11-18: written after the operator widened question 3 of RFC-0014 (the quotes in §1). RFC-0014
-  §3.3.3 keeps the short rule and points here.
+- 2026-11-18, revision 1: written after the operator widened question 3 of RFC-0014 (the quotes in
+  §1). The operator approved its 12 open questions with the recommendations given.
+- 2026-11-18, revision 2: the advisor's review (checked against the code, e.g.
+  `duck/src/duck_lab/nav/run.py` and `nxt/README.md`) replaced six of the recommendations (lease
+  length, no `open_stop`, the pairing and keys timing, the duck's gate and how the NXT is
+  protected, what the first build is, the discovery mechanism) and cut the rest of the machinery
+  from v1. The operator: "Take the advisor version, all is good feedback." Status: Accepted.
+- **The 12 questions, as answered:**
+  1. Lease: 10 to 30 s plus release on disconnect.
+  2. Pairing: none in v1 (dev mode); a console command and a pairing code later.
+  3. Watching: open to any connection in v1.
+  4. STOP: no flag; always accepted.
+  5. Hand-over: ask-and-release only; `gate.request` deferred.
+  6. Idle cap: deferred; manual drive only if kept.
+  7. Owners: a config list of takeover-allowed client names in v1; several owners later.
+  8. The NXT around the bridge: Bluetooth visibility off after pairing, plus the on-brick
+     confirmation (not a passkey change), **tested on hardware, not yet done**.
+  9. Keys and transport: none in v1; a per-client secret later; the stdlib-TLS claim corrected.
+  10. The duck's gate: the one door for our clients, not a boundary.
+  11. A lost owner key: a physical reset; irrelevant until keys exist.
+  12. RFC-0014: edited now (another writer does it).
 - **Sources I fetched and read** (summarised by the fetch tool, not read line by line):
   [Kleppmann on leases and fencing](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html);
-  [VDA 5050 text](https://raw.githubusercontent.com/VDA5050/VDA5050/main/VDA5050_EN.md) (a first
-  fetch of the GitHub page was truncated; the raw text answered only in part: no "master control"
-  wording, one fleet control, order rejection reasons, three instant actions);
+  [VDA 5050 text](https://raw.githubusercontent.com/VDA5050/VDA5050/main/VDA5050_EN.md) (the
+  GitHub page was truncated; the raw text answered only in part: no "master control" wording, one
+  fleet control, order-rejection reasons, three instant actions);
   [ROS 2 DDS-Security design](https://design.ros2.org/articles/ros2_dds_security.html);
   [Mosquitto configuration](https://mosquitto.org/man/mosquitto-conf-5.html);
   [MAVLink 2 message signing](https://mavlink.io/en/guide/message_signing.html);
   [Bluetooth SIG, pairing part 1](https://www.bluetooth.com/blog/bluetooth-pairing-part-1-pairing-feature-exchange/);
   [Open-RMF fleet adapters](https://osrf.github.io/ros2multirobotbook/integration_fleets.html).
-- **Known only from search results** (the page itself not read): the MAVLink operator-control
-  command (pull requests in
-  [mavlink-devguide](https://github.com/mavlink/mavlink-devguide/pull/556) and
-  [ArduPilot/mavlink](https://github.com/ArduPilot/mavlink/pull/382)); the
-  ISO 10218 "single point of control" (a [Denso manual](https://www.manualslib.com/manual/254821/Denso-Rc5.html?page=23));
+- **Known only from search results** (page not read): the MAVLink operator-control command (pull
+  requests in [mavlink-devguide](https://github.com/mavlink/mavlink-devguide/pull/556) and
+  [ArduPilot/mavlink](https://github.com/ArduPilot/mavlink/pull/382)); ISO 10218 "single point of
+  control" (a [Denso manual](https://www.manualslib.com/manual/254821/Denso-Rc5.html?page=23));
   Lego's passkey ([LEGO help](https://www.lego.com/en-sg/service/help-topics/article/connecting-your-lego-mindstorms-ev3-to-bluetooth));
   DJI's single binding ([forum](https://forum.dji.com/thread-287629-1-1.html),
   [mavicpilots](https://mavicpilots.com/threads/link-second-remote-control.115990/)); SROS2's
   permissions files ([ROS 2 access controls](https://docs.ros.org/en/iron/Tutorials/Advanced/Security/Access-Controls.html),
-  which was blocked when fetched).
+  blocked when fetched).
 - **Not verified:** the text of ISO 10218-1/-2 and ISO 3691-4 (paywalled); whether the NXT or EV3
-  refuse a second Bluetooth controller; what the VDA 5050 text says in full on instant actions
-  and operating modes; robot vacuum practice; the exact interfaces of the duck's `robotd`
-  beyond RFC-0003.
+  refuse a second Bluetooth controller beyond what `nxt/README.md` says of the serial link; the
+  on-brick pairing confirmation and Bluetooth-visibility behaviour on the real brick; robotd-lite's
+  0.5 s deadman on the real brick; whether `mapd` would break if `robotd`'s socket were private;
+  robot vacuum practice; whether MAVLink operator control is in the released spec.
 
 ## 8. Open questions
 
-1. **How long is the lease?** RFC-0014 decided: it expires after the robot's deadman time. The
-   NXT's deadman is 0.5 s over Bluetooth, which is too short for a lease that survives a Wi-Fi
-   hiccup, and renewing that often costs the link (RFC-0003 §2.3: 40 % at the deadman rate).
-   **Recommend:** the *motors* stop at the deadman, as now; the *lease* lasts three deadman times,
-   at least two seconds, and the gate stops the robot when it ends. This changes RFC-0014's
-   wording; your call.
-2. **How does a robot with no button accept a pairing?** The NXT bridge, the EV3 and the
-   simulator have no button for the window. **Recommend:** a command at the gate's console plus the
-   six-digit check on both screens; the NXT's own button later (§5).
-3. **May an unpaired client watch?** **Recommend:** discovery shows id, kind, label and free or
-   held to anyone on the network; the state, map and stream go to paired clients only, any role.
-   (RFC-0014 said "watching needs no lock"; it still needs no lock.)
-4. **May an unpaired client on the tailnet STOP?** RFC-0014 §3.8 says STOP needs no token beyond the
-   tailnet. **Recommend:** a gate flag `open_stop`, on in the home lab (as RFC-0014), off in a
-   room with other people; paired clients may always STOP.
-5. **Hand-over by request only, or may a holder allow auto-grant?** MAVLink lets the holder choose
-   (from search results). **Recommend:** ask-and-release only now; no auto-grant until you want it.
-6. **An idle cap?** **Recommend:** ten minutes with no motion command frees the robot, announced.
-7. **Several owners.** **Recommend:** yes, each owner takeover recorded, so the operator's laptops
-   are all owners of his robots; a friend's robot has the friend as owner.
-8. **Can the brick be reached around the bridge?** The NXT's default passkey is 1234, so anyone in
-   Bluetooth range might pair with the brick and bypass the gate. Unverified on this brick.
-   **Recommend:** test it on the real brick before step 3 (change the passkey; check whether it
-   accepts a second host while the bridge is connected), and record the result here.
-9. **Keys and transport.** **Recommend:** self-signed key pairs, pinned on both sides, over TLS
-   from the standard library (no new dependency); the key files mode 600; the robot's key
-   shown to the client at pairing, not trusted from the network.
-10. **Where the duck's gate runs.** **Recommend:** a gateway process on the duck's computer with
-    `robotd`'s socket closed to everything else; upstream `robotd` untouched.
-11. **A lost owner key.** **Recommend:** a physical reset on the robot (clears the paired list and
-    the owner); there is no remote way back.
-12. **Does RFC-0014 change?** §3.3.3's lock API becomes calls to the gate, and §3.9's per-client
-    tokens become keys from step 2. **Recommend:** yes, edit those two paragraphs when this is
-    accepted; not before.
+All twelve of revision 1 are answered (§7). Left:
+
+1. **The takeover list's format**: a per-robot file of client names beside the gate's config. A
+   name is only a label in dev mode, so this is a convention until a secret exists (§3.9).
+   Recommend: a plain file, one name per line.
+2. **The hardware test for the NXT** (visibility off after pairing, the on-brick confirmation, a
+   second host refused) and the check of robotd-lite's deadman on the real brick. Needs the
+   operator at the brick. Recommend: before step 4 is called done.
+3. **Whether `mapd` reads `robotd`'s socket in a way a proxy would change.** The gate proxies the
+   navigator's robot socket only; `mapd` is untouched. Recommend: confirm in the simulator in
+   step 3.
