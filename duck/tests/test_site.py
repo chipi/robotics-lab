@@ -87,7 +87,47 @@ with tempfile.TemporaryDirectory() as tmp:
     check("... and kitchen at an apartment (the general hints)",
           next(iter(flat.votes((0.0, 0.0, 0.0))), None) == "kitchen", flat.votes((0.0, 0.0, 0.0)))
     meta = json.loads((root / "home" / "site.json").read_text())
-    check("site.json says what the site is", meta == {"id": "home", "name": "Home", "kind": "apartment"}, meta)
+    check("site.json says what the site is", meta == {"id": "home", "name": "Home", "kind": "apartment", "areas": []},
+          meta)
+
+    # areas are the operator's: drawn, named, typed; "which area am I in" is geometry (the operator, 2026-11-18)
+    kitchen = again.add_area("Kitchen", [(0, 0), (2, 0), (2, 1.5), (0, 1.5)], "kitchen")
+    again.add_area("Marko's office", [(2, 0), (4, 0), (4, 1.5), (2, 1.5)], "office")
+    check("a point inside an outline is in that area", again.area_at((1.0, 0.7)) is kitchen)
+    check("a point in no outline is in no area", again.area_at((9.0, 9.0)) is None)
+    check("an L-shaped outline: the notch is outside",
+          Site("x", "x", "apartment", root / "x", areas=[]).add_area("L", [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
+          is not None)
+    l_site = Site("x", "x", "apartment", root / "x", areas=[])
+    l_area = l_site.add_area("L", [(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
+    check("... inside the L yes, in its notch no", l_site.area_at((0.5, 1.5)) is l_area and l_site.area_at((1.5, 1.5)) is None)
+    for bad, why in (((("Kitchen", [(0, 0), (1, 0), (1, 1)], None)), "a second area with the same name"),
+                     ((("Hall", [(0, 0), (1, 0)], None)), "an outline of two points")):
+        try:
+            again.add_area(*bad)
+            ok = False
+        except ValueError:
+            ok = True
+        check(f"refused: {why}", ok)
+    again.save()
+    back = Site.load(root, "home", kinds)
+    check("areas survive a save and a load", [(a.name, a.type, a.polygon) for a in back.areas]
+          == [(a.name, a.type, a.polygon) for a in again.areas], [a.to_json() for a in back.areas])
+
+    # the simulated apartment's six rooms as a site's areas (sim-areas): the dock's start puts them in the site frame
+    start = root / "start.json"
+    start.write_text(json.dumps({"map": [0.0, 0.0, 0.0], "truth": [0.05, 0.0, 0.0], "scale": 0.91}))
+    import subprocess  # noqa: E402
+
+    Site.create(root, "flat", "The simulated apartment", "apartment", kinds)
+    out = subprocess.run([sys.executable, "-m", "duck_lab.world_model.site", "--sites", str(root), "sim-areas", "flat",
+                          "--start", str(start)], capture_output=True, text=True)
+    sim = Site.load(root, "flat", kinds)
+    office = next((a for a in sim.areas if a.name == "office"), None)
+    check("sim-areas: the six rooms drawn, typed by their names", {a.name for a in sim.areas} >= {"kitchen", "living",
+          "office", "bedroom", "bath", "corridor"} and office is not None and office.type == "office", out.stdout + out.stderr)
+    check("... in the site frame: the office's world (2.0, 0.0) is at (1.95, 0.0) on the site map",
+          sim.area_at((1.95, 0.0)) is office and sim.area_at((2.06, 0.0)) is office)
 
 print("SITE", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

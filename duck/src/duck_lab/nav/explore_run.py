@@ -296,7 +296,8 @@ def main() -> None:
                 nav.record(event="site", id=site.sid, name=site.name, kind=site.kind,
                            objects=len(site.semantic.objects))
             nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs,
-                               semantic=site.semantic if site else None)
+                               semantic=site.semantic if site else None,
+                               area_at=site.area_at if site and site.areas else None)
         explorer = Explorer(nav, args.out)
         explorer.find = args.find
         result = explorer.run(args.minutes)

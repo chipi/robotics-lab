@@ -347,7 +347,8 @@ class Navigator:
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
         # objects (RFC-0016): off unless a camera is given (enable_objects); the challenge course runs without
         self.semantic = None
-        self.room = None
+        self.room = None         # the area type the objects suggest (a guess; was "room")
+        self.area, self.area_agrees = None, None    # the operator's area the pose is in, and whether the guess agrees
         self._sem_lock = threading.Lock()
         self._closing = threading.Event()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
@@ -990,7 +991,8 @@ class Navigator:
         return {"status": "timeout", "time_s": timeout_s, "reflex_stops": reflex_stops,
                 "pose": [round(v, 3) for v in self.loc.pose()]}
 
-    def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None) -> None:
+    def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None,
+                       area_at=None) -> None:
         """Objects (RFC-0016): every camera period, what the camera recognises joins the semantic map, placed with the
         belief taken right after the camera's truth (50 ms apart at most: 1.5 cm walking, under the camera's noise); a
         "semantic" event when an object is new or confirmed, a "room" event when the room the objects say the duck is in
@@ -1030,7 +1032,7 @@ class Navigator:
             now = time.monotonic() - self._t0
             with self._sem_lock:
                 changes = self.semantic.integrate(found, pose, now)
-                room, votes = self.semantic.room_at(pose, self._map_raw)
+                guess, votes = self.semantic.area_type_at(pose, self._map_raw)
                 moved = any(math.dist((o.x, o.y), recorded["at"].get(o.oid, (math.inf, math.inf))) > SNAPSHOT_MOVED_M
                             for o in self.semantic.objects)
                 due = changes or (moved and now - recorded["t"] >= SNAPSHOT_S)
@@ -1041,10 +1043,24 @@ class Navigator:
                 # the whole map when an object is new or confirmed, and every SNAPSHOT_S while any moved (they follow
                 # the belief's drift): the Observatory then draws where they are, not where they were first seen
                 self.record(event="semantic", changes=[[c, o.oid] for c, o in changes], objects=objects)
-            if room != self.room:
-                self.room = room
-                self.record(event="room", room=room, votes=votes,
-                            decision=decision("room", f"the objects near say: {room}", votes=votes))
+            if guess != self.room:
+                # the area type the objects near suggest: information, never an area (the operator's, site.Area)
+                self.room = guess
+                self.record(event="area_type", type=guess, votes=votes,
+                            decision=decision("area_type", f"the objects near look like: {guess}", votes=votes))
+            if area_at is not None:
+                # which of the operator's areas the duck is in: its pose inside an outline (geometry), and whether the
+                # objects' guess agrees — a disagreement says the pose is likely wrong (RFC-0016 rev. 3)
+                area = area_at(pose[:2])
+                aid = area.aid if area else None
+                agrees = None if area is None or area.type is None or guess is None else area.type == guess
+                if aid != self.area or agrees != self.area_agrees:
+                    self.area, self.area_agrees = aid, agrees
+                    self.record(event="area", id=aid, name=area.name if area else None, type=area.type if area else None,
+                                guess=guess, agrees=agrees,
+                                decision=decision("area", f"in {area.name if area else 'no area'}"
+                                                  + ("" if agrees is not False else f", but the objects look {guess}"),
+                                                  agrees=agrees))
 
         threading.Thread(target=watch, daemon=True).start()
 

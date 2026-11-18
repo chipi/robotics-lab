@@ -92,19 +92,36 @@ def semantic_score(run: Path, rows: list) -> dict:
                           "by_room": {r: f"{f}/{n}" for r, (n, f) in sorted(by_room.items())}}
     # per tick: the room last named against the truth's, leaving out ticks within ROOM_EDGE_M of a room's walls (the
     # truth's room flips at the wall, the belief later: the doorway is not a mistake); time with no room named apart
+    # the area type guess ("area_type"; "room" before the operator made areas his own, 2026-11-18) and, at a site with
+    # areas, the operator's area the pose was in ("area"): each per tick against the truth's room, away from doorways
     said, named, right, none, events = None, 0, 0, 0, 0
+    area, a_ticks, a_right, a_none, agrees, disagrees = None, 0, 0, 0, 0, 0
     for r in rows:
-        if r.get("event") == "room":
-            said, events = r["room"], events + 1
+        ev = r.get("event")
+        if ev in ("area_type", "room"):
+            said, events = r.get("type", r.get("room")), events + 1
+        elif ev == "area":
+            area = r.get("type") or r.get("name")
+            agrees += r.get("agrees") is True
+            disagrees += r.get("agrees") is False
         elif "event" not in r and r.get("truth") and room_of(r["truth"], inset=ROOM_EDGE_M):
             if said is None:
                 none += 1
             else:
                 named += 1
                 right += room_of(r["truth"]) == said
+            if area is None:
+                a_none += 1
+            else:
+                a_ticks += 1
+                a_right += room_of(r["truth"]) == area
     ticks = named + none
     out["rooms_named"] = {"events": events, "named_share": round(named / ticks, 2) if ticks else None,
                           "right": round(right / named, 2) if named else None}
+    if a_ticks or agrees or disagrees:
+        out["areas"] = {"in_area_share": round(a_ticks / (a_ticks + a_none), 2) if a_ticks + a_none else None,
+                        "right": round(a_right / a_ticks, 2) if a_ticks else None,
+                        "guess_agreed": agrees, "guess_disagreed": disagrees}
     for r in rows:
         if r.get("event") != "found":
             continue
@@ -191,9 +208,14 @@ def main() -> None:
                   f"({', '.join(f'{r} {v}' for r, v in ob['by_room'].items())})")
         rn = s["rooms_named"]
         if rn["events"]:
-            print(f"    rooms named: {rn['events']} changes; a room named in {int((rn['named_share'] or 0) * 100)}% of "
+            print(f"    area type guessed: {rn['events']} changes; a guess in {int((rn['named_share'] or 0) * 100)}% of "
                   f"the time, right in {int(rn['right'] * 100) if rn['right'] is not None else '-'}% of that "
                   f"(away from doorways)")
+        if "areas" in s:
+            ar = s["areas"]
+            print(f"    the operator's areas: in an area {int((ar['in_area_share'] or 0) * 100)}% of the time, the "
+                  f"right one {int(ar['right'] * 100) if ar['right'] is not None else '-'}% of that; the guess agreed "
+                  f"{ar['guess_agreed']}x, disagreed {ar['guess_disagreed']}x")
         if "found" in s:
             f = s["found"]
             print(f"    found {f['kind']}: {f['status']}, {f.get('distance_m')} m from it, facing off by "

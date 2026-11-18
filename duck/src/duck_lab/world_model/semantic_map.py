@@ -196,9 +196,12 @@ class SemanticMap:
                 votes[room] = votes.get(room, 0.0) + w / (1.0 + d) ** 2
         return {k: round(v, 3) for k, v in sorted(votes.items(), key=lambda kv: -kv[1])}
 
-    def room_at(self, pose: tuple, grid: dict = None):
-        """(room, votes): the room the duck says it is in. None while no object near says anything; a different room
-        only after it has led ROOM_TICKS looks in a row (no flapping in doorways). Call once per look."""
+    def area_type_at(self, pose: tuple, grid: dict = None):
+        """(area type, votes): what kind of area the objects near say the duck is in ("kitchen-like") — a guess, never
+        an area (areas are the operator's: site.Area; the operator, 2026-11-18). None while no object near says
+        anything; a different type only after it has led ROOM_TICKS looks in a row (no flapping in doorways). Where the
+        operator has drawn areas, the guess is a check on the pose: an area of another type means the pose is likely
+        wrong. Call once per look."""
         votes = self.votes(pose, grid)
         lead = next(iter(votes), None)
         if lead is None:
@@ -211,6 +214,8 @@ class SemanticMap:
             if self._room is None or self._lead_n >= ROOM_TICKS:
                 self._room, self._lead, self._lead_n = lead, None, 0
         return self._room, votes
+
+    room_at = area_type_at      # the name it had before areas were the operator's
 
     def blocking_points(self, spacing: float = 0.03, seen: list = (), seen_m: float = SEEN_M) -> list:
         """Outline points of the confirmed objects' parts the duck must go around (the semantic cost layer, off by

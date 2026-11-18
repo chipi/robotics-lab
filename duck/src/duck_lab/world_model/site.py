@@ -27,6 +27,31 @@ from duck_lab.world_model.semantic_map import ASSOC_M, UNIQUE_M, SemanticMap
 SITES = Path(os.environ.get("DUCK_SITES", Path(__file__).resolve().parents[3] / "sites"))
 
 
+def inside(xy: tuple, polygon: list) -> bool:
+    """Point in polygon (even-odd ray casting); the polygon's vertices in order, not closed."""
+    x, y = xy
+    hit = False
+    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
+            hit = not hit
+    return hit
+
+
+@dataclass
+class Area:
+    """A named region of a site that the operator defines (the operator, 2026-11-18: "the goal is that he can detect in
+    which area he is … I definitely don't want a robot to create areas"): a name, an outline on the site map (site
+    frame) and, optionally, an area type (kitchen, bedroom, office…). The robot never creates or suggests one."""
+    aid: str
+    name: str
+    polygon: list
+    type: str | None = None
+
+    def to_json(self) -> dict:
+        return {"id": self.aid, "name": self.name, "type": self.type, "polygon": [[round(v, 3) for v in p]
+                                                                                for p in self.polygon]}
+
+
 @dataclass
 class Site:
     sid: str
@@ -34,6 +59,23 @@ class Site:
     kind: str
     folder: Path
     semantic: SemanticMap = field(default=None)
+    areas: list = field(default_factory=list)
+
+    def area_at(self, xy: tuple):
+        """The operator's area the point is in (site frame), None outside all of them: geometry, not a guess."""
+        return next((a for a in self.areas if inside(xy, a.polygon)), None)
+
+    def add_area(self, name: str, polygon: list, type_: str | None = None) -> Area:
+        if len(polygon) < 3:
+            raise ValueError("an area's outline needs at least 3 points")
+        if any(a.name.lower() == name.lower() for a in self.areas):
+            raise ValueError(f"an area named {name!r} exists at site {self.sid}")
+        aid = f"area_{len(self.areas) + 1}"
+        while any(a.aid == aid for a in self.areas):
+            aid += "x"
+        area = Area(aid, name, [tuple(p) for p in polygon], type_)
+        self.areas.append(area)
+        return area
 
     @classmethod
     def create(cls, root: Path, sid: str, name: str, kind: str, kinds: dict) -> "Site":
@@ -51,12 +93,13 @@ class Site:
         sem = folder / "semantic_map.json"
         semantic = (SemanticMap.from_json(json.loads(sem.read_text()), kinds, site_kind=meta["kind"]) if sem.exists()
                     else SemanticMap(kinds, site_kind=meta["kind"]))
-        return cls(meta["id"], meta["name"], meta["kind"], folder, semantic)
+        areas = [Area(a["id"], a["name"], [tuple(p) for p in a["polygon"]], a.get("type")) for a in meta.get("areas", [])]
+        return cls(meta["id"], meta["name"], meta["kind"], folder, semantic, areas)
 
     def save(self) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
-        (self.folder / "site.json").write_text(json.dumps({"id": self.sid, "name": self.name, "kind": self.kind},
-                                                          indent=1))
+        (self.folder / "site.json").write_text(json.dumps({"id": self.sid, "name": self.name, "kind": self.kind,
+                                                           "areas": [a.to_json() for a in self.areas]}, indent=1))
         (self.folder / "semantic_map.json").write_text(json.dumps(self.semantic.to_json(), indent=1))
 
     def merge(self, run: SemanticMap) -> dict:
@@ -108,6 +151,17 @@ def main() -> None:
     n.add_argument("id")
     n.add_argument("object")
     n.add_argument("label")
+    a = sub.add_parser("area", help="draw an area: duck-site area home --name Kitchen --type kitchen "
+                                    "--outline '0,0 2,0 2,1.5 0,1.5' (site frame, metres)")
+    a.add_argument("id")
+    a.add_argument("--name", required=True)
+    a.add_argument("--type", help="kitchen, bedroom, office, ... (optional)")
+    a.add_argument("--outline", required=True, help="x,y points in order, separated by spaces")
+    sa = sub.add_parser("sim-areas", help="the simulated apartment's six rooms as a site's areas, as the operator "
+                                          "would draw them at home (the scoreboard's outlines, moved into the site frame "
+                                          "by a run's start.json)")
+    sa.add_argument("id")
+    sa.add_argument("--start", type=Path, required=True, help="a run's start.json (the dock: map and truth)")
     args = ap.parse_args()
     kinds = load_kinds()
     if args.cmd == "create":
@@ -122,7 +176,9 @@ def main() -> None:
             print(f"{m['id']}: {m['name']} ({m['kind']})")
     elif args.cmd == "show":
         site = Site.load(args.sites, args.id, kinds)
-        print(f"{site.sid}: {site.name} ({site.kind}), {len(site.semantic.objects)} objects")
+        print(f"{site.sid}: {site.name} ({site.kind}), {len(site.areas)} areas, {len(site.semantic.objects)} objects")
+        for ar in site.areas:
+            print(f"  area {ar.aid}: {ar.name}" + (f" ({ar.type})" if ar.type else "") + f", {len(ar.polygon)} points")
         for o in sorted(site.semantic.objects, key=lambda o: o.oid):
             print(f"  {o.oid:20s} {o.kind:14s} ({o.x:+.2f}, {o.y:+.2f}) seen {o.n}"
                   + (f'  "{o.label}"' if o.label else "") + ("  pinned" if o.pinned else ""))
@@ -134,6 +190,29 @@ def main() -> None:
             sys.exit(str(e))
         site.save()
         print(f'{args.object} at {site.sid} is now "{args.label}"')
+    elif args.cmd == "area":
+        site = Site.load(args.sites, args.id, kinds)
+        try:
+            outline = [tuple(float(v) for v in p.split(",")) for p in args.outline.split()]
+            area = site.add_area(args.name, outline, args.type)
+        except ValueError as e:
+            sys.exit(str(e))
+        site.save()
+        print(f"area {area.aid} {area.name} at {site.sid}")
+    elif args.cmd == "sim-areas":
+        from duck_lab.nav.frames import compose, inverse
+        from duck_lab.nav.rooms import ROOMS
+        site = Site.load(args.sites, args.id, kinds)
+        st = json.loads(args.start.read_text())
+        map_from_world = compose(tuple(st["map"]), inverse(tuple(st["truth"])))
+        for room, (x0, x1, y0, y1) in ROOMS.items():
+            corners = [compose(map_from_world, (x, y, 0.0))[:2] for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+            try:
+                site.add_area(room, corners, room)
+            except ValueError as e:
+                print(f"skipped {room}: {e}")
+        site.save()
+        print(f"{site.sid}: {len(site.areas)} areas")
 
 
 if __name__ == "__main__":
