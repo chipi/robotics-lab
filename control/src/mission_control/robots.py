@@ -113,8 +113,16 @@ class Link:
         self.last_stop_ok = None
 
     def __call__(self, method: str, params: dict | None = None):
+        return self.via(self._call, method, params)
+
+    def via(self, call, method: str, params: dict | None = None):
+        """The same, through another callable: a gate in another process has one connection per client, and each
+        goes through the one Link, so what the robot answered is one fact."""
         try:
-            result = self._run(method, params or {})
+            result = self._run(call, method, params or {})
+        except GateError:
+            self.ok_at = self._clock()          # the gate answered: it refused, the link is up
+            raise
         except Exception as exc:
             self.errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"
@@ -126,14 +134,14 @@ class Link:
             self.last_stop_ok = True
         return result
 
-    def _run(self, method: str, params: dict):
+    def _run(self, call, method: str, params: dict):
         if self.timeout_s is None:
-            return self._call(method, params)
+            return call(method, params)
         box: dict = {}
 
         def work():
             try:
-                box["result"] = self._call(method, params)
+                box["result"] = call(method, params)
             except BaseException as exc:
                 box["error"] = exc
 
@@ -171,7 +179,12 @@ class RobotRuntime:
         self.link = Link(adapter.call, clock, cfg.call_timeout_s)
         sink = JsonlLog(Path(log_dir) / f"gate-{cfg.id}.jsonl", wall) if log_dir else None
         self._sink = sink
-        self.gate = Gate(self.link, clock=clock, wall=wall, lease_s=cfg.lease_s, takeover_names=cfg.takeover, log=self._log)
+        if hasattr(adapter, "make_gate"):
+            # a gate in its own process (duck-gate, RFC-0017 §3.2): its lease, takeover list and log are its own
+            self.gate = adapter.make_gate(self.link)
+        else:
+            self.gate = Gate(self.link, clock=clock, wall=wall, lease_s=cfg.lease_s, takeover_names=cfg.takeover, log=self._log)
+        self._holder = None
         self.navigator = adapter.make_navigator(self.gate, clock) if cfg.capabilities.get("navigator") else None
         self.mutex = threading.RLock()
         self.sessions: OrderedDict = OrderedDict()
@@ -212,6 +225,14 @@ class RobotRuntime:
                     self._map_version = version
                     self._next_map = now + 1.0 / self.cfg.rates["map_hz"]
                     self.bus.emit("map", robot=self.cfg.id, map=self.adapter.map())
+            except Exception:
+                pass
+        if getattr(self.gate, "remote", False):
+            try:
+                holder = self.gate.who().get("holder")
+                if holder != self._holder:
+                    self._holder = holder
+                    self.bus.emit("lock", robot=self.cfg.id, event="holder", holder=holder)
             except Exception:
                 pass
         online = self.online()
@@ -289,20 +310,27 @@ class RobotRuntime:
         `confirmed` says whether the robot answered robot.stop; an offline robot's STOP is accepted and
         cannot be confirmed (§3.8)."""
         self.link.last_stop_ok = None
-        cid = self.gate.open(client)
         try:
-            self.gate.handle(cid, "robot.stop")
-        finally:
-            self.gate.close(cid)
+            cid = self.gate.open(client)
+            try:
+                self.gate.handle(cid, "robot.stop")
+            finally:
+                self.gate.close(cid)
+        except OSError as exc:                     # a gate in another process that does not answer: accepted, not confirmed
+            self.link.last_stop_ok = False
+            self.link.last_error = f"{type(exc).__name__}: {exc}"
         confirmed = self.link.last_stop_ok is True
         self.bus.emit("stop", robot=self.cfg.id, client=client, confirmed=confirmed)
         return {"robot": self.cfg.id, "confirmed": confirmed, "online": self.online()}
 
 
 def make_adapter(cfg: RobotConfig, clock):
-    """The adapter for a robot file's adapter type. Built: fake. The duck's (RFC-0014 step 2) and the
-    NXT's (step 4) come with their own steps."""
+    """The adapter for a robot file's adapter type. Built: fake and duck-sim (the simulated duck behind duck-gate and
+    duck-nav-server, RFC-0014 step 2). The NXT's comes with step 4."""
     if cfg.adapter["type"] == "fake":
         from .fake import FakeAdapter
         return FakeAdapter(cfg.adapter, cfg.capabilities, clock)
-    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake)")
+    if cfg.adapter["type"] == "duck-sim":
+        from .duck import DuckAdapter
+        return DuckAdapter(cfg.adapter, cfg.capabilities, clock)
+    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim)")

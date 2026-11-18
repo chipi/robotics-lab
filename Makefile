@@ -98,7 +98,7 @@ VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test
 VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py
 
-CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py
 
 .PHONY: test-control test-duck test-viewer test-viewer-pages
 test-control: control-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)
@@ -237,6 +237,10 @@ nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the reposit
 .PHONY: sim-gate-scenarios
 sim-gate-scenarios: duck-sync ## NOT in CI: RFC-0017 step 3 on the real simulator: a second navigator refused, a killed one frees the robot, a frozen one refused after its lease (resets the simulator three times, ~6 min; nobody else may use it)
 	cd $(DUCK_DIR) && .venv/bin/python sim/probes/gate_scenarios.py
+
+.PHONY: sim-duck
+sim-duck: control-sync ## NOT in CI: Mission Control on the real simulator: the gate, duck-nav-server and the real navigator behind the API (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
+	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_duck.py $(ARGS)
 
 .PHONY: control-run
 control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (control/robots.example), state in $(CONTROL_STATE)

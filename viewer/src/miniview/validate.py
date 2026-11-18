@@ -42,6 +42,10 @@ def _run(p):
         return "no_pose is not text"
     if p.get("odometry") is not None and not isinstance(p["odometry"], dict):
         return "odometry is not an object"
+    g = p.get("goal_run")
+    if g is not None and not (isinstance(g, dict) and isinstance(g.get("id"), int) and not isinstance(g["id"], bool)
+                              and isinstance(g.get("name"), str)):
+        return "goal_run is not an object with an integer id and a name"
     return None
 
 

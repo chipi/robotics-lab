@@ -245,6 +245,45 @@ export and import, STOP for the selected robot and STOP ALL (always on screen), 
 is disabled while a run's `watch` is null. It uses the Observatory's colour tokens, in light and dark,
 and fits a 390 px phone. `window.__mc` is a hook for the page test.
 
+## The simulated duck and the navigator API
+
+The adapter type `duck-sim` (`duck.py`; example `robots.sim/duck-sim.json`) puts two processes
+between Mission Control and the simulator, both from the duck package:
+
+- **`duck-gate`** (RFC-0017): the one door to robotd. Mission Control is a client of it as
+  `mission-control`; the lock, STOP and takeover of the API are the gate's own (the robot file's
+  `lease_s` and `takeover` do not apply: they are the gate's flags). A robot's `lock` is the
+  gate's `who`; `unreachable` appears in it when the gate does not answer, and the robot is then
+  offline.
+- **`duck-nav-server`** (O22, `duck_lab/nav/server.py`): the real navigator as its own process,
+  JSON-RPC over TCP on loopback (newline framed, RFC-0003's shape). It takes the lease from the
+  gate at `goal.start` and gives it back at the end, and writes each goal run as an Observatory
+  run `duck/<scene>/mc<id>-<time>`.
+
+Adapter options: `gate_socket`, `navigator` (host:port), `mapd_socket`, `observatory` (the base of
+the Watch links), `calibration`. The state is built from robotd's `robot.subscribe` stream (robotd
+has no `robot.state` request), the map is mapd's grid in the site frame, and
+`GET /robots/{id}/sighting` is `404 no_sighting` (the camera runs with a goal, and its sightings
+are in the Observatory run).
+
+The navigator API, as the server speaks it:
+
+| Method | Meaning |
+| --- | --- |
+| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key}` at once, or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind` |
+| `goal.status {decisions_since, objects_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, objects, objects_v}`; `objects` is the navigator's whole map, only when it changed |
+| `goal.cancel` | the navigator stops, ends the run, gives the lease back |
+| `state`, `objects`, `inventory`, `map` | what the navigator sees now, while a run is active |
+
+`seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as
+`seed`); `seed.areas` are the operator's outlines `{id, name, type, outline}`. A goal run's
+`run_key` is the Observatory run's key and `watch` is `<observatory>/watch/<run_key>`. The
+Observatory run carries `goal_run {id, name, kind, robot}` in its record (`viewer/CONTRACT.md`).
+
+The navigator takes a goal only where the robot's map knows a way: a point or an area in space the
+robot has not seen is `refused` ("no path on the map"), as the navigator has always refused it;
+exploring first is a goal of its own.
+
 ## Robot files
 
 JSON, one per robot, `<id>.json`. The format is provisional (RFC-0014 §5 question 21: the VDA 5050

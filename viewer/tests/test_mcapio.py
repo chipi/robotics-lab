@@ -329,6 +329,24 @@ with tempfile.TemporaryDirectory() as tmp:
         check(f"truth's whole pose ({how}): a tick without it reads back as before (no truth_3d, the plane pose)",
               "truth_3d" not in ticks[1] and ticks[1]["truth"] == [1.0, 2.0, 0.5], ticks[1])
 
+# --- the goal run a run belongs to (RFC-0014 §3.11 item 4, question 20) ---------------------------------------
+from miniview import validate
+
+with tempfile.TemporaryDirectory() as tmp:
+    gdata = Path(tmp)
+    goal = {"id": 42, "name": "go to the fridge", "kind": "go_to_object", "robot": "duck", "site": "home"}
+    make_run(gdata, "duck/room/g1", [tick(1.0, 0.0), tick(1.1, 0.03)], goal_run=goal)
+    rec = next(p for _, kind, p in mcapio.read(keys.run_dir(gdata, "duck/room/g1")) if kind == "run")
+    check("a run record carries the goal run it was made for, as written", rec.get("goal_run") == goal, rec.get("goal_run"))
+    check("the store keeps it on the run (the API's run object)", build(mcapio.read(keys.run_dir(gdata, "duck/room/g1"))).run.get("goal_run") == goal)
+    make_run(gdata, "duck/room/g2", [tick(1.0, 0.0)])
+    rec2 = next(p for _, kind, p in mcapio.read(keys.run_dir(gdata, "duck/room/g2")) if kind == "run")
+    check("a run made for no goal run has none", "goal_run" not in rec2, rec2)
+    base = run_record("duck/room/g3", goal_run=goal)
+    check("a goal run with an integer id and a name is valid", validate.check(0.0, "run", base, 0.0) is None, validate.check(0.0, "run", base, 0.0))
+    check("a goal run that is not an object, or has no integer id, or no name, is refused",
+          all(validate.check(0.0, "run", dict(base, goal_run=g), 0.0) for g in ("x", {"id": "42", "name": "n"}, {"id": 42}, {"id": True, "name": "n"}, {"name": "n"})))
+
 bad = {name: lichtblick_problems(json.loads(schemas.schema_bytes(f"miniview.{name}"))) for name in schemas.MINIVIEW}
 check("our schemas use only what Lichtblick reads (no untyped arrays, no arrays of arrays)",
       not any(bad.values()), {k: v for k, v in bad.items() if v})

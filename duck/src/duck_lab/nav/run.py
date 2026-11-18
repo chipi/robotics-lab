@@ -298,6 +298,9 @@ def load_pivot_vx(robot: str | None) -> float:
 class Navigator:
     runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
     watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
+    speed_cap = None         # a goal's guardrails (RFC-0014 §3.4.8): see __init__; class defaults for a navigator built without it
+    keepout = ()
+    on_decision = None
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None,
@@ -357,6 +360,11 @@ class Navigator:
         self.drops = []      # where the cliff check found no floor, in map metres
         self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
+        # a goal's guardrails (RFC-0014 §3.4.8), set by whoever runs the goal: a forward speed cap (m/s), the points of the
+        # no-go areas (map metres: obstacles for the planner, so a path never enters), and a listener for every decision
+        self.speed_cap = None
+        self.keepout = []
+        self.on_decision = None
         # objects (RFC-0016): off unless a camera is given (enable_objects); the challenge course runs without
         self.semantic = None
         self.room = None         # the area type the objects suggest (a guess; was "room")
@@ -372,7 +380,8 @@ class Navigator:
     def move(self, tw: Twist, **extra) -> None:
         """Send a command and log it with the pose: every command, so surveys, survey turns and the
         waits after a stop are in the log too (explore12 had events there but no poses)."""
-        self.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
+        vx = tw.vx if self.speed_cap is None else max(-self.speed_cap, min(self.speed_cap, tw.vx))
+        self.robot.call("robot.move", {"vx": vx, "vy": 0.0, "vyaw": tw.vyaw})
         pose = self.loc.pose()
         if pose is None:
             return
@@ -434,6 +443,8 @@ class Navigator:
         try:
             ans = self.robot.call("robot.look", {"x": dist * math.cos(rel), "y": dist * math.sin(rel),
                                                  "z": LOOK_FLOOR_Z_M, "neck_pitch": 0.0}) or {}
+        except LeaseLost:
+            raise                  # the gate ended this navigator's lease: not a failed look, the end of the run
         except (RuntimeError, OSError) as e:
             self.record(event="glance", decision=decision("glance", f"robot.look failed: {e}", target=list(target)))
             return {"status": "failed"}
@@ -726,6 +737,11 @@ class Navigator:
             self._record(**row)
 
     def _record(self, **row) -> None:
+        if self.on_decision is not None and row.get("decision"):
+            try:
+                self.on_decision(row)
+            except Exception:       # noqa: BLE001 - a listener must not stop the navigation
+                pass
         if self._log or self.runlog:
             row["t"] = round(time.monotonic() - self._t0, 3)
             if self.body:
@@ -1082,10 +1098,10 @@ class Navigator:
         """The semantic cost layer's points; none unless enable_objects(costs=True): every grid the brain builds is
         then the one it built before objects existed."""
         if self.semantic is None or not self.object_costs:
-            return []
+            return list(self.keepout)
         seen = list(self.blocked)
         with self._sem_lock:
-            return self.semantic.blocking_points(seen=seen)     # only where the depth sensor has no points
+            return list(self.keepout) + self.semantic.blocking_points(seen=seen)     # only where the depth sensor has no points
 
     def close(self) -> None:
         self._closing.set()

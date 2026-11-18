@@ -25,10 +25,14 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   scene, kind,
   started_at_ns, started_at_source ("writer", "file_mtime", "importer_clock", "given"), writer:
   {program, version},
-  source?: {name, sha256}, signals?, odometry?, no_pose?}`. A run whose record disagrees with its
-  folder is broken. `signals` declares a robot's named values (ADR-0013): `[{name, kind: "number" |
-  "text", unit?}]`; `odometry` how a pose was computed (`{sprocket_diameter_m, track_width_m, left,
-  right, invert_left, invert_right, source}`), `no_pose` why there is none ("no wheel geometry ...").
+  source?: {name, sha256}, signals?, odometry?, no_pose?, goal_run?}`. A run whose record disagrees
+  with its folder is broken. `signals` declares a robot's named values (ADR-0013): `[{name, kind:
+  "number" | "text", unit?}]`; `odometry` how a pose was computed (`{sprocket_diameter_m,
+  track_width_m, left, right, invert_left, invert_right, source}`), `no_pose` why there is none ("no
+  wheel geometry ..."). `goal_run` (RFC-0014 §3.11 item 4, question 20) says which goal run of
+  Mission Control wrote the run: `{id (integer), name, kind?, robot?, site?}`; it is written when
+  the run starts and is part of the run record, so `GET /api/v1/runs/<key>` returns it and a page
+  can say "goal run 42, go_to_object fridge". A run with none was not made for a goal run.
 - **Time**: `log_time = started_at_ns + t` (UTC nanoseconds; `t` is the run's time and only grows);
   `publish_time` is the source's own clock (each tick also keeps `t_src`).
 - **Writer**: one, with `writer.lock` (`{pid, host, started_at_ns}`) created exclusively; it refuses

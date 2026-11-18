@@ -45,13 +45,13 @@ NOWHERE = Path("/nonexistent/duck-run")        # no folder of a log: nothing to 
 
 class RunLog:
     def __init__(self, data: Path, scene: str, name: str, kind: str, out_dir: Path | None = None, evaluation: bool = False,
-                 started_at_ns: int | None = None):
+                 started_at_ns: int | None = None, goal_run: dict | None = None):
         """Opens the run `duck/<scene>/<name>` in the data folder (WriterBusy if it exists or has a writer, ValueError for a key
         that is not one). `out_dir` is the navigator's own output folder (its results.json says the run was an evaluation's);
         `evaluation`: every goal starts on a reset simulator, with its own map, so each has its epoch."""
         key = keys.make_key("duck", scene, name)
         run = new_run(key, dict(ROBOT), scene, kind, started_at_ns or time.time_ns(), "writer", signals=SIGNALS,
-                      writer={"program": "duck-lab", "version": "0.1.0"})
+                      writer={"program": "duck-lab", "version": "0.1.0"}, goal_run=goal_run)
         self.key = key
         self.dir = keys.run_dir(Path(data), key)
         self._rec = Recorder(self.dir, run)

@@ -161,6 +161,9 @@ class MissionControl:
         next tick."""
         with rt.mutex:
             if rt.active and rt.navigator is not None:
+                settle = getattr(rt.navigator, "settle", None)
+                if settle is not None:
+                    settle(3.0)            # a navigator in its own process sees the lost lease at its next tick
                 rt.navigator.step()
                 self._sync(rt, rt.active)
 
@@ -320,7 +323,8 @@ class MissionControl:
             self.sites.set_dock_if_unset(site_id, {**rt.status["pose"], "robot": rt.cfg.id})
         rt.active = ActiveRun(run_id, goal, site_id)
         spec = {"kind": goal["kind"], "params": params, "budget": goal.get("budget"),
-                "conditions": {"done_when": goal["done_when"], "guardrails": merged}, "seed": seed}
+                "conditions": {"done_when": goal["done_when"], "guardrails": merged}, "seed": seed,
+                "goal_run": {"id": run_id, "name": goal["name"], "kind": goal["kind"], "robot": rt.cfg.id, "site": site_id}}
         try:
             started = rt.navigator.goal_start(spec)
         except Exception as exc:
@@ -382,10 +386,23 @@ class MissionControl:
         act = rt.active
         if act is None or act.site_id is None:
             return
+        for o in objs:
+            if o.get("seed"):
+                # an object of the site's own that the navigator was seeded with: it is that object, not a new one
+                if o["id"] not in act.assoc.setdefault("ids", {}):
+                    act.assoc["ids"][o["id"]] = o["seed"]
+                    # the sightings it already had are not new ones (the navigator counts from at least the confirm threshold)
+                    act.assoc.setdefault("n", {})[o["id"]] = max(int(self.sites.object(act.site_id, o["seed"])["n"]), 3)
         changes = self.sites.merge_run_objects(act.site_id, objs, rt.cfg.id, act.assoc)
         if changes:
             self.bus.emit("objects", robot=rt.cfg.id, goal_run=act.id, site=act.site_id,
                           changes=[{"change": c, "id": i} for c, i in changes])
+
+    def _watch(self, row: dict):
+        """The Observatory's page for the run (RFC-0014 §3.11), when the robot's adapter has a run key and an Observatory."""
+        rt = self.robots.get(row["robot"])
+        url = getattr(rt.adapter, "watch_url", None) if rt is not None else None
+        return url(row["run_key"]) if url else None
 
     def _run_view(self, row: dict, with_decisions: bool = False) -> dict:
         goal = loads(row["goal"])
@@ -394,7 +411,7 @@ class MissionControl:
             "id": row["id"], "goal_id": row["goal_id"], "goal": goal, "robot": row["robot"], "site": row["site_id"],
             "target": row["target"], "state": row["state"], "reason": row["reason"], "progress": loads(row["progress"]),
             "result": loads(row["result"]), "broken": loads(row["broken"]), "guardrails": loads(row["guardrails"]),
-            "conditions": loads(row["conditions"]), "run_key": row["run_key"], "watch": None,
+            "conditions": loads(row["conditions"]), "run_key": row["run_key"], "watch": self._watch(row),
             "expect": expected, "as_expected": None if row["as_expected"] is None else bool(row["as_expected"]),
             "created_at": row["created_at"], "started_at": row["started_at"], "ended_at": row["ended_at"],
         }

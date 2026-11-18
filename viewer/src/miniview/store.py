@@ -86,7 +86,7 @@ class RunData:
         r, f = self.run, self.frames
         if kind == "run":
             r.update({k: p[k] for k in ("key", "uuid", "scene", "kind", "robot", "started_at_ns", "started_at_source",
-                                        "writer", "source", "signals", "odometry", "no_pose") if k in p})
+                                        "writer", "source", "signals", "odometry", "no_pose", "goal_run") if k in p})
             r["id"] = p["key"].rsplit("/", 1)[-1]
             for d in p.get("signals") or ():
                 self.sig_kinds[d["name"]] = d["kind"]

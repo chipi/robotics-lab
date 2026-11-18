@@ -58,6 +58,7 @@ class Explorer:
         self.find = None          # a kind of object to find and go to (RFC-0016: "go to the fridge"); None: explore
         self.find_failed = {}     # objects found but out of reach -> the leg count when it was last tried
         self.events = []
+        self.within = None        # a test of a point (xy -> bool) the frontiers must pass (explore {area}, RFC-0014 §3.4.1), else the whole map
 
     def note(self, **e) -> None:
         e["t"] = round(time.monotonic() - self.nav._t0, 1)
@@ -157,6 +158,8 @@ class Explorer:
                 continue
 
             def reachable(goal, costs=costs):
+                if self.within is not None and not self.within(goal):
+                    return False
                 c = costs.cell(*goal)
                 if costs.inside(*c) and costs.at(*c) >= LETHAL_COST:
                     return False
