@@ -18,7 +18,8 @@ class Judge:
         self.scene = scene
         lay = layout(scene)
         self.obs = obstacles(lay)
-        self.drops = [g for g in lay["geoms"] if g["name"].startswith("floor_") and g["pos"][2] + g["size"][2] < -1e-6]
+        self.drops = [g for g in lay["geoms"] if g["name"].startswith("floor_") and not g["name"].startswith("floor_step")
+                      and g["pos"][2] + g["size"][2] < -1e-6]
         self.bounds = scene.bounds()
         self.broken = None        # the first invariant broken: {"t", "rule", "why"}
         self.samples = 0
@@ -35,10 +36,11 @@ class Judge:
             self.min_clearance = min(self.min_clearance, near)
         drop = min((footprint_distance(p, g) for g in self.drops), default=math.inf)
         self.min_drop = min(self.min_drop, drop)
+        z -= self.scene.floor_top(p)      # above the floor it is on (a flight down, a step up)
         self.lowest = min(self.lowest, z)
         x0, x1, y0, y1 = self.bounds
         if z < FALLEN_Z_M:
-            why = ("fall", f"trunk at {z:.3f} m, below {FALLEN_Z_M} m")
+            why = ("fall", f"trunk {z:.3f} m above its floor, below {FALLEN_Z_M} m")
         elif drop < DROP_MARGIN_M:
             why = ("drop_margin", f"{drop:.3f} m from a drop's edge, under {DROP_MARGIN_M} m")
         elif self.obs and near[0] < FOOTPRINT_M:

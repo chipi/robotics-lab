@@ -232,8 +232,68 @@ def threshold(seed: int, rng: random.Random) -> Scene:
                  (x + beyond, 0.0), "reach", 75.0, notes={"height_m": round(h, 3), "at_m": round(x, 3)})
 
 
+def _strips(xs: list, tops: list, y0: float = -0.4, y1: float = 0.4, names=None) -> list:
+    """Floor pieces across the corridor meeting edge to edge: xs the edges (n+1), tops the n tops."""
+    names = names or [f"floor_{i}" for i in range(len(tops))]
+    return [slab(n, a, b, y0, y1, top=t) for n, a, b, t in zip(names, xs, xs[1:], tops)]
+
+
+def floor_things(seed: int, rng: random.Random) -> Scene:
+    """Things on the floor, walked over (RFC-0008 §3 challenge 17): a cable, a rug or a book, 0.8-1.2 m ahead, the goal
+    1.4-1.8 m beyond. Heights within what the walking crosses (under 1 cm, docs/wip/STEPS.md); every floor in pieces
+    meeting edge to edge. A cable: a bar 0.5-0.8 cm high and 2 cm deep across the way. A rug: a raised strip 0.5-1.0 cm,
+    0.5-0.7 m long, the whole width (on it, across it, off it). A book: 0.8-1.0 cm, 15 x 22 cm, lying on the way."""
+    x, beyond = rng.uniform(0.8, 1.2), rng.uniform(1.4, 1.8)
+    end, kind = x + beyond + 0.6, rng.choice(["cable", "rug", "book"])
+    if kind == "cable":
+        h, d = rng.uniform(0.005, 0.008), 0.02
+        floors = _strips([-0.6, x, x + d, end], [0.0, h, 0.0], names=["floor", "cable", "floor_beyond"])
+    elif kind == "rug":
+        h, d = rng.uniform(0.005, 0.01), rng.uniform(0.5, 0.7)
+        floors = _strips([-0.6, x, x + d, end], [0.0, h, 0.0], names=["floor", "rug", "floor_beyond"])
+    else:
+        h, d, w = rng.uniform(0.008, 0.01), 0.15, 0.22
+        yc = rng.uniform(-0.1, 0.1)
+        floors = [slab("floor", -0.6, x, -0.4, 0.4), slab("floor_beyond", x + d, end, -0.4, 0.4),
+                  slab("floor_s", x, x + d, -0.4, yc - w / 2), slab("floor_n", x, x + d, yc + w / 2, 0.4),
+                  slab("book", x, x + d, yc - w / 2, yc + w / 2, top=h)]
+    return Scene(f"ch17-s{seed}", f"A {kind} on the floor", _walled("corr", -0.6, end, -0.4, 0.4), floors,
+                 (x + beyond, 0.0), "reach", 75.0, notes={"kind": kind, "height_m": round(h, 4), "at_m": round(x, 3)})
+
+
+def step_up_down(seed: int, rng: random.Random) -> Scene:
+    """A step up and a step down (challenge 18): up 0.5-1.0 cm onto a platform 0.8-1.2 m long, then down 0.5-1.5 cm
+    (STEPS.md: up 3/3 at both, down 3/3 to 2 cm), the goal on the far side."""
+    x, up, length, down, beyond = (rng.uniform(0.7, 1.0), rng.uniform(0.005, 0.01), rng.uniform(0.8, 1.2),
+                                   rng.uniform(0.005, 0.015), rng.uniform(0.6, 0.9))
+    x2, end = x + length, x + length + beyond + 0.5
+    floors = _strips([-0.6, x, x2, end], [0.0, up, up - down], names=["floor", "platform", "step_beyond"])
+    return Scene(f"ch18-s{seed}", "A step up and a step down", _walled("corr", -0.6, end, -0.4, 0.4), floors,
+                 (x2 + beyond, 0.0), "reach", 90.0, notes={"up_m": round(up, 4), "down_m": round(down, 4)})
+
+
+def flight(up: bool):
+    def build(seed: int, rng: random.Random) -> Scene:
+        """A short flight of three small steps, up (challenge 19: 0.5 cm risers; STEPS.md: about 70 % of risers cleared,
+        a flight 1/3) or down (challenge 20: 1.0-2.0 cm risers; 3/3), 0.25 m treads, the goal on top or at the bottom."""
+        x, beyond = rng.uniform(0.7, 1.0), rng.uniform(0.6, 0.9)
+        h = 0.005 if up else rng.uniform(0.01, 0.02)
+        sign, tread = (1 if up else -1), 0.25
+        xs = [-0.6] + [x + i * tread for i in range(4)] + [x + 3 * tread + beyond + 0.5]
+        tops = [0.0] + [sign * (i + 1) * h for i in range(4)]
+        tops[4] = tops[3]
+        floors = _strips(xs, tops, names=["floor", "step1", "step2", "step3", "step_top"])
+        cid = "19" if up else "20"
+        return Scene(f"ch{cid}-s{seed}", f"A short flight of small steps, {'up' if up else 'down'}",
+                     _walled("corr", -0.6, xs[-1], -0.4, 0.4), floors, (x + 3 * tread + beyond, 0.0), "reach", 90.0,
+                     notes={"riser_m": round(h, 4), "steps": 3})
+    build.__name__ = "flight_up" if up else "flight_down"
+    return build
+
+
 CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge, "11": passage_by_hole, "12": table_edge,
-              "13": overhang, "14": thin_legs, "15": small_boxes, "16": threshold}
+              "13": overhang, "14": thin_legs, "15": small_boxes, "16": threshold, "17": floor_things, "18": step_up_down,
+              "19": flight(True), "20": flight(False)}
 
 
 def build(challenge: str, seed: int) -> Scene:

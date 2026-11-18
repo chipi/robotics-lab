@@ -25,6 +25,12 @@ FLOOR_RGBA = "0.45 0.5 0.55 1"
 LOW_RGBA = "0.35 0.25 0.35 1"
 
 
+def _inside(p: tuple, b) -> bool:
+    c, s = math.cos(b.yaw), math.sin(b.yaw)
+    dx, dy = p[0] - b.cx, p[1] - b.cy
+    return abs(c * dx + s * dy) <= b.hx and abs(-s * dx + c * dy) <= b.hy
+
+
 @dataclass(frozen=True)
 class Box:
     name: str
@@ -70,7 +76,16 @@ class Scene:
     notes: dict = field(default_factory=dict)   # what the seed drew (widths, depths): kept in the run's results
 
     def drops(self) -> list:
-        return [f for f in self.floors if f.z1 < -1e-6]
+        """Floors below 0 beyond an edge: holes to keep away from. A `step*` floor is a step to walk down, not a drop."""
+        return [f for f in self.floors if f.z1 < -1e-6 and not f.name.startswith("step")]
+
+    def floor_top(self, p: tuple) -> float:
+        """The top of the floor under p (0 where none): the highest piece that holds it, a bar under 6 cm deep left out
+        (walked over, not stood on), so a fall is judged from the floor the duck is on, not from 0. A drop is no floor:
+        over a hole the fall is judged from 0, as before."""
+        holes = self.drops()
+        tops = [f.z1 for f in self.floors if f not in holes and min(f.hx, f.hy) >= 0.03 and _inside(p, f)]
+        return max(tops, default=0.0)
 
     def bounds(self) -> tuple:
         pts = [p for b in self.boxes + self.floors for p in b.corners()]

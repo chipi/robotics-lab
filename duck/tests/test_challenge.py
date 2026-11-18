@@ -41,7 +41,7 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach", "17": "reach", "18": "reach", "19": "reach", "20": "reach"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -194,6 +194,41 @@ j3 = Judge(corridor)
 check("judge: a trunk below the fall height is a fall, before anything else", j3.check(1.0, (3.0, 0.0, 0.0), 0.02)["rule"] == "fall")
 j4 = Judge(corridor)
 check("judge: leaving the scene's bounds", j4.check(1.0, (0.5, 3.0, 0.0), 0.116)["rule"] == "bounds")
+
+# ---- challenges 17-20: walking over, up and down (heights from docs/wip/STEPS.md) ----------------------------------------
+def edge_to_edge(sc):
+    """Every floor piece meets its neighbours: no gap, no overlap (a bar laid on a floor tripped the duck)."""
+    rows = sorted(sc.floors, key=lambda f: (f.cx - f.hx, f.cy))
+    xs = sorted({round(f.cx - f.hx, 9) for f in rows} | {round(f.cx + f.hx, 9) for f in rows})
+    return all(any(abs(f.cx - f.hx - x) < 1e-9 for f in rows) for x in xs[:-1])
+
+
+c17 = [CHALLENGES["17"](s, random.Random(f"17-{s}")) for s in range(30)]
+check("challenge 17: a cable, a rug or a book (each drawn among 30 seeds), under 1 cm (what the walking crosses), no "
+      "drop, the goal beyond, the floor in pieces", {sc.notes["kind"] for sc in c17} == {"cable", "rug", "book"}
+      and all(0.005 <= sc.notes["height_m"] <= 0.01 and not sc.drops() and sc.goal[0] > sc.notes["at_m"] + 1.0
+              and edge_to_edge(sc) for sc in c17), [(sc.notes["kind"], sc.notes["height_m"]) for sc in c17[:6]])
+books = [sc for sc in c17 if sc.notes["kind"] == "book"]
+check("challenge 17's book: the floor around it fills the corridor (no hole beside the book)",
+      all(abs(sum((f.hy * 2) for f in sc.floors if abs(f.cx - (sc.notes["at_m"] + 0.075)) < 1e-3) - 0.8) < 1e-9 for sc in books))
+c18 = [CHALLENGES["18"](s, random.Random(f"18-{s}")) for s in range(10)]
+check("challenge 18: up 0.5-1.0 cm onto a platform, down 0.5-1.5 cm off it; a step down is no drop",
+      all(0.005 <= sc.notes["up_m"] <= 0.01 and 0.005 <= sc.notes["down_m"] <= 0.015 and not sc.drops() and edge_to_edge(sc)
+          for sc in c18), [(sc.notes["up_m"], sc.notes["down_m"]) for sc in c18[:4]])
+c19 = [CHALLENGES["19"](s, random.Random(f"19-{s}")) for s in range(10)]
+c20 = [CHALLENGES["20"](s, random.Random(f"20-{s}")) for s in range(10)]
+check("challenge 19: three 0.5 cm risers up; challenge 20: three 1-2 cm risers down, neither a drop, the goal on the "
+      "last tread", all(sc.notes["riser_m"] == 0.005 and not sc.drops() and edge_to_edge(sc) for sc in c19)
+      and all(0.01 <= sc.notes["riser_m"] <= 0.02 and not sc.drops() and edge_to_edge(sc) for sc in c20)
+      and all(abs(sc.floor_top(sc.goal) - (-3 * sc.notes["riser_m"])) < 1e-3 for sc in c20))
+down = c20[0]
+jd = Judge(down)
+low = 0.116 - 3 * down.notes["riser_m"]
+check("judge: standing on the flight's last tread (trunk 0.116 m above it, under 0.06 m above 0) is no fall",
+      jd.check(1.0, (*down.goal, 0.0), low) is None and round(jd.lowest, 3) == 0.116, (low, jd.lowest, jd.broken))
+check("judge: on the bottom tread, a trunk 0.03 m above it is a fall", Judge(down).check(1.0, (*down.goal, 0.0), low - 0.086)["rule"] == "fall")
+check("judge: on a 1 cm bar (under 6 cm deep, walked over) the fall is judged from the floor around it",
+      c16[0].floor_top((next(f for f in c16[0].floors if f.name == "threshold").cx, 0.0)) == 0.0)
 
 ok = Judge(corridor)
 v = ok.verdict({"status": "reached", "time_s": 9.0}, (1.9, 0.05, 0.0))
