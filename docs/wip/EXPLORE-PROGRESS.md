@@ -51,6 +51,7 @@ In the bar's order — safety first, then reach, then quality:
 | b6 (head fix, low band) | `f06d48f` | 3 | **3 / 5** | **1/6** | 0 (3) / 0 | refused: no room to turn |
 | b7 (+ retired cells only) | `f06d48f` + retire | 3 | 2 / 3 | 0/6 | 0 (3) / 0 | refused: no room to turn (`lm_office`, 3/3) |
 | b8 (+ objects on, one tight pivot per spot) | `3ceef19` | 3 | 2 / 3 | 0/6 | 2 / 0 | refused: no room to turn |
+| b9 (+ stand for mapd at each frontier) | `d74a5b1` | 3 | **4 / 6** | **2/6** | 0 / 0 | refused: no room to turn |
 
 Contacts in brackets: re-scored on 2026-11-18 by the judge that counts the six `lm_*` landmarks
 (RFC-0016: the depth sensor sees them, so here they are things the duck would hit): b1 0 → 4, b5 2 →
@@ -350,3 +351,26 @@ nearest return 2-10 cm; the truth's clearance to anything that collides was 0.24
 duck 3 cm from the capsule's surface. What decides it: the duck got 3 cm from a thing it sees — with
 a real pillar that is a contact. There are six such landmarks, one per room (`lm_*`). The retire
 change itself is not measured by b7: no run lived long enough to need it.
+
+## b8 and b9: objects on, then standing for mapd (2026-11-18)
+
+b8 (objects on, one tight pivot per spot): rooms median 2, best 3; two runs ended "no frontier
+left" at 3.3 and 3.7 min. At their last picks every frontier cell lay within 0.4 m of a target
+already reached (`sim/probes/last_frontiers.py`): the explorer went on from each reached target
+without stopping, mapd maps only at stops, so those frontiers stayed, blocked by the reached
+targets' discs. Fixed (`d74a5b1`): the duck stands for mapd at each reached frontier, and a reached
+target takes out only the frontier within 0.15 m. Objects in b8: 14-18 of the scene's 38, none
+false, error 0.05-0.14 m; rooms named right 71-95 % of the time away from doorways.
+
+**b9: every room, for the first time.** Rooms median 4, best 6; up to 2 of 6 areas within 25 %; no
+contact, no fall (the judge counting the landmarks).
+
+| Run | Rooms | Objects found (all real) | Rooms named right | End |
+| --- | --- | --- | --- | --- |
+| r1 | 4 (kitchen, office, bedroom, corridor) | 28 of 38, error 0.09 m | 77 % | trapped, 9.3 min |
+| r2 | **6** | **37 of 38**, error 0.16 m | 88 % | the 20 min limit, 103 m walked |
+| r3 | 3 (kitchen, office, corridor) | 23 of 38, error 0.08 m | 88 % | trapped, 4.7 min |
+
+Blockers left: "no room to turn" (14, ended r1 and r3, in the corridor, the kitchen, the office),
+stalls (5, 3.3 min), "no path on the map" (13). Next: stuck detection wired in, the camera's objects
+filling what the depth sensor misses (the thin `lm_office`), then a batch with and without.
