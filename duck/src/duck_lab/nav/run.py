@@ -27,7 +27,7 @@ from pathlib import Path
 
 from duck_lab.nav import cliff
 from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, low_points, obstacle_points
-from duck_lab.nav.client import SIM, Rpc, StateStream, odom_pose
+from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
 from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
@@ -300,7 +300,20 @@ class Navigator:
     watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
-                 calibration: str | None = "sim", runlog: RunLog | None = None):
+                 calibration: str | None = "sim", runlog: RunLog | None = None,
+                 robot_sock: Path | None = None, client: str | None = None):
+        # The robot's socket is a setting (RFC-0017 §5 step 3): robotd's own, or a gate's (duck-gate). With a `client` name
+        # this navigator speaks to a gate: hello {client}, then it takes the lease before anything else, and a gate that
+        # holds the robot for another client refuses it here (LeaseLost), before a run, a thread or a map exists.
+        self.client = client
+        self.robot_sock = Path(robot_sock) if robot_sock else sim_dir / "duck-a.sock"
+        self.robot = Rpc(self.robot_sock, client=client)
+        if client:
+            try:
+                self.robot.call("gate.acquire")
+            except Exception:
+                self.robot.close()
+                raise
         # Odometry, mapd's poses and mapd's grid all come from robotd's odometry; one scale corrects
         # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
         # first stop, so scaling about it keeps the duck where it is.
@@ -317,9 +330,8 @@ class Navigator:
         self.sense = {}          # what go_to decides on this tick (room_m, turning), for the signals; empty outside go_to
         self._logging_failed = False
         self.tof = None
-        self.robot = Rpc(sim_dir / "duck-a.sock")
         self.mapd = Rpc(sim_dir / "duck-a-map.sock")
-        self.state = StateStream(sim_dir / "duck-a.sock", hz=20, on_state=self._on_state)
+        self.state = StateStream(self.robot_sock, hz=20, on_state=self._on_state, client=client)
         self.tof = TofStream(sim_dir / "duck-a-tof.sock")
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
@@ -1077,7 +1089,15 @@ class Navigator:
 
     def close(self) -> None:
         self._closing.set()
-        self.move(Twist())
+        try:
+            self.move(Twist())
+        except LeaseLost:
+            pass                  # the gate stopped the robot when the lease ended
+        if self.client:
+            try:
+                self.robot.call("gate.release")
+            except (LeaseLost, RuntimeError, OSError):
+                pass
         self.state.close()
         self.tof.close()
 
@@ -1088,13 +1108,24 @@ def main() -> None:
     ap.add_argument("y", type=float)
     ap.add_argument("--log", type=Path)
     ap.add_argument("--timeout", type=float, default=90.0)
+    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: robotd's own (the default) or a gate's (duck-gate)")
+    ap.add_argument("--client", help="the name to speak to a gate as (hello, then gate.acquire): needed with a gate's socket")
     add_args(ap)
     args = ap.parse_args()
     stamp = time.strftime("go-%Y%m%d-%H%M%S")
     runlog = open_from_args(args, args.log.stem if args.log else stamp, "go-to", args.log.parent if args.log else None)
-    nav = Navigator(log=args.log, runlog=runlog)
+    try:
+        nav = Navigator(log=args.log, runlog=runlog, robot_sock=args.robot_socket, client=args.client)
+    except LeaseLost as exc:
+        print(json.dumps({"status": "refused", "why": str(exc), "gate": exc.code, "holder": exc.holder}))
+        if runlog:
+            runlog.finish()
+        sys.exit(3)
     try:
         print(json.dumps(nav.go_to((args.x, args.y), args.timeout)))
+    except LeaseLost as exc:
+        print(json.dumps({"status": "interrupted", "why": str(exc), "gate": exc.code, "reason": exc.reason}))
+        sys.exit(4)
     finally:
         nav.close()
         if runlog:

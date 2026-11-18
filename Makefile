@@ -90,7 +90,7 @@ endef
 
 DUCK_TESTS          := tests/test_nav.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py \
-                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py
+                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py tests/test_gate_proxy.py
 VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
@@ -233,6 +233,10 @@ nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot 
 .PHONY: nxt-image
 nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs viewer/ too, ADR-0013)
 	docker build -f $(NXT_DIR)/Dockerfile -t $(NXT_IMAGE) .
+
+.PHONY: sim-gate-scenarios
+sim-gate-scenarios: duck-sync ## NOT in CI: RFC-0017 step 3 on the real simulator: a second navigator refused, a killed one frees the robot, a frozen one refused after its lease (resets the simulator three times, ~6 min; nobody else may use it)
+	cd $(DUCK_DIR) && .venv/bin/python sim/probes/gate_scenarios.py
 
 .PHONY: control-run
 control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (control/robots.example), state in $(CONTROL_STATE)
