@@ -135,6 +135,7 @@ with sync_playwright() as p:
     check("the robot is at the site the operator made and picked", get("/robots/fake-1")["robot"]["site"] == "home")
 
     # --- an area drawn by the operator -------------------------------------------------------------
+    wait(page, "document.getElementById('area-list').textContent.includes('none defined')")  # the list is drawn after the site is loaded
     check("no area yet: it says none defined", "none defined" in page.locator("#area-list").inner_text())
     page.click("#area-draw")
     check("Draw an area opens the draft form", page.locator("#area-draft").is_visible() and page.locator("#area-draw").get_attribute("aria-pressed") == "true")
@@ -223,6 +224,8 @@ with sync_playwright() as p:
           and [a["name"] for a in exported["areas"]] == ["Galley"] and [o["label"] for o in exported["objects"]] == ["my sofa"], exported["areas"])
     page.locator("#area-list [data-action=delete]").click()
     check("Delete asks twice: the first press only arms it", page.locator("#area-list [data-action=delete]").inner_text() == "Sure?" and len(get("/sites/home/areas")["areas"]) == 1)
+    page.evaluate("window.__mc.renderAreas()")
+    check("a redraw of the list does not disarm it", page.locator("#area-list [data-action=delete]").inner_text() == "Sure?")
     page.locator("#area-list [data-action=delete]").click()
     wait(page, "window.__mc.S.areas.length === 0")
     check("delete an area", get("/sites/home/areas")["areas"] == [])

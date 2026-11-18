@@ -4,6 +4,7 @@
 
 const API = "/api/v1";
 const $ = (id) => document.getElementById(id);
+const ARM_MS = 6000; // a delete needs a second press within this long
 const TERMINAL = ["reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted"];
 
 function h(tag, attrs, ...kids) {
@@ -20,7 +21,7 @@ function h(tag, attrs, ...kids) {
 
 const S = {
   robots: [], robot: null, sites: [], site: null, objects: [], areas: [], map: null, goals: [], runs: [], run: null,
-  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null,
+  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null,
 };
 
 async function api(method, path, body) {
@@ -162,10 +163,19 @@ function renderAreas() {
   if (!S.site) { box.replaceChildren(h("div", { class: "dim" }, "Pick a site for this robot to see and draw its areas.")); return; }
   if (!S.areas.length) { box.replaceChildren(h("div", { class: "dim" }, "No areas yet: " + "none defined.")); return; }
   box.replaceChildren(h("ul", { class: "list" }, S.areas.map((a) => {
+    // Armed in S, not in the button: a redraw of the list (an event, a refresh) must not disarm it.
+    const armed = S.armed && S.armed.id === a.id && Date.now() < S.armed.until;
     const del = h("button", { class: "btn sm danger", type: "button", "data-area": a.id, "data-action": "delete", onclick: guard(async () => {
-      if (!del.dataset.armed) { del.dataset.armed = "1"; del.textContent = "Sure?"; setTimeout(() => { delete del.dataset.armed; del.textContent = "Delete"; }, 4000); return; }
+      if (!(S.armed && S.armed.id === a.id && Date.now() < S.armed.until)) {
+        const mine = { id: a.id, until: Date.now() + ARM_MS };
+        S.armed = mine;
+        setTimeout(() => { if (S.armed === mine) { S.armed = null; renderAreas(); } }, ARM_MS);
+        renderAreas();
+        return;
+      }
+      S.armed = null;
       await api("DELETE", `/sites/${S.site}/areas/${a.id}`); await loadSite();
-    }) }, "Delete");
+    }) }, armed ? "Sure?" : "Delete");
     const name = h("input", { class: "grow", value: a.name, "aria-label": "Area name", "data-area": a.id, onchange: guard(async (ev) => {
       try { await api("PUT", `/sites/${S.site}/areas/${a.id}`, { name: ev.target.value }); } catch (e) { ev.target.value = a.name; throw e; }
       await loadSite();
@@ -565,5 +575,5 @@ async function loadAll() {
   renderAll();
 }
 
-window.__mc = { S, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
+window.__mc = { S, renderAreas, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
 guard(async () => { renderGoalFields(); await loadAll(); connect(); S.ready = true; })();
