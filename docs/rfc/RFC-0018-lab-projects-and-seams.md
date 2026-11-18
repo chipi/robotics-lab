@@ -204,25 +204,29 @@ to eval-harness; anything that needs the gate built first (RFC-0017 is proposed)
 
 ## 8. Open questions
 
+All eight are **answered, as recommended** (the operator, 2026-11-18: "I also accept all previous
+recommendations"). Each **Answered:** below is the recommendation he accepted. The RFC stays
+parked; the answers are recorded for when it is picked up.
+
 1. **Repository names and the Observatory's rename.** RFC-0014 says miniview becomes the
-   Observatory; the package is still `miniview`. **Recommend:** rename the package at the moment
+   Observatory; the package is still `miniview`. **Answered:** rename the package at the moment
    the run-format library is cut (step 2), when its imports change anyway, so there is one rename and
    not two.
-2. **Name of the run-format library.** **Recommend:** a plain name such as `runfile`, not tied to
+2. **Name of the run-format library.** **Answered:** a plain name such as `runfile`, not tied to
    a viewer name.
-3. **One docs site or many?** **Recommend:** one lab site now; each project has a README and, when
+3. **One docs site or many?** **Answered:** one lab site now; each project has a README and, when
    it splits, its own small site that the lab site links to.
-4. **Does the world model go with the brains or alone?** **Recommend:** alone, as its own small
+4. **Does the world model go with the brains or alone?** **Answered:** alone, as its own small
    library, from the day a second robot uses it; until then a folder in `duck-lab` with the
    `OVERHEAD_M` knot cut (§6, step 3).
 5. **When does the challenge course move to eval-harness?** Perhaps; it depends on what that
-   project becomes. **Recommend:** stay in the lab; decide when eval-harness is named.
-6. **Submodules or version pins for the lab's view of its projects?** Not checked. **Recommend:**
+   project becomes. **Answered:** stay in the lab; decide when eval-harness is named.
+6. **Submodules or version pins for the lab's view of its projects?** Not checked. **Answered:**
    version pins to Git tags, the simpler of the two, until a reason for submodules appears.
 7. **Do the Observatory's robot adapters (`adapters/duck.py`, `adapters/nxt.py`) go to the run
-   format or to each robot?** **Recommend:** to each robot, so the format knows no robot and the
+   format or to each robot?** **Answered:** to each robot, so the format knows no robot and the
    Observatory loads adapters by name. The cost is a plug-in point in the Observatory; your call.
-8. **When is the first split?** **Recommend:** after the lab "works as it is" and RFC-0014's first
+8. **When is the first split?** **Answered:** after the lab "works as it is" and RFC-0014's first
    slices are built; not before you say.
 
 ## 9. Discussion
