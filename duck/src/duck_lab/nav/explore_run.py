@@ -294,7 +294,7 @@ def main() -> None:
                 # the dock, the site frame, so its map frame is the site's; RFC-0016 rev. 3)
                 site = Site.load(args.sites, args.site, load_kinds())
                 nav.record(event="site", id=site.sid, name=site.name, kind=site.kind,
-                           objects=len(site.semantic.objects))
+                           objects=len(site.semantic.objects), areas=[a.to_json() for a in site.areas])
             nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs,
                                semantic=site.semantic if site else None,
                                area_at=site.area_at if site and site.areas else None)
