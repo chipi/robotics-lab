@@ -345,6 +345,23 @@ The navigator takes a goal only where the robot's map knows a way: a point or an
 robot has not seen is `refused` ("no path on the map"), as the navigator has always refused it;
 exploring first is a goal of its own.
 
+## The NXT
+
+`adapter {"type": "nxt-web", "url": "http://127.0.0.1:8000"}` (`robots.nxt/nxt-1.json`) is the NXT behind
+`nxt-web`, which is the only process on the brick's link, so nxt-web is the robot's gate (RFC-0017):
+its lock, its STOP and its takeover list (`--takeover-names`) are the robot's, and the `takeover` and
+`lease_s` of the robot file do not apply to it. Mission Control is a client: `POST /robots/{id}/lock`
+takes nxt-web's lock in the client's name and returns the session of this API; drive is
+`/api/drive` with nxt-web's session, STOP is `/api/stop`, who holds the lock is `/api/lock`,
+polled at the state rate (a lease that ended at nxt-web, by its own page's STOP, expiry or takeover,
+ends the API's session with nxt-web's reason). `vx` and `vyaw` become the tracks in percent: both
+tracks at 100 is `max_vx` of the file's `drive`, the tracks 50 apart each way is `max_vyaw`. The
+state has `mode`, `velocity` (computed from the tracks), `tracks {left, right}`, `link`, `battery_mv`
+and no `pose`; `battery_pct` is null (the voltage to percent curve of the cells is not known).
+The NXT has no navigator, so a goal for it is a run in the state `refused` ("this robot has no
+navigator"), and it has no map or recogniser. It is reached through nxt-web only, never through a
+device; nxt-web offline is the robot offline, and STOP is then accepted and not confirmed.
+
 ## Robot files
 
 JSON, one per robot, `<id>.json`. The format is provisional (RFC-0014 §5 question 21: the VDA 5050

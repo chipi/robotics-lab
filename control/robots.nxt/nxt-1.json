@@ -1,0 +1,16 @@
+{
+  "id": "nxt-1",
+  "label": "NXT tracked robot",
+  "kind": "nxt",
+  "adapter": {"type": "nxt-web", "url": "http://127.0.0.1:8000", "call_timeout_s": 5.0},
+  "capabilities": {
+    "drive": {"max_vx": 0.3, "max_vyaw": 1.5, "deadman_s": 0.6},
+    "sensors": [],
+    "recognisers": [],
+    "guardrails": [],
+    "skills": [],
+    "description": "LEGO NXT 2.0 on tracks, behind nxt-web; no pose, no map, no navigator: status, drive and STOP only"
+  },
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
+  "takeover": []
+}

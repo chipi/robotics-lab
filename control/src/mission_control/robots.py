@@ -330,12 +330,15 @@ class RobotRuntime:
 
 
 def make_adapter(cfg: RobotConfig, clock):
-    """The adapter for a robot file's adapter type. Built: fake and duck-sim (the simulated duck behind duck-gate and
-    duck-nav-server, RFC-0014 step 2). The NXT's comes with step 4."""
+    """The adapter for a robot file's adapter type. Built: fake; duck-sim (the simulated duck behind duck-gate and duck-nav-server,
+    RFC-0014 step 2); nxt-web (the NXT behind nxt-web's HTTP API and lock, step 4)."""
     if cfg.adapter["type"] == "fake":
         from .fake import FakeAdapter
         return FakeAdapter(cfg.adapter, cfg.capabilities, clock)
     if cfg.adapter["type"] == "duck-sim":
         from .duck import DuckAdapter
         return DuckAdapter(cfg.adapter, cfg.capabilities, clock)
-    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim)")
+    if cfg.adapter["type"] == "nxt-web":
+        from .nxt import NxtAdapter
+        return NxtAdapter(cfg.adapter, cfg.capabilities, clock)
+    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim, nxt-web)")
