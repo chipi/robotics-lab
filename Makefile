@@ -1,7 +1,7 @@
 # robotics-lab — Makefile
 #
 # Layered tiers, as in the operator's other projects (flotilla, eval-harness):
-#   - lint / test-unit / test-duck / test-viewer / test-viewer-pages /
+#   - lint / test-unit / test-duck / test-viewer / test-control / test-viewer-pages /
 #     test-integration / test-viewer-image  → atomic (one project, one kind of check)
 #   - ci-fast                             → what every push must pass (fast feedback)
 #   - ci                                  → what every merge must pass (full gate)
@@ -40,6 +40,9 @@ NXT_DATA       ?= nxt-web-data
 DUCK_DIR       := duck
 VIEWER_DIR     := viewer
 VIEWER_IMAGE   ?= miniview:ci
+CONTROL_DIR    := control
+CONTROL_PORT   ?= 8060
+CONTROL_STATE  ?= /work/robotics-lab/state/control
 
 # ---- Meta --------------------------------------------------------------------
 
@@ -55,6 +58,10 @@ help: ## Show this help (default target)
 nxt-sync: ## Create/refresh the NXT project's venv from its lock (uv)
 	@cd $(NXT_DIR) && uv sync --frozen && echo "nxt-sync PASS"
 
+.PHONY: control-sync
+control-sync: ## Create/refresh Mission Control's venv from its lock (uv; the gate comes from the duck package, a path source)
+	@cd $(CONTROL_DIR) && uv sync --frozen && echo "control-sync PASS"
+
 .PHONY: duck-sync viewer-sync
 duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its dev tools: the tests need rerun-sdk)
 	@cd $(DUCK_DIR) && uv sync --frozen && echo "duck-sync PASS"
@@ -65,7 +72,8 @@ viewer-sync: ## Create/refresh the viewer's venv from its lock (uv, with Playwri
 .PHONY: lint
 lint: ## Byte-compile every Python file of every project
 	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
-	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(VIEWER_DIR)/src $(VIEWER_DIR)/tests >/dev/null \
+	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(VIEWER_DIR)/src $(VIEWER_DIR)/tests \
+	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests >/dev/null \
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
 	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
@@ -89,7 +97,13 @@ VIEWER_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test
 VIEWER_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py
 
-.PHONY: test-duck test-viewer test-viewer-pages
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py
+
+.PHONY: test-control test-duck test-viewer test-viewer-pages
+test-control: control-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)
+	$(call run_tests,$(CONTROL_DIR),$(CONTROL_TESTS),)
+	@echo "test-control PASS"
+
 test-duck: duck-sync ## The duck's navigator and tools, no simulator
 	$(call run_tests,$(DUCK_DIR),$(DUCK_TESTS),)
 	@echo "test-duck PASS"
@@ -191,7 +205,7 @@ test-viewer-image: ## miniview's image: build it, run it with the data read only
 # ---- Composite tiers ---------------------------------------------------------
 
 .PHONY: ci-fast
-ci-fast: lint test-unit test-duck test-viewer ## What every push must pass (fast feedback): every project's unit tests
+ci-fast: lint test-unit test-duck test-viewer test-control ## What every push must pass (fast feedback): every project's unit tests
 	@echo "ci-fast PASS"
 
 .PHONY: ci
@@ -211,6 +225,11 @@ nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot 
 .PHONY: nxt-image
 nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs viewer/ too, ADR-0013)
 	docker build -f $(NXT_DIR)/Dockerfile -t $(NXT_IMAGE) .
+
+.PHONY: control-run
+control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (control/robots.example), state in $(CONTROL_STATE)
+	@mkdir -p $(CONTROL_STATE)
+	cd $(CONTROL_DIR) && exec uv run --frozen mission-control serve --robots robots.example --state $(CONTROL_STATE) --host 127.0.0.1 --port $(CONTROL_PORT)
 
 .PHONY: viewers viewers-down
 viewers: viewer-up ## The viewers on loopback: miniview (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)

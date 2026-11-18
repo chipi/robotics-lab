@@ -1,0 +1,23 @@
+{
+  "id": "fake-1",
+  "label": "Fake robot",
+  "kind": "fake",
+  "adapter": {"type": "fake", "call_timeout_s": 2.0},
+  "capabilities": {
+    "drive": {"max_vx": 0.5, "max_vyaw": 1.5, "deadman_s": 0.5},
+    "sensors": [],
+    "recognisers": [{"name": "fake-camera", "kinds": ["fridge", "sofa", "desk", "plant"], "frame": "site"}],
+    "localisation": {"frame": "site", "how": "dock"},
+    "map": {"kind": "occupancy_grid", "resolution_m": 0.5},
+    "navigator": {
+      "goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"],
+      "conditions": ["within_m", "within_s", "facing_deg"]
+    },
+    "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"],
+    "skills": [],
+    "description": "fake"
+  },
+  "guardrails": [{"name": "max_speed", "mps": 0.5}],
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
+  "takeover": ["operator-laptop"]
+}

@@ -1,0 +1,26 @@
+# Mission Control's service (RFC-0014 §3.13). Published on loopback only; to reach it from the tailnet put the tailnet address
+# in MC_BIND. The robot files are mounted read only, the state (the SQLite store and the gates' logs) is a folder on the host.
+# MC_ROBOTS_DIR and MC_STATE_DIR are the host's folders; the workstation's paths are the defaults here only.
+# Not built or run in the work that wrote it: see RFC-0014's status line.
+name: mission-control
+services:
+  mission-control:
+    build:
+      context: ..
+      dockerfile: control/Dockerfile
+    image: mission-control:local
+    user: "${MC_UID:-1000}:${MC_GID:-1000}"
+    ports:
+      - "${MC_BIND:-127.0.0.1}:${MC_PORT:-8060}:8060"
+    environment:
+      MC_ROBOTS: /config/robots
+      MC_STATE: /state
+    volumes:
+      - type: bind
+        source: "${MC_ROBOTS_DIR:-./robots.example}"
+        target: /config/robots
+        read_only: true
+      - type: bind
+        source: "${MC_STATE_DIR:-/work/robotics-lab/state/control}"
+        target: /state
+    restart: unless-stopped

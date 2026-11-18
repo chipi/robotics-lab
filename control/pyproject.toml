@@ -1,0 +1,23 @@
+[project]
+name = "mission-control"
+version = "0.1.0"
+description = "Mission Control (RFC-0014): one API for every robot, goals, sites and areas; every robot behind the gate of RFC-0017"
+requires-python = ">=3.10"
+dependencies = [
+    "duck-lab",
+]
+
+# The gate (RFC-0017) is a library in the duck package: a path source, like nxt-web's miniview, so there is one copy of the rules.
+[tool.uv.sources]
+duck-lab = { path = "../duck", editable = true }
+miniview = { path = "../viewer", editable = true }
+
+[project.scripts]
+mission-control = "mission_control.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mission_control"]

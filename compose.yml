@@ -1,0 +1,9 @@
+# The Observatory (miniview) and Mission Control together (RFC-0014 §3.13): `docker compose up -d` from the repository root
+# starts both, each from its own compose file, on loopback (miniview :8070, Mission Control :8060). Each file also works on its own
+# (`make viewer-up`, control/compose.yml). Needs Docker Compose 2.20 or newer for `include`.
+# This project is `robotics-lab`; `make viewer-up` runs the project `miniview`. Do not start both while one holds :8070.
+# Parsed with `docker compose config` only: never built or run in the work that wrote it.
+name: robotics-lab
+include:
+  - viewer/compose.yml
+  - control/compose.yml
