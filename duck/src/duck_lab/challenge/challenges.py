@@ -217,12 +217,17 @@ def small_boxes(seed: int, rng: random.Random) -> Scene:
 
 
 def threshold(seed: int, rng: random.Random) -> Scene:
-    """A threshold or bump that tilts the duck: a bar 1-3 cm high and 4 cm deep across a 0.8 m corridor, 0.8-1.2 m
+    """A threshold or bump that tilts the duck: a bar 0.5-1.0 cm high and 4 cm deep across a 0.8 m corridor, 0.8-1.2 m
     ahead, stepped over on the way to the goal 1.4-1.8 m beyond it. A raised floor strip, not an obstacle: the duck
-    walks on it. Tests false drops from pitch (RFC-0008 §3, trial 12)."""
-    x, h, beyond = rng.uniform(0.8, 1.2), rng.uniform(0.01, 0.03), rng.uniform(1.4, 1.8)
+    walks on it. Tests false drops from pitch (RFC-0008 §3, trial 12). Heights within what the walking crosses
+    (docs/wip/STEPS.md: 1 cm 2/3 at 0.3 m/s, 4/5 at 0.4; 1.5 cm 1/3 and 0/5; the operator 2026-11-18: challenges follow
+    the robot's capability); 1.5 cm and up is a later challenge, "too high to cross: stop, do not fall"."""
+    x, h, beyond = rng.uniform(0.8, 1.2), rng.uniform(0.005, 0.01), rng.uniform(1.4, 1.8)
     end = x + beyond + 0.6
-    floors = [slab("floor", -0.6, end, -0.4, 0.4), slab("threshold", x - 0.02, x + 0.02, -0.4, 0.4, top=h)]
+    # edge to edge, not a bar laid on a floor running under it: the simulator tripped the duck on that build (1 cm: 0/3
+    # crossed against 2/3 in pieces, docs/wip/STEPS.md), which was most of this challenge's 0/10
+    floors = [slab("floor", -0.6, x - 0.02, -0.4, 0.4), slab("threshold", x - 0.02, x + 0.02, -0.4, 0.4, top=h),
+              slab("floor_beyond", x + 0.02, end, -0.4, 0.4)]
     return Scene(f"ch16-s{seed}", "A threshold to step over", _walled("corr", -0.6, end, -0.4, 0.4), floors,
                  (x + beyond, 0.0), "reach", 75.0, notes={"height_m": round(h, 3), "at_m": round(x, 3)})
 

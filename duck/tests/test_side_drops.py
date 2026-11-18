@@ -189,5 +189,30 @@ behind = [(0.0, -0.5, "below")] + [(0.0, y, "floor") for y in (0.1, 0.3)]
 check("a below-floor return behind the look's floor does not make the floor a rim",
       edge_from_glance([behind], (0.0, 0.0), math.pi / 2)[0] == [])
 
+# the depth-frame thread adds suspicions while a glance clears them (challenge 9 seed 2, gate6, 2026-11-18: "Set changed
+# size during iteration" in clear, the run lost); here the add happens inside clear's own iteration, the same shape
+def suspected_meanwhile(method):
+    mem = SuspectMemory()
+    for _ in range(SUSPECT_FRAMES):
+        mem.add_frame([(0.3, 0.0, "below"), (0.5, 0.0, "below")])
+
+    class Meanwhile:
+        def __iter__(self):
+            for _ in range(SUSPECT_FRAMES):
+                mem.add_frame([(0.9, 0.9, "below")])
+            yield (0.3, 0.0)
+    try:
+        getattr(mem, method)(Meanwhile(), 0.05)
+    except RuntimeError as e:
+        return str(e)
+    return mem
+
+
+for method in ("clear", "confirm_near"):
+    after = suspected_meanwhile(method)
+    check(f"{method} while a frame adds a suspicion: no crash, the new one kept, the one near the floor gone",
+          isinstance(after, SuspectMemory) and (0.9, 0.9) in after.points() and (0.3, 0.0) not in after.points(),
+          after if isinstance(after, str) else after.points())
+
 print("SIDE-DROPS", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

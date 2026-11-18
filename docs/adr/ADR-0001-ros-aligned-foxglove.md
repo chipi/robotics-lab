@@ -4,6 +4,8 @@
 [RFC-0007](../rfc/RFC-0007-platform.md) (proposed): the Foxglove app is an interim viewer; the target
 is an open-source viewer within our own platform — chosen in
 [ADR-0002](ADR-0002-viewers-rerun-and-lichtblick.md): Rerun first, Lichtblick kept usable.
+Decision 1 amended by [ADR-0018](ADR-0018-ros2-in-a-container-for-comparison.md) (accepted
+2026-11-18): ROS 2 may run in a container as a comparison and learning tool.
 **Date:** 2026-11-14
 **Context from:** [RFC-0002](../rfc/RFC-0002-robot-brain.md) §3.7–3.9 (frames, navigator, link),
 [RFC-0003](../rfc/RFC-0003-robot-interface.md) (one robot interface).
