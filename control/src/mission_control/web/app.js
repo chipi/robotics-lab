@@ -21,14 +21,17 @@ function h(tag, attrs, ...kids) {
 
 const S = {
   robots: [], robot: null, sites: [], site: null, objects: [], areas: [], map: null, goals: [], runs: [], run: null,
-  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null,
+  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null, token: null,
 };
 
 async function api(method, path, body) {
-  const res = await fetch(API + path, { method, headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body) });
+  const headers = { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(S.token ? { Authorization: "Bearer " + S.token } : {}) };
+  const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await res.json();
-  if (!j.ok) { const e = new Error(j.error.message); e.code = j.error.code; e.data = j.error; throw e; }
+  if (!j.ok) {
+    if (res.status === 401) $("tokenbox").hidden = false;          // this server wants a token (RFC-0014 section 3.9); STOP never does
+    const e = new Error(j.error.message); e.code = j.error.code; e.data = j.error; throw e;
+  }
   return j;
 }
 
@@ -48,6 +51,7 @@ function effectiveTheme() {
   return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 }
 try { const t = localStorage.getItem("mc-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage may be off */ }
+try { S.token = localStorage.getItem("mc-token") || null; } catch (e) { /* storage may be off */ }
 $("theme").addEventListener("click", () => {
   const next = effectiveTheme() === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
@@ -403,13 +407,13 @@ $("stop-robot").addEventListener("click", guard(async () => {
   if (!r) return;
   const j = await api("POST", `/robots/${r.id}/stop`, { client: "page" });
   toast(j.stop.confirmed ? `${r.id} stopped.` : `${r.id}: STOP sent, but the robot did not answer, so it cannot be confirmed.`, !j.stop.confirmed);
-  await Promise.all([refreshRobot(r.id), loadRuns()]);
+  await Promise.all([refreshRobot(r.id), loadRuns()]).catch(() => {});
 }));
 $("stop-all").addEventListener("click", guard(async () => {
   const j = await api("POST", "/stop", { client: "page" });
   const bad = j.stop.robots.filter((r) => !r.confirmed).map((r) => r.robot);
   toast(bad.length ? `STOP sent to all. Not confirmed: ${bad.join(", ")}.` : "All robots stopped.", bad.length > 0);
-  await Promise.all([loadRobots(), loadRuns()]);
+  await Promise.all([loadRobots(), loadRuns()]).catch(() => {});   // the stop is done; a refresh a token refuses must not hide it
 }));
 
 // --- the map ---------------------------------------------------------------------------------------------
@@ -568,7 +572,7 @@ function onEvent(e) {
 }
 
 function connect() {
-  const es = new EventSource(API + "/events");
+  const es = new EventSource(API + "/events" + (S.token ? "?token=" + encodeURIComponent(S.token) : ""));
   S.es = es;
   const conn = $("conn");
   es.onopen = () => {
@@ -592,4 +596,12 @@ async function loadAll() {
 }
 
 window.__mc = { S, renderAreas, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
-guard(async () => { renderGoalFields(); await loadAll(); connect(); S.ready = true; })();
+async function start() { renderGoalFields(); await loadAll(); connect(); S.ready = true; }
+$("token-set").addEventListener("click", guard(async () => {
+  S.token = $("token").value.trim();
+  try { localStorage.setItem("mc-token", S.token); } catch (e) { /* storage may be off */ }
+  $("tokenbox").hidden = true;
+  if (S.es) S.es.close();
+  await start();
+}));
+guard(start)();

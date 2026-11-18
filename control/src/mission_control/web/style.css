@@ -121,6 +121,8 @@ pre.json { margin: 4px 0; padding: 6px; max-height: 160px; overflow: auto; backg
   border-radius: 6px; padding: 8px 12px; z-index: 30; box-shadow: 0 4px 16px #0006; }
 #toast.err { border-color: var(--error); color: var(--error); }
 #toast[hidden] { display: none; }
+#tokenbox[hidden] { display: none; }
+#tokenbox input { width: 130px; }
 a.watch { color: var(--accent); }
 a.watch[aria-disabled="true"] { color: var(--text-faint); pointer-events: none; text-decoration: none; }
 

@@ -299,6 +299,31 @@ with sync_playwright() as p:
     check("STOP is still on screen", stop_visible())
 
     check("no script error and no console error in the whole session", errors == [], errors)
+
+    # --- a server that wants tokens ---------------------------------------------------------------------
+    _, TOKEN = mc.tokens.create("page")
+    srv2 = serve(mc, "127.0.0.1", 0, require_tokens=True)
+    threading.Thread(target=srv2.serve_forever, daemon=True).start()
+    BASE2 = f"http://127.0.0.1:{srv2.server_address[1]}"
+    page2 = browser.new_context(viewport={"width": 390, "height": 800}).new_page()
+    page2.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+    page2.goto(BASE2 + "/")
+    wait(page2, "!document.getElementById('tokenbox').hidden")
+    check("with tokens required the page loads and asks for one", page2.locator("#token").is_visible())
+    check("STOP ALL works before any token is entered", (page2.click("#stop-all"), True)[1])
+    wait(page2, "document.getElementById('toast').textContent.toLowerCase().includes('stop')")
+    page2.fill("#token", "mc_wrong")
+    page2.click("#token-set")
+    wait(page2, "!document.getElementById('tokenbox').hidden")
+    check("a wrong token asks again", page2.locator("#token").is_visible())
+    page2.fill("#token", TOKEN)
+    page2.click("#token-set")
+    wait(page2, "window.__mc.ready && document.getElementById('robot-fake-1') && document.getElementById('conn').textContent === 'live'", 25000)
+    check("the right token: the robots load and the event stream is live", page2.locator("#robot-fake-1").get_attribute("data-online") == "true"
+          and page2.locator("#tokenbox").is_hidden())
+    check("and it is kept for the next visit", page2.evaluate("localStorage.getItem('mc-token')") == TOKEN)
+    srv2.shutdown()
+    srv2.server_close()
     browser.close()
 
 srv.shutdown()

@@ -190,7 +190,7 @@ with tempfile.TemporaryDirectory() as tmp:
     store = Store(path)
     cols = {r["name"] for r in store.all("PRAGMA table_info(goal_runs)")}
     check("a store of version 1 is brought to this one: the run table gains parent_id and share, the old run is kept",
-          {"parent_id", "share"} <= cols and store.one("SELECT COUNT(*) AS n FROM goal_runs")["n"] == 1 and store.one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION == 2)
+          {"parent_id", "share"} <= cols and store.one("SELECT COUNT(*) AS n FROM goal_runs")["n"] == 1 and store.one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION)
     store.close()
     db = sqlite3.connect(path)
     db.execute("PRAGMA user_version = 99")

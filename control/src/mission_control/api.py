@@ -10,10 +10,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from .auth import unauthorized
 from .core import MissionControl
 from .errors import ApiError, invalid, not_found
 
 API = "/api/v1"
+# What needs no token even when tokens are required: the health check, and STOP, which is open to everybody (RFC-0017 §3.4).
+OPEN_ROUTES = ("health", "stop", "stop_all")
 WEB = Path(__file__).resolve().parent / "web"
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
                  ".svg": "image/svg+xml"}
@@ -57,10 +60,15 @@ def route(method: str, pattern: str):
 class Ctx:
     """What a route function gets: the core, the path's parts, the query, the body."""
 
-    def __init__(self, mc: MissionControl, args: dict, query: dict, body, headers, server):
+    def __init__(self, mc: MissionControl, args: dict, query: dict, body, headers, server, identity: str | None = None):
         self.mc, self.args, self.query, self.body, self.headers, self.server = mc, args, query, body, headers, server
+        self.identity = identity            # the client a valid token names, else None
 
     def client(self) -> str:
+        """Who is calling: what the token says, else (home-lab mode) what the caller says, else 'api'. A token's client cannot
+        be overridden: it is how a client is held to the name it was given."""
+        if self.identity:
+            return self.identity
         name = self.body.get("client") if isinstance(self.body, dict) else None
         return str(name or self.headers.get("X-Client") or "api")
 
@@ -96,7 +104,7 @@ def drive(c: Ctx):
 
 @route("POST", "/robots/{id}/lock")
 def lock_acquire(c: Ctx):
-    return {"ok": True, "lock": c.mc.robot(c.args["id"]).acquire(c.body.get("client"))}
+    return {"ok": True, "lock": c.mc.robot(c.args["id"]).acquire(c.identity or c.body.get("client"))}
 
 
 @route("POST", "/robots/{id}/lock/renew")
@@ -112,7 +120,7 @@ def lock_release(c: Ctx):
 
 @route("POST", "/robots/{id}/lock/takeover")
 def lock_takeover(c: Ctx):
-    return {"ok": True, "lock": c.mc.robot(c.args["id"]).acquire(c.body.get("client"), takeover=True)}
+    return {"ok": True, "lock": c.mc.robot(c.args["id"]).acquire(c.identity or c.body.get("client"), takeover=True)}
 
 
 @route("POST", "/robots/{id}/stop")
@@ -176,12 +184,12 @@ def goal_delete(c: Ctx):
 
 @route("POST", "/goals/{id}/runs")
 def goal_run(c: Ctx):
-    return 201, {"ok": True, "run": c.mc.run_goal(_int(c.args["id"], "goal"), c.body)}
+    return 201, {"ok": True, "run": c.mc.run_goal(_int(c.args["id"], "goal"), c.body, c.client())}
 
 
 @route("POST", "/goal-runs")
 def adhoc_run(c: Ctx):
-    return 201, {"ok": True, "run": c.mc.run_adhoc(c.body)}
+    return 201, {"ok": True, "run": c.mc.run_adhoc(c.body, c.client())}
 
 
 @route("GET", "/goal-runs")
@@ -331,6 +339,25 @@ def guardrails_put(c: Ctx):
     return {"ok": True, "guardrails": c.mc.sites.set_guardrails(c.args["s"], c.body.get("guardrails"))}
 
 
+# --- tokens (§3.9) -------------------------------------------------------------------------------------
+
+@route("GET", "/tokens")
+def tokens_list(c: Ctx):
+    return {"ok": True, "tokens": c.mc.tokens.list(), "required": c.server.require_tokens}
+
+
+@route("POST", "/tokens")
+def tokens_create(c: Ctx):
+    """A new token for a client. The token is in this reply and nowhere else: only its hash is kept."""
+    tid, token = c.mc.tokens.create(c.body.get("client"))
+    return 201, {"ok": True, "token": {"id": tid, "client": c.body["client"].strip(), "token": token}}
+
+
+@route("DELETE", "/tokens/{id}")
+def token_revoke(c: Ctx):
+    return {"ok": True, "token": c.mc.tokens.revoke(_int(c.args["id"], "token"))}
+
+
 # --- the live stream ---------------------------------------------------------------------------------
 
 @route("GET", "/events")
@@ -419,6 +446,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _identity(self, query: dict) -> str | None:
+        """The client a valid token names. The token is `Authorization: Bearer ...`, or `?token=` (an EventSource sets no header)."""
+        auth = self.headers.get("Authorization", "")
+        token = auth[len("Bearer "):] if auth.startswith("Bearer ") else (query.get("token") or [None])[0]
+        return self.server.mc.tokens.verify(token) if token else None
+
     def _body(self):
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
@@ -448,8 +481,13 @@ class Handler(BaseHTTPRequestHandler):
                 if known:
                     raise ApiError(405, "method_not_allowed", f"{method} is not allowed here: {sorted({r.method for r in known})}")
                 raise ApiError(404, "no_route", f"no such path {url.path}")
+            query = parse_qs(url.query)
+            identity = self._identity(query)
+            if self.server.require_tokens and identity is None and r.fn.__name__ not in OPEN_ROUTES:
+                raise unauthorized("this server wants a token: Authorization: Bearer mc_... (the event stream also takes ?token=)"
+                                   if "Authorization" not in self.headers and "token" not in query else "that token is not valid (revoked or unknown)")
             body = self._body() if method in ("POST", "PUT", "DELETE") else {}
-            ctx = Ctx(self.server.mc, m.groupdict(), parse_qs(url.query), body, self.headers, self.server)
+            ctx = Ctx(self.server.mc, m.groupdict(), query, body, self.headers, self.server, identity)
             result = r.fn(ctx)
             if isinstance(result, tuple) and result and result[0] == "stream":
                 serve_events(self, result[1])
@@ -483,9 +521,10 @@ class Handler(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, mc: MissionControl):
+    def __init__(self, address, mc: MissionControl, require_tokens: bool = False):
         super().__init__(address, Handler)
         self.mc = mc
+        self.require_tokens = require_tokens
         self.stopping = threading.Event()
 
     def shutdown(self) -> None:
@@ -494,6 +533,6 @@ class Server(ThreadingHTTPServer):
         super().shutdown()
 
 
-def serve(mc: MissionControl, host: str = "127.0.0.1", port: int = 8060) -> Server:
+def serve(mc: MissionControl, host: str = "127.0.0.1", port: int = 8060, require_tokens: bool = False) -> Server:
     """Build the server; the caller runs `serve_forever` (in a thread, for a test)."""
-    return Server((host, port), mc)
+    return Server((host, port), mc, require_tokens)

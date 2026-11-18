@@ -54,17 +54,19 @@ class Refused(ToolError):
 
 
 class Api:
-    def __init__(self, base_url: str = DEFAULT_URL, client: str = DEFAULT_CLIENT, allow_real: bool = False):
+    def __init__(self, base_url: str = DEFAULT_URL, client: str = DEFAULT_CLIENT, allow_real: bool = False, token: str | None = None):
         self.base = base_url.rstrip("/") + "/api/v1"
         self.client = client
         self.allow_real = allow_real
+        self.token = token             # when Mission Control wants tokens: the token names this agent, and its name is the token's
 
     def call(self, method: str, path: str, body: dict | None = None, query: dict | None = None) -> dict:
         if not any(m == method and rx.match(path) for m, rx in ALLOWED):
             raise Refused(f"refused: an agent may not call {method} {path}")
         url = self.base + path + ("?" + "&".join(f"{k}={quote(str(v))}" for k, v in query.items() if v is not None) if query else "")
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json", "X-Client": self.client})
+        headers = {"Content-Type": "application/json", "X-Client": self.client, **({"Authorization": f"Bearer {self.token}"} if self.token else {})}
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
                 return json.loads(resp.read())
@@ -81,9 +83,9 @@ class Api:
         return target
 
 
-def build_server(base_url: str | None = None, client: str | None = None, allow_real: bool | None = None) -> MCPServer:
+def build_server(base_url: str | None = None, client: str | None = None, allow_real: bool | None = None, token: str | None = None) -> MCPServer:
     api = Api(base_url or os.environ.get("MC_URL", DEFAULT_URL), client or os.environ.get("MC_MCP_CLIENT", DEFAULT_CLIENT),
-              os.environ.get("MC_MCP_ALLOW_REAL") == "1" if allow_real is None else allow_real)
+              os.environ.get("MC_MCP_ALLOW_REAL") == "1" if allow_real is None else allow_real, token or os.environ.get("MC_TOKEN"))
     mcp = MCPServer("mission-control", instructions=(
         "Mission Control: the operator's robots, goals, sites and areas. Read first (list_robots, get_robot, list_sites), "
         "then set a goal with run_goal or run_adhoc_goal and follow it with get_run. stop_robot and stop_all are always allowed. "

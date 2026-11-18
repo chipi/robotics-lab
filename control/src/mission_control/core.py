@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import goals, guardrails, planner
 from .errors import ApiError, conflict, invalid, not_found
+from .auth import Tokens
 from .events import EventBus
 from .robots import RobotRuntime, make_adapter
 from .sites import Sites
@@ -48,6 +49,7 @@ class MissionControl:
         self.store = Store(self.state_dir / "mission-control.sqlite" if self.state_dir else None)
         self.bus = EventBus(wall)
         self.sites = Sites(self.store, wall)
+        self.tokens = Tokens(self.store, wall)
         self.robots: dict = {}
         for cfg in robot_configs:
             rt = RobotRuntime(cfg, make_adapter(cfg, clock), clock=clock, wall=wall, bus=self.bus,
@@ -227,14 +229,14 @@ class MissionControl:
 
     # --- goal runs ------------------------------------------------------------------------------------
 
-    def run_goal(self, gid: int, body) -> dict:
+    def run_goal(self, gid: int, body, client: str | None = None) -> dict:
         row = self._goal_row(gid)
-        return self._start_run(loads(row["spec"]), body, gid)
+        return self._start_run(loads(row["spec"]), body, gid, client)
 
-    def run_adhoc(self, body) -> dict:
+    def run_adhoc(self, body, client: str | None = None) -> dict:
         if not isinstance(body, dict) or "goal" not in body:
             raise invalid("body is {goal, robots, target}")
-        return self._start_run(body["goal"], body, None)
+        return self._start_run(body["goal"], body, None, client)
 
     def _site_of(self, body: dict, rt: RobotRuntime):
         site = body.get("site") or self.sites.robot_site(rt.cfg.id)
@@ -260,11 +262,11 @@ class MissionControl:
             p["areas"] = [self._area_id(site_id, a) for a in p["areas"]]
         return p
 
-    def _start_run(self, goal_spec, body, goal_id) -> dict:
+    def _start_run(self, goal_spec, body, goal_id, client: str | None = None) -> dict:
         if not isinstance(body, dict):
             raise invalid("body is {robots, target, site?}")
         if body.get("team") is not None or (isinstance(body.get("robots"), list) and len(body["robots"]) > 1):
-            return self._start_group(goal_spec, body, goal_id)
+            return self._start_group(goal_spec, body, goal_id, client)
         robots = body.get("robots")
         if not isinstance(robots, list) or not robots or not all(isinstance(r, str) for r in robots):
             raise invalid("robots is a list with the ids of the robots to run on, or team names a team")
@@ -283,7 +285,7 @@ class MissionControl:
         with rt.mutex:
             if rt.active:
                 raise conflict("robot_busy", f"goal run {rt.active.id} holds {rt.cfg.id}", goal_run=rt.active.id)
-            return self._create_and_start(rt, goal, goal_id, site_id, target)
+            return self._create_and_start(rt, goal, goal_id, site_id, target, None, client)
 
     # --- one goal on several robots (RFC-0014 §3.4.4) ----------------------------------------------------------
 
@@ -303,7 +305,7 @@ class MissionControl:
             self.robot(rid)
         return sorted(robots)
 
-    def _start_group(self, goal_spec, body: dict, goal_id) -> dict:
+    def _start_group(self, goal_spec, body: dict, goal_id, client: str | None = None) -> dict:
         """A goal run for several robots: a parent run and one child run per robot. `each`: every robot does the whole goal,
         independently, and the parent holds one result per robot. `any`: the first robot to reach it ends the goal and the
         others are cancelled. A robot that cannot take part is left out with its reason (a child run in the state refused); if none
@@ -325,22 +327,22 @@ class MissionControl:
         sites = {self._site_of(body, rt) for rt in rts}
         now = self.wall()
         parent_id = self.store.execute(
-            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, started_at, share)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, started_at, share, client)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (goal_id, dumps(goal), ",".join(ids), sites.pop() if len(sites) == 1 else None, target, "running", "[]",
-             dumps({"done_when": goal["done_when"], "not_checkable": []}), now, now, share))
-        self.bus.emit("goal-run", goal_run=parent_id, state="running", share=share, robots=ids)
+             dumps({"done_when": goal["done_when"], "not_checkable": []}), now, now, share, client))
+        self.bus.emit("goal-run", goal_run=parent_id, state="running", share=share, robots=ids, client=client)
         held = None
         for rt in rts:
             site_id = self._site_of(body, rt)
             if not rt.online():
-                self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"{rt.cfg.id} is offline: left out")
+                self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"{rt.cfg.id} is offline: left out", client)
                 continue
             with rt.mutex:
                 if rt.active:
-                    self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"goal run {rt.active.id} holds {rt.cfg.id}: left out")
+                    self._refuse_child(rt, goal, goal_id, parent_id, site_id, target, f"goal run {rt.active.id} holds {rt.cfg.id}: left out", client)
                     continue
-                child = self._create_and_start(rt, goal, goal_id, site_id, target, parent_id)
+                child = self._create_and_start(rt, goal, goal_id, site_id, target, parent_id, client)
             if child["state"] == "refused" and str(child["reason"]).startswith("driven by"):
                 held = (rt.cfg.id, child["reason"])
                 break
@@ -353,14 +355,14 @@ class MissionControl:
             self._refresh_group(parent_id)
         return self.get_run(parent_id)
 
-    def _refuse_child(self, rt: RobotRuntime, goal: dict, goal_id, parent_id: int, site_id, target, reason: str) -> int:
+    def _refuse_child(self, rt: RobotRuntime, goal: dict, goal_id, parent_id: int, site_id, target, reason: str, client=None) -> int:
         now = self.wall()
         run_id = self.store.execute(
             "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, reason, guardrails, conditions, as_expected, created_at,"
-            " ended_at, parent_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " ended_at, parent_id, client) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (goal_id, dumps(goal), rt.cfg.id, site_id, target, "refused", reason, "[]", dumps({"done_when": goal["done_when"], "not_checkable": []}),
-             int(goal["expect"] == "refuse"), now, now, parent_id))
-        self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="refused", reason=reason)
+             int(goal["expect"] == "refuse"), now, now, parent_id, client))
+        self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="refused", reason=reason, client=client)
         return run_id
 
     def _refresh_group(self, parent_id: int) -> None:
@@ -414,7 +416,7 @@ class MissionControl:
         except ApiError:
             pass                                   # it ended by itself in the meantime
 
-    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target, parent_id=None) -> dict:
+    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target, parent_id=None, client=None) -> dict:
         reason = None
         goal_guards = []
         for g in goal["must_not"]:
@@ -433,10 +435,10 @@ class MissionControl:
         conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal)}
         now = self.wall()
         run_id = self.store.execute(
-            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id))
-        self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued")
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id, client)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id, client))
+        self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued", client=client)
         reason = reason or goals.capability_refusal(caps, goal, merged, has_site=site_id is not None)
         params = None
         if reason is None:
@@ -549,7 +551,7 @@ class MissionControl:
             "conditions": loads(row["conditions"]), "run_key": row["run_key"], "watch": self._watch(row),
             "expect": expected, "as_expected": None if row["as_expected"] is None else bool(row["as_expected"]),
             "created_at": row["created_at"], "started_at": row["started_at"], "ended_at": row["ended_at"],
-            "parent_id": row["parent_id"], "share": row["share"],
+            "parent_id": row["parent_id"], "share": row["share"], "client": row["client"],
         }
         if row["share"]:
             view["robots"] = row["robot"].split(",")

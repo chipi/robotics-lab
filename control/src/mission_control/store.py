@@ -7,11 +7,18 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-# version -> what takes a store of that version to the next. 2: one goal on several robots (RFC-0014 section 3.4.4): a run
-# may have a parent (the group) and a group says how its robots share the goal.
-MIGRATIONS = {1: "ALTER TABLE goal_runs ADD COLUMN parent_id INTEGER; ALTER TABLE goal_runs ADD COLUMN share TEXT;"}
+# version -> what takes a store of that version to the next.
+MIGRATIONS = {
+    # to 2: one goal on several robots (RFC-0014 section 3.4.4): a run may have a parent (the group) and a group says how its
+    # robots share the goal
+    1: "ALTER TABLE goal_runs ADD COLUMN parent_id INTEGER; ALTER TABLE goal_runs ADD COLUMN share TEXT;",
+    # to 3: per-client tokens, and the client a goal run was commanded by (RFC-0014 section 3.9)
+    2: "ALTER TABLE goal_runs ADD COLUMN client TEXT;"
+       " CREATE TABLE tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, client TEXT NOT NULL, hash TEXT NOT NULL UNIQUE,"
+       " created_at REAL NOT NULL, revoked_at REAL);",
+}
 
 SCHEMA = """
 CREATE TABLE sites (
@@ -37,7 +44,10 @@ CREATE TABLE goal_runs (
   robot TEXT NOT NULL, site_id TEXT, target TEXT NOT NULL, state TEXT NOT NULL, reason TEXT,
   progress TEXT, result TEXT, broken TEXT, guardrails TEXT NOT NULL, conditions TEXT NOT NULL,
   run_key TEXT, as_expected INTEGER, created_at REAL NOT NULL, started_at REAL, ended_at REAL,
-  parent_id INTEGER, share TEXT);
+  parent_id INTEGER, share TEXT, client TEXT);
+CREATE TABLE tokens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, client TEXT NOT NULL, hash TEXT NOT NULL UNIQUE,
+  created_at REAL NOT NULL, revoked_at REAL);
 CREATE TABLE decisions (
   run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,
   text TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, n));

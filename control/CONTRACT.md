@@ -3,7 +3,8 @@
 `mission-control serve` (or `make control-run`; the image of `control/Dockerfile`) serves the API on
 `--host`/`MC_HOST` (default `127.0.0.1`) and `--port`/`MC_PORT` (default 8060). The robot files are
 read from `--robots`/`MC_ROBOTS`, the SQLite store and the gates' logs are kept in
-`--state`/`MC_STATE`. There is no login: the tailnet is the authentication in v1 (RFC-0014 §3.9).
+`--state`/`MC_STATE`. By default there is no login: the tailnet is the authentication (RFC-0014 §3.9);
+`--require-tokens` adds per-client tokens (below).
 `tests/test_api.py` checks this file against a running server. Units SI (metres, radians, seconds).
 Every response that carries a position names its `frame`; the one frame so far is `site`.
 
@@ -16,6 +17,7 @@ is `{"ok": false, "error": {"code", "message", ...data}}` with an honest status 
 | --- | --- |
 | 400 | `bad_json` |
 | 403 | `not_allowed` (takeover by a name not on the robot's list) |
+| 401 | `unauthorized` (tokens are required and the call has none, or one that is not valid) |
 | 404 | `not_found` (`what`, `id`), `no_route`, `no_map`, `no_recogniser` |
 | 405 | `method_not_allowed` |
 | 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use` |
@@ -269,6 +271,29 @@ may not do, and how:
   started the server with `--allow-real` or `MC_MCP_ALLOW_REAL=1`; anything else is refused before the
   call leaves the process.
 - **Refuse a STOP** or be refused one: not possible; the tools have no limit.
+
+## Per-client tokens
+
+`mission-control serve --require-tokens` (env `MC_REQUIRE_TOKENS=1`) makes every call carry a token
+that names its client: `Authorization: Bearer mc_...`, or `?token=` on the event stream, which a browser
+cannot give a header. It refuses to start while no token exists. Without the flag nothing changes: every
+call works and a client names itself in the body.
+
+- **Make, list, revoke**: `mission-control token create --client NAME` prints the token once; only its
+  sha256 is kept. `token list` shows id, client and state, never the token. `token revoke ID` ends it.
+  Over the API (with a token): `GET /tokens` (`required`, `tokens`), `POST /tokens {client}` (201, the
+  token shown once) and `DELETE /tokens/{id}` (a second revoke is 409, an unknown id 404). The MCP
+  server cannot reach these routes.
+- **Always open, with no token or a wrong one**: STOP (`POST /robots/{id}/stop`, `POST /stop`),
+  `GET /health` and the page's own files (it has to load to ask for a token). A STOP with a valid
+  token is logged under the token's client, otherwise under the name it gave.
+- **The token is the identity**: a lock, a takeover, a goal run and a STOP are recorded under the
+  token's client, whatever `client` the body says. A takeover is therefore for the names on a robot's
+  list only by token. The run carries `client`; so do the `goal-run` and `stop` events.
+- **The MCP server** takes `--token` / `MC_TOKEN` and speaks as that client.
+- **The page** shows a token box when a call is answered 401, keeps the token in `localStorage`
+  (`mc-token`), and STOP and STOP ALL work before any token is entered.
+- Tokens are not encryption: over plain HTTP a token is as visible as the tailnet lets it be.
 
 ## The page
 
