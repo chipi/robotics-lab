@@ -38,7 +38,7 @@ stops, log = [], []
 lock = Lock(lambda: stops.append(now[0]), clock=lambda: now[0], wall=lambda: 1_000_000.0, lease_s=20.0,
             takeover_names={"operator"}, event=lambda kind, **d: log.append((kind, d)))
 
-check("free: anyone without a session may still drive (the page does not take the lock yet)", lock.check(None) is None)
+check("free: a command with no session is refused with no_lease (no lease, no motion)", (refused(lock.check, None) or LockError("", "")).code == "no_lease")
 a = lock.acquire("mission-control")
 check("acquire gives a session and a lease id", a["lease_id"] == 1 and len(a["session"]) == 16, a)
 err = refused(lock.acquire, "script")
@@ -160,7 +160,8 @@ base = f"http://127.0.0.1:{port}"
 try:
     check("GET /api/lock: free", call(base, "/api/lock")[1]["holder"] is None)
     code, r = call(base, "/api/drive", {"left": 30, "right": 30})
-    check("free: an unlocked drive still works", code == 200, (code, r))
+    check("free: a drive with no session is refused: no lease, no motion", code == 409 and r["lock"] == "no_lease", (code, r))
+    check("and nothing moved", call(base, "/api/status")[1]["left"] == 0 and call(base, "/api/status")[1]["right"] == 0)
     code, a = call(base, "/api/lock", {"action": "acquire", "client": "mission-control"})
     check("acquire over HTTP", code == 200 and a["ok"] and a["session"] and a["lease_id"] == 1, a)
     code, r = call(base, "/api/lock", {"action": "acquire", "client": "page"})
@@ -215,9 +216,9 @@ try:
     code, r = upload(base, "late.rxe", b"\x01", session=a["session"])
     check("the latched session cannot upload either", code == 409 and r["lock"] == "lease_ended" and r["reason"] == "stopped_by page" and "late.rxe" not in on_brick(base), r)
     code, r = upload(base, "free.rxe", b"\x01")
-    check("free: an upload with no session still works (the page does not take the lock)", code == 200 and "free.rxe" in on_brick(base), r)
-    code, r = call(base, "/api/files/delete", {"name": "free.rxe"})
-    check("free: so does a delete", code == 200 and "free.rxe" not in on_brick(base), r)
+    check("free: an upload with no session is refused too", code == 409 and r["lock"] == "no_lease" and "free.rxe" not in on_brick(base), r)
+    code, r = call(base, "/api/files/delete", {"name": "demo.rxe"})
+    check("and so is a delete, which left the file", code == 409 and r["lock"] == "no_lease" and "demo.rxe" in on_brick(base), r)
     code, a2 = call(base, "/api/lock", {"action": "acquire", "client": "mission-control"})
     check("acquire clears it", code == 200 and a2["lease_id"] == 2)
     code, t = call(base, "/api/lock", {"action": "takeover", "client": "operator"})

@@ -124,6 +124,13 @@ test-control-page: viewer-sync ## Mission Control's page in headless Chromium at
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-control-page PASS"
 
+.PHONY: test-nxt-page
+test-nxt-page: viewer-sync nxt-sync ## nxt-web's page takes, keeps and gives back the control lock, in headless Chromium against nxt-web --fake (the viewer's Playwright; never a real brick)
+	@log=$$(mktemp); \
+	  if (cd $(VIEWER_DIR) && uv run --frozen python ../$(NXT_DIR)/tests/test_page_lock.py) >$$log 2>&1; then echo "PASS $(NXT_DIR)/tests/test_page_lock.py"; \
+	  else echo "FAIL $(NXT_DIR)/tests/test_page_lock.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
+	@echo "test-nxt-page PASS"
+
 .PHONY: test-unit
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
 	@$(NXT_PY) $(NXT_DIR)/tests/test_deadman.py >/tmp/robotics-lab-test_deadman.log 2>&1 \

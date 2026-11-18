@@ -19,9 +19,14 @@ p = subprocess.Popen([str(NXT_WEB), "--port", str(PORT)],
                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 print("server:", p.stdout.readline().strip())
 try:
-    req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/drive", data=json.dumps({"left": 30, "right": 30}).encode(),
-                                 method="POST", headers={"Content-Type": "application/json"})
-    print("drive:", urllib.request.urlopen(req, timeout=5).read().decode())
+    def post(path, body):
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=json.dumps(body).encode(),
+                                     method="POST", headers={"Content-Type": "application/json"})
+        return urllib.request.urlopen(req, timeout=5).read().decode()
+
+    # no lease, no motion (RFC-0017): the control lock first, then the drive with its session
+    session = json.loads(post("/api/lock", {"action": "acquire", "client": "hw-stop-on-sigterm"}))["session"]
+    print("drive:", post("/api/drive", {"left": 30, "right": 30, "session": session}))
     time.sleep(0.2)
 finally:
     p.terminate()

@@ -1130,9 +1130,10 @@ kept to record where each answer went.
     areas stay the operator's. If an agent should draw areas, that is one more allowed route and
     tool.
   - **`nxt-web`:** the upload's session is the `session` query parameter (its body is the file); a
-    delete's is in its JSON body. With nobody holding the lock a call with no session still works,
-    as for drive, because the page does not take the lock yet; so while another client holds it,
-    the page's upload and delete are refused.
+    delete's is in its JSON body. The page now takes the lock (acquire on the first drive, a
+    keepalive every 5 s, release, who holds it in the header; its STOP stays open), so nxt-web
+    enforces "no lease, no motion": with nobody holding the lock a call with no session is refused
+    `no_lease`, as it is while another client holds it (`held`).
   - **The page test's flake** was found by running it under CPU load (2 of 6 runs failed): the test
     read the area list before the page had drawn it, and the two-press delete lived on the button,
     so a redraw disarmed it. Both fixed (16e5e7d); 8 of 8 passed under the same load.

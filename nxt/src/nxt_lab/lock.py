@@ -7,9 +7,9 @@ HTTP has no connection to tie a lease to, so a lease is tied to a *session*: a r
 so a client that comes back late is refused, as a reconnect would be on the duck. A holder that
 vanishes frees the robot when its lease runs out (there is no disconnect to react to).
 
-While nobody holds the lock a command without a session still drives: the page and the hardware
-scripts do not take it yet. Once it is held, only the holder drives. STOP is accepted from anyone
-and ends the lease."""
+No lease, no motion: a command that moves the robot (or starts or changes what does) needs the holder's session, and
+while nobody holds the lock it is refused with `no_lease`, so a client takes the lock first. STOP is accepted from
+anyone and ends the lease."""
 
 import secrets
 import threading
@@ -105,6 +105,7 @@ class Lock:
                 raise LockError("no_lease", "unknown session: acquire the lock first")
             if self._session is not None:
                 raise self._held()
+            raise LockError("no_lease", "no lease: take the control lock first (POST /api/lock, action acquire); STOP stays open")
 
     def keepalive(self, session: str | None) -> dict:
         self.check(session, "keepalive")

@@ -23,7 +23,28 @@ ENV = dict(os.environ, NXT_LAB_DATA=str(tmp), MINIVIEW_DATA=str(tmp / "miniview"
 RUNS = tmp / "runs"
 
 
+LOCKED = ("/api/drive", "/api/fire", "/api/program/start", "/api/program/stop", "/api/files/upload", "/api/files/delete")
+SESSIONS: dict = {}
+
+
 def call(base, path, body=None, raw=False):
+    """Every call that needs the control lock takes it first (one session per server) and carries it; STOP ends the lease, so the
+    next such call takes it again. test_lock.py is the one that checks the lock's refusals."""
+    bare = path.split("?")[0]
+    if bare in LOCKED:
+        if base not in SESSIONS:
+            SESSIONS[base] = _call(base, "/api/lock", {"action": "acquire", "client": "smoke"})[1]["session"]
+        if raw:
+            path += ("&" if "?" in path else "?") + f"session={SESSIONS[base]}"
+        else:
+            body = {**body, "session": SESSIONS[base]}
+    result = _call(base, path, body, raw)
+    if bare == "/api/stop":
+        SESSIONS.pop(base, None)
+    return result
+
+
+def _call(base, path, body=None, raw=False):
     data = None if body is None else (body if raw else json.dumps(body).encode())
     req = urllib.request.Request(base + path, data=data, method="POST" if body is not None else "GET",
                                  headers={} if raw else {"Content-Type": "application/json"})

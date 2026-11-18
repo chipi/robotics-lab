@@ -2,8 +2,11 @@
 
 **Status:** Accepted, revision 2 (2026-11-18). Built: §5 step 1 (the gate library,
 `duck/src/duck_lab/gate.py`, 6a39053) and step 4's `nxt-web` side (`/api/lock`,
-`nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter does not exist yet; file upload
-and delete pass the lock too since 1ded610, config and connect stay open) and step 2
+`nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter is built, `control/src/mission_control/nxt.py`,
+tested against `nxt-web --fake`; file upload and delete pass the lock too since 1ded610, config and
+connect stay open; nxt-web's own page takes the lock and a command with no session is now refused,
+"no lease, no motion", the hw_* script that drives over HTTP carries a session and was not run)
+and step 2
 (the gate stands in front of RFC-0014's fake robot, `control/`, eb6a560: its tests run the real
 rules) and step 3 (`duck-gate`, `duck/src/duck_lab/gate_proxy.py`, e3aaa54: the socket proxy in
 front of the simulator's `robotd`, the navigator's robot socket a setting, and the three
