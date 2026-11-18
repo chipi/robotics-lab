@@ -5,6 +5,7 @@ description = "Mission Control (RFC-0014): one API for every robot, goals, sites
 requires-python = ">=3.10"
 dependencies = [
     "duck-lab",
+    "mcp>=2.3.0",
 ]
 
 # The gate (RFC-0017) is a library in the duck package: a path source, like nxt-web's miniview, so there is one copy of the rules.

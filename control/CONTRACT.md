@@ -203,6 +203,37 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 
 A comment line `: keepalive` comes every 15 s.
 
+## The MCP server
+
+`mission-control mcp [--url http://127.0.0.1:8060]` (stdio; env `MC_URL`) is the way in for an outside
+agent. It is a client of this API: every tool is one allowed call, and the server calls nothing else
+(`ALLOWED` in `mcp_server.py`, 29 routes, checked by `tests/test_mcp.py`). It needs the `mcp` package,
+which only this command imports.
+
+| Tools | Calls |
+| --- | --- |
+| `list_robots`, `get_robot`, `get_robot_map`, `get_sighting` | the robot reads |
+| `acquire_lock`, `renew_lock`, `release_lock`, `drive` | the lock and manual driving, as the client `mcp-agent` |
+| `stop_robot`, `stop_all` | STOP: always accepted, never needs the lock |
+| `list_goals`, `get_goal`, `create_goal`, `run_goal`, `run_adhoc_goal` | the library and runs |
+| `list_runs`, `get_run`, `cancel_run`, `save_run` | goal runs |
+| `list_sites`, `get_site`, `list_areas`, `area_at`, `list_objects`, `get_inventory`, `get_site_guardrails`, `export_site` | the sites, read only |
+| `label_object` | name an object (RFC-0014 §3.5.2) |
+
+An API error is a tool error whose text is `code: message`, so an agent can read why. What an agent
+may not do, and how:
+
+- **Fire** (O21, RFC-0014 §3.8): there is no tool for it and no allowed route could do it.
+- **Take a robot another client holds** (RFC-0017 §3.5.7): there is no takeover tool; the client name
+  is fixed by the operator (`--client` or `MC_MCP_CLIENT`, default `mcp-agent`) and no tool takes one.
+  A held robot is refused to the agent, naming the holder.
+- **Draw, change or delete areas, make or delete sites, import a site, set a site's guardrails,
+  assign a robot to a site** (RFC-0014 §3.5.3: the operator's): not tools, not allowed routes.
+- **Run on a real robot** (RFC-0014 §3.8, RFC-0002 §3.5): `target` is `sim` unless the operator
+  started the server with `--allow-real` or `MC_MCP_ALLOW_REAL=1`; anything else is refused before the
+  call leaves the process.
+- **Refuse a STOP** or be refused one: not possible; the tools have no limit.
+
 ## The page
 
 `GET /` is the page: `web/index.html`, `web/app.js` and `web/style.css` under `/web/`, plain files with
