@@ -426,6 +426,25 @@ mark { background: rgba(224, 160, 48, .3); color: inherit; border-radius: 2px; }
 .xrow.sel { background: var(--bg-selected); }
 .xrow.hid .nm { color: var(--text-faint); text-decoration: line-through; }
 .xrow .mini { margin-left: auto; }
+/* Explore's other kinds: the depth frame and the map at the playhead (one panel each, in the theme's tokens) */
+.xrobot { display: contents; } .xrobot[hidden], .xkind[hidden] { display: none; }
+.xkind { display: flex; flex-direction: column; flex: none; }
+.xdtop { display: flex; gap: 6px; align-items: center; padding: 6px 8px; flex-wrap: wrap; }
+.xdtop .seg.sm button { padding: 0 5px; }
+.xkind .xmsg[hidden], .xkind .xcvwrap[hidden], .xkind .xmapwrap[hidden], .xkind .xscale[hidden], .xkind .xpart[hidden] { display: none; }
+.xcvwrap, .xmapwrap { padding: 0 8px 6px; background: var(--bg-viewport); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); overflow: hidden; }
+.xcvwrap { padding-top: 8px; }
+.xcvwrap canvas { display: block; margin: 0 auto; cursor: crosshair; touch-action: manipulation; }
+.xmapwrap { padding: 0; }
+.xmapwrap canvas { display: block; margin: 0 auto; cursor: crosshair; touch-action: none; }
+.xkind canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.xscale { padding: 6px 10px 2px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; color: var(--text-dim); font-size: 11px; }
+.xscale .xbar { flex: 1 1 100%; height: 10px; border-radius: 2px; border: 1px solid var(--border); }
+.xscale .xticks { flex: 1 1 100%; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; }
+.xsw { display: inline-flex; align-items: center; gap: 5px; }
+.xsw i { width: 11px; height: 11px; border-radius: 2px; border: 1px solid var(--border-strong); display: inline-block; }
+.xsw i.hatch { background: repeating-linear-gradient(135deg, var(--text-faint) 0 1px, var(--bg-field) 1px 4px); }
+.xkind > .xs { display: block; padding: 4px 10px; }
 
 /* the robot's eye (RFC-0013): the HUD over the viewport, the darkness outside the sensor's cone, the decisions panel, the watch page */
 .eyehud, .eyecone { position: absolute; inset: 0; pointer-events: none; z-index: 2; }

@@ -323,12 +323,13 @@ select({kind, index})       scenes()
 setSection(id, open)        setAngles(bool)
 explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
+exploreKind("robot|depth|map")   exploreView(kind?) -> the depth frame's or the map's view (state, screenOfCell, screenOfPoint, canvas), for scripts
 state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
                 loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
                 last_event, selection, t_range, hidden, eye, alerts, decided, semantic?}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
-exploreState() -> {robot, kind, pose, selected, hidden, isolated, why, links, drawn, values, poses}   (null before Explore opens)
+exploreState() -> for the robot body {robot, kind: "robot body", pose, selected, hidden, isolated, why, links, drawn, values, poses}; for "depth frame" {kind, shown, why, index, n, t, rows, cols, distance_mm, status, derived, derivedWhy, tickT, color, cell, kinds}; for "map" {kind, shown, why, worldN, worldCount, worldT, w, h, res, counts, obstacles, drops, plan, belief, objects, areas, view, layers, cell}   (null before Explore opens)
 exploreSnapshot() -> the body as a PNG data URL
 ```
 

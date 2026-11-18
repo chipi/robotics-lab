@@ -20,7 +20,7 @@ os.environ.setdefault("MINIVIEW_INDEX", str(TMP / "index.sqlite"))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import T0_NS, catalog, scene, serve  # noqa: E402
+from helpers import T0_NS, catalog, make_run, scene, serve  # noqa: E402
 from miniview import keys, kinematics, mcapio  # noqa: E402
 from miniview.shots import launch  # noqa: E402
 
@@ -80,8 +80,77 @@ rec.add(5.2, "end", {"status": "ended"})
 rec.close()
 
 
-def page_of(b, base):
-    ctx = b.new_context(viewport={"width": 1600, "height": 1000}, color_scheme="dark")
+# a run that sees and maps (the Depth frame and Map kinds): six depth frames, each written just before the tick that uses it, which
+# carries what the navigator derived from it (the frames differ in what the cells and points can say, below); two world grids, a plan,
+# a cabinet and the operator's two areas. The first run above has none of these.
+D_KEY = "arm/room/d1"
+GW, GH, RES, ORIGIN = 12, 8, 0.1, [-0.2, -0.3]
+KIND_AT = "fovb"
+AREAS = [{"id": "a1", "name": "Kitchen", "type": "kitchen", "polygon": [[0.2, -0.2], [0.9, -0.2], [0.9, 0.4], [0.2, 0.4]]},
+         {"id": "a2", "name": "Hall", "type": None, "polygon": [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.4], [-0.2, 0.4]]}]
+CABINET = {"id": "cabinet_1", "kind": "cabinet", "x": 0.6, "y": 0.2, "n": 3, "confirmed": True, "landmark": 0.8, "permanence": "fixed",
+           "confidence": 0.9, "parts": [[0.6, 0.2, 0.1, 0.15, 0.3, 0.0, 0.7]]}
+PLAN = [[0.0, 0.0], [0.4, 0.0], [0.8, 0.2]]
+
+
+def cells(second):
+    """Row-major from the lowest y: unknown along the top row and the first column, occupied along the last column (and, in the second grid, a wall)."""
+    out = []
+    for j in range(GH):
+        for i in range(GW):
+            out.append("?" if (j == GH - 1 or i == 0) else "#" if (i == GW - 1 or (second and j == 5 and 3 <= i <= 6)) else ".")
+    return "".join(out)
+
+
+def status_of(j):
+    st = [5] * 64
+    if j == 1:
+        st[0:4] = [0, 0, 0, 0]
+        st[63] = 255                    # no target, and no point was made for it
+    if j == 2:
+        st[63] = 255                    # no target, and the cliff check put a "below" point where the floor should have been
+    return st
+
+
+def distances_of(j):
+    return [300 + 20 * i + 100 * j for i in range(64)]
+
+
+def points_of(j):
+    st = status_of(j)
+    if j == 3:
+        return [[0.5, 0.0, 0.0, "f"], [0.6, 0.1, 0.3, "o"]]         # two points for 64 valid zones: they cannot be told apart
+    return [[round(0.4 + 0.01 * i + 0.05 * j, 3), round(-0.2 + 0.005 * i, 3), round(0.01 * (i % 4), 3), KIND_AT[i % 4]]
+            for i in range(64) if st[i] == 5 or (j == 2 and i == 63)]
+
+
+def d_records():
+    out = [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]}),
+           (0.0, "event", {"kind": "site", "text": "", "notable": False, "t_src": 0.0, "raw": {}, "site": {"id": "home", "name": "Home", "kind": "apartment", "areas": AREAS}}),
+           (0.05, "world", {"grid": {"res": RES, "origin": ORIGIN, "w": GW, "h": GH, "cells": cells(False)}, "obstacles": [[0.25, 0.05]], "drops": []}),
+           (0.05, "plan", {"path": PLAN}),
+           (1.0, "objects", {"objects": [CABINET], "changes": [["new", "cabinet_1"]]}),
+           (2.0, "world", {"grid": {"res": RES, "origin": ORIGIN, "w": GW, "h": GH, "cells": cells(True)}, "obstacles": [[0.5, 0.1], [0.52, 0.12]], "drops": [[0.75, -0.15]]})]
+    uses = {2 + 5 * j: j for j in range(6) if j != 4}                 # frame 4 is the one no tick carries points for
+    for j in range(6):
+        t = round(0.18 + 0.5 * j, 3)
+        out.append((t, "depth_frame", {"rows": 8, "cols": 8, "distance_mm": distances_of(j), "status": status_of(j), "seq": j, "frame_t_ns": 1_000_000_000 + j,
+                                       "state_t_ns": 1_000_000_000 + j - 1000, "pair_dt_ms": -0.001, "t_src": t, "derived": {"points": points_of(j)}}))
+        k = 2 + 5 * j
+        out.append((round(0.1 * k, 3), "tick", {"belief": [0.02 * k, 0.0, 0.1], "truth": None, "tilt": None, "cmd": [0.3, 0.0],
+                                                "depth": points_of(uses[k]) if k in uses else None, "t_src": round(0.1 * k, 3), "raw": {}}))
+    for k in range(31):
+        if k not in range(2, 30, 5):
+            out.append((round(0.1 * k, 3), "tick", {"belief": [0.02 * k, 0.0, 0.1], "truth": None, "tilt": None, "cmd": [0.3, 0.0], "depth": None, "t_src": round(0.1 * k, 3), "raw": {}}))
+    out.append((3.2, "end", {"verdict": "reached"}))
+    return sorted(out, key=lambda r: r[0])
+
+
+make_run(data, D_KEY, d_records())
+
+
+def page_of(b, base, width=1600, height=1000, scheme="dark"):
+    ctx = b.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
     page = ctx.new_page()
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
@@ -107,6 +176,220 @@ def shot(page, name):
 
 def rows(page):
     return page.evaluate("[...document.querySelectorAll('#tree .row')].map((r) => r.dataset.id)")
+
+
+def click_xy(page, js):
+    """A real click at a client point the page names (its canvas scrolled into view first: on a phone it is below the fold)."""
+    page.evaluate("window.miniview.exploreView().canvas().scrollIntoView({ block: 'center' })")
+    xy = page.evaluate(js)
+    page.mouse.click(*xy)
+
+
+def hexrgb(h):
+    h = h.lstrip("#")
+    return [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def token(page, name):
+    return hexrgb(page.evaluate(f"getComputedStyle(document.documentElement).getPropertyValue('{name}').trim()"))
+
+
+def close_to(a, b, tol=3):
+    return all(abs(x - y) <= tol for x, y in zip(a, b))
+
+
+def wait_x(page, expr, t=15000):
+    page.wait_for_function("(() => { const s = window.miniview.exploreState(); return !!s && (" + expr + "); })()", timeout=t)
+
+
+# pixels are read from a copy made for reading (the page's own canvas is not asked to read back again and again)
+COPY = """(() => { const c = window.miniview.exploreView().canvas(), s = document.createElement('canvas'); s.width = c.width; s.height = c.height;
+  const g = s.getContext('2d', { willReadFrequently: true }); g.drawImage(c, 0, 0); return g; })()"""
+
+
+def rgb_at(page, x, y):
+    return page.evaluate(f"([x, y]) => [...{COPY}.getImageData(x, y, 1, 1).data].slice(0, 3)", [x, y])
+
+
+def colours(page):
+    return page.evaluate(f"""() => {{ const g = {COPY}, d = g.getImageData(0, 0, g.canvas.width, g.canvas.height).data, seen = new Set();
+      for (let i = 0; i < d.length; i += 28) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]); return seen.size; }}""")
+
+
+def at_canvas(page, sx, sy):
+    """The canvas pixel under a client point."""
+    return page.evaluate("([x, y]) => { const b = window.miniview.exploreView().canvas().getBoundingClientRect(); return [Math.round(x - b.left), Math.round(y - b.top)]; }", [sx, sy])
+
+
+def depth_checks(page, tag):
+    call(page, "window.miniview.setTime(0.3)")
+    call(page, "window.miniview.exploreKind('depth')")
+    wait_x(page, "s.shown && s.index === 0")
+    opts = page.evaluate("[...document.querySelectorAll('#xwhat option')].map((o) => [o.value, o.textContent, o.disabled])")
+    check(f"{tag}: the selector offers the depth frame and the map, enabled, no longer 'later'",
+          ["depth", "Depth frame", False] in opts and ["map", "Map", False] in opts and not any("later" in o[1] for o in opts), opts)
+    s = page.evaluate("window.miniview.exploreState()")
+    check(f"{tag}: Depth frame at 0.3 s: the frame in force (the first, at 0.18 s), its 8 x 8 distances as recorded, the kinds derived from it, the tick that used it",
+          s["kind"] == "depth frame" and (s["rows"], s["cols"], s["index"], s["n"]) == (8, 8, 0, 6) and s["distance_mm"] == distances_of(0)
+          and s["derived"] and s["tickT"] == 0.2 and s["kinds"] == [KIND_AT[i % 4] for i in range(64)], {k: s[k] for k in ("kind", "index", "n", "derived", "derivedWhy", "tickT")})
+    check(f"{tag}: it draws something (the canvas holds many colours) and a scale, and says which frame it is",
+          colours(page) > 8 and page.evaluate("!!document.querySelector('#xdepth .xbar') && document.querySelector('#xdepth .xticks').innerText.includes('4 m')")
+          and "frame 1 of 6" in page.evaluate("document.querySelector('#xdepth [data-x=info]').textContent"), colours(page))
+    shot(page, f"{tag}-depth-distance")
+
+    click_xy(page, "window.miniview.exploreView().screenOfCell(2, 3)")
+    s = page.evaluate("window.miniview.exploreState()")
+    want = points_of(0)[19]
+    txt = page.evaluate("document.querySelector('#xdepth [data-x=cell]').innerText")
+    check(f"{tag}: a click on a cell (row 2, column 3) reports its values: distance, status, kind, its point in the map frame",
+          s["cell"] == {"row": 2, "col": 3, "mm": 680, "status": 5, "valid": True, "kind": "below the floor", "point": {"x": want[0], "y": want[1], "height": want[2]}, "why": None}
+          and all(x in txt for x in ("row 2, column 3", "680 mm", "5 (range valid)", "below the floor", f"x {want[0]} m, y {want[1]} m, height {want[2]} m")), (s["cell"], txt))
+
+    page.click('#xdepth [data-color="kind"]')
+    cell = page.evaluate("window.miniview.exploreView().canvas().width / 8")
+    got = [rgb_at(page, int(c * cell + 3), 3) for c in range(4)]
+    want_c = [token(page, v) for v in ("--c-floor", "--c-ob", "--c-over", "--c-drop")]
+    check(f"{tag}: coloured by the derived kind: floor, obstacle, overhead, below, in the colours the 3D scene uses",
+          page.evaluate("window.miniview.exploreState().color") == "kind" and all(close_to(g, w) for g, w in zip(got, want_c)), (got, want_c))
+    n_scale = page.evaluate("document.querySelector('#xdepth [data-x=scale]').innerText")
+    check(f"{tag}: the kind legend counts the cells of each kind (16 each)", all(f"{n} 16" in n_scale for n in ("floor", "obstacle", "overhead", "below the floor")), n_scale)
+    shot(page, f"{tag}-depth-kind")
+    page.click('#xdepth [data-color="distance"]')
+    check(f"{tag}: back to distances: the cell is the distance's colour, not the kind's", not close_to(rgb_at(page, 3, 3), want_c[0], 20) and page.evaluate("window.miniview.exploreState().color") == "distance")
+
+    # the playhead: frame 2 (1.18 s) has a no-target zone the cliff check put a point at; the cell picked stays picked
+    call(page, "window.miniview.setTime(1.3)")
+    wait_x(page, "s.shown && s.index === 2")
+    s = page.evaluate("window.miniview.exploreState()")
+    want = points_of(2)[19]
+    check(f"{tag}: it follows the playhead: at 1.3 s frame 3 of 6, the cell picked is still picked and shows this frame's values",
+          s["tickT"] == 1.2 and s["cell"]["row"] == 2 and s["cell"]["col"] == 3 and s["cell"]["mm"] == distances_of(2)[19]
+          and s["cell"]["point"] == {"x": want[0], "y": want[1], "height": want[2]}, s["cell"])
+    click_xy(page, "window.miniview.exploreView().screenOfCell(7, 7)")
+    s = page.evaluate("window.miniview.exploreState()")
+    want = points_of(2)[63]
+    check(f"{tag}: a no-target zone (status 255) with a 'below' point: its status named, its kind below the floor, its point",
+          s["cell"]["status"] == 255 and not s["cell"]["valid"] and s["cell"]["kind"] == "below the floor" and s["cell"]["point"]["x"] == want[0]
+          and "255 (no target)" in page.evaluate("document.querySelector('#xdepth [data-x=cell]').innerText"), s["cell"])
+    page.evaluate("window.miniview.exploreView().setColor('kind')")
+
+    call(page, "window.miniview.setTime(0.9)")
+    wait_x(page, "s.shown && s.index === 1")
+    click_xy(page, "window.miniview.exploreView().screenOfCell(0, 0)")
+    s = page.evaluate("window.miniview.exploreState()")
+    check(f"{tag}: a zone with a status that is not valid: no kind, no point, its status said; it is hatched, not coloured",
+          s["cell"]["status"] == 0 and not s["cell"]["valid"] and s["cell"]["kind"] is None and s["cell"]["point"] is None
+          and "0 (not valid)" in page.evaluate("document.querySelector('#xdepth [data-x=cell]').innerText"), s["cell"])
+    click_xy(page, "window.miniview.exploreView().screenOfCell(1, 0)")
+    s = page.evaluate("window.miniview.exploreState()")
+    want = points_of(1)[4]
+    check(f"{tag}: the points are assigned to the valid zones in order: the fifth valid zone (row 1, column 0, after four not valid) has the fifth point",
+          s["derived"] and s["cell"]["point"] == {"x": want[0], "y": want[1], "height": want[2]} and s["cell"]["kind"] == {"f": "floor", "o": "obstacle", "v": "overhead", "b": "below the floor"}[want[3]], s["cell"])
+
+    call(page, "window.miniview.setTime(1.9)")
+    wait_x(page, "s.shown && s.index === 3")
+    s = page.evaluate("window.miniview.exploreState()")
+    check(f"{tag}: a frame whose derived points cannot be assigned to zones (2 points for 64 valid zones): no kinds, the reason said, the kind switch off, coloured by distance",
+          not s["derived"] and "2 derived points for 64 valid zones" in s["derivedWhy"] and s["color"] == "distance" and page.evaluate("document.querySelector('#xdepth [data-color=kind]').disabled")
+          and "not derived" in page.evaluate("document.querySelector('#xdepth [data-x=cell]').innerText"), (s["derivedWhy"], s["color"]))
+    call(page, "window.miniview.setTime(2.4)")
+    wait_x(page, "s.shown && s.index === 4")
+    s = page.evaluate("window.miniview.exploreState()")
+    check(f"{tag}: a frame no tick used (the next tick carries no points): no kinds, and it says so", not s["derived"] and "no tick" in s["derivedWhy"], s["derivedWhy"])
+    call(page, "window.miniview.setTime(2.9)")
+    wait_x(page, "s.shown && s.index === 5")
+    check(f"{tag}: the last frame again has its kinds", page.evaluate("window.miniview.exploreState().derived"))
+
+
+def map_checks(page, tag, light=False):
+    call(page, "window.miniview.setTime(0.3)")
+    call(page, "window.miniview.exploreKind('map')")
+    wait_x(page, "s.shown && s.worldN === 1")
+    s = page.evaluate("window.miniview.exploreState()")
+    c = {k: cells(False).count(k) for k in "?.#"}
+    check(f"{tag}: Map at 0.3 s: the grid in force (1 of 2), its size and cell counts, the obstacle memory, the plan, the belief pose, the operator's areas, no objects yet",
+          s["kind"] == "map" and (s["worldN"], s["worldCount"], s["w"], s["h"], s["res"]) == (1, 2, GW, GH, RES) and s["counts"] == c and s["obstacles"] == 1 and s["drops"] == 0
+          and s["plan"] == 3 and s["belief"] == [0.06, 0.0, 0.1] and s["areas"] == ["Kitchen", "Hall"] and s["objects"] == 0, s)
+    check(f"{tag}: it draws something and says which map it is", colours(page) > 8 and "map 1 of 2" in page.evaluate("document.querySelector('#xmap [data-x=info]').textContent")
+          and f"{c['.']} free, {c['#']} occupied, {c['?']} unknown" in page.evaluate("document.querySelector('#xmap [data-x=info]').textContent"), colours(page))
+    shot(page, f"{tag}-map")
+
+    def shown_at(x, y):
+        sx, sy = page.evaluate(f"window.miniview.exploreView().screenOfPoint({x}, {y})")
+        return rgb_at(page, *at_canvas(page, sx, sy))
+
+    free, occ, plan = token(page, "--c-free"), token(page, "--c-occ"), token(page, "--c-plan")
+    on_plan = lambda: any(close_to(shown_at(0.3, d), plan, 70) for d in (-0.004, 0.0, 0.004))  # noqa: E731  (a thin antialiased line: any of three samples across it, near the plan colour)
+    check(f"{tag}: a free cell is the theme's free colour, an occupied one its occupied colour, the plan runs over the grid in the plan colour",
+          close_to(shown_at(0.45, -0.15), free) and close_to(shown_at(0.95, -0.05), occ) and on_plan(), (shown_at(0.45, -0.15), free, shown_at(0.95, -0.05), occ, [shown_at(0.3, d) for d in (-0.004, 0.0, 0.004)]))
+
+    def click_at(x, y):
+        click_xy(page, f"window.miniview.exploreView().screenOfPoint({x}, {y})")
+        return page.evaluate("window.miniview.exploreState().cell")
+
+    got = click_at(0.45, -0.15)
+    check(f"{tag}: a click on a cell reports its value and its coordinates in the map frame (cell 6, 1: free, centre 0.45, -0.15)",
+          got["inside"] and (got["i"], got["j"], got["value"], got["name"], got["x"], got["y"]) == (6, 1, ".", "free", 0.45, -0.15)
+          and "free" in page.evaluate("document.querySelector('#xmap [data-x=cell]').innerText"), got)
+    got = click_at(0.25, 0.05)
+    check(f"{tag}: a click on the cell with the obstacle memory's point says it has one", got["inside"] and (got["i"], got["j"]) == (4, 3) and got["obstacle_points"] == 1 and got["drop_points"] == 0, got)
+    got = click_at(0.95, -0.05)
+    check(f"{tag}: an occupied cell (11, 2)", got["inside"] and (got["i"], got["j"], got["value"], got["name"]) == (11, 2, "#", "occupied"), got)
+    got = click_at(0.4, -0.37)
+    check(f"{tag}: a click outside the grid says so and gives the point", not got["inside"] and abs(got["x"] - 0.4) < 0.01 and "Outside the grid" in page.evaluate("document.querySelector('#xmap [data-x=cell]').innerText"), got)
+
+    k0 = page.evaluate("window.miniview.exploreState().view")
+    page.click('#xmap [data-zoom="in"]')
+    k1 = page.evaluate("window.miniview.exploreState().view")
+    check(f"{tag}: zoom in (the button) enlarges by a quarter, about the centre", abs(k1["k"] / k0["k"] - 1.25) < 1e-6 and abs(k1["cx"] - k0["cx"]) < 1e-9, (k0, k1))
+    cx = page.evaluate("(() => { const b = window.miniview.exploreView().canvas().getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()")
+    page.mouse.move(*cx)
+    page.mouse.wheel(0, -300)
+    page.wait_for_function(f"window.miniview.exploreState().view.k > {k1['k'] * 1.05}", timeout=5000)
+    k2 = page.evaluate("window.miniview.exploreState().view")
+    check(f"{tag}: the wheel zooms too", k2["k"] > k1["k"] * 1.05, (k1, k2))
+    page.mouse.move(*cx)
+    page.mouse.down()
+    page.mouse.move(cx[0] + 60, cx[1] + 30, steps=4)
+    page.mouse.up()
+    k3 = page.evaluate("window.miniview.exploreState().view")
+    check(f"{tag}: dragging pans (the map follows the pointer) and does not pick a cell",
+          abs((k3["cx"] - k2["cx"]) * k3["k"] + 60) < 1.5 and abs((k3["cy"] - k2["cy"]) * k3["k"] - 30) < 1.5 and page.evaluate("window.miniview.exploreState().cell.inside") is False, (k2, k3))
+    got = click_at(0.35, 0.15)
+    check(f"{tag}: after zooming and panning a click still lands on the cell under it (cell 5, 4, free)", got["inside"] and (got["i"], got["j"], got["value"]) == (5, 4, "."), got)
+    page.click('#xmap [data-zoom="fit"]')
+    k4 = page.evaluate("window.miniview.exploreState().view")
+    check(f"{tag}: Fit brings the whole map back", abs(k4["k"] - k0["k"]) < 1e-6 and abs(k4["cx"] - k0["cx"]) < 1e-9 and abs(k4["cy"] - k0["cy"]) < 1e-9, (k0, k4))
+    page.click('#xmap [data-layer="plan"]')
+    check(f"{tag}: a layer switches off (the plan): its line is gone from the canvas", page.evaluate("window.miniview.exploreState().layers.plan") is False and not on_plan(), [shown_at(0.3, d) for d in (-0.004, 0.0, 0.004)])
+    page.click('#xmap [data-layer="plan"]')
+
+    call(page, "window.miniview.setTime(2.5)")
+    wait_x(page, "s.shown && s.worldN === 2")
+    s = page.evaluate("window.miniview.exploreState()")
+    c2 = {k: cells(True).count(k) for k in "?.#"}
+    check(f"{tag}: it follows the playhead: at 2.5 s the second grid, its obstacle memory and drop, the belief where it is, the cabinet",
+          s["counts"] == c2 and s["obstacles"] == 2 and s["drops"] == 1 and s["belief"] == [0.5, 0.0, 0.1] and s["objects"] == 1 and s["worldT"] == 2.0, s)
+    got = click_at(0.75, -0.15)
+    check(f"{tag}: the cell with the drop says so", got["inside"] and got["drop_points"] == 1, got)
+    shot(page, f"{tag}-map-later")
+
+
+def empty_checks(page, tag):
+    call(page, f"window.miniview.load('room', '{KEY}')")
+    call(page, "window.miniview.exploreKind('depth')")
+    s = page.evaluate("window.miniview.exploreState()")
+    msg = page.evaluate("(() => { const m = document.querySelector('#xdepth [data-x=msg]'); return [m.hidden, m.textContent]; })()")
+    check(f"{tag}: a run without depth frames: Depth frame says so, plainly, and draws no grid", not s["shown"] and msg[0] is False and "no depth frames" in msg[1]
+          and page.evaluate("document.querySelector('#xdepth [data-x=wrap]').hidden"), (s["why"], msg))
+    call(page, "window.miniview.exploreKind('map')")
+    s = page.evaluate("window.miniview.exploreState()")
+    msg = page.evaluate("(() => { const m = document.querySelector('#xmap [data-x=msg]'); return [m.hidden, m.textContent]; })()")
+    check(f"{tag}: a run without a world grid: Map says so, plainly", not s["shown"] and msg[0] is False and "no world grid" in msg[1] and page.evaluate("document.querySelector('#xmap [data-x=wrap]').hidden"), (s["why"], msg))
+    call(page, "window.miniview.exploreKind('robot')")
+    page.wait_for_function("window.miniview.exploreState()?.drawn === 2", timeout=20000)
+    xs = page.evaluate("window.miniview.exploreState()")
+    check(f"{tag}: back to the robot's body: its panel is shown again and the body drawn", xs["kind"] == "robot body" and page.evaluate("!document.getElementById('xrobot').hidden && document.getElementById('xdepth').hidden && document.getElementById('xmap').hidden"), xs["kind"])
 
 
 with sync_playwright() as p:
@@ -294,6 +577,22 @@ with sync_playwright() as p:
                 check("with the body hidden, every marker has its cylinder back (fill and outline)", off["cylinders"] == {"truth": [True, True], "belief": [True, True]}, off["cylinders"])
                 shot(page, "robot-layer-3d")
                 call(page, "window.miniview.setView('top')")
+
+            # the Depth frame and Map kinds on a run that sees and maps, the empty messages on the run that does not, then both on a phone in the light theme
+            call(page, f"window.miniview.load('room', '{D_KEY}')")
+            depth_checks(page, "dark")
+            map_checks(page, "dark")
+            empty_checks(page, "dark")
+            ctx2, page2, logs2 = page_of(b, base, 390, 800, "light")
+            call(page2, f"window.miniview.load('room', '{D_KEY}')")
+            check("the phone page is in the light theme (the viewport token is the light one)", token(page2, "--bg-viewport") == [246, 247, 249], token(page2, "--bg-viewport"))
+            depth_checks(page2, "phone, light")
+            map_checks(page2, "phone, light")
+            over = page2.evaluate("[document.documentElement.scrollWidth, innerWidth, window.miniview.exploreView('map').canvas().getBoundingClientRect().right, window.miniview.exploreView('depth').canvas().getBoundingClientRect().right]")
+            check("at phone width nothing is wider than the screen (no sideways scroll, both canvases inside it)", over[0] <= over[1] + 1 and over[2] <= over[1] + 1 and over[3] <= over[1] + 1, over)
+            errs2 = [m for m in logs2 if "favicon" not in m]
+            check("the phone page: no console errors or warnings", not errs2, errs2[:5])
+            ctx2.close()
 
             errs = [m for m in logs if "favicon" not in m]
             check("no console errors or warnings", not errs, errs[:5])

@@ -202,8 +202,8 @@ Rules:
 
 **Explore** is a third tab of the right panel, beside Moment and Selection: a detail view for
 looking closely at one thing. A picker says what is explored; its first kind is **the robot's
-body**. Other kinds (a depth frame, the map) come later in the same place. The tab can take more
-room ("Expand").
+body**, and **the depth frame** and **the map** (below) are built, in the same place (2026-11-18).
+The tab can take more room ("Expand").
 
 - **The body in 3D**: the robot's meshes placed by its joint tree (RFC-0011's forward kinematics);
   drag to orbit, scroll to zoom. **Posed as recorded at t** (it follows the timeline) **or by
@@ -219,6 +219,38 @@ room ("Expand").
 
 This places RFC-0011's Robot view as the Explore tab's first kind, not as a view mode beside Top, 3D
 and Map.
+
+**Depth frame** (built 2026-11-18): the depth frame in force at the playhead (the one
+`GET .../sensor?t=` answers, so it follows the timeline), looked at closely.
+
+- The sensor's rows x cols as a **grid of cells**, row 0 at the top, each coloured by its distance
+  (near warm, far cool, scale 0 to 4 m shown) with the mm in it; a zone whose status is not valid is
+  hatched and says its status.
+- **Derived kind** is a switch: the cells coloured floor, obstacle, overhead or below the floor, in
+  the 3D scene's colours, with a count of each. The frame's own record does not reach the page
+  (ADR-0014: the derived points are the replay's), so the kinds are those of the tick that used the
+  frame: the first tick after it that carries points, one point per valid zone in the sensor's order
+  (and one per no-target zone the cliff check put a "below" point at). A frame whose points cannot be
+  assigned to zones (the counts do not match), or that no tick used, has no kinds, and the panel
+  says why; the switch is then off.
+- **Click a cell** (or move with the arrow keys) for its row, column, distance in mm, status (5
+  and 9 are "range valid", 255 "no target"), its kind and its point in the map frame (x, y, height
+  above the floor) when derived. The cell picked stays picked as the playhead moves.
+- A run with no depth frames says so ("This run has no depth frames").
+
+**Map** (built 2026-11-18): the world grid in force at the playhead, in the robot's own map frame.
+
+- The occupancy cells (free, occupied, unknown), with cell lines once a cell is big enough; the
+  **obstacle memory** and the **drops** as points, the **plan** in force, the **belief pose** with
+  its heading, the semantic map's **objects** (the confirmed ones labelled) and the operator's
+  **areas** (the `site` event: outlines with names, as recorded in the map frame) when the run
+  has them. Each layer has a switch.
+- **Drag to pan, scroll or the buttons to zoom, Fit** for the whole map. **Click a cell** for its
+  value (free, occupied, unknown), its column and row and its centre in the map frame, and how many
+  obstacle and drop points fall in it; a click outside the grid gives the point.
+- A line above the map says which map it is (n of m, its time, size, cell counts, what it holds). A
+  run with no world grid says so ("This run has no world grid"); before the first map it says that.
+- Both kinds draw with the page's theme tokens, in light and dark, and fit a phone's width.
 
 ## The robot's eye, what it decided, and the watch page (RFC-0013 prototype, operator 2026-11-16)
 

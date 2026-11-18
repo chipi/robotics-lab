@@ -893,19 +893,36 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('hm') && ($('hm').onclick = () => { M.hideMissing = !M.hideMissing; renderTree(); });
   }
 
-  // ---- Explore (the right panel's third tab): what is explored, its first kind the robot's body (RFC-0011) ----------------
+  // ---- Explore (the right panel's third tab): what is explored: the robot's body (RFC-0011), the depth frame or the map at the playhead ----
   let explore = null;
-  async function openExplore(robot) {
+  // what the depth frame and map kinds read of the run now: the frames the store holds, the world, plan, objects and areas in force at the playhead
+  function exploreData() {
+    const has = hasTicks(), fr = has ? M.fr : null, i = M.i, wi = has ? fr.world_at[i] : -1, pi = has ? fr.plan_at[i] : -1;
+    const site = (M.run?.events || []).find((e) => e.kind === 'site' && e.site?.areas?.length);
+    return { runId: M.runId, t: M.t, i, ticks: M.run?.ticks ?? 0, frames: fr, rawStream: stream('sensors.raw') || null, worldStream: stream('world.grid') || null,
+      belief: has ? fr.belief[i] : null, world: wi >= 0 ? fr.worlds[wi] : null, worldN: wi + 1, worldCount: store.worldCount, plan: pi >= 0 ? fr.plans[pi] : null,
+      objects: fr?.objectsAt(M.t)?.objects ?? [], areas: site?.site.areas ?? [], radius: M.run?.robot?.radius };
+  }
+  async function ensureExplore() {
     M.tab = 'explore'; renderInsp();
     if (!explore) {
       const { createExplore } = await import('./explore.js');
       explore ||= createExplore($('explore'), {
         api: API, robotDesc,
         recorded: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
-        hasRun: () => !!M.run, t: () => M.t,
+        hasRun: () => !!M.run, t: () => M.t, data: exploreData,
       });
     }
-    await explore.open(robot || M.run?.robot?.name || null);
+  }
+  // `keep`: the tab was clicked, so it comes back as it was left (the kind), not on the robot's body
+  async function openExplore(robot, keep = false) {
+    await ensureExplore();
+    await explore.open(robot || M.run?.robot?.name || null, keep);
+    return explore.state();
+  }
+  async function openExploreKind(kind) {
+    await ensureExplore();
+    await explore.openKind(kind);
     return explore.state();
   }
   function toggleOpen(id) { M.open[id] = !M.open[id]; if (T.nodes[id]?.section) saveOpen(); renderTree(); }
@@ -1078,7 +1095,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('tabMoment').setAttribute('aria-selected', M.tab === 'moment'); $('tabSel').setAttribute('aria-selected', M.tab === 'sel');
     $('tabExplore').setAttribute('aria-selected', M.tab === 'explore'); $('tabDecided').setAttribute('aria-selected', M.tab === 'decided');
     el.hidden = M.tab === 'explore'; $('explore').hidden = M.tab !== 'explore';
-    if (M.tab === 'explore') return;
+    if (M.tab === 'explore') { explore?.follow(); return; }
     if (!M.run || (!hasTicks() && !hasSignals())) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
     if (M.tab === 'decided') { el.innerHTML = decidedHtml(); paintDecidedNow(); return; }
     if (M.tab === 'moment' && !hasTicks()) {
@@ -1350,6 +1367,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     setAngles: (on) => setAngles(on),
     // Explore (the right panel's third tab): open it on a robot (the run's when none is named) and act on its body
     explore: (robot) => openExplore(robot),
+    exploreKind: (kind) => openExploreKind(kind),
     explorePart: (link) => (explore ? explore.select(link) : null),
     explorePose: (mode) => (explore ? explore.setPose(mode) : false),
     exploreJoint: (name, radians) => (explore ? explore.setJoint(name, radians) : false),
@@ -1359,6 +1377,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
   window.miniview.state = state;
   window.miniview.exploreState = () => (explore ? explore.state() : null);
+  window.miniview.exploreView = (kind) => (explore ? explore.view(kind) : null);
   window.miniview.exploreSnapshot = () => (explore ? explore.snapshot() : null);
   window.miniview.exploreScreenOf = (link) => (explore ? explore.screenOf(link) : null);
   // the settings a script can have changed, as plain data: per-stream time modes, visibility (global and per view), drawn
@@ -1430,7 +1449,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('tree').ondblclick = (e) => { const row = e.target.closest('.row'); const n = row && T.nodes[row.dataset.id]; if (n?.kids && !n.section) toggleOpen(row.dataset.id); };
   $('tabMoment').onclick = () => { M.tab = 'moment'; renderInsp(); };
   $('tabSel').onclick = () => { M.tab = 'sel'; renderInsp(); };
-  $('tabExplore').onclick = () => openExplore();
+  $('tabExplore').onclick = () => openExplore(undefined, true);
   $('tabDecided').onclick = () => { M.tab = 'decided'; renderInsp(); };
   // a decision in the list: seek to it
   $('inspBody').addEventListener('click', (e) => { const r = e.target.closest('.dec'); if (r) setTime(+r.dataset.t); });

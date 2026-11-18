@@ -1,39 +1,67 @@
 // Explore (UXS-001, RFC-0011 §3.3): the right panel's detail view for looking closely at one thing. Its first kind is the
 // robot's body: the description's meshes placed by its forward kinematics (robot.js), posed as recorded at the playhead or
 // by hand, parts picked in the body or in the list of parts, with their details; isolate, hide, focus. three.js is loaded
-// when Explore first opens (the 2D page does not otherwise need it).
+// when Explore first opens (the 2D page does not otherwise need it). Its other two kinds are the depth frame at the playhead
+// (exploredepth.js) and the world grid at the playhead (exploremap.js), both read from `data()`, the shell's account of the run now.
 import { chainsOf, linkPoses } from './robot.js';
 import { createBody } from './robotbody.js';
+import { createDepthView } from './exploredepth.js';
+import { createMapView } from './exploremap.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const deg = (r) => (r == null ? '—' : `${(r * 180 / Math.PI).toFixed(1)}°`);
+const KIND_NAME = { robot: 'robot body', depth: 'depth frame', map: 'map' };
 
-export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
-  const S = { robot: null, desc: null, pose: 'recorded', hand: {}, sel: null, hidden: new Set(), isolated: null, wide: false, why: null, loading: false };
+export function createExplore(el, { api, robotDesc, recorded, hasRun, t, data }) {
+  const S = { kind: 'robot', robot: null, desc: null, pose: 'recorded', hand: {}, sel: null, hidden: new Set(), isolated: null, wide: false, why: null, loading: false };
   let THREE = null, view = null, robots = null;
+  const views = {};
   const byParent = () => { const b = {}; for (const j of S.desc?.joints || []) (b[j.parent] ||= []).push(j); return b; };
   const jointOf = (link) => (S.desc?.joints || []).find((j) => j.child === link) || null;
   const values = () => (S.pose === 'hand' || !hasRun() ? S.hand : recorded());
 
   el.innerHTML = `<div class="xtop">
       <select id="xwhat" aria-label="What to explore"></select>
-      <div class="seg sm" role="group" aria-label="Pose"><button data-pose="recorded">As recorded</button><button data-pose="hand">By hand</button></div>
+      <div class="seg sm" id="xpose" role="group" aria-label="Pose"><button data-pose="recorded">As recorded</button><button data-pose="hand">By hand</button></div>
       <span class="grow"></span><button class="btn" id="xwide" title="Give the explorer more room">Expand</button></div>
+    <div class="xrobot" id="xrobot">
     <div class="xbody" id="xbody"><div class="xover"><button class="btn" id="xiso" disabled>Isolate</button><button class="btn" id="xhide" disabled>Hide</button>
       <button class="btn" id="xall">Show all</button><span class="grow"></span><span class="hint" id="xhint">drag · scroll · click a part</span></div></div>
     <div class="xmsg" id="xmsg" hidden></div>
     <div class="xpart" id="xpart"></div>
-    <div class="xbelow" id="xbelow"></div>`;
+    <div class="xbelow" id="xbelow"></div></div>
+    <div class="xkind" id="xdepth" hidden></div><div class="xkind" id="xmap" hidden></div>`;
   const $ = (id) => el.querySelector('#' + id);
+  const hosts = { depth: $('xdepth'), map: $('xmap') };
 
   async function listRobots() {
     robots ||= await fetch(`${api}robots`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-    $('xwhat').innerHTML = robots.map((r) => `<option value="robot:${esc(r.name)}" ${r.name === S.robot ? 'selected' : ''}>Robot body: ${esc(r.label || r.name)}</option>`).join('')
-      + '<option disabled>Depth frame (later)</option><option disabled>Map (later)</option>';
+    $('xwhat').innerHTML = robots.map((r) => `<option value="robot:${esc(r.name)}" ${S.kind === 'robot' && r.name === S.robot ? 'selected' : ''}>Robot body: ${esc(r.label || r.name)}</option>`).join('')
+      + `<option value="depth" ${S.kind === 'depth' ? 'selected' : ''}>Depth frame</option><option value="map" ${S.kind === 'map' ? 'selected' : ''}>Map</option>`;
+  }
+  // which kind is shown: the robot's body (its own parts of the panel) or one of the two that look at the run at the playhead
+  function setKind(kind) {
+    S.kind = kind;
+    $('xrobot').hidden = $('xpose').hidden = kind !== 'robot';
+    for (const [k, h] of Object.entries(hosts)) h.hidden = k !== kind;
+    $('xwhat').value = kind === 'robot' ? `robot:${S.robot}` : kind;
+  }
+  async function openKind(kind) {
+    if (kind === 'robot') return open();
+    if (!hosts[kind]) return false;
+    await listRobots();
+    views[kind] ||= kind === 'depth' ? createDepthView(hosts.depth, { api, data }) : createMapView(hosts.map, { data });
+    setKind(kind);
+    render();
+    views[kind].follow();
+    return true;
   }
 
-  async function open(robot) {
+  async function open(robot, keep = false) {
+    if (keep && S.kind !== 'robot') return openKind(S.kind);
+    S.kind = 'robot';
     await listRobots();
+    setKind('robot');
     const name = robot || S.robot || robots[0]?.name || null;
     if (!name) return message('No robot has a description yet (robots/<robot>/robot.urdf).');
     if (name !== S.robot) {
@@ -154,6 +182,7 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
       b.disabled = b.dataset.pose === 'recorded' && !hasRun();
     }
     $('xwide').textContent = S.wide ? 'Narrow' : 'Expand';
+    if (S.kind !== 'robot') return;
     if (!S.desc) { $('xpart').innerHTML = ''; $('xbelow').innerHTML = ''; return; }
     $('xiso').disabled = $('xhide').disabled = !S.sel;
     $('xiso').textContent = S.isolated ? 'Unisolate' : 'Isolate';
@@ -186,7 +215,11 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
     place();
     if (S.sel) $('xpart').innerHTML = details(S.sel);
   });
-  el.addEventListener('change', (e) => { if (e.target.id === 'xwhat' && e.target.value.startsWith('robot:')) open(e.target.value.slice(6)); });
+  el.addEventListener('change', (e) => {
+    if (e.target.id !== 'xwhat') return;
+    if (e.target.value.startsWith('robot:')) open(e.target.value.slice(6));
+    else openKind(e.target.value);
+  });
   el.addEventListener('click', (e) => {
     const b = e.target.closest('button, .xrow');
     if (!b) return;
@@ -210,14 +243,18 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t }) {
   }
 
   return {
-    open,
+    open, openKind,
+    // the playhead moved (or the run grew): the depth frame and the map in force follow it
+    follow() { if (S.kind !== 'robot') views[S.kind]?.follow(); },
+    view: (kind = S.kind) => views[kind] || null,
     // the playhead moved: a recorded pose follows it
-    pose() { if (S.pose === 'recorded' && S.desc) { place(); if (S.sel) $('xpart').innerHTML = details(S.sel); const n = el.querySelector('.xbelow .xs'); if (n) n.textContent = `As recorded at ${t().toFixed(2)} s: the body follows the timeline.`; } },
+    pose() { if (S.kind !== 'robot') { views[S.kind]?.follow(); return; } if (S.pose === 'recorded' && S.desc) { place(); if (S.sel) $('xpart').innerHTML = details(S.sel); const n = el.querySelector('.xbelow .xs'); if (n) n.textContent = `As recorded at ${t().toFixed(2)} s: the body follows the timeline.`; } },
     select, setPose,
     setJoint(name, value) { if (!S.desc?.joints.some((j) => j.name === name && j.type !== 'fixed')) return false; setPose('hand'); S.hand[name] = +value; place(); render(); return true; },
     hide(link, on = true) { if (!view?.links[link]) return false; on ? S.hidden.add(link) : S.hidden.delete(link); place(); render(); return true; },
     isolate(link) { if (link && !view?.links[link]) return false; S.isolated = link || null; place(); render(); return true; },
     state() {
+      if (S.kind !== 'robot') return { robot: S.robot, ...views[S.kind].state(), kind: KIND_NAME[S.kind] };
       return { robot: S.robot, kind: S.robot ? 'robot body' : null, pose: S.pose, selected: S.sel, hidden: [...S.hidden], isolated: S.isolated, why: S.why, loading: S.loading,
         links: S.desc?.links.length ?? 0, drawn: view ? Object.values(view.links).filter((g) => g.children.length).length : 0,
         values: S.desc ? Object.fromEntries(Object.entries(values()).map(([k, x]) => [k, +x.toFixed(4)])) : {},
