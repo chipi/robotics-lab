@@ -1,6 +1,7 @@
 # RFC-0012 — Look far, get ready early: where to look and how fast to go
 
-**Status:** Proposed (2026-11-16, the operator's direction)
+**Status:** Accepted (2026-11-18, the operator: "3A": accept, and build it in the challenge stream,
+the first thing when it resumes); proposed 2026-11-16 on the operator's direction
 **Builds on:** [RFC-0008](RFC-0008-challenge-course.md) (the challenge course, its error budget per
 robot), [RFC-0002](RFC-0002-robot-brain.md) (the robot brain), [RFC-0011](RFC-0011-robot-models.md)
 (each robot's description).

@@ -823,7 +823,8 @@ assumed). Mission Control ships as a container image from its first slice (§3.1
    attempts; the simulator-first flag for real runs.
 6. **The planner module and the LLM** (§3.4.5): `POST /plan`, an OpenAI-compatible client, read-back
    and confirm.
-7. **Per-client tokens**, then the mobile app's needs, then Slack.
+7. **Per-client tokens**, then the mobile app's needs, then Slack. Tokens built; the mobile app and
+   Slack are later (the operator, 2026-11-18: "2CC").
 8. **EV3 and the real duck**, each after its own interface, deadman and safety review.
 9. **`go_to_area` and `explore {area}`** on the operator's outlines; the type guess as a check on
    the pose.

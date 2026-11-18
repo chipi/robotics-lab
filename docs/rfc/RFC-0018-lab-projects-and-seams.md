@@ -1,8 +1,11 @@
 # RFC-0018 — The lab's projects, their seams, and how to split robotics-lab later
 
-**Status:** Proposed (2026-11-18), parked: for later — the operator: "make another RFC with idea to
-split and everything else, and we're gonna come back to that later. First I wanna finish all the
-ideation and I wanna make it work as it is right now."
+**Status:** Decided in direction (2026-11-18): one repository, restructured in full into apps,
+libraries and robots with package seams and a boundary check (the operator: "5C since this is
+more/less big shape we are after"), done together with the Observatory rename once the work in
+flight lands. The detailed layout is to be revised here before it is built. Earlier the same day it
+was parked: "make another RFC with idea to split and everything else, and we're gonna come back to
+that later."
 **Builds on:** [RFC-0014](RFC-0014-mission-control.md) (§3.13 containers, question 10 licence and
 splitting), [RFC-0017](RFC-0017-robot-access.md) (the gate),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
