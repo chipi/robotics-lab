@@ -841,8 +841,10 @@ kept to record where each answer went.
    operator widened it beyond Mission Control and the NXT: five laptops and five robots in one
    room, three ducks and three laptops, each person driving only the robot they are allowed to
    connect to and not ejectable while connected. That is [RFC-0017](RFC-0017-robot-access.md),
-   Accepted. The NXT's lock lives in `nxt-web`'s Controller (`/api/lock`): answered. **Open:**
-   whether the operator's takeover survives RFC-0017's no-ejection rule.
+   Accepted. The NXT's lock lives in `nxt-web`'s Controller (`/api/lock`): answered. The takeover
+   and the no-ejection rule, answered with RFC-0017 (the operator, 2026-11-18: "Take the advisor
+   version"): a robot's owner may take back a robot they lent; among owners of different robots
+   nobody ejects anybody; v1 is a config list of the client names allowed to take over.
 4. **The navigator API:** answered, its own process (§3.7).
 5. **The goal store:** answered, SQLite (§3.4.6), with export and import as files (question 23).
 6. **The first list of `must_not` conditions.** Answered, and made first-class (the operator,
