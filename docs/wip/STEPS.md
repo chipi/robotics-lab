@@ -73,7 +73,9 @@ The operator: "ok on parked 16". What was measured:
   bars of 0.6 cm stalled as well as 0.9 cm.
 - The probe with turning (`step_height.py --yaw`, 1 cm, 0.3 m/s, 5 each): straight 4 of 5, turning
   ±0.18 rad/s 2 of 5. The navigator turns 0.1–0.34 rad/s on the way to the bar (correcting the
-  walk's drift), more than the probe's turning.
+  walk's drift), more than the probe's turning. Five tries each do not show that turning hurts:
+  Fisher's exact test gives a two-sided p of about 0.52 (the RFC-0012 planning pass, 2026-11-18).
+  An earlier note here read it as support; it is not evidence either way.
 - Once a foot is caught, walking straight does not free it (1.5 s at 0.3 m/s, no motion), and the
   duck does not walk backwards.
 

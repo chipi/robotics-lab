@@ -52,6 +52,8 @@ In the bar's order — safety first, then reach, then quality:
 | b7 (+ retired cells only) | `f06d48f` + retire | 3 | 2 / 3 | 0/6 | 0 (3) / 0 | refused: no room to turn (`lm_office`, 3/3) |
 | b8 (+ objects on, one tight pivot per spot) | `3ceef19` | 3 | 2 / 3 | 0/6 | 2 / 0 | refused: no room to turn |
 | b9 (+ stand for mapd at each frontier) | `d74a5b1` | 3 | **4 / 6** | **2/6** | 0 / 0 | refused: no room to turn |
+| b10a (+ stuck detection, objects not filled in) | `22c5917` | 3 | 3 / 5 | 2/6 | **1** / 0 | refused: no room to turn |
+| b10b (+ the objects' parts fill the cost map) | `22c5917` | 3 | **5 / 6** | 2/6 | **1 (5)** / 0 | refused: no room to turn |
 
 Contacts in brackets: re-scored on 2026-11-18 by the judge that counts the six `lm_*` landmarks
 (RFC-0016: the depth sensor sees them, so here they are things the duck would hit): b1 0 → 4, b5 2 →
@@ -374,3 +376,29 @@ contact, no fall (the judge counting the landmarks).
 Blockers left: "no room to turn" (14, ended r1 and r3, in the corridor, the kitchen, the office),
 stalls (5, 3.3 min), "no path on the map" (13). Next: stuck detection wired in, the camera's objects
 filling what the depth sensor misses (the thin `lm_office`), then a batch with and without.
+
+## b10a and b10b: the object fill, with and without (2026-11-18)
+
+The same code, stuck detection wired in; b10b adds `--object-costs` (an object's parts fill the cost
+map where no depth point lies within 0.10 m). Scored with `explore_score --md`; contacts by truth.
+
+| Batch | Runs | Rooms (median / best) | Objects found (best) | Contacts | Top blocker |
+| --- | --- | --- | --- | --- | --- |
+| b10a | r1 5, r2 2, r3 3 | 3 / 5 | 33 of 38 | 1 | refused: no room to turn |
+| b10b | r1 5, r2 6, r3 3 | **5 / 6** | **37 of 38** | 1 graze (scored 5) | refused: no room to turn |
+
+**b10a's contact: a belief jump.** In r1 at t 822.5 s, pivoting in place, the belief moved 0.9 m in
+one tick (truth did not move); its error went from 0.26 m to 0.68 m and stayed. At 844.0 s the duck's
+trunk came 0.064 m from `lm_office`'s outline: its remembered obstacles were where the old belief
+had put them. The only jump of 0.25 m or more in 12 runs (b6, b8, b9, b10a). The recording held
+neither mapd's raw fix nor the odometry paired with it, so its source (mapd's pose, or the pairing)
+was not known; the relocalisation work records both on every fix over 0.1 m and gates implausible
+ones (`3232064`).
+
+**b10b's contact: one graze, scored five times.** r2, t 187.7–189.1 s: the trunk came 0.071–0.083 m
+from `kit_stool2`'s outline (the contact line is 0.083 m), walking 0.2–0.3 m/s and turning up to
+0.7 rad/s; it crossed the line and back five times, and the scorer counts each crossing. No belief
+jump in b10b. Why the stool was that close is not looked into yet.
+
+The fill helps exploring (rooms 3 → 5 median, objects 33 → 37); the bar is not met (a contact in
+each batch). Find try 5 (the fridge): not found, never seen, 53 legs in 12.1 min.
