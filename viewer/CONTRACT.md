@@ -79,7 +79,7 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   | `/depth/raw` | `foxglove.RawImage` (frame `tof`, `16UC1`, one row per sensor row) | **a depth frame** (ADR-0014): the sensor's raw distances in mm, the first message of the frame; a negative distance is kept as the int16's 16 bits |
   | `/depth/status` | `foxglove.RawImage` (frame `tof`, `mono8`) | the frame's per-zone statuses (5 and 9 are "range valid") |
   | `/miniview/depth_frame` | `miniview.depth_frame` | `{rows, cols, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?, t_src?, state?, pose?, derived?}`: **last** message of a depth frame. `frame_t_ns` is the sensor's own clock (CLOCK_MONOTONIC), `state_t_ns` the robot state the frame was paired with (the nearest by time among those received, as Pollen's `autod` does) and `pair_dt_ms` that state's time minus the frame's; `state` is what a replay needs of it (`quat`, `odom_z`, `tof: {pos, quat}`), `pose` the robot's map pose the frame's points were placed with, `derived` what the robot made of the frame (`points` as `{x, y, z, k}` in the map frame, `drop_points` as `{ahead, left, h}`, `block_m`) |
-  | `/miniview/event` | `miniview.event` | `{kind, text, notable, t_src, raw, decision?, room?, votes?}` (`room` and `votes` on a `room` event: the room the robot believes it is in, or null, and its votes, ADR-0019); routine events have `notable: false`; `decision` is `{rule, reason, values}`: the rule that fired and the values it compared (ADR-0014) |
+  | `/miniview/event` | `miniview.event` | `{kind, text, notable, t_src, raw, decision?, room?, votes?, area?}` (`room` and `votes` on a `room` event: the room the robot believes it is in, or null, and its votes, ADR-0019; the duck's `area_type` event, its new name since RFC-0016 revision 3, is read as a `room` event; `area` on an `area` event: `{id, name, type, guess, agrees}`, which of the operator's areas the pose is in and whether the objects' guess agrees); routine events have `notable: false`; `decision` is `{rule, reason, values}`: the rule that fired and the values it compared (ADR-0014) |
   | `/miniview/segment` | `miniview.segment` | a goal's span: `{index, goal?, outcome?, origin_src, t_start, t_end}`, written when it ends (a goal-ending event with a goal) |
   | `/miniview/end` | `miniview.end` | `{verdict, source_sha256?}` |
 
@@ -182,7 +182,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   or `room` events adds `semantic` (a run with none has no such key), what the pages show at that time:
   `{"objects_t": 2.0, "objects": [{"kind", "id", "x", "y", "confirmed", "landmark", "confidence"}],
   "sighting": {"t", "pose", "hfov_deg", "range_m", "seen": [{"kind", "range_m", "confidence"}]} | null,
-  "room": {"t", "name", "votes"} | null}`. `objects` is the snapshot in force (the last at or before
+  "room": {"t", "name", "votes"} | null, "area": {"t", "id", "name", "type", "guess", "agrees"} | null}`. `objects` is the snapshot in force (the last at or before
   `t`, `objects_t` its time; `[]` and null before the first), `x` and `y` in the robot's map frame in
   metres (3 decimals), `confirmed` a boolean, `landmark` the value the robot holds (a landmark is 0.7
   or more). `sighting` is the camera's last sighting when it is at or before `t` and not more than 1
@@ -191,7 +191,8 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   what was seen, how far
   (`range_m`) and how sure (`/semantic` has each one's place relative to the robot). `room` is the
   last `room`
-  event at or before `t`, `name` null when the robot believed it was in none. The page's Script API
+  event at or before `t`, `name` null when the robot believed it was in none; `area` the last `area`
+  event at or before `t` (null in a run without the operator's areas). The page's Script API
   `state()` has the same `semantic`.
 
 ### `GET /api/v1/scenes/{id}` — what is really there (world frame)

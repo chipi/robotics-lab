@@ -125,7 +125,8 @@ class RunData:
             f["worlds"].append(dict(p, t=t))
         elif kind == "event":
             r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {}),
-                                **({"room": p.get("room"), "votes": p.get("votes") or {}} if p["kind"] == "room" else {})})
+                                **({"room": p.get("room"), "votes": p.get("votes") or {}} if p["kind"] == "room" else {}),
+                                **({"area": p.get("area") or {}} if p["kind"] == "area" else {})})
         elif kind == "objects":
             self.sem["objects"].append({"t": t, "objects": p["objects"], "changes": p["changes"]})
             self.counts["objects"] += 1

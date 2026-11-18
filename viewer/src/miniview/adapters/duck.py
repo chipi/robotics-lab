@@ -117,6 +117,9 @@ class DuckLog:
             return [(t, "sighting", {"pose": [_r(v, 4) for v in r["pose"][:3]], "hfov_deg": r.get("hfov_deg"),
                                      "range_m": r.get("range_m"), "seen": r["seen"], "t_src": ts,
                                      "raw": rest("pose", "hfov_deg", "range_m", "seen")})]
+        if ev == "area_type":                               # the objects' guess, renamed from `room` (RFC-0016 rev. 3): read as the room event
+            ev, r = "room", {**r, "room": r.get("type")}
+            r.pop("type", None)
         if ev:
             notable = ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached")
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
@@ -131,7 +134,13 @@ class DuckLog:
                 e["decision"] = r["decision"]
             if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event
                 votes = r.get("votes") if isinstance(r.get("votes"), dict) else {}
-                e.update(room=r.get("room"), votes=votes, text=f"room {r.get('room') or 'none'}", raw=rest("decision", "room", "votes"))
+                e.update(room=r.get("room"), votes=votes, text=f"room {r.get('room') or 'none'}", raw=rest("decision", "room", "type", "votes"))
+            if ev == "area":                                # which of the operator's areas the pose is in, and whether the objects agree
+                e.update(area={k: r.get(k) for k in ("id", "name", "type", "guess", "agrees")}, notable=True,
+                         text=f"area {r.get('name') or 'none'}" + (f", but the objects look {r.get('guess')}"
+                                                                   if r.get("agrees") is False else ""),
+                         raw=rest("decision", "id", "name", "type", "guess", "agrees"))
+                notable = True
             out = [(t, "event", e)]
             if notable:
                 self.events.append({"kind": ev, "text": e["text"], "t": t})

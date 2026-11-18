@@ -258,9 +258,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const fr = M.fr, t = M.t, evs = M.run?.events || [];
     const snap = fr?.objectsAt(t) ?? null, objects = snap?.objects ?? [];
     const room = [...evs].reverse().find((e) => e.kind === 'room' && e.t <= t + 1e-9) || null;
-    const has = !!(fr?.objects.length || fr?.sightings.length || evs.some((e) => e.kind === 'room'));
+    const area = [...evs].reverse().find((e) => e.kind === 'area' && e.t <= t + 1e-9) || null;
+    const has = !!(fr?.objects.length || fr?.sightings.length || evs.some((e) => e.kind === 'room' || e.kind === 'area'));
     return { has, objectsT: snap?.t ?? null, sighting: fr?.sightingAt(t) ?? null, anySighting: !!(fr?.sightings.length && fr.sightings[0].t <= t + 1e-9), objects, confirmed: objects.filter((o) => o.confirmed).length,
-      room: room ? { name: room.room ?? null, votes: room.votes ?? {}, t: room.t } : null };
+      room: room ? { name: room.room ?? null, votes: room.votes ?? {}, t: room.t } : null,
+      area: area ? { t: area.t, ...(area.area || {}) } : null };
   }
   // the semantic map at the playhead as state() and GET .../state?t= give it (ADR-0019); null for a run with none
   function semanticOut() {
@@ -269,7 +271,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const lk = s.sighting, r3 = (n) => (n == null ? null : +n.toFixed(3));      // 3 decimals, as the API rounds
     return { objects_t: s.objectsT, objects: s.objects.map((o) => ({ kind: o.kind, id: o.id, x: r3(o.x), y: r3(o.y), confirmed: !!o.confirmed, landmark: o.landmark ?? null, confidence: o.confidence ?? null })),
       sighting: lk && { t: lk.t, pose: lk.pose.map(r3), hfov_deg: lk.hfov_deg, range_m: lk.range_m, seen: lk.seen.map((d) => ({ kind: d.kind, range_m: d.range_m ?? null, confidence: d.confidence ?? null })) },
-      room: s.room };
+      room: s.room, area: s.area };
   }
 
   function moment() {
@@ -391,7 +393,9 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const votes = Object.entries(s.room?.votes || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${fx(v, 2)}`).join(' · ');
     const room = s.room ? `<b>${esc(s.room.name ?? 'unnamed')}</b>${votes ? ` (${votes})` : ''}` : 'not told yet';
     const total = s.objects.length;
+    const area = s.area && `<b>${esc(s.area.name ?? 'no area')}</b>${s.area.agrees === false ? ` · the objects look ${esc(s.area.guess ?? '?')}` : ''}`;
     return `<div class="sem-sees"><span class="hk">SEES</span>${sees}</div>`
+      + (area ? `<div class="sem-area"><span class="hk">AREA</span>${area}</div>` : '')
       + `<div class="sem-room"><span class="hk">ROOM</span>${room}</div>`
       + `<div class="sem-objects"><span class="hk">OBJECTS</span><b>${s.confirmed}</b> confirmed · ${total - s.confirmed} not yet</div>`;
   }

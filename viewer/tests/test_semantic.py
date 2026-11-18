@@ -62,6 +62,19 @@ check("a room row stays an event, with the room and its votes as plain fields (a
 check("a room row with no room is an event with room null", p["room"] is None and p["votes"] == {} and p["text"] == "room none", p)
 check("a room event is not notable (a verdict is never decided by it) and is not in the adapter's own list of notable events",
       p["notable"] is False and not log.events)
+(t, kind, p), = log.feed_row({"event": "area_type", "t": 3.7, "type": "office", "votes": {"office": 0.9},
+                              "decision": {"rule": "area_type", "reason": "the objects near look like: office", "values": {}}})
+check("an `area_type` row (the room row's name since RFC-0016 revision 3) is read as a room event: the type as the room",
+      kind == "event" and p["kind"] == "room" and p["room"] == "office" and p["votes"] == {"office": 0.9}
+      and p["text"] == "room office" and "type" not in p["raw"], p)
+(t, kind, p), = log.feed_row({"event": "area", "t": 3.8, "id": "area_2", "name": "Marko's office", "type": "office",
+                              "guess": "bath", "agrees": False, "decision": {"rule": "area", "reason": "in Marko's office", "values": {}}})
+check("an `area` row is a notable event with the operator's area, and says when the objects disagree",
+      kind == "event" and p["kind"] == "area" and p["notable"] is True
+      and p["area"] == {"id": "area_2", "name": "Marko's office", "type": "office", "guess": "bath", "agrees": False}
+      and p["text"] == "area Marko's office, but the objects look bath" and "name" not in p["raw"], p)
+msgs = wire.to_messages(3.8, "event", p, 0)
+check("... and the area survives the MCAP encoding", [json.loads(d)["area"]["name"] for topic, _, _, d in msgs] == ["Marko's office"], msgs)
 (t, kind, p), = log.feed_row({"event": "found", "t": 5.0, "kind": "fridge", "status": "reached", "why": "stood 0.6 m from it", "object": {"id": "fridge_1"}})
 check("a found row is a notable event: `found <kind> <status>`, so the index and `events --kind found` see it",
       kind == "event" and p["kind"] == "found" and p["notable"] is True and p["text"] == "found fridge reached", p)
@@ -164,7 +177,7 @@ with tempfile.TemporaryDirectory() as tmp:
         check("/state at 3.6 s: the sighting is 1.1 s old, so none is current; the objects and the room stay", s["sighting"] is None and len(s["objects"]) == 1 and s["room"]["name"] == "kitchen", s)
         check("/state at 2.5 s exactly: the sighting at that time is current (a record at t counts)", sem_at(2.5)["sighting"]["t"] == 2.5)
         check("/state before the first snapshot: an empty list, no sighting, no room, the key still there (the run has semantic records)",
-              sem_at(1.0) == {"objects_t": None, "objects": [], "sighting": None, "room": None}, sem_at(1.0))
+              sem_at(1.0) == {"objects_t": None, "objects": [], "sighting": None, "room": None, "area": None}, sem_at(1.0))
         code, st, _ = get(base, f"/api/v1/runs/{key}/state?t=3.2")
         check("/state's last_event skips room events, as the page's does (the room is in `semantic`)", code == 200 and st["last_event"] is None and st["semantic"]["room"]["name"] == "kitchen", st["last_event"])
     finally:
@@ -189,7 +202,10 @@ old_frames = {"t": [0.1], "belief": [[0, 0, 0]], "truth": [None], "tilt": [None]
 check("a run with no objects, sightings or room events: the state has no `semantic` key", "semantic" not in query.state(old_run, old_frames, 0.1, None, {"objects": [], "sightings": []}))
 room_only = dict(old_run, events=[{"t": 0.05, "kind": "room", "text": "room none", "room": None, "votes": {}}])
 check("a run with only a room event: `semantic` has the room (no name, no votes) and no objects",
-      query.state(room_only, old_frames, 0.1, None, None)["semantic"] == {"objects_t": None, "objects": [], "sighting": None, "room": {"t": 0.05, "name": None, "votes": {}}})
+      query.state(room_only, old_frames, 0.1, None, None)["semantic"] == {"objects_t": None, "objects": [], "sighting": None, "room": {"t": 0.05, "name": None, "votes": {}}, "area": None})
+area_run = dict(old_run, events=[{"t": 0.05, "kind": "area", "text": "area Kitchen", "area": {"id": "area_1", "name": "Kitchen", "type": "kitchen", "guess": None, "agrees": None}}])
+check("a run with an area event: `semantic` has the area at its time",
+      query.state(area_run, old_frames, 0.1, None, None)["semantic"]["area"] == {"t": 0.05, "id": "area_1", "name": "Kitchen", "type": "kitchen", "guess": None, "agrees": None})
 unconf = query.semantic_at(old_run, {"objects": [{"t": 0.0, "objects": [dict(OBJ, confirmed=False, landmark=0.5)], "changes": []}], "sightings": []}, 1.0)
 check("an unconfirmed object is in the list with confirmed false and its landmark value", unconf["objects"][0]["confirmed"] is False and unconf["objects"][0]["landmark"] == 0.5, unconf)
 

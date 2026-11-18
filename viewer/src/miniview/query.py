@@ -67,7 +67,8 @@ def semantic_at(run: dict, sem: dict | None, t: float) -> dict | None:
     None for a run that has no objects, sightings or room events at all."""
     objs, sightings = (sem or {}).get("objects", []), (sem or {}).get("sightings", [])
     rooms = [e for e in run["events"] if e["kind"] == "room"]
-    if not (objs or sightings or rooms):
+    areas = [e for e in run["events"] if e["kind"] == "area"]
+    if not (objs or sightings or rooms or areas):
         return None
     snap = sighting = room = None
     i = bisect.bisect_right(objs, t + 1e-9, key=lambda r: r["t"])
@@ -79,6 +80,7 @@ def semantic_at(run: dict, sem: dict | None, t: float) -> dict | None:
     for e in rooms:
         if e["t"] <= t + 1e-9:
             room = e
+    area = next((e for e in reversed(areas) if e["t"] <= t + 1e-9), None)
     r3 = lambda v: round(v, 3)  # noqa: E731
     return {
         "objects_t": snap["t"] if snap else None,
@@ -87,6 +89,7 @@ def semantic_at(run: dict, sem: dict | None, t: float) -> dict | None:
         "sighting": {"t": sighting["t"], "pose": [r3(v) for v in sighting["pose"]], "hfov_deg": sighting["hfov_deg"], "range_m": sighting["range_m"],
                  "seen": [{"kind": d["kind"], "range_m": d.get("range_m"), "confidence": d.get("confidence")} for d in sighting["seen"]]} if sighting else None,
         "room": {"t": room["t"], "name": room.get("room"), "votes": room.get("votes") or {}} if room else None,
+        "area": {"t": area["t"], **(area.get("area") or {})} if area else None,
     }
 
 
