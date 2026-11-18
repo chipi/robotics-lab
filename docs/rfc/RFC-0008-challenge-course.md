@@ -50,7 +50,7 @@ As many as it takes (the operator); this is the first list, from the trials so f
 | 13 | A low overhang | overhead classification | — |
 | 14 | A thin pole, a chair leg | small obstacles for an 8×8 sensor | — |
 | 15 | A field of small boxes | replanning, the reflex | phase 1 runs 11, 16 |
-| 16 | A home door's threshold | stepping over it, false drops from pitch | trial 12 |
+| 16 | A home door's threshold, 0.5–1.0 cm (what the walking crosses) | stepping over it, false drops from pitch | trial 12 |
 | 17 | Things on the floor: a cable, a rug's edge, a book | stepping over, not round | — |
 | 18 | A step up and a step down | walking up and down, not refusing | — |
 | 19 | A short flight of small steps, up | climbing | — |
@@ -132,3 +132,7 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
   door is the model. Challenges follow the robot's physical capabilities. Renumbered with whole
   numbers: the walking-over family is 16–20, the exploring challenges 21–24. The navigator must notice
   it is stuck (walking, the depth ahead not changing) whatever the cause.
+- 2026-11-18, operator, challenge 16 picked up again: the walking crosses about 1 cm whatever the
+  speed (`docs/wip/STEPS.md`: 1 cm 4/5 at 0.4 m/s, 1.5 cm 0/5, 2 cm 0/5 with falls), so challenge 16's
+  bar is 0.5–1.0 cm, built edge to edge; 1.5–3.5 cm becomes a later "too high to cross: stop, do not
+  fall" challenge once such a bar can be seen; the numbers go upstream on the operator's call.

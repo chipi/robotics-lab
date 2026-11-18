@@ -2,7 +2,7 @@
 
 Parked by the operator on 2026-11-17 ("let's park this and focus on other challenges so that we can
 do explore and apartment, and we will come back to steps later"). Challenges 16–20 (RFC-0008 §3)
-wait on this.
+wait on this. Challenge 16 picked up again on 2026-11-18 (the last section).
 
 ## What was decided before parking
 
@@ -46,9 +46,20 @@ In the simulator this walking clears 0.5 cm reliably, 1 cm going up most of the 
 cable or rug edge, which the duck should walk over, is beyond it: the gap is in the walking policy
 (upstream), not the navigator, unless an approach not yet tried (0.4 m/s, an angle) changes that.
 
-## When this is picked up again
+## Picked up again, 2026-11-18
 
-1. 0.4 m/s and an angled approach (the probe's `--speed`; an angle needs a turned bar).
-2. Bring the numbers upstream (the operator's call).
-3. Stuck detection in the navigator (agreed regardless).
-4. Challenges 16–20 rebuilt on the measured heights, every floor in edge-to-edge pieces.
+The operator took up challenge 16 again and agreed (2026-11-18, "OK on all suggestions"):
+
+1. **Done:** 0.4 m/s measured (above: no better). An angled approach is still not tried.
+2. **Done:** challenge 16 rebuilt in edge-to-edge pieces, its bar 0.5–1.0 cm (what the walking
+   crosses), "reach". Not yet run.
+3. **In progress:** stuck detection in the navigator (walking, the depth ahead not changing).
+4. **On the list — the numbers upstream:** bring Pollen the crossing table (1 cm crossed, 1.5–2 cm
+   not, with falls; 0.4 m/s no better) for a real door threshold. Raising it upstream is the
+   operator's call.
+5. **On the list — a later challenge "too high to cross: stop, do not fall"** for bars of 1.5–3.5
+   cm: higher than the walking crosses, lower than the low band sees (3.5 cm + 2 cm/m; flat floor
+   reads up to +2 cm). It needs a way to see them first — a straight line of slightly raised returns
+   across the way, held over several frames — not tried yet.
+6. Challenges 17–20 (cables, rug edges, a step up and down, small flights) on the measured heights,
+   every floor in edge-to-edge pieces.
