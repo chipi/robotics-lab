@@ -56,3 +56,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0017 — Robot access: who may watch, who may drive, and one driver at a
   time](RFC-0017-robot-access.md)
   (Proposed, 2026-11-18; for the operator's review)
+- [RFC-0018 — The lab's projects, their seams, and how to split robotics-lab
+  later](RFC-0018-lab-projects-and-seams.md) (Proposed, 2026-11-18; parked: for later)
