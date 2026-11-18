@@ -7,12 +7,16 @@ import re
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .core import MissionControl
 from .errors import ApiError, invalid, not_found
 
 API = "/api/v1"
+WEB = Path(__file__).resolve().parent / "web"
+CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+                 ".svg": "image/svg+xml"}
 MAX_BODY = 1_000_000
 KEEPALIVE_S = 15.0
 SSE_BATCH = 200
@@ -235,6 +239,17 @@ def site_delete(c: Ctx):
     return {"ok": True}
 
 
+@route("POST", "/sites/{s}/export")
+def site_export(c: Ctx):
+    return {"ok": True, "bundle": c.mc.sites.export_site(c.args["s"])}
+
+
+@route("POST", "/sites/{s}/import")
+def site_import(c: Ctx):
+    bundle = c.body.get("bundle", c.body)
+    return {"ok": True, "imported": c.mc.sites.import_site(c.args["s"], bundle)}
+
+
 @route("GET", "/sites/{s}/areas")
 def areas_list(c: Ctx):
     return {"ok": True, "frame": "site", "areas": c.mc.sites.areas(c.args["s"])}
@@ -327,7 +342,7 @@ def serve_events(h, c: Ctx) -> None:
     robot's own rate allows (§3.2.2)."""
     mc, stopping = c.mc, c.server.stopping
     try:
-        since = int(c.q("since", mc.bus.seq))
+        since = int(c.q("since", c.headers.get("Last-Event-ID") or mc.bus.seq))  # a browser's EventSource resumes with the header
         state_hz = float(c.q("state_hz")) if c.q("state_hz") is not None else None
         goal_run = int(c.q("goal_run")) if c.q("goal_run") is not None else None
         if state_hz is not None and state_hz <= 0:
@@ -388,6 +403,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _static(self, path: str) -> None:
+        """The page: index.html at / and the files of web/ under /web/. A name is one plain file name."""
+        name = "index.html" if path == "/" else path[len("/web/"):]
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or not (WEB / name).is_file():
+            raise ApiError(404, "no_route", f"no such file {path}")
+        data = (WEB / name).read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", CONTENT_TYPES.get(Path(name).suffix, "application/octet-stream"))
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _body(self):
         length = int(self.headers.get("Content-Length") or 0)
         if length > MAX_BODY:
@@ -405,6 +433,9 @@ class Handler(BaseHTTPRequestHandler):
     def _handle(self, method: str) -> None:
         url = urlsplit(self.path)
         try:
+            if method == "GET" and (url.path == "/" or url.path.startswith("/web/")):
+                self._static(url.path)
+                return
             for r in ROUTES:
                 m = r.regex.match(url.path.rstrip("/") or "/")
                 if m and r.method == method:

@@ -148,6 +148,65 @@ before = len(sites.areas("home"))
 sites.merge_run_objects("home", [rep("nav-50", "bed", 9, 9, n=5, confirmed=True)], "fake-1", {})
 check("merging a run's objects creates no area", len(sites.areas("home")) == before)
 
+# --- export and import ------------------------------------------------------------------------------
+sites.update_area("home", "kitchen", {"name": "Kitchen"})
+sites.delete_area("home", "pantry")
+sites.set_guardrails("home", [{"name": "no_go_area", "area": "kitchen"}, "contact"])
+bundle = sites.export_site("home")
+check("an export is a document: format, version, the site, the operator's areas, the labelled objects, the guardrails",
+      bundle["format"] == "mission-control-site" and bundle["version"] == 1 and bundle["site"]["name"] == "My flat"
+      and [a["name"] for a in bundle["areas"]] == ["Kitchen"] and bundle["areas"][0]["outline"])
+check("only the objects somebody named are in it: what a robot saw is the runs' to find again",
+      [o["label"] for o in bundle["objects"]] == ["My sofa"] and len(sites.objects("home")) > 1, bundle["objects"])
+check("a no-go area is by name, so the file does not depend on ids", bundle["guardrails"][0] == {"name": "no_go_area", "area": "Kitchen"})
+import json as _json
+check("it is plain JSON", _json.loads(_json.dumps(bundle)) == bundle)
+
+other = sites.create("Copy", "flat")
+rep1 = sites.import_site("copy", bundle)
+check("an import into another site makes the areas, the named objects and the guardrails",
+      [a["name"] for a in sites.areas("copy")] == ["Kitchen"] and [o["label"] for o in sites.objects("copy")] == ["My sofa"]
+      and sites.guardrails("copy") == [{"name": "no_go_area", "area": "kitchen"}, {"name": "contact"}], rep1)
+check("the report says what was created", rep1["areas"] == {"created": ["kitchen"], "updated": []} and rep1["objects"]["created"] == ["obj-1"]
+      and rep1["guardrails"] == 2)
+check("an imported named object is confirmed, in the site's own ids, seen by 'import'", sites.object("copy", "obj-1")["confirmed"]
+      and sites.object("copy", "obj-1")["seen_by"] == ["import"])
+rep2 = sites.import_site("copy", bundle)
+check("importing again changes nothing: no duplicate area, object or guardrail",
+      rep2["areas"] == {"created": [], "updated": ["kitchen"]} and rep2["objects"] == {"created": [], "labelled": ["obj-1"], "skipped": []}
+      and len(sites.areas("copy")) == 1 and len(sites.objects("copy")) == 1 and len(sites.guardrails("copy")) == 2, rep2)
+moved = _json.loads(_json.dumps(bundle))
+moved["areas"][0]["outline"] = [[0, 0], [1, 0], [1, 1], [0, 1]]
+moved["areas"][0]["type"] = "galley"
+sites.import_site("copy", moved)
+check("an area of the same name has its outline and type replaced", sites.area("copy", "kitchen")["type"] == "galley"
+      and sites.area("copy", "kitchen")["outline"][2] == [1.0, 1.0])
+
+sites.merge_run_objects("copy", [rep("nav-1", "sofa", -1.5, -1.5, n=2, confirmed=True)], "fake-1", {})
+named = sites.import_site("copy", {**bundle, "objects": [{"kind": "sofa", "x": -1.5, "y": -1.4, "label": "Big sofa"}]})
+check("a named object joins an unnamed one of its kind within the association gate and names it",
+      named["objects"]["labelled"] == ["obj-2"] and sites.object("copy", "obj-2")["label"] == "Big sofa", named)
+clash = sites.import_site("copy", {**bundle, "objects": [{"kind": "desk", "x": 5, "y": 5, "label": "my sofa"}]})
+check("a label another object here already has is skipped and reported, not taken", clash["objects"]["skipped"][0]["label"] == "my sofa"
+      and clash["objects"]["created"] == [] and sites.object("copy", "obj-1")["label"] == "My sofa", clash)
+
+def bad(b):
+    before = (len(sites.areas("copy")), len(sites.objects("copy")))
+    e = refusal(sites.import_site, "copy", b)
+    return e, before == (len(sites.areas("copy")), len(sites.objects("copy")))
+
+e, same = bad({"format": "something-else"})
+check("a file that is not a site file is refused", e.code == "bad_bundle" and same)
+e, same = bad({**bundle, "version": 9})
+check("a version this build does not read is refused", e.code == "bad_bundle" and same)
+e, same = bad({**bundle, "areas": [{"name": "Good", "outline": [[0, 0], [9, 0], [9, 9]]}, {"name": "Bad", "outline": [[0, 0]]}]})
+check("all or nothing: a bad area late in the file rolls the earlier ones back", e.code == "bad_outline" and same and refusal(sites.area, "copy", "good").status == 404)
+e, same = bad({**bundle, "objects": [{"kind": "fridge", "x": 1, "y": 1}]})
+check("an object with no label is refused", e.code == "bad_bundle" and same)
+check("a no-go area the file's areas do not have is refused",
+      refusal(sites.import_site, "copy", {**bundle, "guardrails": [{"name": "no_go_area", "area": "Nowhere"}]}).status == 404)
+check("an import into a site that is not there is a 404", refusal(sites.import_site, "nope", bundle).status == 404)
+
 # --- persistence ------------------------------------------------------------------------------------
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / "db" / "mc.sqlite"

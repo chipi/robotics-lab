@@ -20,7 +20,7 @@ is `{"ok": false, "error": {"code", "message", ...data}}` with an honest status 
 | 405 | `method_not_allowed` |
 | 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use` |
 | 413 | `too_large` |
-| 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline` |
+| 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline`, `bad_bundle` |
 | 501 | `not_built` (teams, RFC-0014 step 5), `no_planner` |
 | 503 | `robot_offline` |
 
@@ -164,6 +164,8 @@ when it does. **Only the operator's calls create, change or delete an area;** a 
 | `GET /sites/{s}/objects` | `[{id, kind, label, x, y, frame, parts, confirmed, landmark, confidence, n, unique, first_seen, last_seen, seen_by, evidence, area}]` |
 | `POST /sites/{s}/objects/{id}/label` | `{label}` (null clears); unique in the site, case-insensitively |
 | `GET /sites/{s}/inventory` | the confirmed objects by area, and `none_defined` |
+| `POST /sites/{s}/export` | the site, the operator's areas, its labelled objects and its guardrails as one JSON document: `{bundle}` with `format: "mission-control-site"`, `version: 1`, `site`, `areas`, `objects`, `guardrails` (no-go areas by name). Objects nobody named are not in it |
+| `POST /sites/{s}/import` | `{bundle}` (or the bundle as the body), merged into this site, all or nothing. An area of the same name has its type and outline replaced; a labelled object joins an unnamed object of its kind within the association gate and names it, else becomes a new confirmed object; a label another object here has is skipped and reported; the guardrails are added. Returns `{imported: {areas: {created, updated}, objects: {created, labelled, skipped}, guardrails}}`; a file that is not a site file is `422 bad_bundle` |
 | `GET`, `PUT /sites/{s}/guardrails` | `{guardrails: [...]}`, including `no_go_area`; an area that a guardrail names is not deleted, merged away or split |
 
 An **outline** is a list of at least three `[x, y]` in the site frame, simple (no crossing), with an
@@ -181,7 +183,8 @@ label is never touched by a merge.
 JSON `{seq, t, kind, robot, ...}`. Query:
 
 - `since=<seq>`: replay what the ring (the latest 5000) still holds after it, then go live.
-  Without it the stream starts from now. When the ring no longer holds all of it, an
+  Without it the stream starts from the `Last-Event-ID` header (a browser's EventSource sends it
+  when it reconnects), else from now. When the ring no longer holds all of it, an
   `event: gap` comes first.
 - `robots=a,b`, `goal_run=<id>`: filters.
 - `state_hz=<n>`: lowers the state rate of this subscription. It cannot raise it above the robot's.
@@ -199,6 +202,17 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 | `object-named` | an operator's label |
 
 A comment line `: keepalive` comes every 15 s.
+
+## The page
+
+`GET /` is the page: `web/index.html`, `web/app.js` and `web/style.css` under `/web/`, plain files with
+no build step, served by the same server. It is a client of this API and the event stream and has no
+call of its own. It shows the robots (online, status, lock holder), the selected robot's map with the
+objects and areas layers, a point goal by tapping the map and the other goal kinds by form, the
+library, the goal runs with their progress and decisions, area drawing, renaming and deleting, site
+export and import, STOP for the selected robot and STOP ALL (always on screen), and a Watch link that
+is disabled while a run's `watch` is null. It uses the Observatory's colour tokens, in light and dark,
+and fits a 390 px phone. `window.__mc` is a hook for the page test.
 
 ## Robot files
 

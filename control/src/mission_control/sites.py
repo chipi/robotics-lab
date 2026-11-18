@@ -7,7 +7,7 @@ import re
 import time
 
 from . import geometry, guardrails
-from .errors import conflict, invalid, not_found
+from .errors import ApiError, conflict, invalid, not_found
 from .store import dumps, loads
 
 # RFC-0016 / semantic_map.py: a detection this close to an object of its kind is that object; for a
@@ -16,6 +16,7 @@ ASSOC_M = 0.5
 UNIQUE_M = 1.5
 POSITION_BLEND = 0.3
 MAX_EVIDENCE = 5
+EXPORT_FORMAT = "mission-control-site"
 
 
 def _slug(text: str) -> str:
@@ -311,6 +312,88 @@ class Sites:
                    for a in areas]
         none = [brief(o) for o in confirmed if o["area"] is None]
         return {"site": sid, "frame": "site", "areas": by_area, "none_defined": none, "confirmed": len(confirmed)}
+
+    # --- export and import (§3.2.1, §3.5.2): the operator's work as a file -------------------------
+
+    def export_site(self, sid: str) -> dict:
+        """The site, the operator's areas, its labelled objects and its guardrails, as one JSON document
+        to keep in a file, diff and back up. What a robot saw and nobody named is not in it: it is the
+        runs' to find again. No-go areas are by area name, so the file does not depend on ids."""
+        site = self.get(sid)
+        areas = self.areas(sid)
+        names = {a["id"]: a["name"] for a in areas}
+        guards = [{"name": "no_go_area", "area": names[g["area"]]} if g["name"] == "no_go_area" else g
+                  for g in self.guardrails(sid)]
+        return {
+            "format": EXPORT_FORMAT, "version": 1,
+            "site": {"name": site["name"], "kind": site["kind"], "frame": "site", "dock_pose": site["dock_pose"]},
+            "areas": [{"name": a["name"], "type": a["type"], "outline": a["outline"]} for a in areas],
+            "objects": [{"id": o["id"], "kind": o["kind"], "label": o["label"], "x": o["x"], "y": o["y"],
+                         "parts": o["parts"], "landmark": o["landmark"], "unique": o["unique"],
+                         "confidence": o["confidence"]} for o in self.objects(sid) if o["label"]],
+            "guardrails": guards,
+        }
+
+    def import_site(self, sid: str, bundle) -> dict:
+        """Merge an export into this site, all or nothing. An area of the same name has its type and outline
+        replaced, a new name is created. A labelled object joins the object of its kind within the
+        association gate when there is one that has no label (it takes the name), else becomes a new,
+        confirmed object; a label that another object here already has is skipped and reported.
+        The file's guardrails are added to the site's. The file's site name, kind and dock are not
+        applied: the site is the one imported into."""
+        self._row(sid)
+        if not isinstance(bundle, dict) or bundle.get("format") != EXPORT_FORMAT:
+            raise invalid(f"not a Mission Control site file: format is {EXPORT_FORMAT!r}", "bad_bundle")
+        if bundle.get("version") != 1:
+            raise invalid(f"site file version {bundle.get('version')!r}: this build reads 1", "bad_bundle")
+        areas, objects = bundle.get("areas", []), bundle.get("objects", [])
+        if not isinstance(areas, list) or not isinstance(objects, list) or not isinstance(bundle.get("guardrails", []), list):
+            raise invalid("areas, objects and guardrails are lists", "bad_bundle")
+        report = {"areas": {"created": [], "updated": []}, "objects": {"created": [], "labelled": [], "skipped": []},
+                  "guardrails": 0}
+        now = self._wall()
+        with self.store.transaction():
+            for a in areas:
+                if not isinstance(a, dict):
+                    raise invalid("an area is an object", "bad_bundle")
+                try:
+                    have = self.area(sid, str(a.get("name")))
+                except ApiError:
+                    have = None
+                if have:
+                    self.update_area(sid, have["id"], {"type": a.get("type"), "outline": a.get("outline")})
+                    report["areas"]["updated"].append(have["id"])
+                else:
+                    report["areas"]["created"].append(self.create_area(sid, a.get("name"), a.get("type"), a.get("outline"))["id"])
+            for o in objects:
+                if not (isinstance(o, dict) and isinstance(o.get("kind"), str) and isinstance(o.get("x"), (int, float))
+                        and isinstance(o.get("y"), (int, float)) and isinstance(o.get("label"), str) and o["label"].strip()):
+                    raise invalid("an object needs kind, x, y and a label", "bad_bundle")
+                label = o["label"].strip()
+                taken = next((x for x in self.objects(sid) if (x["label"] or "").lower() == label.lower()), None)
+                near = self._nearest(sid, o)
+                if taken and not (near and near["id"] == taken["id"]):
+                    report["objects"]["skipped"].append({"label": label, "why": f"{taken['id']} is already called {taken['label']!r}"})
+                    continue
+                if near and (near["label"] is None or near["label"].lower() == label.lower()):
+                    self.store.execute("UPDATE objects SET label = ? WHERE site_id = ? AND id = ?", (label, sid, near["id"]))
+                    report["objects"]["labelled"].append(near["id"])
+                    continue
+                assoc = {"ids": {}}
+                rep = {**o, "id": "import", "confirmed": True, "n": 1}
+                oid = self._insert_object(sid, rep, "import", now, assoc)
+                self.store.execute("UPDATE objects SET label = ? WHERE site_id = ? AND id = ?", (label, sid, oid))
+                report["objects"]["created"].append(oid)
+            wanted = []
+            for g in bundle.get("guardrails", []):
+                g = guardrails.normalise(g)
+                if g["name"] == "no_go_area":
+                    g = {"name": "no_go_area", "area": self.area(sid, g["area"])["id"]}
+                wanted.append(g)
+            merged = self.guardrails(sid)
+            self.set_guardrails(sid, merged + [g for g in wanted if g not in merged])
+            report["guardrails"] = len(wanted)
+        return report
 
     def seed(self, sid: str) -> dict:
         """What a navigator is seeded with (§3.5.2): the confirmed objects and the areas' outlines."""

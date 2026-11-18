@@ -203,6 +203,36 @@ check("GET inventory: confirmed objects by area, sightings and confidence", st =
 check("the named object is an event", any(e["kind"] == "object-named" and e["label"] == "the cold box" for e in mc.bus.since(0, 100000)[0]))
 check("no area was created by the run: still one", len(call("GET", "/sites/home/areas")[1]["areas"]) == 1)
 
+# export and import
+st, b = call("POST", "/sites/home/export")
+bundle = b["bundle"]
+check("POST /sites/{s}/export: the site, its areas and its labelled objects as one document", st == 200 and bundle["format"] == "mission-control-site"
+      and [a["name"] for a in bundle["areas"]] == ["Kitchen"] and [o["label"] for o in bundle["objects"]] == ["the cold box"], bundle)
+call("POST", "/sites", {"name": "Copy", "kind": "flat"})
+st, b = call("POST", "/sites/copy/import", {"bundle": bundle})
+check("POST /sites/{s}/import: the report says what was made", st == 200 and b["imported"]["areas"]["created"] == ["kitchen"]
+      and b["imported"]["objects"]["created"] == ["obj-1"], b)
+check("and the copy has them", call("GET", "/sites/copy/objects")[1]["objects"][0]["label"] == "the cold box"
+      and call("GET", "/sites/copy/areas/at?x=3&y=1")[1]["area"]["id"] == "kitchen")
+check("the bundle itself is accepted as the body too", call("POST", "/sites/copy/import", bundle)[1]["imported"]["areas"]["updated"] == ["kitchen"])
+st, b = call("POST", "/sites/copy/import", {"bundle": {"format": "other"}})
+check("a file that is not a site file is a 422 bad_bundle", st == 422 and b["error"]["code"] == "bad_bundle")
+check("export of a site that is not there is a 404", call("POST", "/sites/nope/export")[0] == 404)
+
+# the page is served by the same server
+req = urllib.request.urlopen(BASE.replace("/api/v1", "/"), timeout=5)
+html = req.read().decode()
+check("GET / is the page", req.status == 200 and req.headers["Content-Type"].startswith("text/html") and "Mission Control" in html and "stop-all" in html)
+req = urllib.request.urlopen(BASE.replace("/api/v1", "/web/app.js"), timeout=5)
+check("and its script, as JavaScript", req.headers["Content-Type"].startswith("text/javascript") and b"EventSource" in req.read())
+check("and its style", urllib.request.urlopen(BASE.replace("/api/v1", "/web/style.css"), timeout=5).headers["Content-Type"].startswith("text/css"))
+for bad_path in ("/web/../core.py", "/web/nothing.js", "/web/%2e%2e%2fcore.py", "/web/.hidden"):
+    try:
+        urllib.request.urlopen(BASE.replace("/api/v1", bad_path), timeout=5)
+        check(f"no file outside web/: {bad_path}", False)
+    except urllib.error.HTTPError as exc:
+        check(f"no file outside web/: {bad_path}", exc.code == 404)
+
 
 # --- the event stream -------------------------------------------------------------------------------
 def read_sse(url, want, out, ready, timeout=15.0):

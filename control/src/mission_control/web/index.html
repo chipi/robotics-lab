@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header class="top">
+  <span class="mark"><i></i>Mission Control</span>
+  <span id="conn" class="chip">connecting</span>
+  <span class="grow"></span>
+  <button id="theme" class="btn sm" type="button" aria-label="Switch between light and dark">Theme</button>
+</header>
+
+<main class="page">
+  <section id="robots" class="panel" aria-label="Robots">
+    <h2>Robots</h2>
+    <div id="robot-list"></div>
+  </section>
+
+  <section id="mapcard" class="panel" aria-label="Map">
+    <h2>Map</h2>
+    <div class="mapbar">
+      <label class="inline" for="site-sel">Site</label>
+      <select id="site-sel" aria-label="The site this robot is at"></select>
+      <label class="inline"><input type="checkbox" id="layer-grid" checked>Map</label>
+      <label class="inline"><input type="checkbox" id="layer-objects" checked>Objects</label>
+      <label class="inline"><input type="checkbox" id="layer-areas" checked>Areas</label>
+    </div>
+    <div class="mapwrap"><canvas id="map" tabindex="0" aria-label="The map: tap to set a point goal"></canvas></div>
+    <div id="maphint" class="hint"></div>
+    <details>
+      <summary class="dim">New site</summary>
+      <div class="row">
+        <input id="site-name" placeholder="Name (Home)" aria-label="New site name">
+        <input id="site-kind" placeholder="Kind (apartment)" aria-label="New site kind">
+        <button id="site-create" class="btn sm" type="button">Create site</button>
+      </div>
+    </details>
+  </section>
+
+  <section id="goal-panel" class="panel" aria-label="Goal">
+    <h2>Goal</h2>
+    <div class="stack">
+      <div class="row">
+        <select id="g-kind" aria-label="Goal kind">
+          <option value="point">Point</option>
+          <option value="go_to_object">Go to an object</option>
+          <option value="go_to_area">Go to an area</option>
+          <option value="explore">Explore</option>
+          <option value="inventory">Inventory</option>
+        </select>
+        <select id="g-expect" aria-label="Expect"><option value="reach">expect reach</option><option value="refuse">expect refuse</option></select>
+      </div>
+      <div id="g-fields"></div>
+      <div>
+        <div class="dim" style="font-size:12px">Must not</div>
+        <label class="inline"><input type="checkbox" class="g-must" value="contact">contact</label>
+        <label class="inline"><input type="checkbox" class="g-must" value="fall">fall</label>
+        <label class="inline"><input type="checkbox" class="g-must" value="stuck">stuck</label>
+        <div class="row">
+          <label class="inline">max speed m/s <input id="g-maxspeed" type="number" min="0" step="0.05" style="width:90px"></label>
+          <label class="inline">time limit s <input id="g-timelimit" type="number" min="0" step="1" style="width:90px"></label>
+        </div>
+      </div>
+      <div class="row">
+        <input id="g-name" class="grow" placeholder="Name (to save)" aria-label="Goal name">
+        <input id="g-folder" class="grow" placeholder="Folder (tests/course)" aria-label="Goal folder">
+      </div>
+      <div class="row">
+        <button id="g-run" class="btn primary" type="button">Run now</button>
+        <button id="g-save" class="btn" type="button">Save to library</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="runs" class="panel" aria-label="Goal runs">
+    <h2>Goal runs</h2>
+    <div id="run-list"></div>
+    <div id="run-detail"></div>
+  </section>
+
+  <section id="library" class="panel" aria-label="Goal library">
+    <h2>Library</h2>
+    <div id="goal-list"></div>
+  </section>
+
+  <section id="areas" class="panel" aria-label="Areas">
+    <h2>Areas</h2>
+    <div class="dim" style="font-size:12px">Only you draw areas. A robot never creates one.</div>
+    <div class="row" style="margin:6px 0">
+      <button id="area-draw" class="btn" type="button" aria-pressed="false">Draw an area</button>
+      <button id="export" class="btn" type="button">Export site</button>
+      <label class="btn" style="display:inline-flex;align-items:center;margin:0;color:var(--text);font-size:14px" for="import-file">Import site</label>
+      <input id="import-file" type="file" accept="application/json,.json" style="display:none" aria-label="Import a site file">
+    </div>
+    <div id="area-draft" hidden class="stack">
+      <div class="dim" id="area-draft-hint"></div>
+      <div class="row">
+        <input id="area-name" class="grow" placeholder="Area name (Kitchen)" aria-label="New area name">
+        <input id="area-type" class="grow" placeholder="Type (optional)" aria-label="New area type">
+      </div>
+      <div class="row">
+        <button id="area-save" class="btn primary" type="button">Save area</button>
+        <button id="area-undo" class="btn" type="button">Undo point</button>
+        <button id="area-cancel" class="btn" type="button">Cancel</button>
+      </div>
+    </div>
+    <div id="area-list"></div>
+  </section>
+
+  <section id="log" class="panel" aria-label="Events">
+    <h2>Events</h2>
+    <div id="event-log" class="log"></div>
+  </section>
+</main>
+
+<div id="toast" role="status" hidden></div>
+<nav class="stopbar" aria-label="Stop">
+  <button id="stop-robot" class="stop" type="button">STOP</button>
+  <button id="stop-all" class="stop all" type="button">STOP ALL</button>
+</nav>
+<script src="/web/app.js"></script>
+</body>
+</html>

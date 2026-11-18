@@ -116,6 +116,13 @@ test-viewer-pages: viewer-sync ## miniview's two pages in headless Chromium (MIN
 	$(call run_tests,$(VIEWER_DIR),$(VIEWER_PAGE_TESTS),)
 	@echo "test-viewer-pages PASS"
 
+.PHONY: test-control-page
+test-control-page: viewer-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the viewer's Playwright and MINIVIEW_CHROMIUM; control has no browser dependency)
+	@log=$$(mktemp); \
+	  if (cd $(VIEWER_DIR) && PYTHONPATH=../$(CONTROL_DIR)/src:../$(DUCK_DIR)/src uv run --frozen python ../$(CONTROL_DIR)/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
+	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
+	@echo "test-control-page PASS"
+
 .PHONY: test-unit
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
 	@$(NXT_PY) $(NXT_DIR)/tests/test_deadman.py >/tmp/robotics-lab-test_deadman.log 2>&1 \
@@ -209,7 +216,7 @@ ci-fast: lint test-unit test-duck test-viewer test-control ## What every push mu
 	@echo "ci-fast PASS"
 
 .PHONY: ci
-ci: ci-fast test-viewer-pages test-run-compat test-integration test-viewer-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
+ci: ci-fast test-viewer-pages test-control-page test-run-compat test-integration test-viewer-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
 	@echo "ci PASS"
 
 # ---- NXT: run and package ----------------------------------------------------
