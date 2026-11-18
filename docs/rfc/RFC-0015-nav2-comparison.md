@@ -1,6 +1,8 @@
 # RFC-0015 — Nav2 on the simulated duck: learn how the standard stack works, and compare
 
-**Status:** Accepted, revision 3 (2026-11-18). The operator: "I would definitely want to do this,
+**Status:** Parked (2026-11-19, the operator: "park for now") after step 2's first drive: the image
+builds and Nav2 comes up, no goal reached yet (§8). Accepted, revision 3 (2026-11-18). The
+operator: "I would definitely want to do this,
 and learn how these systems work and compare our results", and on the image: "I am OK on Docker".
 Revisions 2 and 3 fold in the advisor's two reviews (Fable 5.1; the second: "accept; steps 1 and 2
 can start now"; §7).
