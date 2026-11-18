@@ -108,5 +108,22 @@ post = [(0.55, 0.75)]              # a post the depth sensor saw, in the open ed
 near_post = [p for c in frontiers(door_unseen, obstacles=post) for p in c if math.dist(p, post[0]) <= 0.3]
 check("... a frontier cell within 0.3 m of an obstacle point is no way on", not near_post, near_post)
 
+# Retired frontier cells (a target with no path on the map) take out only themselves, not AVOID_M round each (b6 r1:
+# three refusals retired 190 cells, their 0.4 m discs covered all 11 clusters, 446 cells, and the run ended "no frontier
+# left" with the kitchen and the living room unseen)
+from duck_lab.nav.explore import RETIRED_M, without_retired  # noqa: E402
+
+line = [(1.0, y * 0.05) for y in range(20)]               # a frontier 1 m ahead, y 0-0.95
+retired = line[:7]                                        # its first 0.3 m retired
+left = without_retired([line], retired)
+check("retired cells leave the cluster; the rest stays", left and all(p[1] > 0.3 for p in left[0])
+      and len(left[0]) == len([p for p in line if p[1] > 0.3 + RETIRED_M + 1e-9]), left)
+check("the rest is still pickable (failed targets keep AVOID_M; retired cells do not)",
+      pick(left, (0.0, 0.5, 0.0), avoid=[]) is not None)
+check("a cluster fully retired is gone", without_retired([retired], retired) == [])
+grown = [(1.02, y * 0.05 + 0.01) for y in range(7)]       # the same stretch seen again, cells shifted 1-2 cm
+check("the same stretch, shifted by a cell's noise, stays retired", without_retired([grown], retired) == [],
+      without_retired([grown], retired))
+
 print("EXPLORE", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

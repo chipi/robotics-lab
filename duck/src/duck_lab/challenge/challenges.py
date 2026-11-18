@@ -222,7 +222,10 @@ def threshold(seed: int, rng: random.Random) -> Scene:
     walks on it. Tests false drops from pitch (RFC-0008 §3, trial 12)."""
     x, h, beyond = rng.uniform(0.8, 1.2), rng.uniform(0.01, 0.03), rng.uniform(1.4, 1.8)
     end = x + beyond + 0.6
-    floors = [slab("floor", -0.6, end, -0.4, 0.4), slab("threshold", x - 0.02, x + 0.02, -0.4, 0.4, top=h)]
+    # edge to edge, not a bar laid on a floor running under it: the simulator tripped the duck on that build (1 cm: 0/3
+    # crossed against 2/3 in pieces, docs/wip/STEPS.md), which was most of this challenge's 0/10
+    floors = [slab("floor", -0.6, x - 0.02, -0.4, 0.4), slab("threshold", x - 0.02, x + 0.02, -0.4, 0.4, top=h),
+              slab("floor_beyond", x + 0.02, end, -0.4, 0.4)]
     return Scene(f"ch16-s{seed}", "A threshold to step over", _walled("corr", -0.6, end, -0.4, 0.4), floors,
                  (x + beyond, 0.0), "reach", 75.0, notes={"height_m": round(h, 3), "at_m": round(x, 3)})
 

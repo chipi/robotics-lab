@@ -8,6 +8,7 @@ import math
 
 MIN_CLUSTER_M = 0.20       # frontier stretches shorter than this are noise, not a way on
 AVOID_M = 0.40             # a target this close to a failed one, a drop or an obstacle is skipped
+RETIRED_M = 0.07           # a frontier cell this close to a retired one is retired too: a cell and a half of mapd's 0.0455 m
 STANDOFF_M = 0.15          # stop this far back from the frontier, on the seen side
 # The floor right round the duck stays unknown (the depth sensor does not see its own feet), so the
 # nearest "frontier" is always underfoot: the first trial's first leg went 5 cm.
@@ -64,6 +65,15 @@ def frontiers(grid: dict, scale: float = 1.0, wall_m: float = WALL_M, obstacles:
         if len(members) * res >= MIN_CLUSTER_M:
             clusters.append([(ox + (x + 0.5) * res, oy + (y + 0.5) * res) for x, y in members])
     return clusters
+
+
+def without_retired(clusters: list, retired: list, within_m: float = None) -> list:
+    """The clusters less their cells within RETIRED_M of a retired frontier cell (a stretch a target with no path on
+    the map took out); clusters left empty are dropped. Retired cells are not avoided at AVOID_M as failed targets
+    are: 190 of them did that in b6 r1, their discs covered every frontier, and the run ended with rooms unseen."""
+    within_m = RETIRED_M if within_m is None else within_m
+    left = [[p for p in c if all(math.dist(p, r) > within_m for r in retired)] for c in clusters]
+    return [c for c in left if c]
 
 
 def pick(clusters: list, pose: tuple, avoid: list, ok=None) -> tuple | None:

@@ -48,6 +48,8 @@ In the bar's order — safety first, then reach, then quality:
 | b3 (fix 1 + look before you step) | `c9c24f8` + both | 3 | 2 / **4** | 0/6 | **2** / 0 | stalled: reflex stop answered by the same plan |
 | b4 (+ fixes 2-5, glance) | `c9c24f8` + all | 3 | 2 / 2 | 0/6 | **7** / 0 | no frontier left (fix 5 retired too much) |
 | b5 (fix 5 local, 0.6 m) | `c9c24f8` + all | 3 | 2 / 3 | 0/6 | **2** / 0 | stalled: reflex stop answered by the same plan |
+| b6 (head fix, low band) | `f06d48f` | 3 | **3 / 5** | **1/6** | 0 / 0 | refused: no room to turn |
+| b7 (+ retired cells only) | `f06d48f` + retire | 3 | 2 / 3 | 0/6 | 0 / 0 | refused: no room to turn (`lm_office`, 3/3) |
 
 ## b1, the baseline (2026-11-17)
 
@@ -306,3 +308,40 @@ Rerun (`runs/gate7-low`): **challenge 15 10/10**, no contact (s1 0.123 m from th
 11 s4, 10 s2, 10 s8, 6 s3, 7 s3; 8, 9, 12 9/9 refused across the drop as they should; 13, 14 6/6.
 Challenge 16 0/3 (two falls at the bar, one refusal): the walk-over family, parked, main 0/10. The
 6.5-7 cm boxes the band can miss stay open; challenge 15's smallest box is not changed yet.
+
+## b6, the head fix and the low band (2026-11-18)
+
+The best batch yet: rooms median 3 (was 2), best 5 (was 4), the first area within 25 % (1/6), no
+contact and no fall in 146 m walked.
+
+| Run | Rooms | Areas ok | End | Walked | Legs reached / refused / stalled / timeout |
+| --- | --- | --- | --- | --- | --- |
+| r1 | 3 (office, bedroom, corridor) | 1/6 | no frontier left, 4.3 min | 24 m | 21 / 3 / 1 / 0 |
+| r2 | 5 (kitchen, living, office, bath, corridor) | 1/6 | no frontier left, 15.5 min | 102 m | 44 / 3 / 5 / 4 |
+| r3 | 2 (office, corridor) | 0/6 | trapped, 3.7 min | 20 m | 19 / 7 / 0 / 0 |
+
+Blockers by time lost: timeouts 4x (4.0 min; bath, corridor, living), stalls 6x (2.9 min), "no
+path on the map" 6x (1.7 min; bedroom, corridor), "no room to turn" 7x (0.5 min, but it ended two
+runs: r3 trapped, r1's office). r1 and r2 ended "no frontier left" with rooms unvisited (r1: kitchen
+and living at 0 %): the frontier list ran out before the apartment did. Not yet looked at: why each
+of those frontiers went (retired, walled off by `WALL_M`, or never seen), and r3's seven refusals.
+
+Looked at the same day (`sim/probes/last_frontiers.py`): at r1's last pick 11 frontier clusters
+(446 cells, one of 194) were left, every cell within `AVOID_M` 0.4 m of an avoided point — and 188
+of the 214 avoided points were frontier cells retired by fix 5 (three "no path" refusals), each
+avoided like a failed target, a 0.4 m disc each. Changed: retired cells go to their own list and
+take out only frontier cells within `RETIRED_M` 0.07 m of them (`explore.without_retired`, tests
+in `test_explore.py`); failed targets keep `AVOID_M`. Replayed at the same pick: 56 usable cells and
+a target in the corridor (r2's last pick: 5; `reachable()` not replayed).
+
+## b7, retired cells only (2026-11-18)
+
+Worse, and not for the change's reason: all three runs ended **trapped in the office at 2.2-3.8
+min** by "no room to turn" (18 refusals), at the same spot as b6 r3 and b1 — beside `lm_office`, the
+office's landmark, a standing capsule (about 4-66 cm high) the depth sensor sees and the duck can
+walk through (`collides: false`; the judge does not count it). At the refusals the map gave
+0.05-0.10 m of room, 10-18 remembered points within 0.2 m, the sensor's nearest return 2-10 cm; the
+truth's clearance to anything that collides was 0.24-0.28 m, and the duck 3 cm from the capsule's
+surface. What decides it: the duck got 3 cm from a thing it sees — with a real pillar that is a
+contact. There are six such landmarks, one per room (`lm_*`). The retire change itself is not
+measured by b7: no run lived long enough to need it.

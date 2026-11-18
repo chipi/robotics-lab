@@ -31,7 +31,10 @@ Crossed of tries, at 0.3 m/s:
   deeper treads did not help.
 - **Slower is worse:** at 0.2 m/s, a 1 cm step up 0/5 and a 1 cm bar 1/5 (no falls; stuck with the
   toes at the edge). At 0.15 m/s the duck did not start walking within 6 s.
-- **Not tried:** 0.4 m/s; an angle to the bar; a round cable; the real duck.
+- **Faster does not help** (2026-11-18, picked up again by the operator, edge-to-edge build, 5
+  tries each at 0.4 m/s): a 1 cm bar 4/5, 1.5 cm 0/5 (1 fell), 2 cm 0/5 (1 fell). The limit is about
+  1 cm whatever the speed.
+- **Not tried:** an angle to the bar; a round cable; the real duck.
 - **The scene's construction matters:** a bar laid on a floor that runs under it (challenge 16 as
   built) was crossed 0 of 3 at 1 cm against 2 of 3 for the bar built as three pieces meeting edge to
   edge. Challenge 16's 0/10 was mostly that. Build every floor as pieces meeting edge to edge.

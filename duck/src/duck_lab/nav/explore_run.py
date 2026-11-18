@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.explore import frontiers, pick
+from duck_lab.nav.explore import frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
 from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
@@ -48,6 +48,7 @@ class Explorer:
         self.nav = nav
         self.out = out
         self.failed = []          # frontier targets that failed: avoided from then on
+        self.retired = []         # frontier cells near a target with no path: those cells only (explore.without_retired)
         self.events = []
 
     def note(self, **e) -> None:
@@ -127,7 +128,7 @@ class Explorer:
 
             avoid = self.failed + self.nav.drops
             blocked = list(self.nav.blocked)
-            clusters = frontiers(grid, self.nav.scale, obstacles=blocked)
+            clusters = without_retired(frontiers(grid, self.nav.scale, obstacles=blocked), self.retired)
             target = pick(clusters, pose, avoid, ok=reachable)
             # The choice's inputs, so a replay of it is faithful (sim/probes/frontier_replay.py; the "world" events
             # are the navigator's grid at its plans, not the map read here).
@@ -135,6 +136,7 @@ class Explorer:
                       scale=self.nav.scale, pose=[round(v, 4) for v in pose],
                       avoid=[[round(v, 3) for v in a[:2]] for a in avoid],
                       obstacles=[[round(v, 3) for v in b[:2]] for b in blocked],
+                      retired=[[round(v, 3) for v in r] for r in self.retired],
                       target=[round(v, 3) for v in target] if target else None)
             if target is None:
                 if not surveyed_here:
@@ -165,7 +167,7 @@ class Explorer:
                     # "trapped" at the dock). Only the stretch near it: the whole cluster ran along the corridor in b4
                     # (124 and 201 points retired by one refusal) and took the ways north and south with it.
                     near = min(clusters, key=lambda c: min(math.dist(p, target) for p in c))
-                    self.failed.extend(p for p in near if math.dist(p, target) <= RETIRE_M)
+                    self.retired.extend(p for p in near if math.dist(p, target) <= RETIRE_M)
                 # A run of refusals says the duck is stuck; a target with no path says only that the target is out of
                 # reach (b2 r3, b3 r2: "trapped" at the dock, free to walk north).
                 if not unreachable:
