@@ -6,9 +6,13 @@ fake robot with its fake site, the registry from robot files, the lock through t
 robot, the goal library with ad-hoc runs, `must_not` at robot, site and goal level, goal runs with
 every outcome, and rates that are settings; of step 3, against the fake robot only, the site and
 area library, objects with stable ids, naming, `inventory`, `go_to_object`, `explore`, `not_found`,
-`done` and `result`; and, ahead of its turn, `go_to_area` and `explore {area}` of step 9. Not built:
-the page, the MCP server and the `/watch` link of step 1, the objects and areas layers on a map, export
-and import, and steps 0, 2, 4 to 8 and 10 to 12. The container files are written and not built.
+`done` and `result`; and, ahead of its turn, `go_to_area` and `explore {area}` of step 9. Then, in
+the next commit (920cc90): the page of step 1 (robots, the map with the objects and areas layers, the
+library, point goals by tapping the map, goal runs from the event stream, STOP and STOP ALL, a Watch
+link that is disabled while the run key is null), the areas the operator draws, renames and deletes
+on that map, and site export and import. Not built: the MCP server of step 1 (it needs a dependency
+decision), a working `/watch` link (the fake robot writes no Observatory run), and steps 0, 2, 4 to
+8 and 10 to 12. The container files are written and not built.
 **Builds on:** [RFC-0006](RFC-0006-mission-control.md) (the vision, superseded in part, §2.1),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
 [RFC-0002](RFC-0002-robot-brain.md) §3.9 to §3.10 (several robots, the brain's API),
@@ -1069,3 +1073,24 @@ kept to record where each answer went.
   - **Not checked here:** anything on a real robot, the simulator, a browser, the MCP server, Docker
     (`docker compose config` parses the compose files; no image was built or run), the stream under
     load beyond five clients, and the order of events across threads beyond what the tests show.
+- 2026-11-18 — The page, area editing and site export and import built (920cc90). Choices, open to
+  the operator's correction:
+  - **The page duplicates a small 2D drawing** (question 14's proposal): a canvas of the robot's
+    grid, the areas' outlines and the objects' boxes. It copies the Observatory's colour tokens, names
+    and values, from `viewer/web/shell/shell.css` into its own `style.css`; a shared theme file does
+    not exist, and Mission Control's page is served by another process, so it cannot link to one.
+    The fonts are the system's (the Observatory ships Inter and JetBrains Mono as files).
+  - **Plain files, no build, no library:** `web/index.html`, `app.js`, `style.css`, served at `/`
+    and `/web/`. The page keeps no state the API does not have, except which robot is selected.
+  - **Export is a JSON document, not files in folders** (§3.5.2 says "as files"): the page downloads
+    it as one file. It holds the site, the operator's areas, the labelled objects and the
+    guardrails; objects nobody named are left to the runs. **Import merges** into the chosen site
+    (areas by name, replaced; a named object joins an unnamed one of its kind within the association
+    gate, else is new and confirmed; a label already in use is skipped; guardrails added) and is all
+    or nothing. The RFC does not say replace or merge; merge cannot lose the site's own work.
+  - **Deleting an area takes two presses** on the page; the API deletes at once.
+  - **The page test runs in the viewer's environment** (its Playwright and Chromium; `control/`
+    has no browser dependency): `make test-control-page`.
+  - **Checked in a browser now:** headless Chromium at 390 px and 1500 px, dark and light, on the
+    fake robot. **Not checked:** a phone, another browser, a screen reader, a touch screen's tap
+    (the test clicks), a real robot, a long-running page.
