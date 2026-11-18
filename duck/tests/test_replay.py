@@ -401,5 +401,18 @@ check("a different cell in the next frame: not remembered", new == [] and nv.blo
 new = nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=100)
 check(f"{LOW_FRAMES} different frames: remembered, as obstacle points", len(new) >= 1 and nv.blocked == new, new)
 
+# ---- one tight pivot per spot (the operator, 2026-11-18, option 3): each turn on the spot creeps 3-4 cm the odometry
+# does not see; b7 r2 turned four times beside lm_office, 0.206 -> 0.034 m from it while believing 0.16 ----------------
+from duck_lab.nav.run import TIGHT_PIVOT_M  # noqa: E402
+
+nv = navigator()
+nv._tight_spots = []
+check("the tight pivot room is the footprint plus the creep (0.15 m)", abs(TIGHT_PIVOT_M - 0.15) < 1e-9, TIGHT_PIVOT_M)
+check("a first tight pivot here: allowed", nv._tight_allowed((1.0, 1.0, 0.0), 10.0))
+check("... the same pivot going on, tick after tick: allowed", nv._tight_allowed((1.01, 1.0, 0.5), 10.3)
+      and nv._tight_allowed((1.02, 1.01, 1.0), 10.6))
+check("a new tight pivot at the same spot after that one ended: refused", not nv._tight_allowed((1.03, 1.0, 0.0), 14.0))
+check("a tight pivot 0.2 m away: allowed", nv._tight_allowed((1.2, 1.0, 0.0), 14.0))
+
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

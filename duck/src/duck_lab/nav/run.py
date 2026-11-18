@@ -111,9 +111,10 @@ ARC_AHEAD_M = 0.25
 # following's error, rounded up) from just outside the heading to well round the side it turns to.
 ARC_REACH_M = 0.45
 ARC_OUTER_DEG, ARC_INNER_DEG = 20.0, 120.0
-# No room for either: a pivot is still allowed while the clearance stays above this, rechecked every tick
-# - 2.5 cm more than the 8.3 cm footprint radius. Below it the duck stands and the leg is refused.
-TIGHT_PIVOT_M = 0.11
+# No room for either: a pivot is still allowed while the clearance stays above this, rechecked every tick, once per
+# spot. Below it the duck stands and the leg is refused.
+TIGHT_PIVOT_M = 0.15     # was 0.11 (footprint + 2.5 cm); + the creep a pivot leaves (b7 r2, the operator 2026-11-18)
+TIGHT_SPOT_M, TIGHT_GAP_S = 0.10, 0.5    # one tight pivot per spot (Navigator._tight_allowed)
 BEYOND_M = (0.1, 0.2, 0.3, 0.4)   # a drop's hole continues behind its edge
 FLOOR_CELL_M = 0.05
 # Drop rings by what is known of the drop (docs/wip/SIDE-DROPS.md; the advisor's split, the operator's choice 2026-11-17).
@@ -323,6 +324,7 @@ class Navigator:
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
         self._low = {}       # low-band cells (LOW_CELL_M) -> the frames that saw them, until LOW_FRAMES remember them
+        self._tight_spots = []   # [(x, y), last tick] of each tight pivot: one per spot (_tight_allowed)
         self._drop_streak = 0
         self._drop_frame = None
         self._depth = None       # the newest depth frame's returns in map metres, for the next tick record
@@ -632,6 +634,20 @@ class Navigator:
         return any((cx + dx, cy + dy) in self.floor_seen for dx in range(-r, r + 1) for dy in range(-r, r + 1)
                    if math.hypot(dx, dy) * FLOOR_CELL_M <= radius_m)
 
+    def _tight_allowed(self, pose: tuple, now: float) -> bool:
+        """One tight pivot per spot (the operator, 2026-11-18): a turn on the spot creeps 3-4 cm the odometry does not see,
+        so the belief's room is no longer the room after one (b7 r2: four tight pivots beside lm_office took it from
+        0.206 to 0.034 m while it believed 0.16). A pivot going on (a tick within TIGHT_GAP_S of the last) continues;
+        a new one within TIGHT_SPOT_M of an earlier one is refused, and the leg then is "no room to turn"."""
+        for spot in self._tight_spots:
+            if math.dist(spot[0], pose[:2]) <= TIGHT_SPOT_M:
+                if now - spot[1] <= TIGHT_GAP_S:
+                    spot[1] = now
+                    return True
+                return False
+        self._tight_spots.append([tuple(pose[:2]), now])
+        return True
+
     def _pivot_clear_of_drops(self, pose: tuple) -> bool:
         """Room to turn on the spot, as far as drops go: PIVOT_DROP_M from a cliff stop's points, PIVOT_EDGE_M from a
         measured edge (each its ring less the following's and belief's error, so the duck can turn wherever the planner
@@ -885,7 +901,7 @@ class Navigator:
                 path = None
                 continue
             if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose, tw.vyaw) and \
-                    room >= TIGHT_PIVOT_M and self._pivot_clear_of_drops(pose):
+                    room >= TIGHT_PIVOT_M and self._pivot_clear_of_drops(pose) and self._tight_allowed(pose, now):
                 # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
                 tw, done = step(path, pose, now, st, near=near, pivot_ok=True, pivot_vx=self.pivot_vx,
