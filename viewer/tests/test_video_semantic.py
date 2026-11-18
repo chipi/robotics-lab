@@ -1,4 +1,4 @@
-"""The semantic map in the video export (RFC-0016, ADR-0018), with no MuJoCo and no rendering: the track a run becomes (objects through the
+"""The semantic map in the video export (RFC-0016, ADR-0019), with no MuJoCo and no rendering: the track a run becomes (objects through the
 run's epoch into the world the video renders, each frame's current look with its detections placed from the robot's pose, the HUD's
 SEES / ROOM / OBJECTS entries), the job the engine is given, what an old run gets (nothing), and the overlay's own geometry (the HUD's
 lines, the eye inset's pinhole projection, the top inset's pixels, the camera's wedge). Drawing on an image needs Pillow, which is the

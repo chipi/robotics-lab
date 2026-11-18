@@ -1,4 +1,4 @@
-"""The semantic map in a run (RFC-0016, ADR-0018): the navigator's `semantic` row becomes an `objects` record, its `look` row a `look`
+"""The semantic map in a run (RFC-0016, ADR-0019): the navigator's `semantic` row becomes an `objects` record, its `look` row a `look`
 record, its `room` row an event with the room and its votes as fields. Adapter, the file (the records come back whole, parts as
 boxes), the reader's checks, the service's /semantic, the streams, and a run from before it still reads. The fixture is a slice of a
 real recording (find-fridge-2: ticks, semantic and room rows) with look rows added, which that recording predates.

@@ -110,7 +110,7 @@ nav:
     - ADR-0015 — The scenario runner: adr/ADR-0015-scenario-runner.md
     - ADR-0016 — Joints and the whole truth pose: adr/ADR-0016-joints-and-whole-truth-pose.md
     - ADR-0017 — Video export: adr/ADR-0017-video-export.md
-    - ADR-0018 — The semantic map in a run: adr/ADR-0018-semantic-map-records.md
+    - ADR-0019 — The semantic map in a run: adr/ADR-0019-semantic-map-records.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md

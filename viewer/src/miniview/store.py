@@ -2,7 +2,7 @@
 
 A record is (t, kind, payload). Kinds: `run` (who and where, once), `epoch` (the map -> world
 transform from t on), `tick` (belief, truth, command, tilt, depth), `signals` (a robot's named values at t,
-ADR-0013), `plan`, `world`, `event`, `objects` and `look` (the semantic map and the camera's looks, ADR-0018), `segment` (a goal's span, ADR-0007), `end` (the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
+ADR-0013), `plan`, `world`, `event`, `objects` and `look` (the semantic map and the camera's looks, ADR-0019), `segment` (a goal's span, ADR-0007), `end` (the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
 applies them one by one, so a finished run and a live one are built the same way.
 """
 

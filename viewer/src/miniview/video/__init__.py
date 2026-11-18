@@ -174,7 +174,7 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     `map` is then the robot's last map grid, the only picture of the room there is. Joints come from the `joint_*` signals
     (ADR-0016) on both; a joint never sampled is left out (the engine holds the model's own pose for it).
 
-    semantic=True adds what the semantic map's overlays need (RFC-0016, ADR-0018): `semantic` {"objects": the snapshots with their
+    semantic=True adds what the semantic map's overlays need (RFC-0016, ADR-0019): `semantic` {"objects": the snapshots with their
     parts in the track's frame}, and per frame `obj_i` (the snapshot in force), `look` (the current camera look, its detections placed
     from the robot's pose in the frame) and, with hud=True, the HUD's sees / room / objects entries. A run without objects, looks or
     rooms gets none of it."""
