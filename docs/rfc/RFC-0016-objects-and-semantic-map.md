@@ -140,7 +140,7 @@ confidence (not built yet).
 
 ## 4. Not in the first build
 
-- Correcting position from landmarks (loop closure).
+- ~~Correcting position from landmarks~~ (built as far as the simulator goes: §6, relocalisation).
 - A real camera, a rendered camera image or a detector network; doors as objects; moving objects.
 - Rooms segmented from the map alone (rooms here come from objects; the map's segmentation stays the
   scoreboard's).
@@ -191,3 +191,59 @@ confidence (not built yet).
   again. The constants are guesses for the simulated camera (hit chance 0.4 to 0.8): at its worst
   in-view range (0.8 of 3 m: hit chance 0.8·(1-0.5·0.8) = 0.48), eight misses in a row for an
   object that is there happen 0.52^8 = 0.5 % of the time.
+- 2026-11-18, relocalisation built (RFC-0014 §3.5.4 as far as the simulator goes).
+  - **The gate.** `Localizer(max_jump_m=0.3, hold_n=None)`: a mapd fix that would move the belief more
+    than 0.3 m (or turn it 0.35 rad) is held, the belief stays on odometry, and mapd's later fixes
+    are held while they stay that far off. Every fix that moves the belief over 0.1 m, or is held, is
+    recorded as a `fix` event: mapd's raw pose, its `t_ns`, the paired odometry's pose and `t_ns`,
+    the belief before and after, and the decision. Of the 33 recorded exploring runs (b1 to b10),
+    one holds such a jump (b10a-r1, 0.9 m in one tick at t = 822 s while pivoting, belief error 0.22
+    to 0.70 m, kept to the end). The raw fix of that jump was not recorded, so its source is not
+    known; whether mapd's pose or the pairing with odometry caused it is not shown by any run so far.
+  - **Why held for good.** The first version took a held jump after 5 fixes in a row agreed. In
+    `relo-plain-on-r1` mapd's pose then jumped 1.79 m at t = 226 s (the belief error was 0.05 m
+    before, 1.85 m after, until the end) and stayed there: agreeing fixes do not tell a lost mapd
+    from a right one. The gate now never takes the jump by itself (`hold_n=None`); the belief
+    continues on odometry and the landmarks. What this gives up: a real, large correction by mapd
+    is refused too, and mapd's grid, built from its wrong pose, no longer matches the belief (not
+    measured; the explorer ended "trapped" in the faulted runs below).
+  - **Landmarks.** `world_model/relocalise.py`: objects of a kind with landmark value 0.7 or more and
+    permanence fixed. An anchor is where a landmark was kept: the site map at the start of a run,
+    or the mean of four sightings
+    from 1.2 m or nearer that agree within 12 cm (a tracked object's own position follows the
+    belief, so it is no anchor). A sighting from 1.2 m or nearer is compared with the anchor of its
+    kind within 1 m of where the belief places it; the residuals of 6 s are collected and, when 4
+    agree within 12 cm and their median is over 15 cm, the belief moves by 0.7 of it (at most
+    0.3 m). Heading is not corrected, so only close sightings count (a heading error of 0.1 rad is
+    12 cm at 1.2 m). The correction is an offset that survives mapd's next fix (each fix replaces
+    the transform) and halves in 90 s (mapd corrects itself too), capped at 1 m. Each correction or
+    refusal is a `relocalise` event with the residuals' median and spread.
+  - **Replay** (`sim/probes/reloc_replay.py`, open loop, translation only) on b10a-r1: the 0.7 m
+    error after the jump falls to 0.33 m by the end of the run (three corrections, at t = 827, 856
+    and 858 s: the duck saw `lm_office` within 1.2 m three times in the 37 s left); mean error over
+    the whole run 0.150 to 0.153 m, because one correction at t = 696 s (0.16, -0.24 m against a true
+    error of 0.12, -0.09 m) was wrong. On b10a-r2, r3 and b10b-r1 to r3 (mean errors 0.03 to 0.10 m)
+    it makes 0 to 1 corrections and changes the mean error by -0.01 to 0.00 m. Replay cannot
+    reproduce the glitch's cause, the gate (no raw fixes in those logs) or the loop.
+  - **Simulator** (10-minute exploring runs from a site map built by a first run; `--fix-fault
+    120,0,0.9` shifts mapd's raw pose by 0.9 m in y from 120 s on, persistently, like b10a-r1;
+    belief error against the truth):
+
+    | Run | Gate | Landmarks | Fault | Belief error mean / max / end (m) | Contacts | Ended |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | relo-fault-nogate | off | off | 0.9 m | 0.605 / 0.917 / 0.868 | 0 | trapped, 6.3 min |
+    | relo-fault-nogate-on | off | on | 0.9 m | 0.454 / 0.977 / 0.633 | 0 | trapped, 3.8 min |
+    | relo-fault-off | on | off | 0.9 m | 0.028 / 0.060 / 0.020 | 0 | trapped, 4.4 min |
+    | relo-fault-on | on | on | 0.9 m | 0.065 / 0.159 / 0.089 | 1 | time, 10 min, 4 rooms |
+    | relo-plain-off | on (late) | off | none | 0.053 / 0.098 / 0.037 | 5 | trapped, 8.0 min |
+    | relo-plain-on2 | on | on | none | 0.069 / 0.268 / 0.015 | 0 | time, 10 min, 4 rooms |
+    | relo-plain-on | on (late) | on | none; mapd lost itself at 226 s | 1.135 / 2.161 / 1.700 | 0 | no frontier, 9.8 min, 2 rooms |
+
+    One run each: the differences between rows are not tested for chance, and the exploring
+    outcomes (rooms, "trapped") differ between runs of the same configuration (b9: 3, 6, 4 rooms).
+    The gate removes the fault's belief error (0.61 to 0.03 m mean). Landmarks alone cut it from
+    0.61 to 0.45 m (one correction, in a run that ended at 3.8 min); on top of the gate they add
+    noise (0.03 to 0.07 m mean, one contact). Without a fault they changed little (0.05 to 0.07 m).
+    `relo-plain-on` is a natural mapd failure: it came without any
+    injected fault, once in the 4 unfaulted runs of this session and once in the 33 earlier
+    runs (its cause is not known), and is what led to `hold_n=None`.
