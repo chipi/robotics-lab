@@ -15,6 +15,7 @@ RUN uv sync --frozen --no-dev
 RUN mkdir -p /index /data
 
 EXPOSE 8070
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+# the first start indexes every run under /data (1.4 GB took about 3 minutes here), and the server answers only after it
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=600s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/api/v1/health', timeout=2)"
 CMD ["miniview", "--data", "/data", "serve", "--host", "0.0.0.0", "--port", "8070"]

@@ -35,8 +35,16 @@ def room(w=30, h=20, wall_x=None, door=None, unknown=()):
 
 
 g = CostGrid.from_map_grid(room())
-check("walls at 10 cm cells, by edge distance: cell 1 lethal (5 cm), 2-3 margin (15, 25 cm), 4 free (35 cm)", g.at(1, 10) >= LETHAL_COST and g.at(2, 10) == MARGIN_COST and g.at(3, 10) == MARGIN_COST and g.at(4, 10) == 1.0,
+check("walls at 10 cm cells, by edge distance: cell 1 lethal (5 cm), 2-3 margin (15, 25 cm), 4 free (35 cm)",
+      g.at(1, 10) >= LETHAL_COST and 1.0 < g.at(3, 10) < g.at(2, 10) < LETHAL_COST and g.at(4, 10) == 1.0,
       (g.at(1, 10), g.at(2, 10), g.at(3, 10), g.at(4, 10)))
+# The ring is graded, not flat (grid.margin_cost): a flat ring let plans hug the lethal edge round corners (exploring b5
+# r2 touched the corridor console's corner at 0.075 m after plans passed it at 0.115 m).
+from duck_lab.nav.grid import MARGIN_EDGE_COST, margin_cost  # noqa: E402
+
+check("the margin costs most at the lethal edge and falls to free at its outer edge",
+      margin_cost(0.12, 0.12, 0.28) == MARGIN_EDGE_COST and margin_cost(0.28, 0.12, 0.28) == 1.0
+      and margin_cost(0.15, 0.12, 0.28) > margin_cost(0.25, 0.12, 0.28))
 p = plan(g, (0.5, 0.5), (2.5, 1.5))
 check("open room: a path, start cell to goal cell", p and g.cell(*p[0]) == (5, 5) and g.cell(*p[-1]) == (25, 15),
       p and (p[0], p[-1]))
@@ -205,7 +213,7 @@ for cy in range(20):
                            for cx in range(30)))
 sh = CostGrid.from_map_grid({"res_m": 0.1, "origin": [0.0, 0.0], "width": 30, "height": 20, "cells": "".join(rows_sh)})
 check("unknown next to a known obstacle costs more than open unknown",
-      sh.at(17, 10) == SHADOW_COST and sh.at(21, 6) == UNKNOWN_COST, (sh.at(17, 10), sh.at(21, 6)))
+      sh.at(17, 10) >= SHADOW_COST and sh.at(21, 6) == UNKNOWN_COST, (sh.at(17, 10), sh.at(21, 6)))   # >=: also in a graded margin
 
 # Replan hysteresis (phase 1 run 11, goal 20: two routes flipped for 12 s at the office doorway).
 from duck_lab.nav.grid import keep_current  # noqa: E402
@@ -324,6 +332,19 @@ check("a goal inside a ring: the nearest free cell, within reach of it, out of t
       and math.dist(held, (1.0, 0.75)) > 0.32, held)
 check("none within reach: no hold-off (refused as before)", nearest_free(ring, (1.0, 0.75), 0.2) is None)
 check("a free goal is its own nearest free cell", math.dist(nearest_free(ring, (0.3, 0.3), 0.2), (0.3, 0.3)) < 0.05)
+# A goal inside an object (exploring b3 r1: the office shelf): held off where the duck can still turn, not 11 cm from it.
+from duck_lab.nav.grid import clearance as _clear  # noqa: E402
+
+shelf = CostGrid.from_map_grid(room(w=40, h=40))       # 4 x 4 m at 10 cm, walls round it
+shelf = shelf.with_points([(1.0 + i * 0.05, 1.0 + j * 0.05) for i in range(4) for j in range(4)])   # a 0.2 m object
+inside_goal = (1.08, 1.08)
+plain = nearest_free(shelf, inside_goal, 0.3)
+roomy = nearest_free(shelf, inside_goal, 0.3, room_m=0.17)
+check("held off without room: right against the object (what trapped b3 r1)",
+      plain is not None and _clear(shelf, plain, 0.17) < 0.17, (plain, plain and round(_clear(shelf, plain, 0.17), 3)))
+check("held off with room_m: a point with room to turn", roomy is not None and _clear(shelf, roomy, 0.17) >= 0.17,
+      (roomy, roomy and round(_clear(shelf, roomy, 0.17), 3)))
+check("... and none within reach with room: no hold-off", nearest_free(shelf, inside_goal, 0.1, room_m=0.17) is None)
 
 print("NAV", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

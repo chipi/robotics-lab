@@ -1,0 +1,21 @@
+{
+  "id": "nxt-1",
+  "label": "NXT Shooterbot",
+  "kind": "nxt-shooterbot",
+  "adapter": {"type": "nxt-web", "url": "http://127.0.0.1:8000", "call_timeout_s": 5.0, "full_speed_mps": 0.3, "full_turn_rps": 1.5},
+  "factsheet": {
+    "typeSpecification": {"seriesName": "LEGO NXT 2.0 (8547)", "mobileRobotKinematics": "DIFFERENTIAL"},
+    "protocolFeatures": {"mobileRobotActions": [
+      {"actionType": "fire", "actionScopes": ["INSTANT"], "blockingTypes": ["HARD"], "pauseAllowed": false, "cancelAllowed": false, "irreversible": true}
+    ]}
+  },
+  "control": {"deadman_s": 0.6, "lease_s": 20.0, "takeover": []},
+  "capabilities": {
+    "sensors": [],
+    "recognisers": [],
+    "guardrails": [],
+    "skills": [],
+    "description": "LEGO NXT 2.0 on tracks, behind nxt-web; no pose, no map, no navigator: status, drive and STOP only. Its speeds are not measured: full_speed_mps and full_turn_rps are assumed values for a full track command"
+  },
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}
+}

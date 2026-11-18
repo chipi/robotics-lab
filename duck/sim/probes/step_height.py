@@ -9,6 +9,7 @@ Needs the simulator (each trial resets it on its scene, ~40 s).
 """
 
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,8 @@ from duck_lab.nav.evaluate import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator
 
-BAR_X, WALK_MPS, WALK_S, TICK_S = 0.6, 0.3, 30.0, 0.1   # it walks ~0.13 m/s: 30 s reaches a 0.5 m-tread flight's top
+BAR_X, WALK_MPS, WALK_S, TICK_S = 0.6, 0.3, 30.0, 0.1
+YAW_RPS, YAW_HOLD_RAD = 0.0, 0.1   # --yaw: turn while walking (the navigator does, 0.1-0.2 rad/s), the sign flipped to hold the heading within YAW_HOLD_RAD   # it walks ~0.13 m/s: 30 s reaches a 0.5 m-tread flight's top
 STUCK_M, STUCK_S, START_S = 0.02, 3.0, 6.0     # no STUCK_M further in STUCK_S: stuck, the trial ends (7 s did not reach a flight's top)
 
 
@@ -63,10 +65,13 @@ def trial(kind: str, h: float, k: int) -> dict:
         past = BAR_X + (FLIGHT * STEP_DEPTH_M if kind.startswith("flight") else 0.0) + 0.25
         x0 = nav.body.pose()[0]
         lowest, furthest, t0 = 1.0, x0, time.monotonic()
+        turn = YAW_RPS
         gained = t0                      # when it last got STUCK_M further: it walks ~0.13 m/s, starting included
         while time.monotonic() - t0 < WALK_S and furthest <= past:
-            nav.move(Twist(WALK_MPS, 0.0))
-            x, _, _ = nav.body.pose()
+            nav.move(Twist(WALK_MPS, turn))
+            x, _, yaw = nav.body.pose()
+            if abs(yaw) > YAW_HOLD_RAD:
+                turn = -math.copysign(YAW_RPS, yaw)
             lowest = min(lowest, nav.body.height - floor_under(x))
             if x > furthest + STUCK_M:
                 furthest, gained = x, time.monotonic()
@@ -77,7 +82,7 @@ def trial(kind: str, h: float, k: int) -> dict:
         nav.move(Twist())
     finally:
         nav.close()
-    return {"kind": kind, "height_m": h, "speed_mps": WALK_MPS, "trial": k, "crossed": furthest > past, "fell": lowest < FALLEN_Z_M,
+    return {"kind": kind, "height_m": h, "speed_mps": WALK_MPS, "yaw_rps": YAW_RPS, "trial": k, "crossed": furthest > past, "fell": lowest < FALLEN_Z_M,
             "furthest_m": round(furthest, 3), "lowest_trunk_above_floor_m": round(lowest, 3)}
 
 
@@ -94,6 +99,10 @@ def main() -> None:
         global WALK_MPS
         i = args.index("--speed")
         WALK_MPS, args = float(args[i + 1]), args[:i] + args[i + 2:]
+    if "--yaw" in args:
+        global YAW_RPS
+        i = args.index("--yaw")
+        YAW_RPS, args = float(args[i + 1]), args[:i] + args[i + 2:]
     if "--tread" in args:
         global STEP_DEPTH_M
         i = args.index("--tread")

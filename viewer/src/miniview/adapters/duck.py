@@ -15,7 +15,7 @@ from miniview.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
-           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance")
+           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance", "found", "camera_failed")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
 ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
 
@@ -110,14 +110,39 @@ class DuckLog:
                                            "h": g["height"], "cells": g["cells"]},
                                   "obstacles": r.get("blocked", []), "drops": r.get("drops", []),
                                   "raw": rest("grid", "blocked", "drops")})]
+        if ev == "semantic" and isinstance(r.get("objects"), list):
+            return [(t, "objects", {"objects": r["objects"], "changes": r.get("changes", []), "t_src": ts,
+                                    "raw": rest("objects", "changes")})]
+        if ev in ("sighting", "look") and isinstance(r.get("seen"), list) and isinstance(r.get("pose"), list):      # `look` in the recordings made before the rename (ADR-0019)
+            return [(t, "sighting", {"pose": [_r(v, 4) for v in r["pose"][:3]], "hfov_deg": r.get("hfov_deg"),
+                                     "range_m": r.get("range_m"), "seen": r["seen"], "t_src": ts,
+                                     "raw": rest("pose", "hfov_deg", "range_m", "seen")})]
+        if ev == "area_type":                               # the objects' guess, renamed from `room` (RFC-0016 rev. 3): read as the room event
+            ev, r = "room", {**r, "room": r.get("type")}
+            r.pop("type", None)
         if ev:
             notable = ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached")
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
                                                                          "nearest_mm", "n"))
             e = {"kind": ev, "text": f"{ev} {detail}".strip() if notable else "", "notable": notable, "t_src": ts,
                  "raw": rest("decision")}
+            if ev == "found":                               # a goal's outcome: what was looked for and how it ended
+                e["text"] = f"found {r.get('kind')} {r.get('status')}"
+            if ev == "camera_failed":                       # the camera's error, said once each
+                e["text"] = f"camera_failed {r.get('why')}"
             if isinstance(r.get("decision"), dict):         # a rule that fired, with the values it compared (ADR-0014)
                 e["decision"] = r["decision"]
+            if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event
+                votes = r.get("votes") if isinstance(r.get("votes"), dict) else {}
+                e.update(room=r.get("room"), votes=votes, text=f"room {r.get('room') or 'none'}", raw=rest("decision", "room", "type", "votes"))
+            if ev == "site":                                # the site the run works at, with the operator's areas (RFC-0016 rev. 3)
+                e.update(site={k: r.get(k) for k in ("id", "name", "kind", "areas")}, raw=rest("decision", "id", "name", "kind", "areas"))
+            if ev == "area":                                # which of the operator's areas the pose is in, and whether the objects agree
+                e.update(area={k: r.get(k) for k in ("id", "name", "type", "guess", "agrees")}, notable=True,
+                         text=f"area {r.get('name') or 'none'}" + (f", but the objects look {r.get('guess')}"
+                                                                   if r.get("agrees") is False else ""),
+                         raw=rest("decision", "id", "name", "type", "guess", "agrees"))
+                notable = True
             out = [(t, "event", e)]
             if notable:
                 self.events.append({"kind": ev, "text": e["text"], "t": t})

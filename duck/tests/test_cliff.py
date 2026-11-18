@@ -272,5 +272,34 @@ blind = len(drop_points(shallow, st))
 check("an 8 cm drop 0.45 m ahead: seen with the simulator's mounting, not with no pitch offset", seen > 0 and blind == 0, (seen, blind))
 cliff.configure()
 
+# Low things: a return above the low margin and below the floor margin is in the low band, not floor and not an obstacle
+# (challenge 15 seed 1, gate6: a 6.6 cm box read as floor, passed 0.156 m from its centre and touched)
+from duck_lab.nav.cliff import low_points  # noqa: E402
+
+
+def frame_with_top(st, from_m, to_m, top_m):
+    """Flat floor, except the beams whose floor point lies from_m-to_m ahead meet a surface top_m high."""
+    height, q = sensor_pose(st)
+    f = frame_for(st)
+    for i, beam in enumerate(BEAMS):
+        d = rotate(q, beam)
+        if d[2] < -0.01 and from_m <= (-height / d[2]) * math.hypot(d[0], d[1]) <= to_m:
+            f["distance_mm"][i] = int(-(height - top_m) / d[2] * beam[0] * 1000)
+    return f
+
+
+st = state()
+flat = frame_for(st)
+check("flat floor: nothing in the low band", low_points(flat, st) == [], low_points(flat, st))
+six = frame_with_top(st, 0.35, 0.6, 0.06)
+check("a 6 cm top 0.35-0.6 m ahead: in the low band, not an obstacle",
+      len(low_points(six, st)) > 0 and obstacle_points(six, st) == [], (len(low_points(six, st)), obstacle_points(six, st)))
+two = frame_with_top(st, 0.35, 0.6, 0.02)
+check("a 2 cm top (a bar the duck walks over): floor", low_points(two, st) == [] and obstacle_points(two, st) == [],
+      low_points(two, st))
+tall = frame_with_top(st, 0.35, 0.6, 0.15)
+check("a 15 cm top: an obstacle, not in the low band", obstacle_points(tall, st) and low_points(tall, st) == [],
+      (len(obstacle_points(tall, st)), len(low_points(tall, st))))
+
 print("CLIFF", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

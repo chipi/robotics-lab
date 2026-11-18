@@ -4,7 +4,7 @@
 # Each job runs the same make targets as on the workstation, so a red job reproduces locally with
 # the target named in its step:
 #   unit   → make ci-fast            lint + every project's unit tests
-#   pages  → make test-viewer-pages  miniview's two pages in headless Chromium
+#   pages  → make test-viewer-pages test-control-page   miniview's two pages and Mission Control's page in headless Chromium
 #   compat → make test-run-compat    a run opens in Rerun and miniview (Lichtblick's checks skipped)
 #   images → make test-integration test-viewer-image nxt-programs   the Docker images, the NXC programs
 
@@ -54,6 +54,8 @@ jobs:
         run: make viewer-sync && cd viewer && uv run --frozen playwright install --with-deps chromium
       - name: make test-viewer-pages
         run: make test-viewer-pages
+      - name: make test-control-page
+        run: make test-control-page
 
   compat:
     name: A run opens in Rerun and miniview (Lichtblick skipped)

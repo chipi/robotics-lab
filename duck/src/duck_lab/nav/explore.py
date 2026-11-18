@@ -8,15 +8,22 @@ import math
 
 MIN_CLUSTER_M = 0.20       # frontier stretches shorter than this are noise, not a way on
 AVOID_M = 0.40             # a target this close to a failed one, a drop or an obstacle is skipped
+RETIRED_M = 0.07           # a frontier cell this close to a retired one is retired too: a cell and a half of mapd's 0.0455 m
 STANDOFF_M = 0.15          # stop this far back from the frontier, on the seen side
 # The floor right round the duck stays unknown (the depth sensor does not see its own feet), so the
 # nearest "frontier" is always underfoot: the first trial's first leg went 5 cm.
 MIN_DIST_M = 0.6
 GAIN_PER_M = 1.0           # a metre of frontier is worth a metre of walking (explore_lite's gain/potential)
+# Unknown beside a wall or an object the map has seen is most often that wall going on: its face along the duck's way
+# was never in the depth sensor's 45 deg wedge. Exploring baseline b1 (EXPLORE-PROGRESS.md): 18 of 34 targets were in
+# or within 15 cm of a wall, the cabinet, the stairs or the office landmark, and every run ended trapped beside one.
+WALL_M = 0.30              # frontier cells this close to an occupied cell are not a way on
 
 
-def frontiers(grid: dict, scale: float = 1.0) -> list:
-    """Clusters (8-connected) of free cells with an unknown neighbour, as lists of map points."""
+def frontiers(grid: dict, scale: float = 1.0, wall_m: float = WALL_M, obstacles: list = ()) -> list:
+    """Clusters (8-connected) of free cells with an unknown neighbour and no occupied cell, nor any of obstacles (map
+    points: the navigator's remembered obstacle points), within wall_m, as lists of map points. A 0.8 m doorway keeps its
+    middle 0.2 m."""
     res, (ox, oy) = grid["res_m"] * scale, (grid["origin"][0] * scale, grid["origin"][1] * scale)
     w, h, cells = grid["width"], grid["height"], grid["cells"]
     if not res or not w or not h:
@@ -25,12 +32,20 @@ def frontiers(grid: dict, scale: float = 1.0) -> list:
     def at(x, y):
         return cells[y * w + x] if 0 <= x < w and 0 <= y < h else "?"
 
+    r = math.ceil(wall_m / res) if wall_m > 0 else 0
+    occupied = {(i % w, i // w) for i, c in enumerate(cells) if c == "#"}
+    occupied |= {(math.floor((p[0] - ox) / res), math.floor((p[1] - oy) / res)) for p in obstacles}
+
+    def by_wall(x, y):
+        return r and any((x + dx, y + dy) in occupied for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+                         if math.hypot(dx, dy) * res <= wall_m + 1e-9)
+
     front = set()
     for y in range(h):
         for x in range(w):
             if at(x, y) != ".":
                 continue
-            if any(at(x + dx, y + dy) == "?" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            if any(at(x + dx, y + dy) == "?" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))) and not by_wall(x, y):
                 front.add((x, y))
     clusters, seen = [], set()
     for start in front:
@@ -50,6 +65,15 @@ def frontiers(grid: dict, scale: float = 1.0) -> list:
         if len(members) * res >= MIN_CLUSTER_M:
             clusters.append([(ox + (x + 0.5) * res, oy + (y + 0.5) * res) for x, y in members])
     return clusters
+
+
+def without_retired(clusters: list, retired: list, within_m: float = None) -> list:
+    """The clusters less their cells within RETIRED_M of a retired frontier cell (a stretch a target with no path on
+    the map took out); clusters left empty are dropped. Retired cells are not avoided at AVOID_M as failed targets
+    are: 190 of them did that in b6 r1, their discs covered every frontier, and the run ended with rooms unseen."""
+    within_m = RETIRED_M if within_m is None else within_m
+    left = [[p for p in c if all(math.dist(p, r) > within_m for r in retired)] for c in clusters]
+    return [c for c in left if c]
 
 
 def pick(clusters: list, pose: tuple, avoid: list, ok=None) -> tuple | None:

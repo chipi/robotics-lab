@@ -71,7 +71,9 @@ class SuspectMemory:
 
     def clear(self, floor_points: list, within_m: float = CLEAR_M) -> int:
         """A glance saw floor there: the suspected cells within within_m of floor_points are cleared. Returns how many."""
-        gone = {c for c in self.suspected
+        # over a copy: the depth-frame thread adds cells meanwhile (challenge 9, gate6: "Set changed size during
+        # iteration"); copying a set is one C call, which that thread cannot interleave with
+        gone = {c for c in set(self.suspected)
                 if any(math.dist((c[0] * CELL_M, c[1] * CELL_M), q) <= within_m for q in floor_points)}
         self.suspected -= gone
         self.cleared |= gone
@@ -80,7 +82,7 @@ class SuspectMemory:
     def confirm_near(self, edge_points: list, within_m: float) -> list:
         """Suspected cells within within_m of a measured edge's points are that drop: they leave the suspected set,
         confirmed without a glance. Returns their points."""
-        got = sorted(c for c in self.suspected
+        got = sorted(c for c in set(self.suspected)       # over a copy, as clear
                      if any(math.dist((c[0] * CELL_M, c[1] * CELL_M), q) <= within_m for q in edge_points))
         self.suspected -= set(got)
         self.confirmed |= set(got)

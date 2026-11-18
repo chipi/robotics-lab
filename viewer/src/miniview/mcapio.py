@@ -39,14 +39,16 @@ class WriterBusy(Exception):
 
 def new_run(key: str, robot: dict, scene: str, kind: str, started_at_ns: int, started_at_source: str = "writer",
             source: dict | None = None, run_uuid: str | None = None, signals: list | None = None,
-            odometry: dict | None = None, no_pose: str | None = None, writer: dict | None = None) -> dict:
+            odometry: dict | None = None, no_pose: str | None = None, writer: dict | None = None,
+            goal_run: dict | None = None) -> dict:
     """The run record. `signals` declares the robot's named values (miniview.signals); `odometry` says how the pose was
-    computed, `no_pose` why there is none (a robot with signals only); `writer` names the program that writes the run."""
+    computed, `no_pose` why there is none (a robot with signals only); `writer` names the program that writes the run;
+    `goal_run` says which goal run of Mission Control the run is, {id, name, kind, ...} (RFC-0014 §3.11 item 4)."""
     keys.split_key(key)
     rec = {"format": FORMAT, "key": key, "uuid": run_uuid or str(uuidlib.uuid4()), "robot": robot, "scene": scene,
            "kind": kind, "started_at_ns": int(started_at_ns), "started_at_source": started_at_source,
            "writer": writer or {"program": "miniview", "version": VERSION}}
-    for k, v in (("source", source), ("signals", signals), ("odometry", odometry), ("no_pose", no_pose)):
+    for k, v in (("source", source), ("signals", signals), ("odometry", odometry), ("no_pose", no_pose), ("goal_run", goal_run)):
         if v:
             rec[k] = v
     return rec

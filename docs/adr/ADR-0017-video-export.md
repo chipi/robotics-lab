@@ -74,6 +74,10 @@ are not built into miniview.
   package needed a system upgrade it did not get (it would not start). Run with
   `--python-exit-code 1` so a script that fails is a failed job (Blender exits 0 otherwise), and a
   job that wrote no video fails too. The duck's 2 s at 1280x720: about 30 s, EEVEE, Blender 5.2.4.
+- **Insets and the eye (2026-11-18):** the eye inset looked backward for the duck until commit
+  `1c06f43` (the duck's `head_camera` looks along its `+z`, not MuJoCo's `-z`; `robots.json` now
+  names a robot's `eye_axis`). The insets (`--inset eye,top,hud`), `eye_axis` and what the video draws
+  of the semantic map are described in [ADR-0019](ADR-0019-semantic-map-records.md).
 
 ## Consequences
 

@@ -42,6 +42,10 @@ def _run(p):
         return "no_pose is not text"
     if p.get("odometry") is not None and not isinstance(p["odometry"], dict):
         return "odometry is not an object"
+    g = p.get("goal_run")
+    if g is not None and not (isinstance(g, dict) and isinstance(g.get("id"), int) and not isinstance(g["id"], bool)
+                              and isinstance(g.get("name"), str)):
+        return "goal_run is not an object with an integer id and a name"
     return None
 
 
@@ -127,6 +131,46 @@ def _depth_frame(p):
     return None
 
 
+def _object(o):
+    if not isinstance(o, dict) or not (isinstance(o.get("id"), str) and isinstance(o.get("kind"), str)):
+        return "an object has no id or kind"
+    if not (_num(o.get("x")) and _num(o.get("y"))):
+        return f"object {o['id']!r}: x or y is not a finite number"
+    parts = o.get("parts")
+    if not (isinstance(parts, list) and all(_nums(q, 7) for q in parts)):
+        return f"object {o['id']!r}: parts are not [x, y, hx, hy, yaw, z0, z1]"
+    return None
+
+
+def _objects(p):
+    objs, ch = p.get("objects"), p.get("changes")
+    if not isinstance(objs, list):
+        return "objects is not a list"
+    for o in objs:
+        err = _object(o)
+        if err:
+            return err
+    if not (isinstance(ch, list) and all(isinstance(c, (list, tuple)) and len(c) == 2 and all(isinstance(x, str) for x in c) for c in ch)):
+        return "changes is not a list of [change, id]"
+    return None
+
+
+def _sighting(p):
+    if not _nums(p.get("pose"), 3):
+        return "pose is not three finite numbers"
+    if not (_num(p.get("hfov_deg")) and _num(p.get("range_m"))):
+        return "hfov_deg or range_m is not a finite number"
+    seen = p.get("seen")
+    if not isinstance(seen, list):
+        return "seen is not a list"
+    for s in seen:
+        if not (isinstance(s, dict) and isinstance(s.get("kind"), str) and _num(s.get("x")) and _num(s.get("y"))):
+            return "a detection has no kind, or its x and y are not finite numbers"
+        if any(s.get(k) is not None and not _num(s[k]) for k in ("radius", "z0", "z1", "range_m", "confidence")):
+            return "a detection's radius, z0, z1, range_m or confidence is not a finite number"
+    return None
+
+
 def _segment(p):
     if not (isinstance(p.get("index"), int) and _num(p.get("t_start")) and _num(p.get("t_end"))):
         return "index, t_start or t_end invalid"
@@ -140,7 +184,7 @@ def _end(p):
 
 
 CHECKS = {"run": _run, "epoch": _epoch, "tick": _tick, "signals": _signals, "plan": _plan, "world": _world, "event": _event,
-          "depth_frame": _depth_frame, "segment": _segment, "end": _end}
+          "depth_frame": _depth_frame, "objects": _objects, "sighting": _sighting, "segment": _segment, "end": _end}
 
 
 def check(t, kind: str, p, last_t: float) -> str | None:

@@ -26,7 +26,7 @@ g = grid(["??????????",
           "#........?",
           "#........?",
           "##########"])
-cl = frontiers(g)
+cl = frontiers(g, wall_m=0)     # the basics, without the seen-wall rule (tested below)
 check("two frontier stretches: the top edge and the right edge (one 8-connected cluster)", len(cl) == 1, len(cl))
 check("frontier points are free cells next to unknown", all(0.0 < p[1] < 0.5 for p in cl[0]), cl[0][:3])
 closed = grid(["##########",
@@ -56,8 +56,74 @@ check("pick prefers a wide opening a little further on to a sliver nearby",
 near_only = pick([sliver, [(4.0, 0.0), (4.0, 0.1), (4.0, 0.2)]], (0.0, 0.0, 0.0), avoid=[])
 check("but not a small frontier far away over a near one of the same size", near_only is not None and near_only[0] < 1.0,
       near_only)
-scaled = frontiers(g, scale=0.9)
-check("scale applies to the frontier points like the navigator's grid", max(p[0] for p in scaled[0]) < max(p[0] for p in cl[0]))
+scaled = frontiers(g, scale=0.9, wall_m=0)     # a 3-row room: every frontier is within 0.3 m of its walls
+check("scale applies to the frontier points like the navigator's grid", max(p[0] for p in scaled[0]) < max(p[0] for p in frontiers(g, wall_m=0)[0]))
+
+# Unknown beside a seen wall is that wall going on (baseline b1: targets inside the corridor wall, the cabinet). A wall
+# seen to x=0.4, unknown past it: the free cells within 0.3 m of the wall's end are no way on; the open edge further from
+# it still is.
+#                    x: 0123456789
+wall_end = grid(["??????????",
+                 "????######",
+                 "?.........",
+                 "?.........",
+                 "?.........",
+                 "?.........",
+                 "?.........",
+                 "??????????"])
+we = [p for c in frontiers(wall_end) for p in c]
+check("no frontier within 0.3 m of a seen wall", we and all(min(math.dist(p, (x / 10 + 0.05, 6.5 / 10)) for x in range(4, 10))
+                                                            > 0.3 for p in we), sorted(we)[:3])
+check("... the open edges away from it stay frontiers", any(p[1] < 0.25 for p in we), sorted(we, key=lambda p: p[1])[:2])
+check("with wall_m 0 the old behaviour: frontier right under the wall's end", any(
+    math.dist(p, (0.35, 0.55)) < 0.06 for c in frontiers(wall_end, wall_m=0) for p in c))
+# A 0.8 m doorway (res 0.1) in a seen wall, unknown beyond: its middle is still a way on.
+#                     x: 0123456789ab
+door_open = grid(["????????????",
+                  "#..........#",
+                  "#..........#",
+                  "#..........#",
+                  "#..........#",
+                  "#..........#",
+                  "#..........#",
+                  "#..........#",
+                  "############"])
+dm = [p for c in frontiers(door_open) for p in c]
+check("a 0.8 m doorway keeps its middle as a frontier", dm and all(0.4 <= p[0] <= 0.8 for p in dm), sorted(dm))
+check("... and not its sides", not any(p[0] < 0.4 or p[0] > 0.8 for p in dm))
+# The same doorway, its wall known only as the navigator's obstacle points (mapd left those cells unknown).
+door_unseen = grid(["????????????",
+                    "????????????",
+                    "#..........#",
+                    "#..........#",
+                    "#..........#",
+                    "#..........#",
+                    "#..........#",
+                    "#..........#",
+                    "############"])
+pts = [(x / 10 + 0.05, 0.75) for x in (0, 1, 10, 11)]
+dp = [p for c in frontiers(door_unseen, obstacles=pts) for p in c]
+check("the navigator's obstacle points count as a wall too", dp and all(0.4 <= p[0] <= 0.8 for p in dp), sorted(dp))
+post = [(0.55, 0.75)]              # a post the depth sensor saw, in the open edge's unknown
+near_post = [p for c in frontiers(door_unseen, obstacles=post) for p in c if math.dist(p, post[0]) <= 0.3]
+check("... a frontier cell within 0.3 m of an obstacle point is no way on", not near_post, near_post)
+
+# Retired frontier cells (a target with no path on the map) take out only themselves, not AVOID_M round each (b6 r1:
+# three refusals retired 190 cells, their 0.4 m discs covered all 11 clusters, 446 cells, and the run ended "no frontier
+# left" with the kitchen and the living room unseen)
+from duck_lab.nav.explore import RETIRED_M, without_retired  # noqa: E402
+
+line = [(1.0, y * 0.05) for y in range(20)]               # a frontier 1 m ahead, y 0-0.95
+retired = line[:7]                                        # its first 0.3 m retired
+left = without_retired([line], retired)
+check("retired cells leave the cluster; the rest stays", left and all(p[1] > 0.3 for p in left[0])
+      and len(left[0]) == len([p for p in line if p[1] > 0.3 + RETIRED_M + 1e-9]), left)
+check("the rest is still pickable (failed targets keep AVOID_M; retired cells do not)",
+      pick(left, (0.0, 0.5, 0.0), avoid=[]) is not None)
+check("a cluster fully retired is gone", without_retired([retired], retired) == [])
+grown = [(1.02, y * 0.05 + 0.01) for y in range(7)]       # the same stretch seen again, cells shifted 1-2 cm
+check("the same stretch, shifted by a cell's noise, stays retired", without_retired([grown], retired) == [],
+      without_retired([grown], retired))
 
 print("EXPLORE", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

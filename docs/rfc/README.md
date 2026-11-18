@@ -48,6 +48,19 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0011 — Robots drawn as themselves: a link/joint description, moved by the recorded
   joints](RFC-0011-robot-models.md) (Accepted, 2026-11-16)
 - [RFC-0012 — Look far, get ready early: where to look and how fast to
-  go](RFC-0012-look-far.md) (Proposed, 2026-11-16)
+  go](RFC-0012-look-far.md) (Accepted, 2026-11-18)
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
+- [RFC-0014 — Mission Control: one API for every robot, goals in words, places and
+  objects](RFC-0014-mission-control.md) (Accepted, revision 2, 2026-11-18; first slice built: the
+  fake robot, the core and the API)
+- [RFC-0015 — Nav2 on the simulated duck: learn how the standard stack works, and
+  compare](RFC-0015-nav2-comparison.md) (Accepted, 2026-11-18)
+- [RFC-0016 — Objects, landmarks and a semantic map: "this is the kitchen", "go to the
+  fridge"](RFC-0016-objects-and-semantic-map.md) (Accepted, 2026-11-18; MVP being built)
+- [RFC-0017 — Robot access: who may watch, who may drive, and one driver at a
+  time](RFC-0017-robot-access.md)
+  (Accepted, revision 2, 2026-11-18; the gate library and the nxt-web lock built)
+- [RFC-0018 — The lab's projects, their seams, and how to split robotics-lab
+  later](RFC-0018-lab-projects-and-seams.md) (decided in direction 2026-11-18: one repo,
+  restructured in full)

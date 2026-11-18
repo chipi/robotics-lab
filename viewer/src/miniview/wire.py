@@ -15,7 +15,7 @@ from google.protobuf import json_format
 from miniview import schemas
 from miniview.signals import SignalSet
 
-KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "segment", "end")
+KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "objects", "sighting", "segment", "end")
 
 CHANNELS = {                          # topic -> schema
     "/miniview/run": "miniview.run",
@@ -33,9 +33,12 @@ CHANNELS = {                          # topic -> schema
     "/map": "foxglove.Grid",
     "/miniview/memory": "miniview.memory",
     "/miniview/event": "miniview.event",
+    "/miniview/objects": "miniview.objects",
+    "/miniview/sighting": "miniview.sighting",
     "/miniview/segment": "miniview.segment",
     "/miniview/end": "miniview.end",
 }
+PART_FIELDS = ("x", "y", "hx", "hy", "yaw", "z0", "z1")     # an object's part: a box in plan (centre, half sizes, heading) with a bottom and a top
 POINT = struct.Struct("<fffB")
 UINT8, FLOAT32 = 1, 7
 _IDENT = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
@@ -83,7 +86,7 @@ def _unxy(points) -> list:
 
 
 # kinds a recording from before the adapter listed them as notable wrote as not notable, but that are decisions a page shows (RFC-0013)
-ALWAYS_NOTABLE = ("glance",)
+ALWAYS_NOTABLE = ("glance", "room", "area", "site")
 SENSOR_FRAME = "tof"          # the depth sensor's own frame_id: the raw frame is an image of it, not a place in the map
 
 
@@ -114,6 +117,22 @@ def _depth_frame_meta(p: dict) -> dict:
         if d.get("block_m") is not None:
             m["derived"]["block_m"] = d["block_m"]
     return m
+
+
+def _objects_msg(p: dict) -> dict:
+    """The semantic map as a message: a part as {x, y, hx, hy, yaw, z0, z1} and a change as {change, id} (Lichtblick's JSON-schema
+    reader takes no arrays of arrays)."""
+    return {"objects": [dict(o, parts=[dict(zip(PART_FIELDS, q)) for q in o.get("parts", [])]) for o in p["objects"]],
+            "changes": [{"change": c[0], "id": c[1]} for c in p.get("changes", [])],
+            "t_src": p.get("t_src"), "raw": _raw(p.get("raw", {}))}
+
+
+def _objects_rec(o: dict, keep_raw: bool) -> dict:
+    d = {"objects": [dict(x, parts=[[q[k] for k in PART_FIELDS] for q in x.get("parts", [])]) for x in o["objects"]],
+         "changes": [[c["change"], c["id"]] for c in o.get("changes", [])]}
+    if keep_raw:
+        d.update(t_src=o.get("t_src"), raw=o.get("raw", {}))
+    return d
 
 
 def _stamp(ns: int) -> dict:
@@ -206,6 +225,12 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
              "raw": _raw(p.get("raw", {}))}
         if p.get("decision") is not None:
             e["decision"] = _raw(p["decision"])
+        if p["kind"] == "room":
+            e["room"], e["votes"] = p.get("room"), p.get("votes") or {}
+        if p["kind"] == "area":
+            e["area"] = p.get("area") or {}
+        if p["kind"] == "site":
+            e["site"] = p.get("site") or {}
         return [m("/miniview/event", e)]
     if kind == "depth_frame":
         rows, cols = p["rows"], p["cols"]
@@ -215,6 +240,11 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
         return [m("/depth/raw", _raw_image(ns, rows, cols, "16UC1", cols * 2, dist)),
                 m("/depth/status", _raw_image(ns, rows, cols, "mono8", cols, bytes(p["status"]))),
                 m("/miniview/depth_frame", _depth_frame_meta(p))]
+    if kind == "objects":
+        return [m("/miniview/objects", _objects_msg(p))]
+    if kind == "sighting":
+        return [m("/miniview/sighting", {"pose": p["pose"], "hfov_deg": p["hfov_deg"], "range_m": p["range_m"], "seen": p["seen"],
+                                     "t_src": src, "raw": _raw(p.get("raw", {}))})]
     if kind == "segment":
         return [m("/miniview/segment", p)]
     if kind == "end":
@@ -401,9 +431,22 @@ class Assembler:
             d = {"kind": o["kind"], "text": o["text"]}
             if o.get("decision") is not None:
                 d["decision"] = o["decision"]
+            if o["kind"] == "room":
+                d["room"], d["votes"] = o.get("room"), o.get("votes") or {}
+            if o["kind"] == "area":
+                d["area"] = o.get("area") or {}
+            if o["kind"] == "site":
+                d["site"] = o.get("site") or {}
             if self.keep_raw:
                 d.update(notable=o.get("notable", True), t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "event", d)]
+        if topic == "/miniview/objects":
+            return [(t, "objects", _objects_rec(o, self.keep_raw))]
+        if topic in ("/miniview/sighting", "/miniview/look"):        # `look` is what a file written before the rename (ADR-0019) calls it
+            d = {k: o[k] for k in ("pose", "hfov_deg", "range_m", "seen")}
+            if self.keep_raw:
+                d.update(t_src=o.get("t_src"), raw=o.get("raw", {}))
+            return [(t, "sighting", d)]
         if topic in ("/miniview/segment", "/miniview/end"):
             return [(t, topic.rsplit("/", 1)[1], o)]
         raise ValueError(f"unknown topic {topic!r}")

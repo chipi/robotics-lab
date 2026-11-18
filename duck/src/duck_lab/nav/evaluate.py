@@ -67,13 +67,17 @@ def underside(g: dict) -> float:
     return z - g["size"][0]
 
 
-def obstacles(layout: dict) -> list:
+def obstacles(layout: dict, landmarks: bool = True) -> list:
     """Colliding geoms the duck can walk into: not the floors, not the stairs' treads (the hole is the
-    cliff check's business, not a contact)."""
+    cliff check's business, not a contact). With landmarks, also the per-room lm_* markers: visual only
+    in the simulator, but the depth sensor sees them, so in this world they are things the duck would hit
+    (RFC-0016; b7 ended three runs 3 cm from lm_office, uncounted)."""
     out = []
     for g in layout["geoms"]:
         name = g["name"]
-        if not g["collides"] or g["type"] == "plane" or name.startswith("floor") or name.startswith("stair"):
+        marker = landmarks and name.startswith("lm_")
+        if (not g["collides"] and not marker) or g["type"] == "plane" or name.startswith("floor") or \
+                name.startswith("stair"):
             continue
         if underside(g) > OVERHEAD_CLEAR_M:
             continue    # above the duck's head (a table top, a high shelf): it walks under it
@@ -90,7 +94,7 @@ def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
     # Phase 1's scope (RFC-0002 §3.4, revised): what the duck sees from the dock or on the way — the
     # office and the north corridor. Rooms behind walls it has not seen are phase 2's (exploring).
     floors = [g for g in layout["geoms"] if g["name"] in ("floor_office", "floor_cor_n")]
-    obs = obstacles(layout)
+    obs = obstacles(layout, landmarks=False)      # phase 1's goals as they were drawn (comparable with old runs)
     rng = random.Random(seed)
     goals = []
     while len(goals) < n:

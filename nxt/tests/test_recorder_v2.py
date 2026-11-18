@@ -67,12 +67,15 @@ class Server:
                                   stderr=subprocess.STDOUT, text=True, env=env)
         self.p.stdout.readline()
         self.base = f"http://127.0.0.1:{port}"
+        self.session = None
 
     def drive_for(self, seconds, left=50, right=50):
         """The page's keepalive: the drive command again every 0.2 s (the watchdog stops the tracks after 0.6 s of silence)."""
         end = time.monotonic() + seconds
         while time.monotonic() < end:
-            call(self.base, "/api/drive", {"left": left, "right": right})
+            if self.session is None:
+                self.session = call(self.base, "/api/lock", {"action": "acquire", "client": "test"})[1]["session"]
+            call(self.base, "/api/drive", {"left": left, "right": right, "session": self.session})
             time.sleep(0.2)
 
     def close(self):

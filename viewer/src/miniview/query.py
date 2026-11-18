@@ -22,6 +22,11 @@ def load_signals(catalog, run_id: str) -> dict:
     return catalog.get(run_id).data.sig
 
 
+def load_semantic(catalog, run_id: str) -> dict:
+    """The run's semantic map ({"objects": [...], "sightings": [...]}); the run is already loaded (`load_run`)."""
+    return catalog.get(run_id).data.sem
+
+
 def signals_at(sig: dict, t: float) -> dict | None:
     """The sample at or before t (the first one when t is earlier): its time, its number, and each signal's value in
     it (None where that sample had none)."""
@@ -53,20 +58,58 @@ def tick_at(frames: dict, t: float) -> int:
     return max(0, bisect.bisect_right(frames["t"], t) - 1)
 
 
-def state(run: dict, frames: dict, t: float, sig: dict | None = None) -> dict:
-    """The run at t. A run with signals adds `signals` (see `signals_at`); a run with only signals has no pose, so
-    the answer is the run's identity, the time and the signals."""
+SIGHTING_FRESH_S = 1.0       # a sighting is "current" this long; the pages' and the video's is the same (ADR-0019)
+
+
+def semantic_at(run: dict, sem: dict | None, t: float) -> dict | None:
+    """The semantic map at t (ADR-0019), as the pages show it: the snapshot of objects in force (the last at or before t), the
+    camera's sighting if one is current (at or before t, not more than SIGHTING_FRESH_S old), and the last room event with its votes.
+    None for a run that has no objects, sightings or room events at all."""
+    objs, sightings = (sem or {}).get("objects", []), (sem or {}).get("sightings", [])
+    rooms = [e for e in run["events"] if e["kind"] == "room"]
+    areas = [e for e in run["events"] if e["kind"] == "area"]
+    if not (objs or sightings or rooms or areas):
+        return None
+    snap = sighting = room = None
+    i = bisect.bisect_right(objs, t + 1e-9, key=lambda r: r["t"])
+    if i:
+        snap = objs[i - 1]
+    j = bisect.bisect_right(sightings, t + 1e-9, key=lambda r: r["t"])
+    if j and t - sightings[j - 1]["t"] <= SIGHTING_FRESH_S:
+        sighting = sightings[j - 1]
+    for e in rooms:
+        if e["t"] <= t + 1e-9:
+            room = e
+    area = next((e for e in reversed(areas) if e["t"] <= t + 1e-9), None)
+    r3 = lambda v: round(v, 3)  # noqa: E731
+    return {
+        "objects_t": snap["t"] if snap else None,
+        "objects": [{"kind": o["kind"], "id": o["id"], "x": r3(o["x"]), "y": r3(o["y"]), "confirmed": bool(o.get("confirmed")),
+                     "landmark": o.get("landmark"), "confidence": o.get("confidence")} for o in snap["objects"]] if snap else [],
+        "sighting": {"t": sighting["t"], "pose": [r3(v) for v in sighting["pose"]], "hfov_deg": sighting["hfov_deg"], "range_m": sighting["range_m"],
+                 "seen": [{"kind": d["kind"], "range_m": d.get("range_m"), "confidence": d.get("confidence")} for d in sighting["seen"]]} if sighting else None,
+        "room": {"t": room["t"], "name": room.get("room"), "votes": room.get("votes") or {}} if room else None,
+        "area": {"t": area["t"], **(area.get("area") or {})} if area else None,
+    }
+
+
+def state(run: dict, frames: dict, t: float, sig: dict | None = None, sem: dict | None = None) -> dict:
+    """The run at t. A run with signals adds `signals` (see `signals_at`), a run with a semantic map `semantic` (see
+    `semantic_at`); a run with only signals has no pose, so the answer is the run's identity, the time and the signals."""
     out = _pose_state(run, frames, t) if frames["t"] else {"run": run["id"], "scene": run["scene"], "t": t, "tick": None,
                                                            "last_event": _last_event(run, t)}
     if sig is not None and sig["t"]:
         out["signals"] = signals_at(sig, t)
+    semantic = semantic_at(run, sem, t)
+    if semantic is not None:
+        out["semantic"] = semantic
     return out
 
 
 def _last_event(run: dict, t: float):
     last = None
     for e in run["events"]:
-        if e["t"] <= t + 1e-9:
+        if e["kind"] != "room" and e["t"] <= t + 1e-9:
             last = e
     return last
 
@@ -80,7 +123,7 @@ def _pose_state(run: dict, frames: dict, t: float) -> dict:
     distance = math.dist(belief_world[:2], truth[:2]) if belief_world and truth else None
     last = None
     for e in run["events"]:            # by the time asked: events can follow the last pose (explore12)
-        if e["t"] <= max(t, frames["t"][i]) + 1e-9:
+        if e["kind"] != "room" and e["t"] <= max(t, frames["t"][i]) + 1e-9:
             last = e
     depth_i = next((j for j in range(i, -1, -1) if frames["depth"][j]), None)
     kinds = {}

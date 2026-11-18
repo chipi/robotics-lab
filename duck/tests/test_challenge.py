@@ -130,8 +130,13 @@ check("challenge 15: 6-10 small boxes, 0.45 m apart or more, none within 0.3 m o
           for bs, sc in zip(small, c15)), [len(bs) for bs in small])
 c16 = [CHALLENGES["16"](s, random.Random(f"16-{s}")) for s in range(10)]
 bars = [next(f for f in sc.floors if f.name == "threshold") for sc in c16]
-check("challenge 16: a threshold 1-3 cm high across the corridor, a floor (stepped over, not touched), the goal beyond",
-      all(0.01 <= b.z1 <= 0.03 and b.cx < sc.goal[0] and not sc.drops() for b, sc in zip(bars, c16)), [round(b.z1, 3) for b in bars])
+check("challenge 16: a threshold 0.5-1.0 cm high (what the walking crosses, STEPS.md) across the corridor, a floor "
+      "(stepped over, not touched), the goal beyond",
+      all(0.005 <= b.z1 <= 0.01 and b.cx < sc.goal[0] and not sc.drops() for b, sc in zip(bars, c16)), [round(b.z1, 3) for b in bars])
+floors16 = sorted(c16[0].floors, key=lambda f: f.cx)
+check("challenge 16: the floor in pieces meeting edge to edge at the bar (a bar laid on a floor tripped the duck)",
+      len(floors16) == 3 and all(abs((a.cx + a.hx) - (b.cx - b.hx)) < 1e-9 for a, b in zip(floors16, floors16[1:])),
+      [(round(f.cx - f.hx, 3), round(f.cx + f.hx, 3)) for f in floors16])
 
 # ---- the start's jitter: the world moves, the duck stays at the origin ----------------------------------------------
 base = Scene("t", "t", [Box("box", 1.0, 0.0, 0.1, 0.1, 0.0, 0.3)], [slab("floor", -1, 2, -1, 1)], (2.0, 0.0), "reach", 10.0)

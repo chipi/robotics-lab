@@ -24,6 +24,7 @@ import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { chainsOf } from './robot.js';
+import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 
 const API = '/api/v1/';
@@ -110,6 +111,9 @@ function styleOf(id) {
   if (id === 'world.drops') return c('c-drop', 'points');
   if (id === 'world.gaps') return c('c-gap', 'grid');
   if (id === 'plan.path') return c('c-plan', 'route');
+  if (id === 'semantic.objects') return c('c-floor', 'box');
+  if (id === 'semantic.sighting') return c('c-plan', 'points');
+  if (id === 'semantic.areas') return c('c-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
@@ -154,7 +158,7 @@ function buildTree(run, desc = null) {
     section('sec.senses', 'Senses', [...ids(['sensors.depth', 'sensors.raw']),
       grp('g.imu', 'IMU', [...ids(['sensors.tilt']), ...ids(IMU_SIGNALS.map(sig))], '')]),
     section('sec.mind', 'Mind', [grp('g.belief', 'Belief', ofGroup(['Robot (belief)'])), grp('g.world', 'World model', ofGroup(['World model'])),
-      ...ids(['plan.path', 'events'])]),
+      grp('g.semantic', 'Semantic map', ofGroup(['Semantic map'])), ...ids(['plan.path', 'events'])]),
   ].filter(Boolean);
   const others = S.filter((s) => !taken.has(s.id) && !s.parent);
   const other = section('sec.other', 'Other values', others.map(mk), others.length ? `${others.length}` : '');
@@ -247,8 +251,30 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const lastEvent = () => {
     if (!M.run) return null;
     const lim = Math.max(M.t, hasTicks() ? M.fr.t[M.i] : M.t);
-    return [...M.run.events].reverse().find((e) => e.t <= lim + 1e-9) || null;
+    return [...M.run.events].reverse().find((e) => e.kind !== 'room' && e.t <= lim + 1e-9) || null;      // the room has its own line in the Eye (semanticAt), it is not what the robot is doing
   };
+  // The semantic map at the playhead (RFC-0016): the current sighting and what it saw, the room the robot believes it is in with its
+  // votes, and the objects it knows (the snapshot in force). `sighting` is null when the last sighting is older than SIGHTING_FRESH_S.
+  function semanticAt() {
+    const fr = M.fr, t = M.t, evs = M.run?.events || [];
+    const snap = fr?.objectsAt(t) ?? null, objects = snap?.objects ?? [];
+    const room = [...evs].reverse().find((e) => e.kind === 'room' && e.t <= t + 1e-9) || null;
+    const area = [...evs].reverse().find((e) => e.kind === 'area' && e.t <= t + 1e-9) || null;
+    const has = !!(fr?.objects.length || fr?.sightings.length || evs.some((e) => e.kind === 'room' || e.kind === 'area'));
+    return { has, objectsT: snap?.t ?? null, sighting: fr?.sightingAt(t) ?? null, anySighting: !!(fr?.sightings.length && fr.sightings[0].t <= t + 1e-9), objects, confirmed: objects.filter((o) => o.confirmed).length,
+      room: room ? { name: room.room ?? null, votes: room.votes ?? {}, t: room.t } : null,
+      area: area ? { t: area.t, ...(area.area || {}) } : null };
+  }
+  // the semantic map at the playhead as state() and GET .../state?t= give it (ADR-0019); null for a run with none
+  function semanticOut() {
+    const s = semanticAt();
+    if (!s.has) return null;
+    const lk = s.sighting, r3 = (n) => (n == null ? null : +n.toFixed(3));      // 3 decimals, as the API rounds
+    return { objects_t: s.objectsT, objects: s.objects.map((o) => ({ kind: o.kind, id: o.id, x: r3(o.x), y: r3(o.y), confirmed: !!o.confirmed, landmark: o.landmark ?? null, confidence: o.confidence ?? null })),
+      sighting: lk && { t: lk.t, pose: lk.pose.map(r3), hfov_deg: lk.hfov_deg, range_m: lk.range_m, seen: lk.seen.map((d) => ({ kind: d.kind, range_m: d.range_m ?? null, confidence: d.confidence ?? null })) },
+      room: s.room, area: s.area };
+  }
+
   function moment() {
     const { fr, run } = M, i = M.i, bm = fr.belief[i], bw = M.bw[i], tr = fr.truth[i];
     const dist = tr ? Math.hypot(bw[0] - tr[0], bw[1] - tr[1]) : null;
@@ -359,6 +385,21 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       return { kind: ev.kind, phase, t: ev.t, rule: d?.rule ?? ev.kind, html: `<b class="ah">${head}</b> ${phase === 'looking' ? 'with the head' : esc(d?.reason || ev.kind)}<br>${body}` };
     });
   }
+  // what the camera sees now, the room and the objects confirmed (RFC-0016); nothing for a run with no semantic map
+  function semanticHud() {
+    const s = semanticAt();
+    if (!s.has) return '';
+    const sees = s.sighting ? (s.sighting.seen.length ? s.sighting.seen.map((d) => `<b>${esc(d.kind)}</b> ${fx(d.range_m ?? Math.hypot(d.x, d.y), 1)} m ${d.confidence == null ? '' : Math.round(100 * d.confidence) + '%'}`.trim()).join(' · ') : 'nothing in view')
+      : s.anySighting ? 'nothing in view' : 'no sighting yet';
+    const votes = Object.entries(s.room?.votes || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${fx(v, 2)}`).join(' · ');
+    const room = s.room ? `<b>${esc(s.room.name ?? 'unnamed')}</b>${votes ? ` (${votes})` : ''}` : 'not told yet';
+    const total = s.objects.length;
+    const area = s.area && `<b>${esc(s.area.name ?? 'no area')}</b>${s.area.agrees === false ? ` · the objects look ${esc(s.area.guess ?? '?')}` : ''}`;
+    return `<div class="sem-sees"><span class="hk">SEES</span>${sees}</div>`
+      + (area ? `<div class="sem-area"><span class="hk">AREA</span>${area}</div>` : '')
+      + `<div class="sem-room"><span class="hk">ROOM</span>${room}</div>`
+      + `<div class="sem-objects"><span class="hk">OBJECTS</span><b>${s.confirmed}</b> confirmed · ${total - s.confirmed} not yet</div>`;
+  }
   function paintHud() {
     const on = eyeOn() && !!M.run && hasTicks();
     $('eyehud').hidden = $('eyecone').hidden = !on;
@@ -373,6 +414,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       + `<div><span class="hk">PACE</span><b>${fx(m.cmd?.[0], 2)} m/s</b> · turn <b>${m.cmd ? sgn(m.cmd[1]) : '—'} rad/s</b></div>`
       + `<div><span class="hk">DOING</span>${ev ? `<b>${esc(d?.rule || ev.kind)}</b> · ${esc(d?.reason || (ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trim())} · ${Math.max(0, M.t - ev.t).toFixed(1)} s ago` : 'nothing decided yet'}</div>`
       + (d ? `<div><span class="hk">NUMBERS</span><span class="hv">${Object.entries(d.values).map(([k, v]) => `${esc(k)} <b>${valText(v)}</b>`).join(' · ')}</span></div>` : '')
+      + semanticHud()
       + `<div><span class="hk">FRAME</span>${m.depthTick < 0 ? 'no depth yet' : `floor <b>${m.cnt.f}</b> · obstacle <b>${m.cnt.o}</b> · overhead <b>${m.cnt.v}</b> · below <b>${m.cnt.b}</b>`}</div>`
       + `<div class="src"><span class="hk">SENSOR</span>${ep ? (ep.source === 'recorded' ? 'pose recorded with the frame' : 'pose estimated: this run records no frame state') : '—'}</div>`;
     const cv = $('hudcv'), f = rawFrame(false);
@@ -639,11 +681,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function state() {
     if (!M.run || !hasTicks()) {
       return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: M.run ? lastEvent() : null, selection: null,
-        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }) };
+        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }), ...(M.run && semanticOut() && { semantic: semanticOut() }) };
     }
     const m = moment();
     return {
-      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), raw_frame: rawSummary(),
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), ...(semanticOut() && { semantic: semanticOut() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), alerts: eyeOn() ? alertOut() : [], decided: decidedOut(),
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -851,19 +893,36 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('hm') && ($('hm').onclick = () => { M.hideMissing = !M.hideMissing; renderTree(); });
   }
 
-  // ---- Explore (the right panel's third tab): what is explored, its first kind the robot's body (RFC-0011) ----------------
+  // ---- Explore (the right panel's third tab): what is explored: the robot's body (RFC-0011), the depth frame or the map at the playhead ----
   let explore = null;
-  async function openExplore(robot) {
+  // what the depth frame and map kinds read of the run now: the frames the store holds, the world, plan, objects and areas in force at the playhead
+  function exploreData() {
+    const has = hasTicks(), fr = has ? M.fr : null, i = M.i, wi = has ? fr.world_at[i] : -1, pi = has ? fr.plan_at[i] : -1;
+    const site = (M.run?.events || []).find((e) => e.kind === 'site' && e.site?.areas?.length);
+    return { runId: M.runId, t: M.t, i, ticks: M.run?.ticks ?? 0, frames: fr, rawStream: stream('sensors.raw') || null, worldStream: stream('world.grid') || null,
+      belief: has ? fr.belief[i] : null, world: wi >= 0 ? fr.worlds[wi] : null, worldN: wi + 1, worldCount: store.worldCount, plan: pi >= 0 ? fr.plans[pi] : null,
+      objects: fr?.objectsAt(M.t)?.objects ?? [], areas: site?.site.areas ?? [], radius: M.run?.robot?.radius };
+  }
+  async function ensureExplore() {
     M.tab = 'explore'; renderInsp();
     if (!explore) {
       const { createExplore } = await import('./explore.js');
       explore ||= createExplore($('explore'), {
         api: API, robotDesc,
         recorded: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
-        hasRun: () => !!M.run, t: () => M.t,
+        hasRun: () => !!M.run, t: () => M.t, data: exploreData,
       });
     }
-    await explore.open(robot || M.run?.robot?.name || null);
+  }
+  // `keep`: the tab was clicked, so it comes back as it was left (the kind), not on the robot's body
+  async function openExplore(robot, keep = false) {
+    await ensureExplore();
+    await explore.open(robot || M.run?.robot?.name || null, keep);
+    return explore.state();
+  }
+  async function openExploreKind(kind) {
+    await ensureExplore();
+    await explore.openKind(kind);
     return explore.state();
   }
   function toggleOpen(id) { M.open[id] = !M.open[id]; if (T.nodes[id]?.section) saveOpen(); renderTree(); }
@@ -1036,7 +1095,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('tabMoment').setAttribute('aria-selected', M.tab === 'moment'); $('tabSel').setAttribute('aria-selected', M.tab === 'sel');
     $('tabExplore').setAttribute('aria-selected', M.tab === 'explore'); $('tabDecided').setAttribute('aria-selected', M.tab === 'decided');
     el.hidden = M.tab === 'explore'; $('explore').hidden = M.tab !== 'explore';
-    if (M.tab === 'explore') return;
+    if (M.tab === 'explore') { explore?.follow(); return; }
     if (!M.run || (!hasTicks() && !hasSignals())) { el.innerHTML = `<div class="empty">${M.run ? 'The run has no ticks yet.' : 'No run open.'}</div>`; return; }
     if (M.tab === 'decided') { el.innerHTML = decidedHtml(); paintDecidedNow(); return; }
     if (M.tab === 'moment' && !hasTicks()) {
@@ -1112,11 +1171,15 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   function legendHtml() {
     if (!M.run) return '';
-    const w = M.frame === 'world', sh = (id) => shown(id);
+    const w = M.frame === 'world', sh = (id) => shown(id), sem = (id) => !!adapter.semantic && sh(id);      // the deck page draws no semantic map
     const L = [['Belief', 'c-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'c-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'c-plan', sh('plan.path'), 1],
       ['Floor', 'c-floor', sh('sensors.depth.floor')], ['Obstacle', 'c-ob', sh('sensors.depth.obstacle')], ['Overhead', 'c-over', sh('sensors.depth.overhead')], ['Below floor', 'c-drop', sh('sensors.depth.below')],
-      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')]];
-    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})"></i>${n}</span>`).join('');
+      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')],
+      // the semantic map (ADR-0019): its colours are not themed, a '#' colour is taken as it is; a faint key is an object not yet confirmed
+      ['Object', cssHex(SEMANTIC.object), sem('semantic.objects')], ['Object, not yet', cssHex(SEMANTIC.object) + ';opacity:.4', sem('semantic.objects')], ['Landmark', cssHex(SEMANTIC.landmark), sem('semantic.objects')],
+      ['Field of view', cssHex(SEMANTIC.wedge), sem('semantic.sighting')], ['Detection', cssHex(SEMANTIC.seen), sem('semantic.sighting')],
+      ['Area', cssHex(SEMANTIC.area), sem('semantic.areas'), true]];
+    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:${c.startsWith('#') ? c : `var(--${c})`}"></i>${n}</span>`).join('');
   }
   const renderLegend = () => { $('legend').innerHTML = legendHtml(); };
   // where the legend is hidden (narrow windows) the overlays popover carries the colour keys
@@ -1304,6 +1367,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     setAngles: (on) => setAngles(on),
     // Explore (the right panel's third tab): open it on a robot (the run's when none is named) and act on its body
     explore: (robot) => openExplore(robot),
+    exploreKind: (kind) => openExploreKind(kind),
     explorePart: (link) => (explore ? explore.select(link) : null),
     explorePose: (mode) => (explore ? explore.setPose(mode) : false),
     exploreJoint: (name, radians) => (explore ? explore.setJoint(name, radians) : false),
@@ -1313,6 +1377,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
   window.miniview.state = state;
   window.miniview.exploreState = () => (explore ? explore.state() : null);
+  window.miniview.exploreView = (kind) => (explore ? explore.view(kind) : null);
   window.miniview.exploreSnapshot = () => (explore ? explore.snapshot() : null);
   window.miniview.exploreScreenOf = (link) => (explore ? explore.screenOf(link) : null);
   // the settings a script can have changed, as plain data: per-stream time modes, visibility (global and per view), drawn
@@ -1384,7 +1449,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('tree').ondblclick = (e) => { const row = e.target.closest('.row'); const n = row && T.nodes[row.dataset.id]; if (n?.kids && !n.section) toggleOpen(row.dataset.id); };
   $('tabMoment').onclick = () => { M.tab = 'moment'; renderInsp(); };
   $('tabSel').onclick = () => { M.tab = 'sel'; renderInsp(); };
-  $('tabExplore').onclick = () => openExplore();
+  $('tabExplore').onclick = () => openExplore(undefined, true);
   $('tabDecided').onclick = () => { M.tab = 'decided'; renderInsp(); };
   // a decision in the list: seek to it
   $('inspBody').addEventListener('click', (e) => { const r = e.target.closest('.dec'); if (r) setTime(+r.dataset.t); });

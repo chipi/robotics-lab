@@ -84,6 +84,11 @@ nav:
     - RFC-0011 — Robots drawn as themselves: rfc/RFC-0011-robot-models.md
     - RFC-0012 — Look far, get ready early: rfc/RFC-0012-look-far.md
     - RFC-0013 — The robot's eye: rfc/RFC-0013-robot-eye.md
+    - RFC-0014 — Mission Control: rfc/RFC-0014-mission-control.md
+    - RFC-0015 — Nav2 on the simulated duck: rfc/RFC-0015-nav2-comparison.md
+    - RFC-0016 — Objects and the semantic map: rfc/RFC-0016-objects-and-semantic-map.md
+    - RFC-0017 — Robot access: rfc/RFC-0017-robot-access.md
+    - RFC-0018 — Lab projects and seams: rfc/RFC-0018-lab-projects-and-seams.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md
@@ -109,6 +114,8 @@ nav:
     - ADR-0015 — The scenario runner: adr/ADR-0015-scenario-runner.md
     - ADR-0016 — Joints and the whole truth pose: adr/ADR-0016-joints-and-whole-truth-pose.md
     - ADR-0017 — Video export: adr/ADR-0017-video-export.md
+    - ADR-0018 — ROS 2 in a container: adr/ADR-0018-ros2-in-a-container-for-comparison.md
+    - ADR-0019 — The semantic map in a run: adr/ADR-0019-semantic-map-records.md
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md
@@ -124,6 +131,8 @@ nav:
     - "One clearance model (RFC-0008 §4)": wip/CLEARANCE-MODEL.md
     - Drops beside the way, unseen floor and a glance: wip/SIDE-DROPS.md
     - Walking over and up (parked): wip/STEPS.md
+    - Exploring the apartment, progress: wip/EXPLORE-PROGRESS.md
+    - Prior art, kept against the code: wip/PRIOR-ART.md
     - Viewer spike: wip/VIEWER-SPIKE.md
     - eval-harness for robot trials: wip/EVAL-HARNESS-ROBOTS.md
     - Stretching eval-harness and flotilla: wip/STRETCH-EVAL-FLOTILLA.md

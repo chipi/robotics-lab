@@ -1,6 +1,7 @@
 # RFC-0012 — Look far, get ready early: where to look and how fast to go
 
-**Status:** Proposed (2026-11-16, the operator's direction)
+**Status:** Accepted (2026-11-18, the operator: "3A": accept, and build it in the challenge stream,
+the first thing when it resumes); proposed 2026-11-16 on the operator's direction
 **Builds on:** [RFC-0008](RFC-0008-challenge-course.md) (the challenge course, its error budget per
 robot), [RFC-0002](RFC-0002-robot-brain.md) (the robot brain), [RFC-0011](RFC-0011-robot-models.md)
 (each robot's description).
@@ -43,6 +44,21 @@ trigger is a rule with a reason, logged as an event, and has a challenge that te
 | An opening: a doorway, the end of a box, a junction | What is just past the edge? | 2, 3, 4 |
 | Something ahead that is not floor or wall | How high is it, how far does it go? | 12, 13, 14 |
 | New ground, while exploring | What is around, for the map? | 22–24 |
+| Floor the robot is about to step on, never seen as floor | Is there floor under the next step? | 8–11, exploring |
+
+**Look before you step** (added 2026-11-17, the operator: "maybe both"): the last trigger is a rule,
+not a heuristic — the robot walks only over floor its depth sensor has seen. The strip the duck is
+about to walk over (0.20–0.40 m ahead along the path, across its width) is checked against the floor
+seen, cell by cell with no tolerance (at an edge, a few cm of tolerance is the whole margin); an
+unseen spot stops the duck to look at it; floor goes on, a drop is remembered, still unseen is not
+walked on. Why: exploring batch b2 run 2 cut the staircase opening's corner it had never had in view
+(beside the duck, then just outside the 45° wedge, the corner under the head); mapd draws the
+stairwell as free and no drop was remembered; the harness's truth guard stopped it 0.05 m from the
+opening. Replayed on that run, the rule stops the duck 1.3 s before, to look at a spot inside the
+opening. Its cost, replayed on five recorded runs: a stop in 7–15 % of walking ticks (an upper bound;
+one look covers more than the spot it was for). **Scanning beside the way while walking** (the first
+trigger, done ahead of time) is what keeps that cost down: the rule is the guarantee, the scanning
+the speed.
 
 Rules for every look:
 
@@ -136,3 +152,7 @@ from pace.
 - 2026-11-16, the operator: look far and get ready before you are close, as on a motorbike or a
   snowboard; slowing from 0.3 to 0.2 is fine; the concept must serve many robots, and what slowing
   down means is set per robot.
+- 2026-11-17, stream A (exploring the apartment): the duck cut a stairwell corner it had never seen.
+  Two answers were put to the operator — walk only over seen floor and look before stepping, or scan
+  the sides while walking; the operator: "maybe both". Look before you step is built first, as the
+  guarantee (§2.1); scanning beside the way follows, to win back its time.

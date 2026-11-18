@@ -27,6 +27,16 @@ _XYZK = {"type": "array", "items": _obj(["x", "y", "z", "k"], x=_NUM, y=_NUM, z=
 _DROPS = {"type": "array", "items": _obj(["ahead", "left", "h"], ahead=_NUM, left=_NUM, h=_NUM)}
 _DERIVED = _obj(["points"], points=_XYZK, drop_points=_DROPS, block_m=_NUM)
 
+# The semantic map (RFC-0016): an object's parts are boxes in plan with a bottom and a top, in the map frame; a sighting's detections
+# are relative to the robot (x ahead, y left). Both record kinds stay our own schemas: Foxglove has none for them.
+_PART = _obj(["x", "y", "hx", "hy", "yaw", "z0", "z1"], x=_NUM, y=_NUM, hx=_NUM, hy=_NUM, yaw=_NUM, z0=_NUM, z1=_NUM)
+_OBJECT = _obj(["id", "kind", "x", "y", "confirmed", "parts"], id=_STR, kind=_STR, x=_NUM, y=_NUM, n=_INT, confirmed={"type": "boolean"},
+               landmark=_NUM, permanence=_STR, first_t=_NUM, last_t=_NUM, confidence=_NUM,
+               sources={"type": "array", "items": _STR}, evidence={"type": "array", "items": {"type": "object"}},
+               parts={"type": "array", "items": _PART})
+_SEEN = _obj(["kind", "x", "y"], kind=_STR, x=_NUM, y=_NUM, radius=_NUM, z0=_NUM, z1=_NUM, range_m=_NUM, confidence=_NUM, source=_STR,
+             evidence={"type": "object"})
+
 MINIVIEW = {
     "run": _obj(["format", "key", "uuid", "robot", "scene", "kind", "started_at_ns", "started_at_source", "writer"],
                 format=_INT, key=_STR, uuid=_STR, robot={"type": "object"}, scene=_STR, kind=_STR,
@@ -34,7 +44,11 @@ MINIVIEW = {
     "segment": _obj(["index", "t_start", "t_end"], index=_INT, goal=_ARR, outcome=_STR, origin_src=_NUM,
                     t_start=_NUM, t_end=_NUM),
     "event": _obj(["kind", "text"], kind=_STR, text=_STR, notable={"type": "boolean"}, t_src=_NUM, raw=_RAW,
-                  decision=_DECISION),
+                  decision=_DECISION, room={"type": ["string", "null"]}, votes={"type": "object"}),
+    "objects": _obj(["objects", "changes"], objects={"type": "array", "items": _OBJECT},
+                    changes={"type": "array", "items": _obj(["change", "id"], change=_STR, id=_STR)}, t_src=_NUM, raw=_RAW),
+    "sighting": _obj(["pose", "hfov_deg", "range_m", "seen"], pose=_ARR, hfov_deg=_NUM, range_m=_NUM,
+                 seen={"type": "array", "items": _SEEN}, t_src=_NUM, raw=_RAW),
     "depth_frame": _obj(["rows", "cols", "frame_t_ns"], rows=_INT, cols=_INT, seq=_INT, frame_t_ns=_INT, state_t_ns=_INT,
                         pair_dt_ms=_NUM, t_src=_NUM, state=_STATE, pose=_ARR, derived=_DERIVED),
     "plan": _obj(["path"], path=_POINTS, t_src=_NUM, raw=_RAW),

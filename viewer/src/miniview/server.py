@@ -9,8 +9,9 @@
                                                       ticks refer to, keyed by index
         .../signals?from=&to=                         a robot's named values over a time window, columnar (ADR-0013)
         .../sensor?t=                                 the raw depth frame at or before t, with the state it was paired with (ADR-0014)
-        .../state?t=                                  the moment: belief, truth, distance, depth, signals, last event
+        .../state?t=                                  the moment: belief, truth, distance, depth, signals, semantic map, last event
         .../events?kinds=                             what happened, when
+        .../semantic?from=&to=                        the semantic map's snapshots and the camera's sightings, in the map frame (RFC-0016)
         .../presence                                  when each stream has data (the timeline's rows)
         .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
                                                       then `status`; resumes after `since` or Last-Event-ID
@@ -147,7 +148,18 @@ def signals_window(sig: dict, n: int, t_from: float | None, t_to: float | None) 
     return {"i0": lo, "n": n, "t": ts[lo:hi], "v": {k: col[lo:hi] for k, col in sig["v"].items()}}
 
 
-def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None = None) -> dict:
+def semantic_window(sem: dict, t_from: float | None, t_to: float | None) -> dict:
+    """The semantic map's snapshots (`objects`) and the camera's sightings (`sightings`) with a time in [t_from, t_to]. The pages ask for
+    the whole run once, they are small next to the ticks: a sighting is a few hundred bytes at 2 Hz."""
+    def cut(rows):
+        ts = [r["t"] for r in rows]
+        lo = 0 if t_from is None else bisect.bisect_left(ts, t_from)
+        hi = len(rows) if t_to is None else bisect.bisect_right(ts, t_to)
+        return rows[lo:hi]
+    return {"objects": cut(sem["objects"]), "sightings": cut(sem["sightings"])}
+
+
+def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None = None, sem: dict | None = None) -> dict:
     """Per stream: the spans where it has data (gaps longer than 3 ticks split them) or the times of
     its records, for the timeline's data rows."""
     ts = frames["t"]
@@ -182,6 +194,8 @@ def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None 
         "sensors.raw": {"spans": spans([f["t"] for f in raw or ()], [f["t"] for f in raw or ()])},
         "world.grid": {"times": [w["t"] for w in frames["worlds"]]},
         "plan.path": {"times": [p["t"] for p in frames["plans"]]},
+        "semantic.objects": {"times": [o["t"] for o in (sem or {}).get("objects", ())]},
+        "semantic.sighting": {"spans": spans([x["t"] for x in (sem or {}).get("sightings", ())], [x["t"] for x in (sem or {}).get("sightings", ())])},
         "events": {"times": [e["t"] for e in run["events"]]},
     }}
 
@@ -337,7 +351,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except ValueError as e:
                 raise HttpError(400, str(e)) from None
             what = parts[4] if len(parts) > 4 else ""
-            if len(parts) > 5 or what not in ("", "frames", "signals", "sensor", "state", "events", "presence", "live"):
+            if len(parts) > 5 or what not in ("", "frames", "signals", "sensor", "state", "events", "semantic", "presence", "live"):
                 raise HttpError(404, "not found")
             ld = cat.get(key)
             if ld is None:
@@ -440,16 +454,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(fr)
         if what == "events":
             return self._json(query.events(run, set(q["kinds"].split(",")) if q.get("kinds") else None))
+        if what == "semantic":
+            t_from, t_to = number(q, "from"), number(q, "to")
+            if t_from is not None and t_to is not None and t_from > t_to:
+                raise HttpError(400, f"from {t_from} is after to {t_to}")
+            with ld.data.changed:
+                sem = {k: list(v) for k, v in ld.data.sem.items()}
+            return self._json(semantic_window(sem, t_from, t_to))
         if n == 0 and run["samples"] == 0:
             raise HttpError(409, "the run has no ticks yet")
         frames = {k: (v[:n] if k in PER_TICK else list(v)) for k, v in f.items()}
         sig = {"t": ld.data.sig["t"][:run["samples"]], "v": {k: c[:run["samples"]] for k, c in ld.data.sig["v"].items()}}
         if what == "state":
             t = number(q, "t")
-            return self._json(query.state(run, frames, run["t1"] if t is None else t, sig))
+            with ld.data.changed:
+                sem = {k: list(v) for k, v in ld.data.sem.items()}
+            return self._json(query.state(run, frames, run["t1"] if t is None else t, sig, sem))
         with ld.data.changed:
             raw = list(ld.data.raw)
-        return self._json(presence(run, frames, sig, raw))
+            sem = {k: list(v) for k, v in ld.data.sem.items()}
+        return self._json(presence(run, frames, sig, raw, sem))
 
     @staticmethod
     def _ev(name: str, data, eid=None) -> bytes:

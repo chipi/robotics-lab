@@ -74,6 +74,11 @@
     <h1>NXT Lab</h1>
     <div class="status" id="status">Loading…</div>
     <button id="connect" hidden>Connect</button>
+    <span class="status" id="lockbox" style="flex:none;min-width:0" title="Only the holder of the control lock drives (STOP is always open)">
+      <span id="lock-state">Control: …</span>
+      <button id="lock-take">Take control</button>
+      <button id="lock-release" hidden>Release</button>
+    </span>
     <button class="estop" id="estop" title="Stops the drive motors and any program running on the brick">STOP ALL</button>
   </div>
   <nav>
@@ -253,14 +258,90 @@ function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.style.display = "block";
   clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 4000);
 }
+
+// ---- the control lock (RFC-0017): this page takes it to drive, keeps it alive and gives it back. STOP is always open.
+const CLIENT = "nxt-page";
+const LOCKED = ["/api/drive", "/api/fire", "/api/program/start", "/api/program/stop", "/api/files/upload", "/api/files/delete"];
+let session = null, myLease = null, lockInfo = { holder: null };
+try { session = sessionStorage.getItem("nxt-session"); myLease = Number(sessionStorage.getItem("nxt-lease")) || null; } catch (e) {}
+function setSession(s, lease) {
+  session = s; myLease = s ? lease : null;
+  try { if (s) { sessionStorage.setItem("nxt-session", s); sessionStorage.setItem("nxt-lease", String(lease)); } else { sessionStorage.removeItem("nxt-session"); sessionStorage.removeItem("nxt-lease"); } } catch (e) {}
+}
+async function lockCall(action) {
+  const r = await fetch("/api/lock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, client: CLIENT, session }) });
+  return { ok: r.ok, data: await r.json() };
+}
+async function ensureLock() {
+  if (session) return true;
+  try {
+    const { ok, data } = await lockCall("acquire");
+    if (!ok) { toast(`Not driving: ${data.error}`); refreshLock(); return false; }
+    setSession(data.session, data.lease_id);
+    renderLock();
+    return true;
+  } catch (e) { toast(String(e)); return false; }
+}
+function lostControl(reason) {
+  if (!session) return;
+  setSession(null);
+  toast(`Control ended${reason ? `: ${reason}` : ""}. Take control to drive again.`);
+  renderLock();
+}
+function renderLock() {
+  const mine = !!session, other = lockInfo.holder && !mine;
+  $("lock-state").innerHTML = mine ? `Control: <b>you</b>` : lockInfo.holder ? `Control: <b>${esc(lockInfo.holder)}</b>` : `Control: <b>free</b>`;
+  $("lock-take").hidden = mine;
+  $("lock-take").disabled = !!other;
+  $("lock-release").hidden = !mine;
+  document.querySelectorAll(".pad [data-dir]").forEach((b) => (b.dataset.byLock = other ? "1" : ""));
+}
+async function refreshLock() {
+  try {
+    lockInfo = await (await fetch("/api/lock")).json();
+  } catch (e) { return; }
+  if (session && (lockInfo.holder === null || lockInfo.lease_id !== myLease)) {
+    let reason = "";
+    try { const { data } = await lockCall("keepalive"); reason = data.reason || ""; } catch (e) {}
+    lostControl(reason);
+  }
+  renderLock();
+}
+setInterval(async () => {   // the lease is 20 s; a drive renews it, so this only matters while no button is held
+  if (!session) return;
+  try { const { ok, data } = await lockCall("keepalive"); if (!ok) lostControl(data.reason || data.error); } catch (e) {}
+}, 5000);
+$("lock-take").addEventListener("click", async () => { if (await ensureLock()) toast("You have control"); });
+$("lock-release").addEventListener("click", async () => {
+  const s = session;
+  setSession(null);
+  try { await fetch("/api/lock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "release", session: s }) }); } catch (e) {}
+  refreshLock();
+});
+
 async function api(path, body, raw) {
+  const base = path.split("?")[0];
+  if (LOCKED.includes(base)) {
+    if (!(await ensureLock())) return null;
+    if (raw) path += (path.includes("?") ? "&" : "?") + `session=${session}`; else body = { ...body, session };
+  }
   const opts = body === undefined ? {} : { method: "POST", body: raw ? body : JSON.stringify(body), headers: raw ? {} : { "Content-Type": "application/json" } };
   try {
     const r = await fetch(path, opts);
     const data = await r.json();
-    if (!r.ok || data.ok === false) { toast(data.error || `HTTP ${r.status}`); return null; }
+    if (!r.ok || data.ok === false) {
+      if (data.lock === "lease_ended" || data.lock === "no_lease") lostControl(data.reason || data.error);
+      else toast(data.error || `HTTP ${r.status}`);
+      return null;
+    }
     return data;
   } catch (e) { toast(String(e)); return null; }
+}
+async function stopAll() {
+  const res = await api("/api/stop", { client: CLIENT });   // STOP ends the holder's lease, this page's too
+  setSession(null);
+  renderLock();
+  return res;
 }
 
 // ---- tabs
@@ -278,6 +359,7 @@ document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click
 const LINK_NAMES = { usb: "USB", bluetooth: "Bluetooth", fake: "simulated" };
 let status = {};
 async function refreshStatus() {
+  refreshLock();
   let s;
   try { s = await (await fetch("/api/status")).json(); } catch (e) { s = { connected: false, error: "server unreachable" }; }
   status = s;
@@ -302,7 +384,7 @@ async function refreshStatus() {
   $("prog-state").innerHTML = s.program ? `Running <b>${esc(s.program)}</b>` : "Nothing running.";
   $("prog-stop").disabled = !s.program;
   const otherProgram = s.program && !(s.deadman && s.deadman.running);
-  document.querySelectorAll(".pad button").forEach((b) => (b.disabled = !!otherProgram));
+  document.querySelectorAll(".pad button").forEach((b) => (b.disabled = !!otherProgram || (!!b.dataset.dir && b.dataset.byLock === "1")));
   $("fire").disabled = !!otherProgram || !(config && config.shooter_enabled);
   $("fire").title = config && !config.shooter_enabled ? "Shooter switched off in Setup" : "";
   $("rec").textContent = s.recording ? "Stop recording" : "Start recording";
@@ -314,7 +396,7 @@ let recordingWas = false;
 $("connect").addEventListener("click", async () => { await api("/api/connect", {}); refreshStatus(); });
 $("estop").addEventListener("click", async () => {
   release(false);
-  await api("/api/stop", {});
+  await stopAll();
   if (status.program && !(status.deadman && status.deadman.running)) await api("/api/program/stop", {});
   refreshStatus();
 });
@@ -336,7 +418,7 @@ function release(sendStop = true) {
   if (timer) clearInterval(timer);
   timer = null;
   document.querySelectorAll(".held").forEach((b) => b.classList.remove("held"));
-  if (held && sendStop) api("/api/stop", {});
+  if (held && sendStop && session) api("/api/drive", { left: 0, right: 0 });   // the lease stays: letting go is not giving up control
   held = null;
 }
 document.querySelectorAll("[data-dir]").forEach((b) => {
@@ -344,7 +426,7 @@ document.querySelectorAll("[data-dir]").forEach((b) => {
   b.addEventListener("pointerup", () => release());
   b.addEventListener("pointercancel", () => release());
 });
-$("stop").addEventListener("click", () => { release(false); api("/api/stop", {}); });
+$("stop").addEventListener("click", () => { release(false); stopAll(); });
 $("fire").addEventListener("click", () => api("/api/fire", {}));
 $("power").addEventListener("input", () => ($("powerval").textContent = power()));
 const KEYS = { ArrowUp: "fwd", w: "fwd", ArrowDown: "back", s: "back", ArrowLeft: "left", a: "left", ArrowRight: "right", d: "right" };

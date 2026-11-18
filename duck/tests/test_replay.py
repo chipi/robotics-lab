@@ -67,6 +67,7 @@ def navigator(runlog=None):
     nav.tof = type("Tof", (), {"nearest_mm": 410})()
     nav.floor_seen = set()
     nav.suspects = SuspectMemory()
+    nav._low = {}
     return nav
 
 
@@ -346,6 +347,72 @@ pr.update(2.54, 12.0, 0)
 check("a longer way after the map learned a drop is not a stall: progress counts from it",
       not pr.update(4.15, 20.0, 5) and not pr.update(4.0, 28.0, 5) and not pr.update(3.9, 34.0, 5))
 check("and a stall on the new way is still a stall", pr.update(3.9, 34.0 + NO_PROGRESS_S + 0.1, 5))
+# exploring b3 r1 leg 4: four looks before stepping (~3 s each) inside one leg; standing to look is not a stall
+pr = Progress(0.0)
+pr.update(1.0, 1.0, 0)
+pr.pause(12.0)
+check("time spent looking does not count toward a stall", not pr.update(1.0, 1.0 + NO_PROGRESS_S - 1.0 + 12.0, 0))
+check("... the rest of the time still does", pr.update(1.0, 1.0 + NO_PROGRESS_S + 0.1 + 12.0, 0))
+
+# ---- after a glance the head gets back the command it had, not the angles it was measured at --------------------------
+# challenge 11, gate3 (2026-11-18): robot.head is a command to the walking policy, whose head sits at neck ~13°, pitch
+# ~20° under the default command of zeros; sending those measured angles back as the command ratcheted the head down
+# glance by glance (neck 44°, pitch 83° for the rest of the walk) and the odometry then read 10-14 % short
+# (sim/probes/head_after_glance.py)
+import duck_lab.nav.run as _run  # noqa: E402
+
+_run.LOOK_MAX_S, _run.HEAD_BACK_S = 0.05, 0.05
+nv = navigator()
+nv.glanced, nv.edges, nv.record = [], [], lambda **kw: None
+walking = [0.0] * 5 + [math.radians(13), math.radians(20), 0.0, 0.0] + [0.0] * 6
+nv._states.append((1, {"joints": walking}))
+heads = []
+
+
+class _Robot:
+    def call(self, method, params=None):
+        if method == "robot.head":
+            heads.append(dict(params))
+        if method == "robot.look":
+            return {"head": {"neck_pitch": 0.6, "head_pitch": 1.2, "head_yaw": 0.3, "head_roll": 0.0}}
+        return {}
+
+
+nv.robot = _Robot()
+nv.glance_at((0.5, 0.2), (0.0, 0.0, 0.0))
+check("a glance ends by sending the head command it found (the default zeros), not the measured angles",
+      heads and heads[-1] == {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0},
+      heads[-1] if heads else None)
+
+# ---- a low cell is remembered once LOW_FRAMES different frames saw it (cliff.LOW_MARGIN_M) ---------------------------
+from duck_lab.nav.run import LOW_FRAMES  # noqa: E402
+
+nv = navigator()
+nv.blocked, nv._seen, nv._low = [], set(), {}
+box_side = [(0.5, 0.0), (0.5, 0.02)]
+for _ in range(LOW_FRAMES + 2):
+    nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=7)
+check("one frame read again and again: not remembered", nv.blocked == [], nv.blocked)
+for k in range(8, 8 + LOW_FRAMES - 2):
+    nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=k)
+check(f"{LOW_FRAMES - 1} different frames: not yet", nv.blocked == [], nv.blocked)
+new = nv._remember_low(box_side, (1.0, 0.0, 0.0), frame_key=99)
+check("a different cell in the next frame: not remembered", new == [] and nv.blocked == [], nv.blocked)
+new = nv._remember_low(box_side, (0.0, 0.0, 0.0), frame_key=100)
+check(f"{LOW_FRAMES} different frames: remembered, as obstacle points", len(new) >= 1 and nv.blocked == new, new)
+
+# ---- one tight pivot per spot (the operator, 2026-11-18, option 3): each turn on the spot creeps 3-4 cm the odometry
+# does not see; b7 r2 turned four times beside lm_office, 0.206 -> 0.034 m from it while believing 0.16 ----------------
+from duck_lab.nav.run import TIGHT_PIVOT_M  # noqa: E402
+
+nv = navigator()
+nv._tight_spots = []
+check("the tight pivot room is the footprint plus the creep (0.15 m)", abs(TIGHT_PIVOT_M - 0.15) < 1e-9, TIGHT_PIVOT_M)
+check("a first tight pivot here: allowed", nv._tight_allowed((1.0, 1.0, 0.0), 10.0))
+check("... the same pivot going on, tick after tick: allowed", nv._tight_allowed((1.01, 1.0, 0.5), 10.3)
+      and nv._tight_allowed((1.02, 1.01, 1.0), 10.6))
+check("a new tight pivot at the same spot after that one ended: refused", not nv._tight_allowed((1.03, 1.0, 0.0), 14.0))
+check("a tight pivot 0.2 m away: allowed", nv._tight_allowed((1.2, 1.0, 0.0), 14.0))
 
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

@@ -29,6 +29,24 @@ def write_ticks(log: Path, a: int, b: int) -> None:
         fh.flush()
 
 
+FRIDGE = {"id": "fridge_1", "kind": "fridge", "x": 1.5, "y": 0.5, "n": 6, "confirmed": True, "landmark": 1.0, "permanence": "fixed", "first_t": 3.0, "last_t": 3.9,
+          "confidence": 0.9, "sources": ["sim_camera"], "evidence": [], "parts": [[1.5, 0.5, 0.3, 0.25, 0.4, 0.0, 1.7]]}
+CABINET = {"id": "cabinet_1", "kind": "cabinet", "x": 0.5, "y": -0.5, "n": 1, "confirmed": False, "landmark": 0.5, "permanence": "fixed", "first_t": 3.5, "last_t": 3.5,
+           "confidence": 0.6, "sources": ["sim_camera"], "evidence": [], "parts": [[0.5, -0.5, 0.25, 0.25, 0.0, 0.0, 0.6]]}
+SEEN = {"kind": "fridge", "x": 1.0, "y": 0.4, "radius": 0.4, "z0": 0.0, "z1": 1.7, "range_m": 1.08, "confidence": 0.8, "source": "sim_camera"}
+# the navigator's rows for the semantic map (RFC-0016), as it writes them, at the time of the newest tick of the first batches (3.9 s)
+SEMANTIC_ROWS = [{"event": "semantic", "t": 3.9, "changes": [["new", "cabinet_1"], ["confirmed", "fridge_1"]], "objects": [CABINET, FRIDGE]},
+                 {"event": "sighting", "t": 3.9, "pose": [0.2, 0.0, 0.0], "hfov_deg": 60, "range_m": 3.0, "seen": [SEEN]},
+                 {"event": "room", "t": 3.9, "room": "kitchen", "votes": {"kitchen": 0.4, "office": 0.1}}]
+
+
+def write_rows(log: Path, rows: list) -> None:
+    with open(log / "ticks.jsonl", "a") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+        fh.flush()
+
+
 with tempfile.TemporaryDirectory() as tmp:
     data, log = Path(tmp) / "data", Path(tmp) / "logs" / "explore99"
     log.mkdir(parents=True)
@@ -102,6 +120,42 @@ with tempfile.TemporaryDirectory() as tmp:
         check("the live stream's seq on the page is the server's", all(
             pg.evaluate("window.miniview.state().seq") == get(base, f"/api/v1/runs/{KEY}")[1]["seq"] for pg in pages.values()))
 
+        # the semantic map arriving on the live stream (ADR-0019): objects and sighting records for a run that had none when the pages opened it
+        write_rows(log, SEMANTIC_ROWS)
+        sem_state = "window.miniview.state().semantic"
+        for lib, q in pages.items():
+            q.wait_for_function(f"{sem_state} && {sem_state}.sighting && {sem_state}.room", timeout=15000)
+        wp.wait_for_function(f"{sem_state} && {sem_state}.sighting && {sem_state}.room", timeout=15000)
+        api = get(base, f"/api/v1/runs/{KEY}/state?t=3.9")[1].get("semantic")
+        for lib, q in [*pages.items(), ("watch", wp)]:
+            st = q.evaluate(sem_state)
+            check(f"{lib}: the objects, the current sighting and the room that arrived live are in state().semantic, as the API's /state has them",
+                  st == api and [o["id"] for o in st["objects"]] == ["cabinet_1", "fridge_1"] and [o["confirmed"] for o in st["objects"]] == [False, True]
+                  and st["sighting"]["seen"] == [{"kind": "fridge", "range_m": 1.08, "confidence": 0.8}] and st["room"]["name"] == "kitchen", (st, api))
+            streams = {x["id"]: x for x in q.evaluate("window.miniview.internals.shell().M.run.streams")}
+            check(f"{lib}: the two semantic streams are now counted and no longer missing (one snapshot, one sighting)",
+                  streams["semantic.objects"]["count"] == 1 and streams["semantic.sighting"]["count"] == 1 and not streams["semantic.objects"]["missing"] and not streams["semantic.sighting"]["missing"],
+                  [streams["semantic.objects"], streams["semantic.sighting"]])
+        drawn = "(() => { const s = window.miniview.internals.adapter.semantic(); return !!s && s.objects === 2 && s.sighting !== null; })()"
+        pages["three"].wait_for_function(drawn, timeout=15000)               # the page draws a moment after the record (it batches what arrives)
+        wp.wait_for_function(drawn, timeout=15000)
+        sem3 = pages["three"].evaluate("window.miniview.internals.adapter.semantic()")
+        check("the 3D page draws them live: two objects, one confirmed and labelled, the sighting with what it saw",
+              sem3["objects"] == 2 and sem3["confirmed"] == 1 and sem3["labels"] == ["fridge"] and sem3["sighting"]["seen"][0]["kind"] == "fridge"
+              and sem3["objectsVisible"] and sem3["sightingVisible"] and len(sem3["labelPx"]) == 2, sem3)
+        wsem = wp.evaluate("window.miniview.internals.adapter.semantic()")
+        check("the watch page draws them too", wsem["objects"] == 2 and wsem["sighting"] is not None, wsem)
+        pages["three"].wait_for_function("[...document.querySelectorAll('#legend span')].some((e) => e.textContent === 'Detection')", timeout=10000)
+        check("the legend of the 3D page gains the semantic entries once the records arrive",
+              {"Object", "Landmark", "Field of view", "Detection"} <= set(pages["three"].evaluate("[...document.querySelectorAll('#legend span')].map((e) => e.textContent)")))
+        check("the deck page, which draws no semantic map, keeps its legend free of the semantic entries (and says so: no `semantic()` in its adapter)",
+              {"Object", "Landmark", "Field of view", "Detection"}.isdisjoint(pages["deck"].evaluate("[...document.querySelectorAll('#legend span')].map((e) => e.textContent)"))
+              and pages["deck"].evaluate("window.miniview.internals.adapter.semantic === undefined"))
+        check("the run's file has them: the service's /semantic lists the snapshot and the sighting",
+              (lambda r: [len(r["objects"]), len(r["sightings"])])(get(base, f"/api/v1/runs/{KEY}/semantic")[1]) == [1, 1])
+        check("the room event went through the live path as an event with its room and votes",
+              [(e["room"], e["votes"]) for e in get(base, f"/api/v1/runs/{KEY}")[1]["events"] if e["kind"] == "room"] == [("kitchen", {"kitchen": 0.4, "office": 0.1})])
+
         # a change of time, by script, turns Follow live off; the run goes on growing, the playhead stays
         for lib, q in pages.items():
             q.evaluate("window.miniview.setTime(2.0)")
@@ -132,8 +186,8 @@ with tempfile.TemporaryDirectory() as tmp:
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
         wp.wait_for_function("document.getElementById('runinfo').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
-        check("the watch page shows the run end: the event and the verdict in the decisions, status ended",
-              wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["trapped", "verdict"],
+        check("the watch page shows the run end: the room event, the event and the verdict in the decisions, status ended",
+              wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["room", "trapped", "verdict"],
               wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)"))
         for lib, q in pages.items():
             q.wait_for_function("window.miniview.internals.M.pres.t1 === window.miniview.internals.M.run.t1", timeout=20000)
