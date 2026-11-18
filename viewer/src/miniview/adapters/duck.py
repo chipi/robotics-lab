@@ -110,6 +110,13 @@ class DuckLog:
                                            "h": g["height"], "cells": g["cells"]},
                                   "obstacles": r.get("blocked", []), "drops": r.get("drops", []),
                                   "raw": rest("grid", "blocked", "drops")})]
+        if ev == "semantic" and isinstance(r.get("objects"), list):
+            return [(t, "objects", {"objects": r["objects"], "changes": r.get("changes", []), "t_src": ts,
+                                    "raw": rest("objects", "changes")})]
+        if ev == "look" and isinstance(r.get("seen"), list) and isinstance(r.get("pose"), list):
+            return [(t, "look", {"pose": [_r(v, 4) for v in r["pose"][:3]], "hfov_deg": r.get("hfov_deg"),
+                                 "range_m": r.get("range_m"), "seen": r["seen"], "t_src": ts,
+                                 "raw": rest("pose", "hfov_deg", "range_m", "seen")})]
         if ev:
             notable = ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached")
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
@@ -118,6 +125,9 @@ class DuckLog:
                  "raw": rest("decision")}
             if isinstance(r.get("decision"), dict):         # a rule that fired, with the values it compared (ADR-0014)
                 e["decision"] = r["decision"]
+            if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event
+                votes = r.get("votes") if isinstance(r.get("votes"), dict) else {}
+                e.update(room=r.get("room"), votes=votes, text=f"room {r.get('room') or 'none'}", raw=rest("decision", "room", "votes"))
             out = [(t, "event", e)]
             if notable:
                 self.events.append({"kind": ev, "text": e["text"], "t": t})

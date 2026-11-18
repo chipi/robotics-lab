@@ -2,7 +2,7 @@
 
 A record is (t, kind, payload). Kinds: `run` (who and where, once), `epoch` (the map -> world
 transform from t on), `tick` (belief, truth, command, tilt, depth), `signals` (a robot's named values at t,
-ADR-0013), `plan`, `world`, `event`, `segment` (a goal's span, ADR-0007), `end` (the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
+ADR-0013), `plan`, `world`, `event`, `objects` and `look` (the semantic map and the camera's looks, ADR-0018), `segment` (a goal's span, ADR-0007), `end` (the verdict). Adapters produce records; the MCAP file stores them (`miniview.mcapio`); `RunData`
 applies them one by one, so a finished run and a live one are built the same way.
 """
 
@@ -37,13 +37,14 @@ class RunData:
         self.raw = []                 # the depth frames, raw (ADR-0014): {t, rows, cols, distance_mm, status, frame_t_ns, ...}, in time order
         self.frames = {"t": [], "belief": [], "truth": [], "truth_3d": [], "tilt": [], "cmd": [], "depth": [], "plan_at": [],
                        "world_at": [], "plans": [], "worlds": []}
+        self.sem = {"objects": [], "looks": []}      # the semantic map's snapshots and the camera's looks (RFC-0016), each {t, ...}, in time order
         self.sig = {"t": [], "v": {}}     # the signals ticks: times, and per declared signal its value at each (None: none then)
         self.sig_kinds = {}               # declared signal -> "number" | "text"
         self.sig_counts = {}              # per signal, how many ticks carried a value
         self.log = []                 # (seq, t, kind, payload): what live followers send
         self.seq = 0
         self.last_t = 0.0
-        self.counts = {"truth": 0, "depth": 0, "tilt": 0, "raw": 0, "f": 0, "o": 0, "v": 0, "b": 0}   # stream counts, kept as records arrive
+        self.counts = {"truth": 0, "depth": 0, "tilt": 0, "raw": 0, "objects": 0, "looks": 0, "f": 0, "o": 0, "v": 0, "b": 0}   # stream counts, kept as records arrive
         self.mem = 0                  # an estimate of the bytes this run holds in memory (the cache's measure)
         self._spanned = False
 
@@ -123,7 +124,14 @@ class RunData:
         elif kind == "world":
             f["worlds"].append(dict(p, t=t))
         elif kind == "event":
-            r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {})})
+            r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {}),
+                                **({"room": p.get("room"), "votes": p.get("votes") or {}} if p["kind"] == "room" else {})})
+        elif kind == "objects":
+            self.sem["objects"].append({"t": t, "objects": p["objects"], "changes": p["changes"]})
+            self.counts["objects"] += 1
+        elif kind == "look":
+            self.counts["looks"] += 1
+            self.sem["looks"].append({"t": t, **{k: p[k] for k in ("pose", "hfov_deg", "range_m", "seen")}})
         elif kind == "depth_frame":
             self.raw.append(dict(p, t=t))
             self.counts["raw"] += 1
@@ -155,6 +163,10 @@ def _cost(kind: str, p: dict) -> int:
         return 380 + 165 * len(p["path"])
     if kind == "depth_frame":
         return 700 + 40 * len(p["distance_mm"])
+    if kind == "objects":
+        return 500 + 700 * len(p["objects"])
+    if kind == "look":
+        return 500 + 400 * len(p["seen"])
     if kind == "world":
         return 750 + len(p["grid"]["cells"]) + 165 * (len(p["obstacles"]) + len(p["drops"]))
     return 600
@@ -221,7 +233,9 @@ def streams(f: dict, events: list, counts: dict, run: dict | None = None, sig: d
         s("world.drops", "World model", "drops", "map", len(last["drops"]), why="no drop seen"),
         s("world.gaps", "World model", "gaps", "map", len(f["worlds"]) if f["plans"] else 0, why="needs a world model and a plan"),
         s("plan.path", "Plan", "path", "map", len(f["plans"])),
-        s("events", "Events", "events", "time", len(events), why="no events"),
+        s("semantic.objects", "Semantic map", "objects", "map", counts.get("objects", 0), why="no object recognised"),
+        s("semantic.look", "Semantic map", "camera look", "map", counts.get("looks", 0), why="no camera look recorded"),
+        s("events","Events", "events", "time", len(events), why="no events"),
     ]
     st = sig["t"] if sig else []
     sig_span = (st[-1] - st[0]) if len(st) > 1 else 0.0

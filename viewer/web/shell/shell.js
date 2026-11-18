@@ -110,6 +110,8 @@ function styleOf(id) {
   if (id === 'world.drops') return c('c-drop', 'points');
   if (id === 'world.gaps') return c('c-gap', 'grid');
   if (id === 'plan.path') return c('c-plan', 'route');
+  if (id === 'semantic.objects') return c('c-floor', 'box');
+  if (id === 'semantic.look') return c('c-plan', 'points');
   if (id === 'events') return c('warn', 'flag');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
@@ -154,7 +156,7 @@ function buildTree(run, desc = null) {
     section('sec.senses', 'Senses', [...ids(['sensors.depth', 'sensors.raw']),
       grp('g.imu', 'IMU', [...ids(['sensors.tilt']), ...ids(IMU_SIGNALS.map(sig))], '')]),
     section('sec.mind', 'Mind', [grp('g.belief', 'Belief', ofGroup(['Robot (belief)'])), grp('g.world', 'World model', ofGroup(['World model'])),
-      ...ids(['plan.path', 'events'])]),
+      grp('g.semantic', 'Semantic map', ofGroup(['Semantic map'])), ...ids(['plan.path', 'events'])]),
   ].filter(Boolean);
   const others = S.filter((s) => !taken.has(s.id) && !s.parent);
   const other = section('sec.other', 'Other values', others.map(mk), others.length ? `${others.length}` : '');
@@ -247,8 +249,18 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const lastEvent = () => {
     if (!M.run) return null;
     const lim = Math.max(M.t, hasTicks() ? M.fr.t[M.i] : M.t);
-    return [...M.run.events].reverse().find((e) => e.t <= lim + 1e-9) || null;
+    return [...M.run.events].reverse().find((e) => e.kind !== 'room' && e.t <= lim + 1e-9) || null;      // the room has its own line in the Eye (semanticAt), it is not what the robot is doing
   };
+  // The semantic map at the playhead (RFC-0016): the current camera look and what it saw, the room the robot believes it is in with its
+  // votes, and the objects it knows (the snapshot in force). `look` is null when the last look is older than LOOK_FRESH_S.
+  function semanticAt() {
+    const fr = M.fr, t = M.t, evs = M.run?.events || [];
+    const snap = fr?.objectsAt(t) ?? null, objects = snap?.objects ?? [];
+    const room = [...evs].reverse().find((e) => e.kind === 'room' && e.t <= t + 1e-9) || null;
+    const has = !!(fr?.objects.length || fr?.looks.length || evs.some((e) => e.kind === 'room'));
+    return { has, look: fr?.lookAt(t) ?? null, anyLook: !!(fr?.looks.length && fr.looks[0].t <= t + 1e-9), objects, confirmed: objects.filter((o) => o.confirmed).length,
+      room: room ? { name: room.room ?? null, votes: room.votes ?? {}, t: room.t } : null };
+  }
   function moment() {
     const { fr, run } = M, i = M.i, bm = fr.belief[i], bw = M.bw[i], tr = fr.truth[i];
     const dist = tr ? Math.hypot(bw[0] - tr[0], bw[1] - tr[1]) : null;
@@ -359,6 +371,19 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       return { kind: ev.kind, phase, t: ev.t, rule: d?.rule ?? ev.kind, html: `<b class="ah">${head}</b> ${phase === 'looking' ? 'with the head' : esc(d?.reason || ev.kind)}<br>${body}` };
     });
   }
+  // what the camera sees now, the room and the objects confirmed (RFC-0016); nothing for a run with no semantic map
+  function semanticHud() {
+    const s = semanticAt();
+    if (!s.has) return '';
+    const sees = s.look ? (s.look.seen.length ? s.look.seen.map((d) => `<b>${esc(d.kind)}</b> ${fx(d.range_m ?? Math.hypot(d.x, d.y), 1)} m ${d.confidence == null ? '' : Math.round(100 * d.confidence) + '%'}`.trim()).join(' · ') : 'nothing in view')
+      : s.anyLook ? 'nothing in view' : 'no camera look yet';
+    const votes = Object.entries(s.room?.votes || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${fx(v, 2)}`).join(' · ');
+    const room = s.room ? `<b>${esc(s.room.name ?? 'unnamed')}</b>${votes ? ` (${votes})` : ''}` : 'not told yet';
+    const total = s.objects.length;
+    return `<div class="sem-sees"><span class="hk">SEES</span>${sees}</div>`
+      + `<div class="sem-room"><span class="hk">ROOM</span>${room}</div>`
+      + `<div class="sem-objects"><span class="hk">OBJECTS</span><b>${s.confirmed}</b> confirmed · ${total - s.confirmed} not yet</div>`;
+  }
   function paintHud() {
     const on = eyeOn() && !!M.run && hasTicks();
     $('eyehud').hidden = $('eyecone').hidden = !on;
@@ -373,6 +398,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       + `<div><span class="hk">PACE</span><b>${fx(m.cmd?.[0], 2)} m/s</b> · turn <b>${m.cmd ? sgn(m.cmd[1]) : '—'} rad/s</b></div>`
       + `<div><span class="hk">DOING</span>${ev ? `<b>${esc(d?.rule || ev.kind)}</b> · ${esc(d?.reason || (ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trim())} · ${Math.max(0, M.t - ev.t).toFixed(1)} s ago` : 'nothing decided yet'}</div>`
       + (d ? `<div><span class="hk">NUMBERS</span><span class="hv">${Object.entries(d.values).map(([k, v]) => `${esc(k)} <b>${valText(v)}</b>`).join(' · ')}</span></div>` : '')
+      + semanticHud()
       + `<div><span class="hk">FRAME</span>${m.depthTick < 0 ? 'no depth yet' : `floor <b>${m.cnt.f}</b> · obstacle <b>${m.cnt.o}</b> · overhead <b>${m.cnt.v}</b> · below <b>${m.cnt.b}</b>`}</div>`
       + `<div class="src"><span class="hk">SENSOR</span>${ep ? (ep.source === 'recorded' ? 'pose recorded with the frame' : 'pose estimated: this run records no frame state') : '—'}</div>`;
     const cv = $('hudcv'), f = rawFrame(false);

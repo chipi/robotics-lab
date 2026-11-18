@@ -6,6 +6,8 @@ export const C = {
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
   occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
   boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0,
+  // the semantic map (RFC-0016): chosen to read on both themes, so not themed
+  object: 0x2e9e5b, landmark: 0xe89a00, seen: 0xd62ba8, wedge: 0x3c78e6,
 };
 
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
@@ -217,6 +219,29 @@ export function buildScene(sc, cut = 0.5) {
   return g;
 }
 
+// a text label as a sprite that faces the camera and is sized in metres: a dark pill with the text in white, which reads on either theme
+function labelSprite(text, hex) {
+  const c = document.createElement('canvas'), g = c.getContext('2d'), px = 28;
+  g.font = `600 ${px}px ui-monospace, monospace`;
+  const w = Math.ceil(g.measureText(text).width) + 20;
+  c.width = w; c.height = px + 14;
+  g.font = `600 ${px}px ui-monospace, monospace`;
+  g.fillStyle = 'rgba(10,14,20,0.78)'; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 8); g.fill();
+  g.strokeStyle = '#' + col(hex).getHexString(); g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(text, 10, c.height / 2 + 1);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false }));
+  const hgt = 0.15;
+  s.scale.set((hgt * c.width) / c.height, hgt, 1);
+  s.renderOrder = 9; s.userData.text = text;
+  return s;
+}
+const disposeAll = (group) => {
+  for (const o of [...group.children]) {
+    group.remove(o);
+    o.traverse((x) => { x.geometry?.dispose(); if (x.material) { x.material.map?.dispose(); x.material.dispose(); } });
+  }
+};
+
 function robotMesh(r, h, hex) {
   const g = new THREE.Group();
   const cyl = new THREE.CylinderGeometry(r, r, h, 24).rotateX(Math.PI / 2).translate(0, 0, h / 2);
@@ -321,6 +346,77 @@ export function buildRun(run, fr, world) {
   const psG = new Grow(Float32Array, 3), pStart = [], pCount = [];
   let psN = 0;
   const plan = add('plan.path', new ThickLine(C.plan, 2, 0.07, 0.05));
+
+  // The semantic map (RFC-0016), in the map frame like everything of the robot's (moved by the epoch in the world frame): each part of each
+  // object a box from its bottom to its top; a confirmed object solid-ish with its kind as a label, an unconfirmed one faint, a landmark
+  // (value 1.0 or more) in its own colour. And the camera's current look: its field of view on the floor from the belief pose, and what it
+  // saw placed from that pose, each as a box with its kind and confidence. Rebuilt when the record in force changes, not at each tick.
+  const objects = add('semantic.objects', new THREE.Group()), looks = add('semantic.look', new THREE.Group());
+  let objKey = null, lookKey = null;
+  L.semantic = { objects: 0, confirmed: 0, labels: [], look: null };
+  // new children wear the layer of the group they are in (the page sets the group's layer once, when it builds the run)
+  const wear = (group) => group.traverse((o) => { if (o !== group) o.layers.mask = group.layers.mask; });
+  const triMesh = (tri, hex, opacity) => { const m = fillMesh(tri, hex, opacity); m.renderOrder = -7; return m; };
+  const setObjects = (snap) => {
+    const key = snap ? snap.t : null;
+    if (key === objKey) return;
+    objKey = key;
+    disposeAll(objects);
+    L.semantic.objects = snap ? snap.objects.length : 0; L.semantic.confirmed = 0; L.semantic.labels = [];
+    if (!snap) return;
+    const f = tf(snap.t), faces = new Map(), edges = new Map();
+    for (const o of snap.objects) {
+      const hex = o.landmark >= 1.0 ? C.landmark : C.object, solid = !!o.confirmed, k = hex + ':' + solid;
+      if (!faces.has(k)) { faces.set(k, { hex, solid, tri: [] }); edges.set(k, []); }
+      let top = 0, anchor = null;
+      for (const [x, y, hx, hy, yaw, z0, z1] of o.parts) {
+        const [wx, wy, ey] = f(x, y), b = { cx: wx, cy: wy, hx, hy, yaw: yaw + (ey || 0) };
+        boxFaces(faces.get(k).tri, b, z0, z1); boxEdges(edges.get(k), b, z0, z1);
+        if (z1 >= top) { top = z1; anchor = [wx, wy]; }
+      }
+      if (solid) {
+        L.semantic.confirmed++;
+        if (anchor) { const s = labelSprite(o.kind, hex); s.position.set(anchor[0], anchor[1], top + 0.1); objects.add(s); L.semantic.labels.push(o.kind); }
+      }
+    }
+    for (const [k, { hex, solid, tri }] of faces) {
+      objects.add(triMesh(tri, hex, solid ? 0.42 : 0.1));
+      const e = segs(edges.get(k), hex);
+      e.material.opacity = solid ? 1 : 0.4; e.frustumCulled = false;
+      objects.add(e);
+    }
+    wear(objects);
+  };
+  const setLook = (look) => {
+    const key = look ? look.t : null;
+    if (key === lookKey) return;
+    lookKey = key;
+    disposeAll(looks);
+    L.semantic.look = null;
+    if (!look) return;
+    const f = tf(look.t), [px, py, pyaw] = look.pose, h = (look.hfov_deg * Math.PI) / 360, n = 14, z = 0.012;
+    const apex = f(px, py), arc = [];
+    for (let k = 0; k <= n; k++) arc.push(f(px + look.range_m * Math.cos(pyaw - h + (2 * h * k) / n), py + look.range_m * Math.sin(pyaw - h + (2 * h * k) / n)));
+    const fan = [], outline = [apex[0], apex[1], z, arc[0][0], arc[0][1], z, arc[n][0], arc[n][1], z, apex[0], apex[1], z];
+    for (let k = 1; k <= n; k++) {
+      fan.push(apex[0], apex[1], z, arc[k - 1][0], arc[k - 1][1], z, arc[k][0], arc[k][1], z);
+      outline.push(arc[k - 1][0], arc[k - 1][1], z, arc[k][0], arc[k][1], z);
+    }
+    looks.add(triMesh(fan, C.wedge, 0.16), segs(outline, C.wedge));
+    const c = Math.cos(pyaw), s = Math.sin(pyaw), seen = [];
+    for (const d of look.seen) {
+      const mx = px + c * d.x - s * d.y, my = py + s * d.x + c * d.y, r = d.radius || 0.1, z0 = d.z0 ?? 0, z1 = d.z1 ?? 0.3;
+      const [wx, wy, ey] = f(mx, my), b = { cx: wx, cy: wy, hx: r, hy: r, yaw: ey || 0 }, ed = [];
+      boxEdges(ed, b, z0, z1);
+      const box = segs(ed, C.seen); box.frustumCulled = false; box.renderOrder = 8; box.material.depthTest = false;
+      looks.add(box);
+      const text = d.confidence == null ? d.kind : `${d.kind} ${Math.round(100 * d.confidence)}%`, lab = labelSprite(text, C.seen);
+      lab.position.set(wx, wy, z1 + 0.2); looks.add(lab);
+      seen.push({ kind: d.kind, label: text, map: [mx, my], world: [wx, wy] });
+    }
+    L.semantic.look = { t: look.t, pose: look.pose, hfov_deg: look.hfov_deg, range_m: look.range_m, seen };
+    wear(looks);
+  };
 
   // the world model: grid cells as quads in one geometry, obstacles and drops as points, all with
   // per-world ranges. (InstancedMesh has no offset into its instances, so ranges on plain
@@ -526,6 +622,7 @@ export function buildRun(run, fr, world) {
     drops.geometry.setDrawRange(...(wi >= 0 && dRange[wi] ? dRange[wi] : none));
     obst.material.size = size('world.obstacles'); drops.material.size = size('world.drops');
     setGaps(wi, pi);
+    setObjects(fr.objectsAt?.(t) ?? null); setLook(fr.lookAt?.(t) ?? null);
   };
   L.append(fullRange(fr));
   return L;

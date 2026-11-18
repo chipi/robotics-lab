@@ -23,6 +23,9 @@ import mediapy  # noqa: E402
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))      # the engine runs as a script: its sibling modules are imported by name
+import overlay  # noqa: E402
+
 BOX_RGBA = "0.78 0.78 0.80 0.45"         # see-through: a wall between the camera and the robot must not hide it
 DROP_RGBA = "0.30 0.10 0.32 1"
 MAP_RGBA = "0.55 0.45 0.35 1"
@@ -120,16 +123,15 @@ def _font(size: int):
     return ImageFont.load_default()
 
 
-def _wrap(text: str, n: int, lines: int) -> list:
-    words, out, cur = str(text).split(), [], ""
-    for wd in words:
-        if len(cur) + len(wd) + 1 > n and cur:
-            out.append(cur)
-            cur = wd
-        else:
-            cur = (cur + " " + wd).strip()
-    out.append(cur)
-    return out[:lines] if len(out) <= lines else out[:lines - 1] + [out[lines - 1][: n - 1] + "…"]
+_wrap = overlay.wrap
+
+
+def _overlay_image(img, draw):
+    """img (an RGB array) drawn on by draw(PIL image), as an array again."""
+    from PIL import Image
+    im = Image.fromarray(img)
+    draw(im)
+    return np.asarray(im.convert("RGB"))
 
 
 def _val(v) -> str:
@@ -161,6 +163,7 @@ def _hud(frame, hud: dict, robot: str, scene: str, font, fsize: int) -> None:
         n = dp["counts"]
         lines.append((f"FRAME floor {n.get('f', 0)} · obstacle {n.get('o', 0)} · overhead {n.get('v', 0)} · below "
                       f"{n.get('b', 0)}", (210, 215, 222)))
+    lines += overlay.hud_lines(hud, cols)                 # SEES / ROOM / OBJECTS (RFC-0016); none for a run with no semantic map
     lh = int(fsize * 1.35)
     ph = 10 + lh * len(lines) + 8
     cell = max(5, int(ph / 12))
@@ -220,6 +223,12 @@ def render(job: dict) -> None:
             eye_cam.type, eye_cam.fixedcamid = mujoco.mjtCamera.mjCAMERA_FIXED, cid
         else:
             print(f"no eye camera {rb.get('eye_camera')!r} in the model: the eye inset is left out", flush=True)
+    global_fovy = float(m.vis.global_.fovy)
+    eye_fovy = global_fovy
+    if eye_cam is not None:
+        eye_fovy = float(m.cam_fovy[eye_cam.fixedcamid])
+    sem_objects = (tr.get("semantic") or {}).get("objects") or []
+    lfont = _font(max(9, side // 26)) if {"eye", "top"} & set(insets) and ("semantic" in tr or any(f.get("look") for f in tr["frames"])) else None
     top_cam = None
     if "top" in insets:
         top_cam = mujoco.MjvCamera()
@@ -250,15 +259,28 @@ def render(job: dict) -> None:
             # From the head camera's pose, EYE_AHEAD_M in front of it: the camera itself sits inside the head's shell and
             # rendered the shell (the first test showed grey where the stairwell was).
             cid = eye_cam.fixedcamid
-            fwd = -d.cam_xmat[cid].reshape(3, 3)[:, 2]                  # a MuJoCo camera looks along its -z
+            # A MuJoCo camera looks along its -z. The duck's head_camera does not: at the STAND keyframe with the trunk at the identity,
+            # its -z is world -x, the way behind the robot (its cam position is +0.064 m in front of the trunk's origin, and every
+            # sensor of the robot looks along +x), so the model says which axis the robot looks along (robots.json eye_axis, default -z).
+            fwd = (1.0 if rb.get("eye_axis") == "+z" else -1.0) * d.cam_xmat[cid].reshape(3, 3)[:, 2]
             free_eye = mujoco.MjvCamera()
             free_eye.type = mujoco.mjtCamera.mjCAMERA_FREE
             free_eye.distance = 1.0
             free_eye.lookat[:] = d.cam_xpos[cid] + fwd * (EYE_AHEAD_M + free_eye.distance)
             free_eye.azimuth = math.degrees(math.atan2(fwd[1], fwd[0]))
             free_eye.elevation = math.degrees(math.asin(max(-1.0, min(1.0, fwd[2]))))
+            # rendered with the head camera's own field of view (a free camera takes the model's global one), so the boxes drawn over
+            # it, projected with the same pinhole, land on what they name
+            m.vis.global_.fovy = eye_fovy
             small.update_scene(d, free_eye)
-            _paste(frame, small.render(), "bl")
+            img = small.render().copy()
+            m.vis.global_.fovy = global_fovy
+            if f.get("look") and lfont is not None:
+                # the detections are placed from the trunk (the pose the simulated camera saw them from); the camera is the head's
+                # pose from the model at this frame, the free camera's position and direction as built above
+                pos = d.cam_xpos[cid] + fwd * EYE_AHEAD_M
+                img = _overlay_image(img, lambda im: overlay.draw_eye(im, f["look"], overlay.eye_projector(pos, fwd, side, eye_fovy), lfont))
+            _paste(frame, img, "bl")
         if top_cam is not None:
             if not trail or math.dist(trail[-1], f["pos"][:2]) > 0.1:
                 trail.append(tuple(f["pos"][:2]))
@@ -266,7 +288,12 @@ def render(job: dict) -> None:
             for p in trail[-400:]:
                 _mark(small, (p[0], p[1], 0.02), 0.03, (0.35, 0.55, 0.95, 1))
             _mark(small, (f["pos"][0], f["pos"][1], 0.05), 0.09, (0.95, 0.25, 0.2, 1))
-            _paste(frame, small.render(), "br")
+            img = small.render().copy()
+            if sem_objects and lfont is not None and (f.get("obj_i") is not None or f.get("look")):
+                snap = sem_objects[f["obj_i"]] if f.get("obj_i") is not None else None
+                px = overlay.top_to_px(side, top_cam.lookat, top_cam.distance, global_fovy)
+                img = _overlay_image(img, lambda im: overlay.draw_top(im, snap, f.get("look"), px, lfont))
+            _paste(frame, img, "br")
         if font is not None and f.get("hud"):
             _hud(frame, f["hud"], rb.get("name", "robot"), scene_name, font, fsize)
         frames.append(frame)

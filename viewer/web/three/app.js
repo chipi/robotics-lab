@@ -10,7 +10,7 @@ import { axes as sensorAxes } from '../shell/eye.js';
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
+  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.look', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
 // what the eye does not draw: the robot itself, whose body the sensor sits in
 const NOT_IN_EYE = new Set(['body.model', 'belief.pose', 'truth.pose', 'rel.belief_truth']);
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
@@ -245,6 +245,9 @@ const adapter = {
   eyeView: () => views.eyeView(),
   // the gaps as drawn at the playhead: the unknown cells near the plan, and the other unknown cells
   gaps: () => (RW ? { ...RW.gapCount, visible: RW.obj['world.gaps'].visible && S.shown('world.gaps') } : null),
+  // the semantic map as drawn at the playhead, in the world frame: how many objects and confirmed ones (labelled), and the current look
+  semantic: () => (RW ? { ...RW.semantic, objectsVisible: RW.obj['semantic.objects'].visible && S.shown('semantic.objects'),
+    lookVisible: RW.obj['semantic.look'].visible && S.shown('semantic.look') } : null),
   // tick i's returns as drawn in the world frame, by kind
   returns: (i) => RW?.returnsAt(i) ?? null,
   cursor: (x, y) => views.cursorAt(x, y),

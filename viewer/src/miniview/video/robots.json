@@ -10,6 +10,7 @@
       "home_keyframe": "STAND",
       "keyframes_from": "scene_backlash.xml",
       "eye_camera": "head_camera",
+      "eye_axis": "+z",
       "stand_z": 0.116
     },
     "blender": {
