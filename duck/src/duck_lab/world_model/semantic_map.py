@@ -22,7 +22,12 @@ ROOM_RADIUS_M = 1.2        # objects within this vote for the room the duck is i
 ROOM_TICKS = 3             # looks a new room must win in a row before the duck says it is there
 STAND_M = 0.25             # where to stand to reach an object: this far from its outline (lethal 0.12 + room)
 EVIDENCE_KEEP = 3          # evidence (frames) kept per object
-SEEN_M = 0.10              # a part with a depth point this close to its outline is the depth sensor's (cost layer)
+FORGET_N = 8               # looks an object was expected in view and not seen, in a row, before it is gone (or flagged)
+FORGET_DECAY = 0.85        # its confidence's factor per such look
+FORGET_FOV = 0.8           # "in view" for forgetting: this fraction of the field's half-angle and of the range (the
+                           # belief's drift and the camera's falling chance near its edge must not count as a miss)
+FORGET_MIN_M = 0.3         # nearer than this the camera cannot be asked to have seen it
+SEEN_M = 0.10             # a part with a depth point this close to its outline is the depth sensor's (cost layer)
 
 
 @dataclass
@@ -64,10 +69,14 @@ class Tracked:
     label: str | None = None       # a name the operator gave it ("my desk"; RFC-0016 rev. 3)
     named_by: str | None = None
     pinned: bool = False           # named by hand: never merged away or forgotten by a recogniser
+    misses: int = 0                # looks in a row it was expected in view and not seen
+    gone: bool = False             # forgotten: kept in the history, out of finding, votes and costs
+    gone_t: float | None = None
+    missing: bool = False          # a pinned object expected and not seen for FORGET_N looks: flagged, never forgotten
 
     @property
     def confirmed(self) -> bool:
-        return self.n >= CONFIRM_N
+        return self.n >= CONFIRM_N and not self.gone
 
     def summary(self) -> dict:
         return {"id": self.oid, "kind": self.kind, "x": round(self.x, 3), "y": round(self.y, 3), "n": self.n,
@@ -75,6 +84,7 @@ class Tracked:
                 "permanence": self.props.get("permanence"), "first_t": round(self.first_t, 1),
                 "last_t": round(self.last_t, 1), "confidence": round(self.confidence, 2), "sources": self.sources,
                 "evidence": self.evidence, "label": self.label, "named_by": self.named_by, "pinned": self.pinned,
+                "misses": self.misses, "gone": self.gone, "gone_t": self.gone_t, "missing": self.missing,
                 "parts": [[round(v, 3) for v in (q.x, q.y, q.hx, q.hy, q.yaw, q.z0, q.z1)] for q in self.parts]}
 
 
@@ -104,6 +114,7 @@ class SemanticMap:
         self.objects: list = []
         self._next = {}
         self._room, self._lead, self._lead_n = None, None, 0
+        self._matched = set()
 
     def new_id(self, kind: str) -> str:
         k = self._next.get(kind, 0) + 1
@@ -126,8 +137,9 @@ class SemanticMap:
 
     def integrate(self, detections: list, pose: tuple, t: float = 0.0) -> list:
         """Place each detection with the duck's pose (map frame) and track it. Returns the changes, as
-        ("new" | "confirmed", object) pairs."""
+        ("new" | "confirmed" | "back", object) pairs; an object forgotten and seen again is back."""
         changes = []
+        self._matched = set()
         for d in detections:
             part = d.part().moved(pose)
             cx, cy = part.x, part.y
@@ -137,20 +149,56 @@ class SemanticMap:
                 o = min(same, key=lambda o: math.dist((o.x, o.y), (cx, cy)))
                 a = max(1.0 / (o.n + 1), RECENT)
                 nx, ny = o.x + a * (cx - o.x), o.y + a * (cy - o.y)
+                if o.gone:
+                    o.gone, o.gone_t = False, None
+                    changes.append(("back", o))
                 was = o.confirmed
+                o.misses, o.missing = 0, False
                 o.parts = [q.shifted(nx - o.x, ny - o.y) for q in o.parts]
                 o.x, o.y, o.n, o.last_t = nx, ny, o.n + 1, t
+                self._matched.add(o.oid)
                 if o.confirmed and not was:
                     changes.append(("confirmed", o))
             else:
                 o = Tracked(self.new_id(d.kind), d.kind, cx, cy, [part], 1, t, t, self.kinds.get(d.kind, {}))
                 self.objects.append(o)
+                self._matched.add(o.oid)
                 changes.append(("new", o))
             o.confidence = max(o.confidence, d.confidence)
             if d.source not in o.sources:
                 o.sources.append(d.source)
             if d.evidence:
                 o.evidence = (o.evidence + [d.evidence])[-EVIDENCE_KEEP:]
+        return changes
+
+    def forget(self, pose: tuple, hfov_deg: float, range_m: float, grid: dict = None, t: float = 0.0) -> list:
+        """After a look's integrate(): each confirmed object that should be in the camera's view — inside the field and
+        range (FORGET_FOV of both) and not behind a wall of mapd's grid — and was not matched in this look loses
+        confidence and counts a miss; FORGET_N misses in a row and it is gone (kept, not deleted; summary() says so), or,
+        pinned (named by the operator), only flagged missing. A sighting resets the count. Returns the changes as
+        ("gone" | "missing", object) pairs. Call once per look, after integrate()."""
+        changes = []
+        half = math.radians(hfov_deg) / 2 * FORGET_FOV
+        for o in self.confirmed():
+            if o.oid in self._matched:
+                continue
+            r = math.dist(pose[:2], (o.x, o.y))
+            if r > range_m * FORGET_FOV or r < FORGET_MIN_M:
+                continue
+            b = math.atan2(o.y - pose[1], o.x - pose[0]) - pose[2]
+            if abs(math.atan2(math.sin(b), math.cos(b))) > half or wall_between(grid, pose[:2], (o.x, o.y)):
+                continue
+            o.misses += 1
+            o.confidence *= FORGET_DECAY
+            if o.misses < FORGET_N:
+                continue
+            if o.pinned:
+                if not o.missing:
+                    o.missing = True
+                    changes.append(("missing", o))
+            else:
+                o.gone, o.gone_t = True, t
+                changes.append(("gone", o))
         return changes
 
     def inventory(self, grid: dict = None) -> dict:
@@ -273,7 +321,8 @@ class SemanticMap:
             parts = [Part(*p) for p in s["parts"]]
             o = Tracked(s["id"], s["kind"], s["x"], s["y"], parts, s["n"], s.get("first_t", 0.0), s.get("last_t", 0.0),
                         kinds.get(s["kind"], {}), s.get("confidence", 0.0), list(s.get("sources", [])),
-                        list(s.get("evidence", [])), s.get("label"), s.get("named_by"), bool(s.get("pinned")))
+                        list(s.get("evidence", [])), s.get("label"), s.get("named_by"), bool(s.get("pinned")),
+                        s.get("misses", 0), bool(s.get("gone")), s.get("gone_t"), bool(s.get("missing")))
             m.objects.append(o)
             k = int(s["id"].rsplit("_", 1)[1])
             m._next[s["kind"]] = max(m._next.get(s["kind"], 0), k)

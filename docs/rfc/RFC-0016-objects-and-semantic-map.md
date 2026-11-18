@@ -145,7 +145,7 @@ confidence (not built yet).
 - Rooms segmented from the map alone (rooms here come from objects; the map's segmentation stays the
   scoreboard's).
 - Objects in Mission Control (goals by object there; RFC-0014 revision 2).
-- Forgetting an object expected in view and not seen (needed with a real detector).
+- ~~Forgetting an object expected in view and not seen~~ (built: see §6).
 - The site map at a real site (it needs relocalisation first); area regions.
 
 ## 5. Open questions
@@ -180,3 +180,14 @@ confidence (not built yet).
     tight pivots beside `lm_office`, its points remembered on its outline).
   - Not taken yet: an object missed in view losing confidence (the simulated camera has no false
     positives); a two-leg approach along the face's normal (the turn does the facing).
+- 2026-11-18, forgetting built. `SemanticMap.forget(pose, hfov, range, grid, t)` runs after each
+  look's `integrate`: a confirmed object inside 0.8 of the field's half-angle and of the range, at
+  least 0.3 m away and with no wall of mapd's grid between, that no detection matched, counts a miss
+  and loses 15 % of its confidence. `FORGET_N` = 8 misses in a row and it is `gone` (kept in the map
+  and the site's history, out of `find`, the votes and the costs; a `forget` event with a decision
+  records it). A sighting resets the count; a gone object seen again is `back`, the same object. A
+  pinned (operator-named) object is only flagged `missing`. `Site.merge` marks the stored
+  counterpart of a run's gone object gone (missing, if named) and revives a gone one the run saw
+  again. The constants are guesses for the simulated camera (hit chance 0.4 to 0.8): at its worst
+  in-view range (0.8 of 3 m: hit chance 0.8·(1-0.5·0.8) = 0.48), eight misses in a row for an
+  object that is there happen 0.52^8 = 0.5 % of the time.

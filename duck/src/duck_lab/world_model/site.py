@@ -9,7 +9,9 @@ directly; at a real site the robot must first recognise where it is (later). Unt
 Merging a run's map into the site's: each run object is matched to a stored object of the same kind by the semantic
 map's association rule (ASSOC_M, UNIQUE_M for unique kinds); a match keeps the stored id, label and pins and takes the
 run's position and sightings; no match is a new object with the next stable id. Stored objects not seen in the run
-stay (forgetting the unseen is not built: RFC-0016 §4). An object the operator named is never merged into another.
+stay, unless the run forgot them (an object expected in view and not seen for a while: SemanticMap.forget): those are
+marked gone, kept in the site's history, and an object the operator named is only flagged missing. A gone stored
+object seen again is back. An object the operator named is never merged into another.
 """
 
 import argparse
@@ -21,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.semantic_map import ASSOC_M, UNIQUE_M, SemanticMap
+from duck_lab.world_model.semantic_map import ASSOC_M, CONFIRM_N, UNIQUE_M, SemanticMap
 
 # the operator's data, not the repository's (git-ignored); DUCK_SITES for another folder (a container's volume)
 SITES = Path(os.environ.get("DUCK_SITES", Path(__file__).resolve().parents[3] / "sites"))
@@ -104,8 +106,23 @@ class Site:
 
     def merge(self, run: SemanticMap) -> dict:
         """Merge a run's confirmed objects into the site's map (the module's doc). Returns {"matched", "added"}."""
-        matched, added = 0, 0
+        matched, added, forgotten = 0, 0, 0
         taken = set()
+        for o in run.objects:
+            if not o.gone or o.n < CONFIRM_N:
+                continue
+            # the run forgot it (expected in view, not seen): the stored one goes too, kept in the history; one the
+            # operator named is only flagged
+            gate = UNIQUE_M if self.semantic.kinds.get(o.kind, {}).get("unique") else ASSOC_M
+            same = [s for s in self.semantic.objects if s.kind == o.kind and not s.gone
+                    and math.dist((s.x, s.y), (o.x, o.y)) <= gate]
+            if same:
+                s = min(same, key=lambda s: math.dist((s.x, s.y), (o.x, o.y)))
+                if s.pinned:
+                    s.missing = True
+                else:
+                    s.gone, s.gone_t = True, o.gone_t
+                    forgotten += 1
         for o in run.confirmed():
             gate = UNIQUE_M if self.semantic.kinds.get(o.kind, {}).get("unique") else ASSOC_M
             same = [s for s in self.semantic.objects if s.kind == o.kind and s.oid not in taken
@@ -115,6 +132,7 @@ class Site:
                 taken.add(s.oid)
                 s.parts = [q.shifted(o.x - s.x, o.y - s.y) for q in s.parts]
                 s.x, s.y, s.n = o.x, o.y, s.n + o.n
+                s.gone, s.gone_t, s.misses, s.missing = False, None, o.misses, o.missing    # seen again: it is back
                 s.last_t, s.confidence = o.last_t, max(s.confidence, o.confidence)
                 s.sources = sorted(set(s.sources) | set(o.sources))
                 s.evidence = (s.evidence + o.evidence)[-3:]
@@ -125,7 +143,7 @@ class Site:
                 self.semantic.objects.append(o)
                 taken.add(o.oid)
                 added += 1
-        return {"matched": matched, "added": added}
+        return {"matched": matched, "added": added, "forgotten": forgotten}
 
     def name_object(self, oid: str, label: str, by: str = "operator") -> None:
         """The operator names an object ("my desk"): the label, who named it, and a pin (never merged away)."""

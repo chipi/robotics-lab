@@ -1060,6 +1060,8 @@ class Navigator:
             now = time.monotonic() - self._t0
             with self._sem_lock:
                 changes = self.semantic.integrate(found, pose, now)
+                forgot = self.semantic.forget(pose, camera.cfg["hfov_deg"], camera.cfg["range_m"], self._map_raw, now)
+                changes += forgot
                 guess, votes = self.semantic.area_type_at(pose, self._map_raw)
                 moved = any(math.dist((o.x, o.y), recorded["at"].get(o.oid, (math.inf, math.inf))) > SNAPSHOT_MOVED_M
                             for o in self.semantic.objects)
@@ -1071,6 +1073,10 @@ class Navigator:
                 # the whole map when an object is new or confirmed, and every SNAPSHOT_S while any moved (they follow
                 # the belief's drift): the Observatory then draws where they are, not where they were first seen
                 self.record(event="semantic", changes=[[c, o.oid] for c, o in changes], objects=objects)
+            for c, o in forgot:
+                self.record(event="forget", id=o.oid, kind=o.kind, change=c, misses=o.misses, pinned=o.pinned,
+                            decision=decision("forget", f"{o.kind} {o.oid} {c}: expected in view and not seen "
+                                              f"{o.misses} looks in a row", pose=[round(v, 3) for v in pose]))
             if guess != self.room:
                 # the area type the objects near suggest: information, never an area (the operator's, site.Area)
                 self.room = guess

@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory() as tmp:
     out = site.merge(run1)
     site.save()
     fridge_id = next(o.oid for o in site.semantic.objects if o.kind == "fridge")
-    check("the first run's objects join the site", out == {"matched": 0, "added": 2}, out)
+    check("the first run's objects join the site", out == {"matched": 0, "added": 2, "forgotten": 0}, out)
 
     site.name_object(fridge_id, "the big fridge")
     site.save()
@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory() as tmp:
     seen(run2, "stool", 3.5, 3.5, r=0.15)     # a second stool, far from the first
     out2 = again.merge(run2)
     check("the next run: the same fridge keeps its id and name, a far stool is new",
-          out2 == {"matched": 1, "added": 1}
+          out2 == {"matched": 1, "added": 1, "forgotten": 0}
           and [o.oid for o in again.semantic.objects if o.kind == "fridge"] == [fridge_id]
           and next(o for o in again.semantic.objects if o.kind == "fridge").label == "the big fridge"
           and len({o.oid for o in again.semantic.objects}) == len(again.semantic.objects), out2)
@@ -128,6 +128,35 @@ with tempfile.TemporaryDirectory() as tmp:
           "office", "bedroom", "bath", "corridor"} and office is not None and office.type == "office", out.stdout + out.stderr)
     check("... in the site frame: the office's world (2.0, 0.0) is at (1.95, 0.0) on the site map",
           sim.area_at((1.95, 0.0)) is office and sim.area_at((2.06, 0.0)) is office)
+
+with tempfile.TemporaryDirectory() as tmp:
+    fsite = Site.create(Path(tmp), "forget", "Forget", "apartment", kinds)
+    first = SemanticMap(kinds, "apartment")
+    for y in (0.0, 2.0, -2.0):
+        seen(first, "stool", 1.5, y, r=0.15)
+    fsite.merge(first)
+    ids = [o.oid for o in fsite.semantic.objects]
+    fsite.name_object(ids[2], "my stool")
+    run = SemanticMap(kinds, "apartment")
+    for y in (0.0, 2.0, -2.0):
+        seen(run, "stool", 1.5, y, r=0.15)
+    for o in run.objects:
+        o.misses, o.gone, o.gone_t = 8, True, 77.0
+    out = fsite.merge(run)
+    gone = [o for o in fsite.semantic.objects if o.gone]
+    named = next(o for o in fsite.semantic.objects if o.oid == ids[2])
+    check("a run that forgot stored objects: they are marked gone and kept; the named one is flagged, not forgotten",
+          out["forgotten"] == 2 and len(gone) == 2 and len(fsite.semantic.objects) == 3 and named.missing and not named.gone
+          and all(o.gone_t == 77.0 for o in gone), out)
+    fsite.save()
+    check("... the history survives a save and a load",
+          sum(o.gone for o in Site.load(Path(tmp), "forget", kinds).semantic.objects) == 2)
+    back = SemanticMap(kinds, "apartment")
+    seen(back, "stool", 1.5, 0.0, r=0.15)
+    out = fsite.merge(back)
+    revived = next(o for o in fsite.semantic.objects if o.oid == ids[0])
+    check("a gone object seen in a later run is back under its id", not revived.gone and out["matched"] == 1
+          and len(fsite.semantic.objects) == 3, out)
 
 print("SITE", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

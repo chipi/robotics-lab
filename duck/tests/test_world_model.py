@@ -158,5 +158,64 @@ names = {g["name"] for g in obstacles(json.loads(LAYOUT.read_text()))}
 check("the judge counts the six lm_* landmarks as obstacles", {f"lm_{r}" for r in
       ("kitchen", "living", "corridor", "bedroom", "office", "bath")} <= names, sorted(n for n in names if n.startswith("lm")))
 
+# ---- forgetting what is expected in view and not seen (RFC-0016 §4) ------------------------------------------------
+from duck_lab.world_model.semantic_map import FORGET_N  # noqa: E402
+
+ORIGIN = (0.0, 0.0, 0.0)
+
+
+def confirmed_stool(pinned=False):
+    fm = SemanticMap(kinds)
+    for k in range(CONFIRM_N):
+        fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, float(k))
+    fm.objects[0].pinned = pinned
+    return fm
+
+
+def looks(fm, n, pose=ORIGIN, found=(), grid=None):
+    out = []
+    for k in range(n):
+        fm.integrate(list(found), pose, 10.0 + k)
+        out += fm.forget(pose, 60.0, 3.0, grid, 10.0 + k)
+    return out
+
+
+fm = confirmed_stool()
+st = fm.objects[0]
+c0 = st.confidence
+looks(fm, FORGET_N - 1)
+check(f"expected in view, not seen {FORGET_N - 1} looks: still there, less sure", not st.gone and st.misses == FORGET_N - 1
+      and st.confidence < c0, (st.misses, st.confidence))
+fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 30.0)
+fm.forget(ORIGIN, 60.0, 3.0, None, 30.0)
+check("a sighting resets the count", st.misses == 0 and not st.gone, st.misses)
+ch = looks(fm, FORGET_N)
+check(f"{FORGET_N} looks in a row: gone, kept in the map, out of find and the confirmed", ch == [("gone", st)] and st.gone
+      and st in fm.objects and st not in fm.confirmed() and fm.find("stool") is None, [(c, o.oid) for c, o in ch])
+check("gone survives a save and a load", SemanticMap.from_json(fm.to_json(), kinds).objects[0].gone)
+ch = fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 50.0)
+check("a gone object seen again is back, the same object", ch and ch[0] == ("back", st) and not st.gone and st.confirmed
+      and len(fm.objects) == 1, [(c, o.oid) for c, o in ch])
+
+for name, pose in (("behind the duck", (3.0, 0.0, 0.0)), ("out of the field's angle", (0.0, 0.0, math.pi / 2)),
+                   ("beyond the range", (-3.0, 0.0, 0.0)), ("too close", (1.4, 0.0, 0.0))):
+    fm = confirmed_stool()
+    looks(fm, FORGET_N + 2, pose)
+    check(f"not expected in view ({name}): never counts a miss", fm.objects[0].misses == 0 and not fm.objects[0].gone,
+          fm.objects[0].misses)
+wall = {"res_m": 0.1, "origin": (0.0, 0.0), "width": 40, "height": 10, "cells": [" "] * 400}
+for y in range(10):
+    wall["cells"][y * 40 + 7] = "#"                    # a wall at x = 0.7 between the duck at 0 and the stool at 1.5
+fm = confirmed_stool()
+looks(fm, FORGET_N + 2, grid=wall)
+check("behind a wall of mapd's grid: not expected in view, not forgotten", fm.objects[0].misses == 0 and not fm.objects[0].gone)
+
+fm = confirmed_stool(pinned=True)
+ch = looks(fm, FORGET_N * 2)
+check("an object the operator named is flagged missing, never forgotten", fm.objects[0].missing and not fm.objects[0].gone
+      and [c for c, _ in ch] == ["missing"], [(c, o.oid) for c, o in ch])
+fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 99.0)
+check("... and seen again, the flag clears", not fm.objects[0].missing and fm.objects[0].misses == 0)
+
 print("WORLD-MODEL", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
