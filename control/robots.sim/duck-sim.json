@@ -19,7 +19,7 @@
       "goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"],
       "conditions": ["within_s"]
     },
-    "guardrails": ["time_limit"],
+    "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"],
     "skills": [],
     "description": "duck"
   },

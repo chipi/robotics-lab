@@ -36,7 +36,7 @@ REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--only", help="comma separated: point, cancel, stop, explore, object, area, inventory, takeover")
+ap.add_argument("--only", help="comma separated: point, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
 only = set(ap.parse_args().only.split(",")) if ap.parse_args().only else None
 
 
@@ -93,7 +93,7 @@ FILE = {
         "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed"], "frame": "site"}],
         "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
         "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
-        "guardrails": ["time_limit"], "skills": [], "description": "the simulated duck"},
+        "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"], "skills": [], "description": "the simulated duck"},
     "rates": {"state_hz": 5.0, "map_hz": 1.0, "max_state_hz": 10.0},
     "takeover": [],
 }
@@ -257,6 +257,84 @@ try:
         end = finished(run["id"], 300)
         check("go_to_area: the robot is inside the operator's outline (truth)", end and end["state"] == "reached" and -0.8 < body.pose()[0] < 1.0 and -0.8 < body.pose()[1] < 0.8,
               end and (end["state"], end["reason"], body.pose()))
+
+    # --- guardrails, enforced in the real navigator (RFC-0014 section 3.4.8) -----------------------------------
+    def watch_truth(rid, timeout, inside_of=None):
+        """Follow a run by the truth until it ends: (the peak speed over 0.5 s windows, whether the trunk was ever inside a polygon, the run)."""
+        from duck_lab.world_model.site import inside
+        peak, entered, last, end = 0.0, False, None, time.monotonic() + timeout
+        while time.monotonic() < end:
+            p, now = body.pose(), time.monotonic()
+            if last is not None and now - last[1] >= 0.5:
+                peak = max(peak, math.dist(p[:2], last[0][:2]) / (now - last[1]))
+                last = (p, now)
+            elif last is None:
+                last = (p, now)
+            if inside_of and inside(p[:2], inside_of):
+                entered = True
+            run = run_of(rid)
+            if run["state"] not in ("queued", "running"):
+                return peak, entered, run
+            time.sleep(0.1)
+        return peak, entered, run_of(rid)
+
+    if wanted("speed"):
+        print("\n--- max_speed", flush=True)
+        need_clean()
+        r1 = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}})
+        peak1, _, end1 = watch_truth(r1["id"], 200)
+        clean[0] = False
+        need_clean()                           # the same goal from the same start: the only difference is the cap
+        r2 = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}, "must_not": [{"name": "max_speed", "mps": 0.2}]})
+        peak2, _, end2 = watch_truth(r2["id"], 300)
+        print(f"   peak truth speed: uncapped {peak1:.3f} m/s, capped at 0.2: {peak2:.3f} m/s", flush=True)
+        check("both runs reach their point", end1["state"] == "reached" and end2["state"] == "reached", (end1["state"], end2["state"], end2["reason"]))
+        check("the cap is in the run's merged guardrails, from the goal", end2["guardrails"] == [{"name": "max_speed", "mps": 0.2, "from": ["goal"]}], end2["guardrails"])
+        check("with the cap the robot walks measurably slower (truth) and not above the cap by more than the gait's own wobble",
+              peak2 < 0.9 * peak1, (peak1, peak2))
+
+    if wanted("nogo"):
+        print("\n--- a no-go area", flush=True)
+        need_clean()
+        block = [[0.5, -0.6], [0.9, -0.6], [0.9, 0.4], [0.5, 0.4]]
+        call("POST", "/sites/home/areas", {"name": "Block", "outline": block})
+        call("PUT", "/sites/home/guardrails", {"guardrails": [{"name": "no_go_area", "area": "Block"}]})
+        run = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}})
+        start_pose = body.pose()
+        _, entered, end = watch_truth(run["id"], 300, [tuple(p) for p in block])
+        moved = math.dist(body.pose()[:2], start_pose[:2])
+        check("the straight way crosses the site's no-go area: the planner never paths through it (it goes round, or the goal is refused or "
+              "not reached in time) and the robot never enters it (truth), though it did walk", end["state"] in ("reached", "refused", "failed") and not entered and moved > 0.25,
+              (end["state"], end["reason"], entered, moved))
+        check("the guardrail did not stop the run: the planner kept the robot out, which is the point of putting it in the planner", end["broken"] is None, end["broken"])
+        check("the run's guardrails say the no-go area is the site's", {"name": "no_go_area", "area": "block", "from": ["site"]} in end["guardrails"], end["guardrails"])
+        print("   outcome:", end["state"], end["reason"], flush=True)
+        call("PUT", "/sites/home/guardrails", {"guardrails": []})
+        call("DELETE", "/sites/home/areas/block")
+
+    if wanted("timelimit"):
+        print("\n--- time_limit", flush=True)
+        need_clean()
+        run = start({"kind": "explore", "params": {"site": True}, "budget": {"minutes": 5}, "must_not": [{"name": "time_limit", "seconds": 12}]})
+        end = finished(run["id"], 120)
+        check("the time limit stops the run: stopped_by_guardrail, which guardrail broke", end and end["state"] == "stopped_by_guardrail"
+              and end["broken"]["name"] == "time_limit", end and (end["state"], end["reason"], end["broken"]))
+        check("it is not 'failed': the decision with its reason is in the run", end and any("guardrail broken" in d["text"] and d.get("rule") == "guardrail" for d in end["decisions"]),
+              end and [d["text"] for d in end["decisions"]][-3:])
+        check("the robot stands (truth) and the lease is back", stands_still() and robot()["lock"]["holder"] is None)
+
+    if wanted("drop"):
+        print("\n--- drop_clearance", flush=True)
+        need_clean()
+        run = start({"kind": "point", "params": {"x": 0.5, "y": 0.0}, "must_not": [{"name": "drop_clearance", "m": 3.0}]})
+        end = finished(run["id"], 60)
+        check("a drop within 3 m of the dock breaks drop_clearance 3.0 at once (truth)", end and end["state"] == "stopped_by_guardrail"
+              and end["broken"]["name"] == "drop_clearance", end and (end["state"], end["reason"], end["broken"]))
+        check("the robot stands (truth)", stands_still())
+        run = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}, "must_not": [{"name": "drop_clearance", "m": 0.1}, "contact", "fall", "stuck"]})
+        end = finished(run["id"], 200)
+        check("with 0.1 m, no contact, no fall, no stuck the same robot reaches its point: the guardrails do not stop a good run",
+              end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
 
 finally:
     srv.shutdown()

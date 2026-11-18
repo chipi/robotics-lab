@@ -35,7 +35,8 @@ from pathlib import Path
 
 from duck_lab.nav.client import SIM, LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
-from duck_lab.nav.run import CALIBRATION, Navigator
+from duck_lab.nav.guardrails import Guard
+from duck_lab.nav.run import CALIBRATION, Navigator, decision
 from duck_lab.nav.runlog import RunLog
 from duck_lab.nav.sim_camera import SimCamera
 from duck_lab.world_model.objects import load_kinds
@@ -173,7 +174,18 @@ class GoalRun:
         self._arm_guardrails()
 
     def _arm_guardrails(self) -> None:
-        """Hook for the guardrails (guardrails.py): none yet beyond the deadline."""
+        """The merged guardrails of the goal run (Mission Control's list: robot, site and goal level, strictest wins)."""
+        self.guard = Guard(self.nav, self.guardrails, self._break, self.t0)
+        self.guard.arm()
+
+    def _break(self, name: str, detail: str) -> None:
+        """A guardrail broke: the run stops, with which one, and the decision says why (it is in the Observatory run too)."""
+        with self._lock:
+            if self.broken is not None:
+                return
+            self.broken = {"name": name, "detail": detail}
+        self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        self.nav.abort = f"guardrail {name}: {detail}"
 
     # --- what a poll sees ---------------------------------------------------------------------------
 
@@ -182,6 +194,8 @@ class GoalRun:
         with self._lock:
             self.decisions.append({"n": len(self.decisions) + 1, "t": row.get("t"), "text": d.get("reason", ""),
                                    "rule": d.get("rule"), "values": d.get("values") or {}})
+        if d.get("rule") == "stuck" and any(g["name"] == "stuck" for g in self.guardrails):
+            self._break("stuck", d.get("reason", "walking without getting anywhere"))
 
     def _objects(self) -> list:
         nav = self.nav
