@@ -50,6 +50,71 @@ def coverage(run: Path) -> dict:
     return out
 
 
+FIND_M, FIND_FACING_DEG = 0.35, 45.0     # "go to the fridge" done: within this of its outline, facing it (RFC-0016)
+MATCH_M = 0.6                           # a confirmed object this close to a real one of its kind is that one
+ROOM_EDGE_M = 0.3                       # room naming is not scored this close to a room's walls (doorways)
+
+
+def semantic_score(run: Path, rows: list) -> dict:
+    """The semantic map against the truth (RFC-0016): objects confirmed, matched to a real object of their kind (world
+    frame, through the start's map-to-world), their position error; rooms named, the share of the time the name was
+    the room the duck was in; a "found" goal judged by where the duck stood and faced."""
+    from duck_lab.world_model.objects import distance
+    from duck_lab.world_model.semantic_map import centre
+    from duck_lab.nav.sim_camera import SimCamera
+
+    cam = SimCamera()
+    out = {}
+    sem = run / "semantic_map.json"
+    start = run / "start.json"
+    if sem.exists() and start.exists():
+        st = json.loads(start.read_text())
+        world_from_map = compose(st["truth"], inverse(st["map"]))
+        conf = [o for o in json.loads(sem.read_text())["objects"] if o["confirmed"]]
+        errs, false = [], []
+        for o in conf:
+            wx, wy, _ = compose(world_from_map, (o["x"], o["y"], 0.0))
+            real = [math.dist((wx, wy), centre(parts)) for _, parts in cam.truth_objects(o["kind"])]
+            if real and min(real) <= MATCH_M:
+                errs.append(min(real))
+            else:
+                false.append(o["kind"])
+        out["objects"] = {"confirmed": len(conf), "matched": len(errs), "false": false,
+                          "mean_error_m": round(statistics.mean(errs), 3) if errs else None,
+                          "kinds": sorted({o["kind"] for o in conf})}
+    # per tick: the room last named against the truth's, leaving out ticks within ROOM_EDGE_M of a room's walls (the
+    # truth's room flips at the wall, the belief later: the doorway is not a mistake); time with no room named apart
+    said, named, right, none, events = None, 0, 0, 0, 0
+    for r in rows:
+        if r.get("event") == "room":
+            said, events = r["room"], events + 1
+        elif "event" not in r and r.get("truth") and room_of(r["truth"], inset=ROOM_EDGE_M):
+            if said is None:
+                none += 1
+            else:
+                named += 1
+                right += room_of(r["truth"]) == said
+    ticks = named + none
+    out["rooms_named"] = {"events": events, "named_share": round(named / ticks, 2) if ticks else None,
+                          "right": round(right / named, 2) if named else None}
+    for r in rows:
+        if r.get("event") != "found":
+            continue
+        truth = r.get("truth")
+        real = cam.truth_objects(r["kind"])
+        if not truth or not real:
+            out["found"] = {"kind": r["kind"], "status": r["status"], "pass": False, "why": "no truth"}
+            continue
+        parts = min((p for _, p in real), key=lambda p: distance(p, truth[:2]))
+        d = distance(parts, truth[:2])
+        near = min((q for part in parts for q in part.outline(0.02)), key=lambda q: math.dist(q, truth[:2]))
+        bearing = math.atan2(near[1] - truth[1], near[0] - truth[0])
+        face = math.degrees(abs(math.atan2(math.sin(bearing - truth[2]), math.cos(bearing - truth[2]))))
+        out["found"] = {"kind": r["kind"], "status": r["status"], "distance_m": round(d, 3), "facing_deg": round(face),
+                        "pass": r["status"] == "reached" and d <= FIND_M and face <= FIND_FACING_DEG, "t": r["t"]}
+    return out
+
+
 def score_run(run: Path, obs: list) -> dict:
     rows = [json.loads(line) for line in open(run / "ticks.jsonl")]
     rooms = rooms_score(run)
@@ -93,7 +158,7 @@ def score_run(run: Path, obs: list) -> dict:
             "end": end, "minutes": round((end_t or last_t) / 60, 1), "walked_m": round(walked, 1),
             "contacts": contacts, "falls": int(end == "aborted"), "legs": legs, "reflex_kept": reflex_kept,
             "looks": looks, "look_min": round(glance_s / 60, 1),
-            "blockers": blockers}
+            "blockers": blockers, "semantic": semantic_score(run, rows)}
 
 
 def main() -> None:
@@ -110,6 +175,20 @@ def main() -> None:
               f"falls {o['falls']}, legs {o['legs']}, reflex stops answered by the same plan {o['reflex_kept']}, "
               f"looks before stepping {o['looks']} ({o['look_min']} min)")
         print(f"    coverage: {cov}")
+        s = o["semantic"]
+        if "objects" in s:
+            ob = s["objects"]
+            print(f"    objects: {ob['confirmed']} confirmed, {ob['matched']} real (mean error {ob['mean_error_m']} m), "
+                  f"false {ob['false'] or 'none'}; kinds {', '.join(ob['kinds'])}")
+        rn = s["rooms_named"]
+        if rn["events"]:
+            print(f"    rooms named: {rn['events']} changes; a room named in {int((rn['named_share'] or 0) * 100)}% of "
+                  f"the time, right in {int(rn['right'] * 100) if rn['right'] is not None else '-'}% of that "
+                  f"(away from doorways)")
+        if "found" in s:
+            f = s["found"]
+            print(f"    found {f['kind']}: {f['status']}, {f.get('distance_m')} m from it, facing off by "
+                  f"{f.get('facing_deg')} deg: {'PASS' if f['pass'] else 'FAIL'}")
     cost = {}
     for o in out:
         for b in o["blockers"]:

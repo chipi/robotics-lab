@@ -53,3 +53,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
 - [RFC-0015 — Nav2 on the simulated duck: learn how the standard stack works, and
   compare](RFC-0015-nav2-comparison.md) (Accepted, 2026-11-18)
+- [RFC-0016 — Objects, landmarks and a semantic map: "this is the kitchen", "go to the
+  fridge"](RFC-0016-objects-and-semantic-map.md) (Accepted, 2026-11-18; MVP being built)

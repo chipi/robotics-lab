@@ -85,6 +85,7 @@ nav:
     - RFC-0012 — Look far, get ready early: rfc/RFC-0012-look-far.md
     - RFC-0013 — The robot's eye: rfc/RFC-0013-robot-eye.md
     - RFC-0015 — Nav2 on the simulated duck: rfc/RFC-0015-nav2-comparison.md
+    - RFC-0016 — Objects and the semantic map: rfc/RFC-0016-objects-and-semantic-map.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — miniview: prd/PRD-001-miniview.md

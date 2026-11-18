@@ -19,6 +19,9 @@ from duck_lab.nav.follow import Twist
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance
 from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
+from duck_lab.nav.run import CALIBRATION
+from duck_lab.world_model.objects import load_kinds
+from duck_lab.nav.sim_camera import SimCamera
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
 SURVEY_STEP_RAD = math.pi / 2
@@ -49,6 +52,8 @@ class Explorer:
         self.out = out
         self.failed = []          # frontier targets that failed: avoided from then on
         self.retired = []         # frontier cells near a target with no path: those cells only (explore.without_retired)
+        self.find = None          # a kind of object to find and go to (RFC-0016: "go to the fridge"); None: explore
+        self.find_failed = set()  # objects found but out of reach
         self.events = []
 
     def note(self, **e) -> None:
@@ -69,7 +74,8 @@ class Explorer:
             return False
         if pose:
             try:
-                room = clearance(self.nav.grid().with_points(self.nav.blocked), pose[:2], PIVOT_OBSTACLE_M)
+                room = clearance(self.nav.grid().with_points(self.nav.blocked + self.nav.semantic_points()), pose[:2],
+                                 PIVOT_OBSTACLE_M)
             except EmptyMap:
                 room = PIVOT_OBSTACLE_M
             if room < PIVOT_OBSTACLE_M:
@@ -87,6 +93,30 @@ class Explorer:
             time.sleep(0.1)
         self.nav.move(Twist())
         return True
+
+    def go_to_object(self, obj, pose: tuple, costs) -> dict:
+        """Go and stand in front of a found object: the approach point (semantic_map.approach, on cells the cost map
+        does not block), then turn to face it. A "found" event with the outcome (its truth is the judge's)."""
+        def free(p):     # not lethal, and room to turn there (the hold-off lesson: a stand with no room is a trap)
+            c = costs.cell(*p)
+            return (not costs.inside(*c) or costs.at(*c) < LETHAL_COST) and \
+                clearance(costs, p, PIVOT_OBSTACLE_M) >= PIVOT_OBSTACLE_M
+        with self.nav._sem_lock:
+            stand = self.nav.semantic.approach(obj, pose, free)
+            summary = obj.summary()
+        if stand is None:
+            self.note(event="found", kind=obj.kind, object=summary, status="refused", why="nowhere free to stand",
+                      decision=decision("found", f"a {obj.kind} is known, but nowhere near it is free"))
+            return {"status": "refused", "why": "nowhere free to stand"}
+        out = self.nav.go_to(stand[:2], GO_TIMEOUT_S)
+        if out["status"] == "reached":
+            now = self.nav.loc.pose()
+            if now is not None:
+                self.turn(wrap(stand[2] - now[2]))
+        self.note(event="found", kind=obj.kind, object=summary, stand=[round(v, 3) for v in stand],
+                  status=out["status"], why=out.get("why"),
+                  decision=decision("found", f"went to the {obj.kind}", status=out["status"], object=obj.oid))
+        return {"status": out["status"], "object": obj.oid, "stand": [round(v, 3) for v in stand], "why": out.get("why")}
 
     def survey(self) -> None:
         for _ in range(SURVEY_STEPS):
@@ -112,7 +142,8 @@ class Explorer:
                 # covering() as the navigator does: a drop beyond mapd's grid still grows its zone into it
                 # (trial 6 picked a goal the navigator then scored lethal).
                 costs = self.nav.grid()
-                costs = costs.covering([pose[:2]] + self.nav.blocked + self.nav.drops).with_points(self.nav.blocked)
+                seen = self.nav.blocked + self.nav.semantic_points()
+                costs = costs.covering([pose[:2]] + seen + self.nav.drops).with_points(seen)
                 costs = costs.with_blocked(self.nav.drops, DROP_LETHAL_M, DROP_INFLATE_M)
             except EmptyMap:
                 self.survey()
@@ -125,6 +156,16 @@ class Explorer:
                 # Floor the depth sensor saw, not only mapd's "free": mapd draws a stairwell as free
                 # (upstream #599) and trial 10 picked a target inside one.
                 return self.nav.floor_seen_near(goal)
+
+            if self.find and self.nav.semantic is not None:
+                with self.nav._sem_lock:
+                    obj = self.nav.semantic.find(self.find, pose)
+                if obj is not None and obj.oid not in self.find_failed:
+                    out = self.go_to_object(obj, pose, costs)
+                    if out["status"] == "reached":
+                        return {"legs": legs, "found": out,
+                                "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}
+                    self.find_failed.add(obj.oid)    # that one was out of reach: keep exploring for another
 
             avoid = self.failed + self.nav.drops
             blocked = list(self.nav.blocked)
@@ -191,8 +232,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--minutes", type=float, default=20.0)
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
+    ap.add_argument("--find", metavar="KIND", help="explore until an object of this kind is found, then go to it "
+                    "(RFC-0016; kinds: duck_lab/world_model/kinds.json), e.g. fridge")
+    ap.add_argument("--no-objects", action="store_true", help="no simulated camera and no semantic map")
+    ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
     add_args(ap)
     args = ap.parse_args()
+    if args.find and args.find not in load_kinds():
+        ap.error(f"no kind {args.find!r}; the kinds: {', '.join(sorted(load_kinds()))}")
+    if args.find and args.no_objects:
+        ap.error("--find needs the objects (drop --no-objects)")
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "exploration", args.out)
     nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
@@ -210,10 +259,18 @@ def main() -> None:
             nav.survey()
         (args.out / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": nav.body.pose(),
                                                           "scale": nav.scale}))
-        result = Explorer(nav, args.out).run(args.minutes)
+        if not args.no_objects:
+            cal = json.loads((CALIBRATION / "sim.json").read_text()).get("camera", {})
+            nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs)
+        explorer = Explorer(nav, args.out)
+        explorer.find = args.find
+        result = explorer.run(args.minutes)
         print(json.dumps(result))
     finally:
         nav.close()
+        if nav.semantic is not None:
+            with nav._sem_lock:
+                (args.out / "semantic_map.json").write_text(json.dumps(nav.semantic.to_json(), indent=1))
         if runlog:
             runlog.finish()
 

@@ -34,6 +34,7 @@ from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.step_check import unseen_ahead
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
+from duck_lab.world_model.semantic_map import SemanticMap
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, FREE_COST, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
 
 TICK_S = 0.1
@@ -252,11 +253,15 @@ class Body:
         self._f.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n")
         self._f.flush()
         self._f.readline()
+        # one request and its reply at a time: the record (main thread), an exploring run's truth guard and the
+        # simulated camera (RFC-0016) all read the truth from their own threads over this one socket
+        self._lock = threading.Lock()
 
     def pose(self) -> tuple:
-        self._f.write('{"op":"read"}\n')
-        self._f.flush()
-        r = json.loads(self._f.readline())
+        with self._lock:
+            self._f.write('{"op":"read"}\n')
+            self._f.flush()
+            r = json.loads(self._f.readline())
         w, x, y, z = r["imu"]["quat"]
         self.height = r["trunk"][2]
         self.quat = (w, x, y, z)          # the trunk's whole orientation, for the run's full truth pose (ADR-0016)
@@ -336,6 +341,11 @@ class Navigator:
         self.drops = []      # where the cliff check found no floor, in map metres
         self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
+        # objects (RFC-0016): off unless a camera is given (enable_objects); the challenge course runs without
+        self.semantic = None
+        self.room = None
+        self._sem_lock = threading.Lock()
+        self._closing = threading.Event()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.pivot_vx)
 
@@ -678,7 +688,13 @@ class Navigator:
                      if math.dist((k[0] * LOW_CELL_M, k[1] * LOW_CELL_M), pose[:2]) >= radius_m}
         return gone
 
+    _rec_lock = threading.RLock()   # rows come from the main loop and the camera thread (RFC-0016); re-entered by watch
+
     def record(self, **row) -> None:
+        with self._rec_lock:
+            self._record(**row)
+
+    def _record(self, **row) -> None:
         if self._log or self.runlog:
             row["t"] = round(time.monotonic() - self._t0, 3)
             if self.body:
@@ -731,7 +747,8 @@ class Navigator:
                 except EmptyMap:
                     self.survey()
                     continue
-                grid = grid.covering([pose[:2], goal] + self.blocked + self.drops + self.edges).with_points(self.blocked)
+                seen = self.blocked + self.semantic_points()     # the depth sensor's points and the objects' (RFC-0016)
+                grid = grid.covering([pose[:2], goal] + seen + self.drops + self.edges).with_points(seen)
                 grid = grid.with_blocked(self.drops, DROP_LETHAL_M, DROP_INFLATE_M)
                 grid = grid.with_blocked(self.edges, EDGE_LETHAL_M, EDGE_INFLATE_M)   # edges a glance measured
                 suspected = self.suspects.points()        # suspected drops: a smaller ring until a glance confirms them
@@ -942,7 +959,58 @@ class Navigator:
         return {"status": "timeout", "time_s": timeout_s, "reflex_stops": reflex_stops,
                 "pose": [round(v, 3) for v in self.loc.pose()]}
 
+    def enable_objects(self, camera, kinds: dict, costs: bool = False) -> None:
+        """Objects (RFC-0016): every camera period, what the camera recognises joins the semantic map, placed with the
+        belief taken right after the camera's truth (50 ms apart at most: 1.5 cm walking, under the camera's noise); a
+        "semantic" event when an object is new or confirmed, a "room" event when the room the objects say the duck is in
+        changes (mapd's last grid decides what is in sight). costs: the confirmed objects' parts join the cost map too
+        (semantic_points) — off by default: the depth sensor already sees them, and a drifted copy beside the fresh
+        points closed passages and fed "no room to turn" (the advisor's review; RFC-0016 §5, to be measured)."""
+        self.semantic = SemanticMap(kinds)
+        self.object_costs = costs
+        period = camera.cfg["period_s"]
+
+        def watch():
+            said = set()
+            while not self._closing.wait(period):
+                try:
+                    look()
+                except Exception as e:  # noqa: BLE001 - the camera must not stop the run, nor stop looking; each failure said once
+                    why = f"{type(e).__name__}: {e}"
+                    if why not in said:
+                        said.add(why)
+                        self.record(event="camera_failed", why=why)
+
+        def look():
+            pose = self.loc.pose()
+            if pose is None or self.body is None:
+                return
+            found = camera.detect(self.body.pose())
+            with self._sem_lock:
+                changes = self.semantic.integrate(found, pose, time.monotonic() - self._t0)
+                room, votes = self.semantic.room_at(pose, self._map_raw)
+                objects = [o.summary() for o in self.semantic.objects] if changes else None
+            if changes:
+                self.record(event="semantic", changes=[[c, o.oid] for c, o in changes], objects=objects)
+            if room != self.room:
+                self.room = room
+                self.record(event="room", room=room, votes=votes,
+                            decision=decision("room", f"the objects near say: {room}", votes=votes))
+
+        threading.Thread(target=watch, daemon=True).start()
+
+    object_costs = False
+
+    def semantic_points(self) -> list:
+        """The semantic cost layer's points; none unless enable_objects(costs=True): every grid the brain builds is
+        then the one it built before objects existed."""
+        if self.semantic is None or not self.object_costs:
+            return []
+        with self._sem_lock:
+            return self.semantic.blocking_points()
+
     def close(self) -> None:
+        self._closing.set()
         self.move(Twist())
         self.state.close()
         self.tof.close()
