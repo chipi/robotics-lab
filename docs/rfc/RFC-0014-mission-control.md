@@ -47,8 +47,9 @@ revision does that.
 | --- | --- |
 | site | a named place robots work in, with a kind (apartment, office, warehouse, garden, the simulated challenge course), its own frame and its own maps. Nothing in Mission Control is fixed to one kind of place: "home" is one site, named by the operator. Several sites are supported from the start; a robot is at one site at a time; the simulator's apartment is one site (the operator, 2026-11-18) |
 | site frame | the one coordinate frame of a site. In the simulator it is the dock: every run starts there |
-| area | a part of a site. A room is the kind of area indoors; outdoors an area is a zone. The operator names, creates and manages areas (§3.5.3). Objects are in areas |
-| room | an area indoors ("kitchen"). Today the duck names the room it is in from the objects near it; an area has no extent yet (§3.5.3) |
+| area | a named region of a site that the operator defines: a name, an outline (a polygon on the site map, in the site frame) and optionally an area type (kitchen, bedroom...). Only the operator creates, changes or deletes areas; the robot never does (§3.5.3). Objects are in areas by geometry |
+| room | an area indoors; outdoors an area is a zone |
+| area type guess | what the robot's object votes say the area is like ("kitchen-like"). Information and a check on its position; never an area |
 | place | something a goal can name instead of coordinates: an area, a room or an object |
 | object | anything at a site that a recogniser reports: furniture, a plant, a picture. Has a stable id, a kind, parts (boxes with a bottom and a top), a confidence, maybe a label |
 | kind | what an object is ("fridge"). One catalogue for every site (`kinds.json`, RFC-0016): a general default, plus optional hints per site kind (a fridge suggests a kitchen in a home and a break room in an office) |
@@ -104,8 +105,7 @@ and the EV3 and the real duck are no longer here: they are requirements, with th
 - An LLM as a required part. Every goal can be given without one (§3.4.5).
 - Correcting a robot's position at a real site from landmarks: later (§3.5.4), not in the first
   versions.
-- Area extents (regions) from the navigator: not first (§3.5.3). Until then `go_to_area` and
-  `explore {area}` are not offered.
+- Areas drawn by the robot or suggested by it: never (§3.5.3). Areas are the operator's.
 - A detector on real video: the recogniser slot is in the capabilities, the detector is its own
   work (RFC-0016 §3).
 
@@ -160,10 +160,10 @@ fire (§3.8).
 | `POST /api/v1/plan` | words in, goals out (§3.4.5): `{text}`; returns proposed goals, runs nothing |
 | `GET /api/v1/sites`, `POST /api/v1/sites` | the site library (§3.5.1): list, create `{name, kind}` |
 | `GET`, `PUT`, `DELETE /api/v1/sites/{s}` | read, rename or change the kind of, retire a site: id, name, kind, the site frame, counts |
-| `GET /api/v1/sites/{s}/areas`, `POST /api/v1/sites/{s}/areas` | the areas of a site (§3.5.3): list with the objects in each and any robot's suggestion; create `{name, kind, extent?}` |
-| `PUT`, `DELETE /api/v1/sites/{s}/areas/{a}` | rename an area, give it an extent, retire it |
+| `GET /api/v1/sites/{s}/areas`, `POST /api/v1/sites/{s}/areas` | the operator's areas of a site (§3.5.3): list with the objects in each; create `{name, type?, outline}` (a polygon in the site frame). Only the operator creates, changes or deletes areas; there is no robot suggestion |
+| `PUT`, `DELETE /api/v1/sites/{s}/areas/{a}` | rename, change the type or redraw the outline, delete |
 | `POST /api/v1/sites/{s}/areas/{a}/merge`, `.../split` | merge two areas, split one |
-| `POST /api/v1/sites/{s}/areas/suggestions/{n}/accept` | accept a robot's suggested area name (from object votes, "kitchen"), optionally under another name: `{name?}` |
+| `GET /api/v1/sites/{s}/areas/at?x=&y=` | which area holds a point in the site frame, or "none defined" |
 | `GET /api/v1/sites/{s}/objects` | the site's objects (§3.5): stable id, kind, label, area, parts, confidence |
 | `POST /api/v1/sites/{s}/objects/{id}/label` | name an object: `{label}` ("this is my desk"); the MCP tool is the same call |
 | `GET /api/v1/sites/{s}/inventory` | the confirmed objects by area, with sightings and confidence |
@@ -285,7 +285,7 @@ requires of mission specs.
 | --- | --- | --- | --- |
 | `point` | `{x, y, frame}` | within 0.25 m (ADR-0015's `REACHED_M`) within 60 s | navigator |
 | `go_to_object` | `{kind \| id \| label, area?}` | the robot stands within 0.35 m of the object's outline and faces it within 45 degrees (the judge of RFC-0016), within the budget | navigator; recogniser or a shared site map (§3.3.2) |
-| `go_to_area` | `{area}` | the robot is inside the area | navigator, area regions (not yet, §3.5.3) |
+| `go_to_area` | `{area}` | the robot is inside the area | navigator, an operator-drawn area (§3.5.3) |
 | `explore` | `{area \| site}`, budget in minutes | no reachable frontier left in the area, or the budget is spent: both end `done` | navigator, map |
 | `inventory` | `{areas?}`, budget | the inventory is returned: the confirmed objects by area | navigator, recogniser |
 
@@ -440,9 +440,9 @@ merged list it ran with, so it is readable alone.
 
 **The first list** is what the robots can report today, as the challenge judge does (ADR-0015): no
 contact, no fall, not within a set distance of a drop, not stuck, within the time limit. Then: a
-**no-go area** (until areas have regions, §3.5.3, a no-go zone is a polygon drawn on the site's
-map), a maximum speed, and quiet or away hours later. Which of them each robot kind can report is
-the one part left open (§5, question 6): a robot lists the guardrails it can enforce in its
+**no-go area** (a polygon the operator draws on the site's map, §3.5.3), a maximum speed, and
+quiet or away hours later. Which of them each robot kind can report is the one part left open
+(§5, question 6): a robot lists the guardrails it can enforce in its
 capabilities (`guardrails`), and a goal that needs one it cannot enforce is refused with the reason,
 as in §3.3.2.
 
@@ -517,30 +517,44 @@ addition to it, not decided in this RFC's code.
 - **Files.** SQLite is the store; a site, its areas and its labelled objects can be exported and
   imported as files in folders, to diff and back up (the operator, 2026-11-18, question 23).
 
-#### 3.5.3 Areas, and the operator's library of them
+#### 3.5.3 Areas: the operator's regions, and the robot's type guess
 
-An **area** is a part of a site; indoors it is a room, outdoors a zone. The operator: "I would name
-areas like my rooms, so I can manage those." In the site library the operator, for each site:
+An **area** is a named region of a site that **the operator defines**: a name, an **outline** (a
+polygon on the site map, in the site frame) and, optionally, an **area type** (kitchen, bedroom,
+office...). Indoors it is a room, outdoors a zone: the same polygon, nothing more until a robot
+works outside. **Only the operator creates, changes or deletes areas.** The robot never creates or
+suggests one. The operator (2026-11-18): "why would even a robot suggest an area? That's not the
+goal. The goal is that he can detect in which area he is ... I definitely don't want a robot to
+create areas." And: "I would name areas like my rooms, so I can manage those."
 
-- **creates** an area and **renames** it ("Marko's study");
-- **gives it an extent** later: a region on the map (first derived from the objects plus the map's
-  walls, and drawn or edited by hand; see below);
-- **merges** two areas and **splits** one;
-- **accepts or renames the robot's suggestions.** Today the duck names the room it is in from the
-  confirmed objects near it (a fridge votes kitchen). Those names are suggestions: they show in the
-  library as "kitchen (suggested, 4 objects)", and the operator accepts one as it is, accepts it
-  under another name, or ignores it.
+**The flow:**
 
-Objects are in areas: an object's area is the one whose extent holds it, or, before extents, the
-area its own place votes for. The API and MCP tools for all of this are in §3.2.1 (`/sites/{s}/areas`
-and its merge, split and accept calls).
+1. The operator creates the site.
+2. The first exploration maps it: walls, floor, objects. There are no areas yet, so "which area am I
+   in" answers "none defined", and the robot's type guess (below) is shown as information.
+3. The operator draws and names the areas in the site library, on the map the robot built, with its
+   objects as the reference. Nothing is pre-filled. He can also rename, redraw, merge, split and
+   delete them.
+4. From then on "which area am I in" is geometry: the robot's pose on the site map inside an outline.
+   It is exact.
+5. The type guess becomes a check. Today the duck names the type of room it is in from the confirmed
+   objects near it (a fridge votes kitchen). That is a **guess of the area type** ("kitchen-like"),
+   not an area, and it is never stored as one. The Observatory shows it as information. When the
+   pose says "Bedroom" but the objects look like a kitchen, the pose is probably wrong; in a real
+   site that is the signal to relocalise from landmarks (§3.5.4).
+6. Goals use the operator's areas: `go_to_area` (a free point inside the outline), `explore {area}`
+   (the frontiers inside it), the guardrails' no-go areas (§3.4.8). `go_to_object` needs no area.
 
-An area has **no extent yet**: there is no region anywhere that says where the kitchen is. Until
-there is, an area is a name with the objects in it, the inventory sorts objects by area, and
-`go_to_area` and `explore {area}` are not offered; a goal given today is refused with "areas have no
-extent yet". Decided (the operator, 2026-11-18, question 19): extents come later, first from the
-objects plus the map's walls, and the operator can also draw and edit them in the site library.
-`explore {site}`, `inventory` and the object goals do not wait on them.
+Objects are in areas by geometry: an object's area is the outline that holds its position. Until
+areas are drawn they have none, and the inventory lists them under "none defined".
+
+**In the simulator**, a test site's areas are drawn from the scoreboard's true room outlines, as the
+operator would at home. Both are then measured: is "which area" right, and does the type guess agree
+with it.
+
+The API and MCP tools are in §3.2.1 (`/sites/{s}/areas`, with create, change, delete, merge and
+split, and an `at` query for "which area holds this point or this robot"). The robot's type guess is
+a field of the navigator's `rooms` method and of the state, never of the area list.
 
 #### 3.5.4 A real site: knowing where it is
 
@@ -567,8 +581,8 @@ Two layers are new:
   or more), `confidence`, kind, and the operator's label. A confirmed object is drawn solid, an
   unconfirmed one faint, a landmark in its own colour, as ADR-0019 does for the pages. For a site
   (`GET /sites/{s}/objects`) the frame is the site frame.
-- **An areas layer**: area names placed at the centre of the objects in them, until areas
-  have extents; then their outlines.
+- **An areas layer**: the operator's areas as outlines with their names, and the robot's
+  area type guess as information.
 
 Mission Control draws its own map: it does not embed the Observatory's page. Whether it shares the
 Observatory's drawing module or duplicates a small 2D drawing is **open** (§5, question 14). The
@@ -599,7 +613,7 @@ and offers to Mission Control, over a process boundary, in the RFC-0003 JSON-RPC
 | `goal.start {kind, params, budget, conditions, seed?}` | starts a goal of any kind of §3.4.1 and returns `{run_key}` at once, so the goal run binds to the Observatory's `/watch/<run_key>` while it runs. `seed` is the site's objects (§3.5.2) |
 | `goal.status`, `goal.cancel` | the run's state, progress and, at the end, its outcome and `result`; cancel stops it |
 | `objects` | the navigator's current semantic map (ADR-0019's `objects` shape) |
-| `rooms` | the room it believes it is in and the votes: the source of the suggested area names (§3.5.3) |
+| `rooms` | the area type guess and the votes behind it (§3.5.3); the area it is in comes from the outline, not from here |
 | `inventory` | the confirmed objects by area (RFC-0016's `inventory.json`) |
 | `find {kind \| label}` | the nearest confirmed object of that kind, or the labelled one; null if none is known |
 | `name_object {id, label}` | name an object in the navigator's map (Mission Control also keeps the label in the site's map) |
@@ -758,7 +772,7 @@ assumed). Mission Control ships as a container image from its first slice (§3.1
    hands over the simulator: a goal set on the page runs on the simulated duck and the goal run
    binds to a `/watch` link from its first moment.
 3. **Sites, areas, objects and the object goals:** the site library and the site store in SQLite,
-   areas the operator names (suggestions accepted or renamed; merge and split), merging a run's
+   areas the operator draws and names (merge and split), merging a run's
    objects into a site with stable ids, `objects`, `inventory`, naming by hand, `go_to_object`,
    `explore {site}`, `inventory`, the `not_found` and `done` outcomes and the `result`; the objects
    and areas layers on the map; export and import as files. Built first against the fake site, then
@@ -773,7 +787,8 @@ assumed). Mission Control ships as a container image from its first slice (§3.1
    and confirm.
 7. **Per-client tokens**, then the mobile app's needs, then Slack.
 8. **EV3 and the real duck**, each after its own interface, deadman and safety review.
-9. **Area regions** (drawn, or from objects and walls), then `go_to_area` and `explore {area}`.
+9. **`go_to_area` and `explore {area}`** on the operator's outlines; the type guess as a check on
+   the pose.
 10. **Relocalisation at a real site** from landmarks (§3.5.4); `split` of one goal across robots.
 11. **A real video recogniser** in a robot's capabilities.
 12. **The Observatory rename**, and the flotilla integration (RFC-0006 §5, item 4).
@@ -841,8 +856,8 @@ kept to record where each answer went.
     `miniview.look`, `/miniview/look`) and a landmark at `landmark >= 1.0`. Decisions C and D change
     both. Answered: being closed on the Observatory side, by another change; until then this RFC
     says `sighting` and 0.7 and the ADR says otherwise.
-19. **Area regions.** Answered: later; first from the objects plus the map's walls; the operator can
-    also draw and edit them in the site library (§3.5.3).
+19. **Area regions.** Answered, and replaced by Q25: the operator draws the outlines in the site
+    library, on the map the robot built (§3.5.3). Nothing is derived from objects or walls.
 20. **A link back from the Observatory to the goal run.** Answered: yes, a field in the run's
     metadata (the Observatory's contract changes) (§3.11).
 21. **The robot file's format.** Answered: after the VDA 5050 and Open-RMF specs are read; the
@@ -854,10 +869,11 @@ kept to record where each answer went.
     diff and back up.
 24. **How much of the loop the page shows.** Answered: the current decision and the outcome; full
     detail one click away in the Observatory (§3.11).
-25. **The site library and areas (new, from the operator's review).** Open: whether a robot's
-    suggested area names should be created as areas automatically, or only when the operator
-    accepts them (proposed: only when accepted); how an area's extent is stored (polygon on the
-    site frame, proposed); what an outdoor "zone" needs beyond a name and an extent.
+25. **Who defines areas.** Answered (the operator, 2026-11-18): "why would even a robot suggest an
+    area? That's not the goal. The goal is that he can detect in which area he is ... I definitely
+    don't want a robot to create areas", then "Yes, that's it" to the flow of §3.5.3. Only the operator
+    creates areas; an area is a polygon on the site frame (decided); an outdoor zone is the same
+    polygon, nothing more until a robot works outside.
 26. **The per-site-kind hints in the catalogue (§3.5.1).** Answered (the operator, 2026-11-18: "Ok
     on q26"): in the kinds catalogue (`kinds.json`, RFC-0016): each kind keeps general area hints
     and optional hints per site kind (`rooms_by_site`; a fridge at an office says break room), one
@@ -939,8 +955,8 @@ kept to record where each answer went.
     per site kind (§1.1, §3.5).
   - **A site library and an area library** in the page, API and MCP: the operator names sites, and
     within each names and manages areas ("I would name areas like my rooms, so I can manage
-    those"): create, rename, give an extent later, merge, split, accept or rename the robot's
-    suggested names (§3.5.3). Requirement O27.
+    those"): create, rename, draw an outline, merge, split; the robot never creates or suggests one
+    (§3.5.3). Requirement O27.
   - **An exclusive control lock per robot, built in** (replacing the first answer to question 3,
     which was to ask `nxt-web` whether it is in use): "we should not allow two things to drive the
     same robot ... that's how two things should work together, by not being allowed to work
@@ -964,6 +980,15 @@ kept to record where each answer went.
   - **Q9 and Q10 confirmed** ("yes on Q10, yes on Q9"), and with them a requirement the operator
     calls "super important": the Observatory and Mission Control both run as containers, so they
     run wherever he wants, easily (§3.13, O30).
-  - New open questions from the above: 25 (suggestions as areas, extents, zones) and 26 (where the
-    per-site-kind hints live). Left open, smaller: movable and unseen objects in the merge (15),
+  - Question 26 (where the per-site-kind hints live) was raised in this review and answered. Left
+    open, smaller: movable and unseen objects in the merge (15),
     a moved simulator dock (22).
+- 2026-11-18 — Revision 2, the operator on question 25 ("why would even a robot suggest an area?
+  That's not the goal. The goal is that he can detect in which area he is ... I definitely don't
+  want a robot to create areas", then "Yes, that's it"). Changed (§3.5.3, §3.2.1, §1.1, O27): an area
+  is a region the operator defines (name, polygon outline, optional type); the robot never creates
+  or suggests one; the accept-suggestion step and API row are gone. The robot's object votes are an
+  area type guess, shown as information and used as a check on its position. "Which area am I in" is
+  geometry once the operator has drawn the outlines. In the simulator a test site's areas are drawn
+  from the scoreboard's true room outlines, so the answer and the guess are both measured. Question
+  19 (regions from objects and walls) is replaced by this.

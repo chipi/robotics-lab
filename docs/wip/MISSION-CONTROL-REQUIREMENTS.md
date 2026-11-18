@@ -51,7 +51,7 @@ review of revision 2 (2026-11-18). "Home" is now **site** and "room" is one kind
 | O24 | **Goals by object, area, explore and inventory,** not only points; recognisers among a robot's capabilities; objects and rooms in the map and the API | "A yes", 2026-11-18 |
 | O25 | **Objects are landmarks at a landmark value of 0.7 or more;** the camera record is called `sighting` (was `look`) | "C yes", "D yes", 2026-11-18 |
 | O26 | **A site's semantic map kept between runs,** anchored to the dock in the simulator (every run starts there), stable object ids, objects named by the operator ("this is my desk"), the stored map owned by Mission Control. In a real home the robot must first recognise where it is (landmark position correction, later) | "B yes", 2026-11-18 |
-| O27 | **A library of sites and of areas:** the operator names sites ("Home" is one), and within each site names and manages its areas ("I would name areas like my rooms, so I can manage those"): create, rename, give an extent later, merge, split; the robot's own area names (from object votes) are suggestions to accept or rename. Nothing is fixed to a home: "it's a terrain", several sites from the start | the operator, 2026-11-18 |
+| O27 | **A library of sites and of areas:** the operator names sites ("Home" is one), and within each site names and manages its areas ("I would name areas like my rooms, so I can manage those"): create, rename, draw its outline (a polygon on the site map) and an optional area type, merge, split. Only the operator creates areas; the robot never creates or suggests one, and its object votes are only an area-type guess that checks its position (RFC-0014 §3.5.3). Nothing is fixed to a home: "it's a terrain", several sites from the start | the operator, 2026-11-18 |
 | O28 | **An exclusive control lock per robot,** built in at the robot's own interface: one controller at a time, others refused with who holds it; a lease that expires when the holder goes silent; no ejection by peers. Beyond Mission Control and the NXT: five laptops and five robots, three ducks and three laptops (generalised in RFC-0017) | "we should not allow two things to drive the same robot" |
 | O29 | **Guardrails:** a goal is what to do plus a `must_not` list, at three levels (robot, site, goal), merged, a goal adding and never removing; checked in the navigator; a broken one stops the robot | "guardrails of some sort for the robots ... we have to support that" |
 | O30 | **Super important: both apps run as containers.** The Observatory and Mission Control each as an image, together from one compose file, on any of the operator's machines (workstation, Mac mini, laptop): no host-specific paths, configuration and data by volumes and environment, robots reached over the network | "so that I can run them wherever I want to run them easy. So that's super important" |
@@ -230,7 +230,8 @@ O22). Open questions are the RFC's section 5.
   beyond running it in parallel (dividing a map, handing over, roles) is not specified anywhere;
   RFC-0014 §3.4.4 proposes `each`, `any` and `split`; RFC-0002 §3.9 defers shared maps to phase 6.
 - **VDA 5050 and Open-RMF.** The specs have not been read; RFC-0014's mapping table is from memory.
-- **Area extents.** Areas have names, from the objects near the robot or from the operator, and no regions.
+- **Area extents.** Areas are drawn by the operator; until he draws them, "which area" answers
+  "none defined".
 - **Not read** while gathering this: PRD-001 and UXS-001 (miniview), the review notes, RFC-0010,
   RFC-0012, most ADR bodies, flotilla's and eval-harness's own repositories.
 - **Not checked by running anything:** the endpoints above as described; whether `nxt-web` and the
