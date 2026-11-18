@@ -51,5 +51,5 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   go](RFC-0012-look-far.md) (Proposed, 2026-11-16)
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
-- [RFC-0014 — Mission Control: one API for every robot, a page, goals on a
-  map](RFC-0014-mission-control.md) (Proposed, 2026-11-17; draft for review)
+- [RFC-0014 — Mission Control: one API for every robot, goals in words, places and
+  objects](RFC-0014-mission-control.md) (Proposed, revision 2, 2026-11-18; for the operator's review)

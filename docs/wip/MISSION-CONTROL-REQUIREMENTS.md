@@ -1,4 +1,4 @@
-# Mission control: requirements, 2026-11-17
+# Mission control: requirements, 2026-11-17 (round 2 added 2026-11-18)
 
 Gathered before any design or build. The operator's direction on 2026-11-17: a new app to see the
 robots, whether they are online and how they are, and give them goals; "the de facto interface on
@@ -28,7 +28,38 @@ operator to read before anything is built.
 | O11 | **Full MCP and a remote API**, so a mobile app can be built later | "also full mcp and remote api control" |
 | O12 | **Control through an agent** | "and control through agent" (which kind is open: §5, Q2) |
 
+### 1.1 Round 2 (2026-11-17/18), folded into RFC-0014 revision 2
+
+Given while the operator reviewed the page mockup and the next day; revision 1 of the RFC did not
+include them. O24 to O26 follow the decisions of 2026-11-18.
+
+| # | Requirement | Operator's words, condensed |
+| --- | --- | --- |
+| O13 | **Goals at the centre:** a goal library in folders; ad-hoc runs without saving; the good ones saved | goals are what the app is about |
+| O14 | **Goals in words;** an optional LLM breaks them into a plan, over an OpenAI-compatible API (default LiteLLM on the DGX, an OpenRouter key also). The LLM is never mandatory; the planner is an independent module | missions in words, with the model optional |
+| O15 | **Places and rooms instead of coordinates** | "maps and coordinates make no sense" as the way to give goals |
+| O16 | **One goal on several robots;** the Lego NXT, the Lego EV3 and the Pollen duck collaborating on one goal | see also O8, O10 |
+| O17 | **Observing the loop:** see what the robot decides, and why, while a goal runs | the mockup review |
+| O18 | **Robots configured by files:** the body as URDF plus an own file that borrows the VDA 5050 factsheet and Open-RMF task kinds | agreed "for now", 2026-11-17 |
+| O19 | **Mission Control and the Observatory** (renamed from miniview) separate, but well connected | answer: Observatory |
+| O20 | **SQLite** for goals, runs and homes | answer, 2026-11-17 |
+| O21 | **No firing over MCP:** an agent cannot fire | answer, 2026-11-17 |
+| O22 | **The navigator API is its own process** | answer, 2026-11-17 |
+| O23 | **Lean toward VDA 5050 long term** | "better support for VDA 5050-type robots" |
+| O24 | **Goals by object, room, explore and inventory,** not only points; recognisers among a robot's capabilities; objects and rooms in the map and the API | "A yes", 2026-11-18 |
+| O25 | **Objects are landmarks at a landmark value of 0.7 or more;** the camera record is called `sighting` (was `look`) | "C yes", "D yes", 2026-11-18 |
+| O26 | **A home's semantic map kept between runs,** anchored to the dock in the simulator (every run starts there), stable object ids, objects named by the operator ("this is my desk"), the stored map owned by Mission Control. In a real home the robot must first recognise where it is (landmark position correction, later) | "B yes", 2026-11-18 |
+
 What they mean for the design (my reading, for the operator to confirm in the RFC):
+
+- **Goals are the centre,** so the library, the kinds (point, object, room, explore, inventory),
+  the result of a run and "not found" are part of the API (O13, O15, O24).
+- **The planner and its LLM are optional modules,** never in the path to STOP or the robot (O14).
+- **A home is a thing:** an id, a frame, objects with stable ids, rooms; owned by Mission Control
+  (O26).
+
+What the first round (O1 to O12) meant for the design (my reading, for the operator to confirm in
+the RFC):
 
 - **API first.** Everything the page does is an API call; the page, MCP, an agent and a future
   mobile app are equal clients (O11, O12). Nothing works only in the page.
@@ -134,6 +165,8 @@ Decided (D) or proposed only (P). Line numbers for RFC-0006 are given by section
 | C4 | Goal and mission history belongs to flotilla (FLOTILLA-ASKS) and the logbook (RFC-0007) | Goals are defined, run and followed in the app (O7) | Draw the line again: mission control keeps goals; flotilla, when connected, governs them |
 | C5 | First interfaces: page, MCP, Slack (RFC-0006 §3.1) | Page, full MCP, a remote API for a mobile app, an agent (O11, O12); Slack not mentioned | Ask whether Slack stays in the first version |
 | C6 | One driver at a time (RFC-0003) | `nxt-web` stays, so two apps can drive the NXT | A lock rule across apps |
+| C7 | Missions in words later (RFC-0004); robots collaborating on one goal deferred to phase 6 (RFC-0002 §3.9) | Both are requirements (O14, O16) | Planner as an optional module; a goal names several robots, built in steps |
+| C8 | Objects in Mission Control not in RFC-0016's first build | Wanted now (O24, O26) | Object and room goals, the home's map and naming in RFC-0014 |
 
 ## 4. What exists to build on
 
@@ -144,6 +177,10 @@ Decided (D) or proposed only (P). Line numbers for RFC-0006 are given by section
 | NXT web UI | HTTP JSON API: status, drive, stop, record, programs; records miniview runs | `nxt/src/nxt_lab/web.py`; :8000 |
 | miniview | Read-only API: runs, live stream (SSE), world/map streams, robot descriptions, `/watch` | `viewer/`; `viewer/CONTRACT.md`; :8070 |
 | Robot descriptions | duck, NXT shooterbot, EV3 Spike3r and Track3r, as links and joints | `robots/`, RFC-0011 |
+
+On the branch `explore-apartment` (not merged): the duck's semantic map, simulated camera, `--find`
+and `--inventory` (RFC-0016), and the kinds catalogue; on this branch, the `objects` and sighting
+records and the Observatory's drawing of them (ADR-0019).
 
 Missing: an API in front of the navigator, any goal store, any "is this robot online", any EV3
 driver or interface, the RFC-0003 interface for the NXT, any MCP or Slack code.
@@ -169,15 +206,25 @@ the e-stop (flotilla's freeze, the UI's STOP, both; RFC-0005 §4), where the NXT
 (RFC-0003 §4), how a mission spec is confirmed (RFC-0004 §4), the logbook's home (RFC-0007 §8), when
 to split mission control into its own repository and its licence (RFC-0006 §6).
 
+## 5.1 Decisions of 2026-11-18, and what stayed open
+
+Decided: A (revise RFC-0014 with object, room, explore and inventory goals), B (the home's map,
+O26), C (a landmark at 0.7 or more), D (`sighting`). Also answered since round 1: the viewer is
+named the Observatory, the navigator API is its own process, SQLite, no firing over MCP (O19 to
+O22). Open questions are the RFC's section 5.
+
 ## 6. Not covered by this list
 
-- **The EV3.** No requirement, driver or safety design exists in any doc (only its robot
-  descriptions). Its firmware and sensor protocol differ from the NXT's; it needs its own interface
-  and deadman before it can be driven from the app.
+- **The EV3.** Now a requirement (O2, O10, O16), but no driver or safety design exists in any doc
+  (only its robot descriptions). Its firmware and sensor protocol differ from the NXT's; it needs its
+  own interface and deadman before it can be driven from the app.
 - **The real duck.** Not owned yet; its link (ssh-forwarded sockets, then the navigator on the
-  robot) is in RFC-0002 §3.3 but untested.
-- **Collaboration.** What two robots doing one goal means (dividing a map, handing over, roles) is
-  not specified anywhere; RFC-0002 §3.9 defers multi-robot missions to phase 6.
+  robot) is in RFC-0002 §3.3 but untested. In a real home it must recognise where it is first (O26).
+- **Collaboration.** Now a requirement (O8, O10, O16). What two robots doing one goal means
+  beyond running it in parallel (dividing a map, handing over, roles) is not specified anywhere;
+  RFC-0014 §3.4.4 proposes `each`, `any` and `split`; RFC-0002 §3.9 defers shared maps to phase 6.
+- **VDA 5050 and Open-RMF.** The specs have not been read; RFC-0014's mapping table is from memory.
+- **Room extents.** Rooms have names, from the objects near the robot, and no regions.
 - **Not read** while gathering this: PRD-001 and UXS-001 (miniview), the review notes, RFC-0010,
   RFC-0012, most ADR bodies, flotilla's and eval-harness's own repositories.
 - **Not checked by running anything:** the endpoints above as described; whether `nxt-web` and the
