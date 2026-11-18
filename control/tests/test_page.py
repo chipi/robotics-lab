@@ -24,9 +24,9 @@ from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
 
-caps = copy.deepcopy(FAKE_FILE["capabilities"])
-caps["drive"] = {"max_vx": 2.0, "max_vyaw": 6.0, "deadman_s": 0.5}  # quick, so a sweep takes seconds, not a minute
-mc = MissionControl([RobotConfig(robot_file("fake-1", capabilities=caps, rates={"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0}))],
+fs = copy.deepcopy(FAKE_FILE["factsheet"])
+fs["physicalParameters"] = {"maximumSpeed": 2.0, "maximumAngularSpeed": 6.0}  # quick, so a sweep takes seconds, not a minute
+mc = MissionControl([RobotConfig(robot_file("fake-1", factsheet=fs, rates={"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0}))],
                     state_dir=tempfile.mkdtemp(prefix="mc-page-"))
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}"

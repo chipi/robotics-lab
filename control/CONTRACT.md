@@ -347,16 +347,19 @@ exploring first is a goal of its own.
 
 ## The NXT
 
-`adapter {"type": "nxt-web", "url": "http://127.0.0.1:8000"}` (`robots.nxt/nxt-1.json`) is the NXT behind
-`nxt-web`, which is the only process on the brick's link, so nxt-web is the robot's gate (RFC-0017):
-its lock, its STOP and its takeover list (`--takeover-names`) are the robot's, and the `takeover` and
-`lease_s` of the robot file do not apply to it. Mission Control is a client: `POST /robots/{id}/lock`
-takes nxt-web's lock in the client's name and returns the session of this API; drive is
-`/api/drive` with nxt-web's session, STOP is `/api/stop`, who holds the lock is `/api/lock`,
-polled at the state rate (a lease that ended at nxt-web, by its own page's STOP, expiry or takeover,
-ends the API's session with nxt-web's reason). `vx` and `vyaw` become the tracks in percent: both
-tracks at 100 is `max_vx` of the file's `drive`, the tracks 50 apart each way is `max_vyaw`. The
-state has `mode`, `velocity` (computed from the tracks), `tracks {left, right}`, `link`, `battery_mv`
+`adapter {"type": "nxt-web", "url": "http://127.0.0.1:8000", "full_speed_mps", "full_turn_rps"}`
+(`robots.nxt/nxt-1.json`) is the NXT behind `nxt-web`, which is the only process on the brick's link,
+so nxt-web is the robot's gate (RFC-0017): its lock, its STOP and its takeover list
+(`--takeover-names`) are the robot's, and the file's `control.takeover` and `control.lease_s` do not
+apply to it. Mission Control is a client: `POST /robots/{id}/lock` takes nxt-web's lock in the
+client's name and returns the session of this API; drive is `/api/drive` with nxt-web's session, STOP
+is `/api/stop`, who holds the lock is `/api/lock`, polled at the state rate (a lease that ended at
+nxt-web, by its own page's STOP, expiry or takeover, ends the API's session with nxt-web's reason).
+`vx` and `vyaw` become the tracks in percent: both tracks at 100 is `full_speed_mps`, the tracks 50
+apart each way is `full_turn_rps`. Those two are the factsheet's `maximumSpeed` and
+`maximumAngularSpeed` when the file has them; the NXT's speeds are not measured, so its factsheet
+has none and the file sets the two as assumed values (0.3 and 1.5). The state has `mode`, `velocity`
+(computed from the tracks), `tracks {left, right}`, `link`, `battery_mv`
 and no `pose`; `battery_pct` is null (the voltage to percent curve of the cells is not known).
 The NXT has no navigator, so a goal for it is a run in the state `refused` ("this robot has no
 navigator"), and it has no map or recogniser. It is reached through nxt-web only, never through a
@@ -364,12 +367,29 @@ device; nxt-web offline is the robot offline, and STOP is then accepted and not 
 
 ## Robot files
 
-JSON, one per robot, `<id>.json`. The format is provisional (RFC-0014 §5 question 21: the VDA 5050
-and Open-RMF specs are not read yet). Fields: `id`, `label`, `kind`, `adapter {type, call_timeout_s?}`,
-`capabilities {drive, sensors, recognisers, localisation, map, navigator, guardrails, skills,
-description}`, `guardrails` (the robot's own, each of them in `capabilities.guardrails`),
-`rates {state_hz, map_hz, max_state_hz}`, `lease_s`, `online_after_s`, `takeover [client names]`,
-`teams [names]`.
+JSON, one per robot, `<id>.json` (RFC-0014 §3.3.1; decided 2026-11-18 from
+`docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md`, VDA 5050 3.0.0 and Open-RMF read). A `factsheet` that is a
+subset of VDA's, with **VDA's names verbatim** (camelCase, SI units), and our own snake_case blocks
+beside it. An unknown field anywhere is an error naming it; a file of the first format says where
+the field went.
+
+| Field | What |
+| --- | --- |
+| `id`, `label`, `kind` | ours. `id` is lower case, digits and dashes (no `manufacturer` or `serialNumber` until a VDA robot is added); `kind` keys `robots/<kind>/` |
+| `adapter {type, call_timeout_s?, ...}` | ours: `fake`, `duck-sim`, `nxt-web`, and each one's options |
+| `factsheet.typeSpecification` | VDA: `seriesName`, `seriesDescription`, `mobileRobotKinematics` (`DIFFERENTIAL`, `OMNIDIRECTIONAL`, `THREE_WHEEL`, and **`LEGGED`, which is ours** and not in VDA), `localizationTypes` (VDA's list), `navigationTypes` (open) |
+| `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |
+| `factsheet.protocolFeatures.mobileRobotActions[]` | VDA: `actionType`, `actionScopes` (`INSTANT`, `NODE`, `EDGE`), `blockingTypes` (`NONE`, `SOFT`, `HARD`), `pauseAllowed`, `cancelAllowed`; **`irreversible` is ours** (RFC-0003 §2.3) |
+| `control {deadman_s, lease_s, takeover}` | ours: the deadman (default 0.5 s), the lease (10 to 30 s, default 20), the client names that may take a robot over (default none). VDA has no control lock |
+| `capabilities {sensors, recognisers, localisation, map, navigator, guardrails, skills, description}` | ours: VDA has no field for them |
+| `guardrails` | the robot's own, each of them in `capabilities.guardrails`. A `max_speed` of them may not be above `factsheet.physicalParameters.maximumSpeed`: the file does not load |
+| `rates {state_hz, map_hz, max_state_hz}`, `online_after_s`, `teams [names]` | ours |
+
+`GET /robots/{id}` returns `factsheet`, `control` and `capabilities`. The first format's
+`capabilities.drive {max_vx, max_vyaw, deadman_s}` is now `factsheet.physicalParameters.maximumSpeed`
+and `maximumAngularSpeed` and `control.deadman_s`; its top-level `lease_s` and `takeover` are
+`control.lease_s` and `control.takeover`. There is no VDA adapter.
+
 `state_hz` may not exceed `max_state_hz`, which is what the robot's interface allows. A call that
 does not answer within `adapter.call_timeout_s` is abandoned on its own thread and counts as an error;
 a late answer may still arrive, and the robot's deadman covers it.

@@ -30,9 +30,9 @@ def refusal(fn, *args, **kw):
 
 
 def slow(rid, speed, **over):
-    caps = copy.deepcopy(FAKE_FILE["capabilities"])
-    caps["drive"] = {"max_vx": speed, "max_vyaw": 1.5, "deadman_s": 0.5}
-    return robot_file(rid, capabilities=caps, teams=["pair"], **over)
+    fs = copy.deepcopy(FAKE_FILE["factsheet"])
+    fs["physicalParameters"] = {"maximumSpeed": speed, "maximumAngularSpeed": 1.5}
+    return robot_file(rid, factsheet=fs, teams=["pair"], **over)
 
 
 def boot(*files):

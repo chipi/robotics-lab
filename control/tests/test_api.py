@@ -18,7 +18,7 @@ from mission_control.goals import TERMINAL
 from mission_control.robots import RobotConfig
 
 clock = Clock()
-blind = robot_file("blind", capabilities={"drive": {"max_vx": 0.3, "max_vyaw": 1.0, "deadman_s": 0.5}, "guardrails": ["contact"]})
+blind = robot_file("blind", factsheet={"physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.0}}, capabilities={"guardrails": ["contact"]})
 mc = make_mc(clock, robot_file(), blind)
 run_for(mc, clock, 0.2)
 server = serve(mc, "127.0.0.1", 0)

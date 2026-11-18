@@ -223,7 +223,7 @@ def run_of(rid):
 
 check("the duck is online: robotd's stream, through the gate, is its state", wait_for(lambda: robot()["online"]), robot())
 # online is the first state; the pose follows the navigator's first fix, a moment later (CI's runner read between them)
-wait_for(lambda: (robot().get("status") or {}).get("pose") is not None)
+check("the duck has a pose in its state (the bound is long: the machine is loaded by the simulator streams)", wait_for(lambda: (robot().get("status") or {}).get("pose") is not None, 40.0))
 st = robot()["status"]
 check("its state is in the page's shape: pose in the site frame, mode, flags, battery from robot.health",
       st["pose"]["frame"] == "site" and st["mode"] == "idle" and st["flags"]["fall"] is False and st["battery_pct"] == 63.0 and st["link"] == "duck-gate", st)

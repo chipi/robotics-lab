@@ -1,7 +1,9 @@
 # Robot file format: proposal (RFC-0014 step 0)
 
 Status: decided 2026-11-18, all seven decisions as recommended (the operator: "All as
-recommended"). Written 2026-11-18; not built yet.
+recommended"). Written 2026-11-18; built the same day in `control/src/mission_control/robotfile.py`
+and `robots.py`, with `control/tests/test_robotfile.py` (the NXT's file keeps `takeover` empty:
+nxt-web's own list applies, and its speeds are `adapter.full_speed_mps` and `full_turn_rps`).
 Checked: VDA 5050 **3.0.0** (published 2026-03-18) and Open-RMF `rmf_ros2` **2.15.0**,
 `rmf_api_msgs` **0.7.1**, `rmf_demos` main (2026-11-13). Sources are listed at the end.
 

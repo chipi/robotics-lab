@@ -148,14 +148,23 @@ class NxtGate:
 
 
 class NxtAdapter:
-    """Robot file: {"type": "nxt-web", "url": "http://127.0.0.1:8000"}. The drive capability's max_vx and max_vyaw say what a full
-    track command is: a forward speed of max_vx is both tracks at 100, a turn of max_vyaw is the tracks 50 apart each way."""
+    """Robot file: {"type": "nxt-web", "url": "http://127.0.0.1:8000", "full_speed_mps": 0.3, "full_turn_rps": 1.5}. `full_speed_mps` and
+    `full_turn_rps` say what a full track command is: a forward speed of full_speed_mps is both tracks at 100, a turn of full_turn_rps is
+    the tracks 50 apart each way. They are the factsheet's maximumSpeed and maximumAngularSpeed when the file has those; the NXT's
+    speeds are not measured, so its file sets these two itself, as assumed values, and leaves the factsheet's limits out."""
 
-    def __init__(self, options: dict, capabilities: dict, clock=time.monotonic):
+    def __init__(self, cfg, clock=time.monotonic):
+        from .robots import ConfigError
+
+        options = cfg.adapter
+        limits = cfg.factsheet.get("physicalParameters", {})
         self.url = (options.get("url") or "http://127.0.0.1:8000").rstrip("/")
-        drive = capabilities.get("drive") or {}
-        self.max_vx = float(drive.get("max_vx") or 0.3)
-        self.max_vyaw = float(drive.get("max_vyaw") or 1.5)
+        self.max_vx = options.get("full_speed_mps") or limits.get("maximumSpeed")
+        self.max_vyaw = options.get("full_turn_rps") or limits.get("maximumAngularSpeed")
+        if not self.max_vx or not self.max_vyaw:
+            raise ConfigError(f"{cfg.id}: the nxt-web adapter needs full_speed_mps and full_turn_rps (or the factsheet's maximumSpeed and "
+                              "maximumAngularSpeed) to turn a speed into a track command")
+        self.max_vx, self.max_vyaw = float(self.max_vx), float(self.max_vyaw)
         self.clock = clock
         self._gate = None
 

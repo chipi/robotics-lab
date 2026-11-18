@@ -3,8 +3,18 @@
   "label": "Fake robot",
   "kind": "fake",
   "adapter": {"type": "fake", "call_timeout_s": 2.0},
+  "factsheet": {
+    "typeSpecification": {
+      "seriesName": "Fake robot",
+      "mobileRobotKinematics": "DIFFERENTIAL",
+      "localizationTypes": ["NATURAL"],
+      "navigationTypes": ["FREELY_NAVIGATING"]
+    },
+    "physicalParameters": {"maximumSpeed": 0.5, "maximumAngularSpeed": 1.5},
+    "protocolFeatures": {"mobileRobotActions": []}
+  },
+  "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": ["operator-laptop"]},
   "capabilities": {
-    "drive": {"max_vx": 0.5, "max_vyaw": 1.5, "deadman_s": 0.5},
     "sensors": [],
     "recognisers": [{"name": "fake-camera", "kinds": ["fridge", "sofa", "desk", "plant"], "frame": "site"}],
     "localisation": {"frame": "site", "how": "dock"},
@@ -18,6 +28,5 @@
     "description": "fake"
   },
   "guardrails": [{"name": "max_speed", "mps": 0.5}],
-  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
-  "takeover": ["operator-laptop"]
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}
 }

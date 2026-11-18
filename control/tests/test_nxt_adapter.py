@@ -93,7 +93,7 @@ try:
     check("its status is the brick's: idle tracks, the battery, the link, and no pose", wait(lambda: (robot()["status"] or {}).get("mode") == "idle")
           and robot()["status"]["tracks"] == {"left": 0, "right": 0} and robot()["status"]["battery_mv"] == 7800 and robot()["status"]["link"] == "fake"
           and "pose" not in robot()["status"], robot()["status"])
-    check("the robot file says what it is: no navigator, no map, drive only", r["capabilities"]["drive"]["max_vx"] == 0.3 and "navigator" not in r["capabilities"])
+    check("the robot file says what it is: no navigator, no map, drive only", "physicalParameters" not in r["factsheet"] and r["factsheet"]["typeSpecification"]["mobileRobotKinematics"] == "DIFFERENTIAL" and "navigator" not in r["capabilities"])
 
     # the lock is nxt-web's
     st, b = call("POST", "/robots/nxt-1/lock", {"client": "page"})

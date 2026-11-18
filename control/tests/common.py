@@ -39,8 +39,10 @@ FAKE_FILE = {
     "label": "Fake robot",
     "kind": "fake",
     "adapter": {"type": "fake"},
+    "factsheet": {"typeSpecification": {"seriesName": "Fake robot", "mobileRobotKinematics": "DIFFERENTIAL"},
+                  "physicalParameters": {"maximumSpeed": 0.5, "maximumAngularSpeed": 1.5}},
+    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": ["operator-laptop"]},
     "capabilities": {
-        "drive": {"max_vx": 0.5, "max_vyaw": 1.5, "deadman_s": 0.5},
         "sensors": [],
         "recognisers": [{"name": "fake-camera", "kinds": ["fridge", "sofa", "desk", "plant"], "frame": "site"}],
         "localisation": {"frame": "site", "how": "dock"},
@@ -52,7 +54,6 @@ FAKE_FILE = {
         "description": "fake",
     },
     "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
-    "takeover": ["operator-laptop"],
 }
 
 

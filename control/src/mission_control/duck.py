@@ -254,7 +254,8 @@ class DuckAdapter:
     "mapd_socket": "~/.cache/duck-sim/duck-a-map.sock", "observatory": "http://127.0.0.1:8070"}. `observatory` is where the
     goal runs' Watch links point (the Observatory's /watch/<run key>)."""
 
-    def __init__(self, options: dict, capabilities: dict, clock=time.monotonic):
+    def __init__(self, cfg, clock=time.monotonic):
+        options = cfg.adapter
         self.gate_socket = _addr(options.get("gate_socket", "~/.cache/duck-sim/duck-a-gate.sock"))
         self.nav_address = options.get("navigator", "127.0.0.1:8061")
         self.mapd_socket = _addr(options.get("mapd_socket", "~/.cache/duck-sim/duck-a-map.sock"))

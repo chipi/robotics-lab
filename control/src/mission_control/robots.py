@@ -1,15 +1,18 @@
 """Robots (RFC-0014 §3.3): robot files, one link per robot, the gate in front of it, the sessions of the
 clients that hold it.
 
-The robot file's format is PROVISIONAL (RFC-0014 §5 question 21: the VDA 5050 and Open-RMF specs are to
-be read first). It is JSON, one file per robot, `robots/<id>.json`:
+The robot file is JSON, one file per robot, `robots/<id>.json` (the format of RFC-0014 §3.3.1, decided in
+docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md): a `factsheet` that is a subset of VDA 5050 3.0.0's with VDA's names (robotfile.py),
+and our own snake_case blocks beside it:
 
     {"id": "fake-1", "label": "Fake robot", "kind": "fake",
      "adapter": {"type": "fake", "call_timeout_s": 2.0},
-     "capabilities": {drive, sensors, recognisers, localisation, map, navigator, guardrails, skills, description},
+     "factsheet": {"typeSpecification": {...}, "physicalParameters": {"maximumSpeed": 0.5, ...}, "protocolFeatures": {...}},
+     "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": ["operator-laptop"]},
+     "capabilities": {sensors, recognisers, localisation, map, navigator, guardrails, skills, description},
      "guardrails": [{"name": "max_speed", "mps": 0.4}],          # the robot's own, on every run (§3.4.8)
      "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
-     "lease_s": 20.0, "online_after_s": 2.0, "takeover": ["operator-laptop"]}
+     "online_after_s": 2.0, "teams": ["pair"]}
 """
 
 import json
@@ -22,11 +25,11 @@ from pathlib import Path
 
 from duck_lab.gate import Gate, GateError, JsonlLog
 
-from . import guardrails
+from . import guardrails, robotfile
 from .errors import ApiError, conflict, invalid
 
-CAPABILITY_KEYS = {"drive", "sensors", "recognisers", "localisation", "map", "navigator", "guardrails", "skills",
-                   "description"}
+CAPABILITY_KEYS = {"sensors", "recognisers", "localisation", "map", "navigator", "guardrails", "skills", "description"}
+MOVED = {"lease_s": "control.lease_s", "takeover": "control.takeover"}   # fields of the first format, with where they went
 DEFAULT_RATES = {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}  # §3.2.2
 MAX_SESSIONS = 128
 
@@ -39,10 +42,11 @@ class RobotConfig:
     def __init__(self, raw: dict):
         if not isinstance(raw, dict):
             raise ConfigError("a robot file is a JSON object")
-        extra = set(raw) - {"id", "label", "kind", "adapter", "capabilities", "guardrails", "rates", "lease_s",
-                            "online_after_s", "takeover", "teams"}
+        extra = set(raw) - {"id", "label", "kind", "adapter", "factsheet", "control", "capabilities", "guardrails", "rates",
+                            "online_after_s", "teams"}
         if extra:
-            raise ConfigError(f"unknown fields {sorted(extra)}")
+            hint = "".join(f"; {k} moved to {MOVED[k]}" for k in sorted(extra) if k in MOVED)
+            raise ConfigError(f"unknown fields {sorted(extra)}{hint}")
         self.id = raw.get("id")
         if not isinstance(self.id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.id):
             raise ConfigError(f"id must be lower case letters, digits and dashes, got {self.id!r}")
@@ -54,12 +58,25 @@ class RobotConfig:
         if not isinstance(self.adapter, dict) or not isinstance(self.adapter.get("type"), str):
             raise ConfigError(f"{self.id}: adapter needs a type")
         caps = raw.get("capabilities", {})
+        if isinstance(caps, dict) and "drive" in caps:
+            raise ConfigError(f"{self.id}: capabilities.drive moved: max_vx and max_vyaw are factsheet.physicalParameters.maximumSpeed "
+                              "and maximumAngularSpeed, deadman_s is control.deadman_s")
         if not isinstance(caps, dict) or set(caps) - CAPABILITY_KEYS:
             raise ConfigError(f"{self.id}: capabilities keys are {sorted(CAPABILITY_KEYS)}")
         self.capabilities = caps
         try:
+            self.factsheet = robotfile.parse_factsheet(raw.get("factsheet"))
+            control = robotfile.parse_control(raw.get("control"))
+        except robotfile.FormatError as exc:
+            raise ConfigError(f"{self.id}: {exc}") from None
+        self.control = control
+        try:
             self.guardrails = guardrails.normalise_list(raw.get("guardrails"))
         except ApiError as exc:
+            raise ConfigError(f"{self.id}: {exc}") from None
+        try:
+            robotfile.check_max_speed(self.guardrails, self.factsheet)
+        except robotfile.FormatError as exc:
             raise ConfigError(f"{self.id}: {exc}") from None
         can = set(caps.get("guardrails", []))
         for g in self.guardrails:
@@ -72,16 +89,12 @@ class RobotConfig:
         if rates["state_hz"] > rates["max_state_hz"]:
             raise ConfigError(f"{self.id}: state_hz {rates['state_hz']} is above the robot's limit {rates['max_state_hz']}")
         self.rates = rates
-        self.lease_s = float(raw.get("lease_s", 20.0))
-        if not 10.0 <= self.lease_s <= 30.0:
-            raise ConfigError(f"{self.id}: lease_s is 10 to 30 s (RFC-0017 §3.3)")
+        self.lease_s = control["lease_s"]
+        self.takeover = control["takeover"]
         self.online_after_s = float(raw.get("online_after_s", max(2.0, 3.0 / rates["state_hz"])))
-        self.takeover = list(raw.get("takeover", []))
         self.teams = list(raw.get("teams", []))
         if not all(isinstance(t, str) and t for t in self.teams):
             raise ConfigError(f"{self.id}: teams is a list of team names")
-        if not all(isinstance(n, str) for n in self.takeover):
-            raise ConfigError(f"{self.id}: takeover is a list of client names")
         self.call_timeout_s = self.adapter.get("call_timeout_s")
 
 
@@ -334,11 +347,11 @@ def make_adapter(cfg: RobotConfig, clock):
     RFC-0014 step 2); nxt-web (the NXT behind nxt-web's HTTP API and lock, step 4)."""
     if cfg.adapter["type"] == "fake":
         from .fake import FakeAdapter
-        return FakeAdapter(cfg.adapter, cfg.capabilities, clock)
+        return FakeAdapter(cfg, clock)
     if cfg.adapter["type"] == "duck-sim":
         from .duck import DuckAdapter
-        return DuckAdapter(cfg.adapter, cfg.capabilities, clock)
+        return DuckAdapter(cfg, clock)
     if cfg.adapter["type"] == "nxt-web":
         from .nxt import NxtAdapter
-        return NxtAdapter(cfg.adapter, cfg.capabilities, clock)
+        return NxtAdapter(cfg, clock)
     raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim, nxt-web)")

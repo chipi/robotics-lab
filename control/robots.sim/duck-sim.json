@@ -9,8 +9,18 @@
     "mapd_socket": "~/.cache/duck-sim/duck-a-map.sock",
     "observatory": "http://127.0.0.1:8070"
   },
+  "factsheet": {
+    "typeSpecification": {
+      "seriesName": "Microduck",
+      "mobileRobotKinematics": "LEGGED",
+      "localizationTypes": ["NATURAL"],
+      "navigationTypes": ["FREELY_NAVIGATING"]
+    },
+    "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5},
+    "protocolFeatures": {"mobileRobotActions": []}
+  },
+  "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
   "capabilities": {
-    "drive": {"max_vx": 0.3, "max_vyaw": 1.5, "deadman_s": 0.5},
     "sensors": [],
     "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed", "toilet", "bathtub", "desk"], "frame": "site"}],
     "localisation": {"frame": "site", "how": "dock"},
@@ -23,6 +33,5 @@
     "skills": [],
     "description": "duck"
   },
-  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
-  "takeover": []
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}
 }

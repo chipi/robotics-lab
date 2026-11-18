@@ -117,7 +117,8 @@ class MissionControl:
                 "lock": rt.gate.who(), "last_seen_age_s": self._age(rt)}
 
     def robot_view(self, rt: RobotRuntime) -> dict:
-        return {**self.robot_brief(rt), "capabilities": rt.cfg.capabilities, "status": rt.status,
+        return {**self.robot_brief(rt), "factsheet": rt.cfg.factsheet, "control": rt.cfg.control,
+                "capabilities": rt.cfg.capabilities, "status": rt.status,
                 "guardrails": rt.cfg.guardrails, "rates": rt.cfg.rates, "site": self.sites.robot_site(rt.cfg.id),
                 "goal_run": rt.active.id if rt.active else None}
 

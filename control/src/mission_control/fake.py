@@ -647,12 +647,14 @@ class FakeNavigator:
 class FakeAdapter:
     """What Mission Control needs of any robot's adapter (RFC-0014 §3.3.1): `call` (the robot's own
     interface), `make_navigator(gate, clock)`, `map()` and `sighting()`. The robot file's
-    adapter options: {"type": "fake", "world": {...}} and the capabilities' drive limits."""
+    adapter options: {"type": "fake", "world": {...}}; the limits are the factsheet's maximumSpeed and maximumAngularSpeed and the
+    control block's deadman_s."""
 
-    def __init__(self, options: dict, capabilities: dict, clock=time.monotonic):
-        drive = capabilities.get("drive", {})
-        self.robot = FakeRobot(options.get("world"), clock=clock, max_vx=drive.get("max_vx", 0.5),
-                               max_vyaw=drive.get("max_vyaw", 1.5), deadman_s=drive.get("deadman_s", 0.5))
+    def __init__(self, cfg, clock=time.monotonic):
+        options = cfg.adapter
+        limits = cfg.factsheet.get("physicalParameters", {})
+        self.robot = FakeRobot(options.get("world"), clock=clock, max_vx=limits.get("maximumSpeed", 0.5),
+                               max_vyaw=limits.get("maximumAngularSpeed", 1.5), deadman_s=cfg.control["deadman_s"])
         self.call = self.robot
 
     def make_navigator(self, gate: Gate, clock=time.monotonic) -> FakeNavigator:

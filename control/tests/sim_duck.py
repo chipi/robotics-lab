@@ -88,14 +88,16 @@ FILE = {
     "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
     "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
                 "mapd_socket": str(SIM / "duck-a-map.sock"), "observatory": "http://127.0.0.1:8070"},
+    "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED"},
+                  "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}},
+    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
     "capabilities": {
-        "drive": {"max_vx": 0.3, "max_vyaw": 1.5, "deadman_s": 0.5}, "sensors": [],
+        "sensors": [],
         "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed"], "frame": "site"}],
         "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
         "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
         "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"], "skills": [], "description": "the simulated duck"},
     "rates": {"state_hz": 5.0, "map_hz": 1.0, "max_state_hz": 10.0},
-    "takeover": [],
 }
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)

@@ -45,7 +45,7 @@ for fn, args, code in ((tokens.revoke, (tid,), 409), (tokens.revoke, (99,), 404)
 
 # --- the API, with tokens required ----------------------------------------------------------------------------------------
 clock = Clock()
-mc = make_mc(clock, robot_file("fake-1"), robot_file("fake-2", takeover=["laptop"]))
+mc = make_mc(clock, robot_file("fake-1"), robot_file("fake-2", control={"deadman_s": 0.5, "lease_s": 20.0, "takeover": ["laptop"]}))
 run_for(mc, clock, 0.3)
 _, T_PHONE = mc.tokens.create("phone")
 _, T_LAPTOP = mc.tokens.create("laptop")

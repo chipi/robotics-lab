@@ -19,8 +19,12 @@ run, `viewer/CONTRACT.md`), the guardrails enforced in the real navigator with t
 relayed per goal run (3d8ac35, O17), step 5 and 6 (1a13fa0: one goal on several robots with `share`
 each or any; goals in words by a phrase matcher, with an optional LLM planner that is off unless
 `planner.json` exists and has never been called against a real endpoint) and step 7 (c1339e1:
-per-client tokens, off unless `--require-tokens`). Not built: steps 0, 4, 8 and 10 to 12, and
-`share: split`. The container files are written and not built.
+per-client tokens, off unless `--require-tokens`). Then the containers (f010f44: both images built,
+run together from the root compose file, both health checks and one point goal on the fake robot
+through the containerised Mission Control checked on 2026-11-18, memory capped, `make stack-up`),
+step 4 (2049e7c: the NXT adapter over nxt-web's lock, tested against `nxt-web --fake` only; 2f878d7:
+nxt-web's own page takes the lock and a command with no lease is refused) and step 0 (the robot
+file's format of §3.3.1, decided 2026-11-18). Not built: steps 8 and 10 to 12, and `share: split`.
 **Builds on:** [RFC-0006](RFC-0006-mission-control.md) (the vision, superseded in part, §2.1),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
 [RFC-0002](RFC-0002-robot-brain.md) §3.9 to §3.10 (several robots, the brain's API),
@@ -222,10 +226,33 @@ carries a position names its `frame`.
 
 A robot has an id (`duck-sim`, `nxt-1`), a label, a kind, and an adapter. Robots are configured by
 files (the operator, 2026-11-17): the body as a URDF (RFC-0011) and a small file of our own with the
-connection, the capabilities (§3.3.2) and the robot's task kinds, which borrows the field names of
-the VDA 5050 factsheet and of Open-RMF's task kinds, so a bridge to either stays easy (§3.12). The
-file's format is not fixed here: the specs themselves are to be read first (§5, question 21). There
-is no discovery in v1; the registry is the set of files the operator edits.
+connection, the capabilities (§3.3.2) and the robot's task kinds. There is no discovery in v1; the
+registry is the set of files the operator edits.
+
+**The file's format** is decided (2026-11-18, the operator: "All as recommended", after the specs
+were read: `docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md`). JSON, one file per robot, built in
+`control/src/mission_control/robots.py` and `robotfile.py`, described in `control/CONTRACT.md`:
+
+- **`factsheet`** is a subset of VDA 5050 3.0.0's factsheet with **VDA's names verbatim**
+  (camelCase, SI units), so a real VDA robot's factsheet can fill it by copying:
+  `typeSpecification` (`seriesName`, `mobileRobotKinematics`, `localizationTypes`,
+  `navigationTypes`), `physicalParameters` (`maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s],
+  `maximumAcceleration`, `maximumDeceleration`, `width`, `length`), `protocolFeatures`
+  (`mobileRobotActions`: `actionType`, `actionScopes`, `blockingTypes`, `pauseAllowed`,
+  `cancelAllowed`). `maximumSpeed` and `maximumAngularSpeed` replace the first format's
+  `drive.max_vx` and `max_vyaw`. A value that is not measured is left out, not guessed.
+- **Ours, beside it, in snake_case:** `id`, `label`, `kind`, `adapter`, `control` (`deadman_s`,
+  `lease_s`, `takeover`: the lock is ours, RFC-0017; VDA has none), `capabilities` (`sensors`,
+  `recognisers`, `localisation`, `map`, `navigator`, `guardrails`, `skills`, `description`: VDA has
+  no field for them), `guardrails`, `rates`, `online_after_s`, `teams`.
+- **Two values inside the factsheet are ours, and the contract says so:** the kinematics `LEGGED`
+  for the duck (VDA's enum is extensible and has no legs) and an action's `irreversible`.
+- **The robot's `max_speed` guardrail may never be above `factsheet.physicalParameters.maximumSpeed`:**
+  the guardrail is the limit applied, the factsheet is what the robot can do. A file that breaks it
+  does not load.
+- **`id` stays ours** (lower case, digits, dashes); `manufacturer` and `serialNumber` are added only
+  when a VDA robot is. **No VDA adapter is built.** The field names are borrowed so that one would be
+  a copy, not a translation.
 
 Each robot gets **one connection, its own task, its own timeouts**: a slow or dropped robot is
 marked `online: false` and stays that way until it answers; it never delays another robot. Commands
@@ -234,12 +261,13 @@ bound), not a flag the adapter sets.
 
 #### 3.3.2 Capabilities as data
 
-Each adapter reports a `capabilities` object, and the page and the MCP tools offer only what is
-there. Proposed fields (the first slice settles the schema and writes it in the contract):
+Each robot has a `capabilities` object, and the page and the MCP tools offer only what is there.
+What VDA has a field for (speed, size, kinematics, localisation type, actions) is in the robot
+file's `factsheet` (§3.3.1), and the deadman and the lock's settings are in `control`; the fields
+below are the ones VDA has none for:
 
 | Field | Example |
 | --- | --- |
-| `drive` | `{max_vx, max_vyaw, deadman_s}`: speeds and the deadman the adapter enforces |
 | `sensors` | `[{name, kind: "tof8x8" \| "ultrasonic" \| "colour" \| ..., frame}]` |
 | `recognisers` | `[{name, kinds, frame}]`: what can say "that is a fridge": a camera (simulated now, a video detector later), the kinds it knows (from the catalogue), the frame its detections are in. Absent or empty on a robot that has none; the NXT and the EV3 may have none |
 | `localisation` | `{frame: "site" \| "run", how: "dock" \| "landmarks" \| ...}`: whether the robot's positions are in the site frame, and how it knows. The simulated duck: home, by the dock |
@@ -740,28 +768,33 @@ How much of the loop appears in Mission Control's page is open (§5, question 24
 
 The operator's long-term goal is better support for VDA 5050-type robots, so the design leans
 toward VDA 5050 from the start: its terms where they fit (factsheet, actions, state), and room for
-a VDA 5050 adapter. No single standard covers capabilities. **This table is unverified: the specs
-have not been read; it is from memory and is to be checked before the robot file's format is
-fixed** (§5, question 21).
+a VDA 5050 adapter. No single standard covers capabilities. **The table was checked on 2026-11-18**
+against VDA 5050 **3.0.0** (published 2026-03-18) and Open-RMF `rmf_ros2` 2.15.0, `rmf_api_msgs`
+0.7.1 (`docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md` has the row-by-row verdicts and sources): ten rows
+confirmed (some only as a design, or in part), and **three corrected**, below. Not read: VDA's JSON
+schemas, Open-RMF's navigation graph format, how a fleet adapter bids for a task.
 
 | Mission Control | VDA 5050 | Open-RMF |
 | --- | --- | --- |
-| robot file: capabilities, connection | the factsheet (type, physical parameters, protocol features, supported actions) | fleet configuration: the fleet adapter's settings |
-| robot online | the connection topic (online, offline, connection broken) | fleet state |
-| `point` goal | an order with one node: a position with a map id | `go_to_place` to a place on the nav graph |
-| `go_to_object`, "go to the fridge" | resolved by Mission Control to an approach pose, then an order with one node; works if the site frame is the VDA `mapId` | `go_to_place` where objects and rooms are named places on the graph |
-| `go_to_area` | a node at a point inside the area | `go_to_place` with the area's name |
+| robot file: capabilities, connection | the factsheet (type, physical parameters, protocol features, supported actions): the robot file's `factsheet` block borrows its names (§3.3.1) | fleet configuration: the fleet adapter's settings; not a robot description |
+| robot online | the connection topic (online, offline, connection broken, hibernating) | fleet state: `robot_state.status` has `offline` |
+| `point` goal | **corrected:** an order of two nodes and one edge (the first node is where the robot already is and is not reported, 6.1.1), or the temporary start node of 6.1.3.1; not one node | **corrected:** `go_to_place` is an event (an activity), not a task; a single trip is a `compose` task with one `go_to_place` phase, to a place on the nav graph |
+| `go_to_object`, "go to the fridge" | resolved by Mission Control to an approach pose, then an order as for `point`; works if the site frame is the VDA `mapId`. Neither spec has objects or rooms | the same `compose` task, where objects and rooms are named places on the graph |
+| `go_to_area` | a node at a point inside the area (VDA's zones are geometric; nothing more was found in 3.0.0) | the same task with the area's name; Open-RMF also has a `zone` task, not read in depth |
 | patrol (several places) | an order with several nodes | `patrol`: visit places |
 | `explore`, `inventory` | custom actions declared in the factsheet's supported actions | custom task kinds |
 | goal run state | the state message: order, node and action states, errors, battery, operating mode | task state |
 | progress and decisions | the state's action states, plus Mission Control's own events | task logs |
-| STOP | goes straight to the robot first; the VDA instant action for stop or pause is a second path, not the first | not used; the same rule |
+| STOP | goes straight to the robot first, for both. **Corrected:** VDA has no stop action: it has `cancelOrder` and `startPause`/`stopPause` (every robot must support them) and reports an emergency stop in `safetyState.activeEmergencyStop` (MANUAL, REMOTE, NONE) | **corrected:** not "not used": the fleet adapter has a `stop()`, and the API has `interrupt_task` and `kill_task` |
 | a team goal | one order per robot | task assignment by the fleet adapter |
 | the site's objects and areas | named places that Mission Control resolves before ordering | places on the nav graph |
 
-If this holds, a VDA 5050 robot joins by an adapter that reads its factsheet into `capabilities`
-and turns a goal into orders; the object and area goals work for it because Mission Control, not
-the robot, resolves places to poses.
+A VDA 5050 robot would join by an adapter that reads its factsheet (into the robot file's
+`factsheet`, by copying) and turns a goal into orders. That holds for speed, size, kinematics,
+localisation and actions; it does **not** hold for `recognisers`, `map`, `goal_kinds` or
+`guardrails`, which the factsheet has no field for, so the operator writes those by hand. The
+object and area goals work for such a robot because Mission Control, not the robot, resolves places
+to poses. No VDA adapter is built (§3.3.1).
 
 ### 3.13 Containers: run it anywhere
 
@@ -798,6 +831,7 @@ for SSE under concurrency; if it does not, a framework would be a dependency to 
 assumed). Mission Control ships as a container image from its first slice (§3.13).
 
 0. **Read the VDA 5050 and Open-RMF specs**, then fix the robot file's format (§3.3.1, §3.12).
+   Done 2026-11-18.
 1. **A first slice that is useful.** The API contract (§3.2) and its tests; the fake robot with its
    fake site; the registry from robot files; the page with the robot list (online, status, lock), a
    map for a robot that has one, the goal library with folders and ad-hoc runs, a point goal set by
@@ -844,9 +878,9 @@ revision 2, "I agree with all" of the proposed answers below, with one correctio
 the terms **site** and **area** in place of "home" and "room".
 
 The robot file (agreed "for now", 2026-11-17): the body as URDF (RFC-0011); capabilities and the
-connection in a small file of our own that borrows the VDA 5050 factsheet's fields and Open-RMF's
-task kinds, so a bridge to either stays easy. The design leans toward VDA 5050 from the start. The
-specs themselves are to be read before the format is fixed (question 21).
+connection in a small file of our own with a `factsheet` block that borrows VDA 5050's names
+(§3.3.1). The design leans toward VDA 5050 from the start. The specs were read and the format
+decided on 2026-11-18 (question 21).
 
 Only question 3's open part and the questions marked **open** remain; the rest are answered and
 kept to record where each answer went.
@@ -905,8 +939,11 @@ kept to record where each answer went.
     library, on the map the robot built (§3.5.3). Nothing is derived from objects or walls.
 20. **A link back from the Observatory to the goal run.** Answered: yes, a field in the run's
     metadata (the Observatory's contract changes) (§3.11).
-21. **The robot file's format.** Answered: after the VDA 5050 and Open-RMF specs are read; the
-    §3.12 table is unverified until then.
+21. **The robot file's format.** Answered (2026-11-18, the operator: "All as recommended"): the
+    specs were read; JSON; a `factsheet` block with VDA 5050 3.0.0's names verbatim (camelCase),
+    snake_case blocks of ours beside it; `LEGGED` for the duck, marked as ours; a `max_speed`
+    guardrail never above `maximumSpeed`; `id` kept; no VDA adapter (§3.3.1). The §3.12 table is
+    checked, with three corrections (point goal, `go_to_place`, STOP).
 22. **How the dock pose is recorded.** Answered: the first run at a site sets the site frame from
     where it starts (the dock in the simulator) (§3.5.1). **Open, smaller:** what happens if the
     simulator's dock moves.
@@ -1073,8 +1110,9 @@ kept to record where each answer went.
     an offline robot is an error (503) and creates no run (§3.2.1's two rules, read together).
   - **`explore`'s parameters** are `{area}` or `{site: true}`; `site` is the run's site, which is the
     robot's site (`PUT /robots/{id}/site`, an addition to §3.2.1) unless the run names one.
-  - **The robot file** is JSON for now (question 21 stays open), and the slice depends on the duck
-    package for the gate library (a path source, as nxt-web depends on the viewer package), which pulls
+  - **The robot file** was JSON in a first format (since replaced, §3.3.1), and the slice depends on
+    the duck package for the gate library (a path source, as nxt-web depends on the viewer package),
+    which pulls
     `mcap` and `miniview` into Mission Control's environment.
   - **The fake robot's navigator** goes in straight lines, so a no-go area on the way is refused ("no
     path that avoids it") and its waypoints inside one are skipped; it confirms an object at two
