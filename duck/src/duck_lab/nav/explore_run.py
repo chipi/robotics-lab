@@ -21,6 +21,7 @@ from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.nav.run import CALIBRATION
 from duck_lab.world_model.objects import load_kinds
+from duck_lab.world_model.site import SITES, Site
 from duck_lab.nav.sim_camera import SimCamera
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
@@ -259,6 +260,8 @@ def main() -> None:
     ap.add_argument("--inventory", action="store_true", help="the goal is to find all objects: explore, then say what "
                     "is where (inventory.json is written whenever the objects are on)")
     ap.add_argument("--no-objects", action="store_true", help="no simulated camera and no semantic map")
+    ap.add_argument("--site", help="a site's id: start from its map, save it back at the end (duck-site create first)")
+    ap.add_argument("--sites", type=Path, default=SITES, help=f"the sites' folder (default {SITES})")
     ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
     add_args(ap)
     args = ap.parse_args()
@@ -283,9 +286,17 @@ def main() -> None:
             nav.survey()
         (args.out / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": nav.body.pose(),
                                                           "scale": nav.scale}))
+        site = None
         if not args.no_objects:
             cal = json.loads((CALIBRATION / "sim.json").read_text()).get("camera", {})
-            nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs)
+            if args.site:
+                # the site's map from earlier runs: its objects are known before they are seen again (the run starts at
+                # the dock, the site frame, so its map frame is the site's; RFC-0016 rev. 3)
+                site = Site.load(args.sites, args.site, load_kinds())
+                nav.record(event="site", id=site.sid, name=site.name, kind=site.kind,
+                           objects=len(site.semantic.objects))
+            nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs,
+                               semantic=site.semantic if site else None)
         explorer = Explorer(nav, args.out)
         explorer.find = args.find
         result = explorer.run(args.minutes)
@@ -304,6 +315,10 @@ def main() -> None:
             if args.inventory:
                 print(f"INVENTORY {inventory['objects']} objects: " + "; ".join(
                     f"{room}: {', '.join(o['kind'] for o in objs)}" for room, objs in inventory["rooms"].items()))
+            if site is not None:
+                with nav._sem_lock:
+                    site.save()       # the run worked on the site's own map: its ids stay, the new objects join
+                print(f"SITE {site.sid}: {len(site.semantic.objects)} objects saved to {site.folder}")
         if runlog:
             runlog.finish()
 

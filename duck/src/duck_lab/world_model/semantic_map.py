@@ -61,6 +61,9 @@ class Tracked:
     confidence: float = 0.0        # the best a recogniser was about it
     sources: list = field(default_factory=list)
     evidence: list = field(default_factory=list)   # a few of the recognisers' evidence (frames), newest last
+    label: str | None = None       # a name the operator gave it ("my desk"; RFC-0016 rev. 3)
+    named_by: str | None = None
+    pinned: bool = False           # named by hand: never merged away or forgotten by a recogniser
 
     @property
     def confirmed(self) -> bool:
@@ -71,7 +74,7 @@ class Tracked:
                 "confirmed": self.confirmed, "landmark": self.props.get("landmark", 0.0),
                 "permanence": self.props.get("permanence"), "first_t": round(self.first_t, 1),
                 "last_t": round(self.last_t, 1), "confidence": round(self.confidence, 2), "sources": self.sources,
-                "evidence": self.evidence,
+                "evidence": self.evidence, "label": self.label, "named_by": self.named_by, "pinned": self.pinned,
                 "parts": [[round(v, 3) for v in (q.x, q.y, q.hx, q.hy, q.yaw, q.z0, q.z1)] for q in self.parts]}
 
 
@@ -95,11 +98,31 @@ def wall_between(grid: dict, a: tuple, b: tuple) -> bool:
 
 
 class SemanticMap:
-    def __init__(self, kinds: dict):
+    def __init__(self, kinds: dict, site_kind: str | None = None):
         self.kinds = kinds
+        self.site_kind = site_kind      # a site's kind may change a kind's area hints (kinds.json "rooms_by_site")
         self.objects: list = []
         self._next = {}
         self._room, self._lead, self._lead_n = None, None, 0
+
+    def new_id(self, kind: str) -> str:
+        k = self._next.get(kind, 0) + 1
+        self._next[kind] = k
+        return f"{kind}_{k}"
+
+    def kind_of(self, name: str) -> str | None:
+        """The catalogue's kind for a name: the kind itself or one of its aliases ("refrigerator" -> fridge)."""
+        n = name.strip().lower().replace(" ", "_")
+        if n in self.kinds:
+            return n
+        return next((k for k, v in self.kinds.items() if n in [a.lower().replace(" ", "_") for a in v.get("aliases", [])]),
+                    None)
+
+    def hints(self, kind: str) -> dict:
+        """A kind's area hints at this site: its hints for the site's kind when the catalogue has them, else the general
+        ones (a fridge says kitchen in a home, break room in an office)."""
+        props = self.kinds.get(kind, {})
+        return props.get("rooms_by_site", {}).get(self.site_kind, props.get("rooms", {}))
 
     def integrate(self, detections: list, pose: tuple, t: float = 0.0) -> list:
         """Place each detection with the duck's pose (map frame) and track it. Returns the changes, as
@@ -120,9 +143,7 @@ class SemanticMap:
                 if o.confirmed and not was:
                     changes.append(("confirmed", o))
             else:
-                k = self._next.get(d.kind, 0) + 1
-                self._next[d.kind] = k
-                o = Tracked(f"{d.kind}_{k}", d.kind, cx, cy, [part], 1, t, t, self.kinds.get(d.kind, {}))
+                o = Tracked(self.new_id(d.kind), d.kind, cx, cy, [part], 1, t, t, self.kinds.get(d.kind, {}))
                 self.objects.append(o)
                 changes.append(("new", o))
             o.confidence = max(o.confidence, d.confidence)
@@ -140,7 +161,7 @@ class SemanticMap:
         for o in self.confirmed():
             room = next(iter(self.votes((o.x, o.y), grid)), None)
             rooms.setdefault(room or "unknown", []).append(
-                {"id": o.oid, "kind": o.kind, "x": round(o.x, 2), "y": round(o.y, 2), "sightings": o.n,
+                {"id": o.oid, "kind": o.kind, "label": o.label, "x": round(o.x, 2), "y": round(o.y, 2), "sightings": o.n,
                  "confidence": round(o.confidence, 2), "sources": o.sources, "landmark": o.props.get("landmark", 0.0),
                  "first_t": round(o.first_t, 1), "evidence": o.evidence})
         return {"objects": sum(len(v) for v in rooms.values()), "rooms": rooms}
@@ -148,9 +169,15 @@ class SemanticMap:
     def confirmed(self) -> list:
         return [o for o in self.objects if o.confirmed]
 
-    def find(self, kind: str, pose: tuple = None):
-        """The confirmed object of this kind nearest the pose (else the most recently seen), None when none is known."""
-        of = [o for o in self.confirmed() if o.kind == kind]
+    def find(self, name: str, pose: tuple = None):
+        """The confirmed object a goal names — an id, a label the operator gave ("my desk"), or a kind or one of its
+        aliases ("refrigerator") — the nearest to the pose (else the most recently seen); None when none is known."""
+        by_id = [o for o in self.confirmed() if o.oid == name]
+        if by_id:
+            return by_id[0]
+        labelled = [o for o in self.confirmed() if o.label and o.label.lower() == name.strip().lower()]
+        kind = self.kind_of(name)
+        of = labelled or [o for o in self.confirmed() if o.kind == kind]
         if not of:
             return None
         if pose is None:
@@ -165,7 +192,7 @@ class SemanticMap:
             d = math.dist((o.x, o.y), pose[:2])
             if d > radius_m or wall_between(grid, pose[:2], (o.x, o.y)):
                 continue
-            for room, w in o.props.get("rooms", {}).items():
+            for room, w in self.hints(o.kind).items():
                 votes[room] = votes.get(room, 0.0) + w / (1.0 + d) ** 2
         return {k: round(v, 3) for k, v in sorted(votes.items(), key=lambda kv: -kv[1])}
 
@@ -235,13 +262,13 @@ class SemanticMap:
         return {"objects": [o.summary() for o in self.objects]}
 
     @classmethod
-    def from_json(cls, data: dict, kinds: dict) -> "SemanticMap":
-        m = cls(kinds)
+    def from_json(cls, data: dict, kinds: dict, site_kind: str | None = None) -> "SemanticMap":
+        m = cls(kinds, site_kind)
         for s in data["objects"]:
             parts = [Part(*p) for p in s["parts"]]
             o = Tracked(s["id"], s["kind"], s["x"], s["y"], parts, s["n"], s.get("first_t", 0.0), s.get("last_t", 0.0),
                         kinds.get(s["kind"], {}), s.get("confidence", 0.0), list(s.get("sources", [])),
-                        list(s.get("evidence", [])))
+                        list(s.get("evidence", [])), s.get("label"), s.get("named_by"), bool(s.get("pinned")))
             m.objects.append(o)
             k = int(s["id"].rsplit("_", 1)[1])
             m._next[s["kind"]] = max(m._next.get(s["kind"], 0), k)

@@ -990,14 +990,14 @@ class Navigator:
         return {"status": "timeout", "time_s": timeout_s, "reflex_stops": reflex_stops,
                 "pose": [round(v, 3) for v in self.loc.pose()]}
 
-    def enable_objects(self, camera, kinds: dict, costs: bool = False) -> None:
+    def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None) -> None:
         """Objects (RFC-0016): every camera period, what the camera recognises joins the semantic map, placed with the
         belief taken right after the camera's truth (50 ms apart at most: 1.5 cm walking, under the camera's noise); a
         "semantic" event when an object is new or confirmed, a "room" event when the room the objects say the duck is in
         changes (mapd's last grid decides what is in sight). costs: the confirmed objects' parts join the cost map too
         (semantic_points) — off by default: the depth sensor already sees them, and a drifted copy beside the fresh
         points closed passages and fed "no room to turn" (the advisor's review; RFC-0016 §5, to be measured)."""
-        self.semantic = SemanticMap(kinds)
+        self.semantic = semantic if semantic is not None else SemanticMap(kinds)     # a site's map, or a fresh one
         self.object_costs = costs
         period = camera.cfg["period_s"]
 
