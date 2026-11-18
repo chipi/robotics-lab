@@ -5,11 +5,12 @@ runs as a script).
 
 The job's `semantic` part (miniview.video.track) gives the geometry in the track's frame (the world, or the robot's map when the run
 has no truth): `objects` snapshots {t, items: [{id, kind, confirmed, landmark, parts: [[x, y, hx, hy, yaw, z0, z1]]}]}, and per
-frame `hud` {sees, room, objects} for the lines, `obj_i` the snapshot in force, `look` the current look.
+frame `hud` {sees, room, objects} for the lines, `obj_i` the snapshot in force, `sighting` the current sighting.
 """
 
 import math
 
+LANDMARK_MIN = 0.7          # an object is a landmark from this landmark value on (the operator, 2026-11-18); the pages' is `LANDMARK_MIN` in web/shell/semantic.js
 CONFIRMED_RGB, UNCONFIRMED_RGB, LANDMARK_RGB, SEEN_RGB, WEDGE_RGB = (90, 200, 120), (170, 170, 180), (255, 190, 40), (255, 90, 200), (80, 160, 255)
 
 
@@ -21,7 +22,7 @@ def hud_lines(hud: dict, cols: int) -> list:
     out = []
     sees = hud.get("sees")
     if sees is None:
-        out.append(("SEES  no camera look yet", (200, 200, 200)))
+        out.append(("SEES  no sighting yet", (200, 200, 200)))
     elif not sees:
         out.append(("SEES  nothing in view", (200, 200, 200)))
     else:
@@ -110,16 +111,16 @@ def wedge(pose, hfov_deg: float, range_m: float, steps: int = 12) -> list:
 
 
 def object_rgb(o: dict) -> tuple:
-    return LANDMARK_RGB if o.get("landmark", 0) >= 1.0 else CONFIRMED_RGB if o.get("confirmed") else UNCONFIRMED_RGB
+    return LANDMARK_RGB if o.get("landmark", 0) >= LANDMARK_MIN else CONFIRMED_RGB if o.get("confirmed") else UNCONFIRMED_RGB
 
 
-def draw_top(img, snapshot, look, px, font) -> None:
+def draw_top(img, snapshot, sighting, px, font) -> None:
     """The semantic map on the top inset (a PIL RGB image): each object's parts as a footprint (confirmed solid, the others faint,
     landmarks in their own colour) with its kind, and the camera's wedge. `px` is top_to_px's function."""
     from PIL import ImageDraw
     over = ImageDraw.Draw(img, "RGBA")
-    if look and look.get("pose"):
-        over.polygon([px(*p) for p in wedge(look["pose"], look["hfov_deg"], look["range_m"])], fill=WEDGE_RGB + (60,), outline=WEDGE_RGB + (255,))
+    if sighting and sighting.get("pose"):
+        over.polygon([px(*p) for p in wedge(sighting["pose"], sighting["hfov_deg"], sighting["range_m"])], fill=WEDGE_RGB + (60,), outline=WEDGE_RGB + (255,))
     for o in (snapshot or {}).get("items", []):
         rgb, solid = object_rgb(o), o.get("confirmed")
         for x, y, hx, hy, yaw, _z0, _z1 in o["parts"]:
@@ -129,14 +130,14 @@ def draw_top(img, snapshot, look, px, font) -> None:
             over.text((cx + 3, cy - 4), o["kind"], font=font, fill=(255, 255, 255, 255))
 
 
-def draw_eye(img, look, project, font) -> list:
-    """Each current detection of `look` as a labelled box in the eye inset (a PIL RGB image); the labels drawn: ["cabinet 74%", ...]."""
+def draw_eye(img, sighting, project, font) -> list:
+    """Each current detection of `sighting` as a labelled box in the eye inset (a PIL RGB image); the labels drawn: ["cabinet 74%", ...]."""
     from PIL import ImageDraw
     drawn = []
-    if not look or project is None:
+    if not sighting or project is None:
         return drawn
     over = ImageDraw.Draw(img, "RGBA")
-    for s in look.get("seen", []):
+    for s in sighting.get("seen", []):
         box = seen_box(project, s)
         if box is None:
             continue

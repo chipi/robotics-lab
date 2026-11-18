@@ -18,6 +18,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from mcap.reader import make_reader
 from playwright.sync_api import sync_playwright
 
 from helpers import T0_NS, Checks, catalog, get, import_fixture, scene, serve, wait_until
@@ -33,6 +34,7 @@ LICHTBLICK_ON = os.environ.get("COMPAT_LICHTBLICK") == "1"
 # Pinned by digest (the version this was written against: it checked 2026-11-16); how to bump it is in ADR-0007 "Compatibility".
 LICHTBLICK = os.environ.get("LICHTBLICK_IMAGE", "ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f57737c8c5866abf75670b8dcf2ed6c2cb5ce3d64f3c63f210a5177e9")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
+FRIDGE_SLICE = Path(__file__).resolve().parent / "fixtures" / "find-fridge-slice"
 FOXGLOVE_TOPICS = ["/belief/pose", "/truth/pose", "/tf", "/map", "/depth"]
 
 
@@ -155,6 +157,24 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
           rows == {"/belief/pose": 116, "/truth/pose": 116, "/depth": 116, "/map": 16, "/tf": 1}, rows)
     rc, out = run([RERUN, "rrd", "verify", rrd])
     check("Rerun: `rerun rrd verify` passes the converted file", rc == 0, out[-200:])
+
+    # ---- (a2) a run with the semantic map (ADR-0019): our own JSON kinds, no Foxglove mapping, must not trip Rerun ----
+    shutil.copytree(FRIDGE_SLICE, data.parent / "logs" / "fridge1")
+    fridge_mcap = import_fixture(data, "fridge1") / "run.mcap"
+    rc, out = run([RERUN, "mcap", "check", fridge_mcap])
+    check("Rerun, a run with objects and sightings: `rerun mcap check` passes every channel", rc == 0 and "Issues" in out and not re.search(r"^(warn|error)", out, re.M | re.I), out[-300:])
+    with open(fridge_mcap, "rb") as fh:
+        summ = make_reader(fh).get_summary()
+        sem_topics = {ch.topic: (summ.schemas[ch.schema_id].name, summ.statistics.channel_message_counts[ch.id]) for ch in summ.channels.values()
+                      if ch.topic in ("/miniview/objects", "/miniview/sighting")}
+    check("the file carries both kinds on their own JSON topics, counted (10 snapshots, 17 sightings)",
+          sem_topics == {"/miniview/objects": ("miniview.objects", 10), "/miniview/sighting": ("miniview.sighting", 17)}, sem_topics)
+    fridge_rrd = tmp / "fridge.rrd"
+    rc, out = run([RERUN, "mcap", "convert", "-d", "protobuf", "--disable-raw-fallback", fridge_mcap, "-o", fridge_rrd])
+    got = entities(out)
+    check("Rerun, a run with objects and sightings: `mcap convert` still decodes the Foxglove topics", rc == 0 and {"/belief/pose", "/truth/pose", "/tf"} <= got, sorted(got))
+    rc, out = run([RERUN, "rrd", "verify", fridge_rrd])
+    check("Rerun, a run with objects and sightings: `rerun rrd verify` passes the converted file", rc == 0, out[-200:])
 
     # ---- (b) Lichtblick: skipped unless COMPAT_LICHTBLICK=1 (ADR-0007 "Compatibility") ------------------------
     if LICHTBLICK_ON:

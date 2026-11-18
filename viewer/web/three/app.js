@@ -10,7 +10,7 @@ import { axes as sensorAxes } from '../shell/eye.js';
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.look', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
+  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.sighting', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
 // what the eye does not draw: the robot itself, whose body the sensor sits in
 const NOT_IN_EYE = new Set(['body.model', 'belief.pose', 'truth.pose', 'rel.belief_truth']);
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
@@ -163,6 +163,17 @@ function placeMarker() {
   a.array.set([d.p[0], d.p[1], d.height]); a.needsUpdate = true;
 }
 
+// the semantic labels' height on the screen, in pixels of the first 3D (else the first) pane: meant to be the same at any zoom
+function labelPx() {
+  const s = views.slots.find((q) => q.is3) || views.slots[0];
+  if (!s || !RW) return [];
+  const c = s.camera, up = new THREE.Vector3(0, 1, 0).applyQuaternion(c.quaternion);
+  return ['semantic.objects', 'semantic.sighting'].flatMap((id) => RW.obj[id].children.filter((o) => o.isSprite)).map((sp) => {
+    const p = sp.getWorldPosition(new THREE.Vector3()), a = p.clone().project(c), b = p.clone().add(up.clone().multiplyScalar(sp.scale.y)).project(c);
+    return +((Math.abs(b.y - a.y) / 2) * s.h).toFixed(1);
+  });
+}
+
 const adapter = {
   init(stage, shell) {
     S = shell; M = shell.M;
@@ -245,9 +256,9 @@ const adapter = {
   eyeView: () => views.eyeView(),
   // the gaps as drawn at the playhead: the unknown cells near the plan, and the other unknown cells
   gaps: () => (RW ? { ...RW.gapCount, visible: RW.obj['world.gaps'].visible && S.shown('world.gaps') } : null),
-  // the semantic map as drawn at the playhead, in the world frame: how many objects and confirmed ones (labelled), and the current look
+  // the semantic map as drawn at the playhead, in the world frame: how many objects and confirmed ones (labelled), and the current sighting
   semantic: () => (RW ? { ...RW.semantic, objectsVisible: RW.obj['semantic.objects'].visible && S.shown('semantic.objects'),
-    lookVisible: RW.obj['semantic.look'].visible && S.shown('semantic.look') } : null),
+    sightingVisible: RW.obj['semantic.sighting'].visible && S.shown('semantic.sighting'), labelPx: labelPx() } : null),
   // tick i's returns as drawn in the world frame, by kind
   returns: (i) => RW?.returnsAt(i) ?? null,
   cursor: (x, y) => views.cursorAt(x, y),

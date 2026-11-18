@@ -75,7 +75,7 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   | `/map` + `/miniview/memory` | `foxglove.Grid` (cells as bytes) + `miniview.memory` (`{obstacles, drops, raw}`) | a map snapshot; `memory` last |
   | `/miniview/plan` | `miniview.plan` | `{path, t_src, raw}` |
   | `/miniview/objects` | `miniview.objects` | the semantic map (ADR-0019): `{objects, changes, t_src, raw}`; an object `{id, kind, x, y, n, confirmed, landmark, permanence, first_t, last_t, confidence, sources, evidence, parts}` in the map frame, a part `{x, y, hx, hy, yaw, z0, z1}` (a list in the record), a change `{change: "new" or "confirmed", id}`; the whole map at that time. No Foxglove schema |
-  | `/miniview/look` | `miniview.look` | a camera look (ADR-0019): `{pose, hfov_deg, range_m, seen, t_src, raw}`; `pose` the belief `[x, y, yaw]` in the map frame, `seen` `{kind, x, y, radius, z0, z1, range_m, confidence, source}` relative to the robot (x ahead, y left). No Foxglove schema |
+  | `/miniview/sighting` | `miniview.sighting` | a camera sighting (ADR-0019; `/miniview/look` in a file written before the rename is read as this): `{pose, hfov_deg, range_m, seen, t_src, raw}`; `pose` the belief `[x, y, yaw]` in the map frame, `seen` `{kind, x, y, radius, z0, z1, range_m, confidence, source}` relative to the robot (x ahead, y left). No Foxglove schema |
   | `/depth/raw` | `foxglove.RawImage` (frame `tof`, `16UC1`, one row per sensor row) | **a depth frame** (ADR-0014): the sensor's raw distances in mm, the first message of the frame; a negative distance is kept as the int16's 16 bits |
   | `/depth/status` | `foxglove.RawImage` (frame `tof`, `mono8`) | the frame's per-zone statuses (5 and 9 are "range valid") |
   | `/miniview/depth_frame` | `miniview.depth_frame` | `{rows, cols, frame_t_ns, seq?, state_t_ns?, pair_dt_ms?, t_src?, state?, pose?, derived?}`: **last** message of a depth frame. `frame_t_ns` is the sensor's own clock (CLOCK_MONOTONIC), `state_t_ns` the robot state the frame was paired with (the nearest by time among those received, as Pollen's `autod` does) and `pair_dt_ms` that state's time minus the frame's; `state` is what a replay needs of it (`quat`, `odom_z`, `tof: {pos, quat}`), `pose` the robot's map pose the frame's points were placed with, `derived` what the robot made of the frame (`points` as `{x, y, z, k}` in the map frame, `drop_points` as `{ahead, left, h}`, `block_m`) |
@@ -130,7 +130,8 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `.../signals?from=&to=` | the signals ticks in the window, columnar (below) |
 | `.../sensor?t=` | the raw depth frame at or before t, with its number, the count, the pairing (`state_t_ns`, `pair_dt_ms`) and, when recorded, the paired `state` and the `pose` (404 when the run has none) |
 | `GET /watch/{robot}/{scene}/{run}` and `.../latest` | the watch page (below), HTML; `latest` is the scene's newest run; 400 for a part that is not `[a-z0-9_-]+`, 404 for a run that does not exist or a scene with no run yet |
-| `.../state?t=` | belief, truth, distance, depth returns, the last event at t |
+| `.../state?t=` | belief, truth, distance, depth returns, the last event at t (a `room` event is not one: it is in `semantic`), and for a run with a semantic map its `semantic` (below) |
+| `.../semantic?from=&to=` | the semantic map (ADR-0019): `{"objects": [{t, objects, changes}], "sightings": [{t, pose, hfov_deg, range_m, seen}]}`, the records with a time in the window (both optional; 400 for `from` after `to`), whole map snapshots and camera sightings, parts as lists, objects in the robot's map frame; `{"objects": [], "sightings": []}` for a run with neither |
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
 | `.../live?since=SEQ` | Server-Sent Events, below |
@@ -152,7 +153,8 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   vendored libraries and fonts are cached for a day; request sockets time out after 30 s except live
   streams.
 - **Live.** `live` sends one event per record, named by its kind (`tick`, `signals`, `plan`, `world`,
-  `event`, `depth_frame`, `epoch`, `segment`, `end`), the record (with its `t`) as data and its `seq`
+  `event`, `depth_frame`, `objects`, `sighting`, `epoch`, `segment`, `end`), the record (with its
+  `t`) as data and its `seq`
   as the event id; then
   `status` (`{"status", "seq", "t1", "generation"}`, with `"done": true` last, and `error` for a broken
   run). It resumes after `Last-Event-ID` (what a reconnecting client has just seen), or after `since`
@@ -176,6 +178,21 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   sample at or before `t`); a run with no pose answers `state` with `tick: null` and the signals;
   `presence` has `signals.<name>`
   spans; `frames` of a run with no pose is an empty window.
+- **The semantic map in `state`** (ADR-0019). `.../state?t=` of a run with `objects` or `sighting` records
+  or `room` events adds `semantic` (a run with none has no such key), what the pages show at that time:
+  `{"objects_t": 2.0, "objects": [{"kind", "id", "x", "y", "confirmed", "landmark", "confidence"}],
+  "sighting": {"t", "pose", "hfov_deg", "range_m", "seen": [{"kind", "range_m", "confidence"}]} | null,
+  "room": {"t", "name", "votes"} | null}`. `objects` is the snapshot in force (the last at or before
+  `t`, `objects_t` its time; `[]` and null before the first), `x` and `y` in the robot's map frame in
+  metres (3 decimals), `confirmed` a boolean, `landmark` the value the robot holds (a landmark is 0.7
+  or more). `sighting` is the camera's last sighting when it is at or before `t` and not more than 1
+  s older
+  (`SIGHTING_FRESH_S`, the pages' and the video's too), else null; its `seen` entries say here only
+  what was seen, how far
+  (`range_m`) and how sure (`/semantic` has each one's place relative to the robot). `room` is the
+  last `room`
+  event at or before `t`, `name` null when the robot believed it was in none. The page's Script API
+  `state()` has the same `semantic`.
 
 ### `GET /api/v1/scenes/{id}` — what is really there (world frame)
 
@@ -305,7 +322,7 @@ explore(robot?)             explorePart(link|null)      explorePose("recorded|ha
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
 state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
                 loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
-                last_event, selection, t_range, hidden, eye, alerts, decided}
+                last_event, selection, t_range, hidden, eye, alerts, decided, semantic?}
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
 exploreState() -> {robot, kind, pose, selected, hidden, isolated, why, links, drawn, values, poses}   (null before Explore opens)
@@ -387,6 +404,32 @@ exploreSnapshot() -> the body as a PNG data URL
   it hangs from and carries, where it is from the root, its meshes (no mass: the description has
   none). Isolate, hide, show all, focus; "Expand" widens the right panel. three.js is loaded when
   Explore first opens (the deck.gl page has the same import map as the three.js page).
+- **The semantic map** (RFC-0016, ADR-0019). Two streams in the Mind section's group "Semantic map",
+  `semantic.objects` (a timeline row at each snapshot) and `semantic.sighting` (spans), missing in a
+  run
+  with no such records. The run store loads both lists when the run opens (`GET .../semantic`) and takes
+  later records from the live stream (`objects`, `sighting` events; a stream that was missing gets
+  its count
+  and stops being missing). The three.js page draws them in the world frame through the epoch (the
+  adapter's `semantic()` says what is drawn: `objects`, `confirmed`, `labels`, `landmarks`,
+  `sighting`, both layers'
+  visibility, `labelPx`): each part of each object a box from its bottom to its top, a confirmed object
+  solid-ish and labelled with its kind, an unconfirmed one faint, a landmark (a landmark value of
+  0.7 or more, `LANDMARK_MIN` in `web/shell/semantic.js`; the video's is in `overlay.py`) in its own
+  colour; and the
+  current sighting (1 s) as its field-of-view wedge on the floor from the belief pose with each
+  detection a
+  box and a label with the kind and confidence. A label is a sprite of a fixed height on the screen
+  (20 px) at
+  any zoom or distance, in every view. The **legend** adds Object, Object, not yet, Landmark (with
+  `semantic.objects` shown) and Field of view, Detection (with `semantic.sighting` shown); the
+  colours are
+  `web/shell/semantic.js`, not themed. **The Eye's panel** (`#hudtxt`) says SEES (the current sighting's
+  detections with range and confidence, "nothing in view", "no sighting yet"), ROOM (the room with its
+  votes strongest first, "not told yet") and OBJECTS (n confirmed, n not yet) under DOING and
+  NUMBERS; DOING
+  is the last decision and never a `room` event. A run with no semantic map shows none of it. A `room`
+  event is a row of the Decided tab. The deck page draws none of it.
 - **Signals** (ADR-0013). A run with `signals` has a row and an eye per signal in the outliner
   (in its section; a run with signals only selects the first, so its section is open), the values
   at the playhead in the inspector's Moment (the sample at or before it,
@@ -466,10 +509,12 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 ## Commands (the agent's face)
 
 `miniview scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
-<run> --at t | sensor <run> --at t [--json] |
+<run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
 frame | film | import | repair <key> | compact <key> | index | serve`. `import --robot nxt <run>.csv
 [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web
-recording (ADR-0013); `state` of a run with signals prints them. While a service holds the
+recording (ADR-0013); `state` of a run with signals prints them, of a run with a semantic map its
+objects, current sighting and room; `objects` prints the same three alone (`--json`: the API's
+`semantic`). While a service holds the
 index the
 commands read it and write nothing (one index, ADR-0012); `compact` closes a finished run whose
 writer did

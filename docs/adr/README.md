@@ -48,7 +48,7 @@ Required sections:
 - [ADR-0016 — A run records the robot's joints and the truth's whole pose](ADR-0016-joints-and-whole-truth-pose.md)
 - [ADR-0017 — A run as a video, with any rendering engine and the robot's own model](ADR-0017-video-export.md)
   (Proposed, 2026-11-16)
-- [ADR-0019 — The semantic map in a run: `objects` and `look` records, and what the pages and the video
+- [ADR-0019 — The semantic map in a run: `objects` and `sighting` records, and what the pages and the video
   draw of them](ADR-0019-semantic-map-records.md) (Accepted, 2026-11-18)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

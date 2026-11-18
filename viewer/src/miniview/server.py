@@ -9,9 +9,9 @@
                                                       ticks refer to, keyed by index
         .../signals?from=&to=                         a robot's named values over a time window, columnar (ADR-0013)
         .../sensor?t=                                 the raw depth frame at or before t, with the state it was paired with (ADR-0014)
-        .../state?t=                                  the moment: belief, truth, distance, depth, signals, last event
+        .../state?t=                                  the moment: belief, truth, distance, depth, signals, semantic map, last event
         .../events?kinds=                             what happened, when
-        .../semantic?from=&to=                        the semantic map's snapshots and the camera's looks, in the map frame (RFC-0016)
+        .../semantic?from=&to=                        the semantic map's snapshots and the camera's sightings, in the map frame (RFC-0016)
         .../presence                                  when each stream has data (the timeline's rows)
         .../live?since=                               Server-Sent Events, one per record, named by its kind, id = seq;
                                                       then `status`; resumes after `since` or Last-Event-ID
@@ -149,14 +149,14 @@ def signals_window(sig: dict, n: int, t_from: float | None, t_to: float | None) 
 
 
 def semantic_window(sem: dict, t_from: float | None, t_to: float | None) -> dict:
-    """The semantic map's snapshots (`objects`) and the camera's looks (`looks`) with a time in [t_from, t_to]. The pages ask for
-    the whole run once, they are small next to the ticks: a look is a few hundred bytes at 2 Hz."""
+    """The semantic map's snapshots (`objects`) and the camera's sightings (`sightings`) with a time in [t_from, t_to]. The pages ask for
+    the whole run once, they are small next to the ticks: a sighting is a few hundred bytes at 2 Hz."""
     def cut(rows):
         ts = [r["t"] for r in rows]
         lo = 0 if t_from is None else bisect.bisect_left(ts, t_from)
         hi = len(rows) if t_to is None else bisect.bisect_right(ts, t_to)
         return rows[lo:hi]
-    return {"objects": cut(sem["objects"]), "looks": cut(sem["looks"])}
+    return {"objects": cut(sem["objects"]), "sightings": cut(sem["sightings"])}
 
 
 def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None = None, sem: dict | None = None) -> dict:
@@ -195,8 +195,8 @@ def presence(run: dict, frames: dict, sig: dict | None = None, raw: list | None 
         "world.grid": {"times": [w["t"] for w in frames["worlds"]]},
         "plan.path": {"times": [p["t"] for p in frames["plans"]]},
         "semantic.objects": {"times": [o["t"] for o in (sem or {}).get("objects", ())]},
-        "semantic.look": {"spans": spans([x["t"] for x in (sem or {}).get("looks", ())], [x["t"] for x in (sem or {}).get("looks", ())])},
-        "events":{"times": [e["t"] for e in run["events"]]},
+        "semantic.sighting": {"spans": spans([x["t"] for x in (sem or {}).get("sightings", ())], [x["t"] for x in (sem or {}).get("sightings", ())])},
+        "events": {"times": [e["t"] for e in run["events"]]},
     }}
 
 
@@ -467,7 +467,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sig = {"t": ld.data.sig["t"][:run["samples"]], "v": {k: c[:run["samples"]] for k, c in ld.data.sig["v"].items()}}
         if what == "state":
             t = number(q, "t")
-            return self._json(query.state(run, frames, run["t1"] if t is None else t, sig))
+            with ld.data.changed:
+                sem = {k: list(v) for k, v in ld.data.sem.items()}
+            return self._json(query.state(run, frames, run["t1"] if t is None else t, sig, sem))
         with ld.data.changed:
             raw = list(ld.data.raw)
             sem = {k: list(v) for k, v in ld.data.sem.items()}

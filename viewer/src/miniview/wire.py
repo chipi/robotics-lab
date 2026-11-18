@@ -15,7 +15,7 @@ from google.protobuf import json_format
 from miniview import schemas
 from miniview.signals import SignalSet
 
-KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "objects", "look", "segment", "end")
+KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "objects", "sighting", "segment", "end")
 
 CHANNELS = {                          # topic -> schema
     "/miniview/run": "miniview.run",
@@ -34,7 +34,7 @@ CHANNELS = {                          # topic -> schema
     "/miniview/memory": "miniview.memory",
     "/miniview/event": "miniview.event",
     "/miniview/objects": "miniview.objects",
-    "/miniview/look": "miniview.look",
+    "/miniview/sighting": "miniview.sighting",
     "/miniview/segment": "miniview.segment",
     "/miniview/end": "miniview.end",
 }
@@ -238,8 +238,8 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
                 m("/miniview/depth_frame", _depth_frame_meta(p))]
     if kind == "objects":
         return [m("/miniview/objects", _objects_msg(p))]
-    if kind == "look":
-        return [m("/miniview/look", {"pose": p["pose"], "hfov_deg": p["hfov_deg"], "range_m": p["range_m"], "seen": p["seen"],
+    if kind == "sighting":
+        return [m("/miniview/sighting", {"pose": p["pose"], "hfov_deg": p["hfov_deg"], "range_m": p["range_m"], "seen": p["seen"],
                                      "t_src": src, "raw": _raw(p.get("raw", {}))})]
     if kind == "segment":
         return [m("/miniview/segment", p)]
@@ -434,11 +434,11 @@ class Assembler:
             return [(t, "event", d)]
         if topic == "/miniview/objects":
             return [(t, "objects", _objects_rec(o, self.keep_raw))]
-        if topic == "/miniview/look":
+        if topic in ("/miniview/sighting", "/miniview/look"):        # `look` is what a file written before the rename (ADR-0019) calls it
             d = {k: o[k] for k in ("pose", "hfov_deg", "range_m", "seen")}
             if self.keep_raw:
                 d.update(t_src=o.get("t_src"), raw=o.get("raw", {}))
-            return [(t, "look", d)]
+            return [(t, "sighting", d)]
         if topic in ("/miniview/segment", "/miniview/end"):
             return [(t, topic.rsplit("/", 1)[1], o)]
         raise ValueError(f"unknown topic {topic!r}")

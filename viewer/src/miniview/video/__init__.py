@@ -101,25 +101,25 @@ def _hud_at(t: float, cmd_t: list, cmds: list, dec_t: list, decisions: list, dep
     return out
 
 
-LOOK_FRESH_S = 1.0      # a camera look is "current" for this long (the navigator looks every 0.5 s)
+SIGHTING_FRESH_S = 1.0      # a sighting is "current" for this long (the navigator looks every 0.5 s)
 
 
 class _Semantic:
-    """The semantic map's records (RFC-0016) placed for the video. Objects and looks are in the robot's MAP frame; the video renders
+    """The semantic map's records (RFC-0016) placed for the video. Objects and sightings are in the robot's MAP frame; the video renders
     the WORLD when the run has truth, so each is moved by the run's epoch (map_to_world) in force at its own time (`place`); a run with
     no truth is drawn in the map frame as it is. A detection is relative to the robot: it is placed from the robot's pose in the frame
     being drawn (the truth's, as the simulated camera saw it), not from the belief."""
 
-    def __init__(self, source: str, epochs: list, objs: list, looks: list, rooms: list):
+    def __init__(self, source: str, epochs: list, objs: list, sightings: list, rooms: list):
         self.world = source == "truth"
         self.ep_t = [e[0] for e in epochs]
         self.epochs = [e[1] for e in epochs]
-        self.rooms, self.looks = rooms, looks
+        self.rooms, self.sightings = rooms, sightings
         self.snapshots = [{"t": t, "items": [self._item(t, o) for o in rec["objects"]]} for t, rec in objs]
         self.obj_t = [s["t"] for s in self.snapshots]
         self.room_t = [r[0] for r in rooms]
-        self.look_t = [x[0] for x in looks]
-        self.has = bool(objs or looks or rooms)
+        self.sighting_t = [x[0] for x in sightings]
+        self.has = bool(objs or sightings or rooms)
 
     def place(self, t: float, pose) -> list:
         if not (self.world and self.epochs):
@@ -134,7 +134,7 @@ class _Semantic:
         return {"id": o["id"], "kind": o["kind"], "confirmed": bool(o.get("confirmed")), "landmark": o.get("landmark") or 0.0, "parts": parts}
 
     def at(self, t: float, pos, quat) -> tuple:
-        """(snapshot index or None, the current look placed or None, the HUD's three entries) for a frame at t, the robot at pos with heading from quat."""
+        """(snapshot index or None, the current sighting placed or None, the HUD's three entries) for a frame at t, the robot at pos with heading from quat."""
         k = bisect.bisect_right(self.obj_t, t) - 1
         hud = {}
         if self.snapshots:
@@ -143,12 +143,12 @@ class _Semantic:
         if self.rooms:
             r = bisect.bisect_right(self.room_t, t) - 1
             hud["room"] = {"name": self.rooms[r][1].get("room"), "votes": self.rooms[r][1].get("votes") or {}} if r >= 0 else None
-        look = None
-        if self.looks:
-            j = bisect.bisect_right(self.look_t, t) - 1
+        sighting = None
+        if self.sightings:
+            j = bisect.bisect_right(self.sighting_t, t) - 1
             hud["sees"] = None if j < 0 else []
-            if j >= 0 and t - self.look_t[j] <= LOOK_FRESH_S:
-                lt, lk = self.looks[j]
+            if j >= 0 and t - self.sighting_t[j] <= SIGHTING_FRESH_S:
+                lt, lk = self.sightings[j]
                 w_, x_, y_, z_ = quat
                 yaw = math.atan2(2 * (w_ * z_ + x_ * y_), 1 - 2 * (y_ * y_ + z_ * z_))
                 c, s = math.cos(yaw), math.sin(yaw)
@@ -158,9 +158,9 @@ class _Semantic:
                     seen.append({"kind": d["kind"], "confidence": d.get("confidence"), "range_m": d.get("range_m", math.hypot(rx, ry)),
                                  "radius": d.get("radius"), "z0": d.get("z0"), "z1": d.get("z1"), "rel": [rx, ry],
                                  "world": [round(pos[0] + c * rx - s * ry, 4), round(pos[1] + s * rx + c * ry, 4)]})
-                look = {"pose": [round(v, 4) for v in self.place(lt, lk["pose"])], "hfov_deg": lk["hfov_deg"], "range_m": lk["range_m"], "seen": seen}
+                sighting = {"pose": [round(v, 4) for v in self.place(lt, lk["pose"])], "hfov_deg": lk["hfov_deg"], "range_m": lk["range_m"], "seen": seen}
                 hud["sees"] = [{k: d[k] for k in ("kind", "range_m", "confidence")} for d in seen]
-        return (k if k >= 0 else None), look, hud
+        return (k if k >= 0 else None), sighting, hud
 
 
 def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: float | None = None, stand_z: float = 0.1,
@@ -175,20 +175,20 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     (ADR-0016) on both; a joint never sampled is left out (the engine holds the model's own pose for it).
 
     semantic=True adds what the semantic map's overlays need (RFC-0016, ADR-0019): `semantic` {"objects": the snapshots with their
-    parts in the track's frame}, and per frame `obj_i` (the snapshot in force), `look` (the current camera look, its detections placed
-    from the robot's pose in the frame) and, with hud=True, the HUD's sees / room / objects entries. A run without objects, looks or
+    parts in the track's frame}, and per frame `obj_i` (the snapshot in force), `sighting` (the current sighting, its detections placed
+    from the robot's pose in the frame) and, with hud=True, the HUD's sees / room / objects entries. A run without objects, sightings or
     rooms gets none of it."""
     truth, belief, sig_t, sig_v, imu_t, imu_v, run, grid = [], [], [], [], [], [], None, None
     cmds, decisions, depths = [], [], []          # for the HUD (hud=True)
-    epochs, objs, looks, rooms = [], [], [], []   # for the semantic overlays (semantic=True)
+    epochs, objs, sightings, rooms = [], [], [], []   # for the semantic overlays (semantic=True)
     for t, kind, p in Follower(Path(run_dir), keep_raw=hud).poll():
         if semantic:
             if kind == "epoch":
                 epochs.append((t, tuple(p["map_to_world"])))
             elif kind == "objects":
                 objs.append((t, p))
-            elif kind == "look":
-                looks.append((t, p))
+            elif kind == "sighting":
+                sightings.append((t, p))
             elif kind == "event" and p.get("kind") == "room":
                 rooms.append((t, p))
         if hud and kind == "tick" and p.get("cmd") is not None:
@@ -230,7 +230,7 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     out = {"run": run, "fps": fps, "source": source, "frame": frame, "map": grid if source == "belief" else None, "frames": []}
     if not poses:
         return out
-    sem = _Semantic(source, epochs, objs, looks, rooms) if semantic else None
+    sem = _Semantic(source, epochs, objs, sightings, rooms) if semantic else None
     if sem and sem.has:
         out["semantic"] = {"objects": sem.snapshots}
     pt = [p[0] for p in poses]
@@ -250,8 +250,8 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
         if hud:
             frame["hud"] = _hud_at(t, cmd_t, cmds, dec_t, decisions, dep_t, depths)
         if sem and sem.has:
-            obj_i, look, extra = sem.at(t, frame["pos"], frame["quat"])
-            frame["obj_i"], frame["look"] = obj_i, look
+            obj_i, sighting, extra = sem.at(t, frame["pos"], frame["quat"])
+            frame["obj_i"], frame["sighting"] = obj_i, sighting
             if hud:
                 frame["hud"].update(extra)
         frames.append(frame)

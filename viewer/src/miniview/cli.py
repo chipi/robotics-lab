@@ -18,7 +18,8 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
     uv run miniview scenes                              # the scenes and their runs
     uv run miniview runs apartment                      # a scene's runs
     uv run miniview events explore12 [--kinds a,b]      # what happened, when
-    uv run miniview state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, last event
+    uv run miniview state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, semantic map, last event
+    uv run miniview objects find-fridge-2 --at 12.0 [--json]  # the semantic map: objects, room, the current sighting (ADR-0019)
     uv run miniview sensor explore12 --at 79.0 [--json]  # the raw 8x8 depth frame at t, and the state it was paired with
     uv run miniview frame explore12 --at 79.0 --view three --hide sensors.depth -o f.png
     uv run miniview film explore12 --at 79.6 --span 1.0 --n 5 -o film.png
@@ -174,7 +175,7 @@ def cmd_events(args) -> None:
 def cmd_state(args) -> None:
     cat = _cat(args)
     run, frames = query.load_run(cat, args.run)
-    st = query.state(run, frames, args.at, query.load_signals(cat, args.run))
+    st = query.state(run, frames, args.at, query.load_signals(cat, args.run), query.load_semantic(cat, args.run))
     if args.json:
         print(json.dumps(st, indent=1))
         return
@@ -193,7 +194,35 @@ def cmd_state(args) -> None:
     print(f"  depth frame at {d['frame_t']} s: {d['returns']}  (f floor, o obstacle, v overhead, b below the floor)")
     if sig_line:
         print(sig_line)
+    sm = st.get("semantic")
+    if sm:
+        objs = sm["objects"]
+        print(f"  objects ({len(objs)}, {sum(o['confirmed'] for o in objs)} confirmed): "
+              + (", ".join(f"{o['kind']} {o['id']}{'' if o['confirmed'] else '?'} ({o['x']}, {o['y']})" for o in objs) or "none yet"))
+        lk = sm["sighting"]
+        print("  sighting: " + (f"at {lk['t']} s saw " + (", ".join(f"{d['kind']} {d['range_m']} m {d['confidence']}" for d in lk["seen"]) or "nothing") if lk else "none current"))
+        rm = sm["room"]
+        print("  room: " + (f"{rm['name']} {rm['votes']}" if rm else "not told yet"))
     print(f"  last event {st['last_event']}")
+
+
+def cmd_objects(args) -> None:
+    cat = _cat(args)
+    run, _ = query.load_run(cat, args.run)
+    sm = query.semantic_at(run, query.load_semantic(cat, args.run), args.at)
+    if args.json:
+        print(json.dumps(sm, indent=1))
+        return
+    if sm is None:
+        print(f"{run['id']}: no semantic map (no objects, sightings or room events)")
+        return
+    print(f"{run['id']} at t = {args.at:.2f} s: " + (f"objects as of {sm['objects_t']} s" if sm["objects_t"] is not None else "no objects yet"))
+    for o in sm["objects"]:
+        print(f"  {o['id']:<16} {o['kind']:<12} ({o['x']}, {o['y']})  {'confirmed' if o['confirmed'] else 'not yet'}  landmark {o['landmark']}  confidence {o['confidence']}")
+    rm, lk = sm["room"], sm["sighting"]
+    print("  room: " + (f"{rm['name']} {rm['votes']} (told at {rm['t']} s)" if rm else "not told yet"))
+    print("  sighting: " + (f"at {lk['t']} s from {lk['pose']}, {lk['hfov_deg']} deg to {lk['range_m']} m, saw "
+                        + (", ".join(f"{d['kind']} {d['range_m']} m {d['confidence']}" for d in lk["seen"]) or "nothing") if lk else "none current"))
 
 
 def _shot(args, t, out) -> dict:
@@ -344,6 +373,11 @@ def main() -> None:
             p.add_argument("--span", type=float, default=2.0)
             p.add_argument("--n", type=int, default=5)
         p.set_defaults(fn=fn)
+    p = sub.add_parser("objects", help="the semantic map at a moment: the objects, the room, the camera's current sighting (ADR-0019)")
+    p.add_argument("run")
+    p.add_argument("--at", type=float, required=True)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_objects)
     p = sub.add_parser("sensor", help="the raw depth frame at a moment, and the state it was paired with")
     p.add_argument("run")
     p.add_argument("--at", type=float, required=True)
@@ -361,7 +395,7 @@ def main() -> None:
     p.add_argument("--size", default="1280x720", help="WIDTHxHEIGHT")
     p.add_argument("--from", dest="t_from", type=float)
     p.add_argument("--to", dest="t_to", type=float)
-    p.add_argument("--inset", help="small views in the bottom corners: eye (the robot's camera), top (the room from above), comma-separated")
+    p.add_argument("--inset", help="small views in the bottom corners: eye (the robot's camera), top (the room from above), hud (the status lines), comma-separated")
     p.add_argument("--inset-size", type=float, default=0.28, help="an inset's side as a share of the video's height")
     p.set_defaults(fn=cmd_video)
     p = sub.add_parser("render-serve", help="the render service: runs to videos for the pages, one job at a time (ADR-0017)")

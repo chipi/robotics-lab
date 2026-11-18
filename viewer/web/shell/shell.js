@@ -24,6 +24,7 @@ import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { chainsOf } from './robot.js';
+import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 
 const API = '/api/v1/';
@@ -111,7 +112,7 @@ function styleOf(id) {
   if (id === 'world.gaps') return c('c-gap', 'grid');
   if (id === 'plan.path') return c('c-plan', 'route');
   if (id === 'semantic.objects') return c('c-floor', 'box');
-  if (id === 'semantic.look') return c('c-plan', 'points');
+  if (id === 'semantic.sighting') return c('c-plan', 'points');
   if (id === 'events') return c('warn', 'flag');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
@@ -251,16 +252,26 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const lim = Math.max(M.t, hasTicks() ? M.fr.t[M.i] : M.t);
     return [...M.run.events].reverse().find((e) => e.kind !== 'room' && e.t <= lim + 1e-9) || null;      // the room has its own line in the Eye (semanticAt), it is not what the robot is doing
   };
-  // The semantic map at the playhead (RFC-0016): the current camera look and what it saw, the room the robot believes it is in with its
-  // votes, and the objects it knows (the snapshot in force). `look` is null when the last look is older than LOOK_FRESH_S.
+  // The semantic map at the playhead (RFC-0016): the current sighting and what it saw, the room the robot believes it is in with its
+  // votes, and the objects it knows (the snapshot in force). `sighting` is null when the last sighting is older than SIGHTING_FRESH_S.
   function semanticAt() {
     const fr = M.fr, t = M.t, evs = M.run?.events || [];
     const snap = fr?.objectsAt(t) ?? null, objects = snap?.objects ?? [];
     const room = [...evs].reverse().find((e) => e.kind === 'room' && e.t <= t + 1e-9) || null;
-    const has = !!(fr?.objects.length || fr?.looks.length || evs.some((e) => e.kind === 'room'));
-    return { has, look: fr?.lookAt(t) ?? null, anyLook: !!(fr?.looks.length && fr.looks[0].t <= t + 1e-9), objects, confirmed: objects.filter((o) => o.confirmed).length,
+    const has = !!(fr?.objects.length || fr?.sightings.length || evs.some((e) => e.kind === 'room'));
+    return { has, objectsT: snap?.t ?? null, sighting: fr?.sightingAt(t) ?? null, anySighting: !!(fr?.sightings.length && fr.sightings[0].t <= t + 1e-9), objects, confirmed: objects.filter((o) => o.confirmed).length,
       room: room ? { name: room.room ?? null, votes: room.votes ?? {}, t: room.t } : null };
   }
+  // the semantic map at the playhead as state() and GET .../state?t= give it (ADR-0019); null for a run with none
+  function semanticOut() {
+    const s = semanticAt();
+    if (!s.has) return null;
+    const lk = s.sighting, r3 = (n) => (n == null ? null : +n.toFixed(3));      // 3 decimals, as the API rounds
+    return { objects_t: s.objectsT, objects: s.objects.map((o) => ({ kind: o.kind, id: o.id, x: r3(o.x), y: r3(o.y), confirmed: !!o.confirmed, landmark: o.landmark ?? null, confidence: o.confidence ?? null })),
+      sighting: lk && { t: lk.t, pose: lk.pose.map(r3), hfov_deg: lk.hfov_deg, range_m: lk.range_m, seen: lk.seen.map((d) => ({ kind: d.kind, range_m: d.range_m ?? null, confidence: d.confidence ?? null })) },
+      room: s.room };
+  }
+
   function moment() {
     const { fr, run } = M, i = M.i, bm = fr.belief[i], bw = M.bw[i], tr = fr.truth[i];
     const dist = tr ? Math.hypot(bw[0] - tr[0], bw[1] - tr[1]) : null;
@@ -375,8 +386,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function semanticHud() {
     const s = semanticAt();
     if (!s.has) return '';
-    const sees = s.look ? (s.look.seen.length ? s.look.seen.map((d) => `<b>${esc(d.kind)}</b> ${fx(d.range_m ?? Math.hypot(d.x, d.y), 1)} m ${d.confidence == null ? '' : Math.round(100 * d.confidence) + '%'}`.trim()).join(' · ') : 'nothing in view')
-      : s.anyLook ? 'nothing in view' : 'no camera look yet';
+    const sees = s.sighting ? (s.sighting.seen.length ? s.sighting.seen.map((d) => `<b>${esc(d.kind)}</b> ${fx(d.range_m ?? Math.hypot(d.x, d.y), 1)} m ${d.confidence == null ? '' : Math.round(100 * d.confidence) + '%'}`.trim()).join(' · ') : 'nothing in view')
+      : s.anySighting ? 'nothing in view' : 'no sighting yet';
     const votes = Object.entries(s.room?.votes || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${fx(v, 2)}`).join(' · ');
     const room = s.room ? `<b>${esc(s.room.name ?? 'unnamed')}</b>${votes ? ` (${votes})` : ''}` : 'not told yet';
     const total = s.objects.length;
@@ -665,11 +676,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function state() {
     if (!M.run || !hasTicks()) {
       return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: M.run ? lastEvent() : null, selection: null,
-        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }) };
+        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }), ...(M.run && semanticOut() && { semantic: semanticOut() }) };
     }
     const m = moment();
     return {
-      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), raw_frame: rawSummary(),
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), ...(semanticOut() && { semantic: semanticOut() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), alerts: eyeOn() ? alertOut() : [], decided: decidedOut(),
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -1138,11 +1149,14 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   function legendHtml() {
     if (!M.run) return '';
-    const w = M.frame === 'world', sh = (id) => shown(id);
+    const w = M.frame === 'world', sh = (id) => shown(id), sem = (id) => !!adapter.semantic && sh(id);      // the deck page draws no semantic map
     const L = [['Belief', 'c-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'c-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'c-plan', sh('plan.path'), 1],
       ['Floor', 'c-floor', sh('sensors.depth.floor')], ['Obstacle', 'c-ob', sh('sensors.depth.obstacle')], ['Overhead', 'c-over', sh('sensors.depth.overhead')], ['Below floor', 'c-drop', sh('sensors.depth.below')],
-      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')]];
-    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})"></i>${n}</span>`).join('');
+      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')],
+      // the semantic map (ADR-0019): its colours are not themed, a '#' colour is taken as it is; a faint key is an object not yet confirmed
+      ['Object', cssHex(SEMANTIC.object), sem('semantic.objects')], ['Object, not yet', cssHex(SEMANTIC.object) + ';opacity:.4', sem('semantic.objects')], ['Landmark', cssHex(SEMANTIC.landmark), sem('semantic.objects')],
+      ['Field of view', cssHex(SEMANTIC.wedge), sem('semantic.sighting')], ['Detection', cssHex(SEMANTIC.seen), sem('semantic.sighting')]];
+    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:${c.startsWith('#') ? c : `var(--${c})`}"></i>${n}</span>`).join('');
   }
   const renderLegend = () => { $('legend').innerHTML = legendHtml(); };
   // where the legend is hidden (narrow windows) the overlays popover carries the colour keys

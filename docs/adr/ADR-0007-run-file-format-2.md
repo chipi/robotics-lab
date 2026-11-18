@@ -37,7 +37,7 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
   `/depth` as `foxglove.PointCloud` (with the return kind as a field). Our own kinds use
   `miniview.*` schemas: `run`, `segment`, `event`, `plan`, `command`, `tilt`, `memory` (obstacles
   and drops), `end` (and, added by [ADR-0019](ADR-0019-semantic-map-records.md), `objects` and
-  `look`: single messages like `plan`).
+  `sighting`: single messages like `plan`).
 - **Nothing dropped.** A tick's fields that have no channel of their own go in `miniview.tick_extra`
   (`raw`); an import copies the source log to `source/` beside the run and records its SHA-256.
 - **Closed when done.** The writer writes `end` (the verdict) and compacts the file into `run.mcap`

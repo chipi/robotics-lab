@@ -19,8 +19,8 @@ const API = '/api/v1/';
 export const WINDOW_S = 60;
 export const AHEAD_S = 30;
 const SIG_WINDOW_S = 1800;
-const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'depth_frame', 'objects', 'look', 'epoch', 'segment', 'end'];
-export const LOOK_FRESH_S = 1.0;       // a camera look is "current" this long (the navigator looks every 0.5 s); the video's is the same
+const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'depth_frame', 'objects', 'sighting', 'epoch', 'segment', 'end'];
+export const SIGHTING_FRESH_S = 1.0;       // a sighting is "current" this long (the navigator looks every 0.5 s); the video's is the same
 const DEPTH_STREAM = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' };
 const TICK_FIELDS = ['t', 'belief', 'truth', 'truth_3d', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
 const idle = () => new Promise((r) => setTimeout(r, 0));
@@ -41,9 +41,9 @@ export class RunStore {
   }
 
   _frames() {
-    const fr = { plans: [], worlds: [], ranges: [], objects: [], looks: [] };
+    const fr = { plans: [], worlds: [], ranges: [], objects: [], sightings: [] };
     for (const f of TICK_FIELDS) fr[f] = [];
-    // The semantic map (RFC-0016): `objects` are its snapshots {t, objects, changes} and `looks` the camera's {t, pose, hfov_deg, range_m, seen},
+    // The semantic map (RFC-0016): `objects` are its snapshots {t, objects, changes} and `sightings` the camera's {t, pose, hfov_deg, range_m, seen},
     // in time order and all loaded when the run opens (they are small next to the ticks), then by record. In the robot's map frame.
     const at = (list, t) => {
       let a = 0, b = list.length;                                 // the last record at or before t
@@ -51,7 +51,7 @@ export class RunStore {
       return a > 0 ? list[a - 1] : null;
     };
     fr.objectsAt = (t) => at(fr.objects, t);
-    fr.lookAt = (t) => { const l = at(fr.looks, t); return l && t - l.t <= LOOK_FRESH_S ? l : null; };
+    fr.sightingAt = (t) => { const l = at(fr.sightings, t); return l && t - l.t <= SIGHTING_FRESH_S ? l : null; };
     // the loaded tick at or before t (the first one after it when none is before; the nearest across a hole)
     fr.tickAt = (t) => {
       let best = -1;
@@ -129,12 +129,12 @@ export class RunStore {
 
   _hasSemantic() { return !!this.run.streams?.some((s) => s.id.startsWith('semantic.') && s.count > 0); }
 
-  // The semantic map's snapshots and looks the run had when it was opened. A live record can arrive while this is asked: both are
+  // The semantic map's snapshots and sightings the run had when it was opened. A live record can arrive while this is asked: both are
   // merged by time, so a record in both is kept once.
   async _loadSemantic(gen) {
     const w = await this.json(`${API}runs/${this.key}/semantic`).catch(() => null);
     if (!w || gen !== this.gen) return;
-    for (const [list, got] of [[this.fr.objects, w.objects], [this.fr.looks, w.looks]]) {
+    for (const [list, got] of [[this.fr.objects, w.objects], [this.fr.sightings, w.sightings]]) {
       const have = new Set(list.map((x) => x.t));
       for (const x of got) if (!have.has(x.t)) list.push(x);
       list.sort((a, b) => a.t - b.t);
@@ -291,11 +291,11 @@ export class RunStore {
         const s = r.streams.find((x) => x.id === id);
         if (s) { s.count = list.length; s.missing = !list.length; }
       }
-    } else if (kind === 'objects' || kind === 'look') {
-      const list = kind === 'objects' ? fr.objects : fr.looks, last = list[list.length - 1];
+    } else if (kind === 'objects' || kind === 'sighting') {
+      const list = kind === 'objects' ? fr.objects : fr.sightings, last = list[list.length - 1];
       if (!last || d.t > last.t) {                                                  // a record the open already loaded is not added twice
         list.push(kind === 'objects' ? { t: d.t, objects: d.objects, changes: d.changes } : { t: d.t, pose: d.pose, hfov_deg: d.hfov_deg, range_m: d.range_m, seen: d.seen });
-        this._count(kind === 'objects' ? 'semantic.objects' : 'semantic.look');
+        this._count(kind === 'objects' ? 'semantic.objects' : 'semantic.sighting');
       }
     } else if (kind === 'event') {
       this._span(d.t);

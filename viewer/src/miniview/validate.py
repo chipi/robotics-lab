@@ -151,7 +151,7 @@ def _objects(p):
     return None
 
 
-def _look(p):
+def _sighting(p):
     if not _nums(p.get("pose"), 3):
         return "pose is not three finite numbers"
     if not (_num(p.get("hfov_deg")) and _num(p.get("range_m"))):
@@ -180,7 +180,7 @@ def _end(p):
 
 
 CHECKS = {"run": _run, "epoch": _epoch, "tick": _tick, "signals": _signals, "plan": _plan, "world": _world, "event": _event,
-          "depth_frame": _depth_frame, "objects": _objects, "look": _look, "segment": _segment, "end": _end}
+          "depth_frame": _depth_frame, "objects": _objects, "sighting": _sighting, "segment": _segment, "end": _end}
 
 
 def check(t, kind: str, p, last_t: float) -> str | None:

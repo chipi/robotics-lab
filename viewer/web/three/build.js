@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { gapCells } from '../shell/gaps.js';
+import { SEMANTIC, LANDMARK_MIN } from '../shell/semantic.js';
 
 export const C = {
   belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
   occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
   boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0,
-  // the semantic map (RFC-0016): chosen to read on both themes, so not themed
-  object: 0x2e9e5b, landmark: 0xe89a00, seen: 0xd62ba8, wedge: 0x3c78e6,
+  ...SEMANTIC,                                 // the semantic map's (RFC-0016): not themed, the legend uses the same
 };
 
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
@@ -219,7 +219,10 @@ export function buildScene(sc, cut = 0.5) {
   return g;
 }
 
-// a text label as a sprite that faces the camera and is sized in metres: a dark pill with the text in white, which reads on either theme
+// a text label as a sprite that faces the camera: a dark pill with the text in white, which reads on either theme. Its size is fixed on the
+// screen (LABEL_PX tall, whatever the zoom or the distance), set at each draw for the pane being drawn: sized in metres it was a few pixels
+// high at the default view's 11 m.
+const LABEL_PX = 20, _lp = new THREE.Vector3();
 function labelSprite(text, hex) {
   const c = document.createElement('canvas'), g = c.getContext('2d'), px = 28;
   g.font = `600 ${px}px ui-monospace, monospace`;
@@ -230,9 +233,16 @@ function labelSprite(text, hex) {
   g.strokeStyle = '#' + col(hex).getHexString(); g.lineWidth = 3; g.stroke();
   g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(text, 10, c.height / 2 + 1);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false }));
-  const hgt = 0.15;
-  s.scale.set((hgt * c.width) / c.height, hgt, 1);
+  s.scale.set((0.15 * c.width) / c.height, 0.15, 1);
   s.renderOrder = 9; s.userData.text = text;
+  const aspect = c.width / c.height;
+  s.onBeforeRender = (renderer, scene, cam) => {
+    const metresPerPx = cam.isOrthographicCamera ? (cam.top - cam.bottom) / cam.zoom / RES.value.y
+      : (2 * Math.tan((cam.fov * Math.PI) / 360) * Math.max(0.01, -s.getWorldPosition(_lp).applyMatrix4(cam.matrixWorldInverse).z)) / RES.value.y;
+    const h = LABEL_PX * metresPerPx;
+    s.scale.set(h * aspect, h, 1);
+    s.updateMatrixWorld();                      // the sprite's shader reads the scale from its world matrix, which was built before this call
+  };
   return s;
 }
 const disposeAll = (group) => {
@@ -349,11 +359,11 @@ export function buildRun(run, fr, world) {
 
   // The semantic map (RFC-0016), in the map frame like everything of the robot's (moved by the epoch in the world frame): each part of each
   // object a box from its bottom to its top; a confirmed object solid-ish with its kind as a label, an unconfirmed one faint, a landmark
-  // (value 1.0 or more) in its own colour. And the camera's current look: its field of view on the floor from the belief pose, and what it
+  // (value 0.7 or more) in its own colour. And the current sighting: its field of view on the floor from the belief pose, and what it
   // saw placed from that pose, each as a box with its kind and confidence. Rebuilt when the record in force changes, not at each tick.
-  const objects = add('semantic.objects', new THREE.Group()), looks = add('semantic.look', new THREE.Group());
-  let objKey = null, lookKey = null;
-  L.semantic = { objects: 0, confirmed: 0, labels: [], look: null };
+  const objects = add('semantic.objects', new THREE.Group()), sightings = add('semantic.sighting', new THREE.Group());
+  let objKey = null, sightingKey = null;
+  L.semantic = { objects: 0, confirmed: 0, labels: [], landmarks: [], sighting: null };
   // new children wear the layer of the group they are in (the page sets the group's layer once, when it builds the run)
   const wear = (group) => group.traverse((o) => { if (o !== group) o.layers.mask = group.layers.mask; });
   const triMesh = (tri, hex, opacity) => { const m = fillMesh(tri, hex, opacity); m.renderOrder = -7; return m; };
@@ -362,13 +372,14 @@ export function buildRun(run, fr, world) {
     if (key === objKey) return;
     objKey = key;
     disposeAll(objects);
-    L.semantic.objects = snap ? snap.objects.length : 0; L.semantic.confirmed = 0; L.semantic.labels = [];
+    L.semantic.objects = snap ? snap.objects.length : 0; L.semantic.confirmed = 0; L.semantic.labels = []; L.semantic.landmarks = [];
     if (!snap) return;
     const f = tf(snap.t), faces = new Map(), edges = new Map();
     for (const o of snap.objects) {
-      const hex = o.landmark >= 1.0 ? C.landmark : C.object, solid = !!o.confirmed, k = hex + ':' + solid;
+      const hex = o.landmark >= LANDMARK_MIN ? C.landmark : C.object, solid = !!o.confirmed, k = hex + ':' + solid;
       if (!faces.has(k)) { faces.set(k, { hex, solid, tri: [] }); edges.set(k, []); }
       let top = 0, anchor = null;
+      if (o.landmark >= LANDMARK_MIN) L.semantic.landmarks.push(o.id);
       for (const [x, y, hx, hy, yaw, z0, z1] of o.parts) {
         const [wx, wy, ey] = f(x, y), b = { cx: wx, cy: wy, hx, hy, yaw: yaw + (ey || 0) };
         boxFaces(faces.get(k).tri, b, z0, z1); boxEdges(edges.get(k), b, z0, z1);
@@ -387,35 +398,35 @@ export function buildRun(run, fr, world) {
     }
     wear(objects);
   };
-  const setLook = (look) => {
-    const key = look ? look.t : null;
-    if (key === lookKey) return;
-    lookKey = key;
-    disposeAll(looks);
-    L.semantic.look = null;
-    if (!look) return;
-    const f = tf(look.t), [px, py, pyaw] = look.pose, h = (look.hfov_deg * Math.PI) / 360, n = 14, z = 0.012;
+  const setSighting = (sighting) => {
+    const key = sighting ? sighting.t : null;
+    if (key === sightingKey) return;
+    sightingKey = key;
+    disposeAll(sightings);
+    L.semantic.sighting = null;
+    if (!sighting) return;
+    const f = tf(sighting.t), [px, py, pyaw] = sighting.pose, h = (sighting.hfov_deg * Math.PI) / 360, n = 14, z = 0.012;
     const apex = f(px, py), arc = [];
-    for (let k = 0; k <= n; k++) arc.push(f(px + look.range_m * Math.cos(pyaw - h + (2 * h * k) / n), py + look.range_m * Math.sin(pyaw - h + (2 * h * k) / n)));
+    for (let k = 0; k <= n; k++) arc.push(f(px + sighting.range_m * Math.cos(pyaw - h + (2 * h * k) / n), py + sighting.range_m * Math.sin(pyaw - h + (2 * h * k) / n)));
     const fan = [], outline = [apex[0], apex[1], z, arc[0][0], arc[0][1], z, arc[n][0], arc[n][1], z, apex[0], apex[1], z];
     for (let k = 1; k <= n; k++) {
       fan.push(apex[0], apex[1], z, arc[k - 1][0], arc[k - 1][1], z, arc[k][0], arc[k][1], z);
       outline.push(arc[k - 1][0], arc[k - 1][1], z, arc[k][0], arc[k][1], z);
     }
-    looks.add(triMesh(fan, C.wedge, 0.16), segs(outline, C.wedge));
+    sightings.add(triMesh(fan, C.wedge, 0.16), segs(outline, C.wedge));
     const c = Math.cos(pyaw), s = Math.sin(pyaw), seen = [];
-    for (const d of look.seen) {
+    for (const d of sighting.seen) {
       const mx = px + c * d.x - s * d.y, my = py + s * d.x + c * d.y, r = d.radius || 0.1, z0 = d.z0 ?? 0, z1 = d.z1 ?? 0.3;
       const [wx, wy, ey] = f(mx, my), b = { cx: wx, cy: wy, hx: r, hy: r, yaw: ey || 0 }, ed = [];
       boxEdges(ed, b, z0, z1);
       const box = segs(ed, C.seen); box.frustumCulled = false; box.renderOrder = 8; box.material.depthTest = false;
-      looks.add(box);
+      sightings.add(box);
       const text = d.confidence == null ? d.kind : `${d.kind} ${Math.round(100 * d.confidence)}%`, lab = labelSprite(text, C.seen);
-      lab.position.set(wx, wy, z1 + 0.2); looks.add(lab);
+      lab.position.set(wx, wy, z1 + 0.2); sightings.add(lab);
       seen.push({ kind: d.kind, label: text, map: [mx, my], world: [wx, wy] });
     }
-    L.semantic.look = { t: look.t, pose: look.pose, hfov_deg: look.hfov_deg, range_m: look.range_m, seen };
-    wear(looks);
+    L.semantic.sighting = { t: sighting.t, pose: sighting.pose, hfov_deg: sighting.hfov_deg, range_m: sighting.range_m, seen };
+    wear(sightings);
   };
 
   // the world model: grid cells as quads in one geometry, obstacles and drops as points, all with
@@ -622,7 +633,7 @@ export function buildRun(run, fr, world) {
     drops.geometry.setDrawRange(...(wi >= 0 && dRange[wi] ? dRange[wi] : none));
     obst.material.size = size('world.obstacles'); drops.material.size = size('world.drops');
     setGaps(wi, pi);
-    setObjects(fr.objectsAt?.(t) ?? null); setLook(fr.lookAt?.(t) ?? null);
+    setObjects(fr.objectsAt?.(t) ?? null); setSighting(fr.sightingAt?.(t) ?? null);
   };
   L.append(fullRange(fr));
   return L;

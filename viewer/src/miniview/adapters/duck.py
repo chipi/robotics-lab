@@ -15,7 +15,7 @@ from miniview.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
-           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance")
+           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance", "found", "camera_failed")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
 ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
 
@@ -113,16 +113,20 @@ class DuckLog:
         if ev == "semantic" and isinstance(r.get("objects"), list):
             return [(t, "objects", {"objects": r["objects"], "changes": r.get("changes", []), "t_src": ts,
                                     "raw": rest("objects", "changes")})]
-        if ev == "look" and isinstance(r.get("seen"), list) and isinstance(r.get("pose"), list):
-            return [(t, "look", {"pose": [_r(v, 4) for v in r["pose"][:3]], "hfov_deg": r.get("hfov_deg"),
-                                 "range_m": r.get("range_m"), "seen": r["seen"], "t_src": ts,
-                                 "raw": rest("pose", "hfov_deg", "range_m", "seen")})]
+        if ev in ("sighting", "look") and isinstance(r.get("seen"), list) and isinstance(r.get("pose"), list):      # `look` in the recordings made before the rename (ADR-0019)
+            return [(t, "sighting", {"pose": [_r(v, 4) for v in r["pose"][:3]], "hfov_deg": r.get("hfov_deg"),
+                                     "range_m": r.get("range_m"), "seen": r["seen"], "t_src": ts,
+                                     "raw": rest("pose", "hfov_deg", "range_m", "seen")})]
         if ev:
             notable = ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached")
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
                                                                          "nearest_mm", "n"))
             e = {"kind": ev, "text": f"{ev} {detail}".strip() if notable else "", "notable": notable, "t_src": ts,
                  "raw": rest("decision")}
+            if ev == "found":                               # a goal's outcome: what was looked for and how it ended
+                e["text"] = f"found {r.get('kind')} {r.get('status')}"
+            if ev == "camera_failed":                       # the camera's error, said once each
+                e["text"] = f"camera_failed {r.get('why')}"
             if isinstance(r.get("decision"), dict):         # a rule that fired, with the values it compared (ADR-0014)
                 e["decision"] = r["decision"]
             if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event

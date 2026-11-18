@@ -228,7 +228,7 @@ def render(job: dict) -> None:
     if eye_cam is not None:
         eye_fovy = float(m.cam_fovy[eye_cam.fixedcamid])
     sem_objects = (tr.get("semantic") or {}).get("objects") or []
-    lfont = _font(max(9, side // 26)) if {"eye", "top"} & set(insets) and ("semantic" in tr or any(f.get("look") for f in tr["frames"])) else None
+    lfont = _font(max(9, side // 26)) if {"eye", "top"} & set(insets) and ("semantic" in tr or any(f.get("sighting") for f in tr["frames"])) else None
     top_cam = None
     if "top" in insets:
         top_cam = mujoco.MjvCamera()
@@ -275,11 +275,11 @@ def render(job: dict) -> None:
             small.update_scene(d, free_eye)
             img = small.render().copy()
             m.vis.global_.fovy = global_fovy
-            if f.get("look") and lfont is not None:
+            if f.get("sighting") and lfont is not None:
                 # the detections are placed from the trunk (the pose the simulated camera saw them from); the camera is the head's
                 # pose from the model at this frame, the free camera's position and direction as built above
                 pos = d.cam_xpos[cid] + fwd * EYE_AHEAD_M
-                img = _overlay_image(img, lambda im: overlay.draw_eye(im, f["look"], overlay.eye_projector(pos, fwd, side, eye_fovy), lfont))
+                img = _overlay_image(img, lambda im: overlay.draw_eye(im, f["sighting"], overlay.eye_projector(pos, fwd, side, eye_fovy), lfont))
             _paste(frame, img, "bl")
         if top_cam is not None:
             if not trail or math.dist(trail[-1], f["pos"][:2]) > 0.1:
@@ -289,10 +289,10 @@ def render(job: dict) -> None:
                 _mark(small, (p[0], p[1], 0.02), 0.03, (0.35, 0.55, 0.95, 1))
             _mark(small, (f["pos"][0], f["pos"][1], 0.05), 0.09, (0.95, 0.25, 0.2, 1))
             img = small.render().copy()
-            if sem_objects and lfont is not None and (f.get("obj_i") is not None or f.get("look")):
+            if sem_objects and lfont is not None and (f.get("obj_i") is not None or f.get("sighting")):
                 snap = sem_objects[f["obj_i"]] if f.get("obj_i") is not None else None
                 px = overlay.top_to_px(side, top_cam.lookat, top_cam.distance, global_fovy)
-                img = _overlay_image(img, lambda im: overlay.draw_top(im, snap, f.get("look"), px, lfont))
+                img = _overlay_image(img, lambda im: overlay.draw_top(im, snap, f.get("sighting"), px, lfont))
             _paste(frame, img, "br")
         if font is not None and f.get("hud"):
             _hud(frame, f["hud"], rb.get("name", "robot"), scene_name, font, fsize)
