@@ -54,12 +54,12 @@ The operator took up challenge 16 again and agreed (2026-11-18, "OK on all sugge
 2. **Done:** challenge 16 rebuilt in edge-to-edge pieces, its bar 0.5–1.0 cm (what the walking
    crosses), "reach". Not yet run.
 3. **In progress:** stuck detection in the navigator (walking, the depth ahead not changing).
-4. **On the list — the numbers upstream:** bring Pollen the crossing table (1 cm crossed, 1.5–2 cm
-   not, with falls; 0.4 m/s no better) for a real door threshold. Raising it upstream is the
-   operator's call.
-5. **On the list — a later challenge "too high to cross: stop, do not fall"** for bars of 1.5–3.5
+4. **The numbers upstream:** drafted for the operator to send, as the odometry note was
+   (`UPSTREAM-STEP-HEIGHT-DRAFT.md`, the operator 2026-11-18: "draft it as the other one we have").
+5. **Later, low priority — a challenge "too high to cross: stop, do not fall"** for bars of 1.5–3.5
    cm: higher than the walking crosses, lower than the low band sees (3.5 cm + 2 cm/m; flat floor
    reads up to +2 cm). It needs a way to see them first — a straight line of slightly raised returns
-   across the way, held over several frames — not tried yet.
+   across the way, held over several frames — not tried yet. Low priority: the operator's apartment
+   has no door thresholds (2026-11-18).
 6. Challenges 17–20 (cables, rug edges, a step up and down, small flights) on the measured heights,
    every floor in edge-to-edge pieces.
