@@ -137,6 +137,21 @@ def call(base, path, body=None):
         return e.code, json.loads(e.read())
 
 
+def upload(base, name, data, session=None):
+    """POST /api/files/upload: the file is the body, so the session rides in the query."""
+    url = f"{base}/api/files/upload?name={name}" + (f"&session={session}" if session else "")
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/octet-stream"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def on_brick(base):
+    return {f["name"] for f in call(base, "/api/files")[1]["files"]}
+
+
 port = 8764
 p = subprocess.Popen([NXT_WEB, "--fake", "--port", str(port), "--config", str(tmp / "config.json"), "--takeover-names", str(names)],
                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=ENV)
@@ -162,6 +177,28 @@ try:
     check("fire is locked too", code == 409 and r["lock"] == "held", r)
     code, r = call(base, "/api/program/stop", {})
     check("program stop is locked too", code == 409 and r["lock"] == "held", r)
+    # what is on the brick: upload and delete pass the lock; config, connect and the reads stay open
+    code, r = upload(base, "locked.rxe", b"\x01\x02")
+    check("an upload without the session is refused while held", code == 409 and r["lock"] == "held" and r["holder"] == "mission-control", r)
+    check("and nothing reached the brick", "locked.rxe" not in on_brick(base))
+    code, r = upload(base, "locked.rxe", b"\x01\x02", session="nope")
+    check("an upload with a wrong session is refused", code == 409 and r["lock"] == "no_lease", r)
+    code, r = upload(base, "locked.rxe", b"\x01\x02", session=a["session"])
+    check("the holder's upload goes through", code == 200 and "locked.rxe" in on_brick(base), r)
+    code, r = call(base, "/api/files/delete", {"name": "locked.rxe"})
+    check("a delete without the session is refused while held", code == 409 and r["lock"] == "held" and "locked.rxe" in on_brick(base), r)
+    code, r = call(base, "/api/files/delete", {"name": "locked.rxe", "session": "nope"})
+    check("a delete with a wrong session is refused", code == 409 and r["lock"] == "no_lease" and "locked.rxe" in on_brick(base), r)
+    code, r = call(base, "/api/files/delete", {"name": "locked.rxe", "session": a["session"]})
+    check("the holder's delete goes through", code == 200 and "locked.rxe" not in on_brick(base), r)
+    code, r = call(base, "/api/files")
+    check("listing files is open while held", code == 200 and r["files"])
+    with urllib.request.urlopen(base + "/api/files/download?name=demo.rxe", timeout=5) as dl:
+        check("downloading is open while held", dl.status == 200)
+    code, r = call(base, "/api/config", {"sample_hz": 10})
+    check("config stays open while held", code == 200 and r.get("lock") is None, (code, r))
+    code, r = call(base, "/api/connect", {"link": "auto"})
+    check("connect stays open while held", r.get("lock") is None, (code, r))
     code, r = call(base, "/api/status")
     check("reads are open", code == 200 and r["connected"])
     code, r = call(base, "/api/lock", {"action": "takeover", "client": "page"})
@@ -175,6 +212,12 @@ try:
     code, r = call(base, "/api/drive", {"left": 40, "right": 40, "session": a["session"]})
     check("the holder's next drive is refused: STOP latched", code == 409 and r["lock"] == "lease_ended" and r["reason"] == "stopped_by page", r)
     check("the robot is free after STOP", call(base, "/api/lock")[1]["holder"] is None)
+    code, r = upload(base, "late.rxe", b"\x01", session=a["session"])
+    check("the latched session cannot upload either", code == 409 and r["lock"] == "lease_ended" and r["reason"] == "stopped_by page" and "late.rxe" not in on_brick(base), r)
+    code, r = upload(base, "free.rxe", b"\x01")
+    check("free: an upload with no session still works (the page does not take the lock)", code == 200 and "free.rxe" in on_brick(base), r)
+    code, r = call(base, "/api/files/delete", {"name": "free.rxe"})
+    check("free: so does a delete", code == 200 and "free.rxe" not in on_brick(base), r)
     code, a2 = call(base, "/api/lock", {"action": "acquire", "client": "mission-control"})
     check("acquire clears it", code == 200 and a2["lease_id"] == 2)
     code, t = call(base, "/api/lock", {"action": "takeover", "client": "operator"})

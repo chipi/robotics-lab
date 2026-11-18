@@ -29,8 +29,10 @@ INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_bytes()
 WATCHDOG_SECONDS = 0.6
 MAX_UPLOAD_BYTES = 256 * 1024
 EVENTS_FILE = "events.jsonl"  # the simulated brick logs to events-fake.jsonl instead
-# Commands that move the robot or start something that does: they pass the exclusive lock (RFC-0017).
-LOCKED_PATHS = ("/api/drive", "/api/fire", "/api/program/start", "/api/program/stop")
+# Commands that move the robot, start something that does, or change what is on the brick: they pass the exclusive
+# lock (RFC-0017). Config, connect and the reads stay open. An upload carries the file as its body, so its session is
+# the `session` query parameter; every other call has it in its JSON body.
+LOCKED_PATHS = ("/api/drive", "/api/fire", "/api/program/start", "/api/program/stop", "/api/files/upload", "/api/files/delete")
 
 
 class Controller:
@@ -369,7 +371,7 @@ def make_handler(controller: Controller):
                 elif data:
                     detail.update({k: v for k, v in data.items() if k not in ("sensors", "session")})
                 if path in LOCKED_PATHS:
-                    c.lock.check(data.get("session"), path)
+                    c.lock.check(q.get("session") if data is None else data.get("session"), path)
                 if path == "/api/lock":
                     result.update(lock_action(c.lock, data))
                 elif path == "/api/connect":
