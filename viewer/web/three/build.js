@@ -398,6 +398,23 @@ export function buildRun(run, fr, world) {
     }
     wear(objects);
   };
+  // The operator's areas (RFC-0016 rev. 3): each outline on the floor in the site frame (the map frame in the simulator, where every
+  // run starts at the dock), with its name, from the run's `site` record. Built once: a site's areas do not change during a run.
+  const areas = add('semantic.areas', new THREE.Group());
+  L.semantic.areas = [];
+  const site = (run.events || []).find((e) => e.kind === 'site' && e.site?.areas?.length);
+  if (site) {
+    const f = tf(site.t), pos = [];
+    for (const a of site.site.areas) {
+      const pts = a.polygon.map(([x, y]) => f(x, y));
+      pts.forEach((p, i) => { const q = pts[(i + 1) % pts.length]; pos.push(p[0], p[1], 0.012, q[0], q[1], 0.012); });
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      const s = labelSprite(a.name, C.area); s.position.set(cx, cy, 0.05); areas.add(s);
+      L.semantic.areas.push(a.name);
+    }
+    const e = segs(pos, C.area); e.frustumCulled = false; areas.add(e);
+    wear(areas);
+  }
   const setSighting = (sighting) => {
     const key = sighting ? sighting.t : null;
     if (key === sightingKey) return;

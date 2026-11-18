@@ -126,7 +126,8 @@ class RunData:
         elif kind == "event":
             r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {}),
                                 **({"room": p.get("room"), "votes": p.get("votes") or {}} if p["kind"] == "room" else {}),
-                                **({"area": p.get("area") or {}} if p["kind"] == "area" else {})})
+                                **({"area": p.get("area") or {}} if p["kind"] == "area" else {}),
+                                **({"site": p.get("site") or {}} if p["kind"] == "site" else {})})
         elif kind == "objects":
             self.sem["objects"].append({"t": t, "objects": p["objects"], "changes": p["changes"]})
             self.counts["objects"] += 1
@@ -236,6 +237,8 @@ def streams(f: dict, events: list, counts: dict, run: dict | None = None, sig: d
         s("plan.path", "Plan", "path", "map", len(f["plans"])),
         s("semantic.objects", "Semantic map", "objects", "map", counts.get("objects", 0), why="no object recognised"),
         s("semantic.sighting", "Semantic map", "sightings", "map", counts.get("sightings", 0), why="no sighting recorded"),
+        s("semantic.areas", "Semantic map", "areas", "map", max((len(e["site"].get("areas") or []) for e in events if e["kind"] == "site"),
+                                                                default=0), why="no site with areas"),
         s("events", "Events", "events", "time", len(events), why="no events"),
     ]
     st = sig["t"] if sig else []

@@ -135,6 +135,8 @@ class DuckLog:
             if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event
                 votes = r.get("votes") if isinstance(r.get("votes"), dict) else {}
                 e.update(room=r.get("room"), votes=votes, text=f"room {r.get('room') or 'none'}", raw=rest("decision", "room", "type", "votes"))
+            if ev == "site":                                # the site the run works at, with the operator's areas (RFC-0016 rev. 3)
+                e.update(site={k: r.get(k) for k in ("id", "name", "kind", "areas")}, raw=rest("decision", "id", "name", "kind", "areas"))
             if ev == "area":                                # which of the operator's areas the pose is in, and whether the objects agree
                 e.update(area={k: r.get(k) for k in ("id", "name", "type", "guess", "agrees")}, notable=True,
                          text=f"area {r.get('name') or 'none'}" + (f", but the objects look {r.get('guess')}"

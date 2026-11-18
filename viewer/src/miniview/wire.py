@@ -86,7 +86,7 @@ def _unxy(points) -> list:
 
 
 # kinds a recording from before the adapter listed them as notable wrote as not notable, but that are decisions a page shows (RFC-0013)
-ALWAYS_NOTABLE = ("glance", "room", "area")
+ALWAYS_NOTABLE = ("glance", "room", "area", "site")
 SENSOR_FRAME = "tof"          # the depth sensor's own frame_id: the raw frame is an image of it, not a place in the map
 
 
@@ -229,6 +229,8 @@ def to_messages(t: float, kind: str, p: dict, base_ns: int, sigs: SignalSet | No
             e["room"], e["votes"] = p.get("room"), p.get("votes") or {}
         if p["kind"] == "area":
             e["area"] = p.get("area") or {}
+        if p["kind"] == "site":
+            e["site"] = p.get("site") or {}
         return [m("/miniview/event", e)]
     if kind == "depth_frame":
         rows, cols = p["rows"], p["cols"]
@@ -433,6 +435,8 @@ class Assembler:
                 d["room"], d["votes"] = o.get("room"), o.get("votes") or {}
             if o["kind"] == "area":
                 d["area"] = o.get("area") or {}
+            if o["kind"] == "site":
+                d["site"] = o.get("site") or {}
             if self.keep_raw:
                 d.update(notable=o.get("notable", True), t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "event", d)]

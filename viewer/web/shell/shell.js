@@ -113,6 +113,7 @@ function styleOf(id) {
   if (id === 'plan.path') return c('c-plan', 'route');
   if (id === 'semantic.objects') return c('c-floor', 'box');
   if (id === 'semantic.sighting') return c('c-plan', 'points');
+  if (id === 'semantic.areas') return c('c-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
@@ -1159,7 +1160,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')],
       // the semantic map (ADR-0019): its colours are not themed, a '#' colour is taken as it is; a faint key is an object not yet confirmed
       ['Object', cssHex(SEMANTIC.object), sem('semantic.objects')], ['Object, not yet', cssHex(SEMANTIC.object) + ';opacity:.4', sem('semantic.objects')], ['Landmark', cssHex(SEMANTIC.landmark), sem('semantic.objects')],
-      ['Field of view', cssHex(SEMANTIC.wedge), sem('semantic.sighting')], ['Detection', cssHex(SEMANTIC.seen), sem('semantic.sighting')]];
+      ['Field of view', cssHex(SEMANTIC.wedge), sem('semantic.sighting')], ['Detection', cssHex(SEMANTIC.seen), sem('semantic.sighting')],
+      ['Area', cssHex(SEMANTIC.area), sem('semantic.areas'), true]];
     return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:${c.startsWith('#') ? c : `var(--${c})`}"></i>${n}</span>`).join('');
   }
   const renderLegend = () => { $('legend').innerHTML = legendHtml(); };

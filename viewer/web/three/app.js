@@ -10,7 +10,7 @@ import { axes as sensorAxes } from '../shell/eye.js';
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.sighting', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
+  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.sighting', 'semantic.areas', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
 // what the eye does not draw: the robot itself, whose body the sensor sits in
 const NOT_IN_EYE = new Set(['body.model', 'belief.pose', 'truth.pose', 'rel.belief_truth']);
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));

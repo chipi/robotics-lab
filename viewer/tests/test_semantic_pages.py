@@ -53,11 +53,17 @@ def records():
     return sorted(out, key=lambda r: r[0])
 
 
+# the site the run works at, with two of the operator's areas (RFC-0016 rev. 3), in the map frame
+SITE = (1.0, "event", {"kind": "site", "text": "", "notable": False, "t_src": 1.0, "raw": {},
+                       "site": {"id": "home", "name": "Home", "kind": "apartment",
+                                "areas": [{"id": "area_1", "name": "Kitchen", "type": "kitchen", "polygon": [[0, -1], [1, -1], [1, 1], [0, 1]]},
+                                          {"id": "area_2", "name": "Hall", "type": None, "polygon": [[1, -1], [2, -1], [2, 1], [1, 1]]}]}})
+
 with tempfile.TemporaryDirectory() as tmp:
     data = Path(tmp) / "data"
     cat = catalog(data)
     cat.put_scene(SCENE)
-    make_run(data, "duck/room/sem1", records(), started_at_ns=1_800_000_000 * 10**9)
+    make_run(data, "duck/room/sem1", sorted(records() + [SITE], key=lambda r: r[0]), started_at_ns=1_800_000_000 * 10**9)
     make_run(data, "duck/room/old1", [r for r in records() if r[1] not in ("objects", "sighting") and not (r[1] == "event" and r[2]["kind"] == "room")],
              started_at_ns=1_700_000_000 * 10**9)
     httpd, base = serve(cat, follow=False)
@@ -103,6 +109,8 @@ with tempfile.TemporaryDirectory() as tmp:
         call(page, "window.miniview.setTime(1.1)")
         s = page.evaluate(sem)
         check("before the first snapshot there are no objects drawn and no sighting", s["objects"] == 0 and s["sighting"] is None and s["labels"] == [], s)
+        check("the site's areas are drawn from the start, each with its name", s["areas"] == ["Kitchen", "Hall"]
+              and streams["semantic.areas"]["count"] == 2, (s, streams.get("semantic.areas")))
 
         # ---- the objects: parts as boxes, a confirmed one labelled, in the world frame through the epoch -----------------
         call(page, "window.miniview.setTime(1.6)")

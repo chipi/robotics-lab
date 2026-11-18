@@ -90,7 +90,7 @@ check("the real slice: objects records for its semantic rows, sightings for its 
       and sum(p["kind"] == "room" for _, p in recs["event"]) == 3 and len(recs["tick"]) == 34, {k: len(v) for k, v in recs.items()})
 meta, frames = prepare(SLICE, "apartment")
 check("the slice builds a run: no rejects, the streams count what was recorded",
-      meta["rejects"] == 0 and {s["id"]: s["count"] for s in meta["streams"] if s["id"].startswith("semantic.")} == {"semantic.objects": 10, "semantic.sighting": 17},
+      meta["rejects"] == 0 and {s["id"]: s["count"] for s in meta["streams"] if s["id"].startswith("semantic.")} == {"semantic.objects": 10, "semantic.sighting": 17, "semantic.areas": 0},
       (meta["rejects"], meta["first_error"]))
 rooms = [e for e in meta["events"] if e["kind"] == "room"]
 check("its room events are in the run's events with the room and votes (the first, the recording's: office at 4.249 s)",
@@ -101,8 +101,8 @@ old = by_kind(records(FIXTURE, "apartment"))
 meta_old, _ = prepare(FIXTURE, "apartment")
 check("a run recorded before the semantic map reads as it did: no objects or sighting records, no rejects",
       "objects" not in old and "sighting" not in old and meta_old["rejects"] == 0, sorted(old))
-check("... its two semantic streams are there and missing, with a reason",
-      {s["id"]: (s["count"], s["missing"]) for s in meta_old["streams"] if s["id"].startswith("semantic.")} == {"semantic.objects": (0, True), "semantic.sighting": (0, True)})
+check("... its semantic streams are there and missing, with a reason",
+      {s["id"]: (s["count"], s["missing"]) for s in meta_old["streams"] if s["id"].startswith("semantic.")} == {"semantic.objects": (0, True), "semantic.sighting": (0, True), "semantic.areas": (0, True)})
 
 # ---- the file: written, read back ------------------------------------------------------------------------------------
 with tempfile.TemporaryDirectory() as tmp:
