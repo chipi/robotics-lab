@@ -65,4 +65,4 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   later](RFC-0018-lab-projects-and-seams.md) (decided in direction 2026-11-18: one repo,
   restructured in full)
 - [RFC-0019 — Anomalies: what went wrong, told by the software, on the timeline and the
-  map](RFC-0019-anomaly-telemetry.md) (Proposed, 2026-11-19)
+  map](RFC-0019-anomaly-telemetry.md) (Accepted with changes, 2026-11-19)
