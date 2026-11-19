@@ -97,6 +97,7 @@ OLD = {
         "arc": {"clear_mm": 300, "ahead_m": 0.25, "reach_m": 0.45,            # run.ARC_CLEAR_MM, ARC_AHEAD_M, ARC_REACH_M
                 "outer_deg": 20.0, "inner_deg": 120.0},                       # run.ARC_OUTER_DEG, ARC_INNER_DEG
         "stuck": {"window_s": 3.0, "moved_max_m": 0.05},                      # stuck.WINDOW_S, MOVED_MAX_M
+        "pace": {"caution_mps": 0.2, "look_m": 0.7, "unknown_reach_m": 0.4},  # RFC-0012 section 3, as the profile's measured says
     },
     "sensors": {
         "tof8x8": {
@@ -260,6 +261,12 @@ check("a number that differs between variants needs its why (the variant's pivot
 raw = copy.deepcopy(RAW)
 del raw["variants"]["sim"]["sensors"]["tof8x8"]["mount"]["measured"]
 check("... and its measured (the variant's depth sensor without it)", says(raw, "variants.sim.sensors.tof8x8.mount", "`measured` and `why`"))
+raw = copy.deepcopy(RAW)
+raw["locomotion"]["pace"]["caution_mps"] = 0.15
+check("the caution pace may not be slower than the slowest walk", says(raw, "pace.caution_mps 0.15 is below locomotion.slowest_mps"))
+raw = copy.deepcopy(RAW)
+raw["locomotion"]["pace"]["caution_mps"] = 0.35
+check("... nor faster than cruise", says(raw, "pace.caution_mps 0.35 is above locomotion.cruise_mps"))
 raw = copy.deepcopy(RAW)
 del raw["variants"]["sim"]["localisation"]["odometry"]["why"]
 check("... for a table of numbers too (the odometry by speed)", says(raw, "variants.sim.localisation.odometry"))

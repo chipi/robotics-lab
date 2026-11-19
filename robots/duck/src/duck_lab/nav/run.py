@@ -33,7 +33,7 @@ from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
 from duck_lab import plugins
 from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived: re-exported for the tools that read it)
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
-from duck_lab.nav import anomaly as anom, recovery
+from duck_lab.nav import anomaly as anom, pace as pacing, recovery
 from duck_lab.nav.decision import decision
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
@@ -294,6 +294,8 @@ class Navigator:
         loco, fp, eb, look = profile.locomotion, profile.footprint, profile.error_budget, profile.looking
         tof, fix = profile.sensors.tof8x8, profile.localisation.fix
         self.loco, self.fp = loco, fp
+        self.pace_cfg = loco.pace
+        self.corridor_m = eb.corridor_m
         self.tof_cal = {"pitch_offset_deg": float(tof.mount.pitch_offset_deg), "range_kind": tof.mount.range_kind}
         self.cliff_stop_m = eb.cliff_stop_m
         self.plugins = plugins.load(profile)
@@ -919,6 +921,7 @@ class Navigator:
         stuck = StuckWatch(self.loco.stuck.window_s, self.loco.stuck.moved_max_m)
         following = None     # the path being followed; a replan keeps it unless it is blocked or much longer
         tight = False        # a tight pivot was logged this leg
+        self._pace = pacing.CRUISE
         reflex_stops = 0
         progress = Progress(start)
         held_at = None       # where a goal inside a drop's ring is held off at (nearest_free), once aimed at
@@ -1113,6 +1116,16 @@ class Navigator:
                 self._check_room(room, nearest_drop)
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
+            if tw.vx > self.pace_cfg.caution_mps and not st.turning and path:
+                kind, why, nums = pacing.pace(costs, path[st.target_index:], pose, self.drops + self.edges + self.suspects.points(),
+                                              look_m=self.pace_cfg.look_m, unknown_reach_m=self.pace_cfg.unknown_reach_m,
+                                              narrow_m=self.loco.slow_clearance_m, drop_near_m=self.drop_inflate_m + self.corridor_m)
+                if kind == pacing.CAUTION:
+                    tw = Twist(self.pace_cfg.caution_mps, tw.vyaw)
+                if kind != self._pace:
+                    self._pace = kind
+                    self.record(event="pace", pace=kind, pose=pose,
+                                decision=decision("pace", f"{kind}: {why}", pace=kind, vx=tw.vx, **nums))
             near = self.range.nearest_mm()
             if tw.vx > 0 and path:
                 spot = self.range.unseen_ahead(path[st.target_index:], pose, self.floor_seen_at, skip=self.step_looked)

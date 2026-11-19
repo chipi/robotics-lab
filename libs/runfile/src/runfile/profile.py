@@ -152,6 +152,7 @@ SCHEMA = {
         "cruise_mps": "pos", "slowest_mps": "pos", "yaw_max_rad_s": "pos", "yaw_gain": "pos", "kick_rad_s": "pos", "kick_s": "pos",
         "hold_rad_s": "pos", "restep_rad": "pos", "pivot_first_deg": "pos", "pivot_done_deg": "pos", "slow_yaw_rad_s": "pos",
         "slow_clearance_m": "pos", "lookahead_m": "pos", "lookahead_near_m": "pos", "goal_tol_m": "pos", "step_over_m": "pos",
+        "pace": {"caution_mps": "pos", "look_m": "pos", "unknown_reach_m": "pos"},
         "pivot": {"vx_mps": "num", "drop_clear_m": "pos", "edge_clear_m": "pos", "obstacle_margin_m": "pos", "tight_m": "pos",
                   "tight_spot_m": "pos", "tight_gap_s": "pos"},
         "arc": {"clear_mm": "pos", "ahead_m": "pos", "reach_m": "pos", "outer_deg": "pos", "inner_deg": "pos"},
@@ -332,6 +333,13 @@ def _check_numbers(p: dict, where: str) -> None:
         raise FormatError(f"{where}.locomotion.cruise_mps {cruise:g} is above factsheet.physicalParameters.maximumSpeed {top:g}")
     if cruise is not None and slowest is not None and slowest > cruise:
         raise FormatError(f"{where}.locomotion.slowest_mps {slowest:g} is above locomotion.cruise_mps {cruise:g}")
+    caution = (loco.get("pace") or {}).get("caution_mps")
+    if caution is not None:
+        if slowest is not None and caution < slowest:
+            raise FormatError(f"{where}.locomotion.pace.caution_mps {caution:g} is below locomotion.slowest_mps {slowest:g}: the robot "
+                              f"cannot walk that slowly")
+        if cruise is not None and caution > cruise:
+            raise FormatError(f"{where}.locomotion.pace.caution_mps {caution:g} is above locomotion.cruise_mps {cruise:g}")
     if ang is not None:
         for k in ("yaw_max_rad_s", "kick_rad_s", "hold_rad_s"):
             if k in loco and loco[k] > ang:
