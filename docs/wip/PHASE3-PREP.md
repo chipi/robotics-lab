@@ -143,9 +143,9 @@ Written as the steps land; each lists what was proved and what was not.
   and `why` verbatim from `calibration/sim.json`. The base holds the real duck's values (no
   creep, mapd's 3° axial mount, no odometry scale); `real` is empty, `sim` lays the measured
   numbers on it.
-- `robots/duck/tests/test_profile.py`: every number of the profile (140) compared with the
-  constant it replaces, exactly, both directions (a number with no expected value fails, an
-  expected value missing from the profile fails). Derived values (`LETHAL_M + 0.05`,
+- `robots/duck/tests/test_profile.py`: every number of the profile (140 then, 142 after step 3)
+  compared with the constant it replaces, exactly, both directions (a number with no expected
+  value fails, an expected value missing from the profile fails). Derived values (`LETHAL_M + 0.05`,
   `0.083 + 0.04`, the radians) are checked to the last bit; `measured` and `why` against
   `sim.json`; one case per rule.
 
@@ -200,7 +200,72 @@ Also: `nav/cliff.py` and `nav/step_check.py` are gone (their code is `plugins/to
 frames, ratio and clear distance from the profile; the probes read the sensor through
 `sim/probes/cliff_shim.py`.
 
+### Proof that the duck behaves the same (A4), 2026-11-19
+
+Three trees: the base `c61ca7f`, step 2 `b90731d`, step 3 `0e32d31`. Simulator jobs ran one at a
+time under the shared lock, into a scratch data folder, three seeds per challenge, two repeats.
+
+**0. Is the simulator deterministic? No** (K13). Challenge 5, seeds 1–3, three complete repeats
+on the base: in all 9 pairs the commands first differ at command 84–156 of 200–330, and the
+truth pose already differs by 0.9 mm at the first command (27 mm by command 120), so no
+tick-for-tick comparison of simulator runs is possible. The criterion used instead: exact
+equality where the inputs are recorded (replays, the locomotion replay), pass counts per seed
+over repeats where they are not (challenges).
+
+**1. Every number against its constant:** `test_profile.py`, 142 numbers, exact, both ways.
+
+**2. Step 2.** `make test-duck` PASS (and `make lint`, `make test-control`).
+`duck-replay` over 122 recorded runs (b9 r1–r3, b10b r1–r3, b11 r1–r5, b12 r1–r3, the other
+apartment runs, and the latest run of each seed of challenges 5, 11, 16, 17, 18, 19): the output of
+each run on the base and on step 2 is identical, file for file (115 PASS; the 7 that FAIL fail
+the same on both, K33). Challenges, pass counts by seed (P pass, F fail, one letter per repeat):
+
+| Challenge | Base `c61ca7f` | Step 2 `b90731d` | Step 3 `0e32d31` |
+| --- | --- | --- | --- |
+| 1 | 6/6 | 6/6 | 6/6 |
+| 2 | 6/6 | 6/6 | 6/6 |
+| 3 | 6/6 | 6/6 | 6/6 |
+| 4 | 6/6 | 6/6 | 6/6 |
+| 5 | 7/9: s1 PPP, s2 FPF, s3 PPP | 5/6: s1 PP, s2 PF, s3 PP | 6/6 |
+| 11 | 6/6 | not run | 6/6 |
+| 16 | 2/6: s1 FP, s2 FF, s3 PF | not run | 1/6: s1 FF, s2 FF, s3 PF |
+| 17 | 0/6 | not run | 0/6 |
+| 18 | 1/6: s1 FF, s2 FF, s3 PF | not run | 0/6 |
+| 19 | 0/6 | not run | 0/6 |
+
+Every failure of 16–19 on both trees is "stuck: walking without moving" (K1), except one base
+run of challenge 18 ("no room to turn"); the failures of challenge 5 are "no room to turn" on
+both. The base flips by itself (challenge 5 seed 2; 16 seeds 1 and 3; 18 seed 3), and six runs
+per challenge cannot rule out a drop of 30 points: what they show is no change beyond that
+variation, and no new failure kind.
+
+**3. Step 3.** `make lint`, `make test-duck`, `make test-control`, `make test-observatory`
+PASS. `duck-replay`: the same 122 runs, identical to the base file for file. The locomotion
+replay (`sim/probes/loco_replay.py`: the base's `follow.step` beside `follow.step` and
+`DuckWalk.drive`, fed 21 recorded runs' poses and plans, every combination of the three flags
+the log does not keep): 4611 ticks, 36 888 evaluations, the same motion and the same follower
+state on every one. The logged commands: 2906 of the 3148 non-zero logged commands (92 %) are
+reproduced, within 0.15 rad/s, by some combination of the flags; the other 8 % and the zero
+commands (stands, surveys) are not outputs of `step`, or depend on inputs the log does not keep
+(the pose is logged after the command). Probe replays, base against step 3, identical output:
+`stuck_replay` (challenges 16, 5), `hold_off_replay` (12 refusals of challenges 8–11),
+`glance_replay`, `glance_from_run`, `false_drops`, `trigger_replay` (challenges 10, 11).
+Challenges: the table above.
+
 ## NOT VERIFIED
+
+Written for step 3's proof: the numbers above are from the runs named, no others. Challenges 20
+and up, and the apartment batches, were not run. The EV3, the NXT and the real duck were not
+touched. `margin_replay` and `step_check_replay` need `ticks.jsonl` files the data folder does
+not hold, so they ran on neither tree. The simulator's first divergence between repeats is
+measured, its cause is not. By its COPY lines (the image was not built or run here), Mission
+Control's image (`apps/mission-control/Dockerfile`) has `robots/duck/src` and not the profile, as it
+did not have `calibration/`: the duck adapter's `load_scale` has nothing to read in that image,
+before and after.
+
+Below: the preparation's own note, from before any of this was run.
+
+## NOT VERIFIED (preparation)
 
 Nothing was run, parsed or type-checked; line numbers come from delegated scans and were not
 spot-checked; tick-for-tick determinism of the simulator is not measured; the detector counts cover
