@@ -283,7 +283,8 @@ class Navigator:
         self._closing = threading.Event()
         self._start_watchdog()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
-        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.locomotion.pivot_vx,
+        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, odom_by_speed=self.localisation.by_speed,
+                    pivot_vx_mps=self.locomotion.pivot_vx,
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data)})
 
     def configure(self, profile) -> None:
@@ -332,6 +333,7 @@ class Navigator:
         self.sync_memory()
         vx =tw.vx if self.speed_cap is None else max(-self.speed_cap, min(self.speed_cap, tw.vx))
         self._walking = tw.vx > 0.05
+        self.localisation.commanded(vx, tw.vyaw)
         try:
             self.locomotion.command(vx, tw.vyaw)
         except LeaseLost as exc:

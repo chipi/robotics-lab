@@ -174,7 +174,7 @@ SCHEMA = {
                 "survey_step_deg": "pos"},
     "localisation": {
         "source": "str", "maps_only_at_stops": "bool", "grid_res_m": "pos",
-        "odometry": {"scale": "pos", "at_speed_mps": "pos", "by_speed": "pos_map"},
+        "odometry": {"scale": "pos", "at_speed_mps": "pos", "by_speed": "pos_map", "straight_rad_s": "pos"},
         "fix": {"jump_m": "pos", "jump_rad": "pos", "record_m": "pos", "loop_credit_s": "pos", "hold_n": "int", "hold_agree_m": "pos",
                 "hold_agree_rad": "pos", "offset_max_m": "pos", "offset_half_s": "pos", "move_m": "pos", "move_rad": "pos",
                 "parted_m": "pos", "parted_rad": "pos"},
@@ -298,6 +298,30 @@ def merge_variant(raw: dict, variant: str) -> dict:
     return out
 
 
+def _check_odometry(odo: dict, where: str) -> None:
+    """The odometry scale by speed (K8): the table's speeds are numbers (m/s, as strings: JSON keys), and `scale`, the one the map
+    and mapd's pose are metred by, is the table's value at `at_speed_mps` (within 1 %): a table that disagrees with the scale
+    it sits beside would put the belief and the map in different metres."""
+    table = odo.get("by_speed")
+    if table is None:
+        return
+    speeds = {}
+    for k, v in table.items():
+        try:
+            speeds[float(k)] = v
+        except ValueError:
+            raise FormatError(f"{where}.by_speed: the speed {k!r} is not a number (m/s)") from None
+        if float(k) <= 0:
+            raise FormatError(f"{where}.by_speed: the speed {k!r} must be above 0 m/s")
+    at = odo.get("at_speed_mps")
+    if at is None:
+        raise FormatError(f"{where}.at_speed_mps is required with by_speed (the speed `scale` was measured at)")
+    if at not in speeds:
+        raise FormatError(f"{where}.at_speed_mps {at:g} is not a speed of by_speed ({sorted(speeds)})")
+    if "scale" in odo and abs(odo["scale"] - speeds[at]) > 0.01 * speeds[at]:
+        raise FormatError(f"{where}.scale {odo['scale']:g} is not by_speed's {speeds[at]:g} at {at:g} m/s (within 1 %)")
+
+
 def _check_numbers(p: dict, where: str) -> None:
     fs = parse_factsheet(p["factsheet"])
     pp = fs.get("physicalParameters") or {}
@@ -317,6 +341,7 @@ def _check_numbers(p: dict, where: str) -> None:
         raise FormatError(f"{where}.footprint.radius_m {fp['radius_m']:g} is above footprint.lethal_m {fp['lethal_m']:g}")
     if "inflate_m" in fp and "lethal_m" in fp and fp["lethal_m"] > fp["inflate_m"]:
         raise FormatError(f"{where}.footprint.lethal_m {fp['lethal_m']:g} is above footprint.inflate_m {fp['inflate_m']:g}")
+    _check_odometry((p.get("localisation") or {}).get("odometry") or {}, f"{where}.localisation.odometry")
     try:
         check_max_speed(p.get("guardrails") or [], fs)
     except FormatError as exc:

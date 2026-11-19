@@ -165,6 +165,35 @@ t_start = _time.monotonic()
 check("... and when it is collecting, true (after 2 s more)", m2.settle(lambda: stands.append(1), 5.0, 0.2) is True
       and 1.9 < _time.monotonic() - t_start < 3.0, _time.monotonic() - t_start)
 
+ms = Mapd(P)
+check("the odometry scale by speed: the table's at its speeds, between them on a line, held beyond them",
+      [round(ms.scale_at(v), 4) for v in (0.0, 0.2, 0.25, 0.3, 0.4, 0.5)] == [0.849, 0.849, 0.88, 0.911, 0.93, 0.93],
+      [ms.scale_at(v) for v in (0.0, 0.2, 0.25, 0.3, 0.4, 0.5)])
+rpc3 = Mapd_RPC()
+rpc3.status = {"state": {"pose": {"x": 0.0, "y": 0.0, "yaw": 0.0}, "t_ns": 1_000_000_000}, "loops": 0, "relocalizations": 0,
+               "island_keyframes": 0}
+ms.bind(rpc3)
+ms.on_odom(1_000_000_000, (0.0, 0.0, 0.0))
+ms.commanded(0.2)
+ms.on_odom(2_000_000_000, (1.0, 0.0, 0.0))
+ms.commanded(0.3)
+ms.on_odom(3_000_000_000, (2.0, 0.0, 0.0))
+ms.commanded(0.2, 0.6)
+ms.on_odom(4_000_000_000, (3.0, 0.0, 0.0))
+ms.fix(lambda **kw: None)
+check("odometry steps are scaled by the speed commanded while they were walked (1 m at 0.2, 1 m at 0.3: 0.849 + 0.911)",
+      abs(ms.to_map((2.0, 0.0, 0.0))[0] - 1.760) < 1e-9 and abs(ms.to_map((1.0, 0.0, 0.0))[0] - 0.849) < 1e-9,
+      (ms.to_map((2.0, 0.0, 0.0)), ms.to_map((1.0, 0.0, 0.0))))
+check("... an arc (a turn over straight_rad_s) is corrected by `scale`, the one measured in navigation (0.91)",
+      abs(ms.pose()[0] - (0.849 + 0.911 + 0.91)) < 1e-9, ms.pose())
+mr = Mapd(REAL)
+mr.on_odom(1_000_000_000, (0.0, 0.0, 0.0))
+mr.commanded(0.2)
+mr.on_odom(2_000_000_000, (1.0, 0.0, 0.0))
+mr.bind(rpc3)
+mr.fix(lambda **kw: None)
+check("a profile without a table keeps its one scale at every speed (the real duck's 1.0)", abs(mr.pose()[0] - 1.0) < 1e-9, mr.pose())
+
 # ---- looking --------------------------------------------------------------------------------------------------------------------
 
 

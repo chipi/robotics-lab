@@ -123,7 +123,8 @@ OLD = {
                 "survey_step_deg": 90},                           # explore_run.SURVEY_STEP_RAD = math.pi / 2
     "localisation": {
         "grid_res_m": ROBOT_FILE["capabilities"]["map"]["resolution_m"],      # run.mapd_grid asks mapd for 0.05 (a literal there)
-        "odometry": {"scale": SIM_JSON["odom_scale"], "at_speed_mps": SIM_JSON["at_speed_mps"], "by_speed": SIM_JSON["by_speed"]},
+        "odometry": {"scale": SIM_JSON["odom_scale"], "at_speed_mps": SIM_JSON["at_speed_mps"], "by_speed": SIM_JSON["by_speed"],
+                     "straight_rad_s": SIM_JSON["straight_rad_s"]},
         "fix": {"jump_m": 0.3, "jump_rad": 0.35,                                       # run.FIX_JUMP_M; the literal in frames.on_fix
                 "record_m": 0.1, "loop_credit_s": 3.0,                                 # run.FIX_RECORD_M, LOOP_CREDIT_S
                 "hold_n": 5, "hold_agree_m": 0.15, "hold_agree_rad": 0.1,              # frames.HOLD_N, HOLD_AGREE_M, HOLD_AGREE_RAD
@@ -279,6 +280,19 @@ try:
     check("merge_variant refuses an unknown variant", False)
 except FormatError as exc:
     check("merge_variant refuses an unknown variant, naming the ones it has", "variants.lab" in str(exc) and "sim" in str(exc), str(exc))
+
+raw = copy.deepcopy(RAW)
+raw["variants"]["sim"]["localisation"]["odometry"]["by_speed"]["fast"] = 0.95
+check("the odometry table's speeds are numbers", says(raw, "by_speed", "not a number"))
+raw = copy.deepcopy(RAW)
+del raw["variants"]["sim"]["localisation"]["odometry"]["at_speed_mps"]
+check("a table needs the speed `scale` was measured at", says(raw, "at_speed_mps is required"))
+raw = copy.deepcopy(RAW)
+raw["variants"]["sim"]["localisation"]["odometry"]["at_speed_mps"] = 0.25
+check("... which is one of the table's speeds", says(raw, "at_speed_mps 0.25 is not a speed of by_speed"))
+raw = copy.deepcopy(RAW)
+raw["variants"]["sim"]["localisation"]["odometry"]["scale"] = 0.85
+check("... and `scale` is the table's value there (0.85 against 0.911 at 0.3 m/s)", says(raw, "scale 0.85 is not by_speed's 0.911"))
 
 check("Profile: an attribute that is not there is an AttributeError", not hasattr(SIM, "no_such_block"))
 check("Profile: a table of numbers stays a plain dict", SIM.localisation.odometry.by_speed == {"0.2": 0.849, "0.3": 0.911, "0.4": 0.930})
