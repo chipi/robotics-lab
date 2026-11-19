@@ -20,6 +20,8 @@ import statistics
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav.evaluate import LAYOUT, footprint_distance
 from duck_lab.nav.frames import compose, inverse
 
@@ -33,14 +35,13 @@ def surface(p):
 
 
 for run in map(Path, sys.argv[1:]):
-    st = json.loads((run / "start.json").read_text())
+    st, log = legacy_rows.load(run)
     w_from_m = compose(tuple(st["truth"]), inverse(tuple(st["map"])))
     s = st["scale"]
     print(f"== {run.name}")
-    for line in open(run / "ticks.jsonl"):
-        if '"event": "pick"' not in line:
+    for r in log:
+        if r.get("event") != "pick":
             continue
-        r = json.loads(line)
         b, tr = r["pose"], r.get("truth")
         if not tr:
             continue

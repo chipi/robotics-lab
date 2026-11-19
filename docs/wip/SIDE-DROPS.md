@@ -167,7 +167,12 @@ the way, and what the code does now:
   | a suspicion | 0.32 (what it becomes) | — |
 
   Pivot drift, 87 pivots on 2026-11-17 (`sim/probes/turn_drift.py`): p95 5.1–7.9 cm, max 7.9 cm.
-  The glance's error since the rim fix, 54 glances: −14/+6.4 cm looking aside, −18/+3 cm ahead.
+  The glance's error was stated here as −14/+6.4 cm looking aside, −18/+3 cm ahead, over 54 glances
+  (a measurement that is not in the repo). **Corrected 2026-11-19 (K27, "What the edge error is
+  used for" below):** over the 355 glances of challenges 8–11 the short side is −36.5 cm at worst
+  (54 over 18 cm), and the side that matters, how far past the real edge the nearest rim point of
+  a glance lies, is +8.8 cm at worst (11 of 355 past it, 1 over 3 cm). The ring sums here do not
+  contain it.
   The 0.32 ring also keeps a path held at it out of the cliff check's corridor (0.305 with errors).
 - **A turn while walking** is refused only for a drop within 0.45 m where it turns (from 20° outside
   to 120° inside), not for any drop ahead.
@@ -269,6 +274,51 @@ at its 10 Hz ticks, give the recorded rim exactly, 6 points, y −0.540 to −0.
   budget above came from another measurement that is not in the repo, so the two are not
   compared here. Of the 355, 11 glances grew past +6.4 cm after the fix (largest +10.8 cm; each
   of them also lost 12–40 cm of shortness).
+
+### What the edge error is used for (K27, 2026-11-19)
+
+**Where the budget is stated:** this file (the rings paragraph), the comment above `FLOOR_CELL_M`
+in `robots/duck/src/duck_lab/nav/run.py` ("a drop edge a glance measured (−14/+6.4 cm aside, −18/+3
+cm ahead, 54 glances)", not edited here: it is the navigator's file), and the docstring of
+`sim/probes/glance_edge_error.py` (corrected). **What it is used for:** as the reason for the
+edge's gate and ring (`pivot.edge_clear_m` 0.26, `error_budget.edge_lethal_m` 0.32). It is not an
+input to their sums: 0.26 + the following's 3 cm + the belief's 2.5 cm = 0.315, rounded to 0.32; and
+"the gate less the pivot's drift keeps the judge's 0.15 m" is 0.26 − 0.079 − 0.025 = 0.156 m,
+with no term for the edge's own error.
+
+**Re-measured** (`sim/probes/glance_edge_error.py ch8-s1 … ch11-s10`, the edge code as it is
+now over every recorded glance: 355, each rim point against the scene's hazard box, − short of
+the edge, + past it):
+
+| | stated | measured, 355 glances |
+| --- | --- | --- |
+| short side, the worst rim point of a glance | −14 aside, −18 ahead | worst −36.5 cm; 96 over 14 cm short, 54 over 18, 5 over 30; median −8.7 |
+| past side, the worst rim point of a glance | +6.4 aside, +3 ahead | worst +74.6 cm; 71 over 6.4, 45 over 15, 34 over 30; p50 +0.5, p90 +27, p95 +50 |
+| past side, the *nearest* rim point of a glance | — | worst +8.8 cm (ch8-s2 `run-20261117-081934`); 11 of 355 past the edge at all, 1 over 3 cm, 1 over 6.4 |
+
+Reading: the short side (the believed edge nearer than the real one) costs reach, not safety, and
+it is outside the stated −18 in 54 of 355 glances. A rim point deep in the hole (+27 to +75 cm in
+34 glances: the "no floor before the below returns" case) is not a danger by itself: the rings are
+laid round every rim point, so a deep point only adds ring inside the hole. Where a glance has a
+rim point on the floor side, that point guards the edge near it; only a glance whose every rim
+point is past the edge leaves the real edge unguarded, and that is the "nearest" row, +8.8 cm at
+worst. So the statement should read: "short by up to 37 cm (the duck stays further off than it
+needs to); no rim point on the floor side in 11 of 355 glances, past the real edge by 8.8 cm at
+most and over 3 cm in 1 (challenges 8–11, simulator)". Not measured: the gaps between a glance's
+rim points along the edge (a rim with points short at one end and deep at the other leaves the
+middle to the rings' width).
+
+**What it does to the rings.** With the +8.8 cm in the sum, the real edge is 0.26 − 0.088 − 0.079
+− 0.025 = 0.068 m from a standing duck's centre in the worst glance, under the judge's 0.15 m;
+with the +3 cm stated, 0.126 m, also under. The sum only holds the 0.15 m if the worst terms do
+not coincide (the worst pivot drift at the one glance with the worst past error). What the runs
+show: the trunk centre's closest approach to the hazard box over the 566 recorded runs of
+challenges 8–11 (341 with a glance; runs from before the rim fix included, so this is not the
+fixed code's record): minimum 0.108 m (ch11-s8 `run-20261117-003009`, 2 glances), 1 run of the 341
+under 0.15 m, 2 under 0.20 m, none inside. To hold 0.15 m with the worst glance and the worst
+drift together the edge gate would have to be 0.26 + 0.088 = 0.35 m (ring 0.41); that is a
+navigation number and a trade against reach, not changed here (the navigator's owner decides; it
+belongs with K22, the explorer aiming at places with little room).
 
 ## Not covered
 

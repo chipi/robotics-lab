@@ -12,6 +12,8 @@ import json
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.challenge.floor import coverage_by, known_test, reachable_floor
 from duck_lab.nav.evaluate import LAYOUT
 from duck_lab.nav.rooms import ROOMS
@@ -19,11 +21,12 @@ from duck_lab.nav.rooms import ROOMS
 layout = json.loads(LAYOUT.read_text())
 regions = {name: (lambda p, b=b: b[0] <= p[0] <= b[1] and b[2] <= p[1] <= b[3]) for name, b in ROOMS.items()}
 runs = [Path(a) for a in sys.argv[1:]]
-start = json.loads((runs[0] / "start.json").read_text())
+start = legacy_rows.load(runs[0])[0]
 points = reachable_floor(layout, tuple(start["truth"][:2]))
 print(f"reachable floor from the dock: {len(points)} cells of 0.05 m; per room "
       + ", ".join(f"{n} {c}" for n, c in coverage_by(points, lambda p: True, regions)["cells"].items()))
 for run in runs:
-    st = json.loads((run / "start.json").read_text())
-    cov = coverage_by(points, known_test(json.loads((run / "map_grid.json").read_text()), st), regions)
+    st, rows = legacy_rows.load(run)
+    grid, scale = legacy_rows.final_grid(run, rows)
+    cov = coverage_by(points, known_test(grid, st if scale is None else dict(st, scale=scale)), regions)
     print(f"{run.name}: floor known {cov['all'] * 100:5.1f} %   " + "  ".join(f"{n} {v * 100:3.0f} %" for n, v in cov["regions"].items()))

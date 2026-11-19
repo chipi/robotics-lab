@@ -66,6 +66,62 @@ range model that differs. Predicted, not measured: where it shows in mapd's grid
 placed farther off-axis, a flat wall bent). The duck's navigator already reads the sim as radial for
 its own depth points (`cliff.configure`); mapd's grid is the part that does not.
 
+## The bench: mapd's mapper on a recorded frame set, axial against radial (2026-11-19, K34)
+
+Pollen's replay bench (`maploc/examples/replay.rs`, the same `Mapper` as `mapd`, `--set
+project.range_is_axial=false`) on two sessions recorded from the simulator, scored against
+`apartment_layout.json`. Nothing in Pollen's repository was edited or installed: the example was
+built with `cargo build -p maploc --release --example replay --offline --locked` into a scratch
+target directory (8 s, no fetch), and Pollen's tree is as it was (`git status`: only
+`scripts/duck-sim`, modified before this).
+
+- **The sessions** (`sim/probes/record_session.py`, on the reset apartment simulator, under the
+  lock): `state.jsonl` and `tof.jsonl` as the bench reads them, and the simulator's truth beside
+  every 5th state. Session 1: 5 walk-and-stand stops (0.2 m/s, 0.2 rad/s, 6 s, 4 s), 1622 states, 754
+  depth frames, 4 keyframes. Session 2: 14 stops (0.2 m/s, 0.12 rad/s, 5 s, 3 s), 3787 states, 1670
+  frames, 13 keyframes (the mapper matched 2).
+- **The score** (`sim/probes/map_range.py`): every occupied cell of the grid, put into the world
+  frame (the first keyframe's pose in the map against the truth; the profile's odometry scale 0.91
+  applied as the navigator applies it), signed distance to the nearest solid footprint of the
+  layout (+ outside it, in the free space the sensor looks through; − inside), and the free cells
+  more than 1 cm inside a real footprint. Two ways: with the robot's own odometry, and with the
+  simulator's truth as the odometry (`sim/probes/truth_odometry.py`), which takes the odometry's
+  drift out and leaves the sensor model as the only variable.
+
+| Session, odometry | Variant | Occupied cells | Signed distance to a real surface: mean, p10, p90 (cm) | Free cells inside a real footprint | Frame residual (cm) |
+| --- | --- | --- | --- | --- | --- |
+| 1, truth | axial, 3° (mapd's) | 44 | −0.4, −2.9, +2.0 | 2 | 1.2 |
+| 1, truth | radial, 3° | 41 | +2.6, −0.5, +7.1 | 0 | 1.2 |
+| 2, truth | axial, 3° (mapd's) | 225 | −1.6, −5.2, +1.6 | 152 | 4.5 |
+| 2, truth | radial, 3° | 152 | +0.1, −4.0, +3.2 | 45 | 2.1 |
+| 1, mapd's own | axial, 3° | 36 | +1.7, −1.8, +6.9 | 11 | 5.7 |
+| 1, mapd's own | radial, 3° | 39 | +5.6, −0.2, +14.1 | 11 | 5.7 |
+| 2, mapd's own | axial, 3° | 203 | +0.6, −4.5, +5.8 | 285 | 13.5 |
+| 2, mapd's own | radial, 3° | 162 | +3.6, −3.1, +13.6 | 336 | 15.2 |
+
+Pitch 2.5° and 2.7° in place of mapd's 3° change the means by 0.2 cm or less in every truth-odometry
+row and the occupied counts by up to 7 cells (the sensor's pitch is not what separates the rows).
+The free-cells-inside-solids column is not stable under it (session 2, axial: 152 at 3°, 70 at
+2.7°, 134 at 2.5°; radial 45, 42, 42), so it is read as a rough size, not a trend.
+
+**Result: no clear gain from the radial model, and the sign changes between the sessions.** With
+the truth as the odometry, session 2 favours radial (axial puts the walls 1.6 cm inside the
+surface on average, as a range too long by 1 / (cos × cos) would; radial centres them, with 70 %
+fewer free cells inside solids) but radial also keeps 32 % fewer occupied cells (152 against 225);
+session 1 favours axial (−0.4 against +2.6 cm). With mapd's own odometry radial is worse in both
+(its cells lie +3.6 to +5.6 cm in front of the surface against +0.6 to +1.7), the odometry's drift
+(5 to 15 cm of frame error) larger than the effect. The calculated 3 to 6 cm at 0.5 m of range
+above was not seen: the differences are 1 to 2 cm. Radial is not a change worth asking Pollen for on
+this evidence; the question for Pollen is what the VL53L5CX reports (their own comment calls the
+axial choice "unsettled"): [UPSTREAM-MAPD-RANGE-DRAFT.md](UPSTREAM-MAPD-RANGE-DRAFT.md), a note,
+not sent.
+
+**Not covered by the bench:** two short sessions in one room (4 and 13 keyframes, the mapper
+matched 2 of them), so the scores are of the first scans, not of a map with loop closures; one
+pose of the head (it was walking); the walls and furniture of the apartment only; the real duck's
+sensor; the effect on a navigator's route (the grid is judged against the layout, not the
+planner). `--tof-pitch-deg` was tried at 2.5 and 2.7 only with the mapd latency 60 ms.
+
 ## So
 
 - **The duck profile's sim calibration** (`pitch_offset_deg 2.5`, `range radial`): consistent with
@@ -73,14 +129,14 @@ its own depth points (`cliff.configure`); mapd's grid is the part that does not.
   asked. The apartment's 0.1 to 0.4° higher median is not explained (the head posture while walking
   and tilt are candidates).
 - **mapd in the simulator** assumes axial ranges; this is a setting of Pollen's code (not
-  configurable from `robotd.toml` today), not of ours. Whether a grid built with the radial model
-  matches the walls better was not tried (it needs mapd, or maploc's replay bench, run on a recorded
-  frame set).
+  configurable from `robotd.toml` today), not of ours. A grid built with the radial model does not
+  match the walls better on the two sessions tried (the bench section above: 1 to 2 cm, in
+  different directions); K34 closes with that, and a note for Pollen, not sent.
 
 ## NOT VERIFIED
 
-- mapd and maploc were not run; the grid effect of the axial assumption is a calculation, not a
-  comparison.
+- The first measurement (above the bench section) was a calculation; the bench is the comparison,
+  on two short sessions (what it does not cover is under it).
 - The pitch error was estimated from floor pixels with the sensor height from `odom_z` and
   `frames.tof`; a height error and a pitch error are not separated by these data.
 - The simulator was not asked for its `tof` site's true pose; the 2.4 to 2.9° is inferred from the

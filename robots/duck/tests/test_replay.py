@@ -192,6 +192,45 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a tick whose depth is not any frame's points is found", not replay.verdict(t5) and t5["ticks_untraced"] == 2, t5["ticks_untraced"])
     check("a run with no depth frames is not a pass", not replay.verdict(replay.replay([r for r in recs if r[1] != "depth_frame"])))
 
+    # ---- a run that predates the replay is said to, by what its file lacks; a failure is not mistaken for one ------------
+    nodepth = [r for r in recs if r[1] != "depth_frame"]
+    why = replay.predates(nodepth, replay.replay(nodepth))
+    check("a file with no depth frames predates the replay: it says so, and why", why is not None and "no depth frames" in why, why)
+    nopose = [(t, k, {x: v for x, v in p.items() if x != "derived"} if k == "depth_frame" else p) for t, k, p in recs]
+    why = replay.predates(nopose, replay.replay(nopose))
+    check("frames with no pose, none replayable (a run cut short): nothing to replay, and it says so", why is not None and "no pose" in why, why)
+
+    def flipped(records):
+        """The same run with one point's kind changed in the recorded frame 103 (every coordinate as it was), the way a run recorded
+        under an older floor/obstacle rule differs from the present code."""
+        out = []
+        for t, k, p in records:
+            p = json.loads(json.dumps(p))
+            if k == "depth_frame" and p["seq"] == 103:
+                q = p["derived"]["points"][0]
+                q[3] = "o" if q[3] == "f" else "f"
+            out.append((t, k, p))
+        return out
+
+    old = flipped(recs)
+    rep_old = replay.replay(old)
+    why = replay.predates(old, rep_old)
+    check("only a point's kind differs and no calibration event names the profile: the run predates the replay, and says what differs",
+          not replay.verdict(rep_old) and why is not None and "which returns became points" in why and "1 frames" in why, (len(rep_old["diffs"]), why))
+    named = old + [(0.0, "event", {"kind": "calibration", "raw": {"profile": {"id": "duck", "variant": "sim"}}})]
+    check("... the same difference in a run that names its profile is a failure", replay.predates(named, replay.replay(named)) is None)
+    fewer = []
+    for t, k, p in recs:
+        p = json.loads(json.dumps(p))
+        if k == "depth_frame" and p["seq"] == 103:
+            del p["derived"]["points"][5]
+        fewer.append((t, k, p))
+    check("... so does a run whose recorded frame kept fewer points than the present code gives, each in the same place",
+          replay.predates(fewer, replay.replay(fewer)) is not None)
+    check("... a point that moved is a failure, not an old run (the profile unnamed)", replay.predates(recs, t1) is None)
+    check("... a distance that changed is a failure, not an old run", replay.predates(recs, t2) is None)
+    check("... a passing run has nothing to predate", replay.verdict(rep) and replay.predates(recs, rep) is None)
+
     # ---- an evaluation: a goal is a segment, the navigator before the current one is dropped -------------------------
     ev_rl = RunLog(data, "apartment", "phase1x", "go-to evaluation", None, evaluation=True)
     sid1 = ev_rl.new_session()

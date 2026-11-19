@@ -1,5 +1,6 @@
-"""The glance's edge against the real one, over recorded runs (docs/wip/SIDE-DROPS.md's error budget: -14/+6.4 cm looking aside,
--18/+3 cm ahead, 54 glances). Each glance event of the runs given is replayed from the run's own depth frames with the edge
+"""The glance's edge against the real one, over recorded runs (docs/wip/SIDE-DROPS.md's error budget was stated as -14/+6.4 cm looking aside,
+-18/+3 cm ahead, 54 glances; re-measured over challenges 8-11, 355 glances: short up to -36.5 cm, past up to +74.6 cm at a glance's worst rim
+point, +8.8 cm at its least-past one: that section, "What the edge error is used for"). Each glance event of the runs given is replayed from the run's own depth frames with the edge
 code as it is now (glance_from_run.replay_glance), and every rim point it makes is measured against the scene's drop (the
 hazard boxes of data/scenes/<scene>/scene.json, or an apartment run's stairwell, y -0.70): signed, negative when the rim lies
 on the floor side of the edge (short: the edge is farther than the duck believes), positive past it (inside the hole).

@@ -27,7 +27,10 @@ def edge_distance(p):
     return (dx * dx + dy * dy) ** 0.5
 
 
-nav = Navigator(log="robots/duck/runs/cliff-test.jsonl")
+RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runs")     # robots/duck/runs, wherever this is run from
+os.makedirs(RUNS, exist_ok=True)
+LOG = os.path.join(RUNS, "cliff-test.jsonl")
+nav = Navigator(log=LOG)
 closest = [9.0]
 
 
@@ -51,6 +54,6 @@ try:
     end = nav.body.pose()
     print(json.dumps({"result": out, "truth_end": [round(v, 3) for v in end],
                       "closest_to_opening_m": round(closest[0], 3),
-                      "cliff_stops": sum(1 for l in open("robots/duck/runs/cliff-test.jsonl") if '"cliff_stop"' in l)}))
+                      "cliff_stops": sum(1 for l in open(LOG) if '"cliff_stop"' in l)}))
 finally:
     nav.close()

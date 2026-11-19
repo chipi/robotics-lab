@@ -15,6 +15,8 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav import explore
 from duck_lab.nav.evaluate import LAYOUT, footprint_distance
 from duck_lab.nav.frames import compose, inverse
@@ -38,12 +40,11 @@ def lethal_free(grid):
 
 
 def replay(run: Path, pick=explore.pick, frontiers=explore.frontiers) -> list:
-    start = json.loads((run / "start.json").read_text())
+    start, log = legacy_rows.load(run)
     w_from_m = compose(tuple(start["truth"]), inverse(tuple(start["map"])))
     s = start["scale"]
     world, pose, failed, out = None, None, [], []
-    for line in open(run / "ticks.jsonl"):
-        r = json.loads(line)
+    for r in log:
         ev = r.get("event")
         if ev == "world":
             world = r["grid"]
@@ -68,12 +69,11 @@ def replay(run: Path, pick=explore.pick, frontiers=explore.frontiers) -> list:
 def replay_picks(run: Path, pick=explore.pick, frontiers=explore.frontiers) -> list:
     """From the pick events (runs from b2 on): the exact grid, pose, avoid list and obstacle points the run's choice used.
     The navigator's ok() is not recorded; its verdict is approximated by the grid's own free cells."""
-    start = json.loads((run / "start.json").read_text())
+    start, log = legacy_rows.load(run)
     w_from_m = compose(tuple(start["truth"]), inverse(tuple(start["map"])))
     s = start["scale"]
     out = []
-    for line in open(run / "ticks.jsonl"):
-        r = json.loads(line)
+    for r in log:
         if r.get("event") != "pick" or not r.get("target"):
             continue
         g = r["grid"]
@@ -93,7 +93,7 @@ def replay_picks(run: Path, pick=explore.pick, frontiers=explore.frontiers) -> l
 def report(runs, **kw) -> tuple:
     same = total = rec_bad = got_bad = 0
     for run in runs:
-        has_picks = any('"event": "pick"' in line for line in open(run / "ticks.jsonl"))
+        has_picks = any(r.get("event") == "pick" for r in legacy_rows.load(run)[1])
         for o in (replay_picks if has_picks else replay)(run, **kw):
             total += 1
             same += o["same"]

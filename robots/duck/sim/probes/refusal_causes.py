@@ -8,10 +8,12 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from phantoms import PHANTOM_M, nearest, world  # noqa: E402  (phantoms.py reads argv[1] too)
 
-rows = [json.loads(l) for l in open(Path(sys.argv[1]) / "ticks.jsonl")]
+rows = legacy_rows.load(Path(sys.argv[1]))[1]
 latest = None
 for r in rows:
     if r.get("event") == "world":

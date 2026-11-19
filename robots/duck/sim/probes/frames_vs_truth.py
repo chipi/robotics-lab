@@ -17,6 +17,8 @@ import statistics
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav.evaluate import LAYOUT, footprint_distance
 from duck_lab.nav.frames import compose, inverse
 
@@ -55,18 +57,16 @@ def med(v):
 
 t0 = float(sys.argv[1])
 for run in map(Path, sys.argv[2:]):
-    st = json.loads((run / "start.json").read_text())
+    st, log = legacy_rows.load(run)
     w_from_m = compose(tuple(st["truth"]), inverse(tuple(st["map"])))
     rows = {"pre-fault": [], "post-fault": []}
     beliefs = {"pre-fault": [], "post-fault": []}
-    for line in open(run / "ticks.jsonl"):
-        if '"event": "pick"' not in line:
-            if '"truth"' in line and '"event"' not in line and '"pose"' in line:
-                q = json.loads(line)
-                bq = compose(w_from_m, tuple(q["pose"]))
-                beliefs["post-fault" if q["t"] >= t0 else "pre-fault"].append(math.dist(bq[:2], q["truth"][:2]))
+    for r in log:
+        if r.get("event") != "pick":
+            if "truth" in r and "event" not in r and "pose" in r:
+                bq = compose(w_from_m, tuple(r["pose"]))
+                beliefs["post-fault" if r["t"] >= t0 else "pre-fault"].append(math.dist(bq[:2], r["truth"][:2]))
             continue
-        r = json.loads(line)
         b, tr = r["pose"], r.get("truth")
         if not tr:
             continue

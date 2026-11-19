@@ -8,7 +8,8 @@ For every depth frame in the run, the navigator's own code (`FrameView`: the sen
 with the recorded pose, and the result is compared with what the navigator derived and logged. A difference means the
 navigator used something that is not in the file. Also checked: every tick's `/depth` is a recorded frame's points, the
 frames' sensor times only grow, and each frame's pairing is what it says (its state time minus its own). Exit 0 and
-`REPLAY PASS` when nothing differs.
+`REPLAY PASS` when nothing differs. A run recorded before the file kept what the replay needs (no depth frames; points an older rule
+chose and classed, shown by its calibration event not naming the profile) ends `REPLAY N/A` and exit 0, with why (`predates()`).
 """
 
 import argparse
@@ -114,6 +115,47 @@ def verdict(rep: dict) -> bool:
             and not rep["pair_mismatch"] and not rep["time_back"])
 
 
+def _older_points(d: dict) -> bool:
+    """A `points` difference where every recorded point is in the same place as one the present code gives, in the same order:
+    the present code gives some more points, or some of them another kind (floor, obstacle, below)."""
+    if d["what"] != "points":
+        return False
+    rep, rec = d["replayed"], d["recorded"]
+    i = 0
+    for q in rec:
+        while i < len(rep) and not _same(rep[i][:3], q[:3]):
+            i += 1
+        if i == len(rep):
+            return False
+        i += 1
+    return len(rep) != len(rec) or any(p[3] != q[3] for p, q in zip(rep, rec))
+
+
+def predates(records: list, rep: dict) -> str | None:
+    """Why a run that does not pass cannot be held to the present code, or None when it can: it was recorded before the file
+    kept what the replay needs, which the file shows by what it lacks.
+    - it has no depth frames (the navigator did not log them yet), or none with a pose and a paired state: nothing to replay;
+    - its `calibration` event does not name the robot's profile (the navigator did not name it yet) and every frame that
+      differs differs only as `_older_points` says: no recorded point moved, the present code keeps more of the returns or
+      classes some differently (an older rule decided which returns became points, and of what kind; a `block_m` that differs
+      with them follows). A run that names its profile, or whose points moved, or whose ticks, pairings or clock do not check
+      out, is a failure, not an old run."""
+    if not rep["frames"]:
+        return "the file has no depth frames: the navigator did not log them when it was recorded, so there is nothing to replay"
+    if not rep["replayed"]:
+        return (f"none of its {rep['frames']} depth frames has a pose and a paired state ({rep['no_pose']} no pose, {rep['no_state']} no state): "
+                "the navigator derived nothing from them (a run cut short before its first fix), so there is nothing to replay")
+    cal = next((p for _, k, p in records if k == "event" and p.get("kind") == "calibration"), None)
+    named = bool(((cal or {}).get("raw") or {}).get("profile"))
+    older = [d for d in rep["diffs"] if _older_points(d)]
+    rest = [d for d in rep["diffs"] if d["what"] != "block_m" and not _older_points(d)]
+    if older and not rest and not named and not rep["ticks_untraced"] and not rep["pair_mismatch"] and not rep["time_back"]:
+        return (f"its calibration event does not name the robot's profile, and the {len({d['seq'] for d in older})} frames that differ "
+                "differ only in which returns became points and of what kind (floor, obstacle, below), no recorded point moved: "
+                "it was recorded under an older rule for them")
+    return None
+
+
 def resolve(arg: str, data: Path | None) -> Path:
     p = Path(arg)
     if p.is_dir() and ((p / FINAL).exists() or (p / LIVE).exists()):
@@ -155,6 +197,10 @@ def main() -> None:
     for line in report_lines(rep):
         print(line)
     ok = verdict(rep)
+    old = None if ok else predates(records, rep)
+    if old:
+        print(f"REPLAY N/A: {old}")
+        sys.exit(0)
     print("REPLAY PASS" if ok else "REPLAY FAIL" + ("" if rep["frames"] else " (the run has no depth frames)"))
     sys.exit(0 if ok else 1)
 

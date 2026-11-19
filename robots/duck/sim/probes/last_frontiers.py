@@ -10,19 +10,22 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav import explore
 from duck_lab.nav.explore_score import room_of
 
 
 def main() -> None:
     run = Path(sys.argv[1])
-    picks = [e for e in map(json.loads, (run / "ticks.jsonl").open()) if e.get("event") == "pick"]
+    rows = legacy_rows.load(run)[1]
+    picks = [e for e in rows if e.get("event") == "pick"]
     p = picks[-1]
     clusters = explore.frontiers(p["grid"], p["scale"], obstacles=[tuple(o) for o in p["obstacles"]])
     avoid = [tuple(a) for a in p["avoid"]]
     # avoid = the explorer's failed targets + the navigator's drops (explore_run.run); the last world event's drops
     # (drops + edges) tell the drops apart
-    worlds = [e for e in map(json.loads, (run / "ticks.jsonl").open()) if e.get("event") == "world" and e["t"] <= p["t"]]
+    worlds = [e for e in rows if e.get("event") == "world" and e["t"] <= p["t"]]
     drops = {tuple(round(v, 2) for v in d) for d in (worlds[-1]["drops"] if worlds else [])}
     is_drop = [tuple(round(v, 2) for v in a) in drops for a in avoid]
     print(f"avoided: {sum(is_drop)} drop points, {len(avoid) - sum(is_drop)} failed targets or other: "
@@ -31,7 +34,7 @@ def main() -> None:
           f"{len(clusters)} frontier clusters, {len(avoid)} avoided points (AVOID_M {explore.AVOID_M})")
     # the old run's avoid list mixed failed targets and retired frontier cells (before explore.without_retired):
     # targets are the legs' targets; the rest were retired cells
-    leg_rows = [e for e in map(json.loads, (run / "ticks.jsonl").open()) if e.get("event") == "leg" and e["t"] <= p["t"]]
+    leg_rows = [e for e in rows if e.get("event") == "leg" and e["t"] <= p["t"]]
     legs = [tuple(e["target"]) for e in leg_rows]
     failed = [a for a in avoid if any(math.dist(a, t) < 0.02 for t in legs)]
     reached = [tuple(e["target"]) for e in leg_rows if e["status"] == "reached"]

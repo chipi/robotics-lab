@@ -12,6 +12,8 @@ import statistics
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav import grid as G
 from duck_lab.profile import load as load_profile
 
@@ -33,8 +35,7 @@ def costs(world: dict) -> CostGrid:
 rows, lost, gained = [], 0, 0
 for run in map(Path, sys.argv[1:]):
     world = None
-    for line in open(run / "ticks.jsonl"):
-        r = json.loads(line)
+    for r in legacy_rows.load(run)[1]:
         if r.get("event") == "world":
             world = r
         if r.get("event") != "plan" or world is None or not r.get("path"):

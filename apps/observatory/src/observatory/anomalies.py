@@ -31,9 +31,9 @@ DEFAULTS = {
     "odom_low": 0.95, "odom_high": 1.05, "odom_min_walk_m": 2.0, "odom_leg_min_m": 0.5,
     "odom_legs_out": None,         # legs outside the band that fire it alone: off (3 fired on b10b r1, a clean run: mapd's fixes inflate legs)
     "odom_jump_m": 0.15,           # a belief step this long in one tick is a fix, not odometry
-    "belief_warn_m": 0.20, "belief_major_m": 0.35, "heading_deg": 20.0,
+    "belief_warn_m": 0.35, "belief_major_m": 0.50, "heading_deg": 20.0, "belief_jump_m": 0.30, "belief_jump_window_s": 10.0,
     "phantom_cells": 3, "phantom_far_m": 0.30,
-    "missed_samples": 3, "missed_near_m": 0.15, "missed_step_m": 0.05,
+    "missed_samples": 3, "missed_near_m": 0.15, "missed_step_m": 0.05, "missed_thin_m": 0.05, "missed_seen_m": 1.0,
     "edge_off_m": 0.25, "edge_within_s": 5.0,
     "cover_min": 0.5, "cover_step_m": 0.1,
     "raster_m": 0.025,
@@ -126,6 +126,23 @@ class Truth:
 
     def outline_distance(self, x: float, y: float) -> float:
         return min((footprint_distance(x, y, g) for g in self.outline), default=math.inf)
+
+    def visible(self, p: tuple, q: tuple) -> bool:
+        """Is q in plain sight of p, looking along the floor plan: no obstacle between them (the segment, stopped 2 cm
+        short of q, never enters a footprint, the footprint q lies on included: the far side of a box is not in sight). What a sensor at
+        p could have seen of q; heights and the field of view are not asked."""
+        d = math.dist(p, q)
+        if d < 0.04:
+            return True
+        n = int((d - 0.02) / 0.03)
+        mx, my = (p[0] + q[0]) / 2, (p[1] + q[1]) / 2
+        near = [g for g in self.obstacles if math.hypot(g["pos"][0] - mx, g["pos"][1] - my)
+                <= d / 2 + max(g["size"][0], g["size"][1]) * 1.5 + 0.02]
+        for k in range(1, n + 1):
+            x, y = p[0] + (q[0] - p[0]) * k / n * (d - 0.02) / d, p[1] + (q[1] - p[1]) * k / n * (d - 0.02) / d
+            if any(footprint_distance(x, y, g) <= 0.0 for g in near):
+                return False
+        return True
 
     def hole_distance(self, x: float, y: float) -> float:
         """0 inside the stairwell, else the distance to it."""
@@ -352,21 +369,37 @@ def odometry_scale(det, run: Run, truth, cfg: dict) -> list:
 
 
 def belief_vs_truth(det, run: Run, truth, cfg: dict) -> list:
-    """The 95th percentile over the run of the belief's distance from the truth (warn belief_warn_m, major belief_major_m)
-    and of its heading error (heading_deg)."""
+    """The belief against the truth, three ways. A jump: the belief's offset from the truth (in the world frame) changes by
+    belief_jump_m or more within belief_jump_window_s (mapd moved the belief, or a fix did: K4's 0.9 m and 1.8 m; the clean runs'
+    largest change in 10 s is 0.11 m). The 95th percentile over the run of its distance from the truth (warn belief_warn_m,
+    major belief_major_m: the clean runs' offset wanders to 0.28 m over twenty minutes without harm), and of its heading error
+    (heading_deg)."""
     idx = [i for i, tr in enumerate(run.truth) if tr]
     if len(idx) < 20:
         return []
-    errs, yaws = [], []
+    errs, yaws, offs = [], [], []
     for i in idx:
         b = run.belief_world(i)
         tr = run.truth[i]
+        offs.append((b[0] - tr[0], b[1] - tr[1]))
         errs.append(math.dist(b[:2], tr[:2]))
         yaws.append(abs(math.degrees(_wrap(b[2] - tr[2]))))
 
     def p95(v):
         return statistics.quantiles(v, n=20, method="inclusive")[-1]
     out = []
+    jump, win = cfg["belief_jump_m"], cfg["belief_jump_window_s"]
+    rise, a = [0.0] * len(idx), 0
+    for k in range(len(idx)):
+        while run.t[idx[a]] < run.t[idx[k]] - win:
+            a += 1
+        rise[k] = max((math.dist(offs[k], offs[j]) for j in range(a, k)), default=0.0)
+    for a_, b_ in _episodes([r >= jump for r in rise], [run.t[i] for i in idx], win):
+        k = max(range(a_, b_ + 1), key=lambda k: rise[k])
+        out.append(_record(det, "belief_jump", "localizer", "major" if rise[k] >= cfg["belief_major_m"] else "minor",
+                           run.t[idx[a_]], run.t[idx[b_]], f"the belief's offset from the truth changed by {rise[k]:.2f} m within {win:.0f} s",
+                           {"change_m": round(rise[k], 3), "window_s": win, "offset_m": round(errs[k], 3)}, rise[k] - jump,
+                           run.where(idx[k]), {"t": [run.t[idx[a_]], run.t[idx[b_]]]}))
     p, py = p95(errs), p95(yaws)
     worst = max(range(len(idx)), key=lambda k: errs[k])
     if p > cfg["belief_warn_m"]:
@@ -449,7 +482,12 @@ def phantom_obstacle(det, run: Run, truth, cfg: dict) -> list:
 
 def missed_obstacle(det, run: Run, truth, cfg: dict) -> list:
     """In the run's last map: an obstacle with missed_samples or more outline samples in cells the map knows and no occupied
-    cell within missed_near_m of any of them."""
+    cell within missed_near_m of any of them. A sample counts only as the duck could have placed it: it must have been in plain
+    sight of one of the duck's truth poses within missed_seen_m (Truth.visible: not the far face of a wall, not the back of a
+    chair), and it is looked up in the map where the belief at that pose would have put it (the belief's offset from the truth
+    there added: the map is the belief's, and wanders from the truth by centimetres to decimetres). Left out: what the 8 x 8
+    sensor cannot be asked to map, an obstacle narrower than missed_thin_m (stool and table legs, a lamp pole). Without truth poses
+    the samples are looked up where the epoch puts them, seen or not."""
     if not run.worlds:
         return []
     w = run.worlds[-1]
@@ -457,11 +495,26 @@ def missed_obstacle(det, run: Run, truth, cfg: dict) -> list:
     res, (ox, oy), W, H, cells = g["res"], g["origin"], g["w"], g["h"], g["cells"]
     occ = set(_wall_cells(w))
     reach = math.ceil(cfg["missed_near_m"] / res)
+    poses = []
+    if run.has_truth:
+        for i, tr in enumerate(run.truth):
+            if tr and i % 5 == 0:
+                b = run.belief_world(i)
+                poses.append((tr[0], tr[1], b[0] - tr[0], b[1] - tr[1]))
     out = []
     for geom in truth.obstacles:
+        if (2 * min(geom["size"][0], geom["size"][1]) if geom["type"] == "box" else 2 * geom["size"][0]) < cfg["missed_thin_m"]:
+            continue
         missing = []
         for px, py in perimeter(geom, cfg["missed_step_m"]):
-            mx, my = run.to_map(w["t"], px, py)
+            qx, qy = px, py
+            if poses:
+                close = sorted((p for p in poses if math.dist(p[:2], (px, py)) <= cfg["missed_seen_m"]), key=lambda p: math.dist(p[:2], (px, py)))
+                seen = next((p for p in close[:12] if truth.visible(p[:2], (px, py))), None)
+                if seen is None:
+                    continue
+                qx, qy = px + seen[2], py + seen[3]
+            mx, my = run.to_map(w["t"], qx, qy)
             cx, cy = math.floor((mx - ox) / res), math.floor((my - oy) / res)
             if not (0 <= cx < W and 0 <= cy < H) or cells[cy * W + cx] == "?":
                 continue
@@ -474,7 +527,6 @@ def missed_obstacle(det, run: Run, truth, cfg: dict) -> list:
                                {"obstacle": geom["name"], "samples_missing": len(missing)}, len(missing) - cfg["missed_samples"],
                                {"truth": [round(geom["pos"][0], 3), round(geom["pos"][1], 3)], "frame": "world"}))
     return out
-
 
 def misplaced_edge(det, run: Run, truth, cfg: dict) -> list:
     """A glance that saw an edge whose rim points (the navigator's, mapped to the world) have a median over edge_off_m from
@@ -567,12 +619,12 @@ DETECTORS = {d.id: d for d in (
     Detector("odometry_scale", 1, odometry_scale, "walking belief/truth path ratio outside 0.95-1.05 over the run", ("truth",), True),
     Detector("phantom_obstacle", 1, phantom_obstacle, "an occupied cluster of 3+ map cells, all over 0.30 m from any real outline", ("layout", "worlds"), True),
     Detector("misplaced_edge", 1, misplaced_edge, "a glance's rim median over 0.25 m from the stairwell, a refusal or trap within 5 s", ("layout",), True),
-    Detector("belief_vs_truth", 1, belief_vs_truth, "p95 of belief-truth distance over 0.20 m (major over 0.35 m), of heading error over 20 degrees",
-             ("truth",), False, "not quiet at 0.20 m: b9 r2 p95 0.28 m"),
-    Detector("missed_obstacle", 1, missed_obstacle, "3+ outline samples in known cells with no occupied cell within 0.15 m", ("layout", "worlds"), False,
-             "not quiet: fires on the clean runs (walls, table and stool legs)"),
+    Detector("belief_vs_truth", 2, belief_vs_truth, "the belief's offset from the truth changing by 0.30 m or more within 10 s; p95 of its distance over 0.35 m (major over 0.50 m), of heading error over 20 degrees",
+             ("truth",), True),
+    Detector("missed_obstacle", 2, missed_obstacle, "3+ outline samples in sight of a truth pose within 1.0 m, in known cells, no occupied cell within 0.15 m of where the belief puts them; nothing under 5 cm across", ("layout", "worlds"), False,
+             "not quiet: 0, 17, 18 and 12 on the four clean runs (was 8, 21, 34 and 17): the map wanders 0.15-0.45 m from the belief, and the free bodies' poses are their reset positions"),
     Detector("wrong_refusal", 1, wrong_refusal, "a refused leg whose goal a path reached by truth", ("truth", "layout"), False,
-             "not quiet: fires on the clean runs (the planner's margins are wider than truth's)"),
+             "not quiet: fires on the clean runs; with the planner's own margins on truth it still does (b11 r1: 12 of 17 no-path legs), because a refusal is about the map, not about the floor"),
     Detector("area_uncovered", 1, area_uncovered, "'nothing left to explore' with a room of the layout under 50 % covered", ("layout", "worlds"), False,
              "fires on b11 r1, a clean run: a true positive (kitchen, bedroom)"),
 )}

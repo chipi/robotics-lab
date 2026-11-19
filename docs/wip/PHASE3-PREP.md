@@ -131,7 +131,10 @@ clearance of the trunk centre to the layout's solid geoms under 0.090 m; the rad
 contact line, an episode that crosses it is critical and links `contact@t`), dithering, odometry
 scale, phantom obstacle (with the free bodies in the truth), misplaced edge. **Behind
 `--experimental`**, each said not quiet in the footer: belief vs truth, missed obstacle, wrong
-refusal, area uncovered.
+refusal, area uncovered. *Changed 2026-11-19 (K12, KNOWN-ISSUES): belief vs truth is on the default
+track as version 2 (a jump of the belief's offset from the truth, 0.30 m within 10 s, and the p95
+rule at 0.35 m; quiet on the same four runs, finds b10a r1's 0.94 m jump); missed obstacle is
+version 2 and still experimental (0, 17, 18, 12 on the clean runs).*
 
 **Counts per run** (every detector, the layout with the free bodies as truth; `n/a` = did not apply:
 a challenge scene has no layout here; refused legs for scale):

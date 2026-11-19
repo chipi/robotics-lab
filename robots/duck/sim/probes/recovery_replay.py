@@ -10,11 +10,13 @@ import json
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav import recovery
 
 for run in map(Path, sys.argv[1:]):
     print(f"== {run.name}")
-    rows = [json.loads(line) for line in open(run / "ticks.jsonl") if '"event": "refused"' in line]
+    rows = [r for r in legacy_rows.load(run)[1] if r.get("event") == "refused"]
     for r in rows:
         if "no room to turn" not in (r.get("why") or r["decision"]["reason"]):
             continue
