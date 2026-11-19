@@ -221,6 +221,10 @@ check("challenge 19: three 0.5 cm risers up; challenge 20: three 1-2 cm risers d
       "last tread", all(sc.notes["riser_m"] == 0.005 and not sc.drops() and edge_to_edge(sc) for sc in c19)
       and all(0.01 <= sc.notes["riser_m"] <= 0.02 and not sc.drops() and edge_to_edge(sc) for sc in c20)
       and all(abs(sc.floor_top(sc.goal) - (-3 * sc.notes["riser_m"])) < 1e-3 for sc in c20))
+check("challenges 17-20: every wall reaches down to the lowest floor (a gap under a wall is a hole the depth sensor sees "
+      "through: challenge 20's first build refused 9 of 10 on it)",
+      all(min(b.z0 for b in sc.boxes if b.name.startswith("corr_")) <= min(f.z1 for f in sc.floors) + 1e-9
+          for sc in c17 + c18 + c19 + c20))
 down = c20[0]
 jd = Judge(down)
 low = 0.116 - 3 * down.notes["riser_m"]

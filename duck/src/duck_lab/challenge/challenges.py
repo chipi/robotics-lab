@@ -268,7 +268,9 @@ def step_up_down(seed: int, rng: random.Random) -> Scene:
                                    rng.uniform(0.005, 0.015), rng.uniform(0.6, 0.9))
     x2, end = x + length, x + length + beyond + 0.5
     floors = _strips([-0.6, x, x2, end], [0.0, up, up - down], names=["floor", "platform", "step_beyond"])
-    return Scene(f"ch18-s{seed}", "A step up and a step down", _walled("corr", -0.6, end, -0.4, 0.4), floors,
+    # walls down to the lowest floor: a gap under them is a hole the depth sensor sees through (challenge 20's first build)
+    walls = _walled("corr", -0.6, end, -0.4, 0.4, z0=min(0.0, up - down))
+    return Scene(f"ch18-s{seed}", "A step up and a step down", walls, floors,
                  (x2 + beyond, 0.0), "reach", 90.0, notes={"up_m": round(up, 4), "down_m": round(down, 4)})
 
 
@@ -285,7 +287,7 @@ def flight(up: bool):
         floors = _strips(xs, tops, names=["floor", "step1", "step2", "step3", "step_top"])
         cid = "19" if up else "20"
         return Scene(f"ch{cid}-s{seed}", f"A short flight of small steps, {'up' if up else 'down'}",
-                     _walled("corr", -0.6, xs[-1], -0.4, 0.4), floors, (x + 3 * tread + beyond, 0.0), "reach", 90.0,
+                     _walled("corr", -0.6, xs[-1], -0.4, 0.4, z0=min(tops)), floors, (x + 3 * tread + beyond, 0.0), "reach", 90.0,
                      notes={"riser_m": round(h, 4), "steps": 3})
     build.__name__ = "flight_up" if up else "flight_down"
     return build
