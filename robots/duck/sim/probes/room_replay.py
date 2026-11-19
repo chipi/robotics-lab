@@ -2,7 +2,7 @@
 near the duck. Challenge 11 seed 4, gate4, stuck facing a pit for 70 s: 0.123 m either way, from a mapd cell 9 cm
 closer than the block it stands for (the drops' rings were blamed first, wrongly).
 
-    python sim/probes/room_replay.py runs/gate4-ch11/ch11-s4/run-20261118-005756/ticks.jsonl 77
+    python sim/probes/room_replay.py RUN_DIR 77        (or a legacy folder's ticks.jsonl)
 Reads the last world event before T (s): mapd's grid, the obstacle points, and drops + edges together (the record does
 not tell them apart, so every one gets the drops' ring).
 """
@@ -10,6 +10,9 @@ not tell them apart, so every one gets the drops' ring).
 import json
 import math
 import sys
+from pathlib import Path
+
+import legacy_rows
 
 from duck_lab.nav.grid import CostGrid, clearance
 from duck_lab.profile import load as load_profile
@@ -21,10 +24,9 @@ SLOW_CLEAR_M = PROFILE.locomotion.slow_clearance_m
 
 
 def main() -> None:
-    path, at = sys.argv[1], float(sys.argv[2])
+    path, at = Path(sys.argv[1]), float(sys.argv[2])
     world = pose = None
-    for line in open(path):
-        e = json.loads(line)
+    for e in legacy_rows.load(path.parent if path.name == "ticks.jsonl" else path)[1]:
         if e.get("t", 0) > at:
             break
         if e.get("event") == "world":

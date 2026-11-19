@@ -4,25 +4,30 @@ error against the truth is compared with and without them. Open loop: the run's 
 correction here shifts every later pose by the offset (translation only), and nothing the correction would have changed
 in the navigator's choices.
 
-Run: cd robots/duck && uv run python sim/probes/reloc_replay.py <run folder with ticks.jsonl, start.json> [seconds between lines]"""
+Run: cd robots/duck && uv run python sim/probes/reloc_replay.py <run folder: an MCAP run, or a legacy one with ticks.jsonl, start.json> [seconds between lines]"""
 
 import json
 import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav.frames import OFFSET_HALF_S, OFFSET_MAX_M, compose, inverse
+import legacy_rows
+
+from duck_lab.nav.frames import compose, inverse
+from duck_lab.profile import load as load_profile
 from worldmodel.objects import load_kinds
 from worldmodel.relocalise import Relocaliser
 from worldmodel.semantic_map import Detection, SemanticMap
 
+_LOC = load_profile("sim").localisation
+OFFSET_HALF_S, OFFSET_MAX_M = _LOC.fix.offset_half_s, _LOC.fix.offset_max_m
+
 
 def replay(run: Path, every: float = 60.0, quiet: bool = False) -> dict:
-    rows = [json.loads(line) for line in (run / "ticks.jsonl").read_text().splitlines()]
-    st = json.loads((run / "start.json").read_text())
+    st, rows = legacy_rows.load(run)
     map_from_world = compose(tuple(st["map"]), inverse(tuple(st["truth"])))
     sm = SemanticMap(load_kinds())
-    rel = Relocaliser(sm)
+    rel = Relocaliser(sm, numbers=_LOC.landmarks)
     off, last_t = (0.0, 0.0), 0.0
     out = {"corrections": [], "refusals": [], "series": []}
     for r in rows:

@@ -13,6 +13,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import legacy_rows
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from duck_lab.nav.frames import compose, inverse  # noqa: E402
 
@@ -41,7 +43,7 @@ def nearest(p):
 
 
 run = Path(sys.argv[1])
-start = json.loads((run / "start.json").read_text())
+start = legacy_rows.load(run)[0]
 t = compose(tuple(start["truth"]), inverse(tuple(start["map"])))
 
 
@@ -50,7 +52,7 @@ def world(p):
     return x, y
 
 
-rows = [json.loads(l) for l in open(run / "ticks.jsonl")]
+rows = legacy_rows.load(run)[1]
 worlds = [r for r in rows if r.get("event") == "world"]
 last = worlds[-1]
 blocked = [world(b) for b in last["blocked"]]

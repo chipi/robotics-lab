@@ -38,7 +38,6 @@ them. The plan they are scheduled against: [the plan we execute on](EXECUTION-PL
 | K24 | **The arc has no obstacle check on its inner sweep, and the tight pivot no sensor floor.** | The advisor's reading of b11 r3 and r4 | `run.py` `_arc_clear`, the tight pivot | After phase 6 |
 | K26 | **The fix gate's "take a big loop closure" branch has never run**: mapd's loop counter never stepped in any run. | frames-after-r2, b12 | `frames.py` gate branching | Watch for it; unit-tested only |
 | K27 | **The glance's edge-error statement was wrong, and is corrected; what remains is the navigator's.** Stated −14/+6.4 cm aside, −18/+3 cm ahead (54 glances, a measurement not in the repo). Over the 355 glances of challenges 8–11, 2026-11-19, the same definition (each glance's worst rim point on each side): short side worst −36.5 cm, 96 over 14 cm, 54 over 18, 5 over 30; past side worst +74.6 cm, 71 over 6.4, 34 over 30 (rim points deep in the hole). The side that bounds the real edge is a glance's least-past rim point: +8.8 cm at worst (ch8-s2 `run-20261117-081934`), 11 of 355 glances with every rim point past the edge, 1 over 3 cm. The statement is used as the reason for the edge's gate and ring (`pivot.edge_clear_m` 0.26, `edge_lethal_m` 0.32), but is not in their sums (0.26 + 0.03 + 0.025 = 0.315). With +8.8 cm in it, the worst glance leaves 0.26 − 0.088 − 0.079 − 0.025 = 0.068 m from the real edge, under the judge's 0.15 m (0.126 m with the stated +3); the trunk centre's closest approach to the hazard over the 566 recorded runs of challenges 8–11 is 0.108 m (1 of 341 glanced runs under 0.15 m, none inside; runs from before the rim fix included). Corrected in `SIDE-DROPS.md` ("What the edge error is used for") and the probe's docstring | `sim/probes/glance_edge_error.py`; SIDE-DROPS.md | the comment above `FLOOR_CELL_M` in `nav/run.py` (the navigator's file: still the old statement); the gate's numbers | The navigator's owner: correct the comment; decide whether the edge gate rises to 0.35 m (ring 0.41) to hold 0.15 m with the worst glance and worst drift together, against reach (K22) |
-| K28 | **The ~40 probes under `robots/duck/sim/probes` had their paths rewritten by pattern in phase 2 and were never run after it** (only compiled by lint). | Phase 2's report | `robots/duck/sim/probes` | Run each when it is next needed; fix what fails. Phase 3 changed the signatures they call (the profile, the plugins: `cliff_shim.py` stands in for `nav/cliff.py`) and edited them to match, compiled but not run; `cliff_replay.py` compares two versions of `nav/cliff.py`, a file that is now `plugins/tof8x8.py`, and needs rewriting |
 | K29 | **The operator's Observatory container has a 768 MB memory cap** (the old one had none and reported a 12.7 GB cache). Its `robots/` mount moved to the main checkout on 2026-11-19 (re-upped from main at `2a21ae4`, health `runs 1618`). *Read 2026-11-19 20:59Z (`docker stats --no-stream observatory-observatory-1`, read only):* 189.2 MiB of 768 MiB (24.64 %), CPU 0.04 %, 2 PIDs, running since 16:34:50Z (4 h 25 min); `docker inspect` memory 805306368 bytes (768 MiB). One reading after four hours says the cap is not near; it does not say what a day or a week of use does to a cache. | Phase 2's report, `docker inspect`, `docker stats` | the root compose file | A second reading after a day of use; closed when it stays under the cap with the page used |
 | K30 | **Names kept as `miniview` on purpose** (MCAP topics and schemas, `window.miniview`, `--miniview-data`, `writer.program`, the index folder `state/miniview`). | Phase 2, decision 2 | the run format, the pages | Revisit with the run format's version 3 |
 | K32 | **Duck numbers still in code after RFC-0020 steps 2 and 3.** The world model library keeps the duck's as its default (`worldmodel.objects.DUCK_LIMITS`, `relocalise.DUCK_LANDMARKS`; the navigator passes the profile's); `nav/recovery.py` (the creep floor 150 mm, `ARC_CLEAR_MM` 300 a second copy of `locomotion.arc.clear_mm`, `DROP_AHEAD_M` 0.6 a copy of the cliff stop, the start margin), `nav/explore.py` and `explore_run.py` (the explorer's own policy: stand-off, wall distance, clear and retire distances), `nav/side_drops.py` (the glance's geometry: cell, bins, rim gap, continues), the navigator's obstacle memory (`LAYER_M`, `LOW_*`, `FLOOR_CELL_M`, `DROP_FRAMES`) and the `PARTED_REPORT_M` copy of the parting distance, `sim_camera.py`'s `DEFAULTS`, `runfile/adapters/duck.py` (`ROBOT` radius 0.083, height 0.272), `miniview.py` and `world.py` (0.083, 0.272 drawn), the Eye's `eye.js` (sensor constants), Mission Control's `sites.py` (`ASSOC_M`, `UNIQUE_M`) | `test_profile.py` compares the profile with the values where they were; grep for the numbers | the files named | Step 5 (the EV3) for the navigator's shared policy and recovery; the viewer's copies with the views (step 4) |
@@ -58,3 +57,97 @@ them. The plan they are scheduled against: [the plan we execute on](EXECUTION-PL
 | K33 | Seven recorded runs fail `duck-replay` (no depth frames, or points of an older form) | 2026-11-19: `duck-replay` ends `REPLAY N/A: <why>`, exit 0, for a run recorded before the file kept what the replay needs, keyed on the file, not on names: no depth frames (explore9, explore12, phase1-run18); no frame with a pose and a paired state (31 frames, none with a pose: ch11-s3 `run-20261117-003352`); or a calibration event that does not name the robot's profile and every frame that differs differs only in which returns became points and of what kind, with no recorded point moved (apartment-1117, 1117b, 1117c, explore-1117, explore-1117b and the rest). It was not seven: over the data folder's 1617 runs 195 failed, 3 for no frames, 1 for no pose, 191 for the older rule (challenge runs of 2026-11-16 20:28 to 2026-11-17 14:57: ch11 139, ch12 17, ch3, ch15, ch16 10 each, ch13 1, the apartment 8); all 195 now end N/A (a sweep: 195 of 195), the 1422 that passed still pass. A difference with a moved point, a changed distance or state, a tick whose depth is not a frame's, or a run that names its profile still fails (7 checks in `tests/test_replay.py`). Only `robots/duck/src/duck_lab/replay.py` changed under `src` (tooling, not `nav/`) |
 | K25 | Remembered obstacle points with no real object near them (b11 r2's point at (0.02, 0.21)) | 2026-11-19, from the recording: b11 r3's six points are `ball_1` and b11 r1's group `obj_2` (free bodies, K35); b11 r2's one point is the navigator's own mark, not a return: at 34.16 s a `step_look` aimed a glance at the unseen floor spot (0.035, 0.212), it ended `status floor` at 38.30 s with the spot's cell still not in `floor_seen`, and `run.py` appends such a spot to the remembered obstacles ("still not seen as floor: not walked on"); the first world record with an obstacle (38.33 s) holds exactly [0.035, 0.212], and no depth return of any kind lies within 7.5 cm of it in the 65 frames from 34.0 to 38.4 s (nearest floor 16.3 cm, obstacle 0.50 m, below-floor 0.71 m). By design; whether it should be an obstacle point is the navigator's ([PHANTOM.md](PHANTOM.md)). Not shown: that it caused the "no room to turn" refusals of 38.33–38.77 s |
 | K34 | mapd's sensor model (axial ranges, 3° pitch) does not match the simulator's depth sensor (radial, 2.4–2.9° more downward) | 2026-11-19, the bench ([RANGE.md](RANGE.md), "The bench"): Pollen's `maploc` replay example built offline into a scratch target dir (`cargo build --offline --locked`, 8 s, Pollen's tree untouched), run with and without `--set project.range_is_axial=false` on two sessions recorded from the simulator (`sim/probes/record_session.py`: 4 and 13 keyframes) and scored against `apartment_layout.json` (`map_range.py`, signed distance of each occupied cell to a real surface). With the truth as the odometry: session 2 favours radial (mean −1.6 cm for axial, +0.1 radial; free cells inside solids 152 against 45; but 32 % fewer occupied cells, 152 against 225), session 1 favours axial (−0.4 against +2.6 cm); with mapd's own odometry radial is worse in both (+3.6 to +5.6 cm in front of the surface against +0.6 to +1.7). Differences of 1 to 2 cm, signs that change: no gain shown, so no change is asked of Pollen; the pitch (2.5, 2.7, 3°) moves the means by 0.2 cm or less. The calculated 3–6 cm at 0.5 m of range was not seen. A note for Pollen asking what the real VL53L5CX reports, not sent: [UPSTREAM-MAPD-RANGE-DRAFT.md](UPSTREAM-MAPD-RANGE-DRAFT.md). Not covered: two short sessions in one room, no loop closures, the real sensor |
+| K28 | The ~40 probes under `robots/duck/sim/probes` were never run after phase 2 | 2026-11-19: all 68 run once, table below ("The probes under `robots/duck/sim/probes`"): 31 PASS as they were (the replay ones on the corpus, `tof_*` with Pollen's venv); 15 fixed to read the MCAP corpus through `legacy_rows.py` (they read `ticks.jsonl`/`start.json`, so `FileNotFoundError` on every recorded run); 2 fixed (`reloc_replay`: its constants moved to the profile; `hold_off_replay`: a run with no refusal); 2 fixed and run in the simulator (`cliff_test`, `stairs_angles`: a log path that only existed from the repo root); 16 simulator probes run under the lock, each to its end; `cliff_replay` deleted (superseded by `duck-replay` and `tests/test_cliff.py`: it compared the deleted `nav/cliff.py`); `sudo_free_down` not run (it takes the simulator down). Partial: `stairs_angles` 1 approach of its list, `step_height` 1 trial at 1 cm, `glance_distance` and `glance_floor` 1 scene, `pivot_*` 1 case; `loco_replay` compared main with itself (its base worktree does not exist). 6 probes added |
+
+## The probes under `robots/duck/sim/probes` (K28), run 2026-11-19
+
+Every probe was run once from the p4-tools worktree (`c79fe6b`), the replay ones on the corpus
+(`/work/robotics-lab/data`, read only), the simulator ones under the simulator lock. 68 probes were
+there; one was deleted, 6 were added (they are in the last table). **PASS:** ran as it was, exit 0,
+an answer that reads right. **fixed:** it failed, the cause is named. **sim:** it needs the
+simulator; run under the lock (a measurement has no pass line, so PASS there means it ran to its
+end with an answer). The arguments are in the commit's table; the outputs are quoted.
+
+A cause that hit 16 probes at once: they read `ticks.jsonl` and `start.json`, the navigator's old
+log, and the corpus is MCAP (`runfile.mcapio`) now, so `FileNotFoundError` on every recorded run
+(the only folders that still have `ticks.jsonl` are 11 early ones in the main checkout's
+`robots/duck/runs`, none with the picks or sightings the probes read). They now read rows through
+`sim/probes/legacy_rows.py`, which gives the rows back from an MCAP run by undoing
+`runfile/adapters/duck.py` (every field of a row is in its record, `keep_raw`); proved on the
+adapter's round trip: explore12's 536 rows come back equal to the log's, explore9's equal but for
+`inf == inf` (my comparison), apartment-1117b's world rows keep run time where the log had source
+time (a run whose clock restarted); `tests/test_probe_rows.py` holds the round trip.
+
+| Probe | Status | Evidence |
+| --- | --- | --- |
+| approach_trace | fixed (legacy_rows) | b7 r2, lm_office 100–130 s: 29 lines, "t 128.6 truth->lm_office 0.034 m" |
+| backward | sim, PASS | "vx -0.15 m/s for 4 s: along heading +0.1 cm": the duck does not walk backwards |
+| belief_drift | PASS | ch11: "worst run ch11-s6/run-20261117-205058 max 0.347 m" |
+| below_cells | PASS | ch11 K=3: "drop caught before the closest approach in 36 of 43 runs" |
+| below_seen | PASS | ch11: "the drop's below points seen in 42 of 43 runs" |
+| cliff_replay | **deleted** (obsolete) | compared `nav/cliff.py` before and after the sim-sensor fix (the old file from a baseline worktree); the file is `plugins/tof8x8.py` now and the old one is gone. Superseded by `duck-replay`, which re-derives every recorded frame's points, drop points and block distance through the plugin and compares them (the faithfulness criterion of cliff_replay), and `tests/test_cliff.py`. profile.json and calibration/sim.json cite it as the source of one measurement; `git show c79fe6b:robots/duck/sim/probes/cliff_replay.py` has it |
+| cliff_shim | PASS | the module 10 probes import; they ran |
+| cliff_test | fixed + sim | wrote `robots/duck/runs/cliff-test.jsonl` by a path that exists only from the repo root with a `runs/` folder; now relative to the file, the folder made. Result: "refused: no path on the map" at 20.4 s, closest to the opening 0.658 m (guard 0.05 m not tripped) |
+| cmp_runs | fixed (legacy_rows) | b11 r1 against r2: commands differ at index 53 of 9900 and 376; takes run folders (MCAP) or `ticks.jsonl` paths |
+| corner_seen | fixed (legacy_rows) | b11 r2, corner (0, 0): "0 frames saw an obstacle point within 0.25 m of it in the last 30 s" |
+| drop_census | PASS | 24-line table, ch9 136 runs |
+| false_drop_fixture | PASS | wrote `tests/fixtures/flat_false_stops.json` (8 runs, 472 frames, 367 KB) and `git diff` of it is empty: it reproduces the committed fixture |
+| false_drops | PASS | ch11-s1: "2 frames with a drop; beams counted: too far 17, no valid reading 1" |
+| false_suspects | PASS | ch11-s1: "suspected cells inside a drop 0, outside 0" |
+| floor_coverage | fixed (legacy_rows) | b12 r1, r2: "explore-b12-r2: floor known 51.0 % kitchen 95 % living 12 % office 90 %…" |
+| floor_fit | PASS | "FLOOR FIT PASS" |
+| floor_heights | PASS | ch11: flat floor 153938 returns, p99 +0.062 m |
+| frames_vs_truth | fixed (legacy_rows) | frames-after-r1: "post-fault belief off the world, every tick (46): mean 0.003 m" |
+| frontier_replay | fixed (legacy_rows) | b1 r2, b6 r1: "REPLAY legs 38: replay picks the recorded target 14/38" |
+| gate_scenarios | sim, PASS | "GATE SCENARIOS PASS" (three scenarios, ~45 s each) |
+| glance_distance | sim, PASS | ch7-s1: floor/0 at every distance 0.12–0.50 m, every bearing |
+| glance_edge_error | PASS | ch8–11: 355 glances, "worst short -36.5 cm, worst past +74.6 cm" (K27) |
+| glance_fixture | PASS | b11 r2, glance 0: the JSON of its inputs |
+| glance_floor | sim, PASS | ch1-s1: "below-floor returns 0; floor out to 0.44 m aside" |
+| glance_from_run | PASS | b11 r2: 17 lines, the rim replayed |
+| glance_replay | PASS | ch5-s1 12.0–15.2 s: 47 lines |
+| head_after_glance | PASS | ch11-s7: "24s truth/belief 0.99 head (neck, pitch, yaw, roll) +12.1 +19.0 -0.1 -1.2" |
+| head_walk | sim, PASS | "walked 23 cm in 3 s (0.077 m/s of 0.20)" |
+| hold_off_replay | fixed | `AttributeError` on a run with no refusal that has a goal; says so now. ch8-s1: "goal lethal True; held-off aim None; plan none" |
+| kick_turn | sim, PASS | "kick 1.2 then hold 0.8: +29.6 deg/s of +46 asked" |
+| landmark_contacts | fixed (legacy_rows) | the 60 b-batch runs: 6 contacts with a landmark, all `lm_office` (b1 r3 87.0 s, b5 r3 118.6 s, b6 r3 216.0 s, b7 r2 125.6 s, b8 r1 189.0 s, b10a r1 844.0 s) |
+| last_frontiers | fixed (legacy_rows) | b6 r1: 15 lines |
+| loco_replay | PASS | b11 r1: "LOCO REPLAY PASS … 9568 ticks"; its `--base` is a worktree of the old code: none exists (`p3-base`), so it ran against main (`2a21ae4`), which compares the code with itself |
+| low_persistence | PASS | ch13: "caught heights [] missed heights []" (no low box in the data) |
+| map_relative_error | fixed (legacy_rows) | b3 r1: "t 194.0 near points 125: off the real surface median 0.027 m, p90 0.212 m \| belief off the world 0.407 m" |
+| margin_replay | fixed (legacy_rows) | b5 r2: "path length, graded vs flat: median +0.0 %, worst +55.6 %" |
+| move | sim, PASS | "id: moved 0 cm (0.001 m/s of 0.10)" (the duck stood still for a 0.1 m/s ask: the probe only reads replies) |
+| near_obstacles | PASS | b11 r2 at 100 s: "1 obstacle points; first [[0.035, 0.212]]" (K25) |
+| odom_vs_truth | sim, PASS | "pooled truth/odometry 0.904 over 0.34 m (vx 0.3, 4 s x 1)" |
+| phantoms | fixed (legacy_rows) | b11 r2: 13 lines |
+| pitch_at_start | PASS | ch11-s1 0–4 s: 60 lines |
+| pivot_counter | sim, PASS | ch5-s3 vx 0: "turned 180 deg in 7.2 s; moved 0.141 m" |
+| pivot_kick | sim, PASS | ch4-s1: "+62 deg at 3 s; forward in the kick +9 mm" |
+| pivot_start | sim, PASS | ch6-s3 left: "turned +164 deg in 6 s, moved 0.146 m" |
+| point_error | PASS | ch7-s1: "5 new points: off the nearest surface median 38 mm" |
+| recovery_replay | fixed (legacy_rows) | b11 r2: "t 38.8 room 0.197 nearest_mm 387 …: drop in front False, hazard obstacle" |
+| refusal_causes | fixed (legacy_rows) | b11 r2: 23 lines, "t 38.77 no room to turn nearest memory at 0.20 m: PHANTOM" (K25) |
+| reloc_replay | fixed | `ImportError: cannot import name 'OFFSET_HALF_S'` (the constants moved to the profile's `localisation.fix` in phase 3); reads them and the landmark numbers from the profile. b10a r1: "6 corrections, 1 refusals; mean err 0.150 -> 0.153 m" |
+| room_models | PASS | ch7: 27 lines |
+| room_replay | fixed (legacy_rows) | b11 r2 at 40 s: "room with the drops' rings 0.198 m, without 0.198 m; a turn on the spot needs 0.17" |
+| room_vs_truth | PASS | ch5: 17 lines |
+| scale_by_speed | PASS | ch11: "asked 0.30 m/s: 1753 windows; truth/belief p50 1.037" |
+| signals_at | PASS | b11 r2 10–20 s: "11.52 EVENT room: room corridor" |
+| stairs_angles | fixed + sim | the same relative path as cliff_test; fixed the same way. Approach 0 only: "STAIRS PASS (closest 0.645 m)" |
+| state_stalls | PASS | "136 runs, 1 state stalls over 200 ms" |
+| step_check_replay | fixed (legacy_rows) | b11 r2: "walking ticks 0, stops to look 0" (a run of 39 s that does not walk); on explore9 (an old folder, the same code) 48 lines, "39.62 look at (0.33,0.74) from belief (0.18, 0.54)" |
+| step_height | sim, PASS | 1 cm, 1 trial: "flight_down 1.0 cm: crossed 1 of 1, fell 0" |
+| still | sim, PASS | "speed 0.000 m/s turn 0.001 rad/s STILL" |
+| stops | sim, PASS | 1 stop: prints mapd's status (`duck-a-map.json`) |
+| stuck_replay | PASS | ch16: "STUCK-REPLAY runs 36, verdicts 20, false alarms 0" |
+| sudo_free_down | **not run** | it brings the simulator down through the runner's own path (`duck-sim down`) and reads pam_faillock: that would stop the simulator the other agent is using |
+| tof_rays | PASS | with Pollen's venv: "row 7: ratio 0.927 (1184 zones) angle -2.95" |
+| tof_rows | sim, PASS | "row 7: median 20.0 mm, valid 100 %" (on a duck sitting after a reset: the sensor sees the floor 2 cm away) |
+| tof_truth | PASS | with Pollen's venv: 148 frames, the sensor pose against the belief |
+| tof_truth_export | PASS | "148 frames -> frames.json" |
+| trigger_replay | PASS | ch11: "43 runs, fires per run median 2, max 3" |
+| turn_drift | PASS | ch5: 212 lines, "moved per stretch: p50 0.032 m, p95 0.174 m, max 0.735 m" |
+| where | sim, PASS | the walls near the duck: 10 lines |
+
+New probes in this arc (K34, K13, K36 and the reading helper): `legacy_rows.py`,
+`record_session.py`, `truth_odometry.py`, `map_range.py`, `repeat_sim.py`, `room_rule.py`.

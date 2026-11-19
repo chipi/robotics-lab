@@ -25,6 +25,9 @@ for run in sys.argv[1:]:
             world = p
         elif k == "event" and p.get("kind") == "refused" and (p.get("raw") or {}).get("goal"):
             ref = p["raw"]
+    if world is None or ref is None:
+        print(f"{run}: no refusal with a goal")
+        continue
     g0 = world["grid"]
     grid = CostGrid.from_map_grid({"res_m": g0["res"], "origin": g0["origin"], "width": g0["w"], "height": g0["h"],
                                    "cells": g0["cells"]}, explained_by=world.get("obstacles") or [],

@@ -20,6 +20,8 @@ from duck_lab.nav.simreset import reset  # noqa: E402
 
 STAIRS = (-0.40, 0.00, -1.40, -0.70)
 GUARD_M = 0.05
+RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runs")     # robots/duck/runs, wherever this is run from
+os.makedirs(RUNS, exist_ok=True)
 APPROACHES = [   # name, start (world), target (world)
     ("head-on from the north", None, (-0.2, -1.05)),
     ("diagonal past the NW corner (trial 10)", (-0.09, -0.39), (-0.31, -0.80)),
@@ -41,7 +43,7 @@ for i, (name, start, target) in enumerate(APPROACHES):
     if ONLY and i not in ONLY:
         continue
     reset()
-    nav = Navigator(log=f"robots/duck/runs/stairs-{i}.jsonl")
+    nav = Navigator(log=os.path.join(RUNS, f"stairs-{i}.jsonl"))
     closest = [9.0]
 
     def guard(nav=nav, closest=closest):

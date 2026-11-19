@@ -1,17 +1,24 @@
 """Compare two runs' ticks.jsonl tick for tick: the commands (vx, vyaw of every row that has one) and the decisions (the rule of
 every row that carries one). Prints where they first differ and how much of each sequence is shared.
 
-    python sim/probes/cmp_runs.py A/ticks.jsonl B/ticks.jsonl
+    python sim/probes/cmp_runs.py A B        (run folders: MCAP runs or folders with ticks.jsonl; or the ticks.jsonl files)
 """
 
 import json
 import sys
+from pathlib import Path
+
+import legacy_rows
+
+
+def _rows(path):
+    p = Path(path)
+    return legacy_rows.load(p.parent if p.name == "ticks.jsonl" else p)[1]
 
 
 def read(path):
     cmds, rules, events = [], [], []
-    for line in open(path):
-        r = json.loads(line)
+    for r in _rows(path):
         if "vx" in r and "vyaw" in r:
             cmds.append((r["vx"], r["vyaw"]))
         if r.get("decision"):

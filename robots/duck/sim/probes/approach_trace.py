@@ -10,6 +10,8 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav.evaluate import LAYOUT, footprint_distance
 from duck_lab.nav.frames import compose, inverse
 
@@ -17,11 +19,10 @@ from duck_lab.nav.frames import compose, inverse
 def main() -> None:
     run, name, t0, t1 = Path(sys.argv[1]), sys.argv[2], float(sys.argv[3]), float(sys.argv[4])
     g = next(x for x in json.loads(LAYOUT.read_text())["geoms"] if x["name"] == name)
-    st = json.loads((run / "start.json").read_text())
+    st, rows = legacy_rows.load(run)
     wfm = compose(st["truth"], inverse(st["map"]))
     world, events, last_s = None, [], None
-    for line in open(run / "ticks.jsonl"):
-        r = json.loads(line)
+    for r in rows:
         t = r.get("t", 0)
         if r.get("event") == "world":
             world = r

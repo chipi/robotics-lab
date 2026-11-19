@@ -14,6 +14,8 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from runfile.mcapio import Follower
 
 WINDOW_S, NEAR_M, SEEN_M = 30.0, 0.25, 0.05
@@ -21,8 +23,7 @@ WINDOW_S, NEAR_M, SEEN_M = 30.0, 0.25, 0.05
 run, mv = Path(sys.argv[1]), Path(sys.argv[2])
 T, corner = float(sys.argv[3]), (float(sys.argv[4]), float(sys.argv[5]))
 ticks = []
-for line in open(run / "ticks.jsonl"):
-    r = json.loads(line)
+for r in legacy_rows.load(run)[1]:
     if "event" not in r and r.get("truth"):
         ticks.append((r["t"], r["truth"]))
 ts = [t for t, _ in ticks]

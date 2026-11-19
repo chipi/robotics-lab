@@ -10,6 +10,8 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from duck_lab.nav.evaluate import FOOTPRINT_M, LAYOUT, footprint_distance
 from duck_lab.nav.frames import compose, inverse
 
@@ -17,9 +19,8 @@ from duck_lab.nav.frames import compose, inverse
 def main() -> None:
     marks = [g for g in json.loads(LAYOUT.read_text())["geoms"] if g["name"].startswith("lm_")]
     for run in map(Path, sys.argv[1:]):
-        st = json.loads((run / "start.json").read_text())
+        st, rows = legacy_rows.load(run)
         world_from_map = compose(st["truth"], inverse(st["map"]))
-        rows = [json.loads(line) for line in open(run / "ticks.jsonl")]
         inside, recent, world = None, [], None
         for r in rows:
             if r.get("event"):

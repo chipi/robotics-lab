@@ -16,6 +16,8 @@ import math
 import sys
 from pathlib import Path
 
+import legacy_rows
+
 from cliff_shim import cliff
 from duck_lab.plugins.tof8x8 import STEP_M
 
@@ -36,8 +38,7 @@ def main():
         return any((cx + dx, cy + dy) in floor for dx in (-1, 0, 1) for dy in (-1, 0, 1))
 
     path, looked, stops, walking_ticks = None, [], [], 0
-    for line in open(run / "ticks.jsonl"):
-        r = json.loads(line)
+    for r in legacy_rows.load(run)[1]:
         t = r.get("t", 0)
         while fi < len(frames) and frames[fi][0] <= t:
             for q in ((frames[fi][1].get("derived") or {}).get("points") or []):
