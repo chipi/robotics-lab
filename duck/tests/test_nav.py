@@ -402,5 +402,29 @@ check("held off with room_m: a point with room to turn", roomy is not None and _
       (roomy, roomy and round(_clear(shelf, roomy, 0.17), 3)))
 check("... and none within reach with room: no hold-off", nearest_free(shelf, inside_goal, 0.1, room_m=0.17) is None)
 
+# mapd's own account (RFC-0019): its lost reason and counters recorded when they change, so a jump can be read against it.
+from duck_lab.nav.run import Navigator  # noqa: E402
+
+
+class _Nav:
+    def __init__(self):
+        self.rows, self.loc = [], Localizer()
+
+    def record(self, **row):
+        self.rows.append(row)
+
+
+w = _Nav()
+ok_st = {"state": {"pose": {"x": 0, "y": 0, "yaw": 0}}, "loops": 0, "relocalizations": 0, "island_keyframes": 0}
+Navigator._watch_mapd(w, ok_st)
+Navigator._watch_mapd(w, ok_st)
+check("mapd tracking quietly: nothing recorded", w.rows == [], w.rows)
+Navigator._watch_mapd(w, {"state": {"lost": "bumped"}, "loops": 0, "relocalizations": 0, "island_keyframes": 0})
+Navigator._watch_mapd(w, {"state": {"pose": {"x": 0.9, "y": 0, "yaw": 0}}, "loops": 0, "relocalizations": 1,
+                          "island_keyframes": 0})
+check("mapd lost (bumped), then found again by a relocalization: both recorded, with what changed",
+      [(r["event"], r["lost"], r["relocalizations"], r["changed"]) for r in w.rows]
+      == [("mapd_status", "bumped", 0, ["lost"]), ("mapd_status", None, 1, ["lost", "relocalizations"])], w.rows)
+
 print("NAV", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

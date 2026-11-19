@@ -398,6 +398,7 @@ class Navigator:
         st = self.mapd.call("map.status")
         pose = (st.get("state") or {}).get("pose")
         t_ns = (st.get("state") or {}).get("t_ns")
+        self._watch_mapd(st)
         raw = self._scaled((pose["x"], pose["y"], pose["yaw"])) if pose else None
         if raw and self.fix_fault and time.monotonic() - self._t0 >= self.fix_fault[0]:
             raw = (raw[0] + self.fix_fault[1], raw[1] + self.fix_fault[2], raw[2])
@@ -407,13 +408,30 @@ class Navigator:
         if (f["status"] != "taken" and (self.loc.rejected <= 3 or self.loc.rejected % 20 == 0)) or (f["status"] == "taken"
                                                                                               and f["moved_m"] > FIX_RECORD_M):
             # the next jump shows its source: mapd's raw pose and its t_ns, and the odometry it was paired with
-            self.record(event="fix", **f, rejected=self.loc.rejected,
+            self.record(event="fix", **f, rejected=self.loc.rejected, mapd=getattr(self, "_mapd_seen", None),
                         decision=decision("fix", {"held": "a fix that would move the belief "
                                                   f"{f['moved_m']:.2f} m is held, not taken (limit {FIX_JUMP_M})",
                                                   "late": f"a jump of {f['moved_m']:.2f} m taken: held fixes agreed",
                                                   "taken": f"a fix moved the belief {f['moved_m']:.2f} m"}[f["status"]],
                                           moved_m=f["moved_m"], limit_m=FIX_JUMP_M))
         return True
+
+    def _watch_mapd(self, st: dict) -> None:
+        """mapd's own account of itself (its `map.status`): why it is lost (`boot`, `carried`, `bumped`, `sat`, `fell`,
+        `contradiction`; absent while it knows), and its loop closures, relocalizations and island stops since it started.
+        Recorded when any of them changes, so a jump in the belief can be read against what mapd did at that moment
+        (RFC-0019: the first robot-tagged anomalies; b10a r1's 0.9 m jump had none of this)."""
+        now = {"lost": (st.get("state") or {}).get("lost"), "loops": st.get("loops"),
+               "relocalizations": st.get("relocalizations"), "islands": st.get("island_keyframes")}
+        before = getattr(self, "_mapd_seen", None)
+        if now == before:
+            return
+        self._mapd_seen = now
+        if before is None and not now["lost"] and not now["loops"] and not now["relocalizations"]:
+            return               # the first look, nothing unusual yet
+        what = [k for k in now if before is None or now[k] != before.get(k)]
+        self.record(event="mapd_status", **now, changed=what, pose=self.loc.pose(),
+                    decision=decision("mapd_status", f"mapd: {', '.join(f'{k} {now[k]}' for k in what)}", **now))
 
     def survey(self) -> bool:
         """Stand still with explicit zeros until mapd is collecting this stop, then a little longer."""
