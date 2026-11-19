@@ -165,7 +165,8 @@ left out (b11 r1 alone has 2056 sightings).
 
 Each step: unit tests on recorded runs, each fixture coming out as the anomaly it was: b10b r2's
 graze (near miss, then contact), gate12's stalls (stuck), b11 r2 (the refusal burst and the
-misplaced edge), b11 r3 (the room disagreement), gate4 ch11 (the odometry scale). b10a r1's jump
+misplaced edge), b11 r3 (the room disagreement), gate3 ch11 (the odometry scale, the runs before
+its fix). b10a r1's jump
 can only be found by belief against truth: its recording has no raw fix, so it is no fixture for
 `fix_jump_held`.
 
