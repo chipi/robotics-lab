@@ -137,14 +137,18 @@ obstacles, belief against truth, and wrong refusals. The rest come later in the 
 Each step: unit tests on recorded runs (b10a r1's jump, b10b r2's graze, gate12's stalls are the
 first fixtures: each must come out as the anomaly it was).
 
-## 6. Questions
+## 6. Questions, answered
 
-1. Severity thresholds (what a near miss is: within half the margin? within the footprint plus a
-   centimetre?): proposed from the recordings, reviewed with the operator.
-2. Does a found anomaly ever write back into the robot's run log? Proposed: no; the recording stays
-   what the robot knew.
-3. The NXT and EV3: which of §3.1 they can tag (the gate's, at least) and which found detectors
-   apply to robots without a map.
+The operator, 2026-11-19: "I will go with your recommendation on these 3 questions".
+
+1. **Severity thresholds** (what a near miss is): proposed from the recordings when the detectors are
+   built, each number with the runs it was read from, then reviewed with the operator.
+2. **Does a found anomaly ever write back into the robot's run log?** No: the recording stays what
+   the robot knew; found anomalies live beside the run, rebuilt when a detector changes.
+3. **The NXT and EV3:** they tag the gate's anomalies (`stop_latched`, `lease_lost`) and their
+   adapter's own (offline, a deadman stop) from the first build; the found detectors that need a
+   map or a pose (near miss, phantom and missed obstacles, belief against truth) do not apply until
+   a robot has one, and say so instead of reporting nothing.
 
 ## 7. Not covered
 
