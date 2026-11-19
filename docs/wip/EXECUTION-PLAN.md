@@ -130,6 +130,42 @@ delete; names kept as `miniview` on purpose (K30); nothing run on GitHub yet.
 - **RFC-0019, steps 1–2:** the robot-tagged anomalies; the analysis as a command-line table over a
   run, used on b11 and b12; a detector joins only if it stays quiet on clean runs.
 
+### Phase 3 checkpoint (2026-11-19)
+
+**Built** (branch `mission-control`, not yet on main; details in
+[PHASE3-PREP.md](PHASE3-PREP.md) results):
+
+- RFC-0020 steps 1–3: the profile format and validator (`libs/runfile`), the duck's profile
+  (`robots/duck/profile.json`, variants `sim` and `real`), the navigator reading its numbers from it,
+  the four interfaces with the duck's plugins behind them.
+- RFC-0019 steps 1–2: nine detectors over a recording and `observatory anomalies` (five on the
+  default track, quiet on the clean runs); the navigator raising twelve kinds of anomaly itself.
+- The "phantom" by the dock is a real cube the layout omitted ([PHANTOM.md](PHANTOM.md)); the layout
+  now holds the seven free bodies; the depth shortfall is the sensor's pitch with radial ranges, and
+  mapd's axial model is what differs ([RANGE.md](RANGE.md), K34).
+- Phase 1's 20 goals frozen in `robots/duck/sim/phase1_goals.json`; run 19 on them: 19 of 20 within
+  0.25 m by truth, refused 1 (K38), 0 contacts, 0 falls, 0 timeouts: the bar met.
+
+**Verified by the lead:** `make ci` on the merged tree (`9589921`): every stage PASS, `ci PASS`,
+`MAKE_EXIT=0`; `observatory anomalies` re-run on b9 r2 (0 on the default track) and b10b r2 (the
+graze: near miss 0.071 m, then contact); the cube in Pollen's scene file at (−0.30, 0.10); the
+navigator's diff for the hooks leaves the files that decide commands untouched.
+
+**Behaviour unchanged, how strongly:** exact where inputs are recorded (`duck-replay` over 122–126
+runs identical before and after each step; the locomotion replay 36,888 of 36,888); pass counts
+where they are not (seeded challenges 1–5, 11, 16–19 within the base's own flips). The simulator is
+not deterministic (K13), so "identical" is not claimed for live runs.
+
+**Not done:** RFC-0019 steps 3–5 (index, pages, Mission Control, video: phase 5); ten of the twelve
+robot-tagged anomalies raised by tests only (K37); duck numbers still in code (K32); the radial
+model on Pollen's replay bench (K34); the real duck's numbers (REAL-DUCK.md).
+
+**For the operator to review (RFC-0019 §6):** the robot-tagged anomalies' severities and limits:
+refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking pose 0.30 rad for
+1 s, refused unexplained 0.30 m, a silent stream 3 s.
+
+**Recommendation:** push phase 3 to main, then phase 4.
+
 ## Phase 4 — behaviour on the profiles
 
 - **RFC-0012, look far:** the pace from the map ahead, its numbers read from the robot's profile.
