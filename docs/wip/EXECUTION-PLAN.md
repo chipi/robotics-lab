@@ -180,6 +180,17 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 - **RFC-0020:** the robot page in the Observatory; runs carrying their profile and plugin versions;
   the Eye drawn from the profile; Mission Control showing a robot's profile and why a goal was
   refused.
+- **Mission Control as the navigator's control panel** (the operator, 2026-11-19: "really good and
+  elaborate", following the patterns the Observatory and Mission Control already have). Per robot:
+  - **Modules:** the four interfaces, the plugin filling each (name, version), and its live state
+    (streams alive, last fix and whether it was held, the lease, the walking command).
+  - **Settings:** every profile number by block, with its `measured` and `why`, the `sim` and `real`
+    values side by side, editable through the profile validator; a change applies at the next run,
+    never during one, and is saved as a new profile version; every run names the version it used.
+  - **Transferable between installations:** the profile holds only the robot (no paths, sockets,
+    URLs: today its `control` block has this machine's socket paths and the Observatory's URL, which
+    move to a per-installation file); export and import of a profile as one file, checked by the
+    validator on import, with a version and a checksum; a diff between two profiles.
 
 ## Phase 6 — the first other robot
 
