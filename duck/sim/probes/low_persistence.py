@@ -12,7 +12,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from floor_heights import CLEAR_M, LOW_M, ON_M  # noqa: E402

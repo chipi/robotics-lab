@@ -22,7 +22,7 @@ from mcap.reader import make_reader
 from playwright.sync_api import sync_playwright
 
 from helpers import T0_NS, Checks, catalog, get, import_fixture, scene, serve, wait_until
-from miniview.adapters import nxt
+from runfile.adapters import nxt
 from miniview.shots import launch
 
 check = Checks("RUN COMPAT")

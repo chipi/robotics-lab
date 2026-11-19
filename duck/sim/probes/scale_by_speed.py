@@ -11,7 +11,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 WINDOW_S = 1.0
 MAX_YAW_RATE = 0.3          # rad/s asked: straight enough

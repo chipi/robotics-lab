@@ -1,16 +1,23 @@
 # miniview's service (ADR-0005, RFC-0009 "Running in Docker", ADR-0012): the API, the live streams and the two
 # pages. The runs and scenes are mounted READ ONLY at /data/runs and /data/scenes; the host's state folder (the one
 # index) is mounted at /index. Pictures for the agent (Chromium) stay outside the image.
+#
+#   docker build -f viewer/Dockerfile -t miniview:local .      # from the repository root: it installs libs/runfile too
+#
+# The run format is a path source in viewer/pyproject.toml, so the folders sit side by side as they do in the repository.
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH=/opt/venv/bin:$PATH MINIVIEW_DATA=/data MINIVIEW_INDEX=/index/index.sqlite PYTHONUNBUFFERED=1
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
+COPY libs/runfile/src ./libs/runfile/src
+COPY viewer/pyproject.toml viewer/uv.lock ./viewer/
+WORKDIR /app/viewer
 RUN uv sync --frozen --no-dev --no-install-project
-COPY src ./src
-COPY web ./web
+COPY viewer/src ./src
+COPY viewer/web ./web
 RUN uv sync --frozen --no-dev
 RUN mkdir -p /index /data
 

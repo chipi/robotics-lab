@@ -8,7 +8,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 WINDOW_S = 3.0
 HEAD = ("joint_neck_pitch", "joint_head_pitch", "joint_head_yaw", "joint_head_roll")

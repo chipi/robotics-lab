@@ -9,8 +9,8 @@ import json
 import sys
 from pathlib import Path
 
-from miniview import keys
-from miniview.mcapio import Follower
+from runfile import keys
+from runfile.mcapio import Follower
 
 data = Path(sys.argv[1])
 rows = []

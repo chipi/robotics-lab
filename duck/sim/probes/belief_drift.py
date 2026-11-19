@@ -14,7 +14,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 DT_S = (5.0, 10.0, 20.0)
 

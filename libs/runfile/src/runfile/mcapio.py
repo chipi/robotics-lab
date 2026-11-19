@@ -6,7 +6,7 @@ a compact, indexed file.
 
 `Recorder` is the only writer (the lock is created exclusively). `Follower` reads only complete
 records, resumes where it stopped, and reads the compacted file the same way, so one reader serves a
-finished run and a live one. The messages' shapes are in `miniview.wire`.
+finished run and a live one. The messages' shapes are in `runfile.wire`.
 """
 
 import io
@@ -24,7 +24,7 @@ from mcap.records import Channel, Header, Message, Schema
 from mcap.stream_reader import StreamReader
 from mcap.writer import CompressionType, Writer
 
-from miniview import keys, schemas, wire
+from runfile import keys, schemas, wire
 
 FORMAT = 2
 LIVE, FINAL, LOCK = "run.live.mcap", "run.mcap", "writer.lock"
@@ -41,7 +41,7 @@ def new_run(key: str, robot: dict, scene: str, kind: str, started_at_ns: int, st
             source: dict | None = None, run_uuid: str | None = None, signals: list | None = None,
             odometry: dict | None = None, no_pose: str | None = None, writer: dict | None = None,
             goal_run: dict | None = None) -> dict:
-    """The run record. `signals` declares the robot's named values (miniview.signals); `odometry` says how the pose was
+    """The run record. `signals` declares the robot's named values (runfile.signals); `odometry` says how the pose was
     computed, `no_pose` why there is none (a robot with signals only); `writer` names the program that writes the run;
     `goal_run` says which goal run of Mission Control the run is, {id, name, kind, ...} (RFC-0014 §3.11 item 4)."""
     keys.split_key(key)

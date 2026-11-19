@@ -8,7 +8,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, CostGrid, nearest_free, path_length, plan
 from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, HOLD_DETOUR, HOLD_OFF_M

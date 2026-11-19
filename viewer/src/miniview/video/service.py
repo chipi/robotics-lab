@@ -21,7 +21,8 @@ import urllib.parse
 import uuid
 from pathlib import Path
 
-from miniview import keys, video
+from runfile import keys
+from miniview import video
 
 log = logging.getLogger("miniview.render")
 SIZE = re.compile(r"^(\d{2,5})x(\d{2,5})$")

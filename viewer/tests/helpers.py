@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from miniview import keys, mcapio
+from runfile import keys, mcapio
 from miniview.importer import import_duck
 
 _INDEX_DIR = Path(tempfile.mkdtemp(prefix="miniview-test-index-"))
@@ -59,7 +59,7 @@ def import_fixture(data: Path, name: str = "explore9", robot: str = "duck", scen
 
 def catalog(data: Path, index: Path | None = None, **kw):
     """A catalog over `data` with an index of its own (outside the data, as in production); pass `index` to reuse one."""
-    from miniview.catalog import Catalog
+    from runfile.catalog import Catalog
 
     n = len(list(_INDEX_DIR.glob("*.sqlite")))
     return Catalog(data, index=index or _INDEX_DIR / f"index-{n}.sqlite", **kw)

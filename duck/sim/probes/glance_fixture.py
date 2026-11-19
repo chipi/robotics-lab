@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import glance_from_run as g  # noqa: E402

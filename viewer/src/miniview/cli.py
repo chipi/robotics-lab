@@ -33,8 +33,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from miniview import keys, mcapio, query
-from miniview.catalog import Catalog, default_data
+from runfile import keys, mcapio
+from miniview import query
+from runfile.catalog import Catalog, default_data
 from miniview.importer import import_duck
 from miniview.scenes import from_mujoco_layout
 
@@ -58,7 +59,7 @@ def cmd_scene(args) -> None:
 def cmd_import(args) -> None:
     data = _cat(args).data
     if args.robot == "nxt":
-        from miniview.adapters import nxt
+        from runfile.adapters import nxt
 
         if args.follow:
             raise SystemExit("--follow is for the duck's log; nxt-web writes its runs live itself (ADR-0013)")
@@ -88,7 +89,7 @@ def _live_run_dir(cat: Catalog, key: str) -> Path:
     cannot be checked, so a file that grew in the last STOPPED_AFTER_S seconds is taken as written)."""
     import time
 
-    from miniview.catalog import STOPPED_AFTER_S
+    from runfile.catalog import STOPPED_AFTER_S
 
     d = keys.run_dir(cat.data, key)
     if not (d / mcapio.LIVE).exists():

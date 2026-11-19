@@ -1,7 +1,7 @@
 """The navigator's run as a miniview run, written while it runs (ADR-0014, RFC-0008 step 0).
 
 `RunLog` turns what the navigator logs into format 2 records through miniview's `Recorder`: a row of ticks.jsonl
-becomes the same records the importer would make (`miniview.adapters.duck.DuckLog`, so a run written live and the
+becomes the same records the importer would make (`runfile.adapters.duck.DuckLog`, so a run written live and the
 same log imported later are the same run), and the things ticks.jsonl has no place for are added: every depth frame
 (raw, with the state it was paired with and what was derived) and the IMU and decision values as signals.
 ticks.jsonl is still written by the navigator; the format 2 run is the record.
@@ -17,9 +17,9 @@ import threading
 import time
 from pathlib import Path
 
-from miniview import keys
-from miniview.adapters.duck import DuckLog, ROBOT
-from miniview.mcapio import Recorder, WriterBusy, new_run
+from runfile import keys
+from runfile.adapters.duck import DuckLog, ROBOT
+from runfile.mcapio import Recorder, WriterBusy, new_run
 
 # The robot's named values (ADR-0013's generic signals; ADR-0014): the IMU per state sample, and what the navigator
 # decides on as it last had it, in the same sample.

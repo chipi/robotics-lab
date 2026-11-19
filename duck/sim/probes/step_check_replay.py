@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from duck_lab.nav.step_check import STEP_M, unseen_ahead
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 CELL = 0.05
 

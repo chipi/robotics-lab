@@ -1,0 +1,10 @@
+# The build context is the repository root (the image installs libs/runfile beside the viewer): only what the Dockerfile
+# copies goes in. Nothing of the lab's data (duck/runs, ...) is ever sent to the daemon.
+*
+!libs/runfile/pyproject.toml
+!libs/runfile/src
+!viewer/pyproject.toml
+!viewer/uv.lock
+!viewer/src
+!viewer/web
+**/__pycache__/

@@ -31,8 +31,6 @@ MODULES = {
     "nxt_lab": "nxt_lab",
     "duck_lab": "duck_lab",
     "miniview": "observatory",
-    **{f"miniview.{m}": "runfile" for m in ("keys", "schemas", "wire", "signals", "validate", "mcapio", "se2", "store",
-                                              "catalog", "index", "adapters")},
     "duck_lab.gate": "robotgate",
     "duck_lab.world_model": "worldmodel",
 }

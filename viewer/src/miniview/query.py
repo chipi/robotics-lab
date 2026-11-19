@@ -3,7 +3,7 @@
 import bisect
 import math
 
-from miniview.se2 import compose
+from runfile.se2 import compose
 
 
 def load_run(catalog, run_id: str) -> tuple:

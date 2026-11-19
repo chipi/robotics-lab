@@ -14,7 +14,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 WINDOW_S, NEAR_M, SEEN_M = 30.0, 0.25, 0.05
 

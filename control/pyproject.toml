@@ -8,10 +8,10 @@ dependencies = [
     "mcp>=2.3.0",
 ]
 
-# The gate (RFC-0017) is a library in the duck package: a path source, like nxt-web's miniview, so there is one copy of the rules.
+# The gate (RFC-0017) is a library in the duck package: a path source, like nxt-web's run format, so there is one copy of the rules.
 [tool.uv.sources]
 duck-lab = { path = "../duck", editable = true }
-miniview = { path = "../viewer", editable = true }
+runfile = { path = "../libs/runfile", editable = true }
 
 [project.scripts]
 mission-control = "mission_control.cli:main"

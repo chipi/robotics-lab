@@ -14,7 +14,7 @@ from pathlib import Path
 
 from helpers import Checks, catalog, get, import_fixture, make_run, scene, serve, tick, wait_until
 from miniview import query, server
-from miniview.catalog import FOLLOW_EVERY_S
+from runfile.catalog import FOLLOW_EVERY_S
 
 check = Checks("SERVER")
 MARGIN = 3 * FOLLOW_EVERY_S          # what a record may take to reach a stream: three rounds of the follower

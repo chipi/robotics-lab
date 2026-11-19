@@ -12,9 +12,9 @@ import time
 import uuid
 from pathlib import Path
 
-from miniview import keys
-from miniview.adapters.duck import DuckLog
-from miniview.mcapio import FINAL, Recorder, WriterBusy, new_run
+from runfile import keys
+from runfile.adapters.duck import DuckLog
+from runfile.mcapio import FINAL, Recorder, WriterBusy, new_run
 
 SOURCE_FILES = ("ticks.jsonl", "start.json", "results.json", "map_grid.json")
 UUID_NAMESPACE = uuid.UUID("6f6c6e6a-5b0c-4c0a-9f6e-6d696e697669")

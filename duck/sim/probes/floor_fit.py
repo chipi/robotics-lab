@@ -16,7 +16,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 from duck_lab.nav import cliff
 from duck_lab.replay import state_of

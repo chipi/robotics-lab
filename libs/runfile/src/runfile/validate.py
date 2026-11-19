@@ -3,7 +3,7 @@ A bad record is skipped and counted by the run, never applied half way."""
 
 import math
 
-from miniview import keys, signals
+from runfile import keys, signals
 
 
 class BrokenRun(Exception):

@@ -46,8 +46,9 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from miniview import keys, query, robots
-from miniview.catalog import Catalog
+from runfile import keys
+from miniview import query, robots
+from runfile.catalog import Catalog
 
 log = logging.getLogger("miniview")
 WEB = Path(__file__).resolve().parents[2] / "web"

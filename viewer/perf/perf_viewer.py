@@ -20,8 +20,8 @@ sys.path.insert(0, str(HERE.parent / "tests"))
 
 from helpers import T0_NS, catalog, get, scene, serve, wait_until  # noqa: E402
 
-from miniview import keys, mcapio, store  # noqa: E402
-from miniview.adapters.duck import DuckLog  # noqa: E402
+from runfile import keys, mcapio, store  # noqa: E402
+from runfile.adapters.duck import DuckLog  # noqa: E402
 from miniview.shots import launch  # noqa: E402
 
 

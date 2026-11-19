@@ -12,8 +12,8 @@ import struct
 
 from google.protobuf import json_format
 
-from miniview import schemas
-from miniview.signals import SignalSet
+from runfile import schemas
+from runfile.signals import SignalSet
 
 KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "objects", "sighting", "segment", "end")
 

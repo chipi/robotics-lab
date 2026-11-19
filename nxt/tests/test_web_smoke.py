@@ -138,7 +138,7 @@ try:
     check("run CSV header", lines[0] == "t,power_left,power_right,tacho_A,tacho_B,tacho_C,s1_touch,s3_color,s3_color_name,s4_ultrasonic,program", lines[0])
     check("run CSV rows", len(lines) >= 6, len(lines))
     # the recording is also a miniview run (ADR-0013): compacted when the recording stopped, the .mcap link is that file
-    from miniview import mcapio
+    from runfile import mcapio
     mcap_name = run_name.replace(".csv", ".mcap")
     check("run lists its miniview run as the .mcap file", any(x["name"] == run_name and x["mcap"] == mcap_name for x in runs), runs)
     code, mcap_bytes = call(base, f"/api/runs/download?name={mcap_name}")

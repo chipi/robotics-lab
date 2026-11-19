@@ -15,9 +15,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from miniview import keys
-from miniview.mcapio import Follower
-from miniview.se2 import compose
+from runfile import keys
+from runfile.mcapio import Follower
+from runfile.se2 import compose
 
 HERE = Path(__file__).resolve().parent
 ROBOTS = json.loads((HERE / "robots.json").read_text())

@@ -13,10 +13,11 @@ import argparse
 from pathlib import Path
 
 from helpers import FIXTURE, T0_NS, Checks, catalog, import_fixture, make_run, scene, tick
-from miniview import catalog as catalog_mod
-from miniview import cli, keys, mcapio
-from miniview.catalog import Loaded
-from miniview.index import Index, IndexBusy
+from runfile import catalog as catalog_mod
+from runfile import keys, mcapio
+from miniview import cli
+from runfile.catalog import Loaded
+from runfile.index import Index, IndexBusy
 
 check = Checks("INDEX")
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]

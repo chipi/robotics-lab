@@ -22,8 +22,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from miniview import keys
-from miniview.mcapio import FINAL, Recorder, WriterBusy, new_run
+from runfile import keys
+from runfile.mcapio import FINAL, Recorder, WriterBusy, new_run
 
 ROBOT = "nxt"
 SCENE = "unmapped"

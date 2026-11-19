@@ -13,7 +13,7 @@ import statistics
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 
 def box_distance(px: float, py: float, b: dict) -> float:

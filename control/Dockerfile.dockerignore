@@ -1,4 +1,4 @@
-# The build context is the repository root (the image installs the viewer and duck packages beside Mission Control): only what
+# The build context is the repository root (the image installs the run format (libs/runfile) and the duck package beside Mission Control): only what
 # the Dockerfile copies goes in.
 *
 !control/pyproject.toml
@@ -6,6 +6,6 @@
 !control/src
 !duck/pyproject.toml
 !duck/src
-!viewer/pyproject.toml
-!viewer/src
+!libs/runfile/pyproject.toml
+!libs/runfile/src
 **/__pycache__/

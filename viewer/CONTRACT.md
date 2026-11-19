@@ -47,8 +47,8 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   protobuf with a
   `FileDescriptorSet` schema (the `foxglove-schemas-protobuf` package); ours (`miniview.*`) are JSON
   with JSON schemas.
-  Foxglove's published JSON schemas stay copied in `src/miniview/schemas/` as the reference tests
-  check against.
+  Foxglove's published JSON schemas stay copied in `libs/runfile/src/runfile/schemas/` as the
+  reference tests check against.
   **The tick protocol** (the recorder enforces it, the reader checks it): (1) a tick's first message
   is
   `/belief/pose`; (2) then at most one each of `/truth/pose`, `/depth`, `/miniview/command`,

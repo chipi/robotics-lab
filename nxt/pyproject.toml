@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "Driving a LEGO Mindstorms NXT 2.0 from our own Python code"
 requires-python = ">=3.10"
 dependencies = [
-    "miniview",
+    "runfile",
     "nxt-python>=3.5.1",
 ]
 
-# nxt-web writes its recordings as miniview runs (ADR-0013): the viewer package is a path source, not a release.
+# nxt-web writes its recordings as miniview runs (ADR-0013): the run format is a path source (libs/runfile), not a release.
 [tool.uv.sources]
-miniview = { path = "../viewer", editable = true }
+runfile = { path = "../libs/runfile", editable = true }
 
 [project.scripts]
 nxt-web = "nxt_lab.web:main"

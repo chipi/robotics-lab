@@ -14,9 +14,10 @@ from pathlib import Path
 from mcap.reader import make_reader
 
 from helpers import Checks, catalog, get, make_run, run_record, scene, serve, tick
-from miniview import keys, query, schemas, wire
-from miniview.mcapio import Follower, Recorder
-from miniview.store import RunData, build
+from runfile import keys, schemas, wire
+from miniview import query
+from runfile.mcapio import Follower, Recorder
+from runfile.store import RunData, build
 
 check = Checks("DEPTH-FRAMES")
 STATE = {"quat": [0.99, 0.0, 0.1, 0.0], "odom_z": 0.116, "tof": {"pos": [0.085, 0.02, 0.12], "quat": [0.9, 0.0, 0.4, 0.0]}}

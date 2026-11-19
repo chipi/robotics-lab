@@ -1,4 +1,4 @@
-"""The duck's navigator log (ticks.jsonl, start.json) as records (miniview.store).
+"""The duck's navigator log (ticks.jsonl, start.json) as records (runfile.store).
 
 Reads only; never edits the run. `DuckLog` turns one log line at a time into records, so a log
 still being written (a live run) goes through the same code as a finished one. Every field of the
@@ -10,8 +10,8 @@ end to end in run time and each has its epoch; exploration runs have one epoch f
 import json
 from pathlib import Path
 
-from miniview.se2 import compose, inverse
-from miniview.store import build, verdict_of
+from runfile.se2 import compose, inverse
+from runfile.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
@@ -204,7 +204,7 @@ def records(run_dir: Path, scene_id: str) -> list:
 
 def prepare(run_dir: Path, scene_id: str) -> tuple:
     """(run.json, frames.json) as dicts, for a log in memory (tests and quick looks; imports go through the importer)."""
-    from miniview.mcapio import new_run
+    from runfile.mcapio import new_run
 
     log = DuckLog(run_dir, scene_id)
     run = new_run(f"duck/{scene_id}/{Path(run_dir).name}", log.robot, scene_id, log.kind, 1, "file_mtime")

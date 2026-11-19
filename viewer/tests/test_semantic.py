@@ -13,10 +13,10 @@ from pathlib import Path
 from mcap.reader import make_reader
 
 from helpers import FIXTURE, Checks, catalog, get, make_run, run_record, scene, serve, tick
-from miniview import keys, wire
-from miniview.adapters.duck import DuckLog, prepare, records
-from miniview.mcapio import Follower
-from miniview.store import RunData
+from runfile import keys, wire
+from runfile.adapters.duck import DuckLog, prepare, records
+from runfile.mcapio import Follower
+from runfile.store import RunData
 
 check = Checks("SEMANTIC")
 SLICE = Path(__file__).resolve().parent / "fixtures" / "find-fridge-slice"

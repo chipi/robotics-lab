@@ -15,7 +15,7 @@ from pathlib import Path
 import rerun as rr
 from rerun.urdf import UrdfTree
 
-from miniview import keys
+from runfile import keys
 from miniview.video import track
 
 

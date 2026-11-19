@@ -5,12 +5,12 @@ description = "Our tools around Pollen's Microduck: simulator scenes, probes, MC
 requires-python = ">=3.10"
 dependencies = [
     "mcap>=1.2",
-    "miniview",
+    "runfile",
 ]
 
-# The navigator writes its runs as miniview runs (ADR-0014): the viewer package is a path source, not a release.
+# The navigator writes its runs as miniview runs (ADR-0014): the run format is a path source (libs/runfile), not a release.
 [tool.uv.sources]
-miniview = { path = "../viewer", editable = true }
+runfile = { path = "../libs/runfile", editable = true }
 
 [project.scripts]
 duck-record = "duck_lab.record:main"

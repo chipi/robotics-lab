@@ -16,9 +16,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import FIXTURE, OPEN_SECTIONS, T0_NS, import_fixture, catalog, scene, serve, wait_until
-from miniview import keys
-from miniview.adapters import nxt
-from miniview.mcapio import Recorder
+from runfile import keys
+from runfile.adapters import nxt
+from runfile.mcapio import Recorder
 from miniview.shots import launch
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "nxt"

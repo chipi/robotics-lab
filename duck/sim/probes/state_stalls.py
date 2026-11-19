@@ -9,7 +9,7 @@ a duck fell during one (challenge 9 seed 10, 2026-11-17).
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 STALL_MS = 200.0
 LEAD_S = 0.5

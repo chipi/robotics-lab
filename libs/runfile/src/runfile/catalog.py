@@ -2,7 +2,7 @@
 
     data/scenes/<scene>/scene.json
     data/runs/<robot>/<scene>/<run>/run.mcap       the record of truth (run.live.mcap + writer.lock while written)
-    $MINIVIEW_INDEX                                the service's own index (miniview.index), outside the data
+    $MINIVIEW_INDEX                                the service's own index (runfile.index), outside the data
 
 `Catalog` knows every run from the index, opens a run's records into memory when asked, and follows the
 runs that are still being written. A run is `live`, `ended`, `stopped` (its writer died) or `broken`;
@@ -19,10 +19,10 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from miniview import keys, mcapio
-from miniview.index import Index
-from miniview.store import RunData
-from miniview.validate import BrokenRun
+from runfile import keys, mcapio
+from runfile.index import Index
+from runfile.store import RunData
+from runfile.validate import BrokenRun
 
 log = logging.getLogger("miniview")
 

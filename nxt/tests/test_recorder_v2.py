@@ -17,8 +17,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from miniview import keys, mcapio
-from miniview.catalog import Catalog
+from runfile import keys, mcapio
+from runfile.catalog import Catalog
 from nxt_lab import config as cfgmod
 from nxt_lab.config import Config
 

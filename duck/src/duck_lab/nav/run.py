@@ -190,7 +190,7 @@ class FrameView:
                            for ax, ay, z, kind in self.rel]
 
     def payload(self) -> dict:
-        """The depth_frame record (miniview.wire): the raw frame, its times, the paired state's replay fields, the pose and
+        """The depth_frame record (runfile.wire): the raw frame, its times, the paired state's replay fields, the pose and
         what was derived."""
         fr = self.frame
         p = {"rows": fr["rows"], "cols": fr["cols"], "distance_mm": list(fr["distance_mm"]), "status": list(fr["status"]),

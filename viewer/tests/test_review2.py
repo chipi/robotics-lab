@@ -15,8 +15,9 @@ import urllib.request
 from pathlib import Path
 
 from helpers import T0_NS, Checks, catalog, get, make_run, run_record, scene, serve, tick, wait_until
-from miniview import keys, mcapio, server, validate, wire
-from miniview.mcapio import Follower, Recorder
+from runfile import keys, mcapio, validate, wire
+from miniview import server
+from runfile.mcapio import Follower, Recorder
 
 check = Checks("REVIEW 2")
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
@@ -268,7 +269,7 @@ if want('C3'):
         cat = catalog(data)
         make_run(data, "duck/room/c3", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": "ended"})])
         ld = cat.get("duck/room/c3")
-        import miniview.store as store
+        import runfile.store as store
 
         n, real = [0], store.streams
         store.streams = lambda *a, **k: (n.__setitem__(0, n[0] + 1), real(*a, **k))[1]

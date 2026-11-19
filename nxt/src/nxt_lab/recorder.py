@@ -12,9 +12,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from miniview import keys
-from miniview.adapters import nxt as nxt_run
-from miniview.mcapio import FINAL, Recorder as RunWriter
+from runfile import keys
+from runfile.adapters import nxt as nxt_run
+from runfile.mcapio import FINAL, Recorder as RunWriter
 
 from nxt_lab import deadman
 from nxt_lab.config import DATA_DIR

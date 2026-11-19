@@ -14,10 +14,11 @@ from pathlib import Path
 from mcap.reader import make_reader
 
 from helpers import FIXTURE, T0_NS, Checks, import_fixture, make_run, run_record, tick
-from miniview import cli, keys, mcapio, schemas, wire
+from runfile import keys, mcapio, schemas, wire
+from miniview import cli
 from miniview.importer import sha256_of
-from miniview.mcapio import Follower, Recorder, WriterBusy
-from miniview.store import build
+from runfile.mcapio import Follower, Recorder, WriterBusy
+from runfile.store import build
 
 check = Checks("MCAPIO")
 
@@ -330,7 +331,7 @@ with tempfile.TemporaryDirectory() as tmp:
               "truth_3d" not in ticks[1] and ticks[1]["truth"] == [1.0, 2.0, 0.5], ticks[1])
 
 # --- the goal run a run belongs to (RFC-0014 §3.11 item 4, question 20) ---------------------------------------
-from miniview import validate
+from runfile import validate
 
 with tempfile.TemporaryDirectory() as tmp:
     gdata = Path(tmp)

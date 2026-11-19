@@ -22,7 +22,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcap" },
-    { name = "miniview" },
+    { name = "runfile" },
 ]
 
 [package.dev-dependencies]
@@ -35,7 +35,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcap", specifier = ">=1.2" },
-    { name = "miniview", editable = "../viewer" },
+    { name = "runfile", editable = "../libs/runfile" },
 ]
 
 [package.metadata.requires-dev]
@@ -210,26 +210,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/ca/6a/5039c5204c30478a2
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/15/fa7ff687a128ec51084a48fb1e039b247a9add47b974c125278d97f370be/mcap-1.6.0-py3-none-any.whl", hash = "sha256:7cd37fba2cf51d033f2139ca837d2ed3024dcec3cd9f8ecdf3d4d15930df6e17", size = 21955, upload-time = "2026-10-19T17:48:49.61Z" },
 ]
-
-[[package]]
-name = "miniview"
-version = "0.1.0"
-source = { editable = "../viewer" }
-dependencies = [
-    { name = "foxglove-schemas-protobuf" },
-    { name = "mcap" },
-    { name = "protobuf" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "foxglove-schemas-protobuf", specifier = ">=0.4.0" },
-    { name = "mcap", specifier = ">=1.2" },
-    { name = "protobuf", specifier = ">=7.36.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "playwright", specifier = ">=1.65.2" }]
 
 [[package]]
 name = "numpy"
@@ -865,6 +845,23 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/39/29/1c4f680273bac7e208941ebf7faf06b4a85a992ab04d3776318e39407ba8/rerun_sdk-0.43.2-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:9bb68f110e111108fa2db64d0ba7068d8011b1b8af5727b256535e0a483bea90", size = 170327372, upload-time = "2026-11-13T12:36:18.573Z" },
     { url = "https://files.pythonhosted.org/packages/ea/c6/c2688d46a8b31f23e615538add1aa6d19bf53818ec0ebd696718cf50095a/rerun_sdk-0.43.2-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:a811d4c95e181bd4071545809de8c1389fe5372e31dfdcd112aace767901daf1", size = 175041681, upload-time = "2026-11-13T12:36:25.422Z" },
     { url = "https://files.pythonhosted.org/packages/80/67/4effdd62646c27b1b24118f67c49a9a13f8b0416e27bb66d8d58b1e65276/rerun_sdk-0.43.2-cp311-abi3-win_amd64.whl", hash = "sha256:a946736374e5d69a06958b269f4c241747dfba1879eac6c264a4dbedf2eee715", size = 152634286, upload-time = "2026-11-13T12:36:30.978Z" },
+]
+
+[[package]]
+name = "runfile"
+version = "0.1.0"
+source = { editable = "../libs/runfile" }
+dependencies = [
+    { name = "foxglove-schemas-protobuf" },
+    { name = "mcap" },
+    { name = "protobuf" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "foxglove-schemas-protobuf", specifier = ">=0.4.0" },
+    { name = "mcap", specifier = ">=1.2" },
+    { name = "protobuf", specifier = ">=7.36.2" },
 ]
 
 [[package]]

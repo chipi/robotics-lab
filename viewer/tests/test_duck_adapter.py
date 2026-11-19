@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from miniview.adapters.duck import prepare
+from runfile.adapters.duck import prepare
 
 failures = []
 
@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
 # The trunk's height and whole orientation (ADR-0016): a row with truth_z and truth_quat gives the tick's truth_3d, and they
 # leave the raw extras; a row with only truth_z (a log from before) keeps it raw, as it was.
-from miniview.adapters.duck import DuckLog  # noqa: E402
+from runfile.adapters.duck import DuckLog  # noqa: E402
 
 with tempfile.TemporaryDirectory() as tmp:
     lg = DuckLog(Path(tmp) / "explore-x", "apartment")

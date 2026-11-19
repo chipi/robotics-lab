@@ -15,9 +15,10 @@ import tempfile
 from pathlib import Path
 
 os.environ.setdefault("MINIVIEW_INDEX", str(Path(tempfile.mkdtemp()) / "index.sqlite"))
-from miniview import keys, kinematics  # noqa: E402
-from miniview.catalog import Catalog  # noqa: E402
-from miniview.mcapio import Follower  # noqa: E402
+from runfile import keys
+from miniview import kinematics  # noqa: E402
+from runfile.catalog import Catalog  # noqa: E402
+from runfile.mcapio import Follower  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]

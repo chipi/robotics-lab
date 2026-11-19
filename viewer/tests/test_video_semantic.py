@@ -14,7 +14,8 @@ import tempfile
 from pathlib import Path
 
 from helpers import Checks, make_run, tick
-from miniview import keys, video
+from runfile import keys
+from miniview import video
 
 ENGINES = Path(video.__file__).resolve().parent / "engines"
 sys.path.insert(0, str(ENGINES))

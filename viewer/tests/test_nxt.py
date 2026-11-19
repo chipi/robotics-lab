@@ -15,10 +15,10 @@ from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 from mcap.reader import make_reader
 
 from helpers import Checks, catalog, get, serve, wait_until
-from miniview import keys, mcapio, signals, validate, wire
-from miniview.adapters import nxt
-from miniview.mcapio import Recorder
-from miniview.store import RunData, build
+from runfile import keys, mcapio, signals, validate, wire
+from runfile.adapters import nxt
+from runfile.mcapio import Recorder
+from runfile.store import RunData, build
 
 check = Checks("NXT")
 FIX = Path(__file__).resolve().parent / "fixtures" / "nxt"

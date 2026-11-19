@@ -12,7 +12,7 @@ import math
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from room_vs_truth import box_distance  # noqa: E402

@@ -6,7 +6,7 @@
 import sys
 from pathlib import Path
 
-from miniview.mcapio import Follower
+from runfile.mcapio import Follower
 
 
 def main() -> None:

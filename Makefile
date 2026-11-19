@@ -191,7 +191,7 @@ perf-viewer: viewer-sync ## NOT in CI: replay duck/runs/phase1-run18 at 20 Hz th
 
 .PHONY: test-viewer-image
 test-viewer-image: ## miniview's image: build it, run it with the data read only and the host's state folder (the one index) mounted writable, check what it serves and that it cannot write the data (ADR-0012)
-	@docker build -q -t $(VIEWER_IMAGE) $(VIEWER_DIR) >/dev/null
+	@docker build -q -f $(VIEWER_DIR)/Dockerfile -t $(VIEWER_IMAGE) . >/dev/null
 	@data=$$(mktemp -d); idx=$$(mktemp -d); state=$$(mktemp -d); mkdir -p $$data/runs $$data/scenes; \
 	  (cd $(VIEWER_DIR) && MINIVIEW_INDEX=$$idx/host.sqlite uv run --frozen miniview --data $$data import tests/fixtures/explore9 --scene apartment >/dev/null) \
 	    || { echo "FAIL could not import the fixture run on the host"; rm -rf $$data $$idx; exit 1; }; \

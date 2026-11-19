@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 
 from helpers import catalog, T0_NS, Checks, make_run, run_record, scene, tick, wait_until
-from miniview import keys, mcapio, validate, wire
+from runfile import keys, mcapio, validate, wire
 
 check = Checks("READING")
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]

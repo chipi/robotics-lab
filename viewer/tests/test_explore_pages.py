@@ -21,7 +21,8 @@ os.environ.setdefault("MINIVIEW_INDEX", str(TMP / "index.sqlite"))
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from helpers import T0_NS, catalog, make_run, scene, serve  # noqa: E402
-from miniview import keys, kinematics, mcapio  # noqa: E402
+from runfile import keys, mcapio
+from miniview import kinematics  # noqa: E402
 from miniview.shots import launch  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]

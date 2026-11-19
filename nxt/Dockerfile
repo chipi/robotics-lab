@@ -1,6 +1,6 @@
 # The NXT web UI (nxt-web) as an image, to run on any Linux machine near the robot.
 #
-#   docker build -f nxt/Dockerfile -t robotics-lab/nxt-web .     # from the repository root: it installs ../viewer too
+#   docker build -f nxt/Dockerfile -t robotics-lab/nxt-web .     # from the repository root: it installs libs/runfile too
 #   docker run --rm -p 127.0.0.1:8000:8000 -v nxt-data:/data -v /work/robotics-lab/data:/miniview -e MINIVIEW_DATA=/miniview \
 #     --device /dev/bus/usb robotics-lab/nxt-web                 # NXT over USB
 #   docker run ... --device /dev/rfcomm0 robotics-lab/nxt-web     # NXT over Bluetooth (bound on the host)
@@ -23,12 +23,12 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-# pip does not read [tool.uv.sources]: install the viewer package first, then nxt-web finds `miniview` satisfied
-COPY viewer/pyproject.toml ./viewer/pyproject.toml
-COPY viewer/src ./viewer/src
+# pip does not read [tool.uv.sources]: install the run format (libs/runfile) first, then nxt-web finds `runfile` satisfied
+COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
+COPY libs/runfile/src ./libs/runfile/src
 COPY nxt/pyproject.toml nxt/README.md ./nxt/
 COPY nxt/src ./nxt/src
-RUN pip install --no-cache-dir ./viewer \
+RUN pip install --no-cache-dir ./libs/runfile \
  && pip install --no-cache-dir ./nxt \
  && nxt-web --help >/dev/null
 

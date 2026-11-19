@@ -154,7 +154,7 @@ try:
         key = run["run_key"]
         run_dir = data / "runs" / key
         check("the Observatory run is written under the test's own data folder", run_dir.exists() and any(run_dir.glob("*.mcap")), list(run_dir.glob("*")) if run_dir.exists() else None)
-        from miniview import mcapio
+        from runfile import mcapio
         rec = next((p for _, kind, p in mcapio.read(run_dir) if kind == "run"), None)
         check("the Observatory run carries the goal run (id and name) in its record", rec is not None and rec.get("goal_run", {}).get("id") == run["id"]
               and rec["goal_run"]["name"] == "ad-hoc point", rec)
