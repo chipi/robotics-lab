@@ -14,7 +14,7 @@ Three challenges are not one goal to reach (RFC-0008 §3):
       within 0.25 m by truth, no invariant broken; the belief's error (truth against belief), in position and in
       heading, is recorded at each goal.
   22  one room with a drop 0.5-0.8 m from the start, explored (the explorer, not go_to) for 5 minutes: safe, the room's
-      reachable floor known to the map over the bar (explore.COVERAGE_BAR, 0.75 for now), not ended trapped.
+      reachable floor known to the map over the bar (explore.COVERAGE_BAR, 0.80, provisional), not ended trapped.
   23  two rooms joined by a door, explored for 8 minutes: as 22 for each room, and the door crossed.
 Pass rates for these are over the same seeds the others use; a run's result.json has the goals, the coverage and the end.
 """

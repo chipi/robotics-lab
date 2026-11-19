@@ -15,12 +15,11 @@ from duck_lab.challenge.scene import Scene
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.explore_score import ENDS, belief_score
 
-# The bar, fixed before the first run: the apartment's phase 2 bar (RFC-0002 §3.4: a room's map within 25 % of its floor),
-# and the scenes' own slack: the floor within 0.2 m of a wall, a box or the drop is 25-33 % of the reachable floor in the
-# scenes drawn (tests/test_challenge.py), floor the planner keeps off (lethal zone 0.12 m, frontiers not taken within 0.3 m
-# of a wall) and the 8 x 8 sensor sees at a grazing angle. A map that knows the open floor and most of that band passes; one
-# that knows only the open floor, or leaves a room's far side unseen, does not.
-COVERAGE_BAR = 0.75
+# The bar, set from the ten seeds of challenge 22 (RFC-0008 §3): the nine runs that did not end trapped knew 87.8-96.6 % of the
+# room's reachable floor (median 92.1 %), the trapped one 65.4 %. 80 % sits 7.8 points under the lowest healthy run and 14.6
+# over the trapped one. The scenes' own slack agrees: the floor within 0.2 m of a wall, a box or the drop is 25-33 % of the
+# reachable floor (tests/test_challenge.py), floor the planner keeps off and the 8 x 8 sensor sees at a grazing angle.
+COVERAGE_BAR = 0.80       # provisional: from the ten seeds of challenge 22 (RFC-0008 §3); challenge 23 has three seeds
 
 
 class Trail:

@@ -74,27 +74,36 @@ has its own rule, all judged by truth like the others (`duck-challenge --help`):
   sequence stops at the first goal not reached.
 - **22** runs the explorer (not `go_to`) for 5 minutes in a room of about 3 × 3.5 m with up to three
   boxes and a stairwell-like hole 0.5–0.8 m from the start. Pass: safe, the run did not end
-  `trapped`, and the map knows at least 75 % of the room's reachable floor.
+  `trapped`, and the map knows at least 80 % of the room's reachable floor.
 - **23** runs the explorer for 8 minutes in two rooms (2.4–3 m a side) joined by a door 0.6–0.8 m
   wide, in the wall between them or at the end of a corridor 0.4–0.8 m long, the door ahead of the
-  start or behind it. Pass: safe, not `trapped`, at least 75 % of each room's reachable floor
+  start or behind it. Pass: safe, not `trapped`, at least 80 % of each room's reachable floor
   known, and the door crossed (the duck's truth entered the second room).
 
-**The coverage bar (22, 23): 75 % of the reachable floor.** The reachable floor is the scene's
+**The coverage bar (22, 23): 80 % of the reachable floor.** The reachable floor is the scene's
 level-0 floor the duck could stand on and walk to: at least the footprint (0.083 m) from every
 obstacle's outline, at least the planner's drop zone (0.35 m) from the drop, and connected to the
 start (a pocket walled all round is not asked for). The map's share is mapd's grid read cell by
 cell against it (a known cell is free or occupied; the grid is put into the world by the run's
-start pose and the odometry scale). 75 % is the apartment's phase 2 bar (a room's map within 25 %
-of its floor, RFC-0002 §3.4), and it fits the scenes: the floor within 0.2 m of a wall, a box or the
-drop is 25–33 % of the reachable floor in the scenes drawn (`tests/test_challenge.py`), the band
-the planner keeps off (lethal zone 0.12 m; frontiers are not taken within 0.3 m of a wall) and the
-8 × 8 sensor sees at a grazing angle. **The 75 % is provisional**: it was fixed before the first
-run, and is to be set again from the first ten seeds of 22 and 23 (the first three seeds of each gave
-22: 94 %, 89 %, 95 %; 23: room A 90 % with room B never entered, then 75 % / 82 % and 96 % / 96 %).
+start pose and the odometry scale).
+
+**The 80 % is provisional, set from challenge 22's ten seeds (2026-11-19).** Nine of the ten runs did
+not end `trapped` and knew 87.8–96.6 % of the room's reachable floor (median 92.1 %); the tenth
+(seed 6, `trapped` at 132 s on "no room to turn", 0.15 m to an obstacle) knew 65.4 %. 80 % is 7.8
+points under the lowest healthy run and 14.6 over the trapped one. It was 75 % (the apartment's
+phase 2 bar, a room's map within 25 % of its floor, RFC-0002 §3.4) before any run; the scenes' own
+slack agreed with it: the floor within 0.2 m of a wall, a box or the drop is 25–33 % of the
+reachable floor in the scenes drawn (`tests/test_challenge.py`), the band the planner keeps off
+(lethal zone 0.12 m; frontiers are not taken within 0.3 m of a wall) and the 8 × 8 sensor sees at a
+grazing angle. Seed counts, by the operator's cut for phase 1: **22 has ten seeds** (9 of 10 pass),
+**21 and 23 have three** (21: 3 of 3, all goals reached; 23: 2 of 3, seed 1 not entering room B
+through a 0.645 m door, K2 in `docs/wip/KNOWN-ISSUES.md`; its room coverages 90 % with B at 0 %,
+75 % / 82 %, 96 % / 96 %, so seed 2 passed at 75 % and would not at 80 %). A ten-seed batch of 23 was
+started and stopped by the lead before it finished; its partial runs are not results.
+
 The coverage function is not challenge-only: `duck_lab.challenge.floor` takes a layout (floors and
-obstacles in `sim/apartment_layout.json`'s shape) and regions, and gives the share known per region,
-so the apartment's scoreboard can use it.
+obstacles in `sim/apartment_layout.json`'s shape) and regions, and gives the share known per
+region, so the apartment's scoreboard can use it.
 
 16–20 follow what the robot's body can
 do: each draws its heights under the robot's measured step height (`calibration/<robot>.json`), with
