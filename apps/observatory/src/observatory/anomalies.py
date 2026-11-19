@@ -580,7 +580,7 @@ DETECTORS = {d.id: d for d in (
 
 def analyse(run: Run, truth, detectors=None, min_severity: str = "info", cfg: dict | None = None, experimental: bool = False) -> dict:
     """Run the detectors asked for (default: the default track, plus the experimental ones when asked) over one run.
-    {"anomalies": [...sorted by time...], "ran": [ids], "not_applied": {id: why}, "not_run": [ids not on the default track]}."""
+    {"anomalies": [...sorted by time...], "ran": [ids], "not_applied": {id: why}, "not_run": {id: why it was not run}}."""
     cfg = {**DEFAULTS, **(cfg or {})}
     asked = list(detectors) if detectors else [d.id for d in DETECTORS.values() if d.default or experimental]
     unknown = [d for d in asked if d not in DETECTORS]
@@ -600,4 +600,6 @@ def analyse(run: Run, truth, detectors=None, min_severity: str = "info", cfg: di
         found += [a for a in det.fn(det, run, truth, cfg) if SEVERITIES.index(a["severity"]) >= floor]
     found.sort(key=lambda a: (a["t"], a["detector"]))
     return {"anomalies": found, "ran": ran, "not_applied": skipped,
-            "not_run": [d.id for d in DETECTORS.values() if d.id not in asked]}
+            "not_run": {d.id: ("not selected (--detector named others)" if detectors and d.default else "not selected" if d.default
+                               else "experimental: not quiet on the clean runs; --experimental or --detector NAME runs them")
+                        for d in DETECTORS.values() if d.id not in asked}}

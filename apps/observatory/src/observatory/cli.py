@@ -241,8 +241,8 @@ def cmd_anomalies(args) -> None:
     loose = [anomalies.DETECTORS[d] for d in res["ran"] if not anomalies.DETECTORS[d].default]
     if loose:
         print("  experimental, not quiet on the clean runs: " + "; ".join(f"{d.id} ({d.note})" for d in loose))
-    if res["not_run"]:
-        print("  not run (not on the default track; --experimental, or --detector NAME, runs them): " + ", ".join(res["not_run"]))
+    for why in dict.fromkeys(res["not_run"].values()):
+        print(f"  not run, {why}: " + ", ".join(d for d, w in res["not_run"].items() if w == why))
 
 
 def cmd_state(args) -> None:

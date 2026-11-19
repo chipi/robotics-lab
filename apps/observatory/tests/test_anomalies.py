@@ -304,6 +304,13 @@ doc = json.loads(text)
 check("anomalies: without a layout the near miss is said not to apply, not reported as zero", "near_miss" in doc["not_applied"] and not doc["anomalies"], doc["not_applied"])
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--json", "--detector", "dithering", *LAYOUTS)
 check("anomalies --detector: only that one", json.loads(text)["ran"] == ["dithering"] and not json.loads(text)["anomalies"])
+code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--detector", "dithering", *LAYOUTS)
+lines = [ln for ln in text.splitlines() if ln.strip().startswith("not run")]
+check("anomalies --detector: the footer says why each other detector did not run (not selected, or experimental)",
+      any("not selected" in ln and "near_miss" in ln and "belief_vs_truth" not in ln for ln in lines)
+      and any("experimental" in ln and "belief_vs_truth" in ln and "near_miss" not in ln for ln in lines) and "default track" not in text, lines)
+doc = json.loads(cmdline("anomalies", "graze_b10b_r2", "--json", "--detector", "dithering", *LAYOUTS)[1])
+check("anomalies --json: not_run says why per detector", doc["not_run"]["near_miss"].startswith("not selected") and doc["not_run"]["missed_obstacle"].startswith("experimental"), doc["not_run"])
 code, text, _ = cmdline("anomalies", "edge_b11_r2", "--json", "--detector", "misplaced_edge,wrong_refusal", *LAYOUTS)
 check("anomalies --detector asks for an experimental detector by name", json.loads(text)["ran"] == ["misplaced_edge", "wrong_refusal"])
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--json", "--min-severity", "critical", *LAYOUTS)
