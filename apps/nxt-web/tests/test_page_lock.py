@@ -11,6 +11,8 @@ import signal
 import socket
 import subprocess
 import sys
+import shutil
+import atexit
 import tempfile
 import time
 import urllib.error
@@ -33,6 +35,7 @@ def check(name, cond, detail=""):
 
 
 tmp = Path(tempfile.mkdtemp(prefix="nxt-page-"))
+atexit.register(shutil.rmtree, tmp, True)
 with socket.socket() as s:
     s.bind(("127.0.0.1", 0))
     PORT = s.getsockname()[1]

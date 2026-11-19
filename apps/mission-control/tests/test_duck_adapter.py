@@ -8,6 +8,8 @@ Run: cd apps/mission-control && uv run python tests/test_duck_adapter.py"""
 import json
 import socket
 import socketserver
+import shutil
+import atexit
 import tempfile
 import threading
 import time
@@ -175,6 +177,7 @@ class StubNav:
 
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-duck-"))
+atexit.register(shutil.rmtree, tmp, True)
 robotd = StubRobotd(tmp / "robotd.sock")
 mapd = StubMapd(tmp / "mapd.sock")
 proxy = Proxy(tmp / "gate.sock", tmp / "robotd.sock", takeover_names={"operator-laptop"}, log=tmp / "gate.jsonl", lease_s=10.0)

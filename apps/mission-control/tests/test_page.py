@@ -9,6 +9,8 @@ environment with Mission Control and the gate on the path:
 
 import copy
 import json
+import atexit
+import shutil
 import tempfile
 import threading
 import time
@@ -26,8 +28,10 @@ from mission_control.robots import RobotConfig
 
 fs = copy.deepcopy(FAKE_FILE["factsheet"])
 fs["physicalParameters"] = {"maximumSpeed": 2.0, "maximumAngularSpeed": 6.0}  # quick, so a sweep takes seconds, not a minute
+STATE = tempfile.mkdtemp(prefix="mc-page-")
+atexit.register(shutil.rmtree, STATE, True)
 mc = MissionControl([RobotConfig(robot_file("fake-1", factsheet=fs, rates={"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0}))],
-                    state_dir=tempfile.mkdtemp(prefix="mc-page-"))
+                    state_dir=STATE)
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}"
 threading.Thread(target=srv.serve_forever, daemon=True).start()
