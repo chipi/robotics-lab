@@ -1,5 +1,5 @@
 """Cut the anomaly detectors' fixtures out of real recordings (RFC-0019): slices of a navigator log (ticks.jsonl, start.json),
-trimmed to the fields a detector reads. Run once, by hand, where the recordings are; the slices are committed, this script is
+trimmed to the fields a detector reads (`events=False`: ticks only). Run once, by hand, where the recordings are; the slices are committed, this script is
 how they were made. Read-only on the sources.
 
     cd apps/observatory && uv run python tests/make_anomaly_fixtures.py [RUNS_ROOT]
@@ -21,7 +21,7 @@ TICK_KEEP = ("pose", "vx", "vyaw", "tilt", "t", "truth")
 EVENTS = {"glance", "refused", "leg", "trapped", "no_frontier_left", "tight_pivot", "stalled", "anomaly"}
 
 
-def cut(name: str, src: Path, t0: float, t1: float, world: str = "none", start: bool = True) -> None:
+def cut(name: str, src: Path, t0: float, t1: float, world: str = "none", start: bool = True, events: bool = True) -> None:
     """Rows of src with t0 <= t <= t1: ticks trimmed, the named events whole; `world`: "none", "all" (every world row in the
     window), "first" (the first one at or after t0), "last" (the last one at or before t1, wherever it came)."""
     rows, last_world = [], None
@@ -41,7 +41,7 @@ def cut(name: str, src: Path, t0: float, t1: float, world: str = "none", start: 
             continue
         if ev is None:
             rows.append({k: r[k] for k in TICK_KEEP if k in r})
-        elif ev in EVENTS:
+        elif events and ev in EVENTS:
             rows.append(r)
     if world == "last" and last_world is not None:
         rows.append(last_world)
@@ -61,6 +61,7 @@ if __name__ == "__main__":
     cut("odometry_after_ch11_s1", ROOT / "gate4-ch11/ch11-s1/run-20261118-005452", 0.0, 1e9)
     cut("edge_b11_r2", GATE12 / "explore-b11-r2", 20.0, 42.0, world="last")
     cut("dock_b9_r2", ROOT / "explore-b9-r2", 28.0, 31.0, world="first")
+    cut("jump_b10a_r1", ROOT / "explore-b10a-r1", 808.0, 838.0, events=False)
     cut("nothing_left_b11_r1", GATE12 / "explore-b11-r1", 1030.0, 1041.0, world="last")
     if os.environ.get("ROBOT_TAGGED_SRC"):      # the robot's own tags: a 2-minute simulator exploration with mapd's pose shifted 0.9 m from 30 s on (--fix-fault 30,0.9,0.0)
         cut("robot_tagged_fault", Path(os.environ["ROBOT_TAGGED_SRC"]), 29.0, 37.0)

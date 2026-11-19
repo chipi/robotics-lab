@@ -122,12 +122,29 @@ def drift(dx, dyaw=0.0):
 
 
 check("belief vs truth: 0.1 m is quiet", not found(make(drift(0.1)), "belief_vs_truth"))
-out = found(make(drift(0.3)), "belief_vs_truth")
-check("belief vs truth: 0.3 m is a warning (minor)", len(out) == 1 and out[0]["severity"] == "minor" and out[0]["anomaly"] == "belief_off_truth")
+check("belief vs truth: 0.3 m from the start is quiet (the clean runs' offset wanders to 0.28 m over twenty minutes; a constant offset is no jump)",
+      not found(make(drift(0.3)), "belief_vs_truth"))
 out = found(make(drift(0.4)), "belief_vs_truth")
-check("belief vs truth: 0.4 m is major", len(out) == 1 and out[0]["severity"] == "major")
+check("belief vs truth: 0.4 m at the 95th percentile is a warning (minor)", len(out) == 1 and out[0]["severity"] == "minor" and out[0]["anomaly"] == "belief_off_truth")
+out = found(make(drift(0.6)), "belief_vs_truth")
+check("belief vs truth: 0.6 m is major", len(out) == 1 and out[0]["severity"] == "major")
 out = found(make(drift(0.0, math.radians(30))), "belief_vs_truth")
 check("belief vs truth: 30 degrees of heading is its own anomaly", len(out) == 1 and out[0]["anomaly"] == "heading_off_truth", out)
+
+
+def stepped(dx, at=20, n=60, dt=0.1):
+    return [(i * dt, [dx if i >= at else 0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0]) for i in range(n)]
+
+
+out = [a for a in found(make(stepped(0.4)), "belief_vs_truth") if a["anomaly"] == "belief_jump"]
+check("belief vs truth: the belief's offset stepping by 0.4 m in one tick is a jump (minor), at the tick it happened, with the size",
+      len(out) == 1 and out[0]["anomaly"] == "belief_jump" and out[0]["severity"] == "minor" and abs(out[0]["values"]["change_m"] - 0.4) < 1e-6
+      and abs(out[0]["t"] - 2.0) < 0.2, out and out[0]["values"])
+out = found(make(stepped(0.9)), "belief_vs_truth")
+check("belief vs truth: a jump of 0.9 m is major (K4's size)", any(a["anomaly"] == "belief_jump" and a["severity"] == "major" for a in out), [a["anomaly"] for a in out])
+check("belief vs truth: 0.25 m in one tick is under the line", not found(make(stepped(0.25)), "belief_vs_truth"))
+slow = [(i * 0.1, [0.4 * i / 400, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0]) for i in range(400)]
+check("belief vs truth: 0.4 m over 40 s is a drift, not a jump (0.1 m in any 10 s)", not [a for a in found(make(slow), "belief_vs_truth") if a["anomaly"] == "belief_jump"])
 
 # phantom obstacle: cells (cx, cy) at res 0.1 from (-3, -2): cell (10, 30) is the world point (-1.95, 1.05)
 def world_with(cells, t=10.0):
@@ -156,6 +173,23 @@ check("missed obstacle: an obstacle in known cells with nothing occupied near it
 seen = {**known, **{(cx, cy): "#" for cx in range(38, 42) for cy in range(18, 22)}}
 check("missed obstacle: occupied cells within 0.15 m of the samples are seen", not found(make(worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, seen))]), "missed_obstacle"))
 check("missed obstacle: unknown cells prove nothing", not found(make(worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, {}))]), "missed_obstacle"))
+# ... as the duck could have placed it: what it was in sight of, looked up where its belief put it, and nothing thinner than the map's cell
+only_near = {**known, **{(cx, cy): "#" for cx in (37, 38) for cy in range(18, 22)}}       # x 0.75 and 0.85: the near face is there, the far face (x 1.1) is not
+w_near = [(10.0, grid(0.1, (-3.0, -2.0), 60, 40, only_near))]
+check("missed obstacle: with no truth poses the far face counts (nothing says it was not in sight)", len(found(make(worlds=w_near), "missed_obstacle")) == 1)
+check("missed obstacle: the far face of a box the duck stood in front of was never in sight, so it is not missed",
+      not found(make(still(20, [0.0, 0.0, 0.0]), worlds=w_near), "missed_obstacle"))
+check("missed obstacle: a box beyond missed_seen_m (1.0 m) was not in sight either", not found(make(still(20, [-1.5, 0.0, 0.0]), worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, known))]), "missed_obstacle"))
+check("missed obstacle: ... and the same box 0.9 m from the face, nothing occupied, is missed",
+      len(found(make(still(20, [0.0, 0.0, 0.0]), worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, known))]), "missed_obstacle")) == 1)
+shifted = {**known, **{(cx, cy): "#" for cx in (41, 42) for cy in range(18, 22)}}         # the map holds the box 0.3 m further on: the belief was 0.3 m off
+check("missed obstacle: a map 0.3 m off the truth is the belief's offset, not a missed box (looked up where the belief would put it)",
+      not found(make(still(20, [0.0, 0.0, 0.0], belief=[0.3, 0.0, 0.0]), worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, shifted))]), "missed_obstacle"))
+check("missed obstacle: ... and the same map with a belief that was right says the box was missed",
+      len(found(make(still(20, [0.0, 0.0, 0.0]), worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, shifted))]), "missed_obstacle")) == 1)
+LEG = A.Truth.from_layouts([{"geoms": [geom("floor_a", "box", 0.0, 0.0, -0.005, [3.0, 2.0, 0.005]), geom("leg", "box", 1.0, 0.0, 0.1, [0.018, 0.018, 0.1]),
+                                       geom("pole", "cylinder", 1.0, 0.5, 0.2, [0.015, 0.2, 0.0])]}])
+check("missed obstacle: a leg and a pole under 5 cm across are not asked of the map", not found(make(worlds=[(10.0, grid(0.1, (-3.0, -2.0), 60, 40, known))]), "missed_obstacle", truth=LEG))
 
 # misplaced edge: the stairwell is x -1.3..-0.7, y -1.7..-1.3
 far_rim = {"rim_points": [[-1.0, -0.9], [-1.1, -0.92], [-0.9, -0.88]], "status": "drop"}
@@ -274,6 +308,9 @@ out = found(sliced("odometry_before_ch11_s1"), "odometry_scale", truth=None)
 check("gate3 ch11 seed 1 (before the odometry fix): 0.89 of the truth, major", len(out) == 1 and abs(out[0]["values"]["ratio"] - 0.89) < 0.01
       and out[0]["severity"] == "major", out and out[0]["values"])
 check("gate4 ch11 seed 1 (after the fix): quiet", not found(sliced("odometry_after_ch11_s1"), "odometry_scale", truth=None))
+out = [a for a in found(sliced("jump_b10a_r1"), "belief_vs_truth", truth=None) if a["anomaly"] == "belief_jump"]
+check("b10a r1's mapd jump (K4), ticks only: one belief_jump of 0.94 m within 10 s at about 822.6 s, major", len(out) == 1 and out[0]["anomaly"] == "belief_jump"
+      and out[0]["severity"] == "major" and abs(out[0]["values"]["change_m"] - 0.94) < 0.03 and 822.0 < out[0]["t"] < 824.0, out and out[0]["values"])
 
 edge = sliced("edge_b11_r2")
 out = found(edge, "misplaced_edge", truth=APT)
@@ -344,7 +381,7 @@ before = files(tmp)
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", *LAYOUTS)
 check("anomalies: the table has the near miss, its severity and its places", code == 0 and "near_miss" in text and "critical" in text and "kit_stool2" in text
       and "->" in text, text)
-check("anomalies: the footer counts and names what did not run", "1 anomaly" in text and "not run" in text and "belief_vs_truth" in text, text.splitlines()[-1][:90])
+check("anomalies: the footer counts and names what did not run", "1 anomaly" in text and "not run" in text and "missed_obstacle" in text, text.splitlines()[-1][:90])
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--json", *LAYOUTS)
 doc = json.loads(text)
 check("anomalies --json: the records, what ran, what did not apply", code == 0 and doc["run"] == "duck/apartment/graze_b10b_r2" and len(doc["anomalies"]) == 1
@@ -358,8 +395,8 @@ check("anomalies --detector: only that one", json.loads(text)["ran"] == ["dither
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--detector", "dithering", *LAYOUTS)
 lines = [ln for ln in text.splitlines() if ln.strip().startswith("not run")]
 check("anomalies --detector: the footer says why each other detector did not run (not selected, or experimental)",
-      any("not selected" in ln and "near_miss" in ln and "belief_vs_truth" not in ln for ln in lines)
-      and any("experimental" in ln and "belief_vs_truth" in ln and "near_miss" not in ln for ln in lines) and "default track" not in text, lines)
+      any("not selected" in ln and "near_miss" in ln and "missed_obstacle" not in ln for ln in lines)
+      and any("experimental" in ln and "missed_obstacle" in ln and "near_miss" not in ln for ln in lines) and "default track" not in text, lines)
 doc = json.loads(cmdline("anomalies", "graze_b10b_r2", "--json", "--detector", "dithering", *LAYOUTS)[1])
 check("anomalies --json: not_run says why per detector", doc["not_run"]["near_miss"].startswith("not selected") and doc["not_run"]["missed_obstacle"].startswith("experimental"), doc["not_run"])
 code, text, _ = cmdline("anomalies", "edge_b11_r2", "--json", "--detector", "misplaced_edge,wrong_refusal", *LAYOUTS)
