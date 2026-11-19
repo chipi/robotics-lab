@@ -1,4 +1,4 @@
-"""The gate in front of robotd's socket (RFC-0017 §3.2, §5 step 3): a Unix-socket proxy that puts `duck_lab.gate.Gate` between
+"""The gate in front of robotd's socket (RFC-0017 §3.2, §5 step 3): a Unix-socket proxy that puts `robotgate.Gate` between
 our clients (the navigator, Mission Control, a script) and the duck's one robotd connection.
 
     duck-gate --listen ~/.cache/duck-sim/duck-a-gate.sock --upstream ~/.cache/duck-sim/duck-a.sock
@@ -23,7 +23,7 @@ import socket
 import threading
 from pathlib import Path
 
-from duck_lab.gate import LEASE_SECONDS, Gate, GateError, JsonlLog, load_names
+from robotgate import LEASE_SECONDS, Gate, GateError, JsonlLog, load_names
 
 TICK_S = 0.25
 OUT_QUEUE = 256            # lines waiting for one client; past it the oldest notification goes

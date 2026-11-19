@@ -13,7 +13,7 @@ import threading
 import time
 from collections import deque
 
-from duck_lab.gate import Gate, GateError
+from robotgate import Gate, GateError
 
 from . import geometry
 

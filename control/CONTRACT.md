@@ -52,7 +52,7 @@ logged and on the event stream.
 
 ### The lock
 
-The exclusive control lock of RFC-0014 §3.3.3 and RFC-0017 is the gate of `duck_lab.gate` in front
+The exclusive control lock of RFC-0014 §3.3.3 and RFC-0017 is the gate of `robotgate` in front
 of every robot. HTTP has no connection to tie a lease to, so a lease is tied to a **session**: a
 random id that `acquire` returns and the holder sends with each drive, as nxt-web's `/api/lock`
 does. The robot's `lock` field is the gate's `who`: `{holder, since, lease_id, expires_in_s}`, or

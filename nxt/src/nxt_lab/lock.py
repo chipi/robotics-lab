@@ -1,5 +1,5 @@
 """The exclusive control lock of nxt-web (RFC-0017 step 4): one driver at a time, the same rules as
-the duck's gate (duck_lab.gate) over HTTP. nxt-web is the only process on the brick's link, so the
+the duck's gate (robotgate) over HTTP. nxt-web is the only process on the brick's link, so the
 lock lives here and every client of ours (the page, Mission Control's adapter) passes it.
 
 HTTP has no connection to tie a lease to, so a lease is tied to a *session*: a random id that

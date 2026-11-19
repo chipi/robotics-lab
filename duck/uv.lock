@@ -22,6 +22,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcap" },
+    { name = "robotgate" },
     { name = "runfile" },
 ]
 
@@ -35,6 +36,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcap", specifier = ">=1.2" },
+    { name = "robotgate", editable = "../libs/gate" },
     { name = "runfile", editable = "../libs/runfile" },
 ]
 
@@ -846,6 +848,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ea/c6/c2688d46a8b31f23e615538add1aa6d19bf53818ec0ebd696718cf50095a/rerun_sdk-0.43.2-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:a811d4c95e181bd4071545809de8c1389fe5372e31dfdcd112aace767901daf1", size = 175041681, upload-time = "2026-11-13T12:36:25.422Z" },
     { url = "https://files.pythonhosted.org/packages/80/67/4effdd62646c27b1b24118f67c49a9a13f8b0416e27bb66d8d58b1e65276/rerun_sdk-0.43.2-cp311-abi3-win_amd64.whl", hash = "sha256:a946736374e5d69a06958b269f4c241747dfba1879eac6c264a4dbedf2eee715", size = 152634286, upload-time = "2026-11-13T12:36:30.978Z" },
 ]
+
+[[package]]
+name = "robotgate"
+version = "0.1.0"
+source = { editable = "../libs/gate" }
 
 [[package]]
 name = "runfile"

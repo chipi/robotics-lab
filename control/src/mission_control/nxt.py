@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-from duck_lab.gate import GateError
+from robotgate import GateError
 
 from .errors import ApiError
 

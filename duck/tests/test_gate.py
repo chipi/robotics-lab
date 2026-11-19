@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from duck_lab.gate import Gate, GateError, JsonlLog, load_names
+from robotgate import Gate, GateError, JsonlLog, load_names
 
 failures = []
 

@@ -7,7 +7,7 @@ import math
 
 from common import Clock, check, finish
 
-from duck_lab.gate import Gate, GateError
+from robotgate import Gate, GateError
 from mission_control.fake import FakeRobot
 
 clock = Clock()

@@ -23,7 +23,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from duck_lab.gate import Gate, GateError, JsonlLog
+from robotgate import Gate, GateError, JsonlLog
 
 from . import guardrails, robotfile
 from .errors import ApiError, conflict, invalid

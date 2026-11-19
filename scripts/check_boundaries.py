@@ -31,7 +31,6 @@ MODULES = {
     "nxt_lab": "nxt_lab",
     "duck_lab": "duck_lab",
     "miniview": "observatory",
-    "duck_lab.gate": "robotgate",
     "duck_lab.world_model": "worldmodel",
 }
 

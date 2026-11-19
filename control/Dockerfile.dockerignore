@@ -1,4 +1,4 @@
-# The build context is the repository root (the image installs the run format (libs/runfile) and the duck package beside Mission Control): only what
+# The build context is the repository root (the image installs the run format and the gate (libs/) and the duck package beside Mission Control): only what
 # the Dockerfile copies goes in.
 *
 !control/pyproject.toml
@@ -8,4 +8,6 @@
 !duck/src
 !libs/runfile/pyproject.toml
 !libs/runfile/src
+!libs/gate/pyproject.toml
+!libs/gate/src
 **/__pycache__/

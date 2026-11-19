@@ -1,7 +1,7 @@
 """The simulated duck (RFC-0014 §3.7, step 2): Mission Control's adapter over the two processes that stand in front of it.
 
 - **duck-gate** (RFC-0017): every command to the robot passes this process. Mission Control is one of its clients, as
-  `mission-control`; `RemoteGate` gives Mission Control's robot runtime the interface of an in-process `duck_lab.gate.Gate`
+  `mission-control`; `RemoteGate` gives Mission Control's robot runtime the interface of an in-process `robotgate.Gate`
   over the gate's socket, one connection per client, so the lock, STOP and takeover are the gate's own and Mission Control
   keeps no second copy.
 - **duck-nav-server** (O22, `duck_lab.nav.server`): the real navigator as its own process. `DuckNavigatorClient` is the
@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.gate import GateError
+from robotgate import GateError
 from duck_lab.nav.client import StateStream
 from duck_lab.nav.run import load_scale
 
