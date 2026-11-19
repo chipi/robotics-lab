@@ -1,7 +1,7 @@
-"""nxt-web writes its recordings as miniview runs, live (ADR-0013), against the simulated brick only (--fake): the run is in a
+"""nxt-web writes its recordings as Observatory runs, live (ADR-0013), against the simulated brick only (--fake): the run is in a
 catalog while it is being recorded, its ticks grow, the pose comes from the fake brick's tachos when the wheel geometry is
 set and is absent with the reason when it is not, the file is compacted when the recording stops, a second recording in the
-same second gets its own name, the CSV is always written, and a miniview data folder that cannot be written costs the run,
+same second gets its own name, the CSV is always written, and an Observatory data folder that cannot be written costs the run,
 never the recording. It never opens a real brick: every server here is started with --fake.
 Run: make test-unit (or python apps/nxt-web/tests/test_recorder_v2.py)."""
 
@@ -142,7 +142,7 @@ try:
     finally:
         s.close()
 
-    # ---- a name taken (by a CSV or by a miniview run) is never reused: -2, -3 ---------------------------------------------------
+    # ---- a name taken (by a CSV or by an Observatory run) is never reused: -2, -3 ---------------------------------------------------
     import nxt_lab.recorder as rmod
 
     class Fixed(rmod.datetime):
@@ -189,7 +189,7 @@ try:
     finally:
         s.close()
 
-    # ---- a data folder that cannot be written costs the miniview run, never the recording ---------------------------------------
+    # ---- a data folder that cannot be written costs the Observatory run, never the recording ---------------------------------------
     blocker = tmp / "not-a-folder"
     blocker.write_text("a file where the folder should be")
     s = Server(tmp / "c", Config(sample_hz=10.0), blocker / "mv", 8773)

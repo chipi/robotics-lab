@@ -1,4 +1,4 @@
-"""`miniview serve`: the two pages and the API over the catalog (ADR-0005, ADR-0010), standard library only.
+"""`observatory serve`: the two pages and the API over the catalog (ADR-0005, ADR-0010), standard library only.
 
     GET /api/v1/health
     GET /api/v1/scenes                                the scenes with their runs (index.json's shape)
@@ -47,10 +47,10 @@ import uuid
 from pathlib import Path
 
 from runfile import keys
-from miniview import query, robots
+from observatory import query, robots
 from runfile.catalog import Catalog
 
-log = logging.getLogger("miniview")
+log = logging.getLogger("observatory")
 WEB = Path(__file__).resolve().parents[2] / "web"
 HEARTBEAT_S = 15.0
 REQUEST_TIMEOUT_S = 30.0
@@ -211,7 +211,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def version_string(self):
-        return "miniview"
+        return "observatory"
 
     # ---- plumbing --------------------------------------------------------------------------------
     def _send(self, code: int, body: bytes, ctype: str, extra=None, cache: str = "no-store", gz: bool = False) -> None:
@@ -382,7 +382,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._video_file(parts[1]) if len(parts) == 3 else self._json(render_json("GET", f"/jobs/{parts[1]}"))
         raise HttpError(404, "not found")
 
-    # ---- the render service (ADR-0017): miniview passes through, writes nothing -------------------------------
+    # ---- the render service (ADR-0017): Observatory passes through, writes nothing -------------------------------
     def _render(self) -> None:
         try:
             return self._json(render_json("GET", "/engines", timeout=3))

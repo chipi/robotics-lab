@@ -1,16 +1,16 @@
-# miniview's service: `make viewer-up` / `make viewer-down` (RFC-0009 "Running in Docker", ADR-0012).
-# Published on loopback only. The lab's runs and scenes are mounted READ ONLY: the viewer cannot change a
+# The Observatory's service: `make observatory-up` / `make observatory-down` (RFC-0009 "Running in Docker", ADR-0012).
+# Published on loopback only. The lab's runs and scenes are mounted READ ONLY: the Observatory cannot change a
 # record. The index is ONE: the host's state folder (MINIVIEW_STATE, the folder of the commands' MINIVIEW_INDEX) is
 # mounted writable at /index, so the service and the commands share it; while the service holds it, the commands
 # only read it. Imports and writers run on the host, never in this container.
 # MINIVIEW_DATA and MINIVIEW_STATE are the host's folders; the workstation's paths are the defaults here and in the Makefile only.
-name: miniview
+name: observatory
 services:
-  miniview:
+  observatory:
     build:
       context: ../..
       dockerfile: apps/observatory/Dockerfile
-    image: "miniview:${MINIVIEW_IMAGE_TAG:-local}"
+    image: "observatory:${MINIVIEW_IMAGE_TAG:-local}"
     user: "${MINIVIEW_UID:-1000}:${MINIVIEW_GID:-1000}"
     ports:
       - "127.0.0.1:${MINIVIEW_PORT:-8070}:8070"

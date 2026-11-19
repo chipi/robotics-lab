@@ -17,7 +17,7 @@ from pathlib import Path
 
 NXT_DIR = Path(__file__).resolve().parents[1]
 NXT_WEB = os.environ.get("NXT_WEB", str(NXT_DIR / ".venv" / "bin" / "nxt-web"))
-# The server's recordings, command log and miniview runs go to a folder of this test's own, never to apps/nxt-web/runs.
+# The server's recordings, command log and Observatory runs go to a folder of this test's own, never to apps/nxt-web/runs.
 tmp = Path(tempfile.mkdtemp())
 ENV = dict(os.environ, NXT_LAB_DATA=str(tmp), MINIVIEW_DATA=str(tmp / "miniview"))
 RUNS = tmp / "runs"
@@ -137,7 +137,7 @@ try:
     lines = csv_bytes.decode().splitlines()
     check("run CSV header", lines[0] == "t,power_left,power_right,tacho_A,tacho_B,tacho_C,s1_touch,s3_color,s3_color_name,s4_ultrasonic,program", lines[0])
     check("run CSV rows", len(lines) >= 6, len(lines))
-    # the recording is also a miniview run (ADR-0013): compacted when the recording stopped, the .mcap link is that file
+    # the recording is also an Observatory run (ADR-0013): compacted when the recording stopped, the .mcap link is that file
     from runfile import mcapio
     mcap_name = run_name.replace(".csv", ".mcap")
     check("run lists its miniview run as the .mcap file", any(x["name"] == run_name and x["mcap"] == mcap_name for x in runs), runs)

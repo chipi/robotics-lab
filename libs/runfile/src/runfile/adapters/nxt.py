@@ -1,6 +1,6 @@
 """The LEGO NXT's recordings as format 2 runs (ADR-0013): one run per nxt-web recording, key `nxt/unmapped/<run>`.
 
-Two writers share this module so a run looks the same whichever made it: `miniview import --robot nxt` (a finished
+Two writers share this module so a run looks the same whichever made it: `observatory import --robot nxt` (a finished
 recording: its CSV, plus the events of its old MCAP or of events.jsonl) and nxt-web itself (live, through the recorder).
 
 - **Signals.** Every CSV column but `t` is a signal of the run (`power_left`, `tacho_A`, `s4_ultrasonic`, `s3_color_name`,

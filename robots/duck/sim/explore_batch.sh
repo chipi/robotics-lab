@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One exploration batch (docs/wip/EXPLORE-PROGRESS.md): K runs from the dock, each after a simulator reset (fresh mapd),
-# each a miniview run. Usage: sim/explore_batch.sh BATCH K [MINUTES]   e.g. sim/explore_batch.sh b1 2 20
+# each an Observatory run. Usage: sim/explore_batch.sh BATCH K [MINUTES]   e.g. sim/explore_batch.sh b1 2 20
 # FIRST=n numbers the runs from n (a batch that already has runs); PREFIX=p names them p-BATCH-rN (default explore). ARGS="..." passes options to duck-explore (e.g.
 # ARGS=--object-costs). Prints one "RUN <name> EXIT=<code>" line per run, then "BATCH <name> DONE".
 set -u

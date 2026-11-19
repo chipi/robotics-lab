@@ -1,4 +1,4 @@
-"""Round 2 of the miniview review (docs/wip/REVIEW-2026-11-16-miniview-round2.md): one test per finding, each failed
+"""Round 2 of the Observatory review (docs/wip/REVIEW-2026-11-16-miniview-round2.md): one test per finding, each failed
 before its fix. Run: cd apps/observatory && uv run python tests/test_review2.py"""
 
 import http.client
@@ -16,7 +16,7 @@ from pathlib import Path
 
 from helpers import T0_NS, Checks, catalog, get, make_run, run_record, scene, serve, tick, wait_until
 from runfile import keys, mcapio, validate, wire
-from miniview import server
+from observatory import server
 from runfile.mcapio import Follower, Recorder
 
 check = Checks("REVIEW 2")
@@ -441,7 +441,7 @@ if want("B3"):
     import contextlib
     import io
 
-    from miniview import cli
+    from observatory import cli
 
     with tempfile.TemporaryDirectory() as tmp:
         data = Path(tmp) / "data"
@@ -472,7 +472,7 @@ if want("B3"):
 if want("G3"):
     import argparse
 
-    from miniview import cli
+    from observatory import cli
 
     with tempfile.TemporaryDirectory() as tmp:
         data = Path(tmp) / "data"

@@ -4,7 +4,7 @@ an engine that draws it. Robot-generic: the robot's model comes from robots.json
 signals (ADR-0016), the pose from the truth (its whole pose when the run has it). Engines live in `engines/` and run in
 a Python that has their library (MuJoCo's, Blender's), not this one.
 
-    miniview video duck/ch1-s1/run-20261116-121335 --engine mujoco -o ch1.mp4
+    observatory video duck/ch1-s1/run-20261116-121335 --engine mujoco -o ch1.mp4
 """
 
 import bisect

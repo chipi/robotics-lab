@@ -2,9 +2,9 @@
 explores"). The simulator's truth is logged for scoring only; the brain never reads it.
 
     uv run duck-explore --minutes 20 --out runs/explore
-    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # a live miniview run too
+    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # a live Observatory run too
 
-The format 2 run (miniview, ADR-0014) is the record; ticks.jsonl is kept during the transition.
+The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 """
 
 import argparse

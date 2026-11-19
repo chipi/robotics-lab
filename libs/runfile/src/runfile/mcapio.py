@@ -311,7 +311,7 @@ def compact(run_dir: Path, stopped: bool = False, require_end: bool = False) -> 
                 last_ns = max(last_ns, rec.log_time)
                 w.add_message(chan_map[rec.channel_id], rec.log_time, rec.data, rec.publish_time, rec.sequence)
         if require_end and not has_end:
-            raise ValueError(f"{run_dir.name}: the file has no end record; `miniview repair` closes it as stopped")
+            raise ValueError(f"{run_dir.name}: the file has no end record; `observatory repair` closes it as stopped")
         if stopped and not has_end and base is not None:
             for topic, ns, pub, data in wire.to_messages((last_ns - base) / 1e9, "end", {"verdict": "stopped"}, base):
                 w.add_message(_channel(w, ch_by_topic, {}, topic), ns, data, pub)

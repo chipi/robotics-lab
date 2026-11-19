@@ -22,8 +22,8 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 from helpers import T0_NS, catalog, make_run, scene, serve  # noqa: E402
 from runfile import keys, mcapio
-from miniview import kinematics  # noqa: E402
-from miniview.shots import launch  # noqa: E402
+from observatory import kinematics  # noqa: E402
+from observatory.shots import launch  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 SHOTS = Path("/tmp/claude-1000/explore-pages") if os.environ.get("EXPLORE_SHOTS", "1") != "0" else None
@@ -532,7 +532,7 @@ with sync_playwright() as p:
             check("the main view's legend is on top: no label is drawn over any of its items", over == [], over)
             page.click('#xwide')
 
-            # the pages' forward kinematics are miniview.kinematics' and MuJoCo's: every link of the duck, for every fixture case
+            # the pages' forward kinematics are observatory.kinematics' and MuJoCo's: every link of the duck, for every fixture case
             worst = page.evaluate("""async ([desc, cases]) => {
               const { linkPoses } = await import('/web/shell/robot.js');
               let wp = 0, wq = 0;

@@ -19,10 +19,10 @@ from playwright.sync_api import sync_playwright
 
 from helpers import OPEN_SECTIONS, catalog
 
-from miniview.importer import import_duck
-from miniview.scenes import from_mujoco_layout
-from miniview.server import make_server
-from miniview.shots import launch
+from observatory.importer import import_duck
+from observatory.scenes import from_mujoco_layout
+from observatory.server import make_server
+from observatory.shots import launch
 
 LAYOUT = Path(__file__).resolve().parents[3] / "robots" / "duck" / "sim" / "apartment_layout.json"
 GAP = (40.0, 44.0)         # no ticks between these run times

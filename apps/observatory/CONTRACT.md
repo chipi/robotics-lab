@@ -1,7 +1,12 @@
 # The contract — runs (format 2), the API (version 2) and the pages (RFC-0010)
 
-`miniview serve` (or `make viewer-up`, in Docker) serves the pages and the API over the lab's data
-folder (`MINIVIEW_DATA`, or `--data`; there is no default in the code, the workstation's
+The Observatory (named miniview until RFC-0018's restructure): its command is `observatory`,
+and `miniview` still runs it for one release. What the files and the pages call `miniview`
+stays as it is: the MCAP topics (`/miniview/*`), schema names and profile, `window.miniview`
+and the `MINIVIEW_*` variables.
+
+`observatory serve` (or `make observatory-up`, in Docker) serves the pages and the API over the
+lab's data folder (`MINIVIEW_DATA`, or `--data`; there is no default in the code, the workstation's
 `/work/robotics-lab/data` is the default of the compose file and the Makefile only). The service's
 own index is at `MINIVIEW_INDEX` (default `/work/robotics-lab/state/miniview/index.sqlite`), outside
 the
@@ -39,7 +44,7 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   a run that exists.
   Every record is flushed when it is written; a crash loses at most the tick being written. At the
   end: `end`
-  (`{verdict}`), then `run.mcap`, then the live file and the lock are removed. `miniview repair
+  (`{verdict}`), then `run.mcap`, then the live file and the lock are removed. `observatory repair
   <key>` closes a dead
   writer's run with the verdict `stopped`.
 - **Messages**: the Foxglove channels (`/belief/pose`, `/truth/pose`, `/depth`, `/depth/raw`,
@@ -115,7 +120,7 @@ Tables `runs` (key, uuid, robot, scene, kind, status, verdict, started_at_ns, t0
 rejects,
 first_error, error, rewritten, epochs, size, mtime_ns, inode), `streams`, `events`, `segments`,
 `scenes`. WAL with a busy
-timeout; `miniview index` (the rebuild) refuses while a service holds the index. States: `live` (a
+timeout; `observatory index` (the rebuild) refuses while a service holds the index. States: `live` (a
 writer whose PID is
 alive, or growth in the last 120 s), `ended`, `stopped` (no live writer, no growth for 120 s),
 `broken`; the last three
@@ -168,11 +173,11 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
   headers only.
 
 - **Video (ADR-0017).** The four routes above pass through to the render service
-  (`miniview render-serve`, `GET /engines`, `POST /jobs`, `GET /jobs/{id}[/file]`) whose address is
-  the environment variable `MINIVIEW_RENDER` (read at each request; unset: no render service).
-  miniview writes nothing: the service reads the runs from the same data folder and keeps the videos
-  in its own `<state>/videos/`. One job at a time. `from` and `to` are run times in seconds (the
-  whole run when absent); `size` is `1280x720` or any `WIDTHxHEIGHT`.
+  (`observatory render-serve`, `GET /engines`, `POST /jobs`, `GET /jobs/{id}[/file]`) whose
+  address is the environment variable `MINIVIEW_RENDER` (read at each request; unset: no render
+  service). The Observatory writes nothing: the service reads the runs from the same data folder
+  and keeps the videos in its own `<state>/videos/`. One job at a time. `from` and `to` are run
+  times in seconds (the whole run when absent); `size` is `1280x720` or any `WIDTHxHEIGHT`.
 - **A run of a scene with no `scene.json`** (the NXT's `unmapped`, ADR-0013) is listed under its scene
   (`kind` `no layout`); `GET /scenes/{id}` for it is a 404 and the pages draw none of a scene.
 - **Signals.** `.../signals?from=&to=` (time window, both optional; 400 for `from` after `to`)
@@ -405,7 +410,7 @@ exploreSnapshot() -> the body as a PNG data URL
 - **Explore** (RFC-0011 §3.3): the right panel's third tab (`#tabExplore`, `#explore`), a detail
   view whose first kind is a robot's body (the run's robot, or any of `GET /api/v1/robots`). The
   description's meshes placed by the pages' forward kinematics (`web/shell/robot.js`, the same as
-  `miniview.kinematics`, checked against `robots/duck/fk_fixture.json`), posed **as recorded** (the
+  `observatory.kinematics`, checked against `robots/duck/fk_fixture.json`), posed **as recorded** (the
   joints' values at the playhead, following it) or **by hand** (a slider per joint by chain, within
   its limits; it starts from the recorded pose). A part is picked in the body or in the list of
   parts; its details: what moves it (joint, type, axis, angle, limits) or what it is fixed to, what
@@ -516,7 +521,7 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 
 ## Commands (the agent's face)
 
-`miniview scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
+`observatory scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
 <run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
 frame | film | import | repair <key> | compact <key> | index | serve`. `import --robot nxt <run>.csv
 [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web

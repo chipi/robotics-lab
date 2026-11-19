@@ -2,7 +2,7 @@
 run's epoch into the world the video renders, each frame's current sighting with its detections placed from the robot's pose, the HUD's
 SEES / ROOM / OBJECTS entries), the job the engine is given, what an old run gets (nothing), and the overlay's own geometry (the HUD's
 lines, the eye inset's pinhole projection, the top inset's pixels, the camera's wedge). Drawing on an image needs Pillow, which is the
-engine's Python's, not miniview's: that part runs in the robot's MuJoCo Python when the machine has it, and says NOT RUN when it has not.
+engine's Python's, not Observatory's: that part runs in the robot's MuJoCo Python when the machine has it, and says NOT RUN when it has not.
 Run: cd apps/observatory && uv run python tests/test_video_semantic.py"""
 
 import json
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from helpers import Checks, make_run, tick
 from runfile import keys
-from miniview import video
+from observatory import video
 
 ENGINES = Path(video.__file__).resolve().parent / "engines"
 sys.path.insert(0, str(ENGINES))

@@ -19,7 +19,7 @@ from playwright.sync_api import sync_playwright
 
 from common import FAKE_FILE, check, finish, robot_file
 
-from miniview.shots import launch
+from observatory.shots import launch
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig

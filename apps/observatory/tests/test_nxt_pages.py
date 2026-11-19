@@ -19,7 +19,7 @@ from helpers import FIXTURE, OPEN_SECTIONS, T0_NS, import_fixture, catalog, scen
 from runfile import keys
 from runfile.adapters import nxt
 from runfile.mcapio import Recorder
-from miniview.shots import launch
+from observatory.shots import launch
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "nxt"
 CSV_A, CSV_B = "run-20261114-094243", "run-20261114-145402"

@@ -1,6 +1,6 @@
-"""The navigator's run as a miniview run, written while it runs (ADR-0014, RFC-0008 step 0).
+"""The navigator's run as an Observatory run, written while it runs (ADR-0014, RFC-0008 step 0).
 
-`RunLog` turns what the navigator logs into format 2 records through miniview's `Recorder`: a row of ticks.jsonl
+`RunLog` turns what the navigator logs into format 2 records through Observatory's `Recorder`: a row of ticks.jsonl
 becomes the same records the importer would make (`runfile.adapters.duck.DuckLog`, so a run written live and the
 same log imported later are the same run), and the things ticks.jsonl has no place for are added: every depth frame
 (raw, with the state it was paired with and what was derived) and the IMU and decision values as signals.
@@ -82,7 +82,7 @@ class RunLog:
                 self._new_session = False
             except Exception as e:             # noqa: BLE001 - the navigator must not stop for its log
                 self.error = f"{type(e).__name__}: {e}"
-                print(f"miniview run {self.key}: not written any more ({self.error}); ticks.jsonl goes on", file=sys.stderr)
+                print(f"Observatory run {self.key}: not written any more ({self.error}); ticks.jsonl goes on", file=sys.stderr)
 
     def row(self, sid: int, row: dict) -> None:
         """A row as the navigator writes it to ticks.jsonl (with its time and the simulator's truth)."""
@@ -108,7 +108,7 @@ class RunLog:
                 return self._rec.close()
             except Exception as e:             # noqa: BLE001
                 self.error = f"{type(e).__name__}: {e}"
-                print(f"miniview run {self.key}: not closed ({self.error}); `miniview repair {self.key}` closes it", file=sys.stderr)
+                print(f"Observatory run {self.key}: not closed ({self.error}); `observatory repair {self.key}` closes it", file=sys.stderr)
                 return None
 
 
@@ -130,5 +130,5 @@ def open_from_args(args, default_name: str, kind: str, out_dir: Path | None, eva
         rl = RunLog(data, args.scene, args.run or default_name, kind, out_dir, evaluation)
     except (WriterBusy, ValueError) as e:
         raise SystemExit(f"cannot write the miniview run: {e}") from None
-    print(f"miniview run {rl.key} -> {rl.dir}", file=sys.stderr)
+    print(f"Observatory run {rl.key} -> {rl.dir}", file=sys.stderr)
     return rl

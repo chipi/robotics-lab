@@ -7,7 +7,7 @@
     scenes    the scenes on disk
 
 Derived from the run files and rebuilt from them at any time. WAL with a busy timeout, so the commands
-read it while the service writes it; a service holds the lock file beside it, and `miniview index`
+read it while the service writes it; a service holds the lock file beside it, and `observatory index`
 (the rebuild) refuses while that lock is held.
 """
 

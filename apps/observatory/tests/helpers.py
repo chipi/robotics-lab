@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from runfile import keys, mcapio
-from miniview.importer import import_duck
+from observatory.importer import import_duck
 
 _INDEX_DIR = Path(tempfile.mkdtemp(prefix="miniview-test-index-"))
 atexit.register(shutil.rmtree, _INDEX_DIR, ignore_errors=True)
@@ -96,7 +96,7 @@ def scene(room="room"):
 
 
 def serve(cat, follow=True):
-    from miniview.server import make_server
+    from observatory.server import make_server
 
     httpd = make_server(cat, "127.0.0.1", 0, follow=follow)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()

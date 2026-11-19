@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 from helpers import OPEN_SECTIONS, T0_NS, catalog, import_fixture, make_run, run_record, scene, serve, tick, wait_until
 from runfile import keys
 from runfile.mcapio import Recorder
-from miniview.shots import launch
+from observatory.shots import launch
 
 SHOTS = Path("/tmp/claude-1000/replay") if os.environ.get("REPLAY_SHOTS", "1") != "0" else None
 KEY = "duck/apartment/native1"

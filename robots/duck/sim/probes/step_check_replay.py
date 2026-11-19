@@ -1,5 +1,5 @@
 """Replay "look before you step" (nav/step_check.py) on recorded exploring runs, offline: the floor the depth sensor had
-seen is rebuilt from the miniview run's depth frames (their derived floor points, map frame, 5 cm cells as
+seen is rebuilt from the Observatory run's depth frames (their derived floor points, map frame, 5 cm cells as
 run.FLOOR_CELL_M); the path from the duck's plan events and its pose from the ticks. At each walking tick the rule
 would have stopped the duck where unseen_ahead returns a spot; the replay counts those stops (one per spot: after a
 look the spot is skipped) and says where the first one in a time window happened.

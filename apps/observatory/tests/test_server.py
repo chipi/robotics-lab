@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from helpers import Checks, catalog, get, import_fixture, make_run, scene, serve, tick, wait_until
-from miniview import query, server
+from observatory import query, server
 from runfile.catalog import FOLLOW_EVERY_S
 
 check = Checks("SERVER")
@@ -145,14 +145,14 @@ with tempfile.TemporaryDirectory() as tmp:
           and api("/runs/duck/room/junk1/frames")[0] == 409 and "not an MCAP" in api("/runs/duck/room/junk1/frames")[1]["error"])
     logbuf = io.StringIO()
     handler = logging.StreamHandler(logbuf)
-    logging.getLogger("miniview").addHandler(handler)
+    logging.getLogger("observatory").addHandler(handler)
     real = query.state
     query.state = lambda *a, **k: 1 / 0
     try:
         code, body, _ = api(f"/runs/{K}/state?t=36")
     finally:
         query.state = real
-        logging.getLogger("miniview").removeHandler(handler)
+        logging.getLogger("observatory").removeHandler(handler)
     check("an internal error is a 500 JSON with an id, the same id is in the log, no traceback to the client",
           code == 500 and body["id"] and body["id"] in logbuf.getvalue() and "Traceback" not in json.dumps(body) and "ZeroDivision" in logbuf.getvalue(), body)
     check("the service still answers after all of that", api("/health")[0] == 200)

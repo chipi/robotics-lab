@@ -30,7 +30,6 @@ MODULES = {
     "mission_control": "mission_control",
     "nxt_lab": "nxt_lab",
     "duck_lab": "duck_lab",
-    "miniview": "observatory",
 }
 
 # who may import whom, in a project's source: libraries import no other unit, apps never import apps, robots never apps

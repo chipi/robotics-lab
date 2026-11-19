@@ -1,5 +1,5 @@
 """Samples motors and sensors at a fixed rate: a live ring buffer for the UI, and per recording a CSV (the Plot view
-reads it) and a miniview run (ADR-0013): format 2, written while it is recorded, so it is live in miniview and
+reads it) and an Observatory run (ADR-0013): format 2, written while it is recorded, so it is live in Observatory and
 compacted when the recording stops."""
 
 import collections
@@ -71,7 +71,7 @@ class Recorder:
         self.recording = None
         self._file = None
         self._writer = None
-        self._run = None              # the miniview run being written: {"key", "writer", "odom", "error"}
+        self._run = None              # the Observatory run being written: {"key", "writer", "odom", "error"}
         self._columns = []
         self._header = []
         self._t0 = time.monotonic()
@@ -126,7 +126,7 @@ class Recorder:
             return [s for s in self.samples if s["seq"] > seq]
 
     def _free_name(self) -> str:
-        """run-YYYYMMDD-HHMMSS, with -2, -3, ... when that name (a CSV, or a miniview run) is already taken."""
+        """run-YYYYMMDD-HHMMSS, with -2, -3, ... when that name (a CSV, or an Observatory run) is already taken."""
         base = datetime.now().strftime("run-%Y%m%d-%H%M%S")
         for n in range(1, 1000):
             name = base if n == 1 else f"{base}-{n}"
@@ -155,7 +155,7 @@ class Recorder:
             return self.recording
 
     def _start_run(self, name: str, columns: list, config) -> None:
-        """Open the miniview run beside the CSV. A failure here costs the run, never the recording: the CSV goes on."""
+        """Open the Observatory run beside the CSV. A failure here costs the run, never the recording: the CSV goes on."""
         self._run = None
         try:
             key = f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{name}"
@@ -196,7 +196,7 @@ class Recorder:
             run["writer"].add(run["writer"].last_t, "end", {"verdict": "recorded" if rows else "empty", "source_sha256": sha})
             run["writer"].close()
         except Exception as exc:
-            run["error"] = f"{type(exc).__name__}: {exc}"           # the live file stays: `miniview repair` closes it
+            run["error"] = f"{type(exc).__name__}: {exc}"           # the live file stays: `observatory repair` closes it
         self._hand_over()                                            # run.mcap is new
 
     def _run_time(self, now: float) -> float:
@@ -228,10 +228,10 @@ class Recorder:
                 nxt_run.write_sample(run["writer"], self._run_time(now), dict(zip(self._header[1:], row[1:])), run["odom"], tacho)
             except Exception as exc:
                 run["error"] = f"{type(exc).__name__}: {exc}"
-                run["writer"] = None                              # the miniview run stops here (its live file stays); the CSV goes on
+                run["writer"] = None                              # the Observatory run stops here (its live file stays); the CSV goes on
 
     def log_event(self, entry: dict) -> None:
-        """A command-log entry, into the recording's miniview run while recording."""
+        """A command-log entry, into the recording's Observatory run while recording."""
         with self._lock:
             run = self._run
             if run and run["writer"]:
@@ -242,7 +242,7 @@ class Recorder:
                     run["writer"] = None
 
     def run_status(self) -> dict | None:
-        """What the page shows of the miniview run of the recording in progress: its key, and an error if writing it failed."""
+        """What the page shows of the Observatory run of the recording in progress: its key, and an error if writing it failed."""
         run = self._run
         return {"key": run["key"], "error": run["error"]} if run else None
 
@@ -260,7 +260,7 @@ class Recorder:
         return out
 
     def run_path(self, name: str) -> Path:
-        """The file a download names: the CSV, or `<run>.mcap`: the finished miniview run of that recording."""
+        """The file a download names: the CSV, or `<run>.mcap`: the finished Observatory run of that recording."""
         path = (self.runs_dir / name).resolve()
         if path.parent == self.runs_dir.resolve() and path.suffix == ".csv" and path.exists():
             return path

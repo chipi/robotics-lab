@@ -1,5 +1,5 @@
 """Was the corner the duck touched ever seen? (stream A, 2026-11-17: every exploring contact so far was a corner beside the
-duck while it turned past it.) For a contact at time T and a corner (world x, y): every depth frame of the run's miniview
+duck while it turned past it.) For a contact at time T and a corner (world x, y): every depth frame of the run's Observatory
 record in [T - WINDOW_S, T], its obstacle points (the navigator's own derived points) taken relative to the frame's belief
 pose and placed from the truth pose at that time (the nearest tick), so what is measured is the duck's view of the corner
 relative to itself, not its map's drift. Prints, per frame that saw an obstacle point within NEAR_M of the corner, how far

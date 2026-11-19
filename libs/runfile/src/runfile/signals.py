@@ -3,7 +3,7 @@
 The run record declares them (`signals`: name, kind `number` or `text`, optional unit); a tick of values is one message on
 `/<robot>/signals`, a protobuf message built from that declaration at run time: one optional field per signal (a double or a
 string), so a signal missing from a tick is absent, not zero. The schema stored in the file is the message's own
-FileDescriptorSet, so a reader that knows nothing of miniview (Rerun, Lichtblick) decodes the values by name. Rerun 0.43.2
+FileDescriptorSet, so a reader that knows nothing of Observatory (Rerun, Lichtblick) decodes the values by name. Rerun 0.43.2
 turns the channel into one entity whose struct has a Float64 or Utf8 column per signal (ADR-0013).
 """
 

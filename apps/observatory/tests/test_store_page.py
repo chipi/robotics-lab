@@ -12,7 +12,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import Checks, catalog, make_run, scene, serve, tick, wait_until
-from miniview.shots import launch
+from observatory.shots import launch
 
 check = Checks("STORE PAGE")
 

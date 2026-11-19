@@ -4,9 +4,9 @@
     uv run duck-challenge 8 --runs 3 --seed 5 --miniview-data /work/robotics-lab/data
     uv run duck-challenge 22 --runs 3 --miniview-data /work/robotics-lab/data
 
-Each run: the seed's scene written (the simulator's file under ~/.cache/duck-sim/scenarios, miniview's scene in the data
+Each run: the seed's scene written (the simulator's file under ~/.cache/duck-sim/scenarios, Observatory's scene in the data
 folder), the simulator restarted on it (~40 s), a navigator given the goal, every truth sample checked against the
-invariants (the first one broken is an `invariant` event in the run), and the outcome judged. Every run is a miniview run,
+invariants (the first one broken is an `invariant` event in the run), and the outcome judged. Every run is an Observatory run,
 `duck/<scene id>/<run>`, with its room. The simulator is stopped at the end (--keep-up leaves it).
 
 Three challenges are not one goal to reach (RFC-0008 §3):

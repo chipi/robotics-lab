@@ -12,8 +12,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import Checks, catalog, get, scene, serve, wait_until
-from miniview.importer import import_duck
-from miniview.shots import launch
+from observatory.importer import import_duck
+from observatory.shots import launch
 
 check = Checks("LIVE PAGE")
 KEY = "duck/room/explore99"

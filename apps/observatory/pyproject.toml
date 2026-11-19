@@ -1,5 +1,5 @@
 [project]
-name = "miniview"
+name = "observatory"
 version = "0.1.0"
 description = "Seeing what a robot believed, against what happened — for people and agents, any robot (PRD-001, RFC-0009)"
 requires-python = ">=3.10"
@@ -12,14 +12,16 @@ dependencies = [
 runfile = { path = "../../libs/runfile", editable = true }
 
 [project.scripts]
-miniview = "miniview.cli:main"
+observatory = "observatory.cli:main"
+# the old name, kept for one release (RFC-0018): scripts and habits that run `miniview` still work
+miniview = "observatory.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/miniview"]
+packages = ["src/observatory"]
 
 [dependency-groups]
 dev = [

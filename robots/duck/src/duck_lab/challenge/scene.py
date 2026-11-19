@@ -1,7 +1,7 @@
 """A challenge's scene (ADR-0015): boxes and floor slabs in the challenge's own frame, the duck's start at the origin
 facing +x, the goal, and what counts as right. `moved` applies the start's jitter by moving the world (the body server
 always starts the duck at the origin); `mjcf`, `miniview_scene` and `layout` write the same scene for the simulator,
-for miniview, and for the truth checks.
+for Observatory, and for the truth checks.
 
 A slab is a floor: its top is the floor's level, 0 for the start's, below 0 for the floor beyond a drop.
 """
@@ -65,7 +65,7 @@ def wall(name: str, x0: float, y0: float, x1: float, y1: float, thick: float = 0
 
 @dataclass
 class Scene:
-    id: str                       # miniview's scene id and the scenario folder: the challenge and the seed, `ch2-s3`
+    id: str                       # Observatory's scene id and the scenario folder: the challenge and the seed, `ch2-s3`
     name: str
     boxes: list                   # walls and furniture: what the duck must not touch
     floors: list                  # slabs; one whose top is below 0 is beyond a drop
@@ -136,7 +136,7 @@ def mjcf(scene: Scene, root: Path = SCENARIOS, upstream: Path = UPSTREAM) -> Pat
 
 
 def miniview_scene(scene: Scene) -> dict:
-    """miniview's scene (CONTRACT.md): the boxes, and each lower floor as a drop hazard turned with its yaw."""
+    """Observatory's scene (CONTRACT.md): the boxes, and each lower floor as a drop hazard turned with its yaw."""
     boxes = [{"name": b.name, "cx": b.cx, "cy": b.cy, "z0": b.z0, "z1": b.z1, "hx": b.hx, "hy": b.hy, "yaw": b.yaw}
              for b in scene.boxes]
     hazards = [{"name": f.name, "kind": "drop", "x0": f.cx - f.hx, "x1": f.cx + f.hx, "y0": f.cy - f.hy, "y1": f.cy + f.hy,

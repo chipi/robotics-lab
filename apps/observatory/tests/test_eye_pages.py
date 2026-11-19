@@ -17,7 +17,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import Checks, catalog, get, make_run, serve, tick
-from miniview.shots import launch
+from observatory.shots import launch
 
 check = Checks("EYE PAGES")
 SHOTS = Path("/tmp/claude-1000/eye-pages") if os.environ.get("EYE_SHOTS", "1") != "0" else None

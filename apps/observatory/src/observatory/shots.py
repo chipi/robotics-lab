@@ -35,7 +35,7 @@ class _Server:
     """The real service (API and pages) on a free port, over the given catalog."""
 
     def __init__(self, catalog):
-        from miniview.server import make_server
+        from observatory.server import make_server
 
         self.httpd = make_server(catalog, "127.0.0.1", 0, follow=False)
         self.port = self.httpd.server_address[1]

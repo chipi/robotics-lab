@@ -15,7 +15,7 @@ from mcap.reader import make_reader
 
 from helpers import Checks, catalog, get, make_run, run_record, scene, serve, tick
 from runfile import keys, schemas, wire
-from miniview import query
+from observatory import query
 from runfile.mcapio import Follower, Recorder
 from runfile.store import RunData, build
 
@@ -164,7 +164,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # ---- the commands --------------------------------------------------------------------------------------------
     env = {"PATH": "/usr/bin:/bin"}
-    cli = [sys.executable, "-m", "miniview.cli", "--data", str(data2)]
+    cli = [sys.executable, "-m", "observatory.cli", "--data", str(data2)]
     env["MINIVIEW_INDEX"] = str(Path(tmp) / "cli.sqlite")
     out = subprocess.run(cli + ["sensor", "duck/room/r1", "--at", "1.2"], capture_output=True, text=True, env=env)
     check("miniview sensor prints the frame as a grid, the invalid zones marked, and the pairing",

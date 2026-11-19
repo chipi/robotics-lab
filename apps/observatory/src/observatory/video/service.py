@@ -1,5 +1,5 @@
-"""`miniview render-serve`: the render service of the video export (ADR-0017), standard library only. It renders runs to videos
-for miniview's pages, one job at a time, in its own process: an engine needs its own Python and library, and miniview stays
+"""`observatory render-serve`: the render service of the video export (ADR-0017), standard library only. It renders runs to videos
+for Observatory's pages, one job at a time, in its own process: an engine needs its own Python and library, and Observatory stays
 read-only. It reads the runs from the data folder (read-only) and writes the videos to <state>/videos/.
 
     GET  /engines        {"engines": [{"name", "available", "why", "robots"}]}
@@ -22,9 +22,9 @@ import uuid
 from pathlib import Path
 
 from runfile import keys
-from miniview import video
+from observatory import video
 
-log = logging.getLogger("miniview.render")
+log = logging.getLogger("observatory.render")
 SIZE = re.compile(r"^(\d{2,5})x(\d{2,5})$")
 MAX_BODY = 65536
 def engines() -> list:
@@ -129,7 +129,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def version_string(self):
-        return "miniview-render"
+        return "observatory-render"
 
     def _json(self, obj, code: int = 200) -> None:
         body = json.dumps(obj, separators=(",", ":")).encode()
@@ -211,5 +211,5 @@ def make_server(data: Path, state: Path, host: str = "127.0.0.1", port: int = 80
 def serve(data: Path, state: Path, host: str, port: int) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     httpd = make_server(data, state, host, port)
-    print(f"miniview render service at http://{host}:{port}/, data {data} (read only), videos in {Path(state) / 'videos'}", flush=True)
+    print(f"observatory render service at http://{host}:{port}/, data {data} (read only), videos in {Path(state) / 'videos'}", flush=True)
     httpd.serve_forever()

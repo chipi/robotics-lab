@@ -12,7 +12,7 @@ def load_run(catalog, run_id: str) -> tuple:
         named = catalog.candidates(run_id)
         if len(named) > 1:
             raise SystemExit(f"{len(named)} runs are called {run_id!r}; which of: " + ", ".join(sorted(named)))
-        raise SystemExit(f"no run {run_id!r} under {catalog.data / 'runs'} (miniview import it first)")
+        raise SystemExit(f"no run {run_id!r} under {catalog.data / 'runs'} (observatory import it first)")
     ld = catalog.get(run_id)
     return ld.data.run, ld.data.frames
 

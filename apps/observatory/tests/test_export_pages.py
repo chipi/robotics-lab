@@ -14,8 +14,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from helpers import catalog, import_fixture, scene, serve, stub_engine
-from miniview.shots import launch
-from miniview.video import service
+from observatory.shots import launch
+from observatory.video import service
 
 SHOTS = Path("/tmp/claude-1000/export")          # what the panel looks like, to look at
 KEY, ROVER ="duck/apartment/explore9", "rover/apartment/explore9"

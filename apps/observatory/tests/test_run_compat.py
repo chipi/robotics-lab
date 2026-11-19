@@ -1,5 +1,5 @@
-"""A run opens fully in Rerun and in miniview, kept compatible on purpose (ADR-0007 "Compatibility"): Rerun (rerun mcap
-check, mcap convert, rrd verify, the rows decoded) and miniview (the service loads and serves the same file). The fixture is
+"""A run opens fully in Rerun and in Observatory, kept compatible on purpose (ADR-0007 "Compatibility"): Rerun (rerun mcap
+check, mcap convert, rrd verify, the rows decoded) and Observatory (the service loads and serves the same file). The fixture is
 explore9 imported into a temp folder; an NXT run (ADR-0013) also has a signal plotted in a Rerun time series view from a
 blueprint. Lichtblick's checks (its image, headless: alerts, start date, topics, the 3D panel, the NXT signal in
 Raw Messages and a Plot panel) are skipped unless COMPAT_LICHTBLICK=1: its UI's timing failed CI runs that were not
@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 
 from helpers import T0_NS, Checks, catalog, get, import_fixture, scene, serve, wait_until
 from runfile.adapters import nxt
-from miniview.shots import launch
+from observatory.shots import launch
 
 check = Checks("RUN COMPAT")
 REPO = Path(__file__).resolve().parents[3]
@@ -246,7 +246,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
 
     else:
         print("SKIP Lichtblick, explore9: not tested unless COMPAT_LICHTBLICK=1 (ADR-0007 Compatibility: its UI's timing failed CI runs that were not ours)", flush=True)
-    # ---- (c) miniview ------------------------------------------------------------------------------------------
+    # ---- (c) Observatory ------------------------------------------------------------------------------------------
     cat = catalog(data)
     cat.put_scene(scene("apartment"))
     httpd, base = serve(cat, follow=False)
@@ -355,7 +355,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
                       code == 200 and abs(st["signals"]["t"] - at) < 1e-3 and set(shown) == {k for k, v in want.items() if v is not None}
                       and all(shown[k] == (f'"{v}"' if isinstance(v, str) else f"{v:g}") for k, v in want.items() if v is not None), (shown, want))
                 # A signal on a chart: Raw Messages' "Plot this value on a line chart" on tacho_B opens a Plot panel with that path;
-                # its tooltip at two places gives the time and value under the cursor, which must be a sample miniview serves.
+                # its tooltip at two places gives the time and value under the cursor, which must be a sample Observatory serves.
                 label = pg.get_by_text("tacho_B", exact=True).first.bounding_box()
                 pg.mouse.move(label["x"] + label["width"] + 30, label["y"] + label["height"] / 2)
                 pg.locator("[aria-label='Plot this value on a line chart']").first.click()
@@ -377,7 +377,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
     else:
         print("SKIP Lichtblick, NXT run: not tested unless COMPAT_LICHTBLICK=1 (ADR-0007 Compatibility: its UI's timing failed CI runs that were not ours)", flush=True)
 
-    # ---- (e) miniview serves the NXT run from the same file ----------------------------------------------------------------
+    # ---- (e) Observatory serves the NXT run from the same file ----------------------------------------------------------------
     cat = catalog(nxt_data)
     httpd, base = serve(cat, follow=False)
     code, r, _ = get(base, f"/api/v1/runs/{nkey}")

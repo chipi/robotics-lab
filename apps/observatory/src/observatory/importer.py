@@ -1,6 +1,6 @@
 """A robot's log into the lab's data folder as a format 2 run (ADR-0007), once or while it is being
 written (ADR-0005: live). Until the navigator writes MCAP itself (RFC-0008 step 1), this is how a run
-becomes live: `miniview import --follow` reads the growing log and appends to the run's live file.
+becomes live: `observatory import --follow` reads the growing log and appends to the run's live file.
 
 The source log is copied beside the run (`source/`) and its SHA-256 recorded; every field of it is in
 a record (`raw`), so the copy is for provenance, not for rescuing what the import left out.

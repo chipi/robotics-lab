@@ -185,7 +185,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # ---- the commands: `state` carries the semantic map, `objects` is it alone ----------------------------------------------
     env = {"PATH": "/usr/bin:/bin", "MINIVIEW_INDEX": str(Path(tmp) / "cli.sqlite")}
-    cli = [sys.executable, "-m", "miniview.cli", "--data", str(data)]
+    cli = [sys.executable, "-m", "observatory.cli", "--data", str(data)]
     out = subprocess.run(cli + ["objects", "duck/room/s1", "--at", "2.7"], capture_output=True, text=True, env=env)
     check("miniview objects at 2.7 s prints the object (confirmed, map x/y), no room yet, the current sighting with what it saw",
           out.returncode == 0 and "fridge_1" in out.stdout and "confirmed" in out.stdout and "not told yet" in out.stdout and "saw fridge 1.42 m 0.8" in out.stdout, out.stdout + out.stderr)
@@ -195,7 +195,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("miniview state prints the objects, the sighting and the room too", st_out.returncode == 0 and "objects (1, 1 confirmed)" in st_out.stdout and "room: kitchen" in st_out.stdout, st_out.stdout + st_out.stderr)
 
 # ---- the query without a service: a run with no semantic map has no `semantic` key --------------------------------------------
-from miniview import query  # noqa: E402
+from observatory import query  # noqa: E402
 
 old_run = {"id": "r", "scene": "s", "epochs": [], "events": [{"t": 1.0, "kind": "cliff_stop", "text": "cliff_stop"}]}
 old_frames = {"t": [0.1], "belief": [[0, 0, 0]], "truth": [None], "tilt": [None], "cmd": [[0, 0]], "depth": [None], "plan_at": [-1], "world_at": [-1]}

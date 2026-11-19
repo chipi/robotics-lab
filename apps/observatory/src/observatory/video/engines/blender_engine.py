@@ -1,5 +1,5 @@
 """The Blender engine of the video export (ADR-0017): a job to a video, rendered by Blender (EEVEE), the robot built from its
-description (RFC-0011: its URDF's links and meshes) and moved by our own forward kinematics (miniview.kinematics, the one
+description (RFC-0011: its URDF's links and meshes) and moved by our own forward kinematics (observatory.kinematics, the one
 checked against MuJoCo). Run by Blender itself:
 
     blender --background --factory-startup --python blender_engine.py -- job.json
@@ -17,8 +17,8 @@ from pathlib import Path
 import bpy  # noqa: E402  (Blender's own module)
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2]))           # viewer/src: miniview.kinematics is plain Python, Blender's can import it
-from miniview import kinematics as kin  # noqa: E402
+sys.path.insert(0, str(HERE.parents[2]))           # viewer/src: observatory.kinematics is plain Python, Blender's can import it
+from observatory import kinematics as kin  # noqa: E402
 
 
 def material(name: str, rgba: list):

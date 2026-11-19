@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from miniview import kinematics as kin
+from observatory import kinematics as kin
 
 REPO = Path(__file__).resolve().parents[3]
 failures = []

@@ -12,7 +12,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 os.environ.setdefault("MINIVIEW_INDEX", str(TMP / "index.sqlite"))
 
 from helpers import Checks, catalog, get, serve  # noqa: E402
-from miniview import robots  # noqa: E402
+from observatory import robots  # noqa: E402
 
 check = Checks("ROBOTS")
 

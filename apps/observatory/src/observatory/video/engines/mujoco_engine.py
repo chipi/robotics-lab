@@ -1,5 +1,5 @@
 """The MuJoCo engine of the video export (ADR-0017): a job (a track, a scene, a robot model, a size, an output file) to a
-video. Runs in a Python that has MuJoCo (the robot's `python` in robots.json), not miniview's:
+video. Runs in a Python that has MuJoCo (the robot's `python` in robots.json), not Observatory's:
 
     <mujoco python> mujoco_engine.py job.json
 

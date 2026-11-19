@@ -4,7 +4,7 @@
 
 The gate (duck_lab.gate_proxy) listens on a socket of its own in a temporary folder and forwards to ~/.cache/duck-sim/duck-a.sock;
 each navigator is a `duck-go` process (python -m duck_lab.nav.run) started with --robot-socket and --client, so it takes the
-lease before it does anything. The simulator is the shared one and needs no one else using it; the runs write no miniview run.
+lease before it does anything. The simulator is the shared one and needs no one else using it; the runs write no Observatory run.
 
   a. a second navigator is refused, and the first goes on;
   b. the first navigator is killed (SIGKILL): the robot stops and is free at once;
@@ -48,7 +48,7 @@ def wait_for(cond, timeout, every=0.2):
 
 
 def navigator(gate: Path, client: str, x: float, y: float, out: Path) -> subprocess.Popen:
-    env = {k: v for k, v in os.environ.items() if k != "MINIVIEW_DATA"}      # these runs write no miniview run
+    env = {k: v for k, v in os.environ.items() if k != "MINIVIEW_DATA"}      # these runs write no Observatory run
     return subprocess.Popen([sys.executable, "-m", "duck_lab.nav.run", str(x), str(y), "--robot-socket", str(gate), "--client", client,
                              "--timeout", "90"], stdout=open(out, "w"), stderr=subprocess.STDOUT, env=env)
 

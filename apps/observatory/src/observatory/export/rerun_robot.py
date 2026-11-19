@@ -1,10 +1,10 @@
 """A run in Rerun with the robot drawn as itself (RFC-0011): Rerun's own way, its URDF logged once, each joint's transform
 logged per frame from the recorded angle, the trunk placed by the run's pose. Runs in a Python that has rerun-sdk (the
-duck's: miniview's has not):
+duck's: Observatory's has not):
 
     robots/duck/.venv/bin/python apps/observatory/src/miniview/export/rerun_robot.py <data> <run key> <robot.urdf> <out.rrd> [fps]
 
-The trunk's pose and the joints come from the video's track (`miniview.video.track`): the truth's whole pose in the
+The trunk's pose and the joints come from the video's track (`observatory.video.track`): the truth's whole pose in the
 simulator, the belief with the IMU's tilt in the field. The scene's boxes are logged too (world frame).
 """
 
@@ -16,7 +16,7 @@ import rerun as rr
 from rerun.urdf import UrdfTree
 
 from runfile import keys
-from miniview.video import track
+from observatory.video import track
 
 
 def main() -> None:

@@ -2,9 +2,9 @@
 
     uv run duck-go 1.5 0.5            # one goal in map coordinates, simulator sockets
     uv run duck-go 1.5 0.5 --log run.jsonl
-    uv run duck-go 1.5 0.5 --miniview-data /work/robotics-lab/data   # also written as a live miniview run (ADR-0014)
+    uv run duck-go 1.5 0.5 --miniview-data /work/robotics-lab/data   # also written as a live Observatory run (ADR-0014)
 
-With a miniview data folder (--miniview-data or MINIVIEW_DATA) the run is also written in format 2, while it runs: that run
+With an Observatory data folder (--miniview-data or MINIVIEW_DATA) the run is also written in format 2, while it runs: that run
 is the record, with every depth frame and the IMU (`duck-replay` checks it is complete); ticks.jsonl is kept during the
 transition, for the importer and the older tools.
 
@@ -303,7 +303,7 @@ def load_pivot_vx(robot: str | None) -> float:
 
 
 class Navigator:
-    runlog = None            # a RunLog (ADR-0014) when the run is also written as a miniview run
+    runlog = None            # a RunLog (ADR-0014) when the run is also written as an Observatory run
     watch = None             # a test's truth check (ADR-0015): called with each row that has truth; a row it returns is recorded
     speed_cap = None         # a goal's guardrails (RFC-0014 §3.4.8): see __init__; class defaults for a navigator built without it
     keepout = ()

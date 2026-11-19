@@ -15,8 +15,8 @@ from mcap.reader import make_reader
 
 from helpers import FIXTURE, T0_NS, Checks, import_fixture, make_run, run_record, tick
 from runfile import keys, mcapio, schemas, wire
-from miniview import cli
-from miniview.importer import sha256_of
+from observatory import cli
+from observatory.importer import sha256_of
 from runfile.mcapio import Follower, Recorder, WriterBusy
 from runfile.store import build
 
@@ -182,7 +182,7 @@ with tempfile.TemporaryDirectory() as tmp:
     rows = [{"t": 1.0, "pose": [0, 0, 0], "truth": [0, 0, 0]}, {"t": 2.0, "pose": [0, 0, 0], "truth": [0, 0, 0]},
             {"t": 0.5, "pose": [0, 0, 0], "truth": [0, 0, 0]}, {"t": 0.6, "pose": [0, 0, 0], "truth": [0, 0, 0]}]
     (log / "ticks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    from miniview.importer import import_duck
+    from observatory.importer import import_duck
     import_duck(log, "room", data, say=lambda *_: None, started_at_ns=T0_NS)
     recs = Follower(data / "runs" / "duck" / "room" / "jump1", keep_raw=True).poll()
     ts = [t for t, k, _ in recs if k == "tick"]

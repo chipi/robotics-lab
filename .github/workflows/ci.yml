@@ -1,12 +1,12 @@
 # Build, test and check every project in the repo: the NXT web UI (apps/nxt-web/), the duck's navigator and
-# tools (duck/), and miniview (apps/observatory/). The docs have their own workflow (docs.yml).
+# tools (duck/), and the Observatory (apps/observatory/). The docs have their own workflow (docs.yml).
 #
 # Each job runs the same make targets as on the workstation, so a red job reproduces locally with
 # the target named in its step:
 #   unit   → make ci-fast            lint + every project's unit tests
-#   pages  → make test-viewer-pages test-control-page   miniview's two pages and Mission Control's page in headless Chromium
-#   compat → make test-run-compat    a run opens in Rerun and miniview (Lichtblick's checks skipped)
-#   images → make test-integration test-viewer-image nxt-programs   the Docker images, the NXC programs
+#   pages  → make test-observatory-pages test-control-page   the Observatory's two pages and Mission Control's page in headless Chromium
+#   compat → make test-run-compat    a run opens in Rerun and the Observatory (Lichtblick's checks skipped)
+#   images → make test-integration test-observatory-image nxt-programs   the Docker images, the NXC programs
 
 name: ci
 
@@ -28,7 +28,7 @@ env:
 
 jobs:
   unit:
-    name: Unit tests (nxt, duck, viewer)
+    name: Unit tests (nxt, duck, observatory)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,7 +41,7 @@ jobs:
         run: make ci-fast
 
   pages:
-    name: miniview pages (Chromium)
+    name: Observatory pages (Chromium)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -51,14 +51,14 @@ jobs:
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
-        run: make viewer-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
-      - name: make test-viewer-pages
-        run: make test-viewer-pages
+        run: make observatory-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
+      - name: make test-observatory-pages
+        run: make test-observatory-pages
       - name: make test-control-page
         run: make test-control-page
 
   compat:
-    name: A run opens in Rerun and miniview (Lichtblick skipped)
+    name: A run opens in Rerun and the Observatory (Lichtblick skipped)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -68,8 +68,8 @@ jobs:
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
-        run: make viewer-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
-      - name: make test-run-compat (Rerun from robots/duck/.venv, miniview)
+        run: make observatory-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
+      - name: make test-run-compat (Rerun from robots/duck/.venv, Observatory)
         run: make test-run-compat
 
   images:
@@ -84,7 +84,7 @@ jobs:
           python-version: '3.12'
       - name: Install uv (the image test imports a fixture run on the host, as production does)
         run: pip install "uv==${UV_VERSION}"
-      - name: "make test-viewer-image (miniview's image: data read only, index on its own volume)"
-        run: make viewer-sync && make test-viewer-image
+      - name: "make test-observatory-image (the Observatory's image: data read only, index on its own volume)"
+        run: make observatory-sync && make test-observatory-image
       - name: make nxt-programs
         run: make nxt-programs

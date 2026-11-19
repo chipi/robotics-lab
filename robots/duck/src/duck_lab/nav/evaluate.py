@@ -1,9 +1,9 @@
 """Phase 1's test (RFC-0002 §3.4): go-to goals, each reached or refused, no contacts, all logged.
 
     uv run duck-eval --goals 20 --out runs/phase1     # simulator with mapd running
-    uv run duck-eval --goals 20 --out runs/phase1 --miniview-data /work/robotics-lab/data   # goals are the miniview run's segments
+    uv run duck-eval --goals 20 --out runs/phase1 --miniview-data /work/robotics-lab/data   # goals are the Observatory run's segments
 
-The format 2 run (miniview, ADR-0014) is the record; ticks.jsonl is kept during the transition.
+The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 
 Goals are drawn once, with a fixed seed, from free floor in the apartment layout (sim/apartment_layout.json,
 from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom and the staircase. Every goal starts

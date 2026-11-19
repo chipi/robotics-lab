@@ -1,6 +1,6 @@
-"""The render service of the video export (ADR-0017) and miniview's passthrough to it, with a stand-in engine (no MuJoCo, no rendering):
+"""The render service of the video export (ADR-0017) and Observatory's passthrough to it, with a stand-in engine (no MuJoCo, no rendering):
 `GET /engines`, `POST /jobs` (one at a time, 409 while one runs), `GET /jobs/{id}` and its file, a failing engine's error; then
-miniview's `/api/v1/render`, `/runs/{key}/video` and `/videos/{id}[/file]` with MINIVIEW_RENDER unset, dead and set.
+Observatory's `/api/v1/render`, `/runs/{key}/video` and `/videos/{id}[/file]` with MINIVIEW_RENDER unset, dead and set.
 Run: cd apps/observatory && uv run python tests/test_render_service.py"""
 
 import json
@@ -13,7 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from helpers import Checks, catalog, get, import_fixture, scene, serve, stub_engine, wait_until
-from miniview.video import service
+from observatory.video import service
 
 check = Checks("RENDER SERVICE")
 K = "duck/apartment/explore9"
@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("... and its file is a 409", get(R, f"/jobs/{j['id']}/file")[0] == 409)
     check("the service did not write into the data folder", tree(data) == before)
 
-    # ---- miniview's passthrough
+    # ---- Observatory's passthrough
     cat = catalog(data)
     cat.put_scene(scene("apartment"))
     cat.scan()

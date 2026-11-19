@@ -1,4 +1,4 @@
-"""miniview on a small synthetic run: events, top and 3D frames, the filmstrip. No browser needed (the
+"""Observatory on a small synthetic run: events, top and 3D frames, the filmstrip. No browser needed (the
 SVG is checked; rasterizing is Chromium's). Run: cd robots/duck && uv run python tests/test_miniview.py"""
 
 import json

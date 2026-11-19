@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 
-from miniview import kinematics
+from observatory import kinematics
 
 ROOT = Path(os.environ.get("MINIVIEW_ROBOTS", Path(__file__).resolve().parents[4] / "robots"))
 

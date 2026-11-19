@@ -1,5 +1,5 @@
 """The LEGO NXT's runs in format 2 (ADR-0013): the signals message and the tick protocol's signals tick, validation, the odometry
-math, `miniview import --robot nxt` on the two real recordings (fixtures/nxt: their CSVs, the old MCAP, the command log), the
+math, `observatory import --robot nxt` on the two real recordings (fixtures/nxt: their CSVs, the old MCAP, the command log), the
 catalog and the API for a run of a scene with no layout, and a run written live.
 Run: cd apps/observatory && uv run python tests/test_nxt.py"""
 
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory() as tmp:
     ch, sch = chans["/nxt/signals"]
     check("the signals travel on /<robot>/signals as protobuf with the message's own descriptor set (schema miniview.Signals)",
           ch.message_encoding == "protobuf" and sch.encoding == "protobuf" and sch.name == "miniview.Signals")
-    # a reader that knows nothing of miniview: the descriptor in the file is enough to decode every value by name
+    # a reader that knows nothing of Observatory: the descriptor in the file is enough to decode every value by name
     fds = descriptor_pb2.FileDescriptorSet.FromString(sch.data)
     pool = descriptor_pool.DescriptorPool()
     for f in fds.file:
@@ -279,7 +279,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # ---- the command line ----------------------------------------------------------------------------------------
     d3 = Path(tmp) / "data3"
-    py = [sys.executable, "-m", "miniview.cli", "--data", str(d3)]
+    py = [sys.executable, "-m", "observatory.cli", "--data", str(d3)]
     env = {"MINIVIEW_INDEX": str(Path(tmp) / "cli.sqlite"), "PATH": "/usr/bin:/bin"}
     r = subprocess.run(py + ["import", "--robot", "nxt", "--tz", IMPORT_TZ, "--sprocket-diameter", "0.043", "--track-width", "0.12",
                              str(runs / f"{CSV_B}.csv")], capture_output=True, text=True, env=env)

@@ -1,5 +1,5 @@
 """Per challenge run in a data folder: depth frames, frames whose recorded drop_points are not empty, cliff stops, and
-whether its scene has a drop at all (a lower floor: miniview's scene hazards). The counts the cliff fix is judged on.
+whether its scene has a drop at all (a lower floor: Observatory's scene hazards). The counts the cliff fix is judged on.
 
     uv run python sim/probes/drop_census.py <data folder>
 """

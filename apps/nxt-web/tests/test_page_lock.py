@@ -19,7 +19,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from miniview.shots import launch
+from observatory.shots import launch
 
 NXT_DIR = Path(__file__).resolve().parents[1]
 NXT_WEB = os.environ.get("NXT_WEB", str(NXT_DIR / ".venv" / "bin" / "nxt-web"))

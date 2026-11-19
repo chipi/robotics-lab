@@ -1,28 +1,28 @@
-"""miniview — runs into the lab's data folder, the service for the pages, answers for the agent
+"""Observatory — runs into the lab's data folder, the service for the pages, answers for the agent
 (RFC-0009, ADR-0004, ADR-0005). The data folder is MINIVIEW_DATA or --data: there is no default in the code
 (the compose file and the Makefile default to /work/robotics-lab/data). The index is MINIVIEW_INDEX (default
 /work/robotics-lab/state/miniview/index.sqlite); while a service holds it, the commands read it and write nothing.
 
-    uv run miniview scene apartment --layout ../robots/duck/sim/apartment_layout.json
-    uv run miniview import ../robots/duck/runs/explore12 ../robots/duck/runs/phase1-run18 --scene apartment
-    uv run miniview import ../robots/duck/runs/explore13 --scene apartment --follow   # a run while it runs
-    uv run miniview import --robot nxt ../apps/nxt-web/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
-    uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
-    uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted
-    uv run miniview index                  # rebuild index.sqlite from the run files
-    uv run miniview serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
-    uv run miniview render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by MINIVIEW_RENDER
+    uv run observatory scene apartment --layout ../robots/duck/sim/apartment_layout.json
+    uv run observatory import ../robots/duck/runs/explore12 ../robots/duck/runs/phase1-run18 --scene apartment
+    uv run observatory import ../robots/duck/runs/explore13 --scene apartment --follow   # a run while it runs
+    uv run observatory import --robot nxt ../apps/nxt-web/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
+    uv run observatory repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
+    uv run observatory compact duck/apartment/explore13  # close a finished run whose live file was not compacted
+    uv run observatory index                  # rebuild index.sqlite from the run files
+    uv run observatory serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
+    uv run observatory render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by MINIVIEW_RENDER
 
 The agent's face (UXS-001 "The commands"): answers from the data, pictures from the real page.
 
-    uv run miniview scenes                              # the scenes and their runs
-    uv run miniview runs apartment                      # a scene's runs
-    uv run miniview events explore12 [--kinds a,b]      # what happened, when
-    uv run miniview state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, semantic map, last event
-    uv run miniview objects find-fridge-2 --at 12.0 [--json]  # the semantic map: objects, room, the current sighting (ADR-0019)
-    uv run miniview sensor explore12 --at 79.0 [--json]  # the raw 8x8 depth frame at t, and the state it was paired with
-    uv run miniview frame explore12 --at 79.0 --view three --hide sensors.depth -o f.png
-    uv run miniview film explore12 --at 79.6 --span 1.0 --n 5 -o film.png
+    uv run observatory scenes                              # the scenes and their runs
+    uv run observatory runs apartment                      # a scene's runs
+    uv run observatory events explore12 [--kinds a,b]      # what happened, when
+    uv run observatory state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, semantic map, last event
+    uv run observatory objects find-fridge-2 --at 12.0 [--json]  # the semantic map: objects, room, the current sighting (ADR-0019)
+    uv run observatory sensor explore12 --at 79.0 [--json]  # the raw 8x8 depth frame at t, and the state it was paired with
+    uv run observatory frame explore12 --at 79.0 --view three --hide sensors.depth -o f.png
+    uv run observatory film explore12 --at 79.6 --span 1.0 --n 5 -o film.png
 """
 
 import argparse
@@ -34,10 +34,10 @@ import tempfile
 from pathlib import Path
 
 from runfile import keys, mcapio
-from miniview import query
+from observatory import query
 from runfile.catalog import Catalog, default_data
-from miniview.importer import import_duck
-from miniview.scenes import from_mujoco_layout
+from observatory.importer import import_duck
+from observatory.scenes import from_mujoco_layout
 
 
 def _cat(args, owner: bool = False) -> Catalog:
@@ -232,7 +232,7 @@ def _shot(args, t, out) -> dict:
 
 
 def cmd_frame(args) -> None:
-    from miniview.shots import pictures
+    from observatory.shots import pictures
 
     cat = _cat(args)
     run, _ = query.load_run(cat, args.run)
@@ -242,7 +242,7 @@ def cmd_frame(args) -> None:
 
 
 def cmd_film(args) -> None:
-    from miniview.shots import pictures, sheet
+    from observatory.shots import pictures, sheet
 
     cat = _cat(args)
     run, _ = query.load_run(cat, args.run)
@@ -265,7 +265,7 @@ def cmd_sensor(args) -> None:
     fr = query.sensor_at(cat.get(args.run).data.raw, args.at)
     if fr is None:
         raise SystemExit(f"{run['key']}: no raw depth frames in this run (the navigator writes them from RFC-0008 step 0; "
-                         "an imported ticks.jsonl has none); `miniview state` shows the returns by kind")
+                         "an imported ticks.jsonl has none); `observatory state` shows the returns by kind")
     if args.json:
         print(json.dumps(fr, indent=1))
         return
@@ -284,17 +284,17 @@ def cmd_sensor(args) -> None:
 
 
 def cmd_serve(args) -> None:
-    from miniview.server import make_server
+    from observatory.server import make_server
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cat = _cat(args, owner=True)
     httpd = make_server(cat, args.host, args.port)
-    print(f"miniview at http://{args.host}:{args.port}/ (API /api/v1), data {cat.data}, index {cat.index.path}", flush=True)
+    print(f"observatory at http://{args.host}:{args.port}/ (API /api/v1), data {cat.data}, index {cat.index.path}", flush=True)
     httpd.serve_forever()
 
 
 def cmd_video(args) -> None:
-    from miniview import video
+    from observatory import video
     if not args.data:
         raise SystemExit("no data folder: MINIVIEW_DATA or --data")
     w, h = (int(v) for v in args.size.lower().split("x"))
@@ -305,7 +305,7 @@ def cmd_video(args) -> None:
 
 
 def cmd_render_serve(args) -> None:
-    from miniview.video import service
+    from observatory.video import service
 
     state = args.state or os.environ.get("MINIVIEW_STATE")
     if not args.data:

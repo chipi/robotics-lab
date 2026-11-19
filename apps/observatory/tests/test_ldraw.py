@@ -2,7 +2,7 @@
 needed: a tiny library, a two-link model and its kinematics.json are in fixtures/ldraw/. Checks the flattening (quads, nested
 subfiles, case-insensitive and backslash names, low-resolution primitives), the colours (inherited 16 and 24, explicit, alpha),
 the winding (BFC clockwise files, mirrored subfiles), the unit and axis conversion, the links and the joint, and the
-forward kinematics of the written URDF through miniview.kinematics.
+forward kinematics of the written URDF through observatory.kinematics.
 Run: cd apps/observatory && uv run python tests/test_ldraw.py"""
 
 import json
@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO / "robots" / "ldraw"))
 
 import from_ldraw as ldraw  # noqa: E402
 from helpers import Checks  # noqa: E402
-from miniview import kinematics  # noqa: E402
+from observatory import kinematics  # noqa: E402
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "ldraw"
 check = Checks("LDRAW")

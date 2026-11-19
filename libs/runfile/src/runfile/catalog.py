@@ -24,7 +24,7 @@ from runfile.index import Index
 from runfile.store import RunData
 from runfile.validate import BrokenRun
 
-log = logging.getLogger("miniview")
+log = logging.getLogger("runfile")
 
 STOPPED_AFTER_S = 120.0     # a live file with no writer that has not grown for this long lost its writer
 FOLLOW_EVERY_S = 0.25      # how often the follower looks at the live runs: the latency of a live page is about this

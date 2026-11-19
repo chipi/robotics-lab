@@ -3,7 +3,7 @@
 import math
 import sys
 
-from miniview.query import state, tick_at
+from observatory.query import state, tick_at
 
 failures = []
 

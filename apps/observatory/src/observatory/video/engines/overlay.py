@@ -3,7 +3,7 @@ camera's wedge in the top inset, and each current detection as a labelled box in
 numpy), so a test imports it from the engine's folder; the engine imports it as a sibling (its folder is on sys.path when it
 runs as a script).
 
-The job's `semantic` part (miniview.video.track) gives the geometry in the track's frame (the world, or the robot's map when the run
+The job's `semantic` part (observatory.video.track) gives the geometry in the track's frame (the world, or the robot's map when the run
 has no truth): `objects` snapshots {t, items: [{id, kind, confirmed, landmark, parts: [[x, y, hx, hy, yaw, z0, z1]]}]}, and per
 frame `hud` {sees, room, objects} for the lines, `obj_i` the snapshot in force, `sighting` the current sighting.
 """

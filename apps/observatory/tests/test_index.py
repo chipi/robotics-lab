@@ -15,7 +15,7 @@ from pathlib import Path
 from helpers import FIXTURE, T0_NS, Checks, catalog, import_fixture, make_run, scene, tick
 from runfile import catalog as catalog_mod
 from runfile import keys, mcapio
-from miniview import cli
+from observatory import cli
 from runfile.catalog import Loaded
 from runfile.index import Index, IndexBusy
 
@@ -102,7 +102,7 @@ with tempfile.TemporaryDirectory() as tmp:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         cli.cmd_events(argparse.Namespace(data=str(data), run=None, all=True, kinds="cliff_stop", json=False))
-    check("`miniview events --all --kind cliff_stop` answers across runs from the index",
+    check("`observatory events --all --kind cliff_stop` answers across runs from the index",
           len(buf.getvalue().splitlines()) == 2 and "duck/room/older" in buf.getvalue() and "duck/room/live1" in buf.getvalue()
           and "tight_pivot" not in buf.getvalue(), buf.getvalue())
     jr = io.StringIO()
@@ -123,7 +123,7 @@ with tempfile.TemporaryDirectory() as tmp:
         cli.cmd_index(argparse.Namespace(data=str(data)))
     except SystemExit as e:
         msg = str(e)
-    check("`miniview index` (the rebuild) refuses while a service holds the index, and leaves it as it was",
+    check("`observatory index` (the rebuild) refuses while a service holds the index, and leaves it as it was",
           bool(msg) and "holds" in msg and cat.index.row("duck/room/older") is not None, msg)
 
 # ---- states, and what a restart does with them ------------------------------------------------------------------------
@@ -195,7 +195,7 @@ with tempfile.TemporaryDirectory() as tmp:
         with contextlib.redirect_stdout(io.StringIO()):
             cli.cmd_index(argparse.Namespace(data=str(data)))
         after = {r["key"]: (r["status"], r["events"]) for r in catalog(data, index=idx).list_runs()}
-        check("`miniview index` rebuilds the index from the files when no service holds it", before == after and len(after) == 5, (before, after))
+        check("`observatory index` rebuilds the index from the files when no service holds it", before == after and len(after) == 5, (before, after))
     finally:
         catalog_mod.Loaded = Loaded
 

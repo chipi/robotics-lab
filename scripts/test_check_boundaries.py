@@ -63,7 +63,7 @@ got = run(lambda r: (project(r, "apps/observatory", "observatory", {"x.py": "def
 check("an app importing an app, a robot importing an app, and a nested import all fail", len(got) == 2 and any("x.py:2" in g for g in got), got)
 
 # a module whose unit differs from its package (the carve-out in progress: MODULES maps a prefix, not a folder)
-cb.MODULES["miniview.keys"] = "runfile"
+cb.MODULES.update({"miniview": "observatory", "miniview.keys": "runfile"})
 got = run(lambda r: (project(r, "viewer", "miniview", {"keys.py": "", "server.py": ""}),
                      project(r, "duck", "duck_lab", {"a.py": "from miniview import keys\nfrom miniview.keys import X\n"})))
 check("`from miniview import keys` is the format when the table says so, not the Observatory", got == [], got)
@@ -71,6 +71,7 @@ del cb.MODULES["miniview.keys"]
 got = run(lambda r: (project(r, "viewer", "miniview", {"keys.py": "", "server.py": ""}),
                      project(r, "duck", "duck_lab", {"a.py": "from miniview import server\n"})))
 check("`from miniview import server` is the Observatory, which the duck may not import", len(got) == 1, got)
+del cb.MODULES["miniview"]
 
 # a test may import its neighbour the table gives it, and nothing else
 got = run(lambda r: (project(r, "apps/nxt-web", "nxt_lab", {"tests/t.py": "from observatory.shots import launch\n"}),

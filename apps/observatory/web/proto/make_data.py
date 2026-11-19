@@ -1,5 +1,5 @@
 """The prototype's data (UX round 1: the left panel regrouped, the Explore view): a snapshot of one real run and the robot's
-description, so the prototype runs from files (locally or published). Run with miniview's Python:
+description, so the prototype runs from files (locally or published). Run with Observatory's Python:
 
     cd apps/observatory && uv run python web/proto/make_data.py <data folder> <run key>
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 os.environ.setdefault("MINIVIEW_INDEX", str(Path(tempfile.mkdtemp()) / "index.sqlite"))
 from runfile import keys
-from miniview import kinematics  # noqa: E402
+from observatory import kinematics  # noqa: E402
 from runfile.catalog import Catalog  # noqa: E402
 from runfile.mcapio import Follower  # noqa: E402
 
