@@ -18,15 +18,52 @@ moment with nothing else in flight; the RFCs after it build on the new layout.
 Constraint #1 throughout: every run starts from scratch; no map, objects or landmarks carried
 between runs. Nothing learned on one robot is hard-coded for all (RFC-0020).
 
-## Phase 0 — in flight
+## Phase 0 — done (2026-11-19)
 
 - The navigator (worktree `nav-frames`): one frame for the grid, the belief and the memory, the fix
   gate branching on mapd's own status; the stairwell edge b11 r2 placed 0.45 m short, reproduced
   from its depth frames and fixed; a recovery before a refusal counts and before "trapped"; then b12
-  (5 runs × 20 min from scratch, scored by floor coverage and rooms).
+  (3 runs × 20 min from scratch, cut from 5 by the operator, scored by floor coverage and rooms).
 - The challenges: 22 (one room explored completely, a drop by the start), 23 (two rooms through a
   door), then 21 (ten goals in a row without a reset, pivoting beside boxes, heading scored). The
-  course closes at 23.
+  course closes at 23. Seeds: 22 at 10, 21 and 23 at 3 (the operator: no 10-seed runs now).
+
+### Checkpoint
+
+**Built:** one frame (`09922a6`), the glance's rim (`af7a6fb`), the recovery (`8f96429`), floor
+coverage for the apartment (`b2c06a5`); challenges 21–23, a challenge mode for exploring and a
+reusable floor-coverage judge (`14e58af`, `d2eafdb`); mapd's own status on every fix (`28c5cc9`).
+Merged into mission-control as `05f4468`; `make test-duck`, `test-viewer`, `test-control`, `lint`
+and `docs-lint` all PASS on the merged tree.
+
+**Measured:**
+
+| What | Result | Against |
+| --- | --- | --- |
+| One frame, an injected 0.9 m jump at 120 s | walls off their real place relative to the duck after the jump: median 0.034 m, worst 0.109 m | 0.228 m and 0.261 m without the fix (one run each) |
+| The glance's rim, 379 recorded glances | apartment: short by over 30 cm 0 of 24 (was 5), worst −21 cm (was −47); challenges 8–11: over 30 cm 5 of 355 (was 67) | the replay of the same frames before the fix |
+| b12, 3 runs from scratch | rooms median 4, floor known mean 36.9 %, trapped at 2.0, 12.5, 10.3 min; no contact, no fall in 117 m | b11: rooms median 2, floor 31.7 %, four of five trapped under 4 min |
+| Challenge 22 | 9 of 10, coverage 88–97 % (the one fail trapped at 65 %); nearest to the drop 0.28 m | the bar 8 of 10; the coverage bar set at 0.80 from these runs |
+| Challenge 21 | 3 of 3, every goal; position error max 0.12 m, heading max 2.4° | 3 seeds only |
+| Challenge 23 | 1 of 3 at the 0.80 bar (2 of 3 at 0.75): a narrow door never crossed (K2), one room at 75 % | 3 seeds only |
+
+**Did not work:** the recovery fired 9 times in b12 and freed the duck none of them (the creep never
+ran: the sensor saw a wall or frame 46–140 mm ahead); every b12 run still ended "trapped", each in
+the kitchen with 0.147 m of room, just under the 0.15 m pivot gate. A tight-pivot-gated target the
+explorer should not have chosen is the agent's reading, not tested (K22). Safety held in every run.
+
+**Not done:** the taken-loop-closure path of the gate never ran (mapd's `loops` never stepped); the
+creep never ran in the simulator; one run per arm for the frame fix; 21 and 23 at 3 seeds.
+
+**Known issues:** closed K-rim (the misplaced edge); new K22–K27 (the explorer's targets without room
+to pivot, the recovery not freeing the duck, the arc's inner sweep and the tight pivot without a
+sensor check, phantom remembered points, the untested loop-closure branch, the glance's error in the
+challenge scenes).
+
+**Recommendation:** proceed to phase 1. The baseline is measured; what did not work is the planner's
+to improve after phase 6, recorded as known issues. The operator had said to start phase 1 as soon
+as phase 0 was done; its go-to evaluation started at once (run 16), the push to main waits for the
+operator's go.
 
 ## Phase 1 — land it, and the go-to evaluation
 
