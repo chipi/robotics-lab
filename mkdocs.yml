@@ -125,6 +125,7 @@ nav:
     - Known issues: wip/KNOWN-ISSUES.md
     - "The phantom obstacle by the dock: a real cube": wip/PHANTOM.md
     - "The simulated depth sensor's ranges": wip/RANGE.md
+    - "Draft note to Pollen: mapd's range model (not sent)": wip/UPSTREAM-MAPD-RANGE-DRAFT.md
     - When the real duck arrives: wip/REAL-DUCK.md
     - Opportunities and competitions: wip/OPPORTUNITIES.md
     - "Vision: an arena for any robot": wip/VISION-ARENA.md
