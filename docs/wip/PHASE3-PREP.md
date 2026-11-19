@@ -113,6 +113,11 @@ detector and version.
 
 ## Decisions for the operator
 
+**Decided 2026-11-19, all as recommended:** the validator with the run format (`libs/runfile`);
+duck-only detectors read the truth layout as data (no robot code in the Observatory); near miss
+0.090 m; the phantom cluster investigated first (read-only on recordings, no navigator fix without
+the operator's word).
+
 1. Where the profile validator lives (proposed: with the run format, `libs/runfile`).
 2. How duck-only detectors register (an entry point from the duck's package, or the truth layout
    passed as data).
