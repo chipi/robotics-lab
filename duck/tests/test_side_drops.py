@@ -214,5 +214,26 @@ for method in ("clear", "confirm_near"):
           isinstance(after, SuspectMemory) and (0.9, 0.9) in after.points() and (0.3, 0.0) not in after.points(),
           after if isinstance(after, str) else after.points())
 
+# The stairwell's edge from the glances of three real runs (explore-b11-r2 and r3, explore-b9-r1: the first glance at the dock, 0.76 m
+# from the top edge, y -0.70; frames frozen by sim/probes/glance_fixture.py). The sensor's 8 x 8 beams do not fall along the
+# 4 deg bins from the duck: a bin held only the near end of a beam column's floor, the next 0.18 m of floor was in the
+# neighbouring bin, the run ended there at 0.29 m, and the rim sat 0.46 m short of the edge (b11 r2; the duck at y 0.05, the rim
+# at y -0.22 and the edge it believed 0.27 m away: no room to turn at the dock, six refusals). The error budget: -18 cm ahead.
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+SHORT_BUDGET_M, PAST_BUDGET_M = 0.18, 0.03      # docs/wip/SIDE-DROPS.md: -18/+3 cm looking ahead
+for name in ("glance_b11_r2", "glance_b11_r3", "glance_b9_r1"):
+    fx = json.loads((FIXTURES / f"{name}.json").read_text())
+    rim, below, floor = edge_from_glance([[tuple(p) for p in f] for f in fx["frames"]], tuple(fx["pose"][:2]), fx["bearing"])
+    edge_y = fx["hole"][3]                        # the opening's top edge, y -0.70
+    off = [p[1] - edge_y for p in rim]            # > 0: short, the rim on the floor side; < 0: past the edge, in the hole
+    check(f"{fx['run']}: the glance's rim is within the budget of the stairwell's edge (short at most {SHORT_BUDGET_M * 100:.0f} cm, "
+          f"past at most {PAST_BUDGET_M * 100:.0f} cm)", rim and max(off) <= SHORT_BUDGET_M and min(off) >= -PAST_BUDGET_M,
+          f"short by {min(off):+.3f} .. {max(off):+.3f} m over {len(rim)} points")
+    check(f"{fx['run']}: ... and one point per place, not the same floor return for each bin beside it",
+          len(set(map(tuple, rim))) == len(rim), len(rim) - len(set(map(tuple, rim))))
+
 print("SIDE-DROPS", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
