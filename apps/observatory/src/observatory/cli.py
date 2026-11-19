@@ -19,6 +19,8 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
     uv run observatory scenes                              # the scenes and their runs
     uv run observatory runs apartment                      # a scene's runs
     uv run observatory events explore12 [--kinds a,b]      # what happened, when
+    uv run observatory anomalies explore-b10b-r2 --layout ../robots/duck/sim/apartment_layout.json
+                                                           # what went wrong, found by detectors over the recording (RFC-0019); [--detector a,b] [--min-severity major] [--experimental] [--json]
     uv run observatory state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, semantic map, last event
     uv run observatory objects find-fridge-2 --at 12.0 [--json]  # the semantic map: objects, room, the current sighting (ADR-0019)
     uv run observatory sensor explore12 --at 79.0 [--json]  # the raw 8x8 depth frame at t, and the state it was paired with
@@ -37,6 +39,7 @@ from pathlib import Path
 from runfile import env, keys, mcapio
 from observatory import query
 from runfile.catalog import Catalog, default_data
+from runfile.validate import BrokenRun
 from observatory.importer import import_duck
 from observatory.scenes import from_mujoco_layout
 
@@ -172,6 +175,74 @@ def cmd_events(args) -> None:
         return
     for e in evs:
         print(f"{e['t']:8.2f}  {e['text']}")
+
+
+def _run_folder(args, name: str) -> tuple:
+    """(key, folder) of a run, found by looking at the data folder: `anomalies` touches neither the index nor the run."""
+    if not args.data:
+        raise SystemExit("no data folder: OBSERVATORY_DATA or --data")
+    root = Path(args.data)
+    try:
+        if name.count("/") == 2:
+            keys.split_key(name)
+            found = [keys.run_dir(root, name)]
+        else:
+            keys.check_part(name, "run")
+            found = sorted((root / "runs").glob(f"*/*/{name}"))
+    except ValueError as e:
+        raise SystemExit(f"no run {name!r}: {e}") from None
+    found = [p for p in found if (p / mcapio.FINAL).exists() or (p / mcapio.LIVE).exists()]
+    if not found:
+        raise SystemExit(f"no run {name!r} under {root / 'runs'} (observatory import it first)")
+    if len(found) > 1:
+        raise SystemExit(f"{len(found)} runs are called {name!r}; which of: " + ", ".join(sorted(keys.key_of(root, p) for p in found)))
+    return keys.key_of(root, found[0]), found[0]
+
+
+def _layouts(args) -> tuple:
+    """(paths, layouts): the truth layouts to read, from --layout (repeatable), else OBSERVATORY_LAYOUT (paths joined by the
+    OS's path separator)."""
+    paths = args.layout or [p for p in (env.get("LAYOUT") or "").split(os.pathsep) if p]
+    out = []
+    for p in paths:
+        try:
+            out.append(json.loads(Path(p).read_text()))
+        except (OSError, ValueError) as e:
+            raise SystemExit(f"layout {p}: {e}") from None
+    return paths, out
+
+
+def cmd_anomalies(args) -> None:
+    from observatory import anomalies
+
+    key, folder = _run_folder(args, args.run)
+    paths, layouts = _layouts(args)
+    detectors = [d for chunk in args.detector for d in chunk.split(",") if d] or None
+    try:
+        truth = anomalies.Truth.from_layouts(layouts) if layouts else None
+        run = anomalies.Run(mcapio.read(folder, keep_raw=True))
+        res = anomalies.analyse(run, truth, detectors, args.min_severity, experimental=args.experimental)
+    except (ValueError, BrokenRun) as e:
+        raise SystemExit(f"{key}: {e}") from None
+    if args.json:
+        print(json.dumps({"run": key, **res, "layouts": paths}, indent=1))
+        return
+    for a in res["anomalies"]:
+        w, m = a["where"], a["margin"]
+        places = [f"{k} ({w[k][0]:.2f}, {w[k][1]:.2f})" for k in ("belief", "truth") if k in w]
+        print(f"{a['t']:8.1f} {a['t_end']:8.1f}  {a['anomaly']:<18} {a['source']:<8} {a['severity']:<8} "
+              f"{'-' if m is None else f'{m:.3f}':>7}  {a['summary']}" + (f"  [{' -> '.join(places)}]" if places else ""))
+    n = len(res["anomalies"])
+    counts = ", ".join(f"{d} {sum(a['detector'] == d for a in res['anomalies'])}" for d in res["ran"] if any(a["detector"] == d for a in res["anomalies"]))
+    print(f"{key}: {n} {'anomaly' if n == 1 else 'anomalies'}" + (f" ({counts})" if counts else "")
+          + f" from {len(res['ran'])} detectors: " + ", ".join(res["ran"]))
+    for d, why in res["not_applied"].items():
+        print(f"  did not apply: {d}: {why}")
+    loose = [anomalies.DETECTORS[d] for d in res["ran"] if not anomalies.DETECTORS[d].default]
+    if loose:
+        print("  experimental, not quiet on the clean runs: " + "; ".join(f"{d.id} ({d.note})" for d in loose))
+    for why in dict.fromkeys(res["not_run"].values()):
+        print(f"  not run, {why}: " + ", ".join(d for d, w in res["not_run"].items() if w == why))
 
 
 def cmd_state(args) -> None:
@@ -357,6 +428,16 @@ def main() -> None:
     p.add_argument("--kinds", "--kind", dest="kinds", help="comma-separated event kinds")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_events)
+    p = sub.add_parser("anomalies", help="what went wrong in a run, found by detectors over the recording (RFC-0019); writes nothing")
+    p.add_argument("run", help="the run's key (robot/scene/run), or its name when only one run has it")
+    p.add_argument("--detector", "--detectors", dest="detector", action="append", default=[],
+                   help="comma-separated detector ids (repeatable); an id not on the default track runs when named")
+    p.add_argument("--min-severity", default="info", choices=("info", "minor", "major", "critical"))
+    p.add_argument("--experimental", action="store_true", help="also run the detectors that are not quiet on the clean runs yet")
+    p.add_argument("--layout", action="append", help="the simulator's truth layout (repeatable, merged; OBSERVATORY_LAYOUT also): "
+                                                     "the detectors that need the real world say they did not apply without one")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_anomalies)
     p = sub.add_parser("state", help="the state of a run at a moment")
     p.add_argument("run")
     p.add_argument("--at", type=float, required=True)

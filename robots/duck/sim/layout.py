@@ -4,7 +4,8 @@ Run with microduck_rl's Python, which has MuJoCo:
     /work/pollen/microduck_rl/.venv/bin/python robots/duck/sim/layout.py > robots/duck/sim/apartment_layout.json
 
 Used by the phase 1 evaluation: goals inside rooms, and the footprint check against walls and
-furniture. Only geoms on the world body (the apartment), not the robot's.
+furniture. The geoms on the world body (the apartment) and on its free bodies (obj_*, ball_*: at their
+reset positions; a body the duck pushes moves), not the robot's.
 """
 
 import json
@@ -24,8 +25,9 @@ types = {mujoco.mjtGeom.mjGEOM_BOX: "box", mujoco.mjtGeom.mjGEOM_CYLINDER: "cyli
          mujoco.mjtGeom.mjGEOM_CAPSULE: "capsule"}
 geoms = []
 for i in range(m.ngeom):
-    if m.geom_bodyid[i] != 0:
-        continue
+    root = m.body_rootid[m.geom_bodyid[i]]
+    if root != 0 and not (m.body_dofnum[m.body_rootid == root].sum() == 6 and m.body_jntnum[root] == 1):
+        continue                    # the robot's own bodies; a free body of its own (a cube, a ball) stays
     name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_GEOM, i) or f"geom{i}"
     xmat = d.geom_xmat[i].reshape(3, 3)
     geoms.append({
