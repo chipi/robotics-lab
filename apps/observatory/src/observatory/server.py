@@ -20,7 +20,7 @@
         .../meshes/{file}.stl                         a mesh of the description
     GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
     GET /watch/{robot}/{scene}/{run|latest}           the watch page (RFC-0013): one run, the robot's eye, live while written
-    GET /api/v1/render                                the render service's engines (MINIVIEW_RENDER), or {"available": false, "why"}
+    GET /api/v1/render                                the render service's engines (OBSERVATORY_RENDER), or {"available": false, "why"}
     POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
     GET /api/v1/videos/{id}  and  .../file            the job's progress; the finished video (the render service's, passed through)
 
@@ -46,7 +46,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from runfile import keys
+from runfile import env, keys
 from observatory import query, robots
 from runfile.catalog import Catalog
 
@@ -73,9 +73,9 @@ class HttpError(Exception):
 
 
 def render_open(method: str, path: str, body: dict | None = None, timeout: float = 5.0):
-    """The render service's response (MINIVIEW_RENDER, read at each request) to be used as a context manager. Its own errors come
+    """The render service's response (OBSERVATORY_RENDER, read at each request) to be used as a context manager. Its own errors come
     back as HttpError with its code and reason; one that does not answer is a 503 saying so."""
-    base = os.environ.get("MINIVIEW_RENDER", "").rstrip("/")
+    base = env.get("RENDER", "").rstrip("/")
     if not base:
         raise HttpError(503, "no render service configured")
     req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,

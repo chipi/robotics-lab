@@ -26,7 +26,6 @@ judge reads it (guardrails.py); the brain's own decisions never use it."""
 import argparse
 import json
 import math
-import os
 import socketserver
 import sys
 import threading
@@ -39,6 +38,7 @@ from duck_lab.nav.guardrails import Guard
 from duck_lab.nav.run import CALIBRATION, Navigator, decision
 from duck_lab.nav.runlog import RunLog
 from duck_lab.nav.sim_camera import SimCamera
+from runfile.catalog import default_data
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 from worldmodel.site import Area, inside
@@ -502,13 +502,13 @@ def main() -> None:
     ap.add_argument("--listen", default="127.0.0.1:8061", help="host:port (loopback by default: the API has no login)")
     ap.add_argument("--robot-socket", type=Path, default=SIM / "duck-a-gate.sock", help="the robot's socket: a gate's (duck-gate)")
     ap.add_argument("--client", default="duck-nav-server", help="the name the navigator takes the lease under")
-    ap.add_argument("--data", type=Path, default=Path(os.environ.get("MINIVIEW_DATA", "")) if os.environ.get("MINIVIEW_DATA") else None,
-                    help="the Observatory's data folder: each goal run is written there as a run (env MINIVIEW_DATA)")
+    ap.add_argument("--data", type=Path, default=default_data(),
+                    help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
     ap.add_argument("--out", type=Path, default=Path("state/nav"), help="the navigator's own output folders, one per goal run")
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
     args = ap.parse_args()
     if args.data is None:
-        sys.exit("duck-nav-server: --data (or MINIVIEW_DATA): where the runs are written")
+        sys.exit("duck-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
     host, _, port = args.listen.rpartition(":")
     srv = Server((host or "127.0.0.1", int(port)), NavServer(args.robot_socket, args.data, args.out, args.scene, args.client))
     print(f"duck-nav-server: {args.listen}, robot {args.robot_socket}, runs in {args.data}", flush=True)

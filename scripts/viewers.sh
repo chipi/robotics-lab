@@ -4,7 +4,7 @@
 #   scripts/viewers.sh up      # convert runs, start Lichtblick (Docker) and Rerun (web viewer)
 #   scripts/viewers.sh down    # stop both (only what this script started)
 #
-# Runs: the format 2 runs of the lab data folder (MINIVIEW_DATA, default /work/robotics-lab/data:
+# Runs: the format 2 runs of the lab data folder (OBSERVATORY_DATA or the old MINIVIEW_DATA, default /work/robotics-lab/data:
 # data/runs/<robot>/<scene>/<run>/run.mcap, the finished ones; the NXT's recordings are there, ADR-0013) and the duck's own
 # robots/duck/runs/*.mcap. From another machine:
 #   ssh -N -L 8090:127.0.0.1:8090 -L 9090:127.0.0.1:9090 -L 9876:127.0.0.1:9876 <this host>
@@ -12,7 +12,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 view="$here/.viewers"
-data="${MINIVIEW_DATA:-/work/robotics-lab/data}"
+data="${OBSERVATORY_DATA:-${MINIVIEW_DATA:-/work/robotics-lab/data}}"
 duck="$here/robots/duck/.venv/bin"
 container=robotics-lichtblick
 # pinned by digest, as in apps/observatory/tests/test_run_compat.py (how to bump it: ADR-0007 "Compatibility")

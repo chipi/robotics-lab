@@ -48,7 +48,7 @@ def wait_for(cond, timeout, every=0.2):
 
 
 def navigator(gate: Path, client: str, x: float, y: float, out: Path) -> subprocess.Popen:
-    env = {k: v for k, v in os.environ.items() if k != "MINIVIEW_DATA"}      # these runs write no Observatory run
+    env = {k: v for k, v in os.environ.items() if k not in ("MINIVIEW_DATA", "OBSERVATORY_DATA")}      # these runs write no Observatory run
     return subprocess.Popen([sys.executable, "-m", "duck_lab.nav.run", str(x), str(y), "--robot-socket", str(gate), "--client", client,
                              "--timeout", "90"], stdout=open(out, "w"), stderr=subprocess.STDOUT, env=env)
 

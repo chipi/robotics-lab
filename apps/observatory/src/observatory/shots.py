@@ -10,15 +10,17 @@ import os
 import threading
 from pathlib import Path
 
+from runfile import env as lab_env
+
 SYSTEM_CHROMIUM = "/usr/bin/chromium"
 ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"]
 
 
 def chromium_path() -> str | None:
-    """The Chromium to launch: MINIVIEW_CHROMIUM when set and non-empty; else the system's, but not in CI
+    """The Chromium to launch: OBSERVATORY_CHROMIUM (or the old MINIVIEW_CHROMIUM) when set and non-empty; else the system's, but not in CI
     (on a runner /usr/bin/chromium can be a snap wrapper that fails headless) and only if it exists; else
     None, which is Playwright's bundled Chromium."""
-    env = os.environ.get("MINIVIEW_CHROMIUM", "").strip()
+    env = lab_env.get("CHROMIUM", "").strip()
     if env:
         return env
     if os.environ.get("CI", "").lower() != "true" and Path(SYSTEM_CHROMIUM).exists():

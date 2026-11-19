@@ -2,7 +2,7 @@
 (`robot.urdf`, its meshes beside it) and its registry entry (`robot.json`: what it is, the simulator model and the real
 robot's backend it has). Read only.
 
-The root is $MINIVIEW_ROBOTS, else the repository's `robots/`.
+The root is $OBSERVATORY_ROBOTS, else the repository's `robots/`.
 """
 
 import json
@@ -10,8 +10,9 @@ import os
 from pathlib import Path
 
 from observatory import kinematics
+from runfile import env
 
-ROOT = Path(os.environ.get("MINIVIEW_ROBOTS", Path(__file__).resolve().parents[4] / "robots"))
+ROOT = Path(env.get("ROBOTS", Path(__file__).resolve().parents[4] / "robots"))
 
 
 def _entry(folder: Path) -> dict:

@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from runfile import keys
+from runfile import env, keys
 from runfile.adapters import nxt as nxt_run
 from runfile.mcapio import FINAL, Recorder as RunWriter
 
@@ -25,8 +25,8 @@ RUN_NAME = re.compile(r"^run-[0-9]{8}-[0-9]{6}(-[0-9]+)?$")
 
 
 def default_miniview_data() -> Path:
-    """The lab's data folder for the runs of this recorder: $MINIVIEW_DATA, else `miniview/` in nxt-web's own data folder."""
-    v = os.environ.get("MINIVIEW_DATA", "").strip()
+    """The lab's data folder for the runs of this recorder: $OBSERVATORY_DATA (or the old $MINIVIEW_DATA), else `miniview/` in nxt-web's own data folder."""
+    v = env.get("DATA", "").strip()
     return Path(v) if v else DATA_DIR / "miniview"
 
 

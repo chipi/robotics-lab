@@ -1,6 +1,6 @@
 """Run a challenge N times on its generated scenes, judged by truth, and report its pass rate (RFC-0008 step 1, ADR-0015).
 
-    uv run duck-challenge 1 --runs 10                       # into $MINIVIEW_DATA (the lab data folder)
+    uv run duck-challenge 1 --runs 10                       # into $OBSERVATORY_DATA (the lab data folder)
     uv run duck-challenge 8 --runs 3 --seed 5 --miniview-data /work/robotics-lab/data
     uv run duck-challenge 22 --runs 3 --miniview-data /work/robotics-lab/data
 
@@ -21,7 +21,6 @@ Pass rates for these are over the same seeds the others use; a run's result.json
 
 import argparse
 import json
-import os
 import sys
 import time
 from datetime import datetime
@@ -35,6 +34,7 @@ from duck_lab.nav import simreset
 from duck_lab.nav.frames import compose, inverse
 from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import RunLog
+from runfile.catalog import default_data
 
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
@@ -94,12 +94,12 @@ def main() -> None:
     ap.add_argument("challenge", choices=sorted(CHALLENGES))
     ap.add_argument("--runs", type=int, default=10)
     ap.add_argument("--seed", type=int, default=1, help="the first seed; run i uses seed + i")
-    ap.add_argument("--miniview-data", type=Path, default=Path(os.environ["MINIVIEW_DATA"]) if os.environ.get("MINIVIEW_DATA") else None)
+    ap.add_argument("--miniview-data", type=Path, default=default_data())
     ap.add_argument("--out", type=Path, default=Path("runs/challenges"), help="per run: ticks.jsonl and result.json")
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
     args = ap.parse_args()
     if args.miniview_data is None:
-        raise SystemExit("no miniview data folder (--miniview-data or MINIVIEW_DATA): every challenge run is a miniview run")
+        raise SystemExit("no miniview data folder (--miniview-data or OBSERVATORY_DATA): every challenge run is a miniview run")
     rows = []
     started = time.monotonic()
     try:

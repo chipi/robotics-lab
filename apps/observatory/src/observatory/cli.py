@@ -1,7 +1,8 @@
 """Observatory — runs into the lab's data folder, the service for the pages, answers for the agent
-(RFC-0009, ADR-0004, ADR-0005). The data folder is MINIVIEW_DATA or --data: there is no default in the code
-(the compose file and the Makefile default to /work/robotics-lab/data). The index is MINIVIEW_INDEX (default
+(RFC-0009, ADR-0004, ADR-0005). The data folder is OBSERVATORY_DATA or --data: there is no default in the code
+(the compose file and the Makefile default to /work/robotics-lab/data). The index is OBSERVATORY_INDEX (default
 /work/robotics-lab/state/miniview/index.sqlite); while a service holds it, the commands read it and write nothing.
+Every OBSERVATORY_* variable also reads as MINIVIEW_* (the names before the rename) when the new one is not set.
 
     uv run observatory scene apartment --layout ../robots/duck/sim/apartment_layout.json
     uv run observatory import ../robots/duck/runs/explore12 ../robots/duck/runs/phase1-run18 --scene apartment
@@ -11,7 +12,7 @@
     uv run observatory compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run observatory index                  # rebuild index.sqlite from the run files
     uv run observatory serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
-    uv run observatory render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by MINIVIEW_RENDER
+    uv run observatory render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by OBSERVATORY_RENDER
 
 The agent's face (UXS-001 "The commands"): answers from the data, pictures from the real page.
 
@@ -33,7 +34,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from runfile import keys, mcapio
+from runfile import env, keys, mcapio
 from observatory import query
 from runfile.catalog import Catalog, default_data
 from observatory.importer import import_duck
@@ -296,7 +297,7 @@ def cmd_serve(args) -> None:
 def cmd_video(args) -> None:
     from observatory import video
     if not args.data:
-        raise SystemExit("no data folder: MINIVIEW_DATA or --data")
+        raise SystemExit("no data folder: OBSERVATORY_DATA or --data")
     w, h = (int(v) for v in args.size.lower().split("x"))
     insets = tuple(i.strip() for i in (args.inset or "").split(",") if i.strip())
     print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to,
@@ -307,17 +308,17 @@ def cmd_video(args) -> None:
 def cmd_render_serve(args) -> None:
     from observatory.video import service
 
-    state = args.state or os.environ.get("MINIVIEW_STATE")
+    state = args.state or env.get("STATE")
     if not args.data:
-        raise SystemExit("no data folder: MINIVIEW_DATA or --data")
+        raise SystemExit("no data folder: OBSERVATORY_DATA or --data")
     if not state:
-        raise SystemExit("no state folder for the videos: MINIVIEW_STATE or --state")
+        raise SystemExit("no state folder for the videos: OBSERVATORY_STATE or --state")
     service.serve(Path(args.data), Path(state), args.host, args.port)
 
 
 def main() -> None:
     ap =argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (MINIVIEW_DATA)")
+    ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (OBSERVATORY_DATA)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("scene", help="write a scene from a simulator layout")
     p.add_argument("id")
@@ -407,7 +408,7 @@ def main() -> None:
     p = sub.add_parser("render-serve", help="the render service: runs to videos for the pages, one job at a time (ADR-0017)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8071)
-    p.add_argument("--state", help="where the videos go, in videos/ (MINIVIEW_STATE)")
+    p.add_argument("--state", help="where the videos go, in videos/ (OBSERVATORY_STATE)")
     p.set_defaults(fn=cmd_render_serve)
     args = ap.parse_args()
     args.fn(args)

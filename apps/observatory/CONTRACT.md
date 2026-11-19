@@ -2,15 +2,16 @@
 
 The Observatory (named miniview until RFC-0018's restructure): its command is `observatory`,
 and `miniview` still runs it for one release. What the files and the pages call `miniview`
-stays as it is: the MCAP topics (`/miniview/*`), schema names and profile, `window.miniview`
-and the `MINIVIEW_*` variables.
+stays as it is: the MCAP topics (`/miniview/*`), schema names and profile, `window.miniview`.
+The variables are `OBSERVATORY_*`; the `MINIVIEW_*` names of before the rename are read when the
+new one is not set (the new one wins when both are).
 
 `observatory serve` (or `make observatory-up`, in Docker) serves the pages and the API over the
-lab's data folder (`MINIVIEW_DATA`, or `--data`; there is no default in the code, the workstation's
+lab's data folder (`OBSERVATORY_DATA`, or `--data`; there is no default in the code, the workstation's
 `/work/robotics-lab/data` is the default of the compose file and the Makefile only). The service's
-own index is at `MINIVIEW_INDEX` (default `/work/robotics-lab/state/miniview/index.sqlite`), outside
+own index is at `OBSERVATORY_INDEX` (default `/work/robotics-lab/state/miniview/index.sqlite`), outside
 the
-data. The loaded-run cache is bounded by `MINIVIEW_CACHE_MB` (default 1024). Units SI (metres,
+data. The loaded-run cache is bounded by `OBSERVATORY_CACHE_MB` (default 1024). Units SI (metres,
 radians, seconds). Frames: **world** (the scene's, where truth is) and **map** (the robot's own). A
 pose
 is `[x, y, yaw]`.
@@ -144,7 +145,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 | `.../events?kinds=` | what happened, when |
 | `.../presence` | per stream, the spans or times it has data |
 | `.../live?since=SEQ` | Server-Sent Events, below |
-| `GET /api/v1/robots` | the robots with a description (`robots/<robot>/robot.urdf` under `MINIVIEW_ROBOTS`, default the repository's `robots/`): `[{"name", "label", "description": true, "links", "joints", "meshes", "meshes_missing", "simulator", "backend"}]` (RFC-0011 §3.4; the rest from `robot.json`) |
+| `GET /api/v1/robots` | the robots with a description (`robots/<robot>/robot.urdf` under `OBSERVATORY_ROBOTS`, default the repository's `robots/`): `[{"name", "label", "description": true, "links", "joints", "meshes", "meshes_missing", "simulator", "backend"}]` (RFC-0011 §3.4; the rest from `robot.json`) |
 | `GET /api/v1/robots/{robot}` | its description: `{"name", "label", "root", "links": [{"name", "visuals": [{"mesh", "url", "origin": {"pos", "quat"}, "rgba"}]}], "joints": [{"name", "type", "parent", "child", "origin", "axis", "lower", "upper"}] (from the root out), "meshes_missing": [...], "stand_z": m \| null}` (`stand_z`: the root's height standing, from `robot.json`); 404 for an unknown robot |
 | `GET /api/v1/robots/{robot}/meshes/{file}.stl` | a mesh of the description (`model/stl`, with an ETag); 404 for a missing mesh, a file that is not a mesh or a path out of the robot's folder |
 | `GET /api/v1/render` | the render service's `GET /engines` (`{"engines": [{"name", "available", "why", "robots"}]}`), or `{"available": false, "why": "no render service configured" \| "render service not answering: ..."}` |
@@ -174,7 +175,7 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 
 - **Video (ADR-0017).** The four routes above pass through to the render service
   (`observatory render-serve`, `GET /engines`, `POST /jobs`, `GET /jobs/{id}[/file]`) whose
-  address is the environment variable `MINIVIEW_RENDER` (read at each request; unset: no render
+  address is the environment variable `OBSERVATORY_RENDER` (read at each request; unset: no render
   service). The Observatory writes nothing: the service reads the runs from the same data folder
   and keeps the videos in its own `<state>/videos/`. One job at a time. `from` and `to` are run
   times in seconds (the whole run when absent); `size` is `1280x720` or any `WIDTHxHEIGHT`.
@@ -534,7 +535,7 @@ writer did
 not, `repair` a run whose writer died, both only for a file that has not grown in the last two
 minutes. A run
 is named by its key or by a name only one run has;
-otherwise the command lists the candidates. `--data` or `MINIVIEW_DATA` names the data folder.
+otherwise the command lists the candidates. `--data` or `OBSERVATORY_DATA` names the data folder.
 
 ## Colours (UXS-001)
 

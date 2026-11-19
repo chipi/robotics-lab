@@ -12,11 +12,11 @@ frames' sensor times only grow, and each frame's pairing is what it says (its st
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
 from runfile import keys
+from runfile.catalog import default_data
 from runfile.mcapio import FINAL, LIVE, Follower
 
 from duck_lab.nav import cliff
@@ -108,7 +108,7 @@ def resolve(arg: str, data: Path | None) -> Path:
     if p.is_dir() and ((p / FINAL).exists() or (p / LIVE).exists()):
         return p
     if data is None:
-        raise SystemExit(f"{arg} is not a run folder, and there is no data folder (--miniview-data or MINIVIEW_DATA) to look the key up in")
+        raise SystemExit(f"{arg} is not a run folder, and there is no data folder (--miniview-data or OBSERVATORY_DATA) to look the key up in")
     d = keys.run_dir(data, arg)
     if not ((d / FINAL).exists() or (d / LIVE).exists()):
         raise SystemExit(f"no run {arg!r} under {data}")
@@ -133,9 +133,9 @@ def report_lines(rep: dict) -> list:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", help="the run's key (duck/<scene>/<run>) or its folder")
-    ap.add_argument("--miniview-data", type=Path, default=None, help="the lab's data folder (default $MINIVIEW_DATA)")
+    ap.add_argument("--miniview-data", type=Path, default=None, help="the lab's data folder (default $OBSERVATORY_DATA)")
     args = ap.parse_args()
-    data = args.miniview_data or (Path(os.environ["MINIVIEW_DATA"]) if os.environ.get("MINIVIEW_DATA") else None)
+    data = args.miniview_data or default_data()
     d = resolve(args.run, data)
     f = Follower(d, keep_raw=True)
     records = f.poll()

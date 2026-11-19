@@ -1,23 +1,23 @@
 # The Observatory's service: `make observatory-up` / `make observatory-down` (RFC-0009 "Running in Docker", ADR-0012).
 # Published on loopback only. The lab's runs and scenes are mounted READ ONLY: the Observatory cannot change a
-# record. The index is ONE: the host's state folder (MINIVIEW_STATE, the folder of the commands' MINIVIEW_INDEX) is
+# record. The index is ONE: the host's state folder (OBSERVATORY_STATE, the folder of the commands' OBSERVATORY_INDEX) is
 # mounted writable at /index, so the service and the commands share it; while the service holds it, the commands
 # only read it. Imports and writers run on the host, never in this container.
-# MINIVIEW_DATA and MINIVIEW_STATE are the host's folders; the workstation's paths are the defaults here and in the Makefile only.
+# OBSERVATORY_DATA and OBSERVATORY_STATE (the MINIVIEW_* names of before the rename also work) are the host's folders; the workstation's paths are the defaults here and in the Makefile only.
 name: observatory
 services:
   observatory:
     build:
       context: ../..
       dockerfile: apps/observatory/Dockerfile
-    image: "observatory:${MINIVIEW_IMAGE_TAG:-local}"
-    user: "${MINIVIEW_UID:-1000}:${MINIVIEW_GID:-1000}"
+    image: "observatory:${OBSERVATORY_IMAGE_TAG:-${MINIVIEW_IMAGE_TAG:-local}}"
+    user: "${OBSERVATORY_UID:-${MINIVIEW_UID:-1000}}:${OBSERVATORY_GID:-${MINIVIEW_GID:-1000}}"
     ports:
-      - "127.0.0.1:${MINIVIEW_PORT:-8070}:8070"
+      - "127.0.0.1:${OBSERVATORY_PORT:-${MINIVIEW_PORT:-8070}}:8070"
     environment:
-      MINIVIEW_DATA: /data
-      MINIVIEW_INDEX: /index/index.sqlite
-      MINIVIEW_ROBOTS: /robots
+      OBSERVATORY_DATA: /data
+      OBSERVATORY_INDEX: /index/index.sqlite
+      OBSERVATORY_ROBOTS: /robots
     volumes:
       # the robots' descriptions and meshes (RFC-0011), read only like the runs
       - type: bind
@@ -25,15 +25,15 @@ services:
         target: /robots
         read_only: true
       - type: bind
-        source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/runs"
+        source: "${OBSERVATORY_DATA:-${MINIVIEW_DATA:-/work/robotics-lab/data}}/runs"
         target: /data/runs
         read_only: true
       - type: bind
-        source: "${MINIVIEW_DATA:-/work/robotics-lab/data}/scenes"
+        source: "${OBSERVATORY_DATA:-${MINIVIEW_DATA:-/work/robotics-lab/data}}/scenes"
         target: /data/scenes
         read_only: true
       - type: bind
-        source: "${MINIVIEW_STATE:-/work/robotics-lab/state/miniview}"
+        source: "${OBSERVATORY_STATE:-${MINIVIEW_STATE:-/work/robotics-lab/state/miniview}}"
         target: /index
-    mem_limit: "${MINIVIEW_MEM:-768m}"
+    mem_limit: "${OBSERVATORY_MEM:-${MINIVIEW_MEM:-768m}}"
     restart: unless-stopped

@@ -14,7 +14,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("MINIVIEW_INDEX", str(Path(tempfile.mkdtemp()) / "index.sqlite"))
+os.environ.setdefault("OBSERVATORY_INDEX", str(Path(tempfile.mkdtemp()) / "index.sqlite"))
 from runfile import keys
 from observatory import kinematics  # noqa: E402
 from runfile.catalog import Catalog  # noqa: E402

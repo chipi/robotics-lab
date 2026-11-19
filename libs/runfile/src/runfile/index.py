@@ -18,6 +18,8 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from runfile import env
+
 DEFAULT_INDEX = "/work/robotics-lab/state/miniview/index.sqlite"
 
 SCHEMA = """
@@ -42,7 +44,7 @@ class IndexBusy(Exception):
 
 class Index:
     def __init__(self, path: Path | None = None):
-        self.path = Path(path or os.environ.get("MINIVIEW_INDEX") or DEFAULT_INDEX)
+        self.path = Path(path or env.get("INDEX") or DEFAULT_INDEX)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path, check_same_thread=False, timeout=5.0)
         self.db.execute("pragma journal_mode = wal")

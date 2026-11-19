@@ -2,12 +2,12 @@
 
     data/scenes/<scene>/scene.json
     data/runs/<robot>/<scene>/<run>/run.mcap       the record of truth (run.live.mcap + writer.lock while written)
-    $MINIVIEW_INDEX                                the service's own index (runfile.index), outside the data
+    $OBSERVATORY_INDEX                              the service's own index (runfile.index), outside the data
 
 `Catalog` knows every run from the index, opens a run's records into memory when asked, and follows the
 runs that are still being written. A run is `live`, `ended`, `stopped` (its writer died) or `broken`;
 the last three are final until the file changes. Loaded runs live in a cache bounded by memory
-(`MINIVIEW_CACHE_MB`): the least recently used go first; live runs and runs with an open stream stay.
+(`OBSERVATORY_CACHE_MB`): the least recently used go first; live runs and runs with an open stream stay.
 Nothing that goes wrong inside one run leaves it (ADR-0008).
 """
 
@@ -19,7 +19,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from runfile import keys, mcapio
+from runfile import env, keys, mcapio
 from runfile.index import Index
 from runfile.store import RunData
 from runfile.validate import BrokenRun
@@ -32,7 +32,7 @@ FINAL = ("ended", "stopped", "broken")
 
 
 def default_data() -> Path | None:
-    v = os.environ.get("MINIVIEW_DATA", "").strip()
+    v = env.get("DATA", "").strip()
     return Path(v) if v else None
 
 
@@ -175,7 +175,7 @@ class Catalog:
     def __init__(self, data: Path | None = None, index: Path | None = None, cache_mb: float | None = None):
         data = Path(data) if data else default_data()
         if data is None:
-            raise SystemExit("no data folder: set MINIVIEW_DATA or pass --data")
+            raise SystemExit("no data folder: set OBSERVATORY_DATA or pass --data")
         self.data = data
         for sub in ("runs", "scenes"):
             try:
@@ -183,7 +183,7 @@ class Catalog:
             except OSError:
                 pass                                    # a read-only mount that lacks it: nothing there
         self.index = Index(index)
-        self.cache_bytes = int(float(cache_mb if cache_mb is not None else os.environ.get("MINIVIEW_CACHE_MB", 1024))
+        self.cache_bytes = int(float(cache_mb if cache_mb is not None else env.get("CACHE_MB", 1024))
                                * 1024 * 1024)
         self.lock = threading.RLock()
         self.loaded = OrderedDict()   # run key -> Loaded, least recently used first

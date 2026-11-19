@@ -472,7 +472,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--fake", action="store_true", help="simulated brick, nothing moves")
     parser.add_argument("--config", type=Path, default=config_mod.CONFIG_PATH, help="port setup file")
-    parser.add_argument("--miniview-data", type=Path, help="the lab data folder the recordings are written to as miniview runs (default: $MINIVIEW_DATA, else miniview/ in this program's data folder)")
+    parser.add_argument("--miniview-data", type=Path, help="the lab data folder the recordings are written to as miniview runs (default: $OBSERVATORY_DATA, else miniview/ in this program's data folder)")
     parser.add_argument("--takeover-names", type=Path, help="file of client names (one per line) that may take the control lock from its holder; empty: nobody")
     parser.add_argument("--link", choices=sorted(LINK_BACKENDS), default="auto",
                         help="auto tries USB, then Bluetooth (/dev/rfcomm*)")

@@ -11,13 +11,13 @@ a record from a thread's navigator that is no longer the current one (an evaluat
 dropped. A failure to write costs the run, never the navigation: it is said once on stderr and the log goes quiet.
 """
 
-import os
 import sys
 import threading
 import time
 from pathlib import Path
 
 from runfile import keys
+from runfile.catalog import default_data
 from runfile.adapters.duck import DuckLog, ROBOT
 from runfile.mcapio import Recorder, WriterBusy, new_run
 
@@ -115,16 +115,16 @@ class RunLog:
 def add_args(ap) -> None:
     ap.add_argument("--miniview-data", type=Path, default=None,
                     help="the lab's data folder: the run is written there as a miniview run (format 2) while it runs; "
-                         "default $MINIVIEW_DATA, else only ticks.jsonl is written")
+                         "default $OBSERVATORY_DATA, else only ticks.jsonl is written")
     ap.add_argument("--scene", default="apartment", help="the miniview run's scene (default apartment)")
     ap.add_argument("--run", help="the miniview run's name (default: the output folder's name)")
 
 
 def open_from_args(args, default_name: str, kind: str, out_dir: Path | None, evaluation: bool = False) -> RunLog | None:
     """The run log the command line asks for, or None (no data folder given); a run that exists is an exit, not an overwrite."""
-    data = args.miniview_data or (Path(os.environ["MINIVIEW_DATA"]) if os.environ.get("MINIVIEW_DATA") else None)
+    data = args.miniview_data or default_data()
     if data is None:
-        print("no miniview data folder (--miniview-data or MINIVIEW_DATA): only ticks.jsonl is written", file=sys.stderr)
+        print("no miniview data folder (--miniview-data or OBSERVATORY_DATA): only ticks.jsonl is written", file=sys.stderr)
         return None
     try:
         rl = RunLog(data, args.scene, args.run or default_name, kind, out_dir, evaluation)

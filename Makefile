@@ -94,7 +94,7 @@ endef
 DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recovery.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py \
                        tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py tests/test_gate_proxy.py tests/test_guardrails.py
-OBSERVATORY_TESTS        := tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
+OBSERVATORY_TESTS        := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
                        tests/test_semantic.py tests/test_video_semantic.py
@@ -116,12 +116,12 @@ test-observatory: observatory-sync ## the Observatory: adapter, queries, MCAP, t
 	$(call run_tests,$(OBSERVATORY_DIR),$(OBSERVATORY_TESTS),)
 	@echo "test-observatory PASS"
 
-test-observatory-pages: observatory-sync ## the Observatory's two pages in headless Chromium (MINIVIEW_CHROMIUM, else Playwright's)
+test-observatory-pages: observatory-sync ## the Observatory's two pages in headless Chromium (OBSERVATORY_CHROMIUM, else Playwright's)
 	$(call run_tests,$(OBSERVATORY_DIR),$(OBSERVATORY_PAGE_TESTS),)
 	@echo "test-observatory-pages PASS"
 
 .PHONY: test-control-page
-test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and MINIVIEW_CHROMIUM; control has no browser dependency)
+test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
 	@log=$$(mktemp); \
 	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath $(DUCK_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/worldmodel)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
@@ -161,7 +161,7 @@ nxt-programs: ## Compile every NXC program for the brick (nbc in Docker) into ap
 .PHONY: test-integration
 test-integration: nxt-image ## The packaged image: start it with the simulated brick, check it answers
 	@mv=$$(mktemp -d); chmod 755 $$mv; \
-	  cid=$$(docker run -d --rm -p 127.0.0.1::8000 -v $$mv:/miniview -e MINIVIEW_DATA=/miniview -e NXT_DATA_OWNER=$${NXT_TEST_OWNER-$$(id -u):$$(id -g)} \
+	  cid=$$(docker run -d --rm -p 127.0.0.1::8000 -v $$mv:/observatory -e OBSERVATORY_DATA=/observatory -e NXT_DATA_OWNER=$${NXT_TEST_OWNER-$$(id -u):$$(id -g)} \
 	    $(NXT_IMAGE) nxt-web --fake --host 0.0.0.0 --port 8000); \
 	  trap 'docker stop $$cid >/dev/null; docker run --rm -v $$mv:/d $(NXT_IMAGE) rm -rf /d/runs; rm -rf $$mv' EXIT; \
 	  port=$$(docker port $$cid 8000/tcp | head -1 | sed 's/.*://'); \
@@ -193,7 +193,7 @@ perf-observatory: observatory-sync ## NOT in CI: replay robots/duck/runs/phase1-
 test-observatory-image: ## the Observatory's image: build it, run it with the data read only and the host's state folder (the one index) mounted writable, check what it serves and that it cannot write the data (ADR-0012)
 	@docker build -q -f $(OBSERVATORY_DIR)/Dockerfile -t $(OBSERVATORY_IMAGE) . >/dev/null
 	@data=$$(mktemp -d); idx=$$(mktemp -d); state=$$(mktemp -d); mkdir -p $$data/runs $$data/scenes; \
-	  (cd $(OBSERVATORY_DIR) && MINIVIEW_INDEX=$$idx/host.sqlite uv run --frozen observatory --data $$data import tests/fixtures/explore9 --scene apartment >/dev/null) \
+	  (cd $(OBSERVATORY_DIR) && OBSERVATORY_INDEX=$$idx/host.sqlite uv run --frozen observatory --data $$data import tests/fixtures/explore9 --scene apartment >/dev/null) \
 	    || { echo "FAIL could not import the fixture run on the host"; rm -rf $$data $$idx; exit 1; }; \
 	  cid=$$(docker run -d --rm -p 127.0.0.1::8070 -v $$data/runs:/data/runs:ro -v $$data/scenes:/data/scenes:ro -v $$state:/index \
 	    --user $$(id -u):$$(id -g) $(OBSERVATORY_IMAGE)); \
@@ -233,8 +233,8 @@ ci: ci-fast test-observatory-pages test-control-page test-run-compat test-integr
 # ---- NXT: run and package ----------------------------------------------------
 
 .PHONY: nxt-web
-nxt-web: nxt-sync ## Serve the NXT web UI on the real robot (NXT_HOST, NXT_PORT, NXT_LINK=auto|usb|bluetooth); recordings are live in the Observatory (MINIVIEW_DATA)
-	cd $(NXT_DIR) && exec .venv/bin/nxt-web --host $(NXT_HOST) --port $(NXT_PORT) --link $(NXT_LINK) --miniview-data $(MINIVIEW_DATA)
+nxt-web: nxt-sync ## Serve the NXT web UI on the real robot (NXT_HOST, NXT_PORT, NXT_LINK=auto|usb|bluetooth); recordings are live in the Observatory (OBSERVATORY_DATA)
+	cd $(NXT_DIR) && exec .venv/bin/nxt-web --host $(NXT_HOST) --port $(NXT_PORT) --link $(NXT_LINK) --miniview-data $(OBSERVATORY_DATA)
 
 .PHONY: nxt-web-fake
 nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot needed)
@@ -272,17 +272,17 @@ control-down: ## Stop and remove Mission Control's container (the state folder s
 
 # The Observatory and Mission Control from the root compose file. Ports, state folders and image tags are variables so a second stack can
 # run beside one already holding :8070 (make stack-up STACK_VIEWER_PORT=8170 STACK_CONTROL_PORT=8160 STACK_TAG=test STACK_VIEWER_STATE=... ).
-STACK_VIEWER_PORT  ?= $(MINIVIEW_PORT)
+STACK_VIEWER_PORT  ?= $(OBSERVATORY_PORT)
 STACK_CONTROL_PORT ?= $(CONTROL_PORT)
-STACK_VIEWER_STATE ?= $(MINIVIEW_STATE)
+STACK_VIEWER_STATE ?= $(OBSERVATORY_STATE)
 STACK_TAG          ?= local
-STACK_ENV           = MINIVIEW_PORT=$(STACK_VIEWER_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(STACK_VIEWER_STATE) MINIVIEW_IMAGE_TAG=$(STACK_TAG) \
+STACK_ENV           = OBSERVATORY_PORT=$(STACK_VIEWER_PORT) OBSERVATORY_DATA=$(OBSERVATORY_DATA) OBSERVATORY_STATE=$(STACK_VIEWER_STATE) OBSERVATORY_IMAGE_TAG=$(STACK_TAG) \
 	MC_PORT=$(STACK_CONTROL_PORT) MC_STATE_DIR=$(CONTROL_STATE) MC_ROBOTS_DIR=$(CONTROL_ROBOTS) MC_IMAGE_TAG=$(STACK_TAG) \
-	MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g) MC_UID=$$(id -u) MC_GID=$$(id -g)
+	OBSERVATORY_UID=$$(id -u) OBSERVATORY_GID=$$(id -g) MC_UID=$$(id -u) MC_GID=$$(id -g)
 
 .PHONY: stack-up stack-down
 stack-up: ## The Observatory ($(STACK_VIEWER_PORT)) and Mission Control ($(STACK_CONTROL_PORT)) together from compose.yml, both on loopback, memory capped; waits for both health checks
-	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes $(STACK_VIEWER_STATE) $(CONTROL_STATE)
+	@mkdir -p $(OBSERVATORY_DATA)/runs $(OBSERVATORY_DATA)/scenes $(STACK_VIEWER_STATE) $(CONTROL_STATE)
 	@$(STACK_ENV) docker compose up -d --build --wait \
 	  && echo "observatory at http://127.0.0.1:$(STACK_VIEWER_PORT)/  mission-control at http://127.0.0.1:$(STACK_CONTROL_PORT)/" \
 	  || { echo "stack-up FAIL"; $(STACK_ENV) docker compose logs --tail 40; exit 1; }
@@ -292,7 +292,7 @@ stack-down: ## Stop and remove the stack's two containers (project robotics-lab)
 
 .PHONY: viewers viewers-down
 viewers: observatory-up ## The viewers on loopback: the Observatory (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)
-	@MINIVIEW_DATA=$(MINIVIEW_DATA) scripts/viewers.sh up
+	@OBSERVATORY_DATA=$(OBSERVATORY_DATA) scripts/viewers.sh up
 
 viewers-down: observatory-down ## Stop the viewers started by make viewers
 	@scripts/viewers.sh down
@@ -302,8 +302,8 @@ VIDEO_SIZE ?= 1280x720
 .PHONY: video
 video: observatory-sync ## A run as a video with the robot's model (ADR-0017): make video RUN=<robot/scene/run> [ENGINE=mujoco] [OUT=file.mp4, default the state folder's videos/] [VIDEO_SIZE=1280x720]
 	@test -n "$(RUN)" || { echo "video: RUN=<robot/scene/run> is needed"; exit 2; }
-	cd $(OBSERVATORY_DIR) && uv run --frozen observatory --data $(MINIVIEW_DATA) video $(RUN) --engine $(ENGINE) --size $(VIDEO_SIZE) \
-	  -o $(abspath $(or $(OUT),$(MINIVIEW_STATE)/videos/$(subst /,-,$(RUN))-$(ENGINE).mp4))
+	cd $(OBSERVATORY_DIR) && uv run --frozen observatory --data $(OBSERVATORY_DATA) video $(RUN) --engine $(ENGINE) --size $(VIDEO_SIZE) \
+	  -o $(abspath $(or $(OUT),$(OBSERVATORY_STATE)/videos/$(subst /,-,$(RUN))-$(ENGINE).mp4))
 
 MUJOCO_PYTHON ?= /work/pollen/microduck_rl/.venv/bin/python
 .PHONY: robots rerun-export
@@ -319,28 +319,29 @@ robots-lego: observatory-sync ## The LEGO robots' descriptions (RFC-0011): the E
 rerun-export: duck-sync ## A run in Rerun with the robot drawn as itself (RFC-0011): make rerun-export RUN=<robot/scene/run> [OUT=file.rrd]
 	@test -n "$(RUN)" || { echo "rerun-export: RUN=<robot/scene/run> is needed"; exit 2; }
 	@test -d robots/$(firstword $(subst /, ,$(RUN)))/meshes || { echo "no meshes for that robot: make robots"; exit 2; }
-	$(DUCK_DIR)/.venv/bin/python $(OBSERVATORY_DIR)/src/observatory/export/rerun_robot.py $(MINIVIEW_DATA) $(RUN) \
-	  robots/$(firstword $(subst /, ,$(RUN)))/robot.urdf $(abspath $(or $(OUT),$(MINIVIEW_STATE)/rerun/$(subst /,-,$(RUN)).rrd))
+	$(DUCK_DIR)/.venv/bin/python $(OBSERVATORY_DIR)/src/observatory/export/rerun_robot.py $(OBSERVATORY_DATA) $(RUN) \
+	  robots/$(firstword $(subst /, ,$(RUN)))/robot.urdf $(abspath $(or $(OUT),$(OBSERVATORY_STATE)/rerun/$(subst /,-,$(RUN)).rrd))
 
-MINIVIEW_PORT ?= 8070
-MINIVIEW_DATA ?= /work/robotics-lab/data
-MINIVIEW_STATE ?= /work/robotics-lab/state/miniview
+# The OBSERVATORY_* names; the MINIVIEW_* names of before the rename (RFC-0018) are read when the new ones are not set.
+OBSERVATORY_PORT ?= $(or $(MINIVIEW_PORT),8070)
+OBSERVATORY_DATA ?= $(or $(MINIVIEW_DATA),/work/robotics-lab/data)
+OBSERVATORY_STATE ?= $(or $(MINIVIEW_STATE),/work/robotics-lab/state/miniview)
 RENDER_PORT ?= 8071
 .PHONY: render-up
-render-up: observatory-sync ## The render service on 127.0.0.1:$(RENDER_PORT), in the foreground (ADR-0017): reads $(MINIVIEW_DATA), writes videos to $(MINIVIEW_STATE)/videos; the Observatory offers Export video when started with MINIVIEW_RENDER=http://127.0.0.1:$(RENDER_PORT)
-	cd $(OBSERVATORY_DIR) && MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(MINIVIEW_STATE) exec uv run --frozen observatory render-serve --host 127.0.0.1 --port $(RENDER_PORT)
+render-up: observatory-sync ## The render service on 127.0.0.1:$(RENDER_PORT), in the foreground (ADR-0017): reads $(OBSERVATORY_DATA), writes videos to $(OBSERVATORY_STATE)/videos; the Observatory offers Export video when started with OBSERVATORY_RENDER=http://127.0.0.1:$(RENDER_PORT)
+	cd $(OBSERVATORY_DIR) && OBSERVATORY_DATA=$(OBSERVATORY_DATA) OBSERVATORY_STATE=$(OBSERVATORY_STATE) exec uv run --frozen observatory render-serve --host 127.0.0.1 --port $(RENDER_PORT)
 
-MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) MINIVIEW_STATE=$(MINIVIEW_STATE) MINIVIEW_UID=$$(id -u) MINIVIEW_GID=$$(id -g)
+OBSERVATORY_ENV   = OBSERVATORY_PORT=$(OBSERVATORY_PORT) OBSERVATORY_DATA=$(OBSERVATORY_DATA) OBSERVATORY_STATE=$(OBSERVATORY_STATE) OBSERVATORY_UID=$$(id -u) OBSERVATORY_GID=$$(id -g)
 
 .PHONY: observatory-up observatory-down
-observatory-up: ## The Observatory's service in Docker on 127.0.0.1:$(MINIVIEW_PORT), data from $(MINIVIEW_DATA) (RFC-0009)
-	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes $(MINIVIEW_STATE)
-	@$(MINIVIEW_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml up -d --build --wait \
-	  && echo "observatory at http://127.0.0.1:$(MINIVIEW_PORT)/" \
-	  || { echo "observatory-up FAIL"; $(MINIVIEW_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml logs --tail 40; exit 1; }
+observatory-up: ## The Observatory's service in Docker on 127.0.0.1:$(OBSERVATORY_PORT), data from $(OBSERVATORY_DATA) (RFC-0009)
+	@mkdir -p $(OBSERVATORY_DATA)/runs $(OBSERVATORY_DATA)/scenes $(OBSERVATORY_STATE)
+	@$(OBSERVATORY_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml up -d --build --wait \
+	  && echo "observatory at http://127.0.0.1:$(OBSERVATORY_PORT)/" \
+	  || { echo "observatory-up FAIL"; $(OBSERVATORY_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml logs --tail 40; exit 1; }
 
 observatory-down: ## Stop the Observatory's service
-	@$(MINIVIEW_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml down
+	@$(OBSERVATORY_ENV) docker compose -f $(OBSERVATORY_DIR)/compose.yml down
 
 # The names before the rename (RFC-0018), kept for one release: the same targets under their old names.
 .PHONY: viewer-up viewer-down test-viewer
@@ -349,9 +350,9 @@ viewer-down: observatory-down ## (alias of observatory-down, until the next rele
 test-viewer: test-observatory ## (alias of test-observatory, until the next release)
 
 .PHONY: nxt-image-run
-nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only; recordings go to $(MINIVIEW_DATA) as Observatory runs
-	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes
-	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data -v $(MINIVIEW_DATA):/miniview -e MINIVIEW_DATA=/miniview -e NXT_DATA_OWNER=$$(id -u):$$(id -g) \
+nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only; recordings go to $(OBSERVATORY_DATA) as Observatory runs
+	@mkdir -p $(OBSERVATORY_DATA)/runs $(OBSERVATORY_DATA)/scenes
+	docker run --rm -it -p 127.0.0.1:$(NXT_PORT):8000 -v $(NXT_DATA):/data -v $(OBSERVATORY_DATA):/observatory -e OBSERVATORY_DATA=/observatory -e NXT_DATA_OWNER=$$(id -u):$$(id -g) \
 	  $$(test -d /dev/bus/usb && echo --device /dev/bus/usb) \
 	  $$(for d in /dev/rfcomm*; do test -e $$d && echo --device $$d; done) \
 	  $(NXT_IMAGE) nxt-web --host 0.0.0.0 --port 8000 --link $(NXT_LINK)
