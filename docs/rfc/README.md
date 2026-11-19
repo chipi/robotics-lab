@@ -69,4 +69,4 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0020 — Robot profiles and capability plugins: each robot brings what it is and how it
   moves](RFC-0020-robot-profiles-and-plugins.md) (Accepted, 2026-11-19)
 - [RFC-0021 — The simulator host and the payload: run a navigator on any machine that has Pollen's
-  simulator](RFC-0021-sim-host-and-payload.md) (Proposed, 2026-11-19)
+  simulator](RFC-0021-sim-host-and-payload.md) (Accepted, 2026-11-19)

@@ -175,11 +175,12 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 
 ## Phase 4b — the simulator host and the payload (RFC-0021)
 
-On the operator's decision of [RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md) at the phase 4
-checkpoint (the operator, 2026-11-19: "love it"; any host that runs Pollen's simulator): the reset
-and the socket paths out of the navigator into a host file and host tool, the truth read by the
-runner only, a host check script, one course run on a second machine and opened here, a second
-minimal navigator through the same contract.
+[RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md), accepted by the operator 2026-11-19, built
+after the phase 4 checkpoint (any host that runs Pollen's simulator; the first is this workstation):
+the reset and the socket paths out of the navigator into a host file and host tool, the truth read
+by the runner only, a host check script, one course run through the split on this workstation (the
+first host; another host later, the operator's, with the arena), a second minimal navigator through
+the same contract.
 
 ## Phase 5 — the views
 
