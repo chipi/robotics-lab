@@ -34,16 +34,19 @@ them. The plan they are scheduled against: [the plan we execute on](EXECUTION-PL
 | K18 | **"Rooms" counts rooms named by the objects' votes, not floor covered.** | The advisor's review; floor.py now measures coverage | `explore_score.py` | b12 is scored by coverage too; the apartment bar to be set on coverage |
 | K19 | **The MCP server has not been tried with a real agent client**, only the SDK's own client. | 62de2f0 | `control/src/mission_control/mcp_server.py` | When an agent drives Mission Control |
 | K20 | **The planner's LLM path has only run against a local stub.** | 1a13fa0 | `POST /plan` | When an LLM endpoint is chosen (asks the operator first) |
-| K21 | **Docker images were built and run once, before the robot file format changed.** | f010f44, a01ecc5 after it | `control/`, `viewer/` Dockerfiles | Re-run the stack once after phase 2's restructure |
 | K22 | **The explorer aims at places with less room than a pivot needs.** Every b12 run ended trapped in the kitchen with 0.147–0.148 m of room, under the 0.15 m tight-pivot gate. | b12 r1–r3 (the navigator agent's reading of the runs, not tested) | `explore_run.py` `reachable`, the hold-off aim | After phase 6 (the planner) |
 | K23 | **The recovery before "trapped" fires but does not free the duck.** 9 recoveries in b12, none freed it; the creep never ran (a wall or frame 46–140 mm ahead); arcs stopped after 2–14°. | b12 | `nav/recovery.py` | After phase 6 |
 | K24 | **The arc has no obstacle check on its inner sweep, and the tight pivot no sensor floor.** | The advisor's reading of b11 r3 and r4 | `run.py` `_arc_clear`, the tight pivot | After phase 6 |
 | K25 | **Remembered obstacle points with no real object near them** (b11 r2's point at the dock 0.575 m from any geom; b11 r3's three nearest 0.30–0.36 m from every geom). Related to K3. | The navigator agent's check of b11 | the navigator's memory | Investigate with K3 |
 | K26 | **The fix gate's "take a big loop closure" branch has never run**: mapd's loop counter never stepped in any run. | frames-after-r2, b12 | `frames.py` gate branching | Watch for it; unit-tested only |
 | K27 | **The glance's edge error in the challenge scenes is far outside the stated −18/+3 cm budget** even after the rim fix (5 of 355 over 30 cm short, 71 over 6.4 cm past). | `sim/probes/glance_edge_error.py` | `side_drops.edge_from_glance` | Reconcile the budget with the measurement |
+| K28 | **The ~40 probes under `robots/duck/sim/probes` had their paths rewritten by pattern in phase 2 and were never run after it** (only compiled by lint). | Phase 2's report | `robots/duck/sim/probes` | Run each when it is next needed; fix what fails |
+| K29 | **The operator's Observatory container now mounts `robots/` from the mission-control worktree** and has a 768 MB memory cap (the old one had none and reported a 12.7 GB cache). | Phase 2's report, `docker ps`, health `runs 1618` | the root compose file | Re-up from main after the merge; watch its memory |
+| K30 | **Names kept as `miniview` on purpose** (MCAP topics and schemas, `window.miniview`, `--miniview-data`, `writer.program`, the index folder `state/miniview`). | Phase 2, decision 2 | the run format, the pages | Revisit with the run format's version 3 |
 
 ## Closed
 
 | # | Issue | Closed by |
 | --- | --- | --- |
+| K21 | Docker images built and run only before the robot file format changed | Phase 2: the stack up on test ports from the restructured tree, both healthy (`:8170` and `:8160`), then down; `make ci` builds the images (`test-observatory-image PASS`) |
 | — | The glance placed the stairwell's rim 0.45 m short (b11 r2) | `af7a6fb`: in the apartment's replay, over 30 cm short 0 of 24 glances (was 5) |

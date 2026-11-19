@@ -99,6 +99,28 @@ relocalisation, the frame fix, the rim fix, the recovery).
 **Done 2026-11-19** on the branch `mission-control`, not yet on main: the result, the golden and what
 differed from the plan are in [PHASE2-RESTRUCTURE-PLAN.md](PHASE2-RESTRUCTURE-PLAN.md) §7.
 
+### Phase 2 checkpoint
+
+**Built:** C0–C10, 14 commits (`a3bad74` … `b7c7d13`): `libs/runfile`, `libs/gate` (`robotgate`),
+`libs/worldmodel`; `apps/observatory`, `apps/mission-control`, `apps/nxt-web`; `robots/duck`; the
+rename to the Observatory with compatibility aliases; `OBSERVATORY_*` variables with the old names as
+fallback; an import-boundary check in `make lint` and CI.
+
+**Verified by the lead, on the final tree:** `make ci` → every stage PASS, `ci PASS`, `MAKE_EXIT=0`;
+the golden (`python3 scripts/golden.py`) gives the same five hashes on `pre-restructure` and on the
+final tree (`3e1aa07b…`, `f357641d…`, `6bfdfdde…`, `11b9a04a…`, `b1edc258…`); main has no branch
+protection, so the renamed CI jobs break nothing; the operator's Observatory restarted under its new
+name, healthy, 1618 runs.
+
+**Did not go to plan:** two history rewrites on the unpushed branch (a red page test in C4–C5, a
+lint line in C3–C6d), each fixed in its own commit; the tip unchanged by them.
+
+**Not done:** ~40 probes not run after the path rewrite (K28); the container mounts `robots/` from
+this worktree and has a new memory cap (K29); four moved-aside environments for the operator to
+delete; names kept as `miniview` on purpose (K30); nothing run on GitHub yet.
+
+**Recommendation:** push to main, re-up the Observatory from main, then phase 3.
+
 ## Phase 3 — two parallel streams on the new layout
 
 - **RFC-0020, steps 1–3:** the duck's profile; the numbers out of code; the four interfaces
