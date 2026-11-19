@@ -18,7 +18,7 @@ from pathlib import Path
 
 from runfile.mcapio import Follower
 
-from duck_lab.nav import cliff
+from cliff_shim import cliff
 from duck_lab.replay import state_of
 
 DOWN_DEG, BAND, MIN_BIN = 12.0, 0.15, 200

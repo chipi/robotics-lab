@@ -3,8 +3,21 @@
 import math
 import sys
 
-from duck_lab.nav.side_drops import (SUSPECT_FRAMES, SuspectMemory, below_counts, continuation, continues, edge_axis, edge_from_glance,
+from duck_lab.nav.side_drops import (SuspectMemory, continuation, continues, edge_axis, edge_from_glance,
                                      head_settled, in_the_way, look_targets)
+from duck_lab.plugins.tof8x8 import Tof8x8
+from duck_lab.profile import load
+
+P = load("sim")
+SD = P.sensors.tof8x8.side_drops
+SUSPECT_FRAMES = SD.suspect_frames
+below_counts = Tof8x8(P).below_counts
+
+
+def new_memory():
+    return SuspectMemory(SD.suspect_frames, SD.suspect_ratio, SD.clear_m)
+
+
 
 failures = []
 
@@ -16,7 +29,7 @@ def check(name, cond, detail=""):
 
 
 # Suspicion: a cell becomes a suspected drop after SUSPECT_FRAMES frames of below-floor returns, not before.
-m = SuspectMemory()
+m = new_memory()
 got = [m.add_frame([(1.0, 0.5, "below")]) for _ in range(SUSPECT_FRAMES)]
 check("a cell is suspected on its SUSPECT_FRAMES-th below-floor frame, not before",
       all(not g for g in got[:-1]) and got[-1] == [(20, 10)], got)
@@ -24,23 +37,23 @@ check("its point is the cell's centre", m.points() == [(1.0, 0.5)], m.points())
 check("a suspected cell is not reported again", m.add_frame([(1.0, 0.5, "below")]) == [])
 
 # A below-floor return counts toward a suspicion only when it is deep enough for its range: a far floor return read just
-# past cliff.EXTRA_M (6 cm) is the trunk's pitch, not a hole (the false suspicions that closed challenge 10's goal: 6.6-7.9
+# past the sensor's extra_m (6 cm) is the trunk's pitch, not a hole (the false suspicions that closed challenge 10's goal: 6.6-7.9
 # cm below, 1.1-2.4 m away). Replayed over 2 days of runs, 3.5 cm a metre: false cells 92 -> 17, drops suspected before
 # the closest approach 157 -> 151 of 180, the lead unchanged (17 s).
 check("a return 8 cm below the floor 0.5 m away counts (it needs 6 + 1.75 cm)", below_counts(-0.08, 0.5))
 check("... 1.5 m away it does not (it needs 6 + 5.25 cm)", not below_counts(-0.08, 1.5))
 check("a real drop's floor (11 cm and deeper) counts 1.4 m away", below_counts(-0.11, 1.4))
-check("the threshold at the duck is cliff.EXTRA_M", below_counts(-0.0601, 0.0) and not below_counts(-0.0599, 0.0))
+check("the threshold at the duck is the sensor's extra_m", below_counts(-0.0601, 0.0) and not below_counts(-0.0599, 0.0))
 
 # The ratio: a cell seen as floor about as often as below is not suspected.
-r = SuspectMemory()
+r = new_memory()
 for _ in range(SUSPECT_FRAMES * 2):
     r.add_frame([(0.0, 0.0, "below")])
     r.add_frame([(0.0, 0.0, "floor")])
 check("a cell seen as floor as often as below stays unsuspected (ratio)", not r.suspected, r.below, )
 
 # One frame's many returns in the same cell count once.
-o = SuspectMemory()
+o = new_memory()
 for _ in range(SUSPECT_FRAMES - 1):
     o.add_frame([(2.0, 2.0, "below")] * 10)
 check("a frame counts once per cell, however many returns it puts there", not o.suspected)
@@ -54,17 +67,17 @@ check("a cleared cell is not suspected again from the forward sensor", not m.sus
 # A look aimed at a suspicion that sees floor around it clears it, with floor returns a few cm apart at 0.8 m and the map
 # drifting between the suspicion and the look (challenge 10 seed 8: floor seen, the cell 0.1 m from the goal not cleared,
 # the goal lethal, the leg refused).
-cm = SuspectMemory()
+cm = new_memory()
 for _ in range(SUSPECT_FRAMES):
     cm.add_frame([(2.65, -0.3, "below"), (1.0, 1.0, "below")])
 cm.clear([(2.65 + 0.09, -0.3), (1.0 + 0.12, 1.0)])
 check("floor 9 cm from a suspected cell clears it, 12 cm does not", cm.points() == [(1.0, 1.0)], cm.points())
 check("near(): suspected cells within reach", (lambda s: (s.add_frame([(0.3, 0.0, "below")]) or True) and s.near((0.0, 0.0), 0.5))(
-    (lambda s: [s.add_frame([(0.3, 0.0, "below")]) for _ in range(SUSPECT_FRAMES - 1)] and s)(SuspectMemory())))
+    (lambda s: [s.add_frame([(0.3, 0.0, "below")]) for _ in range(SUSPECT_FRAMES - 1)] and s)(new_memory())))
 
 # A suspicion next to an edge a glance measured is the same drop: confirmed without another look (challenge 10 seed 1
 # looked 7 times in 56 s walking along one ledge, each look covering 0.4 m of it).
-a = SuspectMemory()
+a = new_memory()
 for _ in range(SUSPECT_FRAMES):
     a.add_frame([(1.0, 0.5, "below"), (2.0, 0.5, "below")])
 got = a.confirm_near([(1.1, 0.5)], 0.15)
@@ -192,7 +205,7 @@ check("a below-floor return behind the look's floor does not make the floor a ri
 # the depth-frame thread adds suspicions while a glance clears them (challenge 9 seed 2, gate6, 2026-11-18: "Set changed
 # size during iteration" in clear, the run lost); here the add happens inside clear's own iteration, the same shape
 def suspected_meanwhile(method):
-    mem = SuspectMemory()
+    mem = new_memory()
     for _ in range(SUSPECT_FRAMES):
         mem.add_frame([(0.3, 0.0, "below"), (0.5, 0.0, "below")])
 

@@ -2,16 +2,25 @@
 Run: cd robots/duck && uv run python tests/test_frames.py"""
 
 import math
+import functools
 import sys
 import time
+import types
 
-from duck_lab.nav.frames import MOVE_M, Localizer, compose, move_grid, move_xy
+from duck_lab.nav.frames import Localizer, compose, move_grid, move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid
 from duck_lab.nav.run import LOW_CELL_M, Navigator
 from duck_lab.nav.side_drops import SuspectMemory
+from duck_lab.plugins.mapd import Mapd
+from duck_lab.profile import load
 from worldmodel.objects import Part, load_kinds
 from worldmodel.semantic_map import SemanticMap, Tracked
 
+P = load("sim")
+FIX = P.localisation.fix
+MOVE_M = FIX.move_m
+SD = (P.sensors.tof8x8.side_drops.suspect_frames, P.sensors.tof8x8.side_drops.suspect_ratio, P.sensors.tof8x8.side_drops.clear_m)
+grid_of = functools.partial(CostGrid.from_map_grid, lethal_m=P.footprint.lethal_m, inflate_m=P.footprint.inflate_m)
 failures = []
 NS = 1_000_000_000
 
@@ -28,7 +37,7 @@ def near(a, b, tol=1e-6):
 
 def still(max_jump_m=0.3):
     """A localizer whose odometry stands still, mapd's first fix at (1, 1)."""
-    loc = Localizer(history=1000, max_jump_m=max_jump_m, hold_n=None)
+    loc = Localizer(FIX, history=1000, max_jump_m=max_jump_m, hold_n=None)
     for k in range(400):
         loc.on_odom(k * NS, (0.0, 0.0, 0.0))
     loc.on_fix(0, (1.0, 1.0, 0.0))
@@ -51,7 +60,7 @@ n.nudge(0.0, 0.3)
 check("a landmarks' nudge is a delta too: belief = mapd + the nudge", near(n.delta(), (0.0, 0.3, 0.0)), n.delta())
 n.on_fix(1 * NS, (1.0, 1.0, 0.0))
 check("... that survives the next fix", abs(n.delta()[1] - 0.3) < 0.01, n.delta())
-r = Localizer(max_jump_m=0.3, hold_n=None)
+r = Localizer(FIX, max_jump_m=0.3, hold_n=None)
 for k in range(10):
     r.on_odom(k * NS, (0.0, 0.0, 0.0))
 r.on_fix(0, (0.0, 0.0, 0.0))
@@ -112,7 +121,7 @@ def wall_at(g):
 
 # the duck stands at (0, 0) by the truth; a wall is 2 m ahead (x = 2). mapd's frame jumps +0.9 in y: its pose says (0, 0.9),
 # its grid has the wall at (2, 0.9); the belief held at (0, 0).
-jump = Localizer(max_jump_m=0.3, hold_n=None)
+jump = Localizer(FIX, max_jump_m=0.3, hold_n=None)
 for kk in range(10):
     jump.on_odom(kk * NS, (0.0, 0.0, 0.0))
 jump.on_fix(0, (0.0, 0.0, 0.0))
@@ -135,7 +144,7 @@ tilt = move_grid(wall_grid(1.0, 0.0), (0.5, -0.3, 0.2))
 wt = wall_at(tilt)
 want = move_xy((0.5, -0.3, 0.2), (1.0, 0.0))
 check("a tilt and a shift: the wall lands where the frame change puts it", math.dist(wt, want) < 0.06, (wt, want))
-cost = CostGrid.from_map_grid(framed)
+cost = grid_of(framed)
 check("the framed grid is a cost grid the planner reads: the wall's cell is lethal there",
       cost.at(*cost.cell(*wb)) >= LETHAL_COST, cost.at(*cost.cell(*wb)))
 
@@ -145,15 +154,16 @@ class _Mem:
     move_memory = Navigator.move_memory
 
     def __init__(self):
-        self.rows, self.loc = [], Localizer()
+        self.rows, self.loc = [], Localizer(FIX)
+        self.localisation = types.SimpleNamespace(pose=self.loc.pose)
         self.blocked = [(1.0, 0.0), (2.0, 0.5)]
         self._seen = set()
         self._low = {(round(1.0 / LOW_CELL_M), 0): {1, 2, 3}}
         self.drops, self.edges = [(0.5, 0.5)], [(0.0, 1.0)]
         self.glanced, self.step_looked = [(0.2, 0.2)], [(0.3, 0.3)]
-        self._tight_spots = [[(0.1, 0.1), 5.0]]
+        self.locomotion = types.SimpleNamespace(tight_spots=[[(0.1, 0.1), 5.0]])
         self.floor_seen = {(20, 0), (21, 0)}                # 5 cm cells: (1.0, 0.0), (1.05, 0.0)
-        self.suspects = SuspectMemory()
+        self.suspects = SuspectMemory(*SD)
         self.suspects.suspected = {(10, 10)}                # 5 cm cells: (0.5, 0.5)
         self.suspects.below[(10, 10)] = 7
         self.semantic = SemanticMap(load_kinds())
@@ -177,7 +187,7 @@ check("... and the set that keeps them apart follows", (round(1.0 / 0.03), round
 check("the drops, the measured edges, what was glanced at and looked at move",
       mem.drops == [(0.5, 1.4)] and mem.edges == [(0.0, 1.9)] and mem.glanced == [(0.2, 1.1)] and mem.step_looked == [(0.3, 1.2)],
       (mem.drops, mem.edges, mem.glanced, mem.step_looked))
-check("the tight-pivot spot moves, its time stays", mem._tight_spots == [[(0.1, 1.0), 5.0]], mem._tight_spots)
+check("the tight-pivot spot moves, its time stays", mem.locomotion.tight_spots == [[(0.1, 1.0), 5.0]], mem.locomotion.tight_spots)
 check("the floor the sensor saw moves (5 cm cells)", mem.floor_seen == {(20, 18), (21, 18)}, sorted(mem.floor_seen))
 check("the low-band cells move with their frames", mem._low == {(round(1.0 / LOW_CELL_M), round(0.9 / LOW_CELL_M)): {1, 2, 3}}, mem._low)
 check("the suspected drops and their counts move", mem.suspects.suspected == {(10, 28)} and mem.suspects.below[(10, 28)] == 7,
@@ -207,15 +217,18 @@ check("a point placed at the belief stays at the belief after the belief's frame
       near(moved, p_after[:2], 1e-9), (moved, p_after))
 
 
-# --- the gate follows mapd's own account (Navigator._watch_mapd) -----------------------------------------------------------
+# --- the gate follows mapd's own account (the localisation plugin's _watch) -----------------------------------------------
 class _Watch:
-    _watch_mapd = Navigator._watch_mapd
+    """The localisation plugin (mapd) watching mapd's account of itself, and the rows it records."""
 
     def __init__(self):
-        self.rows, self.loc = [], Localizer()
+        self.rows, self.mapd = [], Mapd(P)
 
     def record(self, **row):
         self.rows.append(row)
+
+    def _watch_mapd(self, st):
+        return self.mapd._watch(st, self.record)
 
 
 def status(lost=None, loops=0, relocs=0, islands=0):
@@ -227,8 +240,8 @@ w = _Watch()
 check("mapd tracking quietly: no trust, nothing to take", w._watch_mapd(status()) is None and w._watch_mapd(status()) is None)
 check("a loop closure and mapd not lost: a large fix may be taken", w._watch_mapd(status(loops=1)) == "loop closure")
 check("... the next status, unchanged, still within its credit", w._watch_mapd(status(loops=1)) == "loop closure")
-w._loop_credit = time.monotonic() - 1.0
-check("... but not after LOOP_CREDIT_S", w._watch_mapd(status(loops=1)) is None)
+w.mapd._loop_credit = time.monotonic() - 1.0
+check("... but not after loop_credit_s", w._watch_mapd(status(loops=1)) is None)
 w = _Watch()
 w._watch_mapd(status())
 check("a loop counter that stepped while mapd is lost: held", w._watch_mapd(status(lost="carried", loops=1)) is None)
@@ -244,7 +257,7 @@ check("mapd's first look with loops already counted is not a step", w._watch_map
 w = _Watch()
 w._watch_mapd(status())
 w._watch_mapd(status(loops=1))
-w._loop_credit = None
+w.mapd._loop_credit = None
 check("a consumed credit is gone", w._watch_mapd(status(loops=1)) is None)
 
 
@@ -253,7 +266,8 @@ class _Parts:
     _watch_frames = Navigator._watch_frames
 
     def __init__(self, loc):
-        self.rows, self.loc, self._parted_at, self._mapd_seen = [], loc, None, None
+        self.rows, self.loc, self._parted_at = [], loc, None
+        self.localisation = types.SimpleNamespace(seen=None, frame_delta=loc.delta)
 
     def record(self, **row):
         self.rows.append(row)

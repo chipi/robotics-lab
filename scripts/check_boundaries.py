@@ -39,7 +39,7 @@ ALLOWED = {
     "robotgate": set(),
     "worldmodel": set(),
     "observatory": {"runfile"},
-    "mission_control": {"robotgate"},
+    "mission_control": {"robotgate", "runfile"},
     "nxt_lab": {"runfile"},
     "duck_lab": {"runfile", "robotgate", "worldmodel"},
 }

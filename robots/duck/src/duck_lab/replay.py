@@ -3,7 +3,7 @@
     uv run duck-replay duck/apartment/explore13 --miniview-data /work/robotics-lab/data
     uv run duck-replay /path/to/data/runs/duck/apartment/explore13
 
-For every depth frame in the run, the navigator's own code (`FrameView`: `cliff.depth_points`, `drop_points`,
+For every depth frame in the run, the navigator's own code (`FrameView`: the sensor plugin's `depth_points`, `drop_points`,
 `blocking_ahead`) is run again on the recorded raw distances and statuses and the paired state, the points are placed
 with the recorded pose, and the result is compared with what the navigator derived and logged. A difference means the
 navigator used something that is not in the file. Also checked: every tick's `/depth` is a recorded frame's points, the
@@ -19,15 +19,15 @@ from runfile import keys
 from runfile.catalog import default_data
 from runfile.mcapio import FINAL, LIVE, Follower
 
-from duck_lab.nav import cliff
-from duck_lab.nav.run import FrameView
+from duck_lab.plugins.tof8x8 import Tof8x8
+from duck_lab.profile import load as load_profile
 
 TOL = 1e-9
 SAMPLE = 5            # how many differences are shown, not only counted
 
 
 def state_of(rec: dict) -> dict:
-    """The robot state as the cliff functions read it, rebuilt from what the frame record kept of it."""
+    """The robot state as the sensor reads it, rebuilt from what the frame record kept of it."""
     s = rec["state"]
     return {"imu": {"quat": s["quat"]}, "odom": {"position": [0.0, 0.0, s["odom_z"]], "yaw": 0.0},
             "frames": {"tof": s["tof"]}}
@@ -50,9 +50,20 @@ def calibration_of(records: list) -> dict:
     return {"pitch_offset_deg": 3.0, "range_kind": "axial"}
 
 
+def profile_of(records: list):
+    """The robot's profile as the run had it: the environment its `calibration` event names, else the real duck's (a run from
+    before the event named it was recorded by a navigator that read its numbers from constants, which are the profile's)."""
+    for _, k, p in records:
+        if k == "event" and p.get("kind") == "calibration":
+            return load_profile(((p.get("raw") or {}).get("profile") or {}).get("variant"))
+    return load_profile(None)
+
+
 def replay(records: list) -> dict:
     """The report for a run's records (read with keep_raw), with the sensor configured as the run was."""
-    cliff.configure(**calibration_of(records))
+
+    profile = profile_of(records)
+    sensor = Tof8x8(profile, mount=calibration_of(records))
     frames = [(t, p) for t, k, p in records if k == "depth_frame"]
     ticks = [p for _, k, p in records if k == "tick"]
     rep = {"frames": len(frames), "replayed": 0, "no_state": 0, "no_pose": 0, "diffs": [], "pair_dt_ms": [],
@@ -79,8 +90,8 @@ def replay(records: list) -> dict:
             rep["no_pose"] += 1
             continue
         d = p["derived"]
-        fv = FrameView({"rows": p["rows"], "cols": p["cols"], "distance_mm": p["distance_mm"], "status": p["status"]},
-                       state_of(p), None, tuple(p["pose"]))
+        fv = sensor.derive({"rows": p["rows"], "cols": p["cols"], "distance_mm": p["distance_mm"], "status": p["status"]},
+                           state_of(p), None, tuple(p["pose"]))
         rep["replayed"] += 1
         rep["points"] += len(d["points"])
         rep["drop_frames"] += bool(d.get("drop_points"))

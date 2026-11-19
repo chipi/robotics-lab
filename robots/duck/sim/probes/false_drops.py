@@ -14,7 +14,7 @@ from pathlib import Path
 from runfile import keys
 from runfile.mcapio import Follower
 
-from duck_lab.nav import cliff
+from cliff_shim import cliff
 from duck_lab.replay import state_of
 
 

@@ -16,6 +16,9 @@ from pathlib import Path
 from runfile.mcapio import Follower
 
 from duck_lab.nav.side_drops import SuspectMemory, cell_of
+from duck_lab.profile import load as load_profile
+
+_SD = load_profile("sim").sensors.tof8x8.side_drops
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from room_vs_truth import box_distance  # noqa: E402
@@ -41,7 +44,7 @@ def main() -> None:
             scene = json.loads((data / "scenes" / run_dir.parent.name / "scene.json").read_text())
             hz = rects(scene)
             walls = [b for b in scene.get("boxes", []) if b.get("z1", 1) > 0.02]
-            mem, epoch, err, why = SuspectMemory(), None, 0.0, collections.defaultdict(list)
+            mem, epoch, err, why = SuspectMemory(_SD.suspect_frames, _SD.suspect_ratio, _SD.clear_m), None, 0.0, collections.defaultdict(list)
             try:
                 recs = list(Follower(run_dir, keep_raw=True).poll())
             except Exception:  # noqa: BLE001 - an unreadable recording is skipped, and said

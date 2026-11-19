@@ -16,7 +16,10 @@ import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav.step_check import STEP_M, unseen_ahead
+from cliff_shim import cliff
+from duck_lab.plugins.tof8x8 import STEP_M
+
+unseen_ahead = cliff.unseen_ahead
 from runfile.mcapio import Follower
 
 CELL = 0.05

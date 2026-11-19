@@ -17,9 +17,13 @@ from pathlib import Path
 from runfile.mcapio import Follower
 
 from duck_lab import replay
-from duck_lab.nav import cliff
-from duck_lab.nav.run import LOOK_COLLECT_S, LOOK_MAX_S, LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG, load_tof
-from duck_lab.nav.side_drops import below_counts, edge_from_glance, head_settled
+from cliff_shim import cliff
+from duck_lab.nav.run import load_tof
+from duck_lab.profile import load as load_profile
+
+_LOOK = load_profile("sim").looking
+LOOK_COLLECT_S, LOOK_MAX_S, LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG = _LOOK.collect_s, _LOOK.max_s, _LOOK.settle_frames, _LOOK.yaw_tol_deg
+from duck_lab.nav.side_drops import edge_from_glance, head_settled
 
 DATA = Path("/work/robotics-lab/data")
 
@@ -62,7 +66,7 @@ def replay_glance(records: list, t_end: float, raw: dict, cal: dict | None = Non
         fr = {k2: p[k2] for k2 in ("rows", "cols", "distance_mm", "status")}
         rel = cliff.depth_points(fr, replay.state_of(p))
         pts = [(pose[0] + c * ax - s * ay, pose[1] + s * ax + c * ay, kind) for ax, ay, h, kind in rel
-               if kind == "floor" or (kind == "below" and below_counts(h, math.hypot(ax, ay)))]
+               if kind == "floor" or (kind == "below" and cliff.below_counts(h, math.hypot(ax, ay)))]
         sx, sy = cliff.sensor_offset(replay.state_of(p))
         sensors.append((pose[0] + c * sx - s * sy, pose[1] + s * sx + c * sy))
         frames.append(pts)

@@ -100,4 +100,12 @@ raw["factsheet"]["physicalParameters"] = {"maximumSpeed": 0.2, "maximumAngularSp
 adapter = make_adapter(RobotConfig(raw), None)
 check("with a factsheet speed the scale comes from it", (adapter.max_vx, adapter.max_vyaw) == (0.2, 1.0))
 
+# --- the validator is the run format library's (RFC-0020 step 1): this module re-exports it, one set of rules ---------------------
+import runfile.profile as profile_rules  # noqa: E402
+from mission_control import robotfile  # noqa: E402
+
+check("robotfile re-exports runfile.profile's parsers and error, they are the same objects",
+      robotfile.parse_factsheet is profile_rules.parse_factsheet and robotfile.parse_control is profile_rules.parse_control
+      and robotfile.check_max_speed is profile_rules.check_max_speed and robotfile.FormatError is profile_rules.FormatError)
+
 finish("test_robotfile")

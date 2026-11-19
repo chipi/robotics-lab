@@ -13,7 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from duck_lab.nav import cliff, simreset
+from cliff_shim import cliff
+from duck_lab.nav import simreset
 from duck_lab.nav.run import Navigator
 
 GLANCE_X_M, GLANCE_Y_M = 0.25, 0.45          # the floor point aimed at, in the trunk frame (ahead, aside)

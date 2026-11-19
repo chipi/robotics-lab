@@ -18,9 +18,10 @@ import math
 from collections import deque
 
 from duck_lab.challenge.scene import Scene, _inside, layout
-from duck_lab.nav.evaluate import FOOTPRINT_M, footprint_distance, obstacles
+from duck_lab.nav.evaluate import FOOTPRINT_M, PROFILE, footprint_distance, obstacles
 from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav.grid import DROP_LETHAL_M
+
+DROP_LETHAL_M = PROFILE.error_budget.drop_lethal_m
 
 STEP_M = 0.05         # the lattice's cell, mapd's finest (0.0455 m raw)
 

@@ -6,6 +6,17 @@ to apply in practice things that we really learned on one robot only, and instea
 to bring its impact on planning in some way, like a little plugins of some sort", and: "on profile we
 expand [the] existing robot profile we have been developing and also augment [the] view surfaces to
 inspect all of these", and the goal: "robot platform where we can load any robot".
+**Build status (2026-11-19, phase 3 stream A, branch `p3-profiles`):** step 1 built: the schema
+and validator are `libs/runfile/src/runfile/profile.py` (Mission Control's `robotfile.py`
+re-exports them), the duck's profile is `robots/duck/profile.json` (variants `sim` and `real`),
+and `robots/duck/tests/test_profile.py` compares every one of its numbers with the constant it
+replaces. Step 2 built: the navigator, the judge and the world model read the footprint,
+locomotion, error budget, localisation gate and look numbers from the profile
+(`Navigator.configure`). Step 3 built: the four interfaces
+(`robots/duck/src/duck_lab/plugins/interfaces.py`) and the duck's plugins behind them
+(`duck-walk@1`, `tof8x8@1`, `mapd@1`, `duck-head@1`), loaded by the names the profile gives;
+the navigator calls them, and a run's `calibration` event records the profile and plugin
+versions. What is left in code is listed in KNOWN-ISSUES K32. Steps 4 and 5: not started.
 **Builds on:** [RFC-0011](RFC-0011-robot-models.md) (a description per robot),
 [RFC-0012](RFC-0012-look-far.md) §2.3 (each robot supplies its own numbers; the policy holds none),
 [RFC-0014](RFC-0014-mission-control.md) §3.3 (robot files, capabilities as data),

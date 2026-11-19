@@ -7,7 +7,7 @@ directly; at a real site the robot must first recognise where it is (later). Unt
 (RFC-0014), a site is a folder: site.json (id, name, kind) and semantic_map.json.
 
 Merging a run's map into the site's: each run object is matched to a stored object of the same kind by the semantic
-map's association rule (ASSOC_M, UNIQUE_M for unique kinds); a match keeps the stored id, label and pins and takes the
+map's association rule (its limits.assoc_m, unique_m for unique kinds); a match keeps the stored id, label and pins and takes the
 run's position and sightings; no match is a new object with the next stable id. Stored objects not seen in the run
 stay, unless the run forgot them (an object expected in view and not seen for a while: SemanticMap.forget): those are
 marked gone, kept in the site's history, and an object the operator named is only flagged missing. A gone stored
@@ -19,7 +19,8 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from worldmodel.semantic_map import ASSOC_M, CONFIRM_N, UNIQUE_M, SemanticMap
+from worldmodel.objects import DUCK_LIMITS, Limits
+from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 
 
 def inside(xy: tuple, polygon: list) -> bool:
@@ -73,21 +74,21 @@ class Site:
         return area
 
     @classmethod
-    def create(cls, root: Path, sid: str, name: str, kind: str, kinds: dict) -> "Site":
+    def create(cls, root: Path, sid: str, name: str, kind: str, kinds: dict, limits: Limits = DUCK_LIMITS) -> "Site":
         folder = Path(root) / sid
         if (folder / "site.json").exists():
             raise FileExistsError(f"site {sid} exists: {folder}")
-        site = cls(sid, name, kind, folder, SemanticMap(kinds, site_kind=kind))
+        site = cls(sid, name, kind, folder, SemanticMap(kinds, site_kind=kind, limits=limits))
         site.save()
         return site
 
     @classmethod
-    def load(cls, root: Path, sid: str, kinds: dict) -> "Site":
+    def load(cls, root: Path, sid: str, kinds: dict, limits: Limits = DUCK_LIMITS) -> "Site":
         folder = Path(root) / sid
         meta = json.loads((folder / "site.json").read_text())
         sem = folder / "semantic_map.json"
-        semantic = (SemanticMap.from_json(json.loads(sem.read_text()), kinds, site_kind=meta["kind"]) if sem.exists()
-                    else SemanticMap(kinds, site_kind=meta["kind"]))
+        semantic = (SemanticMap.from_json(json.loads(sem.read_text()), kinds, site_kind=meta["kind"], limits=limits) if sem.exists()
+                    else SemanticMap(kinds, site_kind=meta["kind"], limits=limits))
         areas = [Area(a["id"], a["name"], [tuple(p) for p in a["polygon"]], a.get("type")) for a in meta.get("areas", [])]
         return cls(meta["id"], meta["name"], meta["kind"], folder, semantic, areas)
 
@@ -106,7 +107,7 @@ class Site:
                 continue
             # the run forgot it (expected in view, not seen): the stored one goes too, kept in the history; one the
             # operator named is only flagged
-            gate = UNIQUE_M if self.semantic.kinds.get(o.kind, {}).get("unique") else ASSOC_M
+            gate = self.semantic.limits.unique_m if self.semantic.kinds.get(o.kind, {}).get("unique") else self.semantic.limits.assoc_m
             same = [s for s in self.semantic.objects if s.kind == o.kind and not s.gone
                     and math.dist((s.x, s.y), (o.x, o.y)) <= gate]
             if same:
@@ -117,7 +118,7 @@ class Site:
                     s.gone, s.gone_t = True, o.gone_t
                     forgotten += 1
         for o in run.confirmed():
-            gate = UNIQUE_M if self.semantic.kinds.get(o.kind, {}).get("unique") else ASSOC_M
+            gate = self.semantic.limits.unique_m if self.semantic.kinds.get(o.kind, {}).get("unique") else self.semantic.limits.assoc_m
             same = [s for s in self.semantic.objects if s.kind == o.kind and s.oid not in taken
                     and math.dist((s.x, s.y), (o.x, o.y)) <= gate]
             if same:

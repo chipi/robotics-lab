@@ -1,39 +1,18 @@
 """Following a path (RFC-0002 §3.8, step 3), as one function: state in, twist out.
 
-What the simulator taught (docs/wip/PHASE0-SPIKE.md): the duck moves at about half of what it is
-asked, does not walk below about 0.2 m/s, and from a stand does not start turning on the spot below
-about 1.1 rad/s. So: turns start with a kick, forward speed stays above the floor, and everything is
-steered from the measured pose, never from the commanded speed.
+What the simulator taught (docs/wip/PHASE0-SPIKE.md): everything is steered from the measured pose, never from the commanded
+speed. This is the shared half of following: find the point on the path to head for (the lookahead) and how far off it the
+robot's heading is. What a robot does about that error is its locomotion plugin's (`drive`: for the duck, plugins/duck_walk.py:
+the kick, the slowest walk, the creep).
+
+The numbers are the profile's `locomotion` block (robots/duck/profile.json), passed as `loco`:
+  lookahead_m       the lookahead; lookahead_near_m within an obstacle's margin, so a bend is followed instead of cut
+                    (regulated pure pursuit's other half: phase 1 runs 9 and 10 cut the office doorway's bend inside)
+  goal_tol_m        reached within this
 """
 
 import math
 from dataclasses import dataclass, field
-
-LOOKAHEAD_M = 0.30
-# Regulated pure pursuit's other half (the duck cannot walk slower): within an obstacle's margin the
-# lookahead shrinks, so a bend is followed instead of cut. Phase 1 runs 9 and 10 cut the office doorway's
-# bend inside, 7-8 cm from the cabinet; a 90 deg corner is cut by about L(1 - 1/sqrt 2): 9 cm at 0.30 m.
-LOOKAHEAD_NEAR_M = 0.15
-GOAL_TOL_M = 0.15
-TURN_FIRST_RAD = math.radians(45)    # heading further off than this: turn on the spot first
-TURN_DONE_RAD = math.radians(15)     # and walk again once within this
-KICK_RAD_S = 1.2                     # starts stepping from a stand
-KICK_S = 1.0
-RESTEP_RAD = 0.05
-TURN_RAD_S = 0.8                     # holds a turn once stepping (about 26 deg/s in the simulator)
-WALK_MPS = 0.3
-# A turn on the spot moves the duck in the simulator (upstream #597: 26 cm over 4.3 rad in exploration
-# trial 5, a contact in phase 1 run 12). Close to an obstacle or a drop the duck turns while walking at
-# the slowest speed it walks at instead, as upstream's brain creeps forward rather than pivot by a wall.
-ARC_MPS = 0.2
-# Turning this hard within an obstacle's margin, the duck walks at ARC_MPS (RFC-0012's caution pace): the apartment's
-# goal 12 (2026-11-17) cut the office cabinet's corner at WALK_MPS turning 0.5-0.8 rad/s, 7 cm from it (margin 12 cm).
-SLOW_YAW_RAD_S = 0.4
-# The margin's cost alone missed goal 11 of run apartment-1117b (0.3 m/s at 0.7-1.0 rad/s, 17 to 7 cm off the cabinet, the
-# pose's cell under MARGIN_COST): measured clearance under this slows a hard turn too.
-SLOW_CLEAR_M = 0.25
-MAX_YAW_RAD_S = 1.0
-YAW_GAIN = 1.5
 
 
 @dataclass
@@ -56,7 +35,7 @@ def wrap(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
 
 
-def lookahead(path: list, pose: tuple, start_index: int, dist_m: float = LOOKAHEAD_M) -> tuple:
+def lookahead(path: list, pose: tuple, start_index: int, dist_m: float) -> tuple:
     """The first path point at least dist_m from the pose, searching forward from the closest
     point at or after start_index; the last point when none is that far."""
     x, y = pose[0], pose[1]
@@ -67,36 +46,16 @@ def lookahead(path: list, pose: tuple, start_index: int, dist_m: float = LOOKAHE
     return len(path) - 1, path[-1]
 
 
-def step(path: list, pose: tuple, now: float, st: FollowState, near: bool = False, pivot_ok: bool = True,
-         pivot_vx: float = 0.0, close: bool = False) -> tuple:
-    """One control step. pose = (x, y, yaw) in the path's frame; near = the duck is within an obstacle's
-    margin (shorter lookahead); close = an obstacle is within SLOW_CLEAR_M (a hard turn slows); pivot_ok = there is room to turn on the spot (else a turn is an arc at
-    ARC_MPS, which the caller must check has clear floor ahead); pivot_vx = the forward speed a turn on the spot
-    is sent with, against the robot's own creep (calibration/<robot>.json "pivot"). Returns (Twist, done)."""
+def step(path: list, pose: tuple, now: float, st: FollowState, loco, walker, near: bool = False, pivot_ok: bool = True,
+         close: bool = False) -> tuple:
+    """One control step. pose = (x, y, yaw) in the path's frame; loco = the profile's locomotion block; walker = the robot's
+    locomotion plugin, which turns the heading error into a motion (Locomotion.drive); near = the robot is within an obstacle's
+    margin (shorter lookahead); close = an obstacle is within slow_clearance_m (a hard turn slows); pivot_ok = there is room to
+    turn on the spot (else a turn is an arc, which the caller must check has clear floor ahead). Returns (Twist, done)."""
     x, y, yaw = pose
-    if math.dist(path[-1], (x, y)) <= GOAL_TOL_M:
+    if math.dist(path[-1], (x, y)) <= loco.goal_tol_m:
         st.turning, st.turn_started = False, None
         return Twist(), True
-    st.target_index, target = lookahead(path, pose, st.target_index, LOOKAHEAD_NEAR_M if near else LOOKAHEAD_M)
+    st.target_index, target = lookahead(path, pose, st.target_index, loco.lookahead_near_m if near else loco.lookahead_m)
     err = wrap(math.atan2(target[1] - y, target[0] - x) - yaw)
-
-    if st.turning and abs(err) <= TURN_DONE_RAD:
-        st.turning, st.turn_started = False, None
-    elif not st.turning and abs(err) > TURN_FIRST_RAD:
-        st.turning, st.turn_started, st.check_t = True, now, None
-
-    if st.turning:
-        if not pivot_ok:     # too close to something to turn on the spot: turn while walking, slowly
-            return Twist(ARC_MPS, math.copysign(MAX_YAW_RAD_S, err)), False
-        # A kick does not always start the stepping (phase 1 run 13, goal 9: 0.16 rad in the kick, then
-        # 14 s at 0.8 rad/s without turning). A pivot that gains under RESTEP_RAD in a second kicks again.
-        if st.check_t is None or now - st.check_t >= 1.0:
-            if st.check_t is not None and now - st.turn_started >= KICK_S and abs(wrap(yaw - st.check_yaw)) < RESTEP_RAD:
-                st.turn_started = now
-            st.check_t, st.check_yaw = now, yaw
-        kicking = now - st.turn_started < KICK_S
-        # The kick stands still: stepping back while the gait starts sometimes left the turn unstarted (old
-        # challenge 6 seed 3: 13 deg in 15 s; sim/probes/pivot_start.py, 1 slow start in 5 at -0.06, none at 0).
-        return Twist(0.0 if kicking else pivot_vx, math.copysign(KICK_RAD_S if kicking else TURN_RAD_S, err)), False
-    vyaw = max(-MAX_YAW_RAD_S, min(MAX_YAW_RAD_S, YAW_GAIN * err))
-    return Twist(ARC_MPS if (near or close) and abs(vyaw) >= SLOW_YAW_RAD_S else WALK_MPS, vyaw), False
+    return walker.drive(err, yaw, now, st, near, pivot_ok, close), False

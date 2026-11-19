@@ -7,10 +7,10 @@ apartment are scored the same way.
 import math
 
 from duck_lab.challenge.scene import Scene, layout
-from duck_lab.nav.evaluate import FALLEN_Z_M, FOOTPRINT_M, REACHED_M, footprint_distance, obstacles
+from duck_lab.nav.evaluate import FALLEN_Z_M, FOOTPRINT_M, PROFILE, REACHED_M, footprint_distance, obstacles
 
-DROP_MARGIN_M = 0.15      # the trunk centre's nearest distance to a drop's outline (ADR-0015, the operator's)
-BOUNDS_MARGIN_M = 0.05
+DROP_MARGIN_M = PROFILE.judge.drop_margin_m      # the trunk centre's nearest distance to a drop's outline (ADR-0015, the operator's)
+BOUNDS_MARGIN_M = PROFILE.judge.bounds_margin_m
 
 
 class Judge:

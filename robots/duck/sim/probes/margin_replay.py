@@ -13,6 +13,9 @@ import sys
 from pathlib import Path
 
 from duck_lab.nav import grid as G
+from duck_lab.profile import load as load_profile
+
+PROFILE = load_profile("sim")
 from duck_lab.nav.grid import CostGrid, clearance, path_length, plan
 
 FLAT = lambda d, lethal_m, inflate_m: G.MARGIN_COST  # noqa: E731
@@ -21,9 +24,10 @@ GRADED = G.margin_cost
 
 def costs(world: dict) -> CostGrid:
     blocked = [tuple(p) for p in world.get("blocked", [])]
-    c = CostGrid.from_map_grid(world["grid"], explained_by=blocked).with_points(blocked)
+    c = CostGrid.from_map_grid(world["grid"], explained_by=blocked, lethal_m=PROFILE.footprint.lethal_m,
+                               inflate_m=PROFILE.footprint.inflate_m).with_points(blocked)
     drops = [tuple(d[:2]) for d in world.get("drops", [])]
-    return c.with_blocked(drops, G.DROP_LETHAL_M, G.DROP_INFLATE_M) if drops else c
+    return c.with_blocked(drops, PROFILE.error_budget.drop_lethal_m, PROFILE.error_budget.drop_inflate_m) if drops else c
 
 
 rows, lost, gained = [], 0, 0

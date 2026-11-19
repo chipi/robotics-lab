@@ -17,12 +17,18 @@ from pathlib import Path
 from runfile.mcapio import Follower
 
 from duck_lab import replay
-from duck_lab.nav import cliff
-from duck_lab.nav.cliff import BEAMS, rotate, sensor_pose
+from duck_lab.plugins.tof8x8 import Tof8x8
+from duck_lab.plugins.tof8x8 import rotate
 from duck_lab.nav.frames import Localizer
 from duck_lab.nav.run import NO_PROGRESS_S, FrameView, Navigator, Progress, decision, load_tof
 from duck_lab.nav.runlog import RunLog, SIGNALS
 from duck_lab.nav.side_drops import SuspectMemory
+from duck_lab.profile import load as load_profile
+
+P = load_profile("sim")
+FIX = P.localisation.fix
+REFLEX = P.footprint.radius_m + P.sensors.tof8x8.reflex_margin_m
+SENSOR = Tof8x8(P, mount={"pitch_offset_deg": 3.0, "range_kind": "axial"})      # what the frames below are built for: the real duck's mount
 
 failures = []
 
@@ -43,9 +49,9 @@ def robot_state(t_ns, pitch_deg=25.0, height=0.118, trunk_pitch=0.0, x=0.0):
 
 def frame_for(st, t_ns, seq, floor_until_m=None, drop_m=0.3):
     """The frame the sensor would send over flat floor, the floor dropping by drop_m beyond floor_until_m."""
-    height, q = sensor_pose(st)
+    height, q = SENSOR.sensor_pose(st)
     dist = []
-    for beam in BEAMS:
+    for beam in SENSOR.beams:
         d = rotate(q, beam)
         if d[2] >= -0.01:
             dist.append(2000)
@@ -60,13 +66,16 @@ def frame_for(st, t_ns, seq, floor_until_m=None, drop_m=0.3):
 def navigator(runlog=None):
     """A Navigator with its sockets left out: what the stream threads call, and what they need."""
     nav = Navigator.__new__(Navigator)
-    nav.scale, nav.loc = 1.0, Localizer()
+    nav.configure(P)
+    nav.scale, nav.loc = 1.0, Localizer(FIX)
+    nav.localisation.belief = nav.loc
+    nav.range = Tof8x8(P, mount={"pitch_offset_deg": 3.0, "range_kind": "axial"})      # the stand-in was always on the real duck's mount
+    nav.range.nearest_mm = lambda: 410
     nav.loc.map_from_odom = (1.2345678901, 2.3456789012, 0.1234567890)     # not round numbers: the pose a frame was placed with is kept as it was
     nav._t0, nav.runlog, nav._sid = __import__("time").monotonic(), runlog, runlog.new_session() if runlog else None
     nav._states, nav._fv, nav.sense, nav._logging_failed = collections.deque(maxlen=40), None, {}, False
-    nav.tof = type("Tof", (), {"nearest_mm": 410})()
     nav.floor_seen = set()
-    nav.suspects = SuspectMemory()
+    nav.suspects = SuspectMemory(P.sensors.tof8x8.side_drops.suspect_frames, P.sensors.tof8x8.side_drops.suspect_ratio, P.sensors.tof8x8.side_drops.clear_m)
     nav._low = {}
     return nav
 
@@ -90,7 +99,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # ---- a frame, derived once ---------------------------------------------------------------------------------------
     s0 = robot_state(1_000_000_000 + 100 * MS)
     fr = frame_for(s0, 1_000_000_000 + 120 * MS, 7, floor_until_m=0.45)
-    fv = FrameView(fr, s0, -20.0, (1.0, 2.0, 0.0))
+    fv = SENSOR.derive(fr, s0, -20.0, (1.0, 2.0, 0.0))
     check("the drop ahead is in the frame's drop points; the points are in map metres, rounded", fv.ok and fv.drops and fv.points
           and all(round(v, 3) == v for q in fv.points for v in q[:3]) and min(d[2] for d in fv.drops) < 0.6, (len(fv.drops), fv.points[:1]))
     pl = fv.payload()
@@ -99,19 +108,19 @@ with tempfile.TemporaryDirectory() as tmp:
           and pl["seq"] == 7 and pl["state"]["odom_z"] == 0.118 and pl["pose"] == [1.0, 2.0, 0.0]
           and pl["derived"]["points"] == fv.points and len(pl["derived"]["drop_points"]) == len(fv.drops), sorted(pl))
     wall = {"seq": 8, "t_ns": fr["t_ns"], "rows": 8, "cols": 8, "distance_mm": [300] * 64, "status": [5] * 64}
-    fw = FrameView(wall, s0, -20.0, (1.0, 2.0, math.pi / 2))          # the frame's pose: at (1, 2), facing +y
+    fw = SENSOR.derive(wall, s0, -20.0, (1.0, 2.0, math.pi / 2))          # the frame's pose: at (1, 2), facing +y
     mem = navigator()
     mem._seen, mem.blocked = set(), []
     got = mem._remember_frame(fw, (0.0, 0.0, 0.0))                     # the tick's pose, some way off
     check("a frame's obstacle points are remembered with the pose of the state it was paired with, not the tick's",
           got and all(q[1] > 2.1 and abs(q[0] - 1.0) < 0.3 for q in got), got[:3])
     check("a state without what the cliff check needs gives a frame that is logged but not derived",
-          not FrameView(fr, {"t_ns": 1}, None, None).ok and "state" not in FrameView(fr, {"t_ns": 1}, None, None).payload())
+          not SENSOR.derive(fr, {"t_ns": 1}, None, None).ok and "state" not in SENSOR.derive(fr, {"t_ns": 1}, None, None).payload())
 
     # ---- a run written by the navigator's own threads and loop -------------------------------------------------------
     rl = RunLog(data, "apartment", "explore99", "exploration", None)
     nav = navigator(rl)
-    nav.tof.nearest_mm = 380
+    nav.range.nearest_mm = lambda: 380
     nav.sense = {"room_m": 0.2, "turning": 1}
     for k in range(10):
         nav._on_state(robot_state(1_000_000_000 + k * 50 * MS, trunk_pitch=2.0 * k, x=0.01 * k))
@@ -228,21 +237,24 @@ with tempfile.TemporaryDirectory() as tmp:
           load_tof(None) == {"pitch_offset_deg": 3.0, "range_kind": "axial"}, load_tof(None))
     # A navigator applies its robot's mounting when it starts (its sockets stubbed: no simulator here).
     from duck_lab.nav import run as nav_run
-    real = {k: getattr(nav_run, k) for k in ("Rpc", "StateStream", "TofStream", "Body")}
+    real = {k: getattr(nav_run, k) for k in ("Rpc", "StateStream", "Body")}
+    real_open = Tof8x8.open
+    Tof8x8.open = lambda self, path: None
     for k in real:
         setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {})())
     try:
         sim_nav = Navigator(calibration="sim", truth=False)
-        sim_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(2.5), "radial")
+        sim_applied = (sim_nav.range.pitch_offset_rad, sim_nav.range.range_kind) == (math.radians(2.5), "radial")
         real_nav = Navigator(calibration=None, truth=False)
-        default_applied = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(3.0), "axial")
+        default_applied = (real_nav.range.pitch_offset_rad, real_nav.range.range_kind) == (math.radians(3.0), "axial")
     finally:
+        Tof8x8.open = real_open
         for k, v in real.items():
             setattr(nav_run, k, v)
     check("a navigator configures the cliff check with its robot's mounting when it starts (and the real duck's without one)",
           sim_applied and default_applied, (sim_applied, default_applied))
     check("a navigator pivots with its robot's calibrated speed: the simulator steps back (-0.06), the real duck stands (0)",
-          (sim_nav.pivot_vx, real_nav.pivot_vx) == (-0.06, 0.0), (sim_nav.pivot_vx, real_nav.pivot_vx))
+          (sim_nav.locomotion.pivot_vx, real_nav.locomotion.pivot_vx) == (-0.06, 0.0), (sim_nav.locomotion.pivot_vx, real_nav.locomotion.pivot_vx))
     cal_rl = RunLog(data, "apartment", "calib1", "exploration", None)
     cal_sid = cal_rl.new_session()
     cal_rl.row(cal_sid, {"t": 0.0, "event": "calibration", "tof": load_tof("sim"), "odom_scale": 0.91})
@@ -252,10 +264,12 @@ with tempfile.TemporaryDirectory() as tmp:
           replay.calibration_of(cal_recs) == load_tof("sim"), replay.calibration_of(cal_recs))
     check("a run from before the event existed: the real duck's mounting", replay.calibration_of(recs) == load_tof(None))
     replay.replay(cal_recs + [r for r in recs if r[1] == "depth_frame"])
-    sim_set = (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(2.5), "radial")
+    sim_sensor = Tof8x8(replay.profile_of(cal_recs), mount=replay.calibration_of(cal_recs))
     replay.replay(recs)
+    plain_sensor = Tof8x8(replay.profile_of(recs), mount=replay.calibration_of(recs))
     check("the replay applies each run's own mounting, and puts the default back for a run without one",
-          sim_set and (cliff.PITCH_OFFSET_RAD, cliff.RANGE) == (math.radians(3.0), "axial"), (cliff.PITCH_OFFSET_RAD, cliff.RANGE))
+          (sim_sensor.pitch_offset_rad, sim_sensor.range_kind) == (math.radians(2.5), "radial")
+          and (plain_sensor.pitch_offset_rad, plain_sensor.range_kind) == (math.radians(3.0), "axial"))
 
     # ---- a run that exists is not overwritten -----------------------------------------------------------------------
     try:
@@ -289,11 +303,14 @@ check("a look that saw nothing or failed: the hole is taken to go on (challenge 
 # ---- a turn while walking, beside a drop: refused only for a drop where the turn goes ---------------------------------
 # challenge 11 seed 1 (2026-11-17): a glance confirmed the pit 0.30 m to the duck's right; turning left, away from it,
 # was refused because any drop within 0.6 m in a 60 deg cone ahead vetoed every turn.
+import functools  # noqa: E402
 from duck_lab.nav.grid import CostGrid as _CG  # noqa: E402
 
-open_floor = _CG.from_map_grid({"res_m": 0.05, "origin": [-1.0, -1.0], "width": 40, "height": 40, "cells": "." * 1600})
+grid_of = functools.partial(_CG.from_map_grid, lethal_m=P.footprint.lethal_m, inflate_m=P.footprint.inflate_m)
+
+open_floor = grid_of({"res_m": 0.05, "origin": [-1.0, -1.0], "width": 40, "height": 40, "cells": "." * 1600})
 nv = navigator()
-nv.tof.nearest_mm = 900
+nv.range.nearest_mm = lambda: 900
 nv.drops, nv.edges = [], [(0.3, -0.3), (0.4, -0.3), (0.5, -0.3)]            # a drop's edge ahead and to the right
 check("a turn away from a drop beside the duck is clear", nv._arc_clear(open_floor, (0.0, 0.0, 0.0), +1.0))
 check("a turn toward it is not", not nv._arc_clear(open_floor, (0.0, 0.0, 0.0), -1.0))
@@ -306,16 +323,16 @@ check("one beyond the arc's reach does not", nv._arc_clear(open_floor, (0.0, 0.0
 # ---- turning on the spot near drops: the gate by kind of drop (the operator's choice 2026-11-17, the advisor's split) --
 # a measured edge is kept PIVOT_EDGE_M off, a cliff stop's rough points PIVOT_DROP_M: the planner may put the duck at its
 # ring less the following's and belief's error, and from there it must still be allowed to turn.
-from duck_lab.nav.run import EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_EDGE_M  # noqa: E402
+EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_EDGE_M = P.error_budget.edge_lethal_m, P.locomotion.pivot.drop_clear_m, P.locomotion.pivot.edge_clear_m
 
 nv = navigator()
 nv.drops, nv.edges = [], [(PIVOT_EDGE_M + 0.005, 0.0)]
-check("a measured edge just past PIVOT_EDGE_M allows a turn on the spot", nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+check("a measured edge just past PIVOT_EDGE_M allows a turn on the spot", nv.locomotion.pivot_clear_of_drops((0.0, 0.0), nv.drops, nv.edges))
 nv.edges = [(PIVOT_EDGE_M - 0.005, 0.0)]
-check("... just inside it does not", not nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+check("... just inside it does not", not nv.locomotion.pivot_clear_of_drops((0.0, 0.0), nv.drops, nv.edges))
 nv.drops, nv.edges = [(PIVOT_EDGE_M + 0.005, 0.0)], []
 check("a cliff stop's point at that distance does not either (its gate is PIVOT_DROP_M)",
-      not nv._pivot_clear_of_drops((0.0, 0.0, 0.0)))
+      not nv.locomotion.pivot_clear_of_drops((0.0, 0.0), nv.drops, nv.edges))
 check("the planner's closest place to an edge (its ring less following 3 cm and belief 2.5 cm) is past the edge gate",
       EDGE_LETHAL_M - 0.055 >= PIVOT_EDGE_M - 1e-9, (EDGE_LETHAL_M, PIVOT_EDGE_M))
 check("... and the edge gate less the pivot drift (7.9 cm max, today's runs) keeps the judge's 0.15 m and belief",
@@ -361,9 +378,10 @@ check("... the rest of the time still does", pr.update(1.0, 1.0 + NO_PROGRESS_S 
 # (sim/probes/head_after_glance.py)
 import duck_lab.nav.run as _run  # noqa: E402
 
-_run.LOOK_MAX_S, _run.HEAD_BACK_S = 0.05, 0.05
+
 nv = navigator()
 nv.glanced, nv.edges, nv.record = [], [], lambda **kw: None
+nv.looking.max_s, nv.looking.back_s = 0.05, 0.05
 walking = [0.0] * 5 + [math.radians(13), math.radians(20), 0.0, 0.0] + [0.0] * 6
 nv._states.append((1, {"joints": walking}))
 heads = []
@@ -379,6 +397,8 @@ class _Robot:
 
 
 nv.robot = _Robot()
+nv.looking.bind(nv.robot)
+nv.locomotion.bind(nv.robot)
 nv.glance_at((0.5, 0.2), (0.0, 0.0, 0.0))
 check("a glance ends by sending the head command it found (the default zeros), not the measured angles",
       heads and heads[-1] == {"neck_pitch": 0.0, "head_pitch": 0.0, "head_yaw": 0.0, "head_roll": 0.0},
@@ -403,16 +423,16 @@ check(f"{LOW_FRAMES} different frames: remembered, as obstacle points", len(new)
 
 # ---- one tight pivot per spot (the operator, 2026-11-18, option 3): each turn on the spot creeps 3-4 cm the odometry
 # does not see; b7 r2 turned four times beside lm_office, 0.206 -> 0.034 m from it while believing 0.16 ----------------
-from duck_lab.nav.run import TIGHT_PIVOT_M  # noqa: E402
+TIGHT_PIVOT_M = P.locomotion.pivot.tight_m
 
 nv = navigator()
-nv._tight_spots = []
+nv.locomotion.tight_spots = []
 check("the tight pivot room is the footprint plus the creep (0.15 m)", abs(TIGHT_PIVOT_M - 0.15) < 1e-9, TIGHT_PIVOT_M)
-check("a first tight pivot here: allowed", nv._tight_allowed((1.0, 1.0, 0.0), 10.0))
-check("... the same pivot going on, tick after tick: allowed", nv._tight_allowed((1.01, 1.0, 0.5), 10.3)
-      and nv._tight_allowed((1.02, 1.01, 1.0), 10.6))
-check("a new tight pivot at the same spot after that one ended: refused", not nv._tight_allowed((1.03, 1.0, 0.0), 14.0))
-check("a tight pivot 0.2 m away: allowed", nv._tight_allowed((1.2, 1.0, 0.0), 14.0))
+check("a first tight pivot here: allowed", nv.locomotion._tight_allowed((1.0, 1.0), 10.0))
+check("... the same pivot going on, tick after tick: allowed", nv.locomotion._tight_allowed((1.01, 1.0), 10.3)
+      and nv.locomotion._tight_allowed((1.02, 1.01), 10.6))
+check("a new tight pivot at the same spot after that one ended: refused", not nv.locomotion._tight_allowed((1.03, 1.0), 14.0))
+check("a tight pivot 0.2 m away: allowed", nv.locomotion._tight_allowed((1.2, 1.0), 14.0))
 
 print("REPLAY-LOG", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
