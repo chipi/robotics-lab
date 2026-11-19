@@ -81,3 +81,32 @@ The operator: "ok on parked 16". What was measured:
 
 Not tried: capping the turn while walking (touches every challenge: a full gate after), seeing the
 bar (the low band starts at 3.5 cm) and squaring up to it.
+
+## The cause: turning while the feet meet the edge (2026-11-19)
+
+Challenges 17–19 (gate12, 10 seeds each) failed the same way as 16: 17 1/10 (cables of 0.52 cm
+stalled), 18 3/10, 19 0/10, every failure "stuck", no contact or fall. Probed one difference at a
+time on a 0.5 cm bar, 5 tries each (`step_height.py`, options `--bar-deep`, `--nav`, `--no-stuck`,
+`--no-steer`, `--glance-first`, `--stand`, `--cmd-log`):
+
+| What the walk was | Crossed |
+| --- | --- |
+| Straight, no turn (4 cm deep; 2 cm deep; after a glance; after 20 s standing; logged) | 21 of 23 |
+| Straight with turns of ±0.1 rad/s | 3 of 5 |
+| Straight with turns of ±0.25 rad/s | 2 of 5 |
+| The navigator's own `go_to` (as is; no stuck rule; small turns zeroed; logged) | 5 of 18 |
+
+Ruled out: the bar's depth, the stuck rule, gaps between commands (0.10 s, the largest 0.11 s), the
+head (all zeros while walking), a glance before, standing 20 s before, the simulator falling behind
+(its clock / wall 0.996–1.007). The command log shows the difference: walking, the navigator asks
+for a turn over 0.1 rad/s in 25–30 of about 70 ticks, +0.57 to +0.65 rad in all, correcting the
+walk's drift to the right (also reported upstream, microduck_rl#59). Zeroing turns under 0.35
+rad/s made the drift grow until larger turns passed, so that variant still turned while crossing.
+
+Upstream (read 2026-11-19): the walking policy is blind to the floor (no height input), trained on
+steps up to 1.5 cm with a 2 cm swing target; walking and turning together are trained (sampled
+independently). Nothing upstream reports this effect; the closest is an unmerged dedicated step-up
+skill (microduck_rl PR #25) trained with no turn at all.
+
+Next (not built): steer in short corrections only past a heading error, zero turn the rest of the
+time; replay, then challenges 16–19, then the full gate (it changes every challenge's walking).
