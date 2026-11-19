@@ -299,7 +299,8 @@ def cmd_video(args) -> None:
     w, h = (int(v) for v in args.size.lower().split("x"))
     insets = tuple(i.strip() for i in (args.inset or "").split(",") if i.strip())
     print(video.export(Path(args.data), args.run, args.engine, Path(args.out), args.fps, (w, h), args.t_from, args.t_to,
-                       insets, args.inset_size))
+                       insets, args.inset_size, tuple(x.strip() for x in (args.hide or "").split(",") if x.strip()),
+                       args.intro or 0.0))
 
 
 def cmd_render_serve(args) -> None:
@@ -397,6 +398,10 @@ def main() -> None:
     p.add_argument("--to", dest="t_to", type=float)
     p.add_argument("--inset", help="small views in the bottom corners: eye (the robot's camera), top (the room from above), hud (the status lines), comma-separated")
     p.add_argument("--inset-size", type=float, default=0.28, help="an inset's side as a share of the video's height")
+    p.add_argument("--intro", type=float, help="instead of the run: SECONDS of the camera circling the robot as it stands at "
+                                                "the start (an opening to join in front of the run's video)")
+    p.add_argument("--hide", help="layers to leave out, comma-separated: truth (the real room's faint outline on the map), map (the "
+                                  "discovered map), objects (their dots on the map), labels (their names in the view), trail, wedge")
     p.set_defaults(fn=cmd_video)
     p = sub.add_parser("render-serve", help="the render service: runs to videos for the pages, one job at a time (ADR-0017)")
     p.add_argument("--host", default="127.0.0.1")

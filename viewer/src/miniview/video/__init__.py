@@ -102,6 +102,7 @@ def _hud_at(t: float, cmd_t: list, cmds: list, dec_t: list, decisions: list, dep
 
 
 SIGHTING_FRESH_S = 1.0      # a sighting is "current" for this long (the navigator looks every 0.5 s)
+GRID_EVERY_S = 5.0          # the map as it grows: one copy at most this often (a 17-minute run keeps ~200, not every world event)
 
 
 class _Semantic:
@@ -179,6 +180,7 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
     from the robot's pose in the frame) and, with hud=True, the HUD's sees / room / objects entries. A run without objects, sightings or
     rooms gets none of it."""
     truth, belief, sig_t, sig_v, imu_t, imu_v, run, grid = [], [], [], [], [], [], None, None
+    grids, all_epochs = [], []                    # the map as it grew, and the map-to-world in force (the top inset's discovered map)
     cmds, decisions, depths = [], [], []          # for the HUD (hud=True)
     epochs, objs, sightings, rooms = [], [], [], []   # for the semantic overlays (semantic=True)
     for t, kind, p in Follower(Path(run_dir), keep_raw=hud).poll():
@@ -199,6 +201,8 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
             classes = [q[3] for q in ((p.get("derived") or {}).get("points") or [])]
             depths.append((t, {"rows": p.get("rows", 8), "cols": p.get("cols", 8), "mm": p["distance_mm"],
                                "status": p.get("status", []), "counts": {c: classes.count(c) for c in "fovb"}}))
+        if kind == "epoch":
+            all_epochs.append((t, tuple(p["map_to_world"])))
         if kind == "run":
             run = p
         elif kind == "tick":
@@ -209,6 +213,8 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
             belief.append((t, p["belief"]))
         elif kind == "world" and p.get("grid"):
             grid = p["grid"]
+            if not grids or (t - grids[-1]["t"] >= GRID_EVERY_S and grid["cells"] != grids[-1]["cells"]):
+                grids.append(dict(grid, t=round(t, 3)))
         elif kind == "signals":
             v = p["values"]
             js = {k.removeprefix("joint_"): x for k, x in v.items() if k.startswith("joint_") and x is not None}
@@ -228,6 +234,15 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
                 q = _tilt_with_yaw(imu_v[_at(imu_t, t)[0]], yaw)
             poses.append((t, [x, y, stand_z], q))
     out = {"run": run, "fps": fps, "source": source, "frame": frame, "map": grid if source == "belief" else None, "frames": []}
+    if grids:
+        # each copy with the map-to-world in force at its time, so the engine draws it where the truth is (a run with no truth: in
+        # its own map frame, as the pose is)
+        ep_t = [e[0] for e in all_epochs]
+        for g in grids:
+            g["to_frame"] = (list(all_epochs[max(bisect.bisect_right(ep_t, g["t"]) - 1, 0)][1])
+                             if source == "truth" and all_epochs else [0.0, 0.0, 0.0])
+        out["grids"] = grids
+    grid_t = [g["t"] for g in grids]
     if not poses:
         return out
     sem = _Semantic(source, epochs, objs, sightings, rooms) if semantic else None
@@ -249,6 +264,8 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
             frame["joints"] = {n: v + (jb.get(n, v) - v) * g for n, v in ja.items()}
         if hud:
             frame["hud"] = _hud_at(t, cmd_t, cmds, dec_t, decisions, dep_t, depths)
+        if grids:
+            frame["grid_i"] = bisect.bisect_right(grid_t, t) - 1 if t >= grid_t[0] else None
         if sem and sem.has:
             obj_i, sighting, extra = sem.at(t, frame["pos"], frame["quat"])
             frame["obj_i"], frame["sighting"] = obj_i, sighting
@@ -260,7 +277,8 @@ def track(run_dir: Path, fps: float = 30.0, t_from: float | None = None, t_to: f
 
 
 def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size: tuple = (1280, 720),
-           t_from: float | None = None, t_to: float | None = None, insets: tuple = (), inset_frac: float = 0.28) -> Path:
+           t_from: float | None = None, t_to: float | None = None, insets: tuple = (), inset_frac: float = 0.28,
+           hide: tuple = (), intro_s: float = 0.0) -> Path:
     """The run `key` of the data folder rendered by `engine` to `out` (a video file). Raises for a robot with no model for that
     engine, a run with no truth, or an engine that fails (its own message). insets: small squares in the bottom corners,
     "eye" (the robot's own camera, robots.json eye_camera), "top" (the room from above, the robot and its trail), each
@@ -283,7 +301,7 @@ def export(data: Path, key: str, engine: str, out: Path, fps: float = 30.0, size
         if rb.get("urdf"):
             rb["urdf"] = str((REPO / rb["urdf"]).resolve())        # the description, from the repository's robots/
         job.write_text(json.dumps({"track": tr, "scene": scene, "robot": rb, "size": list(size), "insets": list(insets),
-                                   "inset_frac": inset_frac,
+                                   "inset_frac": inset_frac, "hide": list(hide), "intro_s": intro_s,
                                    "out": str(Path(out).resolve()), "title": key}))
         r = subprocess.run(command(engine, model, job))
         if r.returncode != 0:

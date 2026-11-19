@@ -138,42 +138,140 @@ def _val(v) -> str:
     return f"{v:.3g}" if isinstance(v, float) else str(v)
 
 
-def _hud(frame, hud: dict, robot: str, scene: str, font, fsize: int) -> None:
-    """The Eye's HUD (web/shell/shell.js paintHud) as a dark panel top-left, in place: the robot, the time, its pace, what
-    it is doing and why with the values the rule compared, the newest depth frame's classes, and its 8 x 8 zones."""
+MAP_UNKNOWN, MAP_FREE, MAP_OCC = (24, 27, 33), (70, 96, 128), (236, 238, 244)
+
+
+TRUTH_LINE, TRUTH_DROP = (88, 96, 112), (120, 70, 130)
+
+
+def _truth_layer(img, scene: dict, px) -> None:
+    """The real room, faint, under the discovered map (the operator, 2026-11-19: a reference for what was found): every box's
+    footprint as a thin grey outline, every drop as a thin purple one."""
+    from PIL import ImageDraw
+    g = ImageDraw.Draw(img)
+    for b in scene.get("boxes", []):
+        g.polygon([px(*c) for c in overlay.rect(b["cx"], b["cy"], b["hx"], b["hy"], b.get("yaw", 0.0))], outline=TRUTH_LINE)
+    for hz in scene.get("hazards", []):
+        cx, cy, hx, hy = (hz["x0"] + hz["x1"]) / 2, (hz["y0"] + hz["y1"]) / 2, (hz["x1"] - hz["x0"]) / 2, (hz["y1"] - hz["y0"]) / 2
+        g.polygon([px(*c) for c in overlay.rect(cx, cy, hx, hy, hz.get("yaw", 0.0))], outline=TRUTH_DROP)
+
+
+def _map_image(grid: dict, size: int, px, scene: dict | None = None, show_map: bool = True) -> "object":
+    """The robot's discovered map as a PIL image `size` px square: unknown dark, free floor blue-grey, occupied white; each cell
+    placed in the frame being drawn through grid["to_frame"] (map to world) and drawn by `px` (frame metres -> pixels); the real
+    room faint on top when `scene` is given (its outlines only, so the discovered map stays readable)."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (size, size), MAP_UNKNOWN)
+    if not show_map:
+        if scene:
+            _truth_layer(img, scene, px)
+        return img
+    g = ImageDraw.Draw(img)
+    res, (ox, oy), gw = grid["res"], grid["origin"], grid["w"]
+    tx, ty, tyaw = grid.get("to_frame", [0.0, 0.0, 0.0])
+    c, s_ = math.cos(tyaw), math.sin(tyaw)
+    half = max(1, int(round(abs(px(res, 0)[0] - px(0, 0)[0]) / 2 + 0.5)))
+    for k, ch in enumerate(grid["cells"]):
+        if ch not in ".#":
+            continue
+        mx, my = ox + (k % gw + 0.5) * res, oy + (k // gw + 0.5) * res
+        x, y = px(tx + c * mx - s_ * my, ty + s_ * mx + c * my)
+        g.rectangle([x - half, y - half, x + half, y + half], fill=MAP_FREE if ch == "." else MAP_OCC)
+    if scene:
+        _truth_layer(img, scene, px)
+    return img
+
+
+def _cam_projector(cam, w: int, h: int, fovy_deg: float):
+    """World point -> (x, y) pixels in the main view (a free camera: lookat, distance, azimuth, elevation), None behind it."""
+    az, el = math.radians(cam.azimuth), math.radians(cam.elevation)
+    fwd = np.array([math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)])
+    pos = np.array(cam.lookat) - fwd * cam.distance
+    right = np.cross(fwd, [0.0, 0.0, 1.0])
+    right /= np.linalg.norm(right)
+    up = np.cross(right, fwd)
+    f = (h / 2) / math.tan(math.radians(fovy_deg) / 2)
+
+    def project(x: float, y: float, z: float):
+        v = np.array([x, y, z]) - pos
+        d = float(v @ fwd)
+        if d < 0.1:
+            return None
+        return w / 2 + f * float(v @ right) / d, h / 2 - f * float(v @ up) / d
+    return project
+
+
+def _labels(frame, snap, project, font, near_m: float, pos) -> None:
+    """The objects the robot has confirmed, labelled over themselves in the main view (landmarks in their own colour), within
+    near_m of the robot; in place."""
+    from PIL import Image, ImageDraw
+    base = Image.fromarray(frame).convert("RGBA")
+    over = ImageDraw.Draw(base, "RGBA")
+    for o in (snap or {}).get("items", []):
+        if not o.get("confirmed") or not o["parts"]:
+            continue
+        x, y = o["parts"][0][0], o["parts"][0][1]
+        top = max(pt[6] for pt in o["parts"])
+        if math.dist((x, y), pos[:2]) > near_m:
+            continue
+        q = project(x, y, top + 0.04)
+        if q is None or not (0 <= q[0] < frame.shape[1] and 0 <= q[1] < frame.shape[0]):
+            continue
+        rgb = overlay.object_rgb(o)
+        tw = over.textlength(o["kind"], font=font)
+        over.rounded_rectangle([q[0] - tw / 2 - 5, q[1] - 22, q[0] + tw / 2 + 5, q[1] - 3], 4, fill=(12, 14, 18, 170), outline=rgb + (255,))
+        over.text((q[0] - tw / 2, q[1] - 20), o["kind"], font=font, fill=rgb + (255,))
+        over.ellipse([q[0] - 3, q[1] - 3, q[0] + 3, q[1] + 3], fill=rgb + (255,))
+    frame[:] = np.asarray(base.convert("RGB"))
+
+
+def _hud(frame, hud: dict, robot: str, scene: str, font, fsize: int, side: int = 0) -> None:
+    """The Eye's HUD (web/shell/shell.js paintHud), in place. Top-left, a panel of FIXED size so it never jumps as lines wrap:
+    the robot and time, its pace, what it is doing and why (two lines kept), what it sees (two lines kept), the room, the
+    objects. Bottom-left, beside the eye inset (side px square) and as tall, the newest depth frame's 8 x 8 zones, so what the
+    robot senses is grouped (the operator, 2026-11-19). The rule's numbers and the frame's class counts are left to the
+    Observatory's pages."""
     import colorsys
     from PIL import Image, ImageDraw
     h, w = frame.shape[:2]
-    pw, cols = int(w * 0.46), max(24, int(w * 0.46 / (fsize * 0.6)) - 12)
-    lines = [(f"{robot.upper()} · EYE", (255, 214, 102))]
-    lines.append((f"{scene} · t {hud['t']:.1f} s · REPLAY", (210, 215, 222)))
+    pw = int(w * 0.36)
+    measure = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    cols = max(24, int((pw - 20) / max(1.0, measure.textlength("M", font=font))) - 7)   # the font's own width; "DOING " in front
+    blank = ("", (0, 0, 0))
+    lines = [(f"{robot.upper()} · {scene} · t {hud['t']:.0f} s", (255, 214, 102))]
     c = hud.get("cmd")
     lines.append((f"PACE  {c[0]:.2f} m/s · turn {c[1]:+.2f} rad/s" if c else "PACE  —", (230, 235, 240)))
     d = hud.get("doing")
-    if d:
-        for i, ln in enumerate(_wrap(f"{d.get('rule')} · {d.get('reason')} · {d['ago']:.1f} s ago", cols, 3)):
-            lines.append((("DOING " if i == 0 else "      ") + ln, (255, 255, 255)))
-        vals = " · ".join(f"{k} {_val(v)}" for k, v in (d.get("values") or {}).items())
-        for i, ln in enumerate(_wrap(vals, cols, 2) if vals else []):
-            lines.append((("NUMBERS " if i == 0 else "        ") + ln, (170, 180, 192)))
-    else:
-        lines.append(("DOING nothing decided yet", (200, 200, 200)))
+    doing = ([(("DOING " if i == 0 else "      ") + ln, (255, 255, 255))
+              for i, ln in enumerate(_wrap(f"{d.get('rule')} · {d.get('reason')}", cols, 2))] if d
+             else [("DOING nothing decided yet", (200, 200, 200))])
+    lines += (doing + [blank, blank])[:2]                 # two lines kept, filled or not
+    sem = overlay.hud_lines(hud, cols)                    # SEES (one or two) / ROOM / OBJECTS; none for a run without a semantic map
+    if sem:
+        sees = [x for x in sem if not x[0].startswith(("ROOM", "OBJECTS"))]
+        rest = [x for x in sem if x[0].startswith(("ROOM", "OBJECTS"))]
+        lines += (sees + [blank, blank])[:2] + rest
+    fit = []
+    for txt, col in lines:                                # a line that would run past the panel is cut, never drawn outside it
+        while txt and measure.textlength(txt, font=font) > pw - 20:
+            txt = txt[:-2].rstrip() + "…"
+        fit.append((txt, col))
+    lh = int(fsize * 1.35)
+    panel = Image.new("RGBA", (pw, 10 + lh * len(fit) + 6), (12, 14, 18, 175))
+    g = ImageDraw.Draw(panel)
+    for i, (txt, col) in enumerate(fit):
+        if txt:
+            g.text((10, 6 + i * lh), txt, font=font, fill=col + (255,))
+    base = Image.fromarray(frame).convert("RGBA")
+    base.alpha_composite(panel, (8, 8))
     dp = hud.get("depth")
     if dp:
-        n = dp["counts"]
-        lines.append((f"FRAME floor {n.get('f', 0)} · obstacle {n.get('o', 0)} · overhead {n.get('v', 0)} · below "
-                      f"{n.get('b', 0)}", (210, 215, 222)))
-    lines += overlay.hud_lines(hud, cols)                 # SEES / ROOM / OBJECTS (RFC-0016); none for a run with no semantic map
-    lh = int(fsize * 1.35)
-    ph = 10 + lh * len(lines) + 8
-    cell = max(5, int(ph / 12))
-    grid_w = (dp["cols"] * cell + 10) if dp else 0
-    panel = Image.new("RGBA", (pw + grid_w, ph), (12, 14, 18, 190))
-    g = ImageDraw.Draw(panel)
-    for i, (txt, col) in enumerate(lines):
-        g.text((10, 6 + i * lh), txt, font=font, fill=col + (255,))
-    if dp:
-        x0, y0 = pw, (ph - dp["rows"] * cell) // 2
+        gh = side if side else dp["rows"] * max(5, h // 64) + 16 + lh
+        cell = max(4, (gh - 16 - lh) // dp["rows"])
+        gw = dp["cols"] * cell + 16
+        grid = Image.new("RGBA", (gw, gh), (12, 14, 18, 200))
+        gd = ImageDraw.Draw(grid)
+        gd.text((8, 4), "DEPTH 8×8", font=font, fill=(210, 215, 222, 255))
         for k, mm in enumerate(dp["mm"]):
             ok = dp["status"][k] in RAW_VALID if k < len(dp["status"]) else True
             if ok:
@@ -181,10 +279,10 @@ def _hud(frame, hud: dict, robot: str, scene: str, font, fsize: int) -> None:
                 col = (int(r * 255), int(gg * 255), int(b * 255), 255)
             else:
                 col = (44, 46, 52, 255)
-            cx, cy = x0 + (k % dp["cols"]) * cell, y0 + (k // dp["cols"]) * cell
-            g.rectangle([cx, cy, cx + cell - 2, cy + cell - 2], fill=col)
-    base = Image.fromarray(frame).convert("RGBA")
-    base.alpha_composite(panel, (8, 8))
+            cx, cy = 8 + (k % dp["cols"]) * cell, 8 + lh + (k // dp["cols"]) * cell
+            gd.rectangle([cx, cy, cx + cell - 2, cy + cell - 2], fill=col)
+        x0 = 8 + side + 2 + 8 if side else 8                # beside the eye inset (its 2 px border), bottom-left
+        base.alpha_composite(grid, (x0, h - gh - 8))
     frame[:] = np.asarray(base.convert("RGB"))
 
 
@@ -206,13 +304,19 @@ def render(job: dict) -> None:
     renderer = mujoco.Renderer(m, height=h, width=w)
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-    cam.distance, cam.elevation = 1.3, -40.0
+    cam.distance, cam.elevation = 2.4, -66.0            # high enough to see over the furniture what the robot finds (was 1.3, -40)
     # Insets (the operator, 2026-11-17): the duck's own view (the model's head camera) and the room from above, as small
     # squares in the bottom corners.
     insets = [i for i in job.get("insets", []) if i in ("eye", "top", "hud")]
     side = max(64, int(h * float(job.get("inset_frac", 0.28))))
+    map_side = int(side * 1.45)                 # the discovered map is the bigger inset (the operator, 2026-11-19)
+    hide = set(job.get("hide") or [])           # layers left out (--hide): truth, map, objects, labels, trail, wedge
+    dt = 1.0 / float(tr.get("fps") or 30.0)
+    follow, turn = 1 - 0.85 ** (30 * dt), 1 - 0.95 ** (30 * dt)   # the camera's smoothing per second, as at 30 fps whatever the rate
+    grids = tr.get("grids") or []
+    map_cache = {}
     small = mujoco.Renderer(m, height=side, width=side) if {"eye", "top"} & set(insets) else None
-    fsize = max(10, h // 40)
+    fsize = max(9, h // 54)                     # smaller than the first build's h // 40 (the operator, 2026-11-19)
     font = _font(fsize) if "hud" in insets else None
     scene_name = (job.get("title") or "").split("/")[1] if "/" in (job.get("title") or "") else ""
     eye_cam = None
@@ -228,6 +332,7 @@ def render(job: dict) -> None:
     if eye_cam is not None:
         eye_fovy = float(m.cam_fovy[eye_cam.fixedcamid])
     sem_objects = (tr.get("semantic") or {}).get("objects") or []
+    main_font = _font(max(12, h // 44))
     lfont = _font(max(9, side // 26)) if {"eye", "top"} & set(insets) and ("semantic" in tr or any(f.get("sighting") for f in tr["frames"])) else None
     top_cam = None
     if "top" in insets:
@@ -235,6 +340,34 @@ def render(job: dict) -> None:
         top_cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         top_cam.lookat[:], top_cam.distance = _square_top(job)
         top_cam.elevation, top_cam.azimuth = -89.9, 90.0          # straight down, +y up in the image
+    if job.get("intro_s"):
+        # An introduction instead of the run (the operator, 2026-11-19: "a few cameras around the duck in 3D to present it"):
+        # the camera circles the robot as it stands in the run's first frame, close and low, at the track's frame rate, no
+        # overlays. Joined in front of the run's video afterwards.
+        f0 = tr["frames"][0]
+        d.qpos[:] = home
+        d.qpos[free:free + 3] = f0["pos"]
+        d.qpos[free + 3:free + 7] = f0["quat"]
+        for n, a in f0["joints"].items():
+            if n in joint_adr:
+                d.qpos[joint_adr[n]] = a
+        mujoco.mj_forward(m, d)
+        n = max(2, int(float(job["intro_s"]) * float(tr["fps"])))
+        intro = []
+        for k in range(n):
+            u = k / (n - 1)
+            cam.lookat[:] = [f0["pos"][0], f0["pos"][1], 0.13]
+            cam.distance = 0.75 - 0.15 * math.sin(math.pi * u)      # in a little at the middle of the turn
+            cam.elevation = -12.0 - 10.0 * u
+            cam.azimuth = 200.0 + 360.0 * u
+            renderer.update_scene(d, cam)
+            intro.append(renderer.render().copy())
+        renderer.close()
+        if small is not None:
+            small.close()
+        mediapy.write_video(job["out"], intro, fps=tr["fps"])
+        print(f"intro {job['out']}: {len(intro)} frames at {tr['fps']:g} fps, {w}x{h}", flush=True)
+        return
     trail = []
     look, heading = None, None
     frames = []
@@ -247,14 +380,16 @@ def render(job: dict) -> None:
                 d.qpos[joint_adr[n]] = a
         mujoco.mj_forward(m, d)
         target = np.array([f["pos"][0], f["pos"][1], 0.08])
-        look = target if look is None else look + 0.15 * (target - look)        # the camera follows, smoothly
+        look = target if look is None else look + follow * (target - look)        # the camera follows, smoothly
         w_, x_, y_, z_ = f["quat"]
         yaw = math.degrees(math.atan2(2 * (w_ * z_ + x_ * y_), 1 - 2 * (y_ * y_ + z_ * z_)))
-        heading = yaw if heading is None else heading + 0.05 * (((yaw - heading + 180) % 360) - 180)   # behind it, turning slowly
+        heading = yaw if heading is None else heading + turn * (((yaw - heading + 180) % 360) - 180)   # behind it, turning slowly
         cam.lookat[:] = look
         cam.azimuth = heading + 150.0
         renderer.update_scene(d, cam)
         frame = renderer.render().copy()
+        if sem_objects and lfont is not None and f.get("obj_i") is not None and "labels" not in hide:
+            _labels(frame, sem_objects[f["obj_i"]], _cam_projector(cam, w, h, global_fovy), main_font, 4.0, f["pos"])
         if eye_cam is not None:
             # From the head camera's pose, EYE_AHEAD_M in front of it: the camera itself sits inside the head's shell and
             # rendered the shell (the first test showed grey where the stairwell was).
@@ -281,7 +416,38 @@ def render(job: dict) -> None:
                 pos = d.cam_xpos[cid] + fwd * EYE_AHEAD_M
                 img = _overlay_image(img, lambda im: overlay.draw_eye(im, f["sighting"], overlay.eye_projector(pos, fwd, side, eye_fovy), lfont))
             _paste(frame, img, "bl")
-        if top_cam is not None:
+        if top_cam is not None and grids:
+            # the robot's discovered map, as it was at this frame's time: what the robot knows, not the room
+            if not trail or math.dist(trail[-1], f["pos"][:2]) > 0.1:
+                trail.append(tuple(f["pos"][:2]))
+            look, dist = _square_top(job)
+            half = dist * math.tan(math.radians(45.0 / 2)) / 1.1 * 1.05
+            mpx = lambda x, y: (map_side / 2 + (x - look[0]) / half * map_side / 2, map_side / 2 - (y - look[1]) / half * map_side / 2)  # noqa: E731
+            gi = f.get("grid_i")
+            if gi not in map_cache:
+                map_cache.clear()
+                map_cache[gi] = (_map_image(grids[gi], map_side, mpx, None if "truth" in hide or tr.get("frame") == "map" else job.get("scene"),
+                                            "map" not in hide) if gi is not None else None)
+            from PIL import Image, ImageDraw
+            img = (map_cache[gi].copy() if map_cache[gi] is not None else Image.new("RGB", (map_side, map_side), MAP_UNKNOWN))
+            dr = ImageDraw.Draw(img, "RGBA")
+            if f.get("sighting") and f["sighting"].get("pose") and "wedge" not in hide:
+                dr.polygon([mpx(*q) for q in overlay.wedge(f["sighting"]["pose"], f["sighting"]["hfov_deg"], f["sighting"]["range_m"])],
+                           fill=overlay.WEDGE_RGB + (45,), outline=overlay.WEDGE_RGB + (160,))
+            if len(trail) > 1 and "trail" not in hide:
+                dr.line([mpx(*q) for q in trail[-600:]], fill=(255, 200, 80, 200), width=2)
+            snap = sem_objects[f["obj_i"]] if sem_objects and f.get("obj_i") is not None else None
+            for o in (snap or {}).get("items", []) if "objects" not in hide else []:
+                if o.get("confirmed") and o["parts"]:
+                    cx, cy = mpx(o["parts"][0][0], o["parts"][0][1])
+                    dr.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=overlay.object_rgb(o) + (255,))
+            rx, ry = mpx(*f["pos"][:2])
+            w_, x_, y_, z_ = f["quat"]
+            yr = math.atan2(2 * (w_ * z_ + x_ * y_), 1 - 2 * (y_ * y_ + z_ * z_))
+            dr.ellipse([rx - 5, ry - 5, rx + 5, ry + 5], fill=(240, 70, 60, 255))
+            dr.line([rx, ry, rx + 11 * math.cos(yr), ry - 11 * math.sin(yr)], fill=(240, 70, 60, 255), width=2)
+            _paste(frame, np.asarray(img), "br")
+        elif top_cam is not None:
             if not trail or math.dist(trail[-1], f["pos"][:2]) > 0.1:
                 trail.append(tuple(f["pos"][:2]))
             small.update_scene(d, top_cam)
@@ -295,7 +461,7 @@ def render(job: dict) -> None:
                 img = _overlay_image(img, lambda im: overlay.draw_top(im, snap, f.get("sighting"), px, lfont))
             _paste(frame, img, "br")
         if font is not None and f.get("hud"):
-            _hud(frame, f["hud"], rb.get("name", "robot"), scene_name, font, fsize)
+            _hud(frame, f["hud"], rb.get("name", "robot"), scene_name, font, fsize, side if eye_cam is not None else 0)
         frames.append(frame)
     renderer.close()
     if small is not None:
