@@ -91,6 +91,7 @@ nav:
     - RFC-0018 — Lab projects and seams: rfc/RFC-0018-lab-projects-and-seams.md
     - RFC-0019 — Anomalies: rfc/RFC-0019-anomaly-telemetry.md
     - RFC-0020 — Robot profiles and plugins: rfc/RFC-0020-robot-profiles-and-plugins.md
+    - RFC-0021 — The simulator host and the payload: rfc/RFC-0021-sim-host-and-payload.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
