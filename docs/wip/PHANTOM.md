@@ -83,7 +83,18 @@ systematic.
 - **K25:** b11 r3's six remembered points 0.33 … 0.41 m from every layout geom are at `ball_1` (a 4
   cm sphere at (2.40, 2.30); the points are at (2.36 … 2.39, 2.28 … 2.36)); b11 r1's group at (2.17
   … 2.23, −2.46 … −2.41) is at `obj_2` (2.10, −2.40). b11 r2's one point at (0.02, 0.21) is 0.29 m
-  from the cube's face, not on it: not explained.
+  from the cube's face, not on it. **Explained 2026-11-19:** it is not a sensed return but the
+  navigator's own mark. At 34.16 s a `step_look` aimed a glance at the floor spot (0.035, 0.212) it
+  had never seen as floor; the glance ended `status floor` at 38.30 s but the spot's 5 cm cell was
+  still not in `floor_seen`, and `run.py` (`go_to`: "still not seen as floor: not walked on")
+  appends the spot itself to the remembered obstacles. The first world record with an obstacle
+  (38.33 s) holds exactly [0.035, 0.212] (the spot to three decimals), and no depth return of any
+  kind lies within 7.5 cm of it in the 65 frames from 34.0 to 38.4 s (nearest floor 16.3 cm,
+  nearest obstacle 0.50 m, nearest below-floor 0.71 m). The 0.29 m from the cube is where the duck
+  chose to look. Whether unseen floor should become an obstacle point is a navigator decision (the
+  same run's "no room to turn" refusals at 38.33 to 38.77 s report 0.20 m to an obstacle and 0.25 m
+  to a drop; which term refused them was not determined, so the mark is not shown to have caused
+  them).
 - **The navigator:** nothing was changed. Options for the operator, not done: the explorer's start
   could step forward before the opening survey; the survey could ignore it; or leave it, as it is a
   real object.
