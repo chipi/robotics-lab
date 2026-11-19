@@ -168,10 +168,19 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 
 ## Phase 4 — behaviour on the profiles
 
+- **Odometry by speed (K8)** first, since look-far makes slow walking common.
 - **RFC-0012, look far:** the pace from the map ahead, its numbers read from the robot's profile.
-- **Crossing edges:** first probe a constant trim against the walk's drift (5 tries); a deadband or
-  burst steering only if the trim does not walk straight. Challenge 16 waits on this.
-- An apartment batch scored by floor coverage.
+- **Crossing edges (K1):** first probe a constant trim against the walk's drift (5 tries); a deadband
+  or burst steering only if the trim does not walk straight. Challenge 16 waits on this.
+- A regression gate: challenges 1–11 (3 seeds), phase 1's evaluation on the fixed goals.
+- **Open items closed alongside** (the operator, 2026-11-19: "close all open items along the way"):
+  the probes run and fixed (K28), old runs marked in `duck-replay` (K33), the radial model on
+  Pollen's replay bench (K34), the edge-error budget (K27), the unexplained point (K25), better
+  detector rules (K12, K36), where the simulator's runs diverge (K13), the Observatory's memory
+  (K29).
+- An apartment batch scored by floor coverage, which also measures K37, K18 and K4–K6.
+- Staying with their phases: the planner's (K22–K24, K38, K2, K9, K11) after phase 6; the EV3's
+  (K10) in phase 6; hardware and choices waiting on the operator (K15–K17, K19, K20).
 
 ## Phase 4b — the simulator host and the payload (RFC-0021)
 
