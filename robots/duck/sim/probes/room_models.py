@@ -14,6 +14,7 @@ from runfile.mcapio import Follower
 
 from duck_lab.nav.evaluate import footprint_distance
 from duck_lab.nav.grid import CostGrid, clearance
+from duck_lab.profile import load as load_profile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from room_vs_truth import box_distance  # noqa: E402
@@ -24,7 +25,8 @@ MAX_M = 0.3
 def grid_of(w: dict) -> CostGrid:
     g = w["grid"]
     cost = [math.inf if c == "#" else 0.0 for c in g["cells"]]
-    return CostGrid(g["res"], tuple(g["origin"]), g["w"], g["h"], cost)
+    fp = load_profile("sim").footprint
+    return CostGrid(g["res"], tuple(g["origin"]), g["w"], g["h"], cost, fp.lethal_m, fp.inflate_m)
 
 
 def to_squares(grid: CostGrid, xy: tuple, max_m: float) -> float:

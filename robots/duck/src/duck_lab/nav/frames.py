@@ -6,21 +6,23 @@ applied to the latest odometry. Poses are (x, y, yaw).
 
 Two things sit on top of that (RFC-0016 §4; the run explore-b10a-r1, where one fix moved the belief 0.9 m while the
 duck pivoted and the duck later touched a landmark): a gate on a fix that would move the belief more than max_jump_m
-(it is held, and taken only when HOLD_N fixes in a row agree with each other), and an offset, the landmarks' correction
+(it is held, and taken only when hold_n fixes in a row agree with each other), and an offset, the landmarks' correction
 (nudge), kept across fixes — each fix replaces the transform, so a correction made once would be gone in a second.
+
+The gate's numbers are the robot's, the profile's `localisation.fix` block, passed as `fix`:
+  jump_m, jump_rad   a fix moving the belief further than this (or turning it further) is a large one
+  hold_n             fixes in a row that must agree before a jump is taken (at one fix a second: 5 s), agreeing to within
+                     hold_agree_m and hold_agree_rad
+  offset_max_m       the landmarks' total correction never exceeds this ...
+  offset_half_s      ... and it halves in this time: mapd corrects itself too, and an old correction would then double it
+  move_m, move_rad   the memory follows the belief's frame once it has moved this far from where the memory sits: a fix a second
+                     moves it by centimetres, and a memory re-keyed every second would only smear
+  parted_m, parted_rad   the belief's frame and mapd's are "parted" past this: a held jump, or a landmarks' offset
 """
 
 import math
 
-HOLD_N = 5               # fixes in a row that must agree before a jump is taken (at one fix a second: 5 s)
-HOLD_AGREE_M = 0.15      # ... agreeing to within this and HOLD_AGREE_RAD
-HOLD_AGREE_RAD = 0.1
-OFFSET_MAX_M = 1.0       # the landmarks' total correction never exceeds this
-OFFSET_HALF_S = 90.0     # ... and it halves in this time: mapd corrects itself too, and an old correction would then double it
-MOVE_M = 0.05            # the memory follows the belief's frame once it has moved this far (or MOVE_RAD) from where the memory sits:
-MOVE_RAD = 0.02          # a fix a second moves it by centimetres, and a memory re-keyed every second would only smear
-PARTED_M = 0.25          # the belief's frame and mapd's are "parted" past this (or PARTED_RAD): a held jump, or a landmarks' offset
-PARTED_RAD = 0.1
+FROM_FIX = ...           # Localizer(hold_n=FROM_FIX): the profile's hold_n (None: a held jump is never taken late)
 
 
 def compose(a: tuple, b: tuple) -> tuple:
@@ -70,12 +72,13 @@ def move_grid(g: dict, t: tuple | None) -> dict:
 
 
 class Localizer:
-    def __init__(self, history: int = 200, max_jump_m: float | None = None, hold_n: int | None = HOLD_N):
+    def __init__(self, fix, history: int = 200, max_jump_m: float | None = None, hold_n=FROM_FIX):
+        self.fix = fix                    # the profile's localisation.fix block: the gate's numbers
         self.map_from_odom = None
         self._odom = []          # (t_ns, pose), newest last
         self._history = history
         self.max_jump_m = max_jump_m      # None: every fix is taken
-        self.hold_n = hold_n              # fixes in a row that must agree before a held jump is taken; None: never
+        self.hold_n = fix.hold_n if hold_n is FROM_FIX else hold_n   # fixes in a row that must agree before a held jump is taken; None: never
         self.offset = (0.0, 0.0)          # the landmarks' correction, added to every fix's transform
         self._held = []                   # the transforms of the fixes held back, in a row
         self._fix_t_ns = None
@@ -90,7 +93,7 @@ class Localizer:
 
     def on_fix(self, t_ns: int, map_pose: tuple, trust: str | None = None) -> bool:
         """A mapd pose. Returns False when no odometry near that time is held. With max_jump_m, a fix that would move the
-        belief further is held (last_fix["status"] "held"; the belief stays) until HOLD_N in a row agree ("late"); it still
+        belief further is held (last_fix["status"] "held"; the belief stays) until hold_n in a row agree ("late"); it still
         returns True. last_fix says what it was: the raw pose, its t_ns, the odometry paired with it, the belief before and
         after and how far it moved. trust (a reason, e.g. "loop closure"): the gate lets this fix through, and last_fix
         says so ("trusted") when the gate would have held it."""
@@ -98,7 +101,7 @@ class Localizer:
         if near is None or abs(near[0] - t_ns) > 100_000_000:
             return False
         if self._fix_t_ns is not None and t_ns > self._fix_t_ns:
-            k = 0.5 ** ((t_ns - self._fix_t_ns) / 1e9 / OFFSET_HALF_S)
+            k = 0.5 ** ((t_ns - self._fix_t_ns) / 1e9 / self.fix.offset_half_s)
             self.offset = (self.offset[0] * k, self.offset[1] * k)
         self._fix_t_ns = t_ns
         new = compose(map_pose, inverse(near[1]))
@@ -109,12 +112,12 @@ class Localizer:
         jump = 0.0 if before is None else math.dist(before[:2], after[:2])
         status = "taken"
         large = before is not None and self.max_jump_m is not None and (jump > self.max_jump_m
-                                                                      or abs(_wrap(after[2] - before[2])) > 0.35)
+                                                                      or abs(_wrap(after[2] - before[2])) > self.fix.jump_rad)
         if large and trust is None:
-            if self._held and (math.dist(self._held[-1][:2], new[:2]) > HOLD_AGREE_M
-                               or abs(_wrap(self._held[-1][2] - new[2])) > HOLD_AGREE_RAD):
+            if self._held and (math.dist(self._held[-1][:2], new[:2]) > self.fix.hold_agree_m
+                               or abs(_wrap(self._held[-1][2] - new[2])) > self.fix.hold_agree_rad):
                 self._held = []
-            self._held = (self._held + [new])[-(self.hold_n or HOLD_N):]
+            self._held = (self._held + [new])[-(self.hold_n or self.fix.hold_n):]
             self.rejected += 1
             status = "late" if self.hold_n is not None and len(self._held) >= self.hold_n else "held"
         if status != "held":
@@ -132,11 +135,11 @@ class Localizer:
 
     def nudge(self, dx: float, dy: float) -> tuple:
         """The landmarks' correction: move the belief by (dx, dy) on the map, kept across fixes; the total is capped at
-        OFFSET_MAX_M. Returns the step taken."""
+        offset_max_m. Returns the step taken."""
         ox, oy = self.offset[0] + dx, self.offset[1] + dy
         n = math.hypot(ox, oy)
-        if n > OFFSET_MAX_M:
-            ox, oy = ox * OFFSET_MAX_M / n, oy * OFFSET_MAX_M / n
+        if n > self.fix.offset_max_m:
+            ox, oy = ox * self.fix.offset_max_m / n, oy * self.fix.offset_max_m / n
         step = (ox - self.offset[0], oy - self.offset[1])
         self.offset = (ox, oy)
         if self.map_from_odom is not None:
@@ -153,19 +156,19 @@ class Localizer:
 
     def parted(self) -> bool:
         d = self.delta()
-        return d is not None and (math.hypot(d[0], d[1]) > PARTED_M or abs(d[2]) > PARTED_RAD)
+        return d is not None and (math.hypot(d[0], d[1]) > self.fix.parted_m or abs(d[2]) > self.fix.parted_rad)
 
     def memory_pending(self) -> bool:
         """The belief has moved from the frame the memory sits in by more than memory_delta acts on."""
         if self.map_from_odom is None or self._mem is None:
             return False
         d = compose(self.map_from_odom, inverse(self._mem))
-        return math.hypot(d[0], d[1]) >= MOVE_M or abs(d[2]) >= MOVE_RAD
+        return math.hypot(d[0], d[1]) >= self.fix.move_m or abs(d[2]) >= self.fix.move_rad
 
     def memory_delta(self) -> tuple | None:
         """What to move the navigator's memory (everything it placed with the belief) by, once the belief's frame has moved
         from the one the memory sits in: the transform new <- old, applied to each point. None while it has moved less
-        than MOVE_M / MOVE_RAD."""
+        than move_m / move_rad."""
         if not self.memory_pending():
             return None
         d = compose(self.map_from_odom, inverse(self._mem))

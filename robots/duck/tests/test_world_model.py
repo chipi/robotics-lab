@@ -218,7 +218,9 @@ fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 99.0)
 check("... and seen again, the flag clears", not fm.objects[0].missing and fm.objects[0].misses == 0)
 
 # ---- landmark relocalisation (RFC-0016 §4) ---------------------------------------------------------------------------
-from worldmodel.relocalise import MAX_STEP_M, Relocaliser  # noqa: E402
+from worldmodel.relocalise import DUCK_LANDMARKS, Relocaliser  # noqa: E402
+
+MAX_STEP_M = DUCK_LANDMARKS.max_step_m
 
 
 def fridge_site():

@@ -10,8 +10,13 @@ from pathlib import Path
 
 from runfile.mcapio import Follower
 
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, CostGrid, nearest_free, path_length, plan
-from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, HOLD_DETOUR, HOLD_OFF_M
+from duck_lab.nav.grid import CostGrid, nearest_free, path_length, plan
+from duck_lab.profile import load as load_profile
+
+PROFILE = load_profile("sim")
+DROP_LETHAL_M, DROP_INFLATE_M = PROFILE.error_budget.drop_lethal_m, PROFILE.error_budget.drop_inflate_m
+EDGE_LETHAL_M, EDGE_INFLATE_M = PROFILE.error_budget.edge_lethal_m, PROFILE.error_budget.edge_inflate_m
+HOLD_DETOUR, HOLD_OFF_M = PROFILE.error_budget.hold_detour, PROFILE.error_budget.hold_off_m
 
 for run in sys.argv[1:]:
     world = ref = None
@@ -22,7 +27,8 @@ for run in sys.argv[1:]:
             ref = p["raw"]
     g0 = world["grid"]
     grid = CostGrid.from_map_grid({"res_m": g0["res"], "origin": g0["origin"], "width": g0["w"], "height": g0["h"],
-                                   "cells": g0["cells"]}, explained_by=world.get("obstacles") or [])
+                                   "cells": g0["cells"]}, explained_by=world.get("obstacles") or [],
+                                  lethal_m=PROFILE.footprint.lethal_m, inflate_m=PROFILE.footprint.inflate_m)
     drops, edges = [tuple(d) for d in ref.get("drops") or []], [tuple(d) for d in ref.get("edges") or []]
     blocked = [tuple(b) for b in world.get("obstacles") or []]
     goal, pose = tuple(ref["goal"]), tuple(ref["pose"][:2])

@@ -17,19 +17,15 @@ from pathlib import Path
 from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
-from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance, plan
+from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import recovery
-from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
+from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
-from duck_lab.nav.run import CALIBRATION
 from worldmodel.objects import load_kinds
 from duck_lab.site_cli import SITES
 from worldmodel.site import Site
 from duck_lab.nav.sim_camera import SimCamera
 
-SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
-SURVEY_STEP_RAD = math.pi / 2
-KICK_RAD_S, HOLD_RAD_S, KICK_S = 1.2, 0.8, 1.0   # PHASE0-SPIKE.md: no start below ~1.1 rad/s
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
 MAX_REFUSALS = 6       # refusals in a row before the run stops as trapped
@@ -82,27 +78,27 @@ class Explorer:
     def turn(self, angle: float) -> bool:
         """Turn on the spot by about angle (odometry yaw), unless a remembered drop is too close."""
         pose = self.nav.loc.pose()
-        if pose and any(math.dist(pose[:2], d) < PIVOT_DROP_M for d in self.nav.drops):
+        if pose and any(math.dist(pose[:2], d) < self.nav.pivot_drop_m for d in self.nav.drops):
             self.note(event="no_survey_turn", why="drop within turn clearance",
-                      decision=decision("no_survey_turn", "a remembered drop within turn clearance", drop_clear_m=PIVOT_DROP_M))
+                      decision=decision("no_survey_turn", "a remembered drop within turn clearance", drop_clear_m=self.nav.pivot_drop_m))
             return False
         if pose:
             try:
                 room = clearance(self.nav.grid().with_points(self.nav.blocked + self.nav.semantic_points()), pose[:2],
-                                 PIVOT_OBSTACLE_M)
+                                 self.nav.pivot_obstacle_m)
             except EmptyMap:
-                room = PIVOT_OBSTACLE_M
-            if room < PIVOT_OBSTACLE_M:
+                room = self.nav.pivot_obstacle_m
+            if room < self.nav.pivot_obstacle_m:
                 self.note(event="no_survey_turn", why=f"obstacle {room:.2f} m away",
                           decision=decision("no_survey_turn", "an obstacle within turn clearance", room_m=round(room, 3),
-                                            min_room_m=PIVOT_OBSTACLE_M))
+                                            min_room_m=self.nav.pivot_obstacle_m))
                 return False
         start, began = self.yaw(), time.monotonic()
         while time.monotonic() - began < 8.0:
             done = wrap(self.yaw() - start)
             if abs(done) >= abs(angle) - math.radians(8):
                 break
-            rate = KICK_RAD_S if time.monotonic() - began < KICK_S else HOLD_RAD_S
+            rate = self.nav.loco.kick_rad_s if time.monotonic() - began < self.nav.loco.kick_s else self.nav.loco.hold_rad_s
             self.nav.move(Twist(0.0, math.copysign(rate, angle)))
             time.sleep(0.1)
         self.nav.move(Twist())
@@ -114,7 +110,7 @@ class Explorer:
         def free(p):     # not lethal, and room to turn there (the hold-off lesson: a stand with no room is a trap)
             c = costs.cell(*p)
             return (not costs.inside(*c) or costs.at(*c) < LETHAL_COST) and \
-                clearance(costs, p, PIVOT_OBSTACLE_M) >= PIVOT_OBSTACLE_M
+                clearance(costs, p, self.nav.pivot_obstacle_m) >= self.nav.pivot_obstacle_m
         with self.nav._sem_lock:
             stands = self.nav.semantic.approaches(obj, pose, free)
             summary = obj.summary()
@@ -163,13 +159,13 @@ class Explorer:
             return
         seen = self.nav.blocked + self.nav.semantic_points()
         costs = costs.covering([pose[:2]] + seen + self.nav.drops + self.nav.edges).with_points(seen)
-        costs = costs.with_blocked(self.nav.drops, DROP_LETHAL_M, DROP_INFLATE_M).with_blocked(self.nav.edges, EDGE_LETHAL_M,
-                                                                                               EDGE_INFLATE_M)
+        costs = costs.with_blocked(self.nav.drops, self.nav.drop_lethal_m, self.nav.drop_inflate_m).with_blocked(self.nav.edges, self.nav.edge_lethal_m,
+                                                                                               self.nav.edge_inflate_m)
 
         def ok(p):
             c = costs.cell(*p)
             return self.nav.floor_seen_near(p) and (not costs.inside(*c) or costs.at(*c) < LETHAL_COST) and \
-                clearance(costs, p, PIVOT_OBSTACLE_M) >= PIVOT_OBSTACLE_M
+                clearance(costs, p, self.nav.pivot_obstacle_m) >= self.nav.pivot_obstacle_m
 
         away = recovery.away_target(pose, self.nav.hazards(), ok)
         if away is None:
@@ -180,9 +176,9 @@ class Explorer:
                                     status=out["status"], start_margin_m=recovery.START_MARGIN_M))
 
     def survey(self) -> None:
-        for _ in range(SURVEY_STEPS):
+        for _ in range(self.nav.profile.looking.survey_steps):
             self.nav.survey()
-            if not self.turn(SURVEY_STEP_RAD):
+            if not self.turn(math.radians(self.nav.profile.looking.survey_step_deg)):
                 break
         self.nav.survey()
 
@@ -207,7 +203,7 @@ class Explorer:
                 costs = self.nav.grid()
                 seen = self.nav.blocked + self.nav.semantic_points()
                 costs = costs.covering([pose[:2]] + seen + self.nav.drops).with_points(seen)
-                costs = costs.with_blocked(self.nav.drops, DROP_LETHAL_M, DROP_INFLATE_M)
+                costs = costs.with_blocked(self.nav.drops, self.nav.drop_lethal_m, self.nav.drop_inflate_m)
             except EmptyMap:
                 self.survey()
                 continue
@@ -369,7 +365,7 @@ def main() -> None:
                                                           "scale": nav.scale}))
         site = None
         if not args.no_objects:
-            cal = json.loads((CALIBRATION / "sim.json").read_text()).get("camera", {})
+            cal = nav.profile.get("sensors.camera", {})
             if args.site:
                 # the site's map from earlier runs: its objects are known before they are seen again (the run starts at
                 # the dock, the site frame, so its map frame is the site's; RFC-0016 rev. 3)

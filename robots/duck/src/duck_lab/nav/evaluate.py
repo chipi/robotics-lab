@@ -30,18 +30,21 @@ from duck_lab.nav.frames import compose, inverse
 from duck_lab.nav import simreset
 from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import add_args, open_from_args
+from duck_lab.profile import load as load_profile
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 # The duck as the simulator models it (robots/duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every
 # collision part within 8.3 cm of the trunk's centre in plan view. Pollen publishes ~25 cm tall,
 # 14 cm wide, under 800 g; the model's extra 2 cm is the head in the standing pose.
-DUCK_HEIGHT_M = 0.272
-FOOTPRINT_M = 0.083       # the trunk centre closer than this to an obstacle's outline: a part can touch
-FALLEN_Z_M = 0.06         # trunk height below this (standing: 0.116) is a fall; so is leaving the flat
+# The harness judges the simulated duck: the numbers are its profile's (robots/duck/profile.json, variant sim).
+PROFILE = load_profile("sim")
+DUCK_HEIGHT_M = PROFILE.footprint.height_m
+FOOTPRINT_M = PROFILE.footprint.radius_m       # the trunk centre closer than this to an obstacle's outline: a part can touch
+FALLEN_Z_M = PROFILE.judge.fall_z_m         # trunk height below this (standing: 0.116) is a fall; so is leaving the flat
 APARTMENT = (-4.0, 4.0, -3.0, 3.0)
-OVERHEAD_CLEAR_M = 0.30   # obstacles whose underside is higher than this pass over the duck's head
-GOAL_CLEARANCE_M = 0.35
-REACHED_M = 0.25          # truth within this of the goal counts as reached
+OVERHEAD_CLEAR_M = PROFILE.footprint.overhead_clear_m   # obstacles whose underside is higher than this pass over the duck's head
+GOAL_CLEARANCE_M = PROFILE.footprint.goal_clearance_m
+REACHED_M = PROFILE.judge.reached_m          # truth within this of the goal counts as reached
 
 
 def footprint_distance(p: tuple, g: dict) -> float:

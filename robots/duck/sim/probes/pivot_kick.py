@@ -12,7 +12,10 @@ import time
 from pathlib import Path
 
 from duck_lab.nav import simreset
-from duck_lab.nav.follow import KICK_RAD_S, KICK_S, TURN_RAD_S
+from duck_lab.profile import load as load_profile
+
+_LOCO = load_profile("sim").locomotion
+KICK_RAD_S, KICK_S, TURN_RAD_S = _LOCO.kick_rad_s, _LOCO.kick_s, _LOCO.hold_rad_s
 from duck_lab.nav.run import Navigator
 
 HOLD_VX = -0.06

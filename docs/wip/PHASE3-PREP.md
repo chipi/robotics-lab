@@ -149,6 +149,31 @@ Written as the steps land; each lists what was proved and what was not.
   `0.083 + 0.04`, the radians) are checked to the last bit; `measured` and `why` against
   `sim.json`; one case per rule.
 
+### Step 2: the numbers out of the navigator
+
+- `duck_lab/profile.py` loads `robots/duck/profile.json` for an environment (`sim`, or `real`
+  for a navigator built with no calibration). `Navigator.configure(profile)` reads the numbers
+  and keeps them as attributes: the rings, the pivot, arc and tight-pivot gates, the reflex and
+  the cliff stop, the fix gate's thresholds, the look's timings, the odometry scale, the pivot
+  creep, the depth sensor's mount. Derived values are computed the way the constants were
+  (`lethal + 0.05` is not `0.17` in floats), so they are the same to the last bit.
+- Pure functions take what they need: `follow.step(…, loco)`, `StuckWatch(window_s,
+  moved_max_m)`, `Localizer(fix)`, `CostGrid.from_map_grid(…, lethal_m=, inflate_m=)` (a grid
+  carries the rings it was built with), `FrameView(…, reflex_half_w_m)`.
+- The world model library takes `Limits` (walk-over and overhead heights, where to stand, the
+  association gates) and the relocaliser its `localisation.landmarks`; the navigator passes the
+  profile's. The library keeps the duck's as the default (`DUCK_LIMITS`, `DUCK_LANDMARKS`),
+  tested equal to the profile: K32.
+- The harness (`evaluate.py`, `challenge/judge.py`, `challenge/floor.py`) reads the judge's
+  and the footprint's numbers from the profile in variant `sim`. The simulated camera's
+  fidelity comes from the profile too.
+- `duck-replay` reads the profile the run's `calibration` event names (the event now carries
+  `profile: {id, variant}`); a run from before it was recorded with numbers that are the
+  `real` variant's.
+- `test_profile.py` now holds each constant's value as it was, where it was, and compares the
+  profile with those; the sensor's own geometry (`cliff.py`, `side_drops.py`) is still code
+  until step 3, and is compared with its module.
+
 ## NOT VERIFIED
 
 Nothing was run, parsed or type-checked; line numbers come from delegated scans and were not

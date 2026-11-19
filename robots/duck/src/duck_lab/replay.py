@@ -21,6 +21,7 @@ from runfile.mcapio import FINAL, LIVE, Follower
 
 from duck_lab.nav import cliff
 from duck_lab.nav.run import FrameView
+from duck_lab.profile import load as load_profile
 
 TOL = 1e-9
 SAMPLE = 5            # how many differences are shown, not only counted
@@ -50,9 +51,20 @@ def calibration_of(records: list) -> dict:
     return {"pitch_offset_deg": 3.0, "range_kind": "axial"}
 
 
+def profile_of(records: list):
+    """The robot's profile as the run had it: the environment its `calibration` event names, else the real duck's (a run from
+    before the event named it was recorded by a navigator that read its numbers from constants, which are the profile's)."""
+    for _, k, p in records:
+        if k == "event" and p.get("kind") == "calibration":
+            return load_profile(((p.get("raw") or {}).get("profile") or {}).get("variant"))
+    return load_profile(None)
+
+
 def replay(records: list) -> dict:
     """The report for a run's records (read with keep_raw), with the sensor configured as the run was."""
     cliff.configure(**calibration_of(records))
+    profile = profile_of(records)
+    reflex_half_w_m = profile.footprint.radius_m + profile.sensors.tof8x8.reflex_margin_m
     frames = [(t, p) for t, k, p in records if k == "depth_frame"]
     ticks = [p for _, k, p in records if k == "tick"]
     rep = {"frames": len(frames), "replayed": 0, "no_state": 0, "no_pose": 0, "diffs": [], "pair_dt_ms": [],
@@ -80,7 +92,7 @@ def replay(records: list) -> dict:
             continue
         d = p["derived"]
         fv = FrameView({"rows": p["rows"], "cols": p["cols"], "distance_mm": p["distance_mm"], "status": p["status"]},
-                       state_of(p), None, tuple(p["pose"]))
+                       state_of(p), None, tuple(p["pose"]), reflex_half_w_m)
         rep["replayed"] += 1
         rep["points"] += len(d["points"])
         rep["drop_frames"] += bool(d.get("drop_points"))

@@ -8,14 +8,13 @@ import heapq
 import math
 from dataclasses import dataclass
 
-# Two layers around every obstacle, as Nav2 does. Within LETHAL_M (about the duck's half-width plus
-# a little) the duck must not go. Out to INFLATE_M — the clearance upstream's autod keeps, plus a
+# Two layers around every obstacle, as Nav2 does. Within the robot's lethal_m (profile footprint.lethal_m: about the duck's
+# half-width plus a little) the duck must not go. Out to its inflate_m — the clearance upstream's autod keeps, plus a
 # margin for what mapd has not seen of an obstacle and for odometry error (phase 1, run 1) — cells
 # are expensive, not forbidden: plans keep off walls, and a duck that drifted into the margin can
-# still get out (run 2, all impassable, stranded it).
-LETHAL_M = 0.12   # 15 cm (run 7) closed the doorway once the obstacle layer added the cabinet and wall;
-                  # run 5's touches at 12 cm came from the cabinet's unmapped side, which the layer now sees
-INFLATE_M = 0.28
+# still get out (run 2, all impassable, stranded it). (The duck's lethal_m is 0.12: 15 cm (run 7) closed the doorway once the
+# obstacle layer added the cabinet and wall; run 5's touches at 12 cm came from the cabinet's unmapped side, which the layer
+# now sees.) A grid carries the two it was built with.
 # Unknown ground can hide a drop (the staircase reads as nothing until the cliff check sees it), so it
 # costs more than the margin round something already seen: with unknown cheaper, the planner took a
 # long detour through unmapped corridor toward the stairs rather than pass the office cabinet.
@@ -51,24 +50,20 @@ FREE_COST = 1.0
 
 
 # Drops get more room than walls, sized from the error budget (docs/wip/SIDE-DROPS.md, 2026-11-17): the cliff check's
-# corridor (cliff.CORRIDOR_DROP_M, 0.25 m aside) plus the following's (~3 cm) and the belief's (~2.5 cm) error, rounded up,
-# so a path held at the ring keeps a known drop out of the corridor and the duck is not stopped again for it (trial 2's
-# stop, replan and stop again). 0.45 (the stop distance of the time) also stood in for how far a hole met head-on goes,
-# and closed challenge 11's passage beside a pit; the duck now looks along the edge for that (run.Navigator.look_along).
+# corridor (the profile's error_budget.corridor_m, 0.25 m aside) plus the following's (~3 cm) and the belief's (~2.5 cm) error,
+# rounded up, so a path held at the ring keeps a known drop out of the corridor and the duck is not stopped again for it
+# (trial 2's stop, replan and stop again). 0.45 (the stop distance of the time) also stood in for how far a hole met head-on
+# goes, and closed challenge 11's passage beside a pit; the duck now looks along the edge for that (run.Navigator.look_along).
 # (Trial 3 tried "do not stop again for a remembered drop" instead: that switched off the cliff check over the
 # unremembered part of the same staircase, and the duck fell. Never again: the cliff check stops for every drop it sees.)
-DROP_LETHAL_M = 0.35
-DROP_INFLATE_M = 0.55
+# The rings are error_budget.drop_lethal_m and drop_inflate_m (0.35 and 0.55), passed to with_blocked.
 
 
-def _grow(cost: list, w: int, h: int, centres: list, res: float,
-          lethal_m: float = None, inflate_m: float = None) -> None:
+def _grow(cost: list, w: int, h: int, centres: list, res: float, lethal_m: float, inflate_m: float) -> None:
     """Mark the lethal disc and the margin ring around each obstacle cell, in place. By distance from
     a cell's centre to the obstacle cell's edge (centre distance minus half a cell), not by whole
     cells: rounding up to whole 10 cm cells closed the office doorway (a 42 cm gap the 14 cm duck
     walks through) in phase 1's run 4."""
-    lethal_m = LETHAL_M if lethal_m is None else lethal_m
-    inflate_m = INFLATE_M if inflate_m is None else inflate_m
     reach = math.ceil(inflate_m / res) + 1
     rings = []
     for dx in range(-reach, reach + 1):
@@ -91,14 +86,11 @@ class EmptyMap(ValueError):
     pass
 
 
-def _grow_points(cost: list, w: int, h: int, origin: tuple, res: float, points: list,
-                 lethal_m: float = None, inflate_m: float = None) -> set:
+def _grow_points(cost: list, w: int, h: int, origin: tuple, res: float, points: list, lethal_m: float, inflate_m: float) -> set:
     """Mark the lethal disc and the margin ring around each exact obstacle point, in place, by the distance
     from a cell's centre to the point itself (the clearance model, docs/wip/CLEARANCE-MODEL.md): a point is
     not rounded to its cell, which cost up to a cell of room. The point's own cell is infinite. Returns
     the cells that hold points."""
-    lethal_m = LETHAL_M if lethal_m is None else lethal_m
-    inflate_m = INFLATE_M if inflate_m is None else inflate_m
     reach = math.ceil(inflate_m / res) + 1
     own = set()
     for px, py in points:
@@ -135,14 +127,16 @@ class CostGrid:
     width: int
     height: int
     cost: list   # row-major from the lowest y; inf on obstacles, LETHAL_COST round them
+    lethal_m: float = 0.0        # the robot's rings this grid grows its obstacles with (profile footprint.lethal_m, inflate_m)
+    inflate_m: float = 0.0
     points: tuple = ()           # exact obstacle points (map metres) the zones were grown from
     point_cells: frozenset = frozenset()     # the cells holding them: their room is the points', not the cells'
 
     @classmethod
-    def from_map_grid(cls, grid: dict, explained_by: list = ()) -> "CostGrid":
-        """The cost grid from mapd's map.grid. explained_by: exact obstacle points (map metres); a wall cell
-        with one inside it or within half a cell of it is left out, as the points describe that obstacle
-        more precisely (with_points adds them). A cell without one stays, grown as a whole cell."""
+    def from_map_grid(cls, grid: dict, explained_by: list = (), *, lethal_m: float, inflate_m: float) -> "CostGrid":
+        """The cost grid from mapd's map.grid, its obstacles grown by the robot's lethal_m and inflate_m. explained_by: exact
+        obstacle points (map metres); a wall cell with one inside it or within half a cell of it is left out, as the points
+        describe that obstacle more precisely (with_points adds them). A cell without one stays, grown as a whole cell."""
         res, (ox, oy) = grid["res_m"], grid["origin"]
         w, h, cells = grid["width"], grid["height"], grid["cells"]
         if res <= 0 or w == 0 or h == 0:
@@ -168,7 +162,7 @@ class CostGrid:
             cells = "".join(listed)
         cost = [UNKNOWN_COST if c == "?" else FREE_COST for c in cells]
         walls = [(i % w, i // w) for i, c in enumerate(cells) if c == "#"]
-        _grow(cost, w, h, walls, res)
+        _grow(cost, w, h, walls, res, lethal_m, inflate_m)
         reach = math.ceil(SHADOW_M / res) + 1
         ring = [(dx, dy) for dx in range(-reach, reach + 1) for dy in range(-reach, reach + 1)
                 if math.hypot(dx, dy) * res - res / 2 < SHADOW_M]
@@ -177,7 +171,7 @@ class CostGrid:
                 x, y = cx + dx, cy + dy
                 if 0 <= x < w and 0 <= y < h and cells[y * w + x] == "?":
                     cost[y * w + x] = max(cost[y * w + x], SHADOW_COST)
-        return cls(res, (ox, oy), w, h, cost)
+        return cls(res, (ox, oy), w, h, cost, lethal_m, inflate_m)
 
     def cell(self, x: float, y: float) -> tuple:
         # The epsilon keeps a point on a cell edge in the upper cell: 0.5 / 0.1 is 4.999… in floats.
@@ -194,14 +188,16 @@ class CostGrid:
         return self.cost[cy * self.width + cx] if self.inside(cx, cy) else math.inf
 
     def with_blocked(self, points: list, lethal_m: float = None, inflate_m: float = None) -> "CostGrid":
-        """This grid with obstacles the depth reflex saw added (map metres), grown like walls. The
-        reflex's memory: mapd may not hold what the sensor saw (something above the floor, or seen
-        between stops), and without it the next plan walks back into it."""
+        """This grid with obstacles the depth reflex saw added (map metres), grown like walls (by the grid's own rings unless
+        given: the drops' and edges' are larger). The reflex's memory: mapd may not hold what the sensor saw (something above
+        the floor, or seen between stops), and without it the next plan walks back into it."""
         if not points:
             return self
         cost = list(self.cost)
-        _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res, lethal_m, inflate_m)
-        return CostGrid(self.res, self.origin, self.width, self.height, cost, self.points, self.point_cells)
+        _grow(cost, self.width, self.height, [self.cell(*p) for p in points], self.res,
+              self.lethal_m if lethal_m is None else lethal_m, self.inflate_m if inflate_m is None else inflate_m)
+        return CostGrid(self.res, self.origin, self.width, self.height, cost, self.lethal_m, self.inflate_m, self.points,
+                        self.point_cells)
 
     def with_points(self, points: list) -> "CostGrid":
         """This grid with exact obstacle points added, their zones grown from the points themselves (the
@@ -209,8 +205,8 @@ class CostGrid:
         if not points:
             return self
         cost = list(self.cost)
-        own = _grow_points(cost, self.width, self.height, self.origin, self.res, points)
-        return CostGrid(self.res, self.origin, self.width, self.height, cost,
+        own = _grow_points(cost, self.width, self.height, self.origin, self.res, points, self.lethal_m, self.inflate_m)
+        return CostGrid(self.res, self.origin, self.width, self.height, cost, self.lethal_m, self.inflate_m,
                         self.points + tuple(tuple(p[:2]) for p in points), self.point_cells | frozenset(own))
 
     def covering(self, points: list, margin_m: float = 0.5) -> "CostGrid":
@@ -231,7 +227,7 @@ class CostGrid:
             start = (cy + down) * w + left
             cost[start:start + self.width] = row
         origin = (self.origin[0] - left * self.res, self.origin[1] - down * self.res)
-        return CostGrid(self.res, origin, w, h, cost, self.points,
+        return CostGrid(self.res, origin, w, h, cost, self.lethal_m, self.inflate_m, self.points,
                         frozenset((x + left, y + down) for x, y in self.point_cells))
 
 

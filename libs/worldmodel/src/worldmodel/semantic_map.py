@@ -1,8 +1,8 @@
 """The semantic map (RFC-0016): the objects the duck has seen, in the map frame, over the occupancy grid.
 
 A detection (from a camera: a kind, a range and bearing, a size and a height band, relative to the duck) is placed
-with the duck's belief and associated with a tracked object of the same kind nearby — within ASSOC_M, or UNIQUE_M for
-a kind a home has one of (kinds.json "unique": a fridge seen again after the belief drifted is the same fridge) —
+with the duck's belief and associated with a tracked object of the same kind nearby — within the robot's limits.assoc_m, or
+unique_m for a kind a home has one of (kinds.json "unique": a fridge seen again after the belief drifted is the same fridge) —
 else it starts a new one. An object's position follows its recent detections (the belief drifts; the object should
 drift with it, not anchor the old frame), and it is confirmed after CONFIRM_N detections (one per camera look). From
 the confirmed objects: the room the duck is in (objects near and in sight vote for their kinds' rooms; the room
@@ -12,15 +12,12 @@ changes only after it wins ROOM_TICKS looks in a row), an object by kind, and wh
 import math
 from dataclasses import dataclass, field
 
-from worldmodel.objects import Part, blocking, distance
+from worldmodel.objects import DUCK_LIMITS, Limits, Part, blocking, distance
 
-ASSOC_M = 0.5              # a detection this close to a tracked object of its kind is that object
-UNIQUE_M = 1.5             # ... for a kind the home has one of: drift between two sightings of the fridge
-RECENT = 0.3               # the newest detection's weight at least (the position follows the drifting belief)
+RECENT = 0.3              # the newest detection's weight at least (the position follows the drifting belief)
 CONFIRM_N = 3              # detections (one per look) before an object is trusted
 ROOM_RADIUS_M = 1.2        # objects within this vote for the room the duck is in (the corridor is 1.5 m wide)
 ROOM_TICKS = 3             # looks a new room must win in a row before the duck says it is there
-STAND_M = 0.25             # where to stand to reach an object: this far from its outline (lethal 0.12 + room)
 EVIDENCE_KEEP = 3          # evidence (frames) kept per object
 LANDMARK_MIN = 0.7         # a landmark value (kinds.json) this high, and fixed in place: it can correct the duck's position
 FORGET_N = 8              # looks an object was expected in view and not seen, in a row, before it is gone (or flagged)
@@ -109,8 +106,9 @@ def wall_between(grid: dict, a: tuple, b: tuple) -> bool:
 
 
 class SemanticMap:
-    def __init__(self, kinds: dict, site_kind: str | None = None):
+    def __init__(self, kinds: dict, site_kind: str | None = None, limits: Limits = DUCK_LIMITS):
         self.kinds = kinds
+        self.limits = limits            # what the robot is: walk-over and overhead heights, where to stand, the association gates
         self.site_kind = site_kind      # a site's kind may change a kind's area hints (kinds.json "rooms_by_site")
         self.objects: list = []
         self._next = {}
@@ -158,7 +156,7 @@ class SemanticMap:
         for d in detections:
             part = d.part().moved(pose)
             cx, cy = part.x, part.y
-            gate = UNIQUE_M if self.kinds.get(d.kind, {}).get("unique") else ASSOC_M
+            gate = self.limits.unique_m if self.kinds.get(d.kind, {}).get("unique") else self.limits.assoc_m
             same = [o for o in self.objects if o.kind == d.kind and math.dist((o.x, o.y), (cx, cy)) <= gate]
             if same:
                 o = min(same, key=lambda o: math.dist((o.x, o.y), (cx, cy)))
@@ -299,15 +297,17 @@ class SemanticMap:
                             return True
             return False
 
-        return [p for o in self.confirmed() for q in blocking(o.parts) if not (seen and seen_by_depth(q))
+        return [p for o in self.confirmed() for q in blocking(o.parts, self.limits) if not (seen and seen_by_depth(q))
                 for p in q.outline(spacing)]
 
-    def approaches(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float = STAND_M,
+    def approaches(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float | None = None,
                    step_deg: int = 10) -> list:
-        """Where to stand to reach object o: the points on a ring stand_m from its outline that free() accepts (the
-        caller's cost map, with room to turn), nearest to the duck first, each with the heading that faces the object.
-        The caller takes the first it can plan a way to (find-fridge-4: the nearest one was in unmapped space)."""
-        parts = blocking(o.parts) or o.parts
+        """Where to stand to reach object o: the points on a ring stand_m (the robot's limits.stand_m unless given) from its
+        outline that free() accepts (the caller's cost map, with room to turn), nearest to the duck first, each with the heading
+        that faces the object. The caller takes the first it can plan a way to (find-fridge-4: the nearest one was in unmapped
+        space)."""
+        stand_m = self.limits.stand_m if stand_m is None else stand_m
+        parts = blocking(o.parts, self.limits) or o.parts
         out = []
         for k in range(0, 360, step_deg):
             a = math.radians(k)
@@ -321,7 +321,7 @@ class SemanticMap:
                 out.append((p[0], p[1], math.atan2(o.y - p[1], o.x - p[0])))
         return sorted(out, key=lambda s: math.dist(s[:2], pose[:2]))
 
-    def approach(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float = STAND_M, step_deg: int = 10):
+    def approach(self, o: Tracked, pose: tuple, free=lambda p: True, stand_m: float | None = None, step_deg: int = 10):
         """The nearest of approaches(), or None when no point on the ring is free."""
         found = self.approaches(o, pose, free, stand_m, step_deg)
         return found[0] if found else None
@@ -337,8 +337,8 @@ class SemanticMap:
         return {"objects": [o.summary() for o in self.objects]}
 
     @classmethod
-    def from_json(cls, data: dict, kinds: dict, site_kind: str | None = None) -> "SemanticMap":
-        m = cls(kinds, site_kind)
+    def from_json(cls, data: dict, kinds: dict, site_kind: str | None = None, limits: Limits = DUCK_LIMITS) -> "SemanticMap":
+        m = cls(kinds, site_kind, limits)
         for s in data["objects"]:
             parts = [Part(*p) for p in s["parts"]]
             o = Tracked(s["id"], s["kind"], s["x"], s["y"], parts, s["n"], s.get("first_t", 0.0), s.get("last_t", 0.0),

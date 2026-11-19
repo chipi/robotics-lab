@@ -5,6 +5,9 @@ import sys
 
 from duck_lab.nav import recovery
 from duck_lab.nav.explore_run import Explorer
+from duck_lab.profile import load
+
+P = load("sim")
 
 failures = []
 
@@ -119,6 +122,10 @@ class _Walker:
 
     def __init__(self):
         self.pose, self.tof, self._fv, self.sent, self.blocked = (0.0, 0.0, 0.0), _Tof(), None, [], []
+        self.cliff_stop_m, self.loco, self.fp = P.error_budget.cliff_stop_m, P.locomotion, P.footprint
+        self.pivot_obstacle_m = P.footprint.lethal_m + P.locomotion.pivot.obstacle_margin_m
+        self.drop_lethal_m, self.drop_inflate_m = P.error_budget.drop_lethal_m, P.error_budget.drop_inflate_m
+        self.edge_lethal_m, self.edge_inflate_m = P.error_budget.edge_lethal_m, P.error_budget.edge_inflate_m
 
     @property
     def loc(self):
@@ -204,7 +211,8 @@ class _Recoverer(_Walker):
         self.semantic_points = lambda: []
 
     def grid(self):
-        return CostGrid.from_map_grid({"res_m": 0.05, "origin": [-2.0, -2.0], "width": 80, "height": 80, "cells": "." * 6400})
+        return CostGrid.from_map_grid({"res_m": 0.05, "origin": [-2.0, -2.0], "width": 80, "height": 80, "cells": "." * 6400},
+                                      lethal_m=P.footprint.lethal_m, inflate_m=P.footprint.inflate_m)
 
     def survey(self):
         self.surveys += 1

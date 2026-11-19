@@ -12,7 +12,12 @@ import math
 import sys
 
 from duck_lab.nav.grid import CostGrid, clearance
-from duck_lab.nav.run import DROP_INFLATE_M, DROP_LETHAL_M, PIVOT_OBSTACLE_M, SLOW_CLEAR_M
+from duck_lab.profile import load as load_profile
+
+PROFILE = load_profile("sim")
+DROP_LETHAL_M, DROP_INFLATE_M = PROFILE.error_budget.drop_lethal_m, PROFILE.error_budget.drop_inflate_m
+PIVOT_OBSTACLE_M = PROFILE.footprint.lethal_m + PROFILE.locomotion.pivot.obstacle_margin_m
+SLOW_CLEAR_M = PROFILE.locomotion.slow_clearance_m
 
 
 def main() -> None:
@@ -28,7 +33,8 @@ def main() -> None:
             pose = e["pose"]
     blocked = [tuple(q[:2]) for q in world["blocked"]]
     drops = [tuple(q[:2]) for q in world["drops"]]
-    base = CostGrid.from_map_grid(world["grid"], explained_by=blocked)
+    base = CostGrid.from_map_grid(world["grid"], explained_by=blocked, lethal_m=PROFILE.footprint.lethal_m,
+                                  inflate_m=PROFILE.footprint.inflate_m)
     base = base.covering([pose[:2]] + blocked + drops).with_points(blocked)
     reach = max(PIVOT_OBSTACLE_M, SLOW_CLEAR_M)
     with_drops = clearance(base.with_blocked(drops, DROP_LETHAL_M, DROP_INFLATE_M), pose[:2], reach)

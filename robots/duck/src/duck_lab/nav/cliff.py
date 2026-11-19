@@ -13,7 +13,7 @@ left), for the beams that found none.
 
 import math
 
-from worldmodel.objects import OVERHEAD_M
+from worldmodel.objects import DUCK_LIMITS
 
 FOV_DEG = 45.0
 ROWS = COLS = 8
@@ -23,14 +23,15 @@ ROWS = COLS = 8
 # real duck's values its floor sat up to 2 cm too low, and the cliff check stopped for drops that were not there (the
 # challenge course, 2026-11-16: 131 frames, 8 stops in 40 runs on flat floor).
 PITCH_OFFSET_RAD = math.radians(3.0)
+OVERHEAD_M = DUCK_LIMITS.overhead_m      # a return higher than this passes over the robot's head (footprint.overhead_clear_m; configure())
 RANGE = "axial"
 
 
-def configure(pitch_offset_deg: float = 3.0, range_kind: str = "axial") -> None:
-    global PITCH_OFFSET_RAD, RANGE
+def configure(pitch_offset_deg: float = 3.0, range_kind: str = "axial", overhead_m: float = DUCK_LIMITS.overhead_m) -> None:
+    global PITCH_OFFSET_RAD, RANGE, OVERHEAD_M
     if range_kind not in ("axial", "radial"):
         raise ValueError(f"range {range_kind!r}: axial or radial")
-    PITCH_OFFSET_RAD, RANGE = math.radians(pitch_offset_deg), range_kind
+    PITCH_OFFSET_RAD, RANGE, OVERHEAD_M = math.radians(pitch_offset_deg), range_kind, overhead_m
 
 
 def along_beam(mm: float, beam: tuple) -> float:

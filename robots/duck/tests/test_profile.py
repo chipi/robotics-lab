@@ -1,9 +1,12 @@
-"""The duck's profile (RFC-0020 step 1, robots/duck/profile.json) and its validator (runfile.profile).
+"""The duck's profile (RFC-0020, robots/duck/profile.json) and its validator (runfile.profile).
 
-Two halves. The profile loaded in the simulator's variant is compared number by number with the constant it replaces in the code
-(and, for the measured ones, with robots/duck/calibration/sim.json, `measured` and `why` verbatim): every number of the profile
-must have an expected value here, and every expected value must be in the profile, so a number added to either side fails. Then the
-validator's rules, each with the profile broken in one place and the error read for its path.
+Two halves. The profile loaded in the simulator's variant is compared number by number with the value of the constant it replaced
+(RFC-0020 step 1 compared it with the constants themselves; step 2 took them out of the navigator, so the table below holds each
+constant's value as it was, with where it was), and, for the measured ones, with robots/duck/calibration/sim.json, `measured` and
+`why` verbatim. The sensor's own geometry (cliff.py, side_drops.py, sim_camera.py) is still code until step 3: those are compared with
+the module's constants. Every number of the profile must have an expected value here, and every expected value must be in the
+profile, so a number added to either side fails. Then the validator's rules, each with the profile broken in one place and the error
+read for its path.
 """
 
 import copy
@@ -12,11 +15,11 @@ import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav import cliff, evaluate, explore_run, follow, frames, grid, run, side_drops, stuck
+from duck_lab.nav import cliff, run, side_drops
 from duck_lab.nav.sim_camera import DEFAULTS as CAMERA_DEFAULTS
-from duck_lab.challenge.judge import BOUNDS_MARGIN_M, DROP_MARGIN_M
 from runfile.profile import FormatError, Profile, load_profile, merge_variant, numbers, validate_profile
-from worldmodel import objects, relocalise, semantic_map
+from worldmodel.objects import DUCK_LIMITS
+from worldmodel.relocalise import DUCK_LANDMARKS
 
 failures = []
 
@@ -68,59 +71,79 @@ OLD = {
     "profile_version": 1,
     "factsheet": ROBOT_FILE["factsheet"],
     "control": ROBOT_FILE["control"],
-    "footprint": {"radius_m": evaluate.FOOTPRINT_M, "height_m": evaluate.DUCK_HEIGHT_M, "overhead_clear_m": evaluate.OVERHEAD_CLEAR_M,
-                  "lethal_m": grid.LETHAL_M, "inflate_m": grid.INFLATE_M, "standoff_m": semantic_map.STAND_M,
-                  "goal_clearance_m": evaluate.GOAL_CLEARANCE_M},
+    # each value is what the constant was, and where (deleted in step 2)
+    "footprint": {"radius_m": 0.083,            # evaluate.FOOTPRINT_M
+                  "height_m": 0.272,            # evaluate.DUCK_HEIGHT_M
+                  "overhead_clear_m": 0.30,     # evaluate.OVERHEAD_CLEAR_M, worldmodel.objects.OVERHEAD_M
+                  "lethal_m": 0.12,             # grid.LETHAL_M
+                  "inflate_m": 0.28,            # grid.INFLATE_M
+                  "standoff_m": 0.25,           # semantic_map.STAND_M
+                  "goal_clearance_m": 0.35},    # evaluate.GOAL_CLEARANCE_M
     "locomotion": {
-        "cruise_mps": follow.WALK_MPS, "slowest_mps": follow.ARC_MPS, "yaw_max_rad_s": follow.MAX_YAW_RAD_S, "yaw_gain": follow.YAW_GAIN,
-        "kick_rad_s": follow.KICK_RAD_S, "kick_s": follow.KICK_S, "hold_rad_s": follow.TURN_RAD_S, "restep_rad": follow.RESTEP_RAD,
-        "pivot_first_deg": 45, "pivot_done_deg": 15, "slow_yaw_rad_s": follow.SLOW_YAW_RAD_S, "slow_clearance_m": follow.SLOW_CLEAR_M,
-        "lookahead_m": follow.LOOKAHEAD_M, "lookahead_near_m": follow.LOOKAHEAD_NEAR_M, "goal_tol_m": follow.GOAL_TOL_M,
-        "step_over_m": objects.WALK_OVER_M,
-        "pivot": {"vx_mps": run.load_pivot_vx("sim"), "drop_clear_m": run.PIVOT_DROP_M, "edge_clear_m": run.PIVOT_EDGE_M,
-                  "obstacle_margin_m": 0.05,       # run.PIVOT_OBSTACLE_M = grid.LETHAL_M + 0.05 (a literal there), checked below
-                  "tight_m": run.TIGHT_PIVOT_M,
-                  "tight_spot_m": run.TIGHT_SPOT_M, "tight_gap_s": run.TIGHT_GAP_S},
-        "arc": {"clear_mm": run.ARC_CLEAR_MM, "ahead_m": run.ARC_AHEAD_M, "reach_m": run.ARC_REACH_M, "outer_deg": run.ARC_OUTER_DEG,
-                "inner_deg": run.ARC_INNER_DEG},
-        "stuck": {"window_s": stuck.WINDOW_S, "moved_max_m": stuck.MOVED_MAX_M},
+        "cruise_mps": 0.3, "slowest_mps": 0.2,                  # follow.WALK_MPS, ARC_MPS
+        "yaw_max_rad_s": 1.0, "yaw_gain": 1.5,                  # follow.MAX_YAW_RAD_S, YAW_GAIN
+        "kick_rad_s": 1.2, "kick_s": 1.0, "hold_rad_s": 0.8,    # follow.KICK_RAD_S, KICK_S, TURN_RAD_S (explore_run had its own copies)
+        "restep_rad": 0.05,                                     # follow.RESTEP_RAD
+        "pivot_first_deg": 45, "pivot_done_deg": 15,            # follow.TURN_FIRST_RAD = math.radians(45), TURN_DONE_RAD = radians(15)
+        "slow_yaw_rad_s": 0.4, "slow_clearance_m": 0.25,        # follow.SLOW_YAW_RAD_S, SLOW_CLEAR_M
+        "lookahead_m": 0.30, "lookahead_near_m": 0.15,          # follow.LOOKAHEAD_M, LOOKAHEAD_NEAR_M
+        "goal_tol_m": 0.15,                                     # follow.GOAL_TOL_M
+        "step_over_m": 0.01,                                    # worldmodel.objects.WALK_OVER_M
+        "pivot": {"vx_mps": SIM_JSON["pivot"]["vx_mps"],        # calibration/sim.json "pivot"
+                  "drop_clear_m": 0.30,                         # run.PIVOT_DROP_M
+                  "edge_clear_m": 0.26,                         # run.PIVOT_EDGE_M
+                  "obstacle_margin_m": 0.05,                    # run.PIVOT_OBSTACLE_M = LETHAL_M + 0.05 (a literal there)
+                  "tight_m": 0.15,                              # run.TIGHT_PIVOT_M
+                  "tight_spot_m": 0.10, "tight_gap_s": 0.5},    # run.TIGHT_SPOT_M, TIGHT_GAP_S
+        "arc": {"clear_mm": 300, "ahead_m": 0.25, "reach_m": 0.45,            # run.ARC_CLEAR_MM, ARC_AHEAD_M, ARC_REACH_M
+                "outer_deg": 20.0, "inner_deg": 120.0},                       # run.ARC_OUTER_DEG, ARC_INNER_DEG
+        "stuck": {"window_s": 3.0, "moved_max_m": 0.05},                      # stuck.WINDOW_S, MOVED_MAX_M
     },
     "sensors": {
         "tof8x8": {
             "fov_deg": cliff.FOV_DEG, "rows": cliff.ROWS, "cols": cliff.COLS, "valid_status": sorted(cliff.VALID),
             "no_target_status": cliff.NO_TARGET, "range_m": cliff.NO_TARGET_RANGE_M, "look_m": cliff.LOOK_M, "extra_m": cliff.EXTRA_M,
             "min_zones": cliff.MIN_ZONES, "floor_margin_m": cliff.FLOOR_MARGIN_M, "floor_margin_per_m": cliff.FLOOR_MARGIN_PER_M,
-            "low_margin_m": cliff.LOW_MARGIN_M, "low_margin_per_m": cliff.LOW_MARGIN_PER_M, "emergency_mm": run.EMERGENCY_MM,
-            "reflex_ahead_m": run.REFLEX_AHEAD_M, "reflex_margin_m": 0.04,    # run.REFLEX_HALF_W_M = 0.083 + 0.04, checked below
-            "mount": {"pitch_offset_deg": run.load_tof("sim")["pitch_offset_deg"]},
+            "low_margin_m": cliff.LOW_MARGIN_M, "low_margin_per_m": cliff.LOW_MARGIN_PER_M,
+            "emergency_mm": 150,                                       # run.EMERGENCY_MM
+            "reflex_ahead_m": 0.30, "reflex_margin_m": 0.04,           # run.REFLEX_AHEAD_M; run.REFLEX_HALF_W_M = 0.083 + 0.04
+            "mount": {"pitch_offset_deg": SIM_JSON["tof"]["pitch_offset_deg"]},
             "side_drops": {"cell_m": side_drops.CELL_M, "below_slope": side_drops.BELOW_SLOPE, "suspect_frames": side_drops.SUSPECT_FRAMES,
                            "suspect_ratio": side_drops.SUSPECT_RATIO, "clear_m": side_drops.CLEAR_M},
         },
         "camera": {k: v for k, v in CAMERA_DEFAULTS.items()},
     },
-    "looking": {"walk_command": run.HEAD_WALK_CMD, "floor_z_m": run.LOOK_FLOOR_Z_M, "settle_frames": run.LOOK_SETTLE_FRAMES,
-                "yaw_tol_deg": run.LOOK_YAW_TOL_DEG, "max_s": run.LOOK_MAX_S, "collect_s": run.LOOK_COLLECT_S, "back_s": run.HEAD_BACK_S,
-                "along_m": run.LOOK_ALONG_M, "continue_m": run.CONTINUE_M, "survey_steps": explore_run.SURVEY_STEPS,
-                "survey_step_deg": 90},
+    "looking": {"walk_command": dict.fromkeys(("neck_pitch", "head_pitch", "head_yaw", "head_roll"), 0.0),    # run.HEAD_WALK_CMD
+                "floor_z_m": -0.116,                              # run.LOOK_FLOOR_Z_M
+                "settle_frames": 5, "yaw_tol_deg": 3.0,           # run.LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG
+                "max_s": 3.0, "collect_s": 1.0, "back_s": 2.0,    # run.LOOK_MAX_S, LOOK_COLLECT_S, HEAD_BACK_S
+                "along_m": 0.4, "continue_m": 1.0,                # run.LOOK_ALONG_M, CONTINUE_M
+                "survey_steps": 4,                                # explore_run.SURVEY_STEPS
+                "survey_step_deg": 90},                           # explore_run.SURVEY_STEP_RAD = math.pi / 2
     "localisation": {
         "grid_res_m": ROBOT_FILE["capabilities"]["map"]["resolution_m"],      # run.mapd_grid asks mapd for 0.05 (a literal there)
-        "odometry": {"scale": run.load_scale("sim"), "at_speed_mps": SIM_JSON["at_speed_mps"], "by_speed": SIM_JSON["by_speed"]},
-        "fix": {"jump_m": run.FIX_JUMP_M, "jump_rad": 0.35, "record_m": run.FIX_RECORD_M, "loop_credit_s": run.LOOP_CREDIT_S,
-                "hold_n": frames.HOLD_N, "hold_agree_m": frames.HOLD_AGREE_M, "hold_agree_rad": frames.HOLD_AGREE_RAD,
-                "offset_max_m": frames.OFFSET_MAX_M, "offset_half_s": frames.OFFSET_HALF_S, "move_m": frames.MOVE_M,
-                "move_rad": frames.MOVE_RAD, "parted_m": frames.PARTED_M, "parted_rad": frames.PARTED_RAD},
-        "landmarks": {"match_m": relocalise.MATCH_M, "range_m": relocalise.RANGE_M, "anchor_range_m": relocalise.ANCHOR_RANGE_M,
-                      "anchor_n": relocalise.ANCHOR_N, "anchor_spread_m": relocalise.ANCHOR_SPREAD_M, "window_s": relocalise.WINDOW_S,
-                      "min_n": relocalise.MIN_N, "spread_m": relocalise.SPREAD_M, "deadband_m": relocalise.DEADBAND_M,
-                      "gain": relocalise.GAIN, "max_step_m": relocalise.MAX_STEP_M},
+        "odometry": {"scale": SIM_JSON["odom_scale"], "at_speed_mps": SIM_JSON["at_speed_mps"], "by_speed": SIM_JSON["by_speed"]},
+        "fix": {"jump_m": 0.3, "jump_rad": 0.35,                                       # run.FIX_JUMP_M; the literal in frames.on_fix
+                "record_m": 0.1, "loop_credit_s": 3.0,                                 # run.FIX_RECORD_M, LOOP_CREDIT_S
+                "hold_n": 5, "hold_agree_m": 0.15, "hold_agree_rad": 0.1,              # frames.HOLD_N, HOLD_AGREE_M, HOLD_AGREE_RAD
+                "offset_max_m": 1.0, "offset_half_s": 90.0,                            # frames.OFFSET_MAX_M, OFFSET_HALF_S
+                "move_m": 0.05, "move_rad": 0.02,                                      # frames.MOVE_M, MOVE_RAD
+                "parted_m": 0.25, "parted_rad": 0.1},                                  # frames.PARTED_M, PARTED_RAD
+        # relocalise.MATCH_M ... MAX_STEP_M: the library keeps the duck's as its default numbers (DUCK_LANDMARKS)
+        "landmarks": vars(DUCK_LANDMARKS),
     },
-    "error_budget": {"cliff_stop_m": run.CLIFF_STOP_M, "corridor_m": cliff.CORRIDOR_DROP_M, "drop_lethal_m": grid.DROP_LETHAL_M,
-                     "drop_inflate_m": grid.DROP_INFLATE_M, "edge_lethal_m": run.EDGE_LETHAL_M, "edge_inflate_m": run.EDGE_INFLATE_M,
-                     "confirm_m": run.CONFIRM_M, "glanced_m": run.GLANCED_M, "absorb_m": run.ABSORB_M, "hold_off_m": run.HOLD_OFF_M,
-                     "hold_detour": run.HOLD_DETOUR, "beyond_m": list(run.BEYOND_M), "assoc_m": semantic_map.ASSOC_M,
-                     "unique_m": semantic_map.UNIQUE_M},
-    "judge": {"fall_z_m": evaluate.FALLEN_Z_M, "drop_margin_m": DROP_MARGIN_M, "reached_m": evaluate.REACHED_M,
-              "bounds_margin_m": BOUNDS_MARGIN_M},
+    "error_budget": {"cliff_stop_m": 0.60,                                             # run.CLIFF_STOP_M
+                     "corridor_m": cliff.CORRIDOR_DROP_M,                              # (cliff.py: sensor code until step 3)
+                     "drop_lethal_m": 0.35, "drop_inflate_m": 0.55,                    # grid.DROP_LETHAL_M, DROP_INFLATE_M
+                     "edge_lethal_m": 0.32, "edge_inflate_m": 0.50,                    # run.EDGE_LETHAL_M, EDGE_INFLATE_M
+                     "confirm_m": 0.9, "glanced_m": 0.4, "absorb_m": 0.15,             # run.CONFIRM_M, GLANCED_M, ABSORB_M
+                     "hold_off_m": 0.20, "hold_detour": 1.25,                          # run.HOLD_OFF_M, HOLD_DETOUR
+                     "beyond_m": [0.1, 0.2, 0.3, 0.4],                                 # run.BEYOND_M
+                     "assoc_m": DUCK_LIMITS.assoc_m, "unique_m": DUCK_LIMITS.unique_m},   # semantic_map.ASSOC_M, UNIQUE_M
+    "judge": {"fall_z_m": 0.06,                       # evaluate.FALLEN_Z_M
+              "drop_margin_m": 0.15,                  # challenge.judge.DROP_MARGIN_M
+              "reached_m": 0.25,                      # evaluate.REACHED_M
+              "bounds_margin_m": 0.05},               # challenge.judge.BOUNDS_MARGIN_M
     "rates": ROBOT_FILE["rates"],
     "capabilities": ROBOT_FILE["capabilities"],
 }
@@ -130,17 +153,24 @@ check("every number of the profile has an expected old value, and the other way 
 off = {p: (have[p], want[p]) for p in have if p in want and have[p] != want[p]}
 check(f"all {len(have)} numbers equal the constant they replace, exactly", not off, off)
 
-# the numbers that are not a constant of their own: derived the way the code derived them
-check("the pivot's obstacle gate is the lethal ring plus the margin, to the last bit",
-      grid.LETHAL_M + SIM.locomotion.pivot.obstacle_margin_m == run.PIVOT_OBSTACLE_M)
-check("the reflex corridor is the radius plus the margin, to the last bit",
-      SIM.footprint.radius_m + tof.reflex_margin_m == run.REFLEX_HALF_W_M)
-check("the turn thresholds in degrees are the code's radians, to the last bit",
-      math.radians(SIM.locomotion.pivot_first_deg) == follow.TURN_FIRST_RAD
-      and math.radians(SIM.locomotion.pivot_done_deg) == follow.TURN_DONE_RAD
-      and math.radians(SIM.looking.survey_step_deg) == explore_run.SURVEY_STEP_RAD)
-check("the head joints and the sensor's valid statuses are the code's", tuple(SIM.looking.head_joints) == run.HEAD_JOINTS
+# the numbers that are not a constant of their own: derived the way the code derived them, to the last bit (0.12 + 0.05 is not 0.17)
+check("the pivot's obstacle gate is the lethal ring plus the margin, to the last bit of what the constant was",
+      SIM.footprint.lethal_m + SIM.locomotion.pivot.obstacle_margin_m == 0.12 + 0.05)
+check("the reflex corridor is the radius plus the margin, to the last bit of what the constant was",
+      SIM.footprint.radius_m + tof.reflex_margin_m == 0.083 + 0.04)
+check("the turn thresholds in degrees are the radians the constants were, to the last bit",
+      math.radians(SIM.locomotion.pivot_first_deg) == math.radians(45) and math.radians(SIM.locomotion.pivot_done_deg) == math.radians(15)
+      and math.radians(SIM.looking.survey_step_deg) == math.pi / 2)
+check("the head joints are the code's four, and the sensor's valid statuses are the code's",
+      tuple(SIM.looking.head_joints) == ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
       and set(tof.valid_status) == cliff.VALID == run.VALID_STATUS)
+check("the world model library's duck limits are the profile's (until a second robot passes its own)",
+      (SIM.locomotion.step_over_m, SIM.footprint.overhead_clear_m, SIM.footprint.standoff_m, SIM.error_budget.assoc_m,
+       SIM.error_budget.unique_m) == (DUCK_LIMITS.walk_over_m, DUCK_LIMITS.overhead_m, DUCK_LIMITS.stand_m, DUCK_LIMITS.assoc_m,
+                                      DUCK_LIMITS.unique_m))
+check("the navigator reads the same numbers: its calibration loaders return the profile's",
+      run.load_scale("sim") == 0.91 and run.load_tof("sim") == {"pitch_offset_deg": 2.5, "range_kind": "radial"}
+      and run.load_pivot_vx("sim") == -0.06 and run.load_scale(None) == 1.0 and run.load_pivot_vx(None) == 0.0)
 check("the sensor's mount in the simulator: radial ranges", tof.mount.range_kind == run.load_tof("sim")["range_kind"] == "radial")
 check("the simulated camera is calibration/sim.json's", {k: v for k, v in SIM.sensors.camera.data.items() if k not in ("measured", "why")}
       == {k: v for k, v in SIM_JSON["camera"].items() if k != "about"} and SIM.sensors.camera.why == SIM_JSON["camera"]["about"])

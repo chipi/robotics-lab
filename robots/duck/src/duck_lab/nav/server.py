@@ -35,7 +35,7 @@ from pathlib import Path
 from duck_lab.nav.client import SIM, LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.guardrails import Guard
-from duck_lab.nav.run import CALIBRATION, Navigator, decision
+from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
 from duck_lab.nav.sim_camera import SimCamera
 from runfile.catalog import default_data
@@ -167,7 +167,7 @@ class GoalRun:
         by_id = {a.aid: a for a in self.areas}
         if self.kind == "go_to_object" and self.params.get("area") in by_id:
             semantic.only_in = by_id[self.params["area"]].polygon
-        cal = json.loads((CALIBRATION / "sim.json").read_text()).get("camera", {})
+        cal = self.nav.profile.get("sensors.camera", {})
         self.nav.enable_objects(SimCamera(config=cal), kinds, semantic=semantic,
                                 area_at=lambda xy: next((a for a in self.areas if inside(xy, a.polygon)), None))
         self.kinds = kinds

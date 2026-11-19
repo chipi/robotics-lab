@@ -12,6 +12,9 @@ from pathlib import Path
 from runfile.mcapio import Follower
 
 from duck_lab.nav.stuck import StuckWatch
+from duck_lab.profile import load as load_profile
+
+STUCK = load_profile("sim").locomotion.stuck
 
 STUCK_TRUTH_M = 0.05
 
@@ -33,7 +36,7 @@ def main() -> None:
                 print(f"unreadable: {run_dir}")
                 continue
             runs += 1
-            watch, odom, last, truth_at = StuckWatch(), 0.0, None, []
+            watch, odom, last, truth_at = StuckWatch(STUCK.window_s, STUCK.moved_max_m), 0.0, None, []
             for t, k, p in rows:
                 if k == "tick" and p.get("belief") and p.get("cmd"):
                     b = p["belief"]

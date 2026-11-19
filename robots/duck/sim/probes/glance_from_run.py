@@ -18,7 +18,11 @@ from runfile.mcapio import Follower
 
 from duck_lab import replay
 from duck_lab.nav import cliff
-from duck_lab.nav.run import LOOK_COLLECT_S, LOOK_MAX_S, LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG, load_tof
+from duck_lab.nav.run import load_tof
+from duck_lab.profile import load as load_profile
+
+_LOOK = load_profile("sim").looking
+LOOK_COLLECT_S, LOOK_MAX_S, LOOK_SETTLE_FRAMES, LOOK_YAW_TOL_DEG = _LOOK.collect_s, _LOOK.max_s, _LOOK.settle_frames, _LOOK.yaw_tol_deg
 from duck_lab.nav.side_drops import below_counts, edge_from_glance, head_settled
 
 DATA = Path("/work/robotics-lab/data")
