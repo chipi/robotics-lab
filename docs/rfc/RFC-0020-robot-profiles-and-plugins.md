@@ -84,6 +84,7 @@ guardrails, rates: RFC-0014, VDA 5050 names in `factsheet`), and `duck/calibrati
 | `localisation` | the source (`mapd`, odometry and own map), maps only at stops or not, its known error (odometry scale by speed), the jump gate's thresholds | `sim.json`, `frames.py`, `run.py` |
 | `error_budget` | following error, belief p95, pivot drift, corner cutting: the margins and rings are derived from it (RFC-0008 §4) | `grid.py`, `run.py` |
 | `judge` | what a fall is for this body (trunk height, tilt), what a contact is (the footprint), reach tolerance | `evaluate.py`, `guardrails.py` |
+| `anomalies` | the thresholds of the robot-tagged anomalies that are the robot's (RFC-0019): the head's walking pose and how far off it counts, how long its streams may be silent, the sensor's clear distance, the map's explaining distance | measured on the recordings (PHASE3-PREP B1 results) |
 | `capabilities`, `guardrails`, `rates`, `control`, `adapter` | as today | the robot file |
 
 Every measured number keeps its `measured` and `why` (as `sim.json` does), so a number can be
