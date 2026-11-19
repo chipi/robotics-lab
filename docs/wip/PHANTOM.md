@@ -10,8 +10,8 @@ pose. The apartment's layout file (`robots/duck/sim/apartment_layout.json`) does
 because `robots/duck/sim/layout.py` dumps only the geoms on the world body, and the cube hangs on a
 `freejoint` body. Every truth comparison made against that file called the cube "0.5 m from any real
 outline". The cluster needs no fault in mapd, the navigator or the sensor model to exist; the one
-thing here not explained is a 6 … 11 % shortfall of the recorded ranges against a ray cast (NOT
-VERIFIED).
+thing first left open, a 6 … 11 % shortfall of the recorded ranges against a ray cast, is explained
+in [RANGE](RANGE.md): the missing 2.5 … 2.9° of sensor pitch.
 
 ## Evidence
 
@@ -91,11 +91,10 @@ systematic.
 ## NOT VERIFIED
 
 - mapd was not run. The projection above is my re-implementation of `project.rs` in Python from its
-  source; the 3-frame vote, the keyframe's local frame and the grid render were read, not replayed.
-  The cluster's agreement with the cube is by position (1), by pixel and time (2) and by ray cast
-  (3).
-- The 6 … 9 % shorter recorded ranges are not explained here (the simulator's radial ranges against
-  mapd's axial assumption, and the 2.5° pitch offset against its 3°, are candidates, not tested).
+source; the 3-frame vote, the keyframe's local frame and the grid render were read, not replayed.
+The cluster's agreement with the cube is by position (1), by pixel and time (2) and by ray cast (3).
+- The 6 … 11 % shorter recorded ranges: explained in [RANGE](RANGE.md) (a pitch of 2.4 … 2.9°,
+  radial ranges); 1 … 3 % is left there.
 - The cube's pose is its XML reset position; the recordings do not carry free bodies' poses, so
   whether a run pushed it is not known (a push would show as occupied cells elsewhere, none seen in
   b9 r2's first map).

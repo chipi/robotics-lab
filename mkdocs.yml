@@ -124,6 +124,7 @@ nav:
     - The plan we execute on: wip/EXECUTION-PLAN.md
     - Known issues: wip/KNOWN-ISSUES.md
     - "The phantom obstacle by the dock: a real cube": wip/PHANTOM.md
+    - "The simulated depth sensor's ranges": wip/RANGE.md
     - Opportunities and competitions: wip/OPPORTUNITIES.md
     - "Vision: an arena for any robot": wip/VISION-ARENA.md
     - "Phase 2 prepared: the restructure": wip/PHASE2-RESTRUCTURE-PLAN.md
