@@ -9,10 +9,9 @@ import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from duck_lab.nav.cliff import OVERHEAD_M
-
 KINDS_FILE = Path(__file__).with_name("kinds.json")
 WALK_OVER_M = 0.01         # the walking policy crosses about 1 cm (STEPS.md, 2026-11-18)
+OVERHEAD_M = 0.30          # above the duck's head (27.2 cm): passes over it; the navigator's cliff check reads it from here
 
 
 def load_kinds(path: Path = KINDS_FILE) -> dict:

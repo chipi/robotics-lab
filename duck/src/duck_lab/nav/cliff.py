@@ -13,6 +13,8 @@ left), for the beams that found none.
 
 import math
 
+from duck_lab.world_model.objects import OVERHEAD_M
+
 FOV_DEG = 45.0
 ROWS = COLS = 8
 # The sensor as mounted on this robot (configure(), from calibration/<robot>.json): how much further down it looks than the
@@ -102,7 +104,6 @@ def sensor_offset(state: dict) -> tuple:
 # predicted floor at 0.4 m (pose error); real obstacles (walls, the cabinet) read a median 14 cm.
 FLOOR_MARGIN_M = 0.08      # a return lower than this (+3 cm per metre of range) is floor
 FLOOR_MARGIN_PER_M = 0.03
-OVERHEAD_M = 0.30          # above the duck's head (27.2 cm): passes over it
 # Below the floor margin, above this: the low band, things a few cm tall that the floor margin reads as floor (a 6.6 cm
 # box, challenge 15 seed 1). One return there is noise as often as not, so the navigator keeps a low cell only once
 # several frames saw it. Flat floor since the head fix (27 runs, 20 min, sim/probes/low_persistence.py): 0 cells/min

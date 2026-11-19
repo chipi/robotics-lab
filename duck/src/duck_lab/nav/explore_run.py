@@ -23,7 +23,8 @@ from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.nav.run import CALIBRATION
 from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.site import SITES, Site
+from duck_lab.site_cli import SITES
+from duck_lab.world_model.site import Site
 from duck_lab.nav.sim_camera import SimCamera
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge

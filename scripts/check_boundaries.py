@@ -63,10 +63,7 @@ EXCEPTIONS = {
 }
 
 # to be removed (each a knot cut by a later commit of the restructure)
-BASELINE = {
-    "duck_lab.world_model.objects": {"duck_lab"},
-    "duck_lab.world_model.site": {"duck_lab"},
-}
+BASELINE = {}
 
 SKIP_DIRS = {".venv", "__pycache__", "node_modules", ".git", "site"}
 

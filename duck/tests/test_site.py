@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory() as tmp:
     import subprocess  # noqa: E402
 
     Site.create(root, "flat", "The simulated apartment", "apartment", kinds)
-    out = subprocess.run([sys.executable, "-m", "duck_lab.world_model.site", "--sites", str(root), "sim-areas", "flat",
+    out = subprocess.run([sys.executable, "-m", "duck_lab.site_cli", "--sites", str(root), "sim-areas", "flat",
                           "--start", str(start)], capture_output=True, text=True)
     sim = Site.load(root, "flat", kinds)
     office = next((a for a in sim.areas if a.name == "office"), None)

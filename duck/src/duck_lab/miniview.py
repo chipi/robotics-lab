@@ -1,15 +1,16 @@
-"""miniview: a robot run, as a picture, at one moment — small enough for an AI to use. Meant for any
-robot (it lives in the duck package until a shared one exists); it reads the navigator's run log.
+"""duck-pic (once `miniview`, a name the Observatory now owns): a robot run, as a picture, at one moment — small enough
+for an AI to use. Meant for any robot (it lives in the duck package until a shared one exists); it reads the navigator's
+run log.
 
 Rerun's slice we use, as commands that return pictures: a time cursor (--at), a 3D camera (--view 3d,
 --az, --el, --around) or the top view, layers to switch (--layers, Rerun's entity tree), and a
 filmstrip under the main view (--film N over --span seconds) or a sheet of moments (--strip):
 
-    uv run miniview runs/explore12 --events                       # what happened, and when
-    uv run miniview runs/explore12 --at 79.7 --around 1.2         # a top-down PNG at t = 79.7 s
-    uv run miniview runs/explore12 --at 79.7 --layers truth,depth # only what is named
-    uv run miniview runs/explore12 --strip 74 80 6 --around 1.2   # six moments on one sheet
-    uv run miniview runs/explore12 --at 80 --view 3d --around 1.2 --film 5 --span 4
+    uv run duck-pic runs/explore12 --events                       # what happened, and when
+    uv run duck-pic runs/explore12 --at 79.7 --around 1.2         # a top-down PNG at t = 79.7 s
+    uv run duck-pic runs/explore12 --at 79.7 --layers truth,depth # only what is named
+    uv run duck-pic runs/explore12 --strip 74 80 6 --around 1.2   # six moments on one sheet
+    uv run duck-pic runs/explore12 --at 80 --view 3d --around 1.2 --film 5 --span 4
 
 Layers: apartment, map, memory, depth, plan, belief, truth (all by default).
 
