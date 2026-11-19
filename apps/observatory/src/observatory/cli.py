@@ -236,6 +236,10 @@ def cmd_anomalies(args) -> None:
     counts = ", ".join(f"{d} {sum(a['detector'] == d for a in res['anomalies'])}" for d in res["ran"] if any(a["detector"] == d for a in res["anomalies"]))
     print(f"{key}: {n} {'anomaly' if n == 1 else 'anomalies'}" + (f" ({counts})" if counts else "")
           + f" from {len(res['ran'])} detectors: " + ", ".join(res["ran"]))
+    robot = [a["anomaly"] for a in res["anomalies"] if a["source"] == "robot"]
+    if robot:
+        print(f"  tagged by the robot while it ran, read from the run's own events: {len(robot)} ("
+              + ", ".join(f"{k} {robot.count(k)}" for k in dict.fromkeys(robot)) + ")")
     for d, why in res["not_applied"].items():
         print(f"  did not apply: {d}: {why}")
     loose = [anomalies.DETECTORS[d] for d in res["ran"] if not anomalies.DETECTORS[d].default]

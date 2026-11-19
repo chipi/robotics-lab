@@ -18,7 +18,7 @@ from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
-from duck_lab.nav import recovery
+from duck_lab.nav import anomaly as anom, recovery
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
 from worldmodel.objects import load_kinds
@@ -59,7 +59,20 @@ class Explorer:
         self.events = []
         self.attempts = 0         # recoveries in a row since a leg was reached
         self.within = None        # a test of a point (xy -> bool) the frontiers must pass (explore {area}, RFC-0014 §3.4.1), else the whole map
+        self.burst = anom.RefusalBurst()     # refusals in a row at one pose (RFC-0019's refusal_burst)
         nav.on_move = self.move_frame
+
+    def watch_burst(self, out: dict, pose: tuple, legs: int) -> None:
+        """A leg's outcome: refusals at one pose with no motion between (b11 r2: six in 0.45 s, then "trapped") are one anomaly, said
+        when the streak reaches anomaly.BURST_N; any other outcome ends the streak."""
+        if out["status"] != "refused":
+            self.burst.reset()
+            return
+        n = self.burst.refused(pose[:2])
+        if n:
+            self.nav.anomaly("refusal_burst", f"{n} legs refused in a row at one pose: {out.get('why')}", margin=n - self.burst.n,
+                             values={"refusals": n, "why": out.get("why"), "legs": legs, "limit": self.burst.n, "moved_max_m": self.burst.moved_m,
+                                     "max_refusals": MAX_REFUSALS, "margin_unit": "refusals"})
 
     def move_frame(self, d: tuple) -> None:
         """The belief's frame moved (the navigator moved its memory): the frontier targets' bookkeeping moves with it."""
@@ -265,6 +278,7 @@ class Explorer:
             pose = self.nav.loc.pose() or pose
             self.note(event="leg", n=legs, target=[round(v, 2) for v in target], status=out["status"],
                       why=out.get("why"))
+            self.watch_burst(out, pose, legs)
             if out.get("why") == "start boxed in" and not cleared_here:
                 gone = self.nav.forget_blocked_near(pose, CLEAR_M)
                 self.note(event="cleared", points=gone,

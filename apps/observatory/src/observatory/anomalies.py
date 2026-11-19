@@ -578,14 +578,47 @@ DETECTORS = {d.id: d for d in (
 )}
 
 
+# ---- tagged by the robot (RFC-0019 section 3.1): events of the run, already records -----------------------------------------
+
+# The kinds the navigator tags (the format's vocabulary, RFC-0019 section 3.1; no robot code is imported): `--detector` takes them too.
+ROBOT_KINDS = ("fix_jump_held", "mapd_lost", "reloc_refused", "stuck", "frames_parted", "refusal_burst", "room_disagrees", "head_off_walk",
+               "refused_unexplained", "camera_failed", "thread_failed", "stop_latched", "lease_lost")
+
+
+def robot_records(run: Run) -> list:
+    """The anomalies the robot tagged while it ran (events of kind `anomaly`, source "robot"), in the same record as the found ones:
+    `t_end` is `t` plus the duration the raise point knew; `where` in the world frame, the belief placed there by the epoch in force
+    and the truth from the event's own row (the simulator's, absent on a real robot). mapd's own place stays in the event."""
+    out = []
+    for e in run.events:
+        if e.get("kind") != "anomaly" or e.get("source") != "robot" or "anomaly" not in e:
+            continue
+        where = {"frame": "world"}
+        belief = (e.get("where") or {}).get("belief")
+        if belief:
+            where["belief"] = [round(v, 3) for v in run.to_world(e["t"], belief[0], belief[1])]
+        truth = e.get("truth")
+        if truth:
+            where["truth"] = [round(truth[0], 3), round(truth[1], 3)]
+        out.append({"anomaly": e["anomaly"], "source": "robot", "module": e.get("module"), "severity": e.get("severity") or "info",
+                    "detector": e.get("detector"), "version": e.get("version"), "t": round(e["t"], 3),
+                    "t_end": round(e["t"] + (e.get("duration_s") or 0.0), 3), "where": where, "summary": e.get("summary") or "",
+                    "values": e.get("values") or {}, "margin": e.get("margin"), "evidence": e.get("evidence") or {},
+                    "related": e.get("related") or []})
+    return out
+
+
 def analyse(run: Run, truth, detectors=None, min_severity: str = "info", cfg: dict | None = None, experimental: bool = False) -> dict:
-    """Run the detectors asked for (default: the default track, plus the experimental ones when asked) over one run.
-    {"anomalies": [...sorted by time...], "ran": [ids], "not_applied": {id: why}, "not_run": {id: why it was not run}}."""
+    """Run the detectors asked for (default: the default track, plus the experimental ones when asked) over one run, and add what the
+    robot tagged itself (all of it, or the kinds named). {"anomalies": [...sorted by time...], "ran": [ids], "not_applied": {id: why},
+    "not_run": {id: why it was not run}}."""
     cfg = {**DEFAULTS, **(cfg or {})}
     asked = list(detectors) if detectors else [d.id for d in DETECTORS.values() if d.default or experimental]
-    unknown = [d for d in asked if d not in DETECTORS]
+    unknown = [d for d in asked if d not in DETECTORS and d not in ROBOT_KINDS]
     if unknown:
-        raise ValueError(f"no detector {unknown[0]!r}; the detectors are " + ", ".join(DETECTORS))
+        raise ValueError(f"no detector {unknown[0]!r}; the detectors are " + ", ".join(DETECTORS) + "; the robot's own kinds are " + ", ".join(ROBOT_KINDS))
+    robot_asked = [d for d in asked if d in ROBOT_KINDS]
+    asked = [d for d in asked if d in DETECTORS]
     if min_severity not in SEVERITIES:
         raise ValueError(f"severity {min_severity!r}: one of " + ", ".join(SEVERITIES))
     floor = SEVERITIES.index(min_severity)
@@ -598,7 +631,8 @@ def analyse(run: Run, truth, detectors=None, min_severity: str = "info", cfg: di
             continue
         ran.append(id_)
         found += [a for a in det.fn(det, run, truth, cfg) if SEVERITIES.index(a["severity"]) >= floor]
-    found.sort(key=lambda a: (a["t"], a["detector"]))
+    found += [a for a in robot_records(run) if (not detectors or a["anomaly"] in robot_asked) and SEVERITIES.index(a["severity"]) >= floor]
+    found.sort(key=lambda a: (a["t"], a["detector"] or ""))
     return {"anomalies": found, "ran": ran, "not_applied": skipped,
             "not_run": {d.id: ("not selected (--detector named others)" if detectors and d.default else "not selected" if d.default
                                else "experimental: not quiet on the clean runs; --experimental or --detector NAME runs them")

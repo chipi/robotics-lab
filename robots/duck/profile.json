@@ -153,6 +153,17 @@
     "unique_m": 1.5
   },
   "judge": {"fall_z_m": 0.06, "drop_margin_m": 0.15, "reached_m": 0.25, "bounds_margin_m": 0.05},
+  "anomalies": {
+    "head_walk_pose": {"neck_pitch": 0.239, "head_pitch": 0.358, "head_yaw": -0.078, "head_roll": -0.023},
+    "head_off_walk_rad": 0.30,
+    "head_off_walk_s": 1.0,
+    "state_stale_s": 3.0,
+    "depth_stale_s": 3.0,
+    "room_disagrees_clear_mm": 280,
+    "unexplained_clear_m": 0.30,
+    "measured": "2026-11-19, the 66 recordings of the apartment scene (simulator). Head: 160107 walking samples (a forward command) of 63 runs; the pose is each joint's median over the runs' medians; a sample within 0.10 rad of it in 81 %, over 0.30 rad from it in 12 %; episodes of 1 s or more over 0.30 rad: 209 in 20 runs, and 1 each in b9 r2, b10b r1 and b11 r1, 2 in b10b r2 (over 0.20 rad: 8 and 9 in b10b r1 and r2). Streams: the longest gap between state samples 1.40 s and between depth frames 1.41 s, except apartment-1117c (25 s). Refusals for no room to turn: 123 of 240 had a nearest return of 280 mm or more, and the map was more than 5 cm tighter than the truth in 25 of those 123 against 19 of the other 117 (it does not separate). No-path refusals with a free start, a goal that is not lethal and nothing within 0.30 m of the pose by the cost map: 8 of 181, in 2 runs (b10b r1, b12 r2)",
+    "why": "the thresholds of the robot-tagged anomalies that are the duck's (RFC-0019 step 1, PHASE3-PREP B1): the head's walking pose and how far from it counts as off (a glance that left the head pitched tilted the odometry), how long the state and depth streams may be silent before they are stale (3 s is more than twice the longest gap of a running run), the sensor's clear distance at which a refusal for no room to turn disagrees with the map, and the distance round the pose inside which something in the map explains a refusal. Measured in the simulator only; the real duck has its own measurement to make (its walking head pose is robotd's default, neck 13 deg and head 20 deg, SIDE-DROPS.md)"
+  },
   "capabilities": {
     "sensors": [],
     "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed", "toilet", "bathtub", "desk"], "frame": "site"}],

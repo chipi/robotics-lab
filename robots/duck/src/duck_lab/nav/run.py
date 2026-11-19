@@ -33,7 +33,7 @@ from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
 from duck_lab import plugins
 from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived: re-exported for the tools that read it)
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
-from duck_lab.nav import recovery
+from duck_lab.nav import anomaly as anom, recovery
 from duck_lab.nav.decision import decision
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
@@ -146,6 +146,7 @@ FLOOR_CELL_M = 0.05
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 STATE_KEEP = 40          # robot states held to pair depth frames with: two seconds at 20 Hz (autod holds the last second)
+WATCHDOG_S = 0.5         # how often the streams' watchdog looks (the limits are the profile's anomalies.state_stale_s, depth_stale_s)
 
 
 
@@ -201,6 +202,9 @@ class Navigator:
     fault_grid = False
     on_move = None
     _parted_at = None
+    _walking = False         # the last command asked for a forward walk (the head watch reads it on the state thread)
+    _lease_said = False
+    anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None,
@@ -277,6 +281,7 @@ class Navigator:
         self.area, self.area_agrees = None, None    # the operator's area the pose is in, and whether the guess agrees
         self._sem_lock = threading.Lock()
         self._closing = threading.Event()
+        self._start_watchdog()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.locomotion.pivot_vx,
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data)})
@@ -310,6 +315,13 @@ class Navigator:
         self.look_along_m, self.continue_m = look.along_m, look.continue_m
         self.limits = Limits(walk_over_m=loco.step_over_m, overhead_m=fp.overhead_clear_m, stand_m=fp.standoff_m,
                              assoc_m=eb.assoc_m, unique_m=eb.unique_m)
+        # the robot-tagged anomalies' numbers (RFC-0019 step 1); a profile without the block raises none that need them
+        an = profile.get("anomalies")
+        self.anomalies = profile.anomalies if an else None
+        if an:
+            self._head = anom.HeadWatch(an["head_walk_pose"], an["head_off_walk_rad"], an["head_off_walk_s"])
+            now = time.monotonic()
+            self._beat = {"state": anom.Staleness(an["state_stale_s"], now), "depth": anom.Staleness(an["depth_stale_s"], now)}
 
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
@@ -319,7 +331,12 @@ class Navigator:
         waits after a stop are in the log too (explore12 had events there but no poses)."""
         self.sync_memory()
         vx =tw.vx if self.speed_cap is None else max(-self.speed_cap, min(self.speed_cap, tw.vx))
-        self.locomotion.command(vx, tw.vyaw)
+        self._walking = tw.vx > 0.05
+        try:
+            self.locomotion.command(vx, tw.vyaw)
+        except LeaseLost as exc:
+            self.lease_ended(exc)
+            raise
         pose = self.localisation.pose()
         if pose is None:
             return
@@ -333,6 +350,7 @@ class Navigator:
             return False
         self.sync_memory()
         self._watch_frames()
+        self._watch_fix()
         return True
 
     def sync_memory(self) -> None:
@@ -394,10 +412,127 @@ class Navigator:
                             fix=(self.loc.last_fix or {}).get("status"), offset=[round(v, 3) for v in self.loc.offset],
                             decision=decision("frames_parted", f"the belief's frame is {math.hypot(d[0], d[1]):.2f} m, "
                                               f"{math.degrees(d[2]):.1f} deg from mapd's", delta=shown))
+                held = (self.loc.last_fix or {}).get("status") == "held"
+                fx = self.profile.localisation.fix
+                margin, unit = anom.over(math.hypot(d[0], d[1]), fx.parted_m, abs(d[2]), fx.parted_rad)
+                self.anomaly("frames_parted", f"the belief's frame is {math.hypot(d[0], d[1]):.2f} m, {math.degrees(d[2]):.1f} deg from "
+                             f"mapd's" + ("; a held fix" if held else ""), "major" if held else None, margin=margin,
+                             values={"delta": shown, "offset": [round(v, 3) for v in self.loc.offset], "fix": (self.loc.last_fix or {}).get("status"),
+                                     "parted_m": fx.parted_m, "parted_rad": fx.parted_rad, "margin_unit": unit})
         elif self._parted_at is not None:
             self._parted_at = None
             self.record(event="frames_joined", delta=shown,
                         decision=decision("frames_joined", "the belief's frame and mapd's are together again", delta=shown))
+
+    # ---- anomalies (RFC-0019 §3.1: what the navigator itself notices; nav/anomaly.py has the record and the stateful rules) -------
+
+    def anomaly(self, kind: str, summary: str, severity: str | None = None, **fields) -> None:
+        """One robot-tagged anomaly, as an event of the run (source "robot"), with the belief's place when there is one: the
+        simulator's truth is added by `record`, as to every row. It writes a row and changes nothing else (no decision, no state);
+        a failure to write it is said on stderr and never stops the navigation."""
+        try:
+            loc = getattr(self, "localisation", None)
+            self.record(**anom.record(kind, summary, severity, belief=loc.pose() if loc else None, **fields))
+        except Exception as e:  # noqa: BLE001 - an observer must not stop the navigation
+            print(f"anomaly {kind} not recorded: {type(e).__name__}: {e}", file=sys.stderr)
+
+    def _once_here(self, kind: str, pose: tuple) -> bool:
+        """False for an anomaly already said for this place (anomaly.PlaceGate): a refusal repeats for every target tried at one pose."""
+        gates = self.__dict__.setdefault("_gates", {})
+        return gates.setdefault(kind, anom.PlaceGate()).allow(time.monotonic(), pose)
+
+    def _watch_fix(self) -> None:
+        """fix_jump_held: every fix the gate held, none throttled (the `fix` event is: only the first few and every twentieth)."""
+        f = self.loc.last_fix
+        if not f or f["status"] != "held":
+            return
+        fx = self.profile.localisation.fix
+        turn = abs(wrap(f["after"][2] - f["before"][2])) if f.get("before") else 0.0
+        margin, unit = anom.over(f["moved_m"], fx.jump_m, turn, fx.jump_rad)
+        seen = self.localisation.seen or {}
+        self.anomaly("fix_jump_held", f"mapd's fix would move the belief {f['moved_m']:.2f} m and turn it {math.degrees(turn):.0f} deg; held",
+                     margin=margin, mapd=f["raw"][:2],
+                     values={"jump_m": f["moved_m"], "turn_deg": round(math.degrees(turn), 1), "limit_m": fx.jump_m, "limit_rad": fx.jump_rad,
+                             "held_in_a_row": len(self.loc._held), "held_total": self.loc.rejected, "mapd_lost": seen.get("lost"),
+                             "relocalizations": seen.get("relocalizations"), "margin_unit": unit},
+                     evidence={"fix_t_ns": f["t_ns"], "odom_t_ns": f["odom_t_ns"], "raw": f["raw"], "before": f.get("before"), "after": f["after"]})
+
+    def _check_room(self, room: float, nearest_drop: float) -> None:
+        """room_disagrees: the map says there is no room to turn while the depth sensor sees `room_disagrees_clear_mm` or more clear
+        ahead. Half of the refusals for no room to turn in the recordings are such (profile anomalies.measured): it is a note beside
+        them, not a verdict on which of the two was right."""
+        if self.anomalies is None:
+            return
+        near, pose = self.range.nearest_mm(), self.localisation.pose()
+        limit = self.anomalies.room_disagrees_clear_mm
+        if near is None or near < limit or not self._once_here("room_disagrees", pose):
+            return
+        self.anomaly("room_disagrees", f"the map has {room:.2f} m of room to turn, the depth sensor sees {near:.0f} mm clear ahead",
+                     margin=near - limit, values={"room_m": round(room, 3), "nearest_mm": near, "limit_mm": limit,
+                                                  "nearest_drop_m": round(nearest_drop, 3), "margin_unit": "mm"})
+
+    def _check_unexplained(self, grid: CostGrid, pose: tuple, goal: tuple, why: str, start_cost: float, goal_cost: float) -> None:
+        """refused_unexplained: the planner found no way, the start is not boxed in, the goal is not lethal, and nothing the robot's
+        own map holds (walls, remembered obstacles, drops, edges, suspected drops) lies within `unexplained_clear_m` of the pose."""
+        if self.anomalies is None or start_cost >= LETHAL_COST or goal_cost >= LETHAL_COST:
+            return
+        limit = self.anomalies.unexplained_clear_m
+        if clearance(grid, pose[:2], limit) < limit or not self._once_here("refused_unexplained", pose):
+            return
+        self.anomaly("refused_unexplained", f"{why}, with nothing in the map within {limit} m of the pose and the goal not lethal",
+                     values={"why": why, "start_cost": start_cost, "goal_cost": goal_cost, "clear_m": limit, "goal": [round(v, 3) for v in goal]})
+
+    def _check_head(self, s: dict) -> None:
+        """head_off_walk, on the state stream: the head joints against the walking pose while the last command was a walk."""
+        joints = s.get("joints") or []
+        if self._head is None or len(joints) != len(JOINTS):
+            return
+        try:
+            ev = self._head.update(time.monotonic() - self._t0, self._walking, dict(zip(JOINTS, joints)))
+        except Exception as e:  # noqa: BLE001 - an observer must not stop the state stream
+            self._head = None
+            print(f"head watch stopped: {type(e).__name__}: {e}", file=sys.stderr)
+            return
+        if ev:
+            self.anomaly("head_off_walk", f"{ev['joint']} is {math.degrees(ev['deviation_rad']):.0f} deg from its walking pose after "
+                         f"{ev['walking_s']:.1f} s of walking", margin=ev["deviation_rad"] - self.anomalies.head_off_walk_rad,
+                         values={**ev, "limit_rad": self.anomalies.head_off_walk_rad, "margin_unit": "rad"}, duration_s=ev["walking_s"])
+
+    def _start_watchdog(self) -> None:
+        if not self._beat:
+            return
+        for beat in self._beat.values():
+            beat.last = time.monotonic()         # the clock starts when the streams are open, not when the profile was read
+        self._watchdog_thread = threading.Thread(target=self._watchdog, daemon=True)
+        self._watchdog_thread.start()
+
+    def _watchdog(self) -> None:
+        """thread_failed: the state and depth streams run in threads that end silently (an exception in a callback leaves a line on
+        stderr and nothing in the run), so each is said when it has been quiet past its limit (the profile's anomalies.state_stale_s,
+        depth_stale_s) and has not spoken since."""
+        while not self._closing.wait(WATCHDOG_S):
+            now = time.monotonic()
+            for name, stream in (("state", self.state), ("depth", self.range)):
+                age = self._beat[name].check(now)
+                if age is None:
+                    continue
+                limit = self._beat[name].limit_s
+                thread = getattr(stream, "_thread", None)
+                self.anomaly("thread_failed", f"the {name} stream has been silent for {age:.1f} s", margin=age - limit,
+                             values={"stream": name, "silent_s": round(age, 2), "limit_s": limit,
+                                     "thread_alive": None if thread is None else thread.is_alive(), "margin_unit": "s"})
+
+    def lease_ended(self, exc: LeaseLost) -> None:
+        """stop_latched or lease_lost, once: the gate refused a command because this client has no lease. `stopped_by <who>` is a STOP
+        from someone; an expired lease, a takeover or any other end is the lease lost mid-goal."""
+        if self._lease_said:
+            return
+        self._lease_said = True
+        reason = exc.reason or exc.code
+        stopped = (exc.reason or "").startswith("stopped_by")
+        self.anomaly("stop_latched" if stopped else "lease_lost",
+                     f"the gate stopped the robot: {reason.replace('_', ' ')}" if stopped else f"the lease ended: {reason.replace('_', ' ')}",
+                     values={"code": exc.code, "reason": exc.reason, "holder": exc.holder})
 
     def hazards(self) -> list:
         """The remembered drops: a cliff stop's points, measured edges, suspected cells."""
@@ -610,6 +745,9 @@ class Navigator:
         the navigator's values to the run's signals."""
         self.localisation.on_odom(s["t_ns"], odom_pose(s))
         self._states.append((s["t_ns"], s))
+        if self._beat:
+            self._beat["state"].seen(time.monotonic())
+            self._check_head(s)
         if self.runlog and not self._logging_failed:
             try:
                 self.runlog.signals(self._sid, time.monotonic() - self._t0, self._signal_values(s))
@@ -648,6 +786,8 @@ class Navigator:
         first and found no frontier with seen floor): paired with a state and derived once (FrameView), logged, and the
         floor it shows joins floor_seen."""
         arrived = time.monotonic() - self._t0
+        if self._beat:
+            self._beat["depth"].seen(time.monotonic())
         state, dt_ms = self._pair(frame.get("t_ns") or 0)
         pose = None
         if state is not None:
@@ -858,6 +998,7 @@ class Navigator:
                                 blocked=[[round(v, 2) for v in b] for b in self.blocked],
                                 decision=decision("refused", why, start_cost=start_cost, goal_cost=goal_cost,
                                                   lethal_cost=LETHAL_COST))
+                    self._check_unexplained(grid, pose, goal, why, start_cost, goal_cost)
                     return {"status": "refused", "why": why, "time_s": round(now - start, 1),
                             "start_lethal": start_cost >= LETHAL_COST}
                 ahead = following[st.target_index:] if following else []
@@ -967,6 +1108,7 @@ class Navigator:
                             decision=decision("refused", "no room to turn", room_m=round(room, 3), min_room_m=self.tight_pivot_m,
                                               nearest_drop_m=round(nearest_drop, 3), drop_clear_m=self.pivot_drop_m, edge_clear_m=self.pivot_edge_m,
                                               nearest_mm=self.range.nearest_mm(), arc_clear_mm=self.arc_clear_mm))
+                self._check_room(room, nearest_drop)
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
             near = self.range.nearest_mm()
@@ -1021,6 +1163,9 @@ class Navigator:
                 self.record(event="stuck", pose=pose, **seen,
                             decision=decision("stuck", "walking without getting anywhere", **seen,
                                               window_s=self.loco.stuck.window_s, moved_max_m=self.loco.stuck.moved_max_m))
+                self.anomaly("stuck", f"walking for {seen['seconds']:.1f} s, the belief moved {seen['moved_m']:.3f} m",
+                             margin=self.loco.stuck.moved_max_m - seen["moved_m"], duration_s=seen["seconds"],
+                             values={**seen, "window_s": self.loco.stuck.window_s, "moved_max_m": self.loco.stuck.moved_max_m})
                 return {"status": "stalled", "why": "stuck: walking without moving", "time_s": round(now - start, 1),
                         **seen}
             self.move(tw, nearest_mm=near, turning=st.turning)
@@ -1057,6 +1202,7 @@ class Navigator:
                     if why not in said:
                         said.add(why)
                         self.record(event="camera_failed", why=why)
+                        self.anomaly("camera_failed", f"the camera's look failed: {why}", values={"why": why, "period_s": period})
 
         recorded = {"t": 0.0, "at": {}}       # the last objects snapshot: when, and where each object was then
 
@@ -1086,6 +1232,12 @@ class Navigator:
                                               f"landmarks {fixed['landmarks']} place the duck {fixed['median']} m off: "
                                               f"belief moved {fixed.get('step')}", **{k: v for k, v in fixed.items()
                                                                                       if k in ("n", "median", "spread_m")}))
+                if fixed["status"] == "refused":
+                    lm = self.profile.localisation.landmarks
+                    self.anomaly("reloc_refused", f"{fixed['n']} landmark sightings in {lm.window_s:g} s disagree by {fixed['spread_m']:.2f} m "
+                                 f"(limit {lm.spread_m}); no correction", margin=fixed["spread_m"] - lm.spread_m,
+                                 values={"n": fixed["n"], "spread_m": fixed["spread_m"], "median": fixed["median"], "landmarks": fixed["landmarks"],
+                                         "limit_m": lm.spread_m, "window_s": lm.window_s, "min_n": lm.min_n})
             if self.frames_on and fixed and fixed["status"] == "corrected":
                 return           # the objects are in the old frame until the navigator's thread moves them: this look is not placed
             with self._sem_lock:

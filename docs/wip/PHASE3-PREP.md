@@ -194,11 +194,11 @@ odometry scale in 9 early-batch runs b3–b5 and explore-1117b, dithering in 4, 
 misplaced edge in 2): those are runs with contacts, the pre-fix odometry, displaced maps and stalls,
 not the clean four; no run was read one by one.
 
-**Not built:** the robot-tagged anomalies (B1: `fix_jump_held`, `reloc_refused`, `stuck`,
-`frames_parted`, `refusal_burst`, `room_disagrees`, `head_off_walk`, `refused_unexplained`,
+**Not built (at stream B's end):** the robot-tagged anomalies (B1: `fix_jump_held`, `reloc_refused`,
+`stuck`, `frames_parted`, `refusal_burst`, `room_disagrees`, `head_off_walk`, `refused_unexplained`,
 `camera_failed`, `thread_failed`, `stop_latched`, `lease_lost`): their raise points are inside the
-navigator and wait for the profiles branch to merge; the derived index; the pages; Mission Control;
-the video.
+navigator and waited for the profiles branch to merge (built since: "Results of B1" below); the
+derived index; the pages; Mission Control; the video.
 
 **Not verified:** the detectors ran on the recordings by their MCAP, not on a live run; the fixtures
 are slices trimmed to the fields the rules read (tick rows keep pose, truth, speed, tilt, time; the
@@ -207,6 +207,106 @@ and was not compared with a planner replay; `belief vs truth` for runs with seve
 1's evaluations) was computed with each tick's epoch and not checked against `observatory state`;
 the challenge scenes (ch11) have no layout here, so nothing that needs one was run on them; the free
 bodies' poses are their reset positions.
+
+## Results of B1: the robot-tagged anomalies in the navigator (RFC-0019 step 1), branch `p3-hooks`, 2026-11-19
+
+**Built.** `Navigator.anomaly(kind, summary, severity, ...)`
+(`robots/duck/src/duck_lab/nav/anomaly.py` builds the record) writes RFC-0019 §2.1's record as an
+event row of the run: `event: "anomaly"`, `source: "robot"`, `module`, `detector`, `version` 1,
+`severity`, `summary`, `values`, `margin`, `evidence`, `related`, `duration_s`, and `where: {belief,
+frame: "map"}` (mapd's own place too for a held fix); the simulator's truth pose is in the row,
+added by `record` as to every row. It has no `decision`, so Mission Control's listeners and
+guardrails do not see it and nothing it does changes a decision or a command (a unit test: two rows
+with an anomaly between them are the rows without it). A failure to write one goes to stderr and
+never stops the navigation. In the Observatory, the adapter lists it as a notable event with a line
+of text (`anomaly stuck (major): ...`: `observatory events --kinds anomaly`), and `observatory
+anomalies` reads the events back into the found records' shape (`t_end` is `t` plus the duration,
+the belief placed in the world by the epoch in force, the truth from the row) beside the found ones,
+the `source` column `robot`, a footer line counting them by kind; `--detector` takes a robot kind
+(`stuck`) as well as a found detector, naming only found ones hides the robot's. The thresholds that
+are the duck's are the profile's new `anomalies` block (`runfile.profile` validates it;
+`test_profile.py` holds each number), with the measurement in its own `measured` and `why`; the
+policy numbers are in `nav/anomaly.py`.
+
+**The raise points**, with the numbers and where they came from. "The recordings" are the 66
+apartment runs in `/work/robotics-lab/data` (read only; scratch scripts, not committed).
+
+| Anomaly | Raised in | Rule as built | Number and its source | Severity |
+| --- | --- | --- | --- | --- |
+| `fix_jump_held` | `Navigator._watch_fix`, after every fix | the gate held the fix: every one, none throttled (the `fix` event keeps the first 3, then every 20th) | the gate's `localisation.fix` `jump_m` 0.3, `jump_rad` 0.35 (RFC-0016, existing); margin past the limit in m, or in rad when the turn held it | major |
+| `reloc_refused` | the camera thread, where the relocaliser says `refused` | at least 4 sightings in 6 s that spread over 0.12 m | the relocaliser's own `localisation.landmarks` `min_n`, `window_s`, `spread_m` (existing); it clears its window on a refusal, so it repeats only after 4 new sightings | minor |
+| `stuck` | `_go_to`'s stuck branch | the existing rule: 3 s of walking, the belief under 0.05 m | `locomotion.stuck` (existing) | major |
+| `frames_parted` | `_watch_frames`, at the existing event's moments | the frames past 0.25 m or 0.1 rad, and again 0.25 m further | `localisation.fix` `parted_m`, `parted_rad` (existing) | major when the last fix was held, else minor (the landmarks' offset) |
+| `refusal_burst` | `Explorer.watch_burst`, after each leg | 3 refused legs within 0.10 m of the first, no leg of another outcome between; once a streak | `BURST_N` 3, `BURST_MOVED_M` 0.10. The recordings' refused legs grouped by pose: groups of 1: 81, 2: 18, 3: 16, 4: 3, 5: 3, 6 or more: 35 (the explorer's "trapped" is 6); 57 streaks of 3 or more in 66 runs | major |
+| `room_disagrees` | `_check_room`, at the refusal "no room to turn" | the sensor reads `room_disagrees_clear_mm` or more clear ahead | **280 mm** (the table's number, kept): of the 240 such refusals, 123 read 280 mm or more (109 at 300, 97 at 350, 63 at 400). By truth (the layout's nearest obstacle to the true pose) the map was more than 5 cm tighter than the real clearance in 25 of those 123 and in 19 of the 117 below 280 mm, at every limit from 200 to 400 mm the same share: the reading does not separate a wrong map from a right one (K36). One for a place (`PLACE_MOVED_M` 0.10, `PLACE_GAP_S` 5: b11 r5 refused six times in 1 s at one pose) | info |
+| `head_off_walk` | `_check_head`, on every state | a head joint more than `head_off_walk_rad` from `head_walk_pose` for `head_off_walk_s` of walking (a forward command); standing clears the timer, the episode ends when the head is back | **0.30 rad, 1.0 s**, the pose `{neck_pitch 0.239, head_pitch 0.358, head_yaw -0.078, head_roll -0.023}`: each joint's median over the 63 runs' medians, from 160107 walking samples (the docs' "neck 13 deg, pitch 20 deg" are 0.227 and 0.349). A sample is within 0.10 rad of it in 81 %, 0.10-0.20 in 5 %, over 0.30 rad in 12 %. Episodes of 1 s or more: 0.20 rad 269 in 30 runs (8 and 9 in b10b r1 and r2), 0.30 rad 209 in 20 runs (1 each in b9 r2, b10b r1, b11 r1, 2 in b10b r2; the long ones, to 38 s, in b2-b5) | minor |
+| `refused_unexplained` | `_check_unexplained`, at "no path on the map" / "start boxed in" | start not lethal, goal not lethal, and nothing in the planner's own cost map (walls, remembered obstacles, drops, edges, suspected drops) within `unexplained_clear_m` of the pose; one for a place | **0.30 m**: of 181 such refusals, 121 had a lethal goal and 28 a lethal start (both explain them), 32 neither; of those 32, 22 had something within 0.2 m, and nothing within 0.30 m in 8 (2 runs: b10b r1 at 1113 s and 1149-1156 s, b12 r2 at 407 s), within 0.40 m in 6, 0.50 m in 4, 0.60 m in 0. The table's rule had no "goal not lethal"; 121 of 181 refusals are a goal in a wall's ring | minor |
+| `camera_failed` | the camera thread, where the event was | a look raised; said once for each different error | none | major |
+| `thread_failed` | `_watchdog`, a thread every 0.5 s | the state or the depth stream silent for `state_stale_s` / `depth_stale_s`, once until it speaks again; says whether its thread is alive | **3.0 s** each: the longest gap between state samples is 1.40 s and between depth frames 1.41 s over the 66 recordings (apartment-1117 and, for 1.16 s, relo-fault-nogate-r1), and 25 s in `apartment-1117c`, a stalled recording; 120 state and 103 depth gaps over 0.2 and 0.3 s, all but the 25 s ones under 1.41 s | major |
+| `stop_latched`, `lease_lost` | `Navigator.move` (the command the gate refuses), and `GoalRun._work` | `stopped_by <who>` is `stop_latched`; an expired lease, a takeover, another holder or any other end is `lease_lost`; said once for a navigator | none | info, major |
+
+Not tagged: `mapd_lost` (RFC-0019 §3.1's second row; the `mapd_status` event already says it).
+
+**Proof the navigator behaves the same.** The change adds rows and reads state: the diff to the
+navigator's modules is `nav/anomaly.py` (new), `run.py` (+154 lines: the emit path, the raise
+points, the watchdog), `explore_run.py`, `server.py` (2 lines) and `plugins/tof8x8.py` (the stream
+thread kept as an attribute); `follow.py`, `duck_walk.py`, `grid.py`, `stuck.py`, `frames.py` and
+the planner are untouched.
+
+- `duck-replay` over 126 recorded runs (all 66 apartment recordings and the latest run of each seed
+  of challenges 5, 11, 16, 17, 18, 19), before the change (be77f60) and after: the output of 125 is
+  identical file for file. `apartment/phase1-run19` differed because another agent's evaluation was
+  still writing it during the first pass (8370 records then, 33449 after); run again on the finished
+  recording with be77f60's source (`PYTHONPATH` to a `git archive` of it) and with the new tree, the
+  output is identical. 118 PASS and 8 FAIL on both: K33's seven and `apartment/explore-1117` (1178
+  differences, the same kind: recorded before the derived points' present form). **What this proves
+  and what it does not:** `duck-replay` replays the perception (the depth frames derived again from
+  the recorded raw distances and states) and compares it with what was logged; it does not run the
+  planner, the follower or the gates, so it does not by itself say the commands and decisions are
+  the same. They are the same by the diff above (those modules are untouched; the anomaly code only
+  reads state and writes a row) and by the test that two rows with an anomaly between them are the
+  rows without it.
+- `sim/probes/stuck_replay.py` over 169 recorded runs of challenges 16 and 5 (the stuck rule on the
+  recorded belief and commands): 20 verdicts, 0 false alarms, the output identical between be77f60's
+  source and the new tree.
+- The unit tests drive the real `Navigator._go_to`, `fix`, `move`, `enable_objects` and
+  `GoalRun._work` with the duck's real plugins and stub sockets:
+  `robots/duck/tests/test_anomaly.py`, 62 checks, each raise point once for what raises it and for
+  what must not (the gate taking a fix, 279 mm against 280, a wall 0.05 m from the pose, a
+  stand-still head, a stream that keeps talking, a refusal repeated at one pose, a distinct pose).
+  Mutation-checked: 16 deliberate breaks (a raise point not called or saying nothing, the 280 mm
+  limit made exclusive, a lethal goal not counted as an explanation, the head watch counting
+  standing, the lease said at every refusal, the server not telling the navigator, the watchdog
+  thread not started) each fail the file; the explorer's loop calling the burst watch and the
+  constructor starting the watchdog are checked by reading the source, as they need the simulator or
+  sockets. `apps/observatory/tests/test_anomalies.py` reads the robot's tags from a made-up run (the
+  epoch, the truth, the duration, the filters) and from
+  `tests/fixtures/anomalies/robot_tagged_fault` (a real simulator run, below): the table, the
+  footer, `--json`, `--detector`, `events`.
+
+**The simulator, under the lock** (scratch data folder; the simulator was up and was not left as
+found: `duck-challenge` stops it at its end, and the last run's `sim/reset_sim.py` started the
+apartment scene, which is up):
+
+- challenge 5 seed 1: passed (reached, error 0.181 m, 0.7 min), **no anomaly** in the run;
+- challenge 11 seed 1: passed (reached, error 0.144 m, 0.8 min), **no anomaly**;
+- so that the check sees a record in a real run, a third, not asked for: `duck-explore --minutes 2
+  --fix-fault 30,0.9,0.0` (mapd's pose shifted 0.9 m from 30 s on, a persistent jump like b10a r1):
+  **53 anomalies**, 52 `fix_jump_held` (every held fix, major, margin 0.59-0.61 m; the `fix` event
+  was written 5 times in the run) and 1 `frames_parted` (major, at 32.0 s), each with the belief's
+  place and the truth's, 0.9-4.4 cm apart, median 2.2 cm (the belief held while mapd was 0.9 m off).
+  `observatory anomalies` lists them with source `robot` beside 3 found `phantom_obstacle`s;
+  `observatory events --kinds anomaly` lists the same 53. No `thread_failed`, `camera_failed`,
+  `head_off_walk` or other false alarm in the three runs. A slice of it is the fixture.
+
+**Not verified** (the same list is in KNOWN-ISSUES K36, K37): `refusal_burst`, `room_disagrees`,
+`refused_unexplained`, `head_off_walk`, `reloc_refused`, `stuck`, `camera_failed`, `thread_failed`,
+`stop_latched` and `lease_lost` were raised by unit tests only, not by a live run: the three
+simulator runs raised only `fix_jump_held` and `frames_parted`. Whether each stays quiet on the
+navigator as it is now was not measured (the 66 recordings include the early batches), and the real
+duck was not touched, so its walking head pose, its stream gaps and its two distances are the
+simulator's. The simulator is not deterministic (K13), so the passes of challenges 5 and 11 are not
+a proof of equal commands.
 
 ## Decisions for the operator
 

@@ -14,11 +14,23 @@ on the Observatory's side: `observatory anomalies <run>`
 five on the default track because they stay quiet on the clean runs (near miss at 0.090 m,
 dithering, odometry scale, phantom obstacle, misplaced edge) and four behind `--experimental`
 because they do not (belief against truth, missed obstacle, wrong refusal, area uncovered); the
-record of §2.1 as a Python dict, written nowhere yet. Not built: the robot-tagged set (§3.1, §5 step
-1: the navigator's raise points wait for the profiles branch), the derived index, the pages, Mission
-Control, the video (§5 steps 3–5). The counts per run, the rules as built and what was not verified
+record of §2.1 as a Python dict. The counts per run, the rules as built and what was not verified
 are in [PHASE3-PREP](../wip/PHASE3-PREP.md) "Stream B results". The "phantom obstacle" of the first
 measurements was a real cube the truth layout lacked ([PHANTOM](../wip/PHANTOM.md)).
+**Step 1 complete (2026-11-19, phase 3 hooks, branch `p3-hooks`):** the record and the robot-tagged
+set inside the navigator. `Navigator.anomaly` (`robots/duck/src/duck_lab/nav/anomaly.py`) writes
+§2.1's record as an event of the run (`event: "anomaly"`, source `robot`, the belief's place in
+`where`, the simulator's truth in the row), with no `decision`: the decision listeners and guardrails
+do not see it. `observatory anomalies` reads them from the run's events beside the found ones
+(the `source` column, the belief against the truth), `observatory events` lists them. Raise points
+for twelve of §3.1's thirteen: `fix_jump_held`, `reloc_refused`, `stuck`, `frames_parted`,
+`refusal_burst`, `room_disagrees`, `head_off_walk`, `refused_unexplained`, `camera_failed`,
+`thread_failed` (a watchdog on the state and depth streams), `stop_latched` and `lease_lost`. Not
+tagged: `mapd_lost` (the `mapd_status` event of 28c5cc9 says it). The thresholds that are the duck's
+are in its profile's `anomalies` block, each with the recordings it was read from; what was
+measured, the replay and the simulator check are in PHASE3-PREP "Results of B1", and what was not
+verified in KNOWN-ISSUES K36 and K37. Not built: the derived index, the pages, Mission Control, the
+video (§5 steps 3–5).
 **Builds on:** [RFC-0010](RFC-0010-run-store-v2.md) (the run store), [RFC-0013](RFC-0013-robot-eye.md)
 (the Eye, the watch page), [RFC-0014](RFC-0014-mission-control.md) (Mission Control's live side),
 [RFC-0016](RFC-0016-objects-and-semantic-map.md) (relocalisation and the fix gate),
@@ -165,7 +177,7 @@ left out (b11 r1 alone has 2056 sightings).
 
 1. The record and the robot-tagged set (§3.1) in the navigator; mapd's lost reason and counters
    read on every fix (built: 28c5cc9, `mapd_status`); the frame delta in every `world` event (with
-   the frame fix, branch nav-frames).
+   the frame fix, branch nav-frames). **Built 2026-11-19** (the set but `mapd_lost`; see the status).
 2. The analysis as a command-line table over one run first (a detector is a function over a run that
    returns records), used on b11 at once (**built**, 2026-11-19: `observatory anomalies`); then the
    first found set (§3.2) in the Observatory's derived index (not built).
