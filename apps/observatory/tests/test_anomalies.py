@@ -221,9 +221,10 @@ def sliced(name):
     return A.Run([(0.0, "run", run)] + duck.records(d, "apartment"))
 
 
-FREE = json.loads((SIM / "apartment_free_bodies.json").read_text())
-APT = A.Truth.from_layouts([json.loads((SIM / "apartment_layout.json").read_text()), FREE])
-APT_NO_FREE = A.Truth.from_layouts([json.loads((SIM / "apartment_layout.json").read_text())])
+LAYOUT_JSON = json.loads((SIM / "apartment_layout.json").read_text())
+APT = A.Truth.from_layouts([LAYOUT_JSON])
+# the layout as it was before it held the free bodies (obj_*, ball_*): the cube by the dock is then nothing
+APT_NO_FREE = A.Truth.from_layouts([{"geoms": [g for g in LAYOUT_JSON["geoms"] if not g["name"].startswith(("obj_", "ball_"))]}])
 
 out = found(sliced("graze_b10b_r2"), "near_miss", truth=APT)
 check("b10b r2's graze: one near miss, kit_stool2, then a contact", len(out) == 1 and out[0]["values"]["obstacle"] == "kit_stool2"
@@ -245,9 +246,9 @@ check("b11 r2: legs refused where a path existed by truth (the detector is exper
 
 dock = sliced("dock_b9_r2")
 out = found(dock, "phantom_obstacle", truth=APT_NO_FREE)
-check("b9 r2's first map, the layout alone: the 'phantom' by the dock, 0.5 m from any outline", len(out) == 1 and 3 <= out[0]["values"]["cells"] <= 4
+check("b9 r2's first map, the layout without the free bodies: the 'phantom' by the dock, 0.5 m from any outline", len(out) == 1 and 3 <= out[0]["values"]["cells"] <= 4
       and abs(out[0]["where"]["belief"][0] + 0.27) < 0.06 and abs(out[0]["where"]["belief"][1] - 0.13) < 0.06 and out[0]["values"]["nearest_outline_m"] > 0.4, out and out[0])
-check("b9 r2's first map, the layout and the free bodies: it is the cube obj_3, nothing is phantom", not found(dock, "phantom_obstacle", truth=APT))
+check("b9 r2's first map, the layout with its free bodies: it is the cube obj_3, nothing is phantom", not found(dock, "phantom_obstacle", truth=APT))
 
 end = sliced("nothing_left_b11_r1")
 out = found(end, "area_uncovered", truth=APT)
@@ -266,7 +267,7 @@ atexit.register(shutil.rmtree, tmp, ignore_errors=True)
 data = tmp / "data"
 for name in ("graze_b10b_r2", "odometry_before_ch11_s1", "edge_b11_r2"):
     import_duck(FIX / name, "apartment", data, say=lambda *_: None, started_at_ns=T0_NS)
-LAYOUTS = ["--layout", str(SIM / "apartment_layout.json"), "--layout", str(SIM / "apartment_free_bodies.json")]
+LAYOUTS = ["--layout", str(SIM / "apartment_layout.json")]
 
 
 def cmdline(*args):
@@ -297,7 +298,7 @@ code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--json", *LAYOUTS)
 doc = json.loads(text)
 check("anomalies --json: the records, what ran, what did not apply", code == 0 and doc["run"] == "duck/apartment/graze_b10b_r2" and len(doc["anomalies"]) == 1
       and doc["anomalies"][0]["detector"] == "near_miss" and "near_miss" in doc["ran"] and list(doc["not_applied"]) == ["phantom_obstacle"]
-      and doc["layouts"] == [str(SIM / "apartment_layout.json"), str(SIM / "apartment_free_bodies.json")], doc.get("not_applied"))
+      and doc["layouts"] == [str(SIM / "apartment_layout.json")], doc.get("not_applied"))
 code, text, _ = cmdline("anomalies", "graze_b10b_r2", "--json")
 doc = json.loads(text)
 check("anomalies: without a layout the near miss is said not to apply, not reported as zero", "near_miss" in doc["not_applied"] and not doc["anomalies"], doc["not_applied"])

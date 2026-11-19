@@ -83,8 +83,8 @@ def perimeter(g: dict, step: float) -> list:
 
 
 class Truth:
-    """The simulator's layout: geoms with type, pos, size, yaw, collides (sim/apartment_layout.json, and what its dump leaves
-    out: the free bodies, sim/apartment_free_bodies.json). Several layouts merge into one."""
+    """The simulator's layout: geoms with type, pos, size, yaw, collides (sim/apartment_layout.json, which holds the free
+    bodies too). Several layouts merge into one."""
 
     def __init__(self, layouts: list, overhead_m: float = DEFAULTS["overhead_m"], ceiling_m: float = DEFAULTS["mapd_ceiling_m"]):
         self.geoms = [g for lay in layouts for g in lay["geoms"]]

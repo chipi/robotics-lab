@@ -117,14 +117,14 @@ detector and version.
 [--experimental] [--layout FILE …] [--json]` (the `miniview` script is the same entry point),
 reading the run straight from the data folder (no index, nothing written, the run's MCAP read with
 `keep_raw` so events come whole), in `apps/observatory/src/observatory/anomalies.py`: no robot code
-is imported; the simulator's truth is data, the layout file and
-`robots/duck/sim/apartment_free_bodies.json` together (the free bodies the layout dump omits:
-[PHANTOM](PHANTOM.md)); a detector that needs the layout or the truth pose says it did not apply,
-not "0". The table is: t, end, anomaly, source, severity, margin, summary, belief → truth place; the
-footer counts, names what did not apply and what was not run. The record is RFC-0019 §2.1's, source
-`analysis`, with `detector` and `version`. Tests: `apps/observatory/tests/test_anomalies.py` (each
-rule at its threshold; seven fixtures cut from real recordings by `tests/make_anomaly_fixtures.py`,
-about 260 kB; the command line; nothing written).
+is imported; the simulator's truth is data, `robots/duck/sim/apartment_layout.json` (regenerated
+with the free bodies, which the dump had omitted: [PHANTOM](PHANTOM.md)); a detector that needs the
+layout or the truth pose says it did not apply, not "0". The table is: t, end, anomaly, source,
+severity, margin, summary, belief → truth place; the footer counts, names what did not apply and
+what was not run. The record is RFC-0019 §2.1's, source `analysis`, with `detector` and `version`.
+Tests: `apps/observatory/tests/test_anomalies.py` (each rule at its threshold; seven fixtures cut
+from real recordings by `tests/make_anomaly_fixtures.py`, about 260 kB; the command line; nothing
+written).
 
 **The default track** (quiet on b9 r2, b10b r1, b10b r3, b11 r1, all five at 0): near miss (truth
 clearance of the trunk centre to the layout's solid geoms under 0.090 m; the radius 0.083 m is the
@@ -133,7 +133,7 @@ scale, phantom obstacle (with the free bodies in the truth), misplaced edge. **B
 `--experimental`**, each said not quiet in the footer: belief vs truth, missed obstacle, wrong
 refusal, area uncovered.
 
-**Counts per run** (every detector, the layout and the free bodies as truth; `n/a` = did not apply:
+**Counts per run** (every detector, the layout with the free bodies as truth; `n/a` = did not apply:
 a challenge scene has no layout here; refused legs for scale):
 
 | Run | near miss | dithering | odometry scale | phantom | misplaced edge | belief vs truth | missed obstacle | wrong refusal | area uncovered | refused legs |
@@ -178,6 +178,16 @@ have none); ch20's 10 runs, which fail otherwise, have none.
   50 % in cells the last map knows; the rooms are the layout's `floor_*` decals.
 - *Belief vs truth:* p95 over the run of the belief's distance from the truth in the world (warn
   0.20 m, major 0.35 m), and of the heading error (20°), as two anomalies.
+
+**The regenerated layout and phase 1's goals** (`draw_goals(layout, 20, seed 1)`, what run 16's
+`duck-eval --goals 20` draws; the evaluation was not re-run). The dump gained 7 geoms and changed
+none. The goals change: old goals 5 (−0.13, 0.42, cor_n) and 17 (−0.17, −0.07, cor_n) are no longer
+drawn, because the cube `obj_3` at (−0.30, 0.10) is 0.315 m and 0.165 m from them, under the 0.35 m
+goal clearance. The draws are sequential from one seeded generator, so the other 18 keep their order
+and values but shift up (by one before old goal 17, by two after it), and two new goals are appended
+at the end: (1.69, −0.57, office) and (−0.31, 2.11, cor_n). Phase 1's results are for the old 20; a
+comparison with them needs the old layout (`git show
+c61ca7f:robots/duck/sim/apartment_layout.json`).
 
 **Over all 65 apartment runs, the default track fires in 30** (near miss 33 episodes in 23 runs,
 odometry scale in 9 early-batch runs b3–b5 and explore-1117b, dithering in 4, phantom in 5,

@@ -42,8 +42,8 @@ All on b9 r2 (`data/runs/duck/apartment/explore-b9-r2`) unless said; recordings 
    runs without.
 5. **The detector.** `phantom_obstacle` over b9 r2, b10b r1, b10b r3 and b11 r1: with the layout
    file alone, 1 phantom each at (−0.27 … −0.28, 0.12 … 0.14), 0.47 … 0.52 m from any outline (the
-   figure in PHASE3-PREP B2); with the layout and `robots/duck/sim/apartment_free_bodies.json` (the
-   seven free bodies, from `apartment.xml`), 0 each.
+   figure in PHASE3-PREP B2); with the free bodies in the layout (the seven, from `apartment.xml`;
+   the layout file was regenerated with them, K32), 0 each.
 
 ## Does it explain early "no room to turn"?
 
@@ -73,13 +73,13 @@ systematic.
 
 ## What this changes
 
-- **The detectors read the truth of free bodies too.** `observatory anomalies` takes the layout and
-  `apartment_free_bodies.json` together (`--layout` twice, or `OBSERVATORY_LAYOUT`). With the file
-  alone, `phantom_obstacle` fires on every run at the cube.
-- **K32** (new): the layout dump leaves out the free bodies. Regenerating `apartment_layout.json`
-  with them would change the draws of phase 1's go-to goals (`evaluate.py` `draw_goals` reads every
-  colliding geom), so it is not done here; the operator decides. Until then the free bodies are a
-  second file.
+- **One truth file.** `layout.py` now dumps the free bodies too (at their reset positions), and
+  `apartment_layout.json` was regenerated with them (82 geoms, 89 now; none changed or removed): the
+  operator's call, 2026-11-19. `observatory anomalies --layout
+  robots/duck/sim/apartment_layout.json` is the whole truth; without the free bodies
+  `phantom_obstacle` fires on every run at the cube.
+- **K32:** the layout dump leaving out the free bodies. Closed by that regeneration. It moves phase
+  1's go-to goals (`draw_goals`): see PHASE3-PREP "Stream B results".
 - **K25:** b11 r3's six remembered points 0.33 … 0.41 m from every layout geom are at `ball_1` (a 4
   cm sphere at (2.40, 2.30); the points are at (2.36 … 2.39, 2.28 … 2.36)); b11 r1's group at (2.17
   … 2.23, −2.46 … −2.41) is at `obj_2` (2.10, −2.40). b11 r2's one point at (0.02, 0.21) is 0.29 m

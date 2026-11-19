@@ -19,7 +19,7 @@ The agent's face (UXS-001 "The commands"): answers from the data, pictures from 
     uv run observatory scenes                              # the scenes and their runs
     uv run observatory runs apartment                      # a scene's runs
     uv run observatory events explore12 [--kinds a,b]      # what happened, when
-    uv run observatory anomalies explore-b10b-r2 --layout ../robots/duck/sim/apartment_layout.json --layout ../robots/duck/sim/apartment_free_bodies.json
+    uv run observatory anomalies explore-b10b-r2 --layout ../robots/duck/sim/apartment_layout.json
                                                            # what went wrong, found by detectors over the recording (RFC-0019); [--detector a,b] [--min-severity major] [--experimental] [--json]
     uv run observatory state explore12 --at 79.0 [--json]  # belief, truth, distance, depth, semantic map, last event
     uv run observatory objects find-fridge-2 --at 12.0 [--json]  # the semantic map: objects, room, the current sighting (ADR-0019)
