@@ -37,7 +37,7 @@ NXT_LINK       ?= auto
 NXT_IMAGE      ?= robotics-lab/nxt-web:dev
 NXT_DATA       ?= nxt-web-data
 
-DUCK_DIR       := duck
+DUCK_DIR       := robots/duck
 VIEWER_DIR     := apps/observatory
 VIEWER_IMAGE   ?= miniview:ci
 CONTROL_DIR    := apps/mission-control
@@ -186,7 +186,7 @@ test-run-compat: viewer-sync duck-sync ## A run opens fully in Rerun and minivie
 	@echo "test-run-compat PASS"
 
 .PHONY: perf-viewer
-perf-viewer: viewer-sync ## NOT in CI: replay duck/runs/phase1-run18 at 20 Hz through the writer with both pages open; prints latency, bytes per page, lock hold time
+perf-viewer: viewer-sync ## NOT in CI: replay robots/duck/runs/phase1-run18 at 20 Hz through the writer with both pages open; prints latency, bytes per page, lock hold time
 	@cd $(VIEWER_DIR) && uv run --frozen python perf/perf_viewer.py $(PERF_ARGS)
 
 .PHONY: test-viewer-image

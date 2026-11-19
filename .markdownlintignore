@@ -4,3 +4,4 @@ node_modules/
 apps/nxt-web/.venv/
 apps/nxt-web/build/
 apps/nxt-web/runs/
+.venv-broken-*/

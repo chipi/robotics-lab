@@ -3,9 +3,9 @@
 (the compose file and the Makefile default to /work/robotics-lab/data). The index is MINIVIEW_INDEX (default
 /work/robotics-lab/state/miniview/index.sqlite); while a service holds it, the commands read it and write nothing.
 
-    uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
-    uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
-    uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
+    uv run miniview scene apartment --layout ../robots/duck/sim/apartment_layout.json
+    uv run miniview import ../robots/duck/runs/explore12 ../robots/duck/runs/phase1-run18 --scene apartment
+    uv run miniview import ../robots/duck/runs/explore13 --scene apartment --follow   # a run while it runs
     uv run miniview import --robot nxt ../apps/nxt-web/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
     uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
     uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted

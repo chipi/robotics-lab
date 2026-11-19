@@ -3,7 +3,7 @@ check, mcap convert, rrd verify, the rows decoded) and miniview (the service loa
 explore9 imported into a temp folder; an NXT run (ADR-0013) also has a signal plotted in a Rerun time series view from a
 blueprint. Lichtblick's checks (its image, headless: alerts, start date, topics, the 3D panel, the NXT signal in
 Raw Messages and a Plot panel) are skipped unless COMPAT_LICHTBLICK=1: its UI's timing failed CI runs that were not
-ours (the operator, 2026-11-16). Needs duck/.venv (rerun-sdk: `make duck-sync`), Chromium, and Docker for Lichtblick. Run: make test-run-compat
+ours (the operator, 2026-11-16). Needs robots/duck/.venv (rerun-sdk: `make duck-sync`), Chromium, and Docker for Lichtblick. Run: make test-run-compat
 or: cd apps/observatory && uv run python tests/test_run_compat.py"""
 
 import base64
@@ -27,7 +27,7 @@ from miniview.shots import launch
 
 check = Checks("RUN COMPAT")
 REPO = Path(__file__).resolve().parents[3]
-RERUN = REPO / "duck" / ".venv" / "bin" / "rerun"
+RERUN = REPO / "robots" / "duck" / ".venv" / "bin" / "rerun"
 # Lichtblick is not tested unless COMPAT_LICHTBLICK=1 (the operator, 2026-11-16: driving its UI failed CI runs for
 # reasons in its UI, not in our files). The checks are kept for when that is fixed.
 LICHTBLICK_ON = os.environ.get("COMPAT_LICHTBLICK") == "1"
@@ -86,7 +86,7 @@ def rerun_plot(browser, rrd, app, entity, component, field, shot):
     """`field` of the struct on `entity` in Rerun's web viewer, plotted by a blueprint: the red line's columns (screen x
     with a red pixel), its horizontal span (a fraction of the width) and its mean screen y on the left and on the right."""
     rbl = rrd.with_name(f"{field}.rbl")
-    rc, out = run([REPO / "duck" / ".venv" / "bin" / "python", Path(__file__).with_name("rerun_blueprint.py"), app, rbl, entity, component, field])
+    rc, out = run([REPO / "robots" / "duck" / ".venv" / "bin" / "python", Path(__file__).with_name("rerun_blueprint.py"), app, rbl, entity, component, field])
     assert rc == 0, out
     web, grpc = free_port(), free_port()
     # bin/rerun is a wrapper that starts the viewer as a child: its own process group, so stopping the group stops both
@@ -143,7 +143,7 @@ with tempfile.TemporaryDirectory(prefix="compat-") as tmp:
 
     # ---- (a) Rerun ---------------------------------------------------------------------------------------------
     if not RERUN.exists():
-        raise SystemExit(f"no {RERUN}: run `make duck-sync` (rerun-sdk lives in duck/.venv)")
+        raise SystemExit(f"no {RERUN}: run `make duck-sync` (rerun-sdk lives in robots/duck/.venv)")
     rc, out = run([RERUN, "mcap", "check", mcap])
     check("Rerun: `rerun mcap check` passes every channel", rc == 0 and "Issues" in out and not re.search(r"^(warn|error)", out, re.M | re.I), out[-300:])
     rrd = tmp / "run.rrd"

@@ -2,7 +2,7 @@
 logged per frame from the recorded angle, the trunk placed by the run's pose. Runs in a Python that has rerun-sdk (the
 duck's: miniview's has not):
 
-    duck/.venv/bin/python viewer/src/miniview/export/rerun_robot.py <data> <run key> <robot.urdf> <out.rrd> [fps]
+    robots/duck/.venv/bin/python apps/observatory/src/miniview/export/rerun_robot.py <data> <run key> <robot.urdf> <out.rrd> [fps]
 
 The trunk's pose and the joints come from the video's track (`miniview.video.track`): the truth's whole pose in the
 simulator, the belief with the IMU's tilt in the field. The scene's boxes are logged too (world frame).

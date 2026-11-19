@@ -1,5 +1,5 @@
 """The workbench in a real browser, both pages (three.js and deck.gl), self-contained: it writes the scene from the
-committed layout (duck/sim/apartment_layout.json), generates a synthetic duck log that exercises every stream kind
+committed layout (robots/duck/sim/apartment_layout.json), generates a synthetic duck log that exercises every stream kind
 (and a gap without ticks), imports it, serves it and drives the pages through the UI and `window.miniview`.
 Needs Chromium and Playwright (CI: `uv run playwright install --with-deps chromium`; MINIVIEW_CHROMIUM overrides).
 Run: cd apps/observatory && uv run python tests/test_ui.py"""
@@ -24,7 +24,7 @@ from miniview.scenes import from_mujoco_layout
 from miniview.server import make_server
 from miniview.shots import launch
 
-LAYOUT = Path(__file__).resolve().parents[3] / "duck" / "sim" / "apartment_layout.json"
+LAYOUT = Path(__file__).resolve().parents[3] / "robots" / "duck" / "sim" / "apartment_layout.json"
 GAP = (40.0, 44.0)         # no ticks between these run times
 T0, T1, DT = 10.0, 70.0, 0.125
 fails = []

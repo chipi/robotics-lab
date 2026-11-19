@@ -2,7 +2,7 @@
 
     cd apps/mission-control && uv run python tests/sim_duck.py [--only point,cancel,...]      # make sim-duck
 
-NOT in `make test-control`: it resets the simulator (via duck/sim/reset_sim.py, ~45 s each time), moves the duck for minutes and
+NOT in `make test-control`: it resets the simulator (via robots/duck/sim/reset_sim.py, ~45 s each time), moves the duck for minutes and
 needs nobody else using it. Everything it writes goes to a folder of its own in the system temp dir: the Observatory's runs
 (a data folder with a copy of the apartment scene), the navigator's output, Mission Control's state.
 
@@ -65,13 +65,13 @@ proxy = body = None
 
 
 def fresh_sim():
-    """The simulator back at the dock with a fresh map (duck/sim/reset_sim.py, the only way this test restarts it), and a new gate in
+    """The simulator back at the dock with a fresh map (robots/duck/sim/reset_sim.py, the only way this test restarts it), and a new gate in
     front of the new robotd: the old gate's upstream connection died with the old robotd."""
     global proxy, body
     if proxy is not None:
         proxy.stop()
-    print("resetting the simulator (duck/sim/reset_sim.py) ...", flush=True)
-    subprocess.run([str(REPO / "duck" / ".venv" / "bin" / "python"), "sim/reset_sim.py"], cwd=REPO / "duck", check=True, timeout=400)
+    print("resetting the simulator (robots/duck/sim/reset_sim.py) ...", flush=True)
+    subprocess.run([str(REPO / "robots" / "duck" / ".venv" / "bin" / "python"), "sim/reset_sim.py"], cwd=REPO / "robots" / "duck", check=True, timeout=400)
     body = Body()
     proxy = Proxy(tmp / "gate.sock", SIM / "duck-a.sock", log=tmp / "gate.jsonl", lease_s=20.0, takeover_names={"operator-laptop"})
     proxy.start()

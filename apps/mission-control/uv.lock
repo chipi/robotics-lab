@@ -233,7 +233,7 @@ wheels = [
 [[package]]
 name = "duck-lab"
 version = "0.1.0"
-source = { editable = "../../duck" }
+source = { editable = "../../robots/duck" }
 dependencies = [
     { name = "mcap" },
     { name = "robotgate" },
@@ -531,7 +531,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duck-lab", editable = "../../duck" },
+    { name = "duck-lab", editable = "../../robots/duck" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "robotgate", editable = "../../libs/gate" },
 ]

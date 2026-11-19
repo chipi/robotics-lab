@@ -1,4 +1,4 @@
-"""`make perf-viewer` (not in CI): a real run (duck/runs/phase1-run18) replayed at 20 Hz through the writer while the service
+"""`make perf-viewer` (not in CI): a real run (robots/duck/runs/phase1-run18) replayed at 20 Hz through the writer while the service
 follows it and both pages watch it. Prints the follower's latency (write to applied in memory), each page's latency
 (write to applied in the page), the bytes each page receives per second, and how long the run's lock is held.
 
@@ -69,7 +69,7 @@ def pct(xs, q):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--log", default=str(HERE.parents[2] / "duck" / "runs" / "phase1-run18"))
+    ap.add_argument("--log", default=str(HERE.parents[2] / "robots" / "duck" / "runs" / "phase1-run18"))
     ap.add_argument("--hz", type=float, default=20.0)
     ap.add_argument("--ticks", type=int, default=0, help="stop after this many ticks (0: the whole log)")
     ap.add_argument("--warm", type=int, default=20, help="ticks written before the pages open")

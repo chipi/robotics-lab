@@ -69,7 +69,7 @@ jobs:
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
         run: make viewer-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
-      - name: make test-run-compat (Rerun from duck/.venv, miniview)
+      - name: make test-run-compat (Rerun from robots/duck/.venv, miniview)
         run: make test-run-compat
 
   images:

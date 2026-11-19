@@ -1,6 +1,6 @@
 # Mission Control (RFC-0014 §3.13) as an image, to run on any of the operator's machines.
 #
-#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate, libs/worldmodel and ../duck too
+#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate, libs/worldmodel and robots/duck too
 #   docker run --rm -p 127.0.0.1:8060:8060 -v $PWD/apps/mission-control/robots.example:/config/robots:ro -v mc-state:/state mission-control:local
 #
 # `make`'s control-up / control-down wrap apps/mission-control/compose.yml. Configuration (the robot files) and data (the SQLite store, the gates'
@@ -23,8 +23,8 @@ COPY libs/gate/pyproject.toml ./libs/gate/pyproject.toml
 COPY libs/gate/src ./libs/gate/src
 COPY libs/worldmodel/pyproject.toml ./libs/worldmodel/pyproject.toml
 COPY libs/worldmodel/src ./libs/worldmodel/src
-COPY duck/pyproject.toml ./duck/pyproject.toml
-COPY duck/src ./duck/src
+COPY robots/duck/pyproject.toml ./robots/duck/pyproject.toml
+COPY robots/duck/src ./robots/duck/src
 COPY apps/mission-control/pyproject.toml apps/mission-control/uv.lock ./apps/mission-control/
 COPY apps/mission-control/src ./apps/mission-control/src
 RUN cd apps/mission-control && uv sync --frozen --no-dev \

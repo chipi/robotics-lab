@@ -6,14 +6,14 @@
 #
 # Runs: the format 2 runs of the lab data folder (MINIVIEW_DATA, default /work/robotics-lab/data:
 # data/runs/<robot>/<scene>/<run>/run.mcap, the finished ones; the NXT's recordings are there, ADR-0013) and the duck's own
-# duck/runs/*.mcap. From another machine:
+# robots/duck/runs/*.mcap. From another machine:
 #   ssh -N -L 8090:127.0.0.1:8090 -L 9090:127.0.0.1:9090 -L 9876:127.0.0.1:9876 <this host>
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
 view="$here/.viewers"
 data="${MINIVIEW_DATA:-/work/robotics-lab/data}"
-duck="$here/duck/.venv/bin"
+duck="$here/robots/duck/.venv/bin"
 container=robotics-lichtblick
 # pinned by digest, as in apps/observatory/tests/test_run_compat.py (how to bump it: ADR-0007 "Compatibility")
 lichtblick_image=ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f57737c8c5866abf75670b8dcf2ed6c2cb5ce3d64f3c63f210a5177e9
@@ -37,18 +37,18 @@ down() {
 }
 
 up() {
-    [ -x "$duck/duck-to-rerun" ] || { echo "run: cd duck && uv sync" >&2; exit 2; }
+    [ -x "$duck/duck-to-rerun" ] || { echo "run: cd robots/duck && uv sync" >&2; exit 2; }
     # The binary itself, not the Python launcher: the launcher starts it and exits, so its pid
     # would not be the server's.
-    rerun_bin="$(ls "$here"/duck/.venv/lib/python*/site-packages/rerun_cli/rerun 2>/dev/null | head -1)"
-    [ -x "$rerun_bin" ] || { echo "no Rerun binary in duck/.venv: cd duck && uv sync" >&2; exit 2; }
+    rerun_bin="$(ls "$here"/robots/duck/.venv/lib/python*/site-packages/rerun_cli/rerun 2>/dev/null | head -1)"
+    [ -x "$rerun_bin" ] || { echo "no Rerun binary in robots/duck/.venv: cd robots/duck && uv sync" >&2; exit 2; }
     down >/dev/null
     rm -rf "$view/mcap" "$view/rrd"
     mkdir -p "$view/mcap" "$view/rrd"
     shopt -s nullglob
     v2_runs=("$data"/runs/*/*/*/run.mcap)
-    duck_runs=("$here"/duck/runs/*.mcap)
-    [ $((${#v2_runs[@]} + ${#duck_runs[@]})) -gt 0 ] || { echo "no runs yet in $data/runs or duck/runs: record one in nxt-web or with duck-record" >&2; exit 2; }
+    duck_runs=("$here"/robots/duck/runs/*.mcap)
+    [ $((${#v2_runs[@]} + ${#duck_runs[@]})) -gt 0 ] || { echo "no runs yet in $data/runs or robots/duck/runs: record one in nxt-web or with duck-record" >&2; exit 2; }
     # format 2 (ADR-0007): the protobuf channels decode in Rerun with its protobuf decoder; Lichtblick reads the file as it is
     for f in "${v2_runs[@]}"; do
         rel="${f#"$data"/runs/}"                      # robot/scene/run/run.mcap
@@ -62,7 +62,7 @@ up() {
     done
     chmod -R a+rX "$view/mcap"
     # The brain's world model for the newest duck runs (VIEWER_RUNS, default 4): duck-world.
-    for d in $(ls -1dt "$here"/duck/runs/*/ 2>/dev/null | head -"${VIEWER_RUNS:-4}"); do
+    for d in $(ls -1dt "$here"/robots/duck/runs/*/ 2>/dev/null | head -"${VIEWER_RUNS:-4}"); do
         [ -f "$d/ticks.jsonl" ] || continue
         "$duck/duck-world" "$d" -o "$view/rrd/world-$(basename "$d").rrd" 2>/dev/null | sed 's|^|  |'
     done
