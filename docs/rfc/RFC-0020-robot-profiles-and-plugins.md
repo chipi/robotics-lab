@@ -1,6 +1,6 @@
 # RFC-0020 — Robot profiles and capability plugins: each robot brings what it is and how it moves
 
-**Status:** Proposed (2026-11-19), for the operator's review. The operator's direction, 2026-11-19:
+**Status:** Accepted (2026-11-19; its three questions answered, §7). The operator's direction, 2026-11-19:
 "I want this to be generic platform, observatory and control thing for any robot … I also want not
 to apply in practice things that we really learned on one robot only, and instead I want each robot
 to bring its impact on planning in some way, like a little plugins of some sort", and: "on profile we
@@ -130,15 +130,16 @@ commands, tick for tick, where the run is deterministic).
 It starts after the navigator work in flight (the frame fix, recovery) lands, since both change
 `run.py`.
 
-## 7. Questions
+## 7. Questions, answered
 
-1. One file per robot under `robots/<robot>/` (proposed), or the Mission Control robot file and the
-   description kept apart with a link?
-2. Real and simulated variants of one robot (the duck in the simulator and on the floor differ in
-   measured numbers): two profiles, or one with variants? Proposed: one profile, a variant block per
-   environment (`sim`, `real`), the variant named at goal start.
-3. Plugins in Python only for now (proposed), or a process boundary (a plugin as its own service)
-   for robots driven by other runtimes?
+The operator, 2026-11-19: "Yes to all 3".
+
+1. **One profile file per robot** under `robots/<robot>/`, the Mission Control robot file and the
+   description folded into it.
+2. **One profile per robot with a variant block per environment** (`sim`, `real`): measured numbers
+   that differ live in the variant; the variant is named at goal start.
+3. **Plugins in Python only for now**; a process boundary (a plugin as its own service) later, if a
+   robot driven by another runtime needs one.
 
 ## 8. Not covered
 
