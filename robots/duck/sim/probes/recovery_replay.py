@@ -3,7 +3,7 @@ the depth sensor's nearest return, the remembered drops and obstacle points near
 first attempt. Open loop: it says which refusals have a motion to try and which only get the survey, not whether the motion
 frees the duck.
 
-    .venv/bin/python sim/probes/recovery_replay.py /work/robotics-lab/mission-control/duck/runs/explore-b11-r{2,3,4,5}
+    .venv/bin/python sim/probes/recovery_replay.py runs/explore-b11-r{2,3,4,5}
 """
 
 import json

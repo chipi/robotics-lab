@@ -1,7 +1,7 @@
 """The NXT adapter (RFC-0014 step 4): Mission Control against nxt-web --fake, the real process with its simulated brick.
 Never a real brick: nxt-web runs with --fake, in a scratch data folder, on a free loopback port, and this test never names a
 device (no /dev/rfcomm*, no USB). The lock is nxt-web's, so the checks read it from both sides.
-Run: make test-control (needs nxt/.venv: make nxt-sync)"""
+Run: make test-control (needs apps/nxt-web/.venv: make nxt-sync)"""
 
 import json
 import os
