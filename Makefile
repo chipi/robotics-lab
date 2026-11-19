@@ -77,6 +77,9 @@ lint: ## Byte-compile every Python file of every project
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
 	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
+	@$(PYTHON) scripts/test_check_boundaries.py >/tmp/robotics-lab-test_check_boundaries.log 2>&1 \
+	  || { cat /tmp/robotics-lab-test_check_boundaries.log; echo "lint FAIL: the boundary checker's self-test"; exit 1; }
+	@$(PYTHON) scripts/check_boundaries.py || { echo "lint FAIL: a package imports one it may not (RFC-0018)"; exit 1; }
 	@echo "lint PASS"
 
 # One line per test file: PASS, or FAIL with its output. $(1) the project dir, $(2) the test files.
