@@ -28,7 +28,8 @@ from pathlib import Path
 from duck_lab.nav import cliff
 from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, low_points, obstacle_points
 from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
-from duck_lab.nav.follow import SLOW_CLEAR_M, FollowState, Twist, step, wrap
+from duck_lab.nav.follow import ARC_MPS, MAX_YAW_RAD_S, SLOW_CLEAR_M, FollowState, Twist, step, wrap
+from duck_lab.nav import recovery
 from duck_lab.nav.frames import Localizer, move_grid, move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.step_check import unseen_ahead
@@ -528,6 +529,91 @@ class Navigator:
                     decision=decision("mapd_status", f"mapd: {', '.join(f'{k} {now[k]}' for k in what)}", **now))
         return trust
 
+    def hazards(self) -> list:
+        """The remembered drops: a cliff stop's points, measured edges, suspected cells."""
+        return self.drops + self.edges + self.suspects.points()
+
+    def costs_here(self, pose: tuple) -> CostGrid:
+        """The cost map as the leg's plan sees it round pose: mapd's grid (the belief's frame), the memory's obstacle points
+        and the objects', the remembered drops and edges."""
+        seen = self.blocked + self.semantic_points()
+        costs = self.grid().covering([pose[:2]] + seen + self.drops + self.edges).with_points(seen)
+        return costs.with_blocked(self.drops, DROP_LETHAL_M, DROP_INFLATE_M).with_blocked(self.edges, EDGE_LETHAL_M, EDGE_INFLATE_M)
+
+    def recover(self, attempt: int) -> dict:
+        """One recovery at the pose (nav/recovery.py): a creep forward, or an arc away from the nearest hazard, as
+        recovery.choose says for this attempt from what the depth sensor shows now; then a survey, so mapd maps the new stop.
+        A creep only where the room ahead is a turn's room and more than the room here (recovery.creep_gains_room), from the
+        same cost map the refusal came from. The event says what was done and how far it moved the duck."""
+        pose = self.loc.pose()
+        haz = recovery.hazard(pose, self.hazards(), self.blocked)
+        front = recovery.drop_ahead(pose, self.hazards())
+        try:
+            costs = self.costs_here(pose)
+            ahead = (pose[0] + recovery.CREEP_M * math.cos(pose[2]), pose[1] + recovery.CREEP_M * math.sin(pose[2]))
+            room_now, room_ahead = clearance(costs, pose[:2], 0.5), clearance(costs, ahead, 0.5)
+        except EmptyMap:
+            room_now, room_ahead = recovery.projected_room(pose, self.blocked, recovery.CREEP_M)
+        nearest_mm = self.tof.nearest_mm
+        kind = recovery.choose(attempt, nearest_mm, front, haz, recovery.creep_gains_room(room_now, room_ahead, PIVOT_OBSTACLE_M))
+        why = None
+        if kind == "creep":
+            why = self._walk(0.0, recovery.CREEP_M, ARC_MPS, 0.0)
+        elif kind == "arc":
+            why = self._walk(0.7, 0.0, ARC_MPS, recovery.turn_away(pose, haz[0]) * MAX_YAW_RAD_S)
+        collecting = self.survey()
+        after = self.loc.pose()
+        moved = math.dist(pose[:2], after[:2])
+        turned = abs(wrap(after[2] - pose[2]))
+        self.record(event="recovery", attempt=attempt, action=kind, stopped=why, pose=pose, after=after, moved_m=round(moved, 3),
+                    turned_deg=round(math.degrees(turned), 1), nearest_mm=nearest_mm, drop_ahead=front,
+                    room_m=round(room_now, 3), room_ahead_m=round(room_ahead, 3),
+                    hazard=[[round(v, 3) for v in haz[0]], haz[1]] if haz else None, surveyed=collecting,
+                    decision=decision("recovery", f"a refusal at this pose: {kind}" + (f" ({haz[1]} at {math.dist(pose[:2], haz[0]):.2f} m)"
+                                                                                       if kind == "arc" else "") + ", then a survey",
+                                      attempt=attempt, action=kind, moved_m=round(moved, 3), nearest_mm=nearest_mm,
+                                      room_m=round(room_now, 3), room_ahead_m=round(room_ahead, 3)))
+        return {"action": kind, "moved_m": moved, "turned_rad": turned}
+
+    def _walk(self, turned_rad: float, dist_m: float, vx: float, vyaw: float, timeout_s: float = 3.0) -> str | None:
+        """Walk at (vx, vyaw) until it has gone dist_m (a creep) or turned turned_rad (an arc), or something stops it: the depth
+        sensor shows too little ahead (a creep: the footprint and the margin, recovery.CREEP_FLOOR_MM, and what is left to go; an
+        arc: recovery.ARC_CLEAR_MM), the same for an obstacle in the corridor, a drop in the frame within the cliff-stop
+        distance, the remembered obstacles nearer than at the start (by 1 cm), the abort, the time. Returns why it stopped early,
+        None when it got where it was asked. Ends with a stop."""
+        start = self.loc.pose()
+        room0 = min((math.dist(start[:2], b[:2]) for b in self.blocked), default=math.inf)
+        t0 = time.monotonic()
+        why = "time"
+        while time.monotonic() - t0 < timeout_s:
+            if self.abort:
+                why = "abort"
+                break
+            pose = self.loc.pose()
+            gone = math.dist(start[:2], pose[:2])
+            if (dist_m and gone >= dist_m) or (turned_rad and abs(wrap(pose[2] - start[2])) >= turned_rad):
+                why = None
+                break
+            need_mm = recovery.CREEP_FLOOR_MM + max(0.0, dist_m - gone) * 1000 if dist_m else recovery.ARC_CLEAR_MM
+            near, fv = self.tof.nearest_mm, self._fv
+            if near is None or near < need_mm:
+                why = "no room ahead"
+                break
+            if fv is not None and fv.ok:
+                if fv.block is not None and fv.block < need_mm / 1000.0:
+                    why = "obstacle"
+                    break
+                if fv.drops and min(p[2] for p in fv.drops) < CLIFF_STOP_M:
+                    why = "drop"
+                    break
+            if min((math.dist(pose[:2], b[:2]) for b in self.blocked), default=math.inf) < room0 - 0.01:
+                why = "closer to something"
+                break
+            self.move(Twist(vx, vyaw))
+            time.sleep(TICK_S)
+        self.move(Twist())
+        return why
+
     def survey(self) -> bool:
         """Stand still with explicit zeros until mapd is collecting this stop, then a little longer."""
         t = time.monotonic()
@@ -1007,7 +1093,8 @@ class Navigator:
                                 blocked=[[round(v, 2) for v in b] for b in self.blocked],
                                 decision=decision("refused", why, start_cost=start_cost, goal_cost=goal_cost,
                                                   lethal_cost=LETHAL_COST))
-                    return {"status": "refused", "why": why, "time_s": round(now - start, 1)}
+                    return {"status": "refused", "why": why, "time_s": round(now - start, 1),
+                            "start_lethal": start_cost >= LETHAL_COST}
                 ahead = following[st.target_index:] if following else []
                 if keep_current(grid, ahead, pose, raw):
                     path = ahead

@@ -18,7 +18,8 @@ from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance, plan
-from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
+from duck_lab.nav import recovery
+from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.nav.run import CALIBRATION
 from duck_lab.world_model.objects import load_kinds
@@ -59,6 +60,7 @@ class Explorer:
         self.find = None          # a kind of object to find and go to (RFC-0016: "go to the fridge"); None: explore
         self.find_failed = {}     # objects found but out of reach -> the leg count when it was last tried
         self.events = []
+        self.attempts = 0         # recoveries in a row since a leg was reached
         self.within = None        # a test of a point (xy -> bool) the frontiers must pass (explore {area}, RFC-0014 §3.4.1), else the whole map
         nav.on_move = self.move_frame
 
@@ -133,6 +135,49 @@ class Explorer:
                   decision=decision("found", f"went to the {obj.kind}", status=out["status"], object=obj.oid))
         return {"status": out["status"], "object": obj.oid, "stand": [round(v, 3) for v in stand], "why": out.get("why")}
 
+    def recovered(self, out: dict) -> bool:
+        """A refusal that is about the pose, not the target (no room to turn; a start in a lethal cell): the same pose refuses
+        every target, and six of them in half a second ended four of b11's five runs. A recovery there first (creep, arc away, a
+        survey: Navigator.recover); True when one was made, and the refusal does not count. Only when recovery.MAX_ATTEMPTS in
+        a row (no leg reached between) have not freed the duck does the refusal count toward "trapped"."""
+        why = out.get("why") or ""
+        if out.get("status") != "refused" or self.attempts >= recovery.MAX_ATTEMPTS:
+            return False
+        if not (why.startswith("no room to turn") or why == "start boxed in" or out.get("start_lethal")):
+            return False
+        self.nav.recover(self.attempts)
+        self.attempts += 1
+        return True
+
+    def leave_drop(self) -> None:
+        """A run that starts within recovery.START_MARGIN_M of a remembered drop goes first to a place away from the nearest one
+        (recovery.away_target: seen floor, not lethal, room to turn), not to the nearest frontier: the pose beside a drop refuses
+        every turn. Not tied to a site: any run, any place."""
+        pose = self.nav.loc.pose()
+        if pose is None:
+            return
+        try:
+            costs = self.nav.grid()
+        except EmptyMap:
+            return
+        seen = self.nav.blocked + self.nav.semantic_points()
+        costs = costs.covering([pose[:2]] + seen + self.nav.drops + self.nav.edges).with_points(seen)
+        costs = costs.with_blocked(self.nav.drops, DROP_LETHAL_M, DROP_INFLATE_M).with_blocked(self.nav.edges, EDGE_LETHAL_M,
+                                                                                               EDGE_INFLATE_M)
+
+        def ok(p):
+            c = costs.cell(*p)
+            return self.nav.floor_seen_near(p) and (not costs.inside(*c) or costs.at(*c) < LETHAL_COST) and \
+                clearance(costs, p, PIVOT_OBSTACLE_M) >= PIVOT_OBSTACLE_M
+
+        away = recovery.away_target(pose, self.nav.hazards(), ok)
+        if away is None:
+            return
+        out = self.nav.go_to(away, GO_TIMEOUT_S)
+        self.note(event="leave_drop", target=[round(v, 3) for v in away], status=out["status"], why=out.get("why"),
+                  decision=decision("leave_drop", "the run started beside a drop: first to a place away from it",
+                                    status=out["status"], start_margin_m=recovery.START_MARGIN_M))
+
     def survey(self) -> None:
         for _ in range(SURVEY_STEPS):
             self.nav.survey()
@@ -146,12 +191,14 @@ class Explorer:
         # A full survey is 4 x 90 deg, ~30 s; a leg is ~5 s. Trial 4 surveyed after every leg and spent
         # 85% of its time turning on the spot, so the survey now runs only when no frontier is in sight.
         self.survey()
+        self.leave_drop()
         surveyed_here, cleared_here, refusals = True, False, 0
         while time.monotonic() < end:
             if self.nav.abort:
                 self.note(event="aborted", why=self.nav.abort)
                 break
             grid = self.nav.mapd_grid()      # scaled, in the belief's frame: the frontiers are places the planner goes to
+            moved_at = len(self.nav._moves)
             pose = self.nav.loc.pose()
             try:
                 # covering() as the navigator does: a drop beyond mapd's grid still grows its zone into it
@@ -193,6 +240,8 @@ class Explorer:
             # targets covered every frontier left; with STANDOFF_M, 66 and 81 cells usable at the same pick)
             clusters = without_retired(clusters, self.reached, STANDOFF_M)
             target = pick(clusters, pose, avoid, ok=reachable)
+            if len(self.nav._moves) != moved_at:
+                continue          # the memory moved while this was worked out (the costs read its own grid): again, in one frame
             # The choice's inputs, so a replay of it is faithful (sim/probes/frontier_replay.py; the "world" events
             # are the navigator's grid at its plans, not the map read here).
             self.note(event="pick", grid={k: grid[k] for k in ("res_m", "origin", "width", "height", "cells")},
@@ -227,8 +276,10 @@ class Explorer:
                 cleared_here = True
                 continue          # the same frontier again: the start was the problem, not the target
             if out["status"] != "reached":
+                if self.recovered(out):
+                    continue          # a refusal at the pose: recovered from, not counted, the target not failed
                 self.failed.append(target)
-                unreachable = out["status"] == "refused" and out.get("why") == "no path on the map"
+                unreachable = out["status"] == "refused" and out.get("why") == "no path on the map" and not out.get("start_lethal")
                 if unreachable and clusters:
                     # That stretch of the frontier is out of reach, not only this point of it (b2 r3: six targets in
                     # the same stairwell frontier, within 0.5 m of each other, refused in one second, and the run ended
@@ -248,7 +299,7 @@ class Explorer:
                                                 max_refusals=MAX_REFUSALS))
                     break
                 continue
-            refusals, cleared_here = 0, False
+            refusals, cleared_here, self.attempts = 0, False, 0
             self.reached.append(target)  # not picked twice; it takes out only the frontier where it stood
             # stand still for mapd at the frontier just reached: mapd maps only at stops, and without one the frontier
             # stayed on its map, next to a target never picked again (b8: "no frontier left" at 3.3 and 3.7 min)

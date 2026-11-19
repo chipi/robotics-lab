@@ -57,9 +57,14 @@ t0 = float(sys.argv[1])
 for run in map(Path, sys.argv[2:]):
     st = json.loads((run / "start.json").read_text())
     w_from_m = compose(tuple(st["truth"]), inverse(tuple(st["map"])))
-    rows = {"before": [], "after": []}
+    rows = {"pre-fault": [], "post-fault": []}
+    beliefs = {"pre-fault": [], "post-fault": []}
     for line in open(run / "ticks.jsonl"):
         if '"event": "pick"' not in line:
+            if '"truth"' in line and '"event"' not in line and '"pose"' in line:
+                q = json.loads(line)
+                bq = compose(w_from_m, tuple(q["pose"]))
+                beliefs["post-fault" if q["t"] >= t0 else "pre-fault"].append(math.dist(bq[:2], q["truth"][:2]))
             continue
         r = json.loads(line)
         b, tr = r["pose"], r.get("truth")
@@ -68,17 +73,20 @@ for run in map(Path, sys.argv[2:]):
         cells = placed(wall_cells(r["grid"], r["scale"]), b, tr)
         pts = placed(r["obstacles"], b, tr)
         bw = compose(w_from_m, (b[0], b[1], b[2]))
-        rows["after" if r["t"] >= t0 else "before"].append((r["t"], len(cells), med(cells), cells[int(len(cells) * 0.9)] if cells else float("nan"),
+        rows["post-fault" if r["t"] >= t0 else "pre-fault"].append((r["t"], len(cells), med(cells), cells[int(len(cells) * 0.9)] if cells else float("nan"),
                                                            len(pts), med(pts), math.dist(bw[:2], tr[:2])))
     print(f"== {run.name}")
     for k, v in rows.items():
         if not v:
             continue
         ok = [x for x in v if x[1]]
-        print(f"{k:6s} t >= {t0:g}: {len(v)} picks; wall cells within {NEAR_M:g} m off the real surface: median of medians "
+        print(f"{k:10s} ({len(v)} picks); wall cells within {NEAR_M:g} m off the real surface: median of medians "
               f"{med([x[2] for x in ok]):.3f} m, worst median {max((x[2] for x in ok), default=float('nan')):.3f} m, "
               f"p90 of p90s {med([x[3] for x in ok]):.3f} m; remembered points: median of medians "
               f"{med([x[5] for x in v if x[4]]):.3f} m; belief off the world: mean {statistics.mean(x[6] for x in v):.3f} m, "
               f"max {max(x[6] for x in v):.3f} m")
-    for x in rows["after"]:
+    for k, v in beliefs.items():
+        if v:
+            print(f"{k:10s} belief off the world, every tick ({len(v)}): mean {statistics.mean(v):.3f} m, max {max(v):.3f} m, last {v[-1]:.3f} m")
+    for x in rows["post-fault"]:
         print(f"  t {x[0]:6.1f}: {x[1]:4d} wall cells median {x[2]:.3f} p90 {x[3]:.3f} | {x[4]:3d} points median {x[5]:.3f} | belief off {x[6]:.3f}")
