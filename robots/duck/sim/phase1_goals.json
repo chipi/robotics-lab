@@ -1,0 +1,10 @@
+{
+ "about": "Phase 1's go-to evaluation: the 20 goals, fixed so every evaluation measures the same thing (the operator, 2026-11-19). Drawn by duck_lab.nav.evaluate.draw_goals(layout, 20, seed 1) from apartment_layout.json with the simulator's free bodies (K35); the draw from the older layout (runs 1-16) had (-0.13, 0.42) and (-0.17, -0.07) in place of the last two, both under 0.35 m from the cube obj_3. world x, y in metres, and the room.",
+ "goals": [
+  [2.23, -0.1, "office"], [2.03, -0.01, "office"], [-0.18, 1.68, "cor_n"], [1.66, 0.44, "office"],
+  [2.42, 0.41, "office"], [1.81, -0.12, "office"], [1.44, 0.1, "office"], [-0.4, 2.2, "cor_n"],
+  [2.32, 0.12, "office"], [1.75, -0.31, "office"], [2.41, -0.56, "office"], [-0.08, 1.21, "cor_n"],
+  [1.62, 0.26, "office"], [-0.28, 2.48, "cor_n"], [-0.38, 2.33, "cor_n"], [-0.01, 1.9, "cor_n"],
+  [1.82, -0.31, "office"], [2.25, -0.35, "office"], [1.69, -0.57, "office"], [-0.31, 2.11, "cor_n"]
+ ]
+}

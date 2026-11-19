@@ -33,6 +33,7 @@ from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.profile import load as load_profile
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
+GOALS = Path(__file__).resolve().parents[3] / "sim" / "phase1_goals.json"
 # The duck as the simulator models it (robots/duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every
 # collision part within 8.3 cm of the trunk's centre in plan view. Pollen publishes ~25 cm tall,
 # 14 cm wide, under 800 g; the model's extra 2 cm is the head in the standing pose.
@@ -113,6 +114,8 @@ def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--goals-file", type=Path, default=GOALS, help="the fixed goals (default: phase 1's 20)")
+    ap.add_argument("--draw", action="store_true", help="draw goals from the layout instead (--goals, --seed)")
     ap.add_argument("--goals", type=int, default=20)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--timeout", type=float, default=90.0)
@@ -122,7 +125,11 @@ def main() -> None:
     args = ap.parse_args()
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)
-    goals = draw_goals(layout, args.goals, args.seed)
+    if args.draw:
+        goals = draw_goals(layout, args.goals, args.seed)
+    else:
+        goals = [tuple(g) for g in json.loads(args.goals_file.read_text())["goals"]]
+        args.goals = len(goals)
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "go-to evaluation", args.out, evaluation=not args.chain)
     results = []
