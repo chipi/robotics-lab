@@ -13,6 +13,7 @@ import collections
 import math
 
 from duck_lab.nav.cliff import EXTRA_M
+from duck_lab.nav.frames import move_xy
 
 CELL_M = 0.05
 BELOW_SLOPE = 0.035          # m more below the floor per m of range (below_counts; replayed, docs/wip/SIDE-DROPS.md)
@@ -61,6 +62,21 @@ class SuspectMemory:
                 self.suspected.add(c)
                 new.append(c)
         return new
+
+    def move(self, t: tuple) -> None:
+        """Re-place every cell by the frame change t (frames.move_xy): the belief's frame moved, and the cells were counted
+        in the old one. Built beside and swapped in, as the depth-frame thread adds cells meanwhile."""
+        def cell(c):
+            return cell_of(*move_xy(t, (c[0] * CELL_M, c[1] * CELL_M)))
+
+        def counts(old):
+            new = collections.Counter()
+            for c, n in list(old.items()):
+                new[cell(c)] += n
+            return new
+        self.below, self.floor = counts(self.below), counts(self.floor)
+        self.suspected, self.cleared = {cell(c) for c in set(self.suspected)}, {cell(c) for c in set(self.cleared)}
+        self.confirmed = {cell(c) for c in set(self.confirmed)}
 
     def points(self) -> list:
         return [(c[0] * CELL_M, c[1] * CELL_M) for c in sorted(self.suspected)]

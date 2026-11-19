@@ -16,6 +16,7 @@ from pathlib import Path
 
 from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
 from duck_lab.nav.follow import Twist
+from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav.run import PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
@@ -59,6 +60,12 @@ class Explorer:
         self.find_failed = {}     # objects found but out of reach -> the leg count when it was last tried
         self.events = []
         self.within = None        # a test of a point (xy -> bool) the frontiers must pass (explore {area}, RFC-0014 §3.4.1), else the whole map
+        nav.on_move = self.move_frame
+
+    def move_frame(self, d: tuple) -> None:
+        """The belief's frame moved (the navigator moved its memory): the frontier targets' bookkeeping moves with it."""
+        for lst in (self.failed, self.retired, self.reached):
+            lst[:] = [move_xy(d, p) for p in lst]
 
     def note(self, **e) -> None:
         e["t"] = round(time.monotonic() - self.nav._t0, 1)
@@ -144,7 +151,7 @@ class Explorer:
             if self.nav.abort:
                 self.note(event="aborted", why=self.nav.abort)
                 break
-            grid = self.nav.mapd.call("map.grid", {"res_m": 0.05})
+            grid = self.nav.mapd_grid()      # scaled, in the belief's frame: the frontiers are places the planner goes to
             pose = self.nav.loc.pose()
             try:
                 # covering() as the navigator does: a drop beyond mapd's grid still grows its zone into it
@@ -181,7 +188,7 @@ class Explorer:
 
             avoid = self.failed + self.nav.drops
             blocked = list(self.nav.blocked)
-            clusters = without_retired(frontiers(grid, self.nav.scale, obstacles=blocked), self.retired)
+            clusters = without_retired(frontiers(grid, 1.0, obstacles=blocked), self.retired)
             # a reached target takes out only the frontier where it stood (b8 r1, r2: the 0.4 m discs of 15 reached
             # targets covered every frontier left; with STANDOFF_M, 66 and 81 cells usable at the same pick)
             clusters = without_retired(clusters, self.reached, STANDOFF_M)
@@ -189,7 +196,7 @@ class Explorer:
             # The choice's inputs, so a replay of it is faithful (sim/probes/frontier_replay.py; the "world" events
             # are the navigator's grid at its plans, not the map read here).
             self.note(event="pick", grid={k: grid[k] for k in ("res_m", "origin", "width", "height", "cells")},
-                      scale=self.nav.scale, pose=[round(v, 4) for v in pose],
+                      scale=1.0, pose=[round(v, 4) for v in pose],
                       avoid=[[round(v, 3) for v in a[:2]] for a in avoid],
                       obstacles=[[round(v, 3) for v in b[:2]] for b in blocked],
                       retired=[[round(v, 3) for v in r] for r in self.retired],
@@ -205,7 +212,11 @@ class Explorer:
                 break
             surveyed_here = False
             legs += 1
+            moves = len(self.nav._moves)
             out = self.nav.go_to(target, min(GO_TIMEOUT_S, end - time.monotonic()))
+            for d in self.nav._moves[moves:]:      # the leg moved the memory: its target, a place in the world, moved with it
+                target = move_xy(d, target)[:2]
+            pose = self.nav.loc.pose() or pose
             self.note(event="leg", n=legs, target=[round(v, 2) for v in target], status=out["status"],
                       why=out.get("why"))
             if out.get("why") == "start boxed in" and not cleared_here:
@@ -268,6 +279,10 @@ def main() -> None:
     ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
     ap.add_argument("--no-relocalise", action="store_true", help="landmarks do not correct the belief (the run before relocalisation)")
     ap.add_argument("--fix-fault", help="T,DX,DY: from T s on, mapd's pose is shifted by (DX, DY) m, a persistent jump like explore-b10a-r1 (a test)")
+    ap.add_argument("--frame-fault", help="T,DX,DY: as --fix-fault, and mapd's grid shifts with its pose (its frame jumped as a "
+                    "whole: pose and grid come from one graph, mapping-design §5) (a test)")
+    ap.add_argument("--no-frames", action="store_true", help="the grid stays in mapd's frame and the memory does not move with the "
+                    "belief's (the run before RFC-0016 §6's frame fix; a test)")
     ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (the run before the fix gate)")
     add_args(ap)
     args = ap.parse_args()
@@ -280,8 +295,12 @@ def main() -> None:
     nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
     if args.no_fix_gate:
         nav.loc.max_jump_m = None
-    if args.fix_fault:
-        nav.fix_fault = tuple(float(v) for v in args.fix_fault.split(","))
+    if args.fix_fault and args.frame_fault:
+        ap.error("--fix-fault and --frame-fault are one fault: give one")
+    if args.fix_fault or args.frame_fault:
+        nav.fix_fault = tuple(float(v) for v in (args.fix_fault or args.frame_fault).split(","))
+        nav.fault_grid = bool(args.frame_fault)
+    nav.frames_on = not args.no_frames
 
     def guard():
         while not nav.abort:

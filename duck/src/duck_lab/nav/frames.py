@@ -17,6 +17,10 @@ HOLD_AGREE_M = 0.15      # ... agreeing to within this and HOLD_AGREE_RAD
 HOLD_AGREE_RAD = 0.1
 OFFSET_MAX_M = 1.0       # the landmarks' total correction never exceeds this
 OFFSET_HALF_S = 90.0     # ... and it halves in this time: mapd corrects itself too, and an old correction would then double it
+MOVE_M = 0.05            # the memory follows the belief's frame once it has moved this far (or MOVE_RAD) from where the memory sits:
+MOVE_RAD = 0.02          # a fix a second moves it by centimetres, and a memory re-keyed every second would only smear
+PARTED_M = 0.25          # the belief's frame and mapd's are "parted" past this (or PARTED_RAD): a held jump, or a landmarks' offset
+PARTED_RAD = 0.1
 
 
 def compose(a: tuple, b: tuple) -> tuple:
@@ -35,6 +39,36 @@ def _wrap(a: float) -> float:
     return math.atan2(math.sin(a), math.cos(a))
 
 
+def move_xy(t: tuple, p: tuple) -> tuple:
+    """A point (x, y, ...) moved by the frame change t (x, y, yaw): t ∘ p's position; anything past the position is kept."""
+    c, s = math.cos(t[2]), math.sin(t[2])
+    return (t[0] + c * p[0] - s * p[1], t[1] + s * p[0] + c * p[1]) + tuple(p[2:])
+
+
+def move_grid(g: dict, t: tuple | None) -> dict:
+    """mapd's grid (res_m, origin, width, height, cells; metres as the navigator uses them) expressed in the belief's
+    frame, t = the belief's frame against mapd's (Localizer.delta). A shift when t does not turn: the origin moves. A turn
+    is resampled onto a grid that stays axis-aligned (the cell centre of each new cell read from the old grid, "?" where
+    it was off it). The grid is rendered from the same graph mapd's pose is, so the two frames move together
+    (mapping-design §5): one transform for the whole grid."""
+    if t is None or (t[0] == 0.0 and t[1] == 0.0 and t[2] == 0.0):
+        return g
+    res, (ox, oy), w, h, cells = g["res_m"], g["origin"], g["width"], g["height"], g["cells"]
+    if abs(t[2]) < 1e-3:
+        return {**g, "origin": [ox + t[0], oy + t[1]]}
+    corners = [move_xy(t, (ox + i * w * res, oy + j * h * res)) for i in (0, 1) for j in (0, 1)]
+    nx0, ny0 = min(c[0] for c in corners), min(c[1] for c in corners)
+    nw, nh = math.ceil((max(c[0] for c in corners) - nx0) / res), math.ceil((max(c[1] for c in corners) - ny0) / res)
+    back = inverse(t)
+    out = []
+    for cy in range(nh):
+        for cx in range(nw):
+            sx, sy = move_xy(back, (nx0 + (cx + 0.5) * res, ny0 + (cy + 0.5) * res))
+            ix, iy = math.floor((sx - ox) / res), math.floor((sy - oy) / res)
+            out.append(cells[iy * w + ix] if 0 <= ix < w and 0 <= iy < h else "?")
+    return {**g, "origin": [nx0, ny0], "width": nw, "height": nh, "cells": "".join(out)}
+
+
 class Localizer:
     def __init__(self, history: int = 200, max_jump_m: float | None = None, hold_n: int | None = HOLD_N):
         self.map_from_odom = None
@@ -47,16 +81,19 @@ class Localizer:
         self._fix_t_ns = None
         self.rejected = 0
         self.last_fix = None              # what the latest fix was, for the run's record
+        self.mapd_from_odom = None        # mapd's own transform from its latest fix, held or taken: its frame, no offset
+        self._mem = None                  # the map <- odom the navigator's memory is expressed in (memory_delta)
 
     def on_odom(self, t_ns: int, pose: tuple) -> None:
         self._odom.append((t_ns, pose))
         del self._odom[:-self._history]
 
-    def on_fix(self, t_ns: int, map_pose: tuple) -> bool:
+    def on_fix(self, t_ns: int, map_pose: tuple, trust: str | None = None) -> bool:
         """A mapd pose. Returns False when no odometry near that time is held. With max_jump_m, a fix that would move the
         belief further is held (last_fix["status"] "held"; the belief stays) until HOLD_N in a row agree ("late"); it still
         returns True. last_fix says what it was: the raw pose, its t_ns, the odometry paired with it, the belief before and
-        after and how far it moved."""
+        after and how far it moved. trust (a reason, e.g. "loop closure"): the gate lets this fix through, and last_fix
+        says so ("trusted") when the gate would have held it."""
         near = min(self._odom, key=lambda e: abs(e[0] - t_ns), default=None)
         if near is None or abs(near[0] - t_ns) > 100_000_000:
             return False
@@ -65,13 +102,15 @@ class Localizer:
             self.offset = (self.offset[0] * k, self.offset[1] * k)
         self._fix_t_ns = t_ns
         new = compose(map_pose, inverse(near[1]))
+        self.mapd_from_odom = new
         new = (new[0] + self.offset[0], new[1] + self.offset[1], new[2])
         before = None if self.map_from_odom is None else compose(self.map_from_odom, near[1])
         after = compose(new, near[1])
         jump = 0.0 if before is None else math.dist(before[:2], after[:2])
         status = "taken"
-        if before is not None and self.max_jump_m is not None and (jump > self.max_jump_m
-                                                                  or abs(_wrap(after[2] - before[2])) > 0.35):
+        large = before is not None and self.max_jump_m is not None and (jump > self.max_jump_m
+                                                                      or abs(_wrap(after[2] - before[2])) > 0.35)
+        if large and trust is None:
             if self._held and (math.dist(self._held[-1][:2], new[:2]) > HOLD_AGREE_M
                                or abs(_wrap(self._held[-1][2] - new[2])) > HOLD_AGREE_RAD):
                 self._held = []
@@ -81,10 +120,14 @@ class Localizer:
         if status != "held":
             self.map_from_odom = new
             self._held = []
+            if self._mem is None:
+                self._mem = new       # the memory starts in the first fix's frame
         self.last_fix = {"status": status, "t_ns": t_ns, "raw": [round(v, 4) for v in map_pose],
                          "odom_t_ns": near[0], "odom": [round(v, 4) for v in near[1]],
                          "before": None if before is None else [round(v, 4) for v in before],
                          "after": [round(v, 4) for v in after], "moved_m": round(jump, 3)}
+        if large and trust is not None:
+            self.last_fix["trusted"] = trust
         return True
 
     def nudge(self, dx: float, dy: float) -> tuple:
@@ -100,6 +143,34 @@ class Localizer:
             m = self.map_from_odom
             self.map_from_odom = (m[0] + step[0], m[1] + step[1], m[2])
         return step
+
+    def delta(self) -> tuple | None:
+        """The belief's frame against mapd's: the transform T with belief = T ∘ mapd's pose, (x, y, yaw); None before the
+        first fix. A taken fix leaves only the landmarks' offset; a held one leaves the jump."""
+        if self.map_from_odom is None or self.mapd_from_odom is None:
+            return None
+        return compose(self.map_from_odom, inverse(self.mapd_from_odom))
+
+    def parted(self) -> bool:
+        d = self.delta()
+        return d is not None and (math.hypot(d[0], d[1]) > PARTED_M or abs(d[2]) > PARTED_RAD)
+
+    def memory_pending(self) -> bool:
+        """The belief has moved from the frame the memory sits in by more than memory_delta acts on."""
+        if self.map_from_odom is None or self._mem is None:
+            return False
+        d = compose(self.map_from_odom, inverse(self._mem))
+        return math.hypot(d[0], d[1]) >= MOVE_M or abs(d[2]) >= MOVE_RAD
+
+    def memory_delta(self) -> tuple | None:
+        """What to move the navigator's memory (everything it placed with the belief) by, once the belief's frame has moved
+        from the one the memory sits in: the transform new <- old, applied to each point. None while it has moved less
+        than MOVE_M / MOVE_RAD."""
+        if not self.memory_pending():
+            return None
+        d = compose(self.map_from_odom, inverse(self._mem))
+        self._mem = self.map_from_odom
+        return d
 
     def to_map(self, odom_pose: tuple) -> tuple | None:
         """An odometry pose on the map (None before the first fix): the pose at the odometry's own instant, not the latest."""

@@ -36,6 +36,9 @@ class Pose:
     def pose(self):
         return self.p
 
+    def memory_delta(self):
+        return None
+
 
 class Latest:
     latest = None
