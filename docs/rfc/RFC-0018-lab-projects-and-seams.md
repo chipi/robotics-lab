@@ -1,19 +1,19 @@
 # RFC-0018 — The lab's projects, their seams, and how to split robotics-lab later
 
-**Status:** Decided in direction (2026-11-18): one repository, restructured in full into apps,
-libraries and robots with package seams and a boundary check (the operator: "5C since this is
-more/less big shape we are after"), done together with the Observatory rename once the work in
-flight lands. The detailed layout is to be revised here before it is built. Earlier the same day it
-was parked: "make another RFC with idea to split and everything else, and we're gonna come back to
-that later."
+**Status:** Built (2026-11-19): one repository, restructured in full into apps, libraries and
+robots with package seams and a boundary check (the operator, 2026-11-18: "5C since this is
+more/less big shape we are after"; 2026-11-19: "Yes to all 10 and go for phase 2"), together with
+the Observatory rename. §10 records what was built and where it differs; §1–§9 are the proposal as
+decided on 2026-11-18, kept as written. Earlier on 2026-11-18 it was parked: "make another RFC with
+idea to split and everything else, and we're gonna come back to that later."
 **Builds on:** [RFC-0014](RFC-0014-mission-control.md) (§3.13 containers, question 10 licence and
 splitting), [RFC-0017](RFC-0017-robot-access.md) (the gate),
 [RFC-0003](RFC-0003-robot-interface.md) (one robot interface),
-[RFC-0009](RFC-0009-miniview.md) (miniview, to be renamed the Observatory),
+[RFC-0009](RFC-0009-miniview.md) (miniview, now the Observatory),
 [ADR-0007](../adr/ADR-0007-run-file-format-2.md) (the run file) and
 [ADR-0019](../adr/ADR-0019-semantic-map-records.md) (the semantic map in a run).
-**Nothing here is to be done now.** The first job is to make the lab work as it is. This RFC
-records the idea so that we can come back to it.
+**The first version said nothing here was to be done yet;** the lab then worked as it was,
+and §10 is the move.
 
 ## 1. Why
 
@@ -242,3 +242,58 @@ parked; the answers are recorded for when it is picked up.
 - **Not checked:** `robots/` internals beyond the folder names; the `viewer` modules that would go to
   the run format; whether the run file carries a version a reader checks; the `miniview` command
   collision; the history-preserving move tools; any CI workflow files in detail.
+
+## 10. What was built (2026-11-19)
+
+One branch, commits C0 to C10 of [the plan](../wip/PHASE2-RESTRUCTURE-PLAN.md), each with its
+gates green; a golden (a fixture run's API answers, one `duck-replay` report) hashed before and
+after every move, equal throughout.
+
+| Path | Package | Holds | From |
+| --- | --- | --- | --- |
+| `libs/runfile` | `runfile` | keys, schemas, wire, signals, validate, mcapio, se2, store, catalog, index, the adapters, `env` | `viewer/src/miniview` |
+| `libs/gate` | `robotgate` | the gate (RFC-0017), standard library only | `duck_lab/gate.py` |
+| `libs/worldmodel` | `worldmodel` | objects, semantic map, relocalise, site, `kinds.json` | `duck_lab/world_model` |
+| `apps/observatory` | `observatory` | the server, importer, pages, video, export, CLI | `viewer/` |
+| `apps/mission-control` | `mission_control` | as before | `control/` |
+| `apps/nxt-web` | `nxt_lab` | as before, with its programs and toolchain | `nxt/` |
+| `robots/duck` | `duck_lab` | the navigator, challenges, replay, gate proxy, simulator, calibration, beside the robot's description | `duck/` |
+
+Which package may import which, as `scripts/check_boundaries.py` enforces it (stdlib `ast`, run by
+`make lint` and so by CI; its self-test proves a forbidden import fails). Libraries import no other
+package of the lab; apps never import apps; robots never import apps.
+
+| Importer | runfile | robotgate | worldmodel | observatory | mission_control | nxt_lab | duck_lab |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| runfile, robotgate, worldmodel | self | - | - | - | - | - | - |
+| observatory | yes | - | - | self | - | - | - |
+| mission_control | tests | yes | tests | tests (Chromium shots) | self | - | exception, tests |
+| nxt_lab | yes | - | - | tests (Chromium shots) | - | self | - |
+| duck_lab | yes | yes | yes | - | - | - | self |
+
+The one exception, by module: `mission_control.duck` (Mission Control's duck adapter) imports
+`duck_lab.nav.client` and `duck_lab.nav.run.load_scale`; RFC-0020's plugins retire it. A test
+or probe of a project may also use what the table lists as "tests".
+
+Where it differs from §5 to §8, and why:
+
+- **Names.** `runfile`, `robotgate`, `worldmodel`, `observatory`; the gate is the package's
+  `__init__` (`from robotgate import Gate`).
+- **The index** moved with the catalog: `catalog` imports it, and a library may not import an app.
+- **Adapters** stayed in `runfile` (answer 7 of §8 is deferred to RFC-0020's plugin loader).
+- **The world model** needed two cuts: `OVERHEAD_M` now lives in `worldmodel.objects` and the
+  navigator reads it from there; the `duck-site` command, which draws the simulator's rooms with the
+  navigator's frames, moved to `duck_lab.site_cli` with the sites folder's default.
+- **The navigator** stays in `robots/duck` as `duck_lab`; its generic part moves to a library in
+  RFC-0020 step 3.
+- **The NXT's lock** (`nxt_lab/lock.py`) keeps its own copy of the gate's rules over HTTP;
+  unifying it would change behaviour.
+- **No split into repositories** and no uv workspace: each project keeps its own `pyproject.toml`
+  and `uv.lock`, the libraries are path sources.
+- **The rename.** The command is `observatory` (`miniview` still runs it, one release), the make
+  targets `observatory-*` and `test-observatory*` (`viewer-up`, `viewer-down`, `test-viewer` kept one
+  release), the variables `OBSERVATORY_*` (`MINIVIEW_*` read as a fallback). Kept so old runs and
+  fixtures read byte for byte: the MCAP topics `/miniview/*`, schema names and profile, the signals
+  proto, the index folder `state/miniview`, `window.miniview` and the pages' storage keys, the
+  `--miniview-data` flags. Revisit with format 3.
+- **The duck's old `miniview` tool** is `duck-pic`.

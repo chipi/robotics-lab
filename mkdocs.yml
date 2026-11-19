@@ -79,7 +79,7 @@ nav:
     - RFC-0006 — Mission control: rfc/RFC-0006-mission-control.md
     - RFC-0007 — The platform: rfc/RFC-0007-platform.md
     - RFC-0008 — The challenge course: rfc/RFC-0008-challenge-course.md
-    - RFC-0009 — miniview: rfc/RFC-0009-miniview.md
+    - RFC-0009 — The Observatory (was miniview): rfc/RFC-0009-miniview.md
     - RFC-0010 — Runs, version 2: rfc/RFC-0010-run-store-v2.md
     - RFC-0011 — Robots drawn as themselves: rfc/RFC-0011-robot-models.md
     - RFC-0012 — Look far, get ready early: rfc/RFC-0012-look-far.md
@@ -93,17 +93,17 @@ nav:
     - RFC-0020 — Robot profiles and plugins: rfc/RFC-0020-robot-profiles-and-plugins.md
   - Product (PRD):
     - Overview: prd/README.md
-    - PRD-001 — miniview: prd/PRD-001-miniview.md
+    - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
   - UX specs (UXS):
     - Overview: uxs/README.md
-    - UXS-001 — miniview: uxs/UXS-001-miniview.md
+    - UXS-001 — The Observatory (was miniview): uxs/UXS-001-miniview.md
   - Decisions (ADR):
     - Overview: adr/README.md
     - ADR-0001 — ROS-aligned, Foxglove from the start: adr/ADR-0001-ros-aligned-foxglove.md
     - ADR-0002 — Viewers, Rerun first: adr/ADR-0002-viewers-rerun-and-lichtblick.md
-    - ADR-0003 — miniview draws with three.js: adr/ADR-0003-miniview-drawing-three-js.md
+    - ADR-0003 — The Observatory (was miniview) draws with three.js: adr/ADR-0003-miniview-drawing-three-js.md
     - ADR-0004 — Runs in MCAP, a derived index: adr/ADR-0004-runs-in-mcap-with-derived-index.md
-    - ADR-0005 — miniview API, live from the start: adr/ADR-0005-miniview-api-live-from-the-start.md
+    - ADR-0005 — The Observatory (was miniview), API live from the start: adr/ADR-0005-miniview-api-live-from-the-start.md
     - ADR-0006 — A run is robot/scene/run: adr/ADR-0006-run-identity.md
     - ADR-0007 — The run file, format 2: adr/ADR-0007-run-file-format-2.md
     - ADR-0008 — Reading runs: adr/ADR-0008-reading-runs.md
@@ -146,8 +146,8 @@ nav:
     - Review of the duck RFCs: wip/REVIEW-2026-11-14-duck-rfcs.md
     - Review of all RFCs, round 2: wip/REVIEW-2026-11-14-round2.md
     - Review of the navigator, 2026-11-15: wip/REVIEW-2026-11-15-navigator.md
-    - Review of miniview, 2026-11-15: wip/REVIEW-2026-11-15-miniview.md
-    - Review of miniview, round 2, 2026-11-16: wip/REVIEW-2026-11-16-miniview-round2.md
+    - Review of the Observatory (was miniview), 2026-11-15: wip/REVIEW-2026-11-15-miniview.md
+    - Review of the Observatory (was miniview), round 2, 2026-11-16: wip/REVIEW-2026-11-16-miniview-round2.md
     - What robotics asks of flotilla: wip/FLOTILLA-ASKS.md
     - What robotics asks of eval-harness: wip/EVAL-HARNESS-ASKS.md
   - History:

@@ -1,4 +1,7 @@
-# ADR-0003 — miniview draws with three.js, the same page for the operator and the agent
+# ADR-0003 — miniview (now the Observatory) draws with three.js, the same page for the operator and the agent
+
+> Now the Observatory (RFC-0018, built 2026-11-19): the product, package and command were renamed;
+> this text keeps the names of its time.
 
 **Status:** Accepted for this step (2026-11-15, by the operator); deck.gl evolves alongside for the
 next rounds, and the final pick is made mid-term

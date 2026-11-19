@@ -1,4 +1,7 @@
-# PRD-001: miniview — seeing what a robot believed, against what happened
+# PRD-001: miniview (now the Observatory) — seeing what a robot believed, against what happened
+
+> Now the Observatory (RFC-0018, built 2026-11-19): the product, package and command were renamed;
+> this text keeps the names of its time.
 
 - **Status**: Proposed (2026-11-15) — for the operator's review
 - **Authors**: Marko Dragoljevic

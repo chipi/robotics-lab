@@ -1,4 +1,7 @@
-# ADR-0005 — miniview: one API over the run store, live from the start
+# ADR-0005 — miniview (now the Observatory): one API over the run store, live from the start
+
+> Now the Observatory (RFC-0018, built 2026-11-19): the product, package and command were renamed;
+> this text keeps the names of its time.
 
 **Status:** Accepted (2026-11-15, by the operator); in part superseded by [RFC-0010](../rfc/RFC-0010-run-store-v2.md)
 **Date:** 2026-11-15

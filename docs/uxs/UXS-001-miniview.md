@@ -1,4 +1,7 @@
-# UXS-001: miniview — scenes, runs, and the commands
+# UXS-001: miniview (now the Observatory) — scenes, runs, and the commands
+
+> Now the Observatory (RFC-0018, built 2026-11-19): the product, package and command were renamed;
+> this text keeps the names of its time.
 
 - **Status**: Proposed (2026-11-15) — for the operator's review; shaped by the operator's asks the
   same day (scenes, choosing runs, the timebar, 2D first, sides and three-view, the coordinate

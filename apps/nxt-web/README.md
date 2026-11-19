@@ -41,7 +41,7 @@ uv run scripts/hello.py --motor A    # turn motor A 180 degrees at low power
 make nxt-web                       # real brick, http://127.0.0.1:8000 (from the repo root)
 make nxt-web NXT_LINK=bluetooth    # or usb / auto; NXT_HOST, NXT_PORT too
 make nxt-web-fake                  # simulated brick with made-up readings, nothing moves
-uv run nxt-web --help              # the same, from nxt/
+uv run nxt-web --help              # the same, from apps/nxt-web/
 ```
 
 **Anywhere, in Docker** (`apps/nxt-web/Dockerfile`; config and recordings in the `nxt-web-data` volume):

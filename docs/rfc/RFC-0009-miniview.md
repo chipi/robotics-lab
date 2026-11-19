@@ -1,4 +1,7 @@
-# RFC-0009 — miniview: one run format, two faces, any robot
+# RFC-0009 — miniview (now the Observatory): one run format, two faces, any robot
+
+> Now the Observatory (RFC-0018, built 2026-11-19): the product, package and command were renamed;
+> this text keeps the names of its time.
 
 **Status:** Proposed (2026-11-15) — for the operator's review.
 **Product and UX:** [PRD-001](../prd/PRD-001-miniview.md), [UXS-001](../uxs/UXS-001-miniview.md).
