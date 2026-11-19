@@ -10,6 +10,8 @@ import time
 
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator
+from duck_lab.plugins.duck_walk import DuckWalk
+from duck_lab.profile import load
 
 failures = []
 
@@ -48,6 +50,9 @@ def navigator(pose):
     """A Navigator with its sockets replaced: commands are collected, the log is in memory."""
     nav = Navigator.__new__(Navigator)
     nav.robot, nav.loc, nav.state, nav.body = Calls(), Pose(pose), Latest(), None
+    nav.localisation = nav.loc
+    nav.locomotion = DuckWalk(load("sim"))
+    nav.locomotion.bind(nav.robot)
     nav._log, nav._t0, nav._depth = io.StringIO(), time.monotonic(), None
     return nav
 
@@ -80,7 +85,7 @@ check("path following adds its own fields to the same row, one row per command",
 from duck_lab.nav.runlog import JOINTS, SIGNALS  # noqa: E402
 
 nav = Navigator.__new__(Navigator)
-nav._fv, nav.tof, nav.sense = None, None, {}
+nav._fv, nav.range, nav.sense = None, None, {}
 angles = [round(0.01 * i, 2) for i in range(15)]
 v = nav._signal_values({"joints": angles})
 check("robotd's 15 measured joint angles become joint_<name> signals, in its order",

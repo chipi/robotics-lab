@@ -12,7 +12,11 @@ from pathlib import Path
 
 from duck_lab.nav import simreset
 from duck_lab.nav.follow import FollowState, step
+from duck_lab.plugins.duck_walk import DuckWalk
 from duck_lab.profile import load as load_profile
+
+PROFILE = load_profile("sim")
+LOCO = PROFILE.locomotion
 from duck_lab.nav.run import Navigator
 
 scene_id, side, tries = sys.argv[1], sys.argv[2], int(sys.argv[3])
@@ -29,7 +33,7 @@ for vx in [float(v) for v in sys.argv[4:]]:
             st, start, turned, last = FollowState(), time.monotonic(), 0.0, a0
             while time.monotonic() - start < 6.0:
                 x, y, a = nav.body.pose()
-                tw, _ = step([(x0 + 2 * target[0][0], y0 + 2 * target[0][1])], (x, y, a), time.monotonic(), st, load_profile("sim").locomotion, pivot_vx=vx)
+                tw, _ = step([(x0 + 2 * target[0][0], y0 + 2 * target[0][1])], (x, y, a), time.monotonic(), st, LOCO, DuckWalk(PROFILE, pivot_vx=vx))
                 nav.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
                 turned += math.atan2(math.sin(a - last), math.cos(a - last))
                 last = a

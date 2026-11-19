@@ -29,16 +29,16 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav import cliff
-from duck_lab.nav.cliff import blocking_ahead, depth_points, drop_points, low_points, obstacle_points
 from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
+from duck_lab import plugins
+from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived: re-exported for the tools that read it)
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
 from duck_lab.nav import recovery
-from duck_lab.nav.frames import Localizer, move_grid, move_xy
+from duck_lab.nav.decision import decision
+from duck_lab.nav.frames import move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
-from duck_lab.nav.step_check import unseen_ahead
 from duck_lab.nav.stuck import StuckWatch
-from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
+from duck_lab.nav.side_drops import (SuspectMemory, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
 from duck_lab.profile import load as load_profile
 from worldmodel.objects import Limits
@@ -145,103 +145,9 @@ FLOOR_CELL_M = 0.05
 # robotd's default head command: how the duck walks when nothing moves the head.
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
-VALID_STATUS = {5, 9}    # ST's "range valid" statuses
 STATE_KEEP = 40          # robot states held to pair depth frames with: two seconds at 20 Hz (autod holds the last second)
 
 
-def decision(rule: str, reason: str, **values) -> dict:
-    """A rule that fired, for the log (ADR-0014): which rule, why, and the numbers it compared with its thresholds."""
-    return {"rule": rule, "reason": reason, "values": values}
-
-
-class FrameView:
-    """One depth frame, the robot state it was paired with and what the navigator makes of it, derived once: the points
-    (map metres, for the viewer and the floor memory), the drop points, the blocking distance. Everything that reads the
-    frame (the cliff check, the reflex, the obstacle memory, the log) reads this, so what is logged is what was used.
-    reflex_half_w_m: half the corridor the duck sweeps walking straight on (its radius and the sensor's reflex margin)."""
-
-    def __init__(self, frame: dict, state: dict | None, dt_ms: float | None, pose: tuple | None, reflex_half_w_m: float):
-        self.frame, self.state, self.dt_ms, self.pose = frame, state, dt_ms, pose
-        self.rel = self.drops = self.block = self.points = None
-        self.ok = False
-        if state is None:
-            return
-        try:
-            self.rel = depth_points(frame, state)
-            self.drops = drop_points(frame, state)
-        except (KeyError, TypeError, ValueError):
-            return
-        self.ok = True
-        self.block = blocking_ahead(self.rel, reflex_half_w_m)
-        if pose is not None:
-            c, s_ = math.cos(pose[2]), math.sin(pose[2])
-            self.points = [[round(pose[0] + c * ax - s_ * ay, 3), round(pose[1] + s_ * ax + c * ay, 3), round(z, 3), kind[0]]
-                           for ax, ay, z, kind in self.rel]
-
-    def payload(self) -> dict:
-        """The depth_frame record (runfile.wire): the raw frame, its times, the paired state's replay fields, the pose and
-        what was derived."""
-        fr = self.frame
-        p = {"rows": fr["rows"], "cols": fr["cols"], "distance_mm": list(fr["distance_mm"]), "status": list(fr["status"]),
-             "frame_t_ns": int(fr.get("t_ns") or 0), "seq": fr.get("seq")}
-        if self.state is not None and "t_ns" in self.state:
-            p["state_t_ns"] = int(self.state["t_ns"])
-            if self.dt_ms is not None:
-                p["pair_dt_ms"] = round(self.dt_ms, 3)
-        if self.ok:
-            st = self.state
-            p["state"] = {"quat": list(st["imu"]["quat"]), "odom_z": st["odom"]["position"][2],
-                          "tof": {"pos": list(st["frames"]["tof"]["pos"]), "quat": list(st["frames"]["tof"]["quat"])}}
-            if self.pose is not None:
-                p["pose"] = list(self.pose[:3])          # as it was used, not rounded: a replay places the points with it
-                p["derived"] = {"points": self.points, "drop_points": [list(d) for d in self.drops]}
-                if self.block is not None:
-                    p["derived"]["block_m"] = self.block
-        return p
-
-
-class TofStream:
-    """tof.stream in a thread; keeps the nearest valid distance in the central columns."""
-
-    def __init__(self, path: Path):
-        self.nearest_mm = None
-        self.frames = 0
-        self.last = None
-        self.on_frame = None     # called with each frame (the navigator's seen-floor memory)
-        self._sock = socket.socket(socket.AF_UNIX)
-        self._sock.connect(str(path))
-        self._sock.settimeout(1.0)
-        self._f = self._sock.makefile("rw")
-        self._f.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tof.stream"}) + "\n")
-        self._f.flush()
-        self._stop = threading.Event()
-        threading.Thread(target=self._run, daemon=True).start()
-
-    def _run(self):
-        while not self._stop.is_set():
-            try:
-                line = self._f.readline()
-            except (TimeoutError, socket.timeout):
-                continue
-            if not line:
-                return
-            msg = json.loads(line)
-            if msg.get("method") != "tof.frame":
-                continue
-            fr = msg["params"]
-            self.last = fr
-            rows, cols = fr["rows"], fr["cols"]
-            central = range(cols // 2 - 2, cols // 2 + 2)
-            near = [fr["distance_mm"][r * cols + c] for r in range(rows) for c in central
-                    if fr["status"][r * cols + c] in VALID_STATUS and fr["distance_mm"][r * cols + c] > 0]
-            self.nearest_mm = min(near) if near else None
-            self.frames += 1
-            if self.on_frame:
-                self.on_frame(fr)
-
-    def close(self):
-        self._stop.set()
-        self._sock.close()
 
 
 class Body:
@@ -295,7 +201,6 @@ class Navigator:
     fault_grid = False
     on_move = None
     _parted_at = None
-    _loop_credit = None
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None,
@@ -325,16 +230,16 @@ class Navigator:
         self._fv = None          # the newest depth frame, paired and derived (FrameView)
         self.sense = {}          # what go_to decides on this tick (room_m, turning), for the signals; empty outside go_to
         self._logging_failed = False
-        self.tof = None
+
         self.mapd = Rpc(sim_dir / "duck-a-map.sock")
+        self.localisation.bind(self.mapd)
         self.state = StateStream(self.robot_sock, hz=20, on_state=self._on_state, client=client)
-        self.tof = TofStream(sim_dir / "duck-a-tof.sock")
+
         self.body = Body() if truth else None
         self._log = open(log, "a") if log else None
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
         self._low = {}       # low-band cells (LOW_CELL_M) -> the frames that saw them, until LOW_FRAMES remember them
-        self._tight_spots = []   # [(x, y), last tick] of each tight pivot: one per spot (_tight_allowed)
         self._drop_streak = 0
         self._drop_frame = None
         self._depth = None       # the newest depth frame's returns in map metres, for the next tick record
@@ -344,7 +249,8 @@ class Navigator:
         self.floor_seen = set()
         # Drops beside the way (docs/wip/SIDE-DROPS.md): suspected from the forward sensor's below-floor returns, then
         # confirmed (into drops) or cleared by a glance; the places already looked at.
-        self.suspects = SuspectMemory()
+        sd = self.profile.sensors.tof8x8.side_drops
+        self.suspects = SuspectMemory(sd.suspect_frames, sd.suspect_ratio, sd.clear_m)
         self.glanced = []
         self.step_looked = []    # spots looked at before stepping on them (step_check), not looked at again
         self._map_raw = None     # mapd's last grid (scaled), for the world record
@@ -354,9 +260,9 @@ class Navigator:
         self._moves = []         # the frame changes the memory has been moved by, in order (a leg's goal follows them)
         self.on_move = None      # called with each: the explorer's own lists
         self._parted_at = None   # the frames' delta when "frames_parted" was last said, None while they are together
-        self._loop_credit = None # until when a loop closure mapd believed lets a large fix through (time.monotonic)
         self._world_key = None
-        self.tof.on_frame = self._on_frame
+        self.range.on_frame = self._on_frame
+        self.range.open(sim_dir / "duck-a-tof.sock")
         self.drops = []      # where the cliff check found no floor, in map metres
         self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
@@ -372,8 +278,8 @@ class Navigator:
         self._sem_lock = threading.Lock()
         self._closing = threading.Event()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
-        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.pivot_vx,
-                    profile={"id": self.profile.id, "variant": self.profile.variant})
+        self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, pivot_vx_mps=self.locomotion.pivot_vx,
+                    profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data)})
 
     def configure(self, profile) -> None:
         """The robot's numbers, from its profile (RFC-0020): everything the navigator decides with that is the robot's and not its
@@ -382,27 +288,26 @@ class Navigator:
         loco, fp, eb, look = profile.locomotion, profile.footprint, profile.error_budget, profile.looking
         tof, fix = profile.sensors.tof8x8, profile.localisation.fix
         self.loco, self.fp = loco, fp
-        self.scale = float(profile.localisation.odometry.scale)
         self.tof_cal = {"pitch_offset_deg": float(tof.mount.pitch_offset_deg), "range_kind": tof.mount.range_kind}
-        cliff.configure(**self.tof_cal, overhead_m=fp.overhead_clear_m)
-        self.pivot_vx = float(loco.pivot.vx_mps)
-        self.reflex_ahead_m, self.reflex_half_w_m, self.emergency_mm = tof.reflex_ahead_m, fp.radius_m + tof.reflex_margin_m, tof.emergency_mm
         self.cliff_stop_m = eb.cliff_stop_m
-        self.fix_jump_m, self.fix_record_m, self.loop_credit_s = fix.jump_m, fix.record_m, fix.loop_credit_s
-        self.loc = Localizer(fix, max_jump_m=fix.jump_m, hold_n=None)
-        self.pivot_drop_m, self.pivot_edge_m = loco.pivot.drop_clear_m, loco.pivot.edge_clear_m
-        self.pivot_obstacle_m = fp.lethal_m + loco.pivot.obstacle_margin_m
-        self.tight_pivot_m, self.tight_spot_m, self.tight_gap_s = loco.pivot.tight_m, loco.pivot.tight_spot_m, loco.pivot.tight_gap_s
-        self.arc_clear_mm, self.arc_ahead_m, self.arc_reach_m = loco.arc.clear_mm, loco.arc.ahead_m, loco.arc.reach_m
-        self.arc_outer_deg, self.arc_inner_deg = loco.arc.outer_deg, loco.arc.inner_deg
+        self.plugins = plugins.load(profile)
+        self.locomotion = lw = self.plugins["locomotion"]
+        self.range = rs = self.plugins["range_sensing"]
+        self.localisation = mp = self.plugins["localisation"]
+        self.looking = self.plugins["looking"]
+        lw.bind(getattr(self, "robot", None))
+        self.looking.bind(getattr(self, "robot", None))
+        self.loc = mp.belief          # the belief the localisation plugin owns: the frames logic below is shared
+        self.scale = mp.scale
+        self.reflex_ahead_m, self.reflex_half_w_m, self.emergency_mm = rs.reflex_ahead_m, rs.reflex_half_w_m, rs.emergency_mm
+        # what the navigator itself decides with, and records, of the locomotion plugin's gates
+        self.pivot_drop_m, self.pivot_edge_m, self.pivot_obstacle_m = lw.pivot_drop_m, lw.pivot_edge_m, lw.pivot_obstacle_m
+        self.tight_pivot_m, self.arc_clear_mm = lw.tight_pivot_m, lw.arc.clear_mm
         self.drop_lethal_m, self.drop_inflate_m = eb.drop_lethal_m, eb.drop_inflate_m
         self.edge_lethal_m, self.edge_inflate_m = eb.edge_lethal_m, eb.edge_inflate_m
         self.confirm_m, self.hold_off_m, self.hold_detour = eb.confirm_m, eb.hold_off_m, eb.hold_detour
         self.glanced_m, self.absorb_m, self.beyond_m = eb.glanced_m, eb.absorb_m, tuple(eb.beyond_m)
-        self.look_along_m, self.continue_m, self.look_floor_z_m = look.along_m, look.continue_m, look.floor_z_m
-        self.look_settle_frames, self.look_yaw_tol_deg = look.settle_frames, look.yaw_tol_deg
-        self.look_max_s, self.look_collect_s, self.head_back_s = look.max_s, look.collect_s, look.back_s
-        self.head_walk_cmd = dict(look.walk_command)
+        self.look_along_m, self.continue_m = look.along_m, look.continue_m
         self.limits = Limits(walk_over_m=loco.step_over_m, overhead_m=fp.overhead_clear_m, stand_m=fp.standoff_m,
                              assoc_m=eb.assoc_m, unique_m=eb.unique_m)
 
@@ -414,8 +319,8 @@ class Navigator:
         waits after a stop are in the log too (explore12 had events there but no poses)."""
         self.sync_memory()
         vx =tw.vx if self.speed_cap is None else max(-self.speed_cap, min(self.speed_cap, tw.vx))
-        self.robot.call("robot.move", {"vx": vx, "vy": 0.0, "vyaw": tw.vyaw})
-        pose = self.loc.pose()
+        self.locomotion.command(vx, tw.vyaw)
+        pose = self.localisation.pose()
         if pose is None:
             return
         self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), tilt=self._tilt(),
@@ -423,29 +328,9 @@ class Navigator:
         self._depth = None
 
     def fix(self) -> bool:
-        st = self.mapd.call("map.status")
-        pose = (st.get("state") or {}).get("pose")
-        t_ns = (st.get("state") or {}).get("t_ns")
-        trust = self._watch_mapd(st) if self.frames_on else None
-        raw = self._scaled((pose["x"], pose["y"], pose["yaw"])) if pose else None
-        if raw and self.fix_fault and time.monotonic() - self._t0 >= self.fix_fault[0]:
-            raw = (raw[0] + self.fix_fault[1], raw[1] + self.fix_fault[2], raw[2])
-        if not (pose and t_ns and self.loc.on_fix(t_ns, raw, trust=trust)):
+        """A fix from the localisation source, applied to the belief; then the memory follows the belief's frame."""
+        if not self.localisation.fix(self.record, self.frames_on, self.fix_fault, self._t0):
             return False
-        f = self.loc.last_fix
-        if f.get("trusted"):
-            self._loop_credit = None          # one large fix per loop closure
-        if (f["status"] != "taken" and (self.loc.rejected <= 3 or self.loc.rejected % 20 == 0)) or (f["status"] == "taken"
-                                                                                              and f["moved_m"] > self.fix_record_m):
-            # the next jump shows its source: mapd's raw pose and its t_ns, and the odometry it was paired with
-            self.record(event="fix", **f, rejected=self.loc.rejected, mapd=getattr(self, "_mapd_seen", None),
-                        decision=decision("fix", {"held": "a fix that would move the belief "
-                                                  f"{f['moved_m']:.2f} m is held, not taken (limit {self.fix_jump_m})",
-                                                  "late": f"a jump of {f['moved_m']:.2f} m taken: held fixes agreed",
-                                                  "taken": (f"a {f['trusted']} mapd believed moved the belief {f['moved_m']:.2f} m: taken"
-                                                            if f.get("trusted") else
-                                                            f"a fix moved the belief {f['moved_m']:.2f} m")}[f["status"]],
-                                          moved_m=f["moved_m"], limit_m=self.fix_jump_m))
         self.sync_memory()
         self._watch_frames()
         return True
@@ -477,7 +362,7 @@ class Navigator:
         self.edges = [mv(p) for p in self.edges]
         self.glanced = [mv(p) for p in self.glanced]
         self.step_looked = [mv(p) for p in self.step_looked]
-        for spot in self._tight_spots:
+        for spot in self.locomotion.tight_spots:
             spot[0] = mv(spot[0])
         self.floor_seen = {(round(q[0] / FLOOR_CELL_M), round(q[1] / FLOOR_CELL_M))
                            for q in (mv((cx * FLOOR_CELL_M, cy * FLOOR_CELL_M)) for cx, cy in list(self.floor_seen))}
@@ -490,14 +375,14 @@ class Navigator:
             self.on_move(d)
         self.record(event="memory_moved", delta=[round(d[0], 4), round(d[1], 4), round(d[2], 4)], blocked=len(self.blocked),
                     drops=len(self.drops) + len(self.edges), floor_cells=len(self.floor_seen),
-                    objects=len(self.semantic.objects) if self.semantic is not None else 0, pose=self.loc.pose(),
+                    objects=len(self.semantic.objects) if self.semantic is not None else 0, pose=self.localisation.pose(),
                     decision=decision("memory_moved", f"the belief's frame moved {math.hypot(d[0], d[1]):.2f} m, "
                                       f"{math.degrees(d[2]):.1f} deg: the memory moved with it", moves=len(self._moves)))
 
     def _watch_frames(self) -> None:
         """The belief's frame against mapd's (RFC-0019's frames_parted): said when they part (a held jump, a landmarks'
         offset), again when they part further, and when they are together again."""
-        d = self.loc.delta()
+        d = self.localisation.frame_delta()
         if d is None:
             return
         shown = [round(d[0], 4), round(d[1], 4), round(d[2], 4)]
@@ -505,7 +390,7 @@ class Navigator:
             last = self._parted_at
             if last is None or math.dist(last[:2], d[:2]) > PARTED_REPORT_M:
                 self._parted_at = d
-                self.record(event="frames_parted", delta=shown, mapd=getattr(self, "_mapd_seen", None),
+                self.record(event="frames_parted", delta=shown, mapd=self.localisation.seen,
                             fix=(self.loc.last_fix or {}).get("status"), offset=[round(v, 3) for v in self.loc.offset],
                             decision=decision("frames_parted", f"the belief's frame is {math.hypot(d[0], d[1]):.2f} m, "
                                               f"{math.degrees(d[2]):.1f} deg from mapd's", delta=shown))
@@ -513,34 +398,6 @@ class Navigator:
             self._parted_at = None
             self.record(event="frames_joined", delta=shown,
                         decision=decision("frames_joined", "the belief's frame and mapd's are together again", delta=shown))
-
-    def _watch_mapd(self, st: dict) -> str | None:
-        """mapd's own account of itself (its `map.status`): why it is lost (`boot`, `carried`, `bumped`, `sat`, `fell`,
-        `contradiction`; absent while it knows), and its loop closures, relocalizations and island stops since it started.
-        Recorded when any of them changes, so a jump in the belief can be read against what mapd did at that moment
-        (RFC-0019: the first robot-tagged anomalies; b10a r1's 0.9 m jump had none of this).
-        Returns "loop closure" when a large fix may be taken now: the loops counter stepped within loop_credit_s, mapd is not
-        lost and no relocalization stepped (mapd believed a loop closure after two agreeing stops, mapping-design §3); None
-        otherwise, and the gate holds a large fix as it always did."""
-        now = {"lost": (st.get("state") or {}).get("lost"), "loops": st.get("loops"),
-               "relocalizations": st.get("relocalizations"), "islands": st.get("island_keyframes")}
-        before = getattr(self, "_mapd_seen", None)
-        stepped = {k: before is not None and (now[k] or 0) > (before.get(k) or 0) for k in ("loops", "relocalizations")}
-        t = time.monotonic()
-        if now["lost"] or stepped["relocalizations"]:
-            self._loop_credit = None
-        elif stepped["loops"]:
-            self._loop_credit = t + self.loop_credit_s
-        trust = "loop closure" if not now["lost"] and (getattr(self, "_loop_credit", None) or 0) > t else None
-        if now == before:
-            return trust
-        self._mapd_seen = now
-        if before is None and not now["lost"] and not now["loops"] and not now["relocalizations"]:
-            return trust         # the first look, nothing unusual yet
-        what = [k for k in now if before is None or now[k] != before.get(k)]
-        self.record(event="mapd_status", **now, changed=what, pose=self.loc.pose(),
-                    decision=decision("mapd_status", f"mapd: {', '.join(f'{k} {now[k]}' for k in what)}", **now))
-        return trust
 
     def hazards(self) -> list:
         """The remembered drops: a cliff stop's points, measured edges, suspected cells."""
@@ -558,7 +415,7 @@ class Navigator:
         recovery.choose says for this attempt from what the depth sensor shows now; then a survey, so mapd maps the new stop.
         A creep only where the room ahead is a turn's room and more than the room here (recovery.creep_gains_room), from the
         same cost map the refusal came from. The event says what was done and how far it moved the duck."""
-        pose = self.loc.pose()
+        pose = self.localisation.pose()
         haz = recovery.hazard(pose, self.hazards(), self.blocked)
         front = recovery.drop_ahead(pose, self.hazards())
         try:
@@ -567,7 +424,7 @@ class Navigator:
             room_now, room_ahead = clearance(costs, pose[:2], 0.5), clearance(costs, ahead, 0.5)
         except EmptyMap:
             room_now, room_ahead = recovery.projected_room(pose, self.blocked, recovery.CREEP_M)
-        nearest_mm = self.tof.nearest_mm
+        nearest_mm = self.range.nearest_mm()
         kind = recovery.choose(attempt, nearest_mm, front, haz, recovery.creep_gains_room(room_now, room_ahead, self.pivot_obstacle_m))
         why = None
         if kind == "creep":
@@ -575,7 +432,7 @@ class Navigator:
         elif kind == "arc":
             why = self._walk(0.7, 0.0, self.loco.slowest_mps, recovery.turn_away(pose, haz[0]) * self.loco.yaw_max_rad_s)
         collecting = self.survey()
-        after = self.loc.pose()
+        after = self.localisation.pose()
         moved = math.dist(pose[:2], after[:2])
         turned = abs(wrap(after[2] - pose[2]))
         self.record(event="recovery", attempt=attempt, action=kind, stopped=why, pose=pose, after=after, moved_m=round(moved, 3),
@@ -594,7 +451,7 @@ class Navigator:
         arc: recovery.ARC_CLEAR_MM), the same for an obstacle in the corridor, a drop in the frame within the cliff-stop
         distance, the remembered obstacles nearer than at the start (by 1 cm), the abort, the time. Returns why it stopped early,
         None when it got where it was asked. Ends with a stop."""
-        start = self.loc.pose()
+        start = self.localisation.pose()
         room0 = min((math.dist(start[:2], b[:2]) for b in self.blocked), default=math.inf)
         t0 = time.monotonic()
         why = "time"
@@ -602,13 +459,13 @@ class Navigator:
             if self.abort:
                 why = "abort"
                 break
-            pose = self.loc.pose()
+            pose = self.localisation.pose()
             gone = math.dist(start[:2], pose[:2])
             if (dist_m and gone >= dist_m) or (turned_rad and abs(wrap(pose[2] - start[2])) >= turned_rad):
                 why = None
                 break
             need_mm = recovery.CREEP_FLOOR_MM + max(0.0, dist_m - gone) * 1000 if dist_m else recovery.ARC_CLEAR_MM
-            near, fv = self.tof.nearest_mm, self._fv
+            near, fv = self.range.nearest_mm(), self._fv
             if near is None or near < need_mm:
                 why = "no room ahead"
                 break
@@ -628,80 +485,33 @@ class Navigator:
         return why
 
     def survey(self) -> bool:
-        """Stand still with explicit zeros until mapd is collecting this stop, then a little longer."""
-        t = time.monotonic()
-        collecting_since = None
-        while time.monotonic() - t < SURVEY_TIMEOUT_S:
-            self.move(Twist())
-            st = self.mapd.call("map.status")
-            if (st.get("state") or {}).get("collecting"):
-                collecting_since = collecting_since or time.monotonic()
-                if time.monotonic() - collecting_since > 2.0:
-                    break
-            time.sleep(TICK_S)
+        """Stand still with explicit zeros until the source is mapping this stop, then a little longer (a source that maps only at
+        stops: mapd); then a fix. A source that maps on the move has nothing to wait for."""
+        collecting = True
+        if self.localisation.needs_stationary():
+            collecting = self.localisation.settle(lambda: self.move(Twist()), SURVEY_TIMEOUT_S, TICK_S)
         self.fix()
-        return collecting_since is not None
-
-    @staticmethod
-    def _sensor_yaw(state: dict) -> float:
-        """The depth sensor's yaw against the trunk (deg), from the state the frame was paired with."""
-        w, x, y, z = state["frames"]["tof"]["quat"]
-        return math.degrees(math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)))
-
-    @staticmethod
-    def _sensor_dir(state: dict) -> tuple:
-        """The depth sensor's (yaw, pitch) against the trunk (deg)."""
-        w, x, y, z = state["frames"]["tof"]["quat"]
-        return Navigator._sensor_yaw(state), math.degrees(math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x)))))
+        return collecting
 
     def glance_at(self, target: tuple, pose: tuple) -> dict:
         """Stand and look at the floor at target (map metres) with the head, to confirm or clear a suspected drop there
-        (docs/wip/SIDE-DROPS.md). The head is aimed with robot.look and held by resending; frames are used once the
-        sensor's own yaw has held still (the old glance read short from frames taken while the head was still turning),
-        for looking.collect_s. What it saw: floor joins floor_seen and clears the suspicions it covers; a floor boundary with
+        (docs/wip/SIDE-DROPS.md). The looking plugin aims the head and returns the frames it saw once the sensor's own yaw held
+        still. What the navigator makes of them: floor joins floor_seen and clears the suspicions it covers; a floor boundary with
         below-floor returns beyond it (side_drops.edge_from_glance) is a drop, remembered with its edge extended. The head
-        then gets back the command it had (robot.head keeps a command until told otherwise)."""
-        t0 = time.monotonic()
-        bearing = math.atan2(target[1] - pose[1], target[0] - pose[0])
-        rel = wrap(bearing - pose[2])
-        dist = math.dist(target, pose[:2])
-        # robot.head is a command to the walking policy, not a joint target: under robotd's default command (zeros) the
-        # head walks at neck ~13°, pitch ~20°, so sending the measured angles back pitched it further down at every
-        # glance (challenge 11, 2026-11-18: neck 44°, pitch 83° after three, the odometry 10-14 % short)
-        home = self.head_walk_cmd
-        fv0 = self._fv
-        yaw0 = self._sensor_yaw(fv0.state) if fv0 is not None and fv0.ok else 0.0   # where the sensor faced before
+        then gets back the command it had (robot.head keeps a command until told otherwise). A robot that cannot look leaves the
+        spot unseen: not blocked."""
+        if not self.looking.capable:
+            self.record(event="glance", decision=decision("glance", "this robot cannot look: the spot stays unseen",
+                                                          target=list(target)))
+            return {"status": "unseen"}
+        hold = lambda: self.move(Twist())          # noqa: E731
+        view = lambda: self._fv                    # noqa: E731
         self.glanced.append(tuple(target))
-        try:
-            ans = self.robot.call("robot.look", {"x": dist * math.cos(rel), "y": dist * math.sin(rel),
-                                                 "z": self.look_floor_z_m, "neck_pitch": 0.0}) or {}
-        except LeaseLost:
-            raise                  # the gate ended this navigator's lease: not a failed look, the end of the run
-        except (RuntimeError, OSError) as e:
-            self.record(event="glance", decision=decision("glance", f"robot.look failed: {e}", target=list(target)))
+        look = self.looking.look_at(target, pose, hold, view, TICK_S)
+        if "failed" in look:
+            self.record(event="glance", decision=decision("glance", f"robot.look failed: {look['failed']}", target=list(target)))
             return {"status": "failed"}
-        head = ans.get("head")
-        frames, seen, dirs, settled = [], None, [], None
-        while time.monotonic() - t0 < self.look_max_s and (settled is None or time.monotonic() - settled < self.look_collect_s):
-            if head:
-                self.robot.call("robot.head", head)
-            self.move(Twist())
-            fv = self._fv
-            if fv is not None and fv is not seen and fv.ok and fv.pose is not None:
-                seen = fv
-                dirs.append(self._sensor_dir(fv.state))
-                if settled is None and head_settled(dirs, self.look_settle_frames, self.look_yaw_tol_deg):
-                    settled = time.monotonic()
-                if settled is not None:
-                    c, s_ = math.cos(fv.pose[2]), math.sin(fv.pose[2])
-                    # below-floor returns by the same range-dependent threshold as every other frame (_on_frame,
-                    # side_drops.below_counts): far floor reads a few cm low, and a glance into an open room counted it
-                    # (challenge 7 seed 1: floor 1.7-2.5 m away read 6-9 cm low, the glance said "drop", the start was
-                    # fenced in; sim/probes/glance_distance.py)
-                    frames.append([(fv.pose[0] + c * ax - s_ * ay, fv.pose[1] + s_ * ax + c * ay, kind)
-                                   for ax, ay, h, kind in fv.rel
-                                   if kind == "floor" or (kind == "below" and below_counts(h, math.hypot(ax, ay)))])
-            time.sleep(TICK_S)
+        t0, frames, bearing, rel, dist = look["t0"], look["frames"], look["bearing"], look["rel"], look["dist"]
         rim, below, floor = edge_from_glance(frames, tuple(pose[:2]), bearing)
         for x, y in floor:
             self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
@@ -714,15 +524,7 @@ class Navigator:
             # goal or the passage inside the ring. Rims are too noisy to tell a corner from a line (rms 3-4 cm round a
             # corner, 8-10 cm along a straight ledge).
         edge_m = min((math.dist(p, pose[:2]) for p in rim), default=None)
-        # back to the walking command, held until the sensor faces as it did
-        back = time.monotonic()
-        while time.monotonic() - back < self.head_back_s:
-            self.robot.call("robot.head", home)
-            self.move(Twist())
-            fv = self._fv
-            if fv is not None and fv.ok and abs(self._sensor_yaw(fv.state) - yaw0) < self.look_yaw_tol_deg:
-                break
-            time.sleep(TICK_S)
+        self.looking.restore(hold, view, TICK_S)
         # no frames: the head never settled, so nothing was seen; not floor (challenge 11 seed 5 recorded such a look as floor)
         out = {"status": "drop" if rim else ("floor" if frames else "unseen"), "frames": len(frames), "rim": len(rim), "below": len(below),
                "cleared": cleared, "edge_m": round(edge_m, 3) if edge_m is not None else None,
@@ -756,20 +558,11 @@ class Navigator:
         return out
 
     def mapd_grid(self) -> dict:
-        """mapd's grid as the navigator uses it: its finest resolution (doorways stay open), scaled like the odometry, and in
-        the belief's frame (frames.move_grid): the pose, the memory and the grid are then one frame, whatever the belief
-        took from mapd. Before, only the scale was applied, and after a held jump or a landmarks' nudge the walls sat
-        displaced against the duck."""
+        """The localisation source's grid as the navigator uses it: scaled like the odometry, and in the belief's frame (the
+        pose, the memory and the grid are then one frame, whatever the belief took from the source: after a held jump or a
+        landmarks' nudge the walls sat displaced against the duck)."""
         self.sync_memory()
-        g = dict(self.mapd.call("map.grid", {"res_m": 0.05}))
-        if g.get("res_m"):
-            g["res_m"] *= self.scale
-            g["origin"] = [v * self.scale for v in g["origin"]]
-            if self.fault_grid and self.fix_fault and time.monotonic() - self._t0 >= self.fix_fault[0]:
-                g["origin"] = [g["origin"][0] + self.fix_fault[1], g["origin"][1] + self.fix_fault[2]]
-            if self.frames_on:
-                g = move_grid(g, self.loc.delta())
-        return g
+        return self.localisation.grid(self.frames_on, self.fix_fault, self.fault_grid, self._t0)
 
     def grid(self) -> CostGrid:
         g = self._map_raw = self.mapd_grid()
@@ -794,8 +587,8 @@ class Navigator:
         (fv.pose), the tick's only when the frame has none: frames come at 15 Hz and ticks at 10 Hz, and during a pivot at
         0.8 rad/s the tick's pose is up to 0.08 rad off, a point at 0.6 m some 5 cm (the review of 2026-11-16)."""
         pose = fv.pose or tick_pose
-        return self._remember(obstacle_points(fv.frame, fv.state, within_m=LAYER_M), pose) + \
-            self._remember_low(low_points(fv.frame, fv.state, within_m=LAYER_M), pose,
+        return self._remember(self.range.obstacle_points(fv.frame, fv.state, within_m=LAYER_M), pose) + \
+            self._remember_low(self.range.low_points(fv.frame, fv.state, within_m=LAYER_M), pose,
                                (fv.frame.get("seq"), fv.frame.get("t_ns")))
 
     def _remember_low(self, pts: list, pose: tuple, frame_key) -> list:
@@ -815,7 +608,7 @@ class Navigator:
     def _on_state(self, s: dict) -> None:
         """Every robot state (the state stream's thread): odometry to the localizer, the state to the pairing history, the IMU and
         the navigator's values to the run's signals."""
-        self.loc.on_odom(s["t_ns"], self._scaled(odom_pose(s)))
+        self.localisation.on_odom(s["t_ns"], odom_pose(s))
         self._states.append((s["t_ns"], s))
         if self.runlog and not self._logging_failed:
             try:
@@ -836,7 +629,7 @@ class Navigator:
         if len(joints) == len(JOINTS):
             v.update({f"joint_{n}": a for n, a in zip(JOINTS, joints)})
         fv = self._fv
-        v.update(nearest_mm=self.tof.nearest_mm if self.tof else None, block_m=fv.block if fv else None, **self.sense)
+        v.update(nearest_mm=self.range.nearest_mm() if self.range else None, block_m=fv.block if fv else None, **self.sense)
         return {k: x for k, x in v.items() if x is not None and math.isfinite(x)}
 
     def _pair(self, t_ns: int) -> tuple:
@@ -859,16 +652,16 @@ class Navigator:
         pose = None
         if state is not None:
             try:
-                pose = self.loc.to_map(self._scaled(odom_pose(state)))
+                pose = self.localisation.to_map(odom_pose(state))
             except (KeyError, TypeError, ValueError):
                 pass
-        fv = self._fv = FrameView(frame, state, dt_ms, pose, self.reflex_half_w_m)
+        fv = self._fv = self.range.derive(frame, state, dt_ms, pose)
         # not while the memory still sits in the frame before the belief's last move: these points would be moved twice
         if fv.ok and pose is not None and not (self.frames_on and self.loc.memory_pending()):
             c, s_ = math.cos(pose[2]), math.sin(pose[2])
             seen = []
             for ax, ay, h, kind in fv.rel:
-                if kind == "floor" or (kind == "below" and below_counts(h, math.hypot(ax, ay))):
+                if kind == "floor" or (kind == "below" and self.range.below_counts(h, math.hypot(ax, ay))):
                     x, y = pose[0] + c * ax - s_ * ay, pose[1] + s_ * ax + c * ay
                     seen.append((x, y, kind))
                     if kind == "floor":
@@ -905,50 +698,9 @@ class Navigator:
         return any((cx + dx, cy + dy) in self.floor_seen for dx in range(-r, r + 1) for dy in range(-r, r + 1)
                    if math.hypot(dx, dy) * FLOOR_CELL_M <= radius_m)
 
-    def _tight_allowed(self, pose: tuple, now: float) -> bool:
-        """One tight pivot per spot (the operator, 2026-11-18): a turn on the spot creeps 3-4 cm the odometry does not see,
-        so the belief's room is no longer the room after one (b7 r2: four tight pivots beside lm_office took it from
-        0.206 to 0.034 m while it believed 0.16). A pivot going on (a tick within tight_gap_s of the last) continues;
-        a new one within tight_spot_m of an earlier one is refused, and the leg then is "no room to turn"."""
-        for spot in self._tight_spots:
-            if math.dist(spot[0], pose[:2]) <= self.tight_spot_m:
-                if now - spot[1] <= self.tight_gap_s:
-                    spot[1] = now
-                    return True
-                return False
-        self._tight_spots.append([tuple(pose[:2]), now])
-        return True
-
-    def _pivot_clear_of_drops(self, pose: tuple) -> bool:
-        """Room to turn on the spot, as far as drops go: pivot.drop_clear_m from a cliff stop's points, pivot.edge_clear_m from a
-        measured edge (each its ring less the following's and belief's error, so the duck can turn wherever the planner
-        may put it)."""
-        xy = pose[:2]
-        return all(math.dist(xy, d) >= self.pivot_drop_m for d in self.drops) and \
-            all(math.dist(xy, d) >= self.pivot_edge_m for d in self.edges)
-
     def _arc_clear(self, costs: CostGrid, pose: tuple, turn: float) -> bool:
-        """Clear floor for a slow turn while walking, turn > 0 to the left: the depth sensor, the grid ahead (for walls:
-        a cell lethal only for a drop's ring is left to the drop check) and the drop memory, where the arc sweeps: within
-        arc.reach_m, from arc.outer_deg on the outer side to arc.inner_deg on the inner side. A drop anywhere ahead vetoed
-        every turn before (challenge 11 seed 1: a turn away from a pit at the side was refused)."""
-        near = self.tof.nearest_mm
-        if near is None or near < self.arc_clear_mm:
-            return False
-        drops = self.drops + self.edges + self.suspects.points()
-        ahead = (pose[0] + self.arc_ahead_m * math.cos(pose[2]), pose[1] + self.arc_ahead_m * math.sin(pose[2]))
-        c = costs.cell(*ahead)
-        if costs.inside(*c) and costs.at(*c) >= LETHAL_COST and \
-                all(math.dist(ahead, d) > self.drop_lethal_m for d in drops):
-            return False
-        side = 1.0 if turn >= 0 else -1.0
-        for d in drops:
-            if math.dist(pose[:2], d) >= self.arc_reach_m:
-                continue
-            b = math.degrees(wrap(math.atan2(d[1] - pose[1], d[0] - pose[0]) - pose[2])) * side
-            if -self.arc_outer_deg <= b <= self.arc_inner_deg:
-                return False
-        return True
+        """Clear floor for a slow turn while walking (the locomotion plugin judges it against the sensor and the hazard memory)."""
+        return self.locomotion.arc_clear(costs, pose, turn, self.range.nearest_mm(), self.drops, self.edges, self.suspects.points())
 
     def _record_world(self) -> None:
         """The world model as the planner saw it, for the viewer (duck-world): mapd's grid and the
@@ -956,7 +708,7 @@ class Navigator:
         g = self._map_raw
         if not g:
             return
-        d = self.loc.delta()
+        d = self.localisation.frame_delta()
         shown = [round(v, 4) for v in d] if d is not None else None
         key = (hash(g["cells"]), g["width"], g["height"], len(self.blocked), len(self.drops), len(self.edges), tuple(shown or ()),
                len(self._moves))
@@ -1017,9 +769,9 @@ class Navigator:
 
     def _go_to(self, goal: tuple, timeout_s: float) -> dict:
         start = time.monotonic()
-        if self.loc.pose() is None and not self.fix():
+        if self.localisation.pose() is None and not self.fix():
             self.survey()
-        if self.loc.pose() is None:
+        if self.localisation.pose() is None:
             return {"status": "refused", "why": "no pose on the map yet"}
         path, planned_at, st = None, 0.0, FollowState()
         stuck = StuckWatch(self.loco.stuck.window_s, self.loco.stuck.moved_max_m)
@@ -1042,7 +794,7 @@ class Navigator:
                 moves_seen = len(self._moves)
                 path = following = None
             now = time.monotonic()
-            pose = self.loc.pose()
+            pose = self.localisation.pose()
             if path is None or now - planned_at > REPLAN_S:
                 fv = self._fv
                 if fv is not None and fv.ok:
@@ -1143,8 +895,8 @@ class Navigator:
             near = costs.inside(*costs.cell(*pose[:2])) and costs.at(*costs.cell(*pose[:2])) > FREE_COST    # in a margin ring, unknown or shadow
             nearest_drop = min((math.dist(pose[:2], d) for d in self.drops + self.edges), default=math.inf)
             room = clearance(costs, pose[:2], max(self.pivot_obstacle_m, self.loco.slow_clearance_m))
-            pivot_ok = room >= self.pivot_obstacle_m and self._pivot_clear_of_drops(pose)
-            tw, done = step(path, pose, now, st, self.loco, near=near, pivot_ok=pivot_ok, pivot_vx=self.pivot_vx,
+            pivot_ok = self.locomotion.can_pivot(room, pose[:2], self.drops, self.edges)
+            tw, done = step(path, pose, now, st, self.loco, self.locomotion, near=near, pivot_ok=pivot_ok,
                             close=room < self.loco.slow_clearance_m)
             self.sense = {"room_m": round(room, 3), "turning": int(st.turning)}
             if done:
@@ -1193,33 +945,33 @@ class Navigator:
                 path = None
                 continue
             if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose, tw.vyaw) and \
-                    room >= self.tight_pivot_m and self._pivot_clear_of_drops(pose) and self._tight_allowed(pose, now):
+                    self.locomotion.tight_pivot_ok(room, pose[:2], self.drops, self.edges, now):
                 # Nav2's spin recovery with a collision check, by the tick: in a squeeze (exploration
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
-                tw, done = step(path, pose, now, st, self.loco, near=near, pivot_ok=True, pivot_vx=self.pivot_vx,
+                tw, done = step(path, pose, now, st, self.loco, self.locomotion, near=near, pivot_ok=True,
                                 close=room < self.loco.slow_clearance_m)
                 if not tight:
                     tight = True
-                    self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.tof.nearest_mm,
+                    self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.range.nearest_mm(),
                                 decision=decision("tight_pivot", "no clear floor for an arc; pivoting while the room lasts",
                                                   room_m=round(room, 3), min_room_m=self.tight_pivot_m,
                                                   nearest_drop_m=round(nearest_drop, 3), drop_clear_m=self.pivot_drop_m, edge_clear_m=self.pivot_edge_m,
-                                                  nearest_mm=self.tof.nearest_mm, arc_clear_mm=self.arc_clear_mm))
+                                                  nearest_mm=self.range.nearest_mm(), arc_clear_mm=self.arc_clear_mm))
             if st.turning and tw.vx > 0 and not self._arc_clear(costs, pose, tw.vyaw):
                 self.move(Twist())
                 self.record(event="refused", why="no room to turn", pose=pose, room_m=round(room, 3),
-                            nearest_drop_m=round(nearest_drop, 3), nearest_mm=self.tof.nearest_mm,
+                            nearest_drop_m=round(nearest_drop, 3), nearest_mm=self.range.nearest_mm(),
                             blocked=[[round(v, 2) for v in b] for b in self.blocked if math.dist(b, pose[:2]) < 0.5],
                             drops=[[round(v, 2) for v in d] for d in self.drops],
                             path=[[round(v, 2) for v in q] for q in (path or [])[:8]],
                             decision=decision("refused", "no room to turn", room_m=round(room, 3), min_room_m=self.tight_pivot_m,
                                               nearest_drop_m=round(nearest_drop, 3), drop_clear_m=self.pivot_drop_m, edge_clear_m=self.pivot_edge_m,
-                                              nearest_mm=self.tof.nearest_mm, arc_clear_mm=self.arc_clear_mm))
+                                              nearest_mm=self.range.nearest_mm(), arc_clear_mm=self.arc_clear_mm))
                 return {"status": "refused", "why": f"no room to turn ({room:.2f} m to an obstacle, "
                         f"{nearest_drop:.2f} m to a drop)", "time_s": round(now - start, 1)}
-            near = self.tof.nearest_mm
+            near = self.range.nearest_mm()
             if tw.vx > 0 and path:
-                spot = unseen_ahead(path[st.target_index:], pose, self.floor_seen_at, skip=self.step_looked)
+                spot = self.range.unseen_ahead(path[st.target_index:], pose, self.floor_seen_at, skip=self.step_looked)
                 if spot is not None:
                     # Look before you step (step_check.py): floor about to be walked on that the depth sensor never saw
                     # as floor (exploring b2 r2 cut a stairwell corner it had never had in view).
@@ -1239,7 +991,7 @@ class Navigator:
             if tw.vx > 0 and (blocked_ahead or (near is not None and near < self.emergency_mm)):
                 reflex_stops += 1
                 self.move(Twist())
-                seen = obstacle_points(fv.frame, fv.state) if fv is not None and fv.ok else []
+                seen = self.range.obstacle_points(fv.frame, fv.state) if fv is not None and fv.ok else []
                 self._remember(seen, (fv.pose or pose) if fv is not None else pose)    # placed with the frame's pose
                 if not seen:   # no geometry (no state yet): the nearest return straight ahead
                     ahead = near / 1000.0
@@ -1277,7 +1029,7 @@ class Navigator:
             time.sleep(max(0.0, TICK_S - (time.monotonic() - now)))
         self.move(Twist())
         return {"status": "timeout", "time_s": timeout_s, "reflex_stops": reflex_stops,
-                "pose": [round(v, 3) for v in self.loc.pose()]}
+                "pose": [round(v, 3) for v in self.localisation.pose()]}
 
     def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None,
                        area_at=None, relocalise: bool = True) -> None:
@@ -1309,7 +1061,7 @@ class Navigator:
         recorded = {"t": 0.0, "at": {}}       # the last objects snapshot: when, and where each object was then
 
         def look():
-            pose = self.loc.pose()
+            pose = self.localisation.pose()
             if pose is None or self.body is None or (self.frames_on and self.loc.memory_pending()):
                 return           # (pending: the memory is not yet in the belief's frame, the navigator's thread moves it)
             found = camera.detect(self.body.pose())
@@ -1324,10 +1076,10 @@ class Navigator:
             now = time.monotonic() - self._t0
             fixed = self.reloc.observe(found, pose, now) if relocalise else None
             if fixed and fixed["status"] == "corrected":
-                step = self.loc.nudge(fixed["dx"], fixed["dy"])
+                step = self.localisation.nudge(fixed["dx"], fixed["dy"])
                 fixed["step"] = [round(v, 3) for v in step]
                 fixed["offset"] = [round(v, 3) for v in self.loc.offset]
-                pose = self.loc.pose() or pose
+                pose = self.localisation.pose() or pose
             if fixed:
                 self.record(event="relocalise", **fixed, pose=[round(v, 4) for v in pose],
                             decision=decision("relocalise", fixed.get("why") or
@@ -1399,7 +1151,7 @@ class Navigator:
             except (LeaseLost, RuntimeError, OSError):
                 pass
         self.state.close()
-        self.tof.close()
+        self.range.close()
 
 
 def main() -> None:

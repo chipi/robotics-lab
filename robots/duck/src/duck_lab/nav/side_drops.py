@@ -12,24 +12,14 @@ approach, with a false cell in 8 of 273 drop-free runs (at most 2 cells). A glan
 import collections
 import math
 
-from duck_lab.nav.cliff import EXTRA_M
 from duck_lab.nav.frames import move_xy
 
 CELL_M = 0.05
-BELOW_SLOPE = 0.035          # m more below the floor per m of range (below_counts; replayed, docs/wip/SIDE-DROPS.md)
-SUSPECT_FRAMES = 5           # frames that put a below-floor return in the cell
-SUSPECT_RATIO = 3.0          # and at least this many times the frames that put floor there
-# floor a glance saw this near a suspected cell clears it: returns lie a few cm apart at 0.8 m and the map drifts between
-# the suspicion and the look (challenge 10 seed 8: 5 cm left a suspicion beside the goal, and the leg was refused)
-CLEAR_M = 0.10
-
-
-def below_counts(height_m: float, range_m: float) -> bool:
-    """A below-floor return (height above the floor, negative) deep enough for its range to count toward a suspicion:
-    cliff.EXTRA_M at the duck, BELOW_SLOPE more a metre. A far floor return read just past EXTRA_M is the trunk's pitch
-    (walking sway), not a hole: 3 deg at 1.5 m is 8 cm (the false suspicions that closed challenge 10's goal sat 6.6-7.9
-    cm below, 1.1-2.4 m away)."""
-    return height_m <= -(EXTRA_M + BELOW_SLOPE * range_m)
+# The robot's numbers are the profile's sensors.tof8x8.side_drops, given to SuspectMemory: suspect_frames (frames that put a
+# below-floor return in the cell), suspect_ratio (and at least this many times the frames that put floor there), clear_m (floor a
+# glance saw this near a suspected cell clears it: returns lie a few cm apart at 0.8 m and the map drifts between the suspicion
+# and the look; challenge 10 seed 8: 5 cm left a suspicion beside the goal, and the leg was refused). The slope a far below-floor
+# return must clear to count is the sensor's own (plugins.tof8x8.Tof8x8.below_counts; replayed, docs/wip/SIDE-DROPS.md).
 
 
 def cell_of(x: float, y: float) -> tuple:
@@ -39,8 +29,8 @@ def cell_of(x: float, y: float) -> tuple:
 class SuspectMemory:
     """Below-floor and floor frames per cell (map frame); the cells that became suspected drops."""
 
-    def __init__(self, frames: int = SUSPECT_FRAMES, ratio: float = SUSPECT_RATIO):
-        self.frames, self.ratio = frames, ratio
+    def __init__(self, frames: int, ratio: float, clear_m: float):
+        self.frames, self.ratio, self.clear_m = frames, ratio, clear_m
         self.below, self.floor = collections.Counter(), collections.Counter()
         self.suspected = set()          # cells
         self.cleared = set()            # cells a glance saw as floor: never suspected again from the forward sensor
@@ -85,8 +75,10 @@ class SuspectMemory:
         """Suspected cells within within_m of xy, as points."""
         return [p for p in self.points() if math.dist(p, xy) <= within_m]
 
-    def clear(self, floor_points: list, within_m: float = CLEAR_M) -> int:
-        """A glance saw floor there: the suspected cells within within_m of floor_points are cleared. Returns how many."""
+    def clear(self, floor_points: list, within_m: float | None = None) -> int:
+        """A glance saw floor there: the suspected cells within within_m (clear_m unless given) of floor_points are cleared.
+        Returns how many."""
+        within_m = self.clear_m if within_m is None else within_m
         # over a copy: the depth-frame thread adds cells meanwhile (challenge 9, gate6: "Set changed size during
         # iteration"); copying a set is one C call, which that thread cannot interleave with
         gone = {c for c in set(self.suspected)

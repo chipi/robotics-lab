@@ -14,7 +14,7 @@ from pathlib import Path
 from runfile.mcapio import Follower
 
 from duck_lab import replay
-from duck_lab.nav import cliff
+from cliff_shim import cliff
 from duck_lab.nav.run import load_tof
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

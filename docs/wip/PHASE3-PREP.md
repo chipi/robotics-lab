@@ -174,6 +174,32 @@ Written as the steps land; each lists what was proved and what was not.
   profile with those; the sensor's own geometry (`cliff.py`, `side_drops.py`) is still code
   until step 3, and is compared with its module.
 
+### Step 3: the four interfaces and the duck's plugins
+
+`robots/duck/src/duck_lab/plugins/`: `interfaces.py` (the four, runtime-checkable Protocols),
+`__init__.py` (`load(profile)`: the names the profile gives, a name or version it does not
+have is an error naming it), and the duck's four, each built from the profile with its numbers
+as instance state and no socket opened at construction.
+
+| Interface | The duck's | What moved behind it (the code is the same, moved) |
+| --- | --- | --- |
+| Locomotion | `duck-walk@1` | `command`/`stop` (`robot.move`), `drive` (the kick, the slowest walk, the creep: `follow.step`'s second half), `can_pivot`, `tight_pivot_ok` (one per spot, its own state), `arc_clear` |
+| RangeSensing | `tof8x8@1` | the stream (`TofStream`), `FrameView`/`derive`, all of `cliff.py` as methods (the mount is instance state: two sensors in one process), `below_counts`, `step_check.py`'s strip and `unseen_ahead` |
+| Localisation | `mapd@1` | mapd's RPC, the odometry scale, `Localizer` (the belief), `fix`, mapd's account of itself, `grid`, `settle` (stand until mapd maps this stop), `needs_stationary` |
+| Looking | `duck-head@1` | `glance_at`'s aiming and frame collection, the head's walking command, `restore`; `capable` |
+
+What stays in the navigator, as RFC-0020 §A3 says: the hazard memory (drops, edges, suspected
+cells, the floor seen), the frames logic that moves the memory with the belief, the planner and
+the safety rules. `follow.step` keeps the path geometry (lookahead, heading error) and calls
+the plugin's `drive`. A robot that cannot look (`capable = False`) leaves the spot unseen, not
+blocked (tested with a stub). A run's `calibration` event records `profile: {id, variant,
+plugins}`.
+
+Also: `nav/cliff.py` and `nav/step_check.py` are gone (their code is `plugins/tof8x8.py`);
+`nav/decision.py` holds `decision` (plugins record decisions too); `SuspectMemory` takes its
+frames, ratio and clear distance from the profile; the probes read the sensor through
+`sim/probes/cliff_shim.py`.
+
 ## NOT VERIFIED
 
 Nothing was run, parsed or type-checked; line numbers come from delegated scans and were not

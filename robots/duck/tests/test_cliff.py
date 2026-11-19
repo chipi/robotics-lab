@@ -6,7 +6,53 @@ import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav.cliff import BEAMS, COLS, drop_ahead, drop_points, rotate, sensor_pose
+from duck_lab.plugins.tof8x8 import Tof8x8, extend_edge, rotate
+from duck_lab.profile import load
+
+P = load("real")
+S = Tof8x8(P)                   # the sensor under test: use() mounts a new one (the real duck's 3 deg axial, then others)
+BEAMS, COLS = S.beams, S.cols
+
+
+def use(pitch_offset_deg: float = 3.0, range_kind: str = "axial") -> None:
+    global S
+    S = Tof8x8(P, mount={"pitch_offset_deg": pitch_offset_deg, "range_kind": range_kind})
+
+
+def drop_ahead(*a):
+    return S.drop_ahead(*a)
+
+
+def drop_points(*a):
+    return S.drop_points(*a)
+
+
+def sensor_pose(*a):
+    return S.sensor_pose(*a)
+
+
+def _dp(*a):
+    return S.depth_points(*a)
+
+
+depth_points = _dp
+
+
+def obstacle_points(*a, **k):
+    return S.obstacle_points(*a, **k)
+
+
+def low_points(*a, **k):
+    return S.low_points(*a, **k)
+
+
+def blocking_ahead(*a):
+    return S.blocking_ahead(*a)
+
+
+def sensor_offset(*a):
+    return S.sensor_offset(*a)
+
 
 failures = []
 
@@ -87,7 +133,6 @@ believed, actual = state(pitch_deg=25.0), state(pitch_deg=22.0)
 check("flat floor seen with the head 3 deg higher than believed: no drop",
       drop_points(frame_for(actual), believed) == [], len(drop_points(frame_for(actual), believed)))
 
-from duck_lab.nav.cliff import depth_points as _dp  # noqa: E402
 
 hole_pts = _dp(side_hole(st, 0.12), st)
 check("returns from inside a hole are 'below', never 'floor' (the explorer trusts only floor)",
@@ -99,7 +144,7 @@ check("returns from inside a hole are 'below', never 'floor' (the explorer trust
 # beam's lowest point in range. depth_points gives that as a "below" point where the floor should have been, so a glance
 # traces the edge and the forward sensor suspects it (challenge 12 seed 1: every glance read "floor", and the duck
 # walked the edge for 60 s instead of refusing).
-from duck_lab.nav.cliff import EXTRA_M, NO_TARGET_RANGE_M  # noqa: E402
+EXTRA_M, NO_TARGET_RANGE_M = S.extra_m, S.range_m
 
 none_beyond = frame_for(st)
 h0, q0 = sensor_pose(st)
@@ -120,7 +165,6 @@ check("no return from beams that never meet the floor in range says nothing (not
       not any(p[3] == "below" for p in _dp(up, level_up)), sorted({p[3] for p in _dp(up, level_up)}))
 check("the range used is the simulated sensor's", NO_TARGET_RANGE_M == 4.0)
 
-from duck_lab.nav.cliff import extend_edge  # noqa: E402
 
 seen = [(0.0, -0.7), (0.1, -0.71), (0.2, -0.7)]          # 20 cm of a stairwell's edge, along x
 ext = extend_edge(seen, 0.15)
@@ -140,7 +184,6 @@ for path in sorted((Path(__file__).resolve().parents[1] / "runs").glob("tof-flat
 # Obstacle points for the reflex's memory, on the same recordings: floor is not an obstacle; the
 # doorway walls and the cabinet are (tof-flat-0 faces them from the dock, tof-flat-180 faces open
 # corridor floor).
-from duck_lab.nav.cliff import obstacle_points  # noqa: E402
 
 runs = Path(__file__).resolve().parents[1] / "runs"
 if (runs / "tof-flat-180.json").exists():
@@ -164,7 +207,6 @@ if (runs / "tof-flat-0.json").exists():
     at_trunk = copy.deepcopy(f)
     at_trunk["state"]["frames"]["tof"]["pos"] = [0.0, 0.0, f["state"]["frames"]["tof"]["pos"][2]]
     a, b = obstacle_points(f, f["state"]), obstacle_points(at_trunk, at_trunk["state"])
-    from duck_lab.nav.cliff import sensor_offset  # noqa: E402
 
     (ax_, ay_), (bx_, by_) = sensor_offset(f["state"]), sensor_offset(at_trunk["state"])
     ex, ey = ax_ - bx_, ay_ - by_
@@ -176,7 +218,6 @@ if (runs / "tof-flat-0.json").exists():
           (round(ex, 3), round(ey, 3), len(a), len(b)))
 
 # The reflex's corridor: only what the duck would walk into counts.
-from duck_lab.nav.cliff import blocking_ahead  # noqa: E402
 
 pts = [(0.25, 0.30, 0.2, "obstacle"),     # a door frame to the side: passed, not hit
        (0.40, 0.05, 0.2, "obstacle"),     # straight ahead, further on
@@ -186,7 +227,6 @@ check("blocking_ahead: the nearest obstacle in the corridor, not the nearest in 
       blocking_ahead(pts, 0.12) == 0.40 and blocking_ahead(pts[:1], 0.12) is None, blocking_ahead(pts, 0.12))
 
 # The viewer's depth points: every valid return, classified as the obstacle layer classifies them.
-from duck_lab.nav.cliff import depth_points  # noqa: E402
 
 for name in ("tof-flat-0.json", "tof-flat-180.json"):
     if (runs / name).exists():
@@ -201,7 +241,6 @@ for name in ("tof-flat-0.json", "tof-flat-180.json"):
 # The sensor as mounted (calibration "tof"). The simulator's looks 2.5 deg further down than its servo angles say and reads
 # along each ray; read with the real duck's values (3 deg, axial) its flat floor looked further away when the head looked near
 # level, and the duck stopped for drops that were not there (the challenge course, 2026-11-16).
-from duck_lab.nav import cliff  # noqa: E402
 
 SIM_TOF = json.loads((Path(__file__).resolve().parents[1] / "calibration" / "sim.json").read_text())["tof"]
 SIM_MOUNT = (SIM_TOF["pitch_offset_deg"], SIM_TOF["range"])
@@ -209,7 +248,7 @@ SIM_MOUNT = (SIM_TOF["pitch_offset_deg"], SIM_TOF["range"])
 
 def sim_frame(st, floor_until_m=None, drop_m=0.3):
     """What the simulator's sensor reports: mounted as calibration/sim.json says, the distance along each zone's ray."""
-    cliff.configure(*SIM_MOUNT)
+    use(*SIM_MOUNT)
     height, q = sensor_pose(st)
     dist = []
     for beam in BEAMS:
@@ -225,16 +264,16 @@ def sim_frame(st, floor_until_m=None, drop_m=0.3):
 
 
 try:
-    cliff.configure(0.0, "slant")
+    use(0.0, "slant")
     check("configure: an unknown range kind is refused", False)
 except ValueError:
     check("configure: an unknown range kind is refused", True)
 beam = BEAMS[0]
-cliff.configure()
-axial = cliff.along_beam(500, beam)
-cliff.configure(0.0, "radial")
+use()
+axial = S.along_beam(500, beam)
+use(0.0, "radial")
 check("along_beam: axial readings are divided by the beam's axial part, radial ones are not",
-      abs(axial - 0.5 / beam[0]) < 1e-12 and cliff.along_beam(500, beam) == 0.5, (axial, beam[0]))
+      abs(axial - 0.5 / beam[0]) < 1e-12 and S.along_beam(500, beam) == 0.5, (axial, beam[0]))
 
 def first_stop(frames, stop_m, needed):
     """The navigator's cliff stop: `needed` frames in a row with a drop, the last one's nearest within stop_m."""
@@ -251,7 +290,7 @@ def first_stop(frames, stop_m, needed):
 fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "flat_false_stops.json").read_text())
 stops = {}
 for mount in ((3.0, "axial"), SIM_MOUNT):
-    cliff.configure(*mount)
+    use(*mount)
     stops[mount] = [first_stop(r["frames"], fx["stop_m"], fx["frames_needed"]) for r in fx["runs"]]
 check(f"recorded flat floor ({len(fx['runs'])} runs): the real duck's mounting stops for a drop in every run, as it did",
       len(fx["runs"]) == 8 and all(s is not None and abs(s - r["stop_t"]) < 1e-6 for s, r in zip(stops[(3.0, "axial")], fx["runs"])),
@@ -265,16 +304,15 @@ edge = drop_points(sim_frame(st, floor_until_m=0.45), st)
 check("the simulator's floor ending 0.45 m ahead: a drop, at about 0.45 m",
       edge and 0.4 <= min(p[2] for p in edge) <= 0.55, min((p[2] for p in edge), default=None))
 shallow = sim_frame(st, floor_until_m=0.45, drop_m=0.08)
-cliff.configure(*SIM_MOUNT)
+use(*SIM_MOUNT)
 seen = len(drop_points(shallow, st))
-cliff.configure(0.0, "radial")
+use(0.0, "radial")
 blind = len(drop_points(shallow, st))
 check("an 8 cm drop 0.45 m ahead: seen with the simulator's mounting, not with no pitch offset", seen > 0 and blind == 0, (seen, blind))
-cliff.configure()
+use()
 
 # Low things: a return above the low margin and below the floor margin is in the low band, not floor and not an obstacle
 # (challenge 15 seed 1, gate6: a 6.6 cm box read as floor, passed 0.156 m from its centre and touched)
-from duck_lab.nav.cliff import low_points  # noqa: E402
 
 
 def frame_with_top(st, from_m, to_m, top_m):

@@ -109,7 +109,11 @@ from duck_lab.nav.run import Navigator  # noqa: E402
 
 
 class _Tof:
-    nearest_mm = 800
+    mm = 800
+
+    def nearest_mm(self):
+        return self.mm
+
 
 
 class _Frame:
@@ -121,14 +125,14 @@ class _Walker:
     abort = None
 
     def __init__(self):
-        self.pose, self.tof, self._fv, self.sent, self.blocked = (0.0, 0.0, 0.0), _Tof(), None, [], []
+        self.pose, self.range, self._fv, self.sent, self.blocked = (0.0, 0.0, 0.0), _Tof(), None, [], []
         self.cliff_stop_m, self.loco, self.fp = P.error_budget.cliff_stop_m, P.locomotion, P.footprint
         self.pivot_obstacle_m = P.footprint.lethal_m + P.locomotion.pivot.obstacle_margin_m
         self.drop_lethal_m, self.drop_inflate_m = P.error_budget.drop_lethal_m, P.error_budget.drop_inflate_m
         self.edge_lethal_m, self.edge_inflate_m = P.error_budget.edge_lethal_m, P.error_budget.edge_inflate_m
 
     @property
-    def loc(self):
+    def localisation(self):
         walker = self
 
         class Loc:
@@ -150,7 +154,7 @@ why = w._walk(0.0, 0.10, 0.2, 0.0, timeout_s=1e9)
 check("a creep walks 0.10 m ahead and stops with a zero command", why is None and abs(math.dist(w.pose[:2], (0, 0)) - 0.10) < 0.03
       and w.sent[-1] == Twist(), (why, w.pose))
 w = _Walker()
-w.tof.nearest_mm = 240
+w.range.mm = 240
 check("... not at all with less than 250 mm ahead", w._walk(0.0, 0.10, 0.2, 0.0, 1e9) == "no room ahead" and w.pose == (0.0, 0.0, 0.0))
 w = _Walker()
 f = _Frame()
@@ -170,12 +174,12 @@ w = _Walker()
 
 class _Closing:
     """A sensor whose nearest return falls 2 m per m walked (a wall ahead, close)."""
-    @property
+
     def nearest_mm(self):
         return 300 - 2000 * w.pose[0]
 
 
-w.tof = _Closing()
+w.range = _Closing()
 why = w._walk(0.0, 0.10, 0.2, 0.0, 1e9)
 check("a creep stops when the sensor shows less than the footprint and margin plus what is left to go (150 mm + the rest)",
       why == "no room ahead" and 0.04 < w.pose[0] < 0.09 and w.sent[-1] == Twist(), (why, w.pose))
@@ -207,7 +211,7 @@ class _Recoverer(_Walker):
 
     def __init__(self, points=()):
         super().__init__()
-        self.blocked, self.drops, self.edges, self.suspects, self.rows, self.surveys = list(points), [], [], SuspectMemory(), [], 0
+        self.blocked, self.drops, self.edges, self.suspects, self.rows, self.surveys = list(points), [], [], SuspectMemory(P.sensors.tof8x8.side_drops.suspect_frames, P.sensors.tof8x8.side_drops.suspect_ratio, P.sensors.tof8x8.side_drops.clear_m), [], 0
         self.semantic_points = lambda: []
 
     def grid(self):
@@ -223,19 +227,19 @@ class _Recoverer(_Walker):
 
 
 rc = _Recoverer([(-0.04, 0.132)])                   # b11 r5's shape: a point 0.138 m behind-left, room ahead
-rc.tof.nearest_mm = 283
+rc.range.mm = 283
 out = rc.recover(0)
 ev = rc.rows[-1]
 check("recover on a pose with 283 mm ahead and 0.138 m of room that a creep takes to 0.178: a creep, then a survey, one event",
       out["action"] == "creep" and rc.surveys == 1 and ev["event"] == "recovery" and ev["action"] == "creep"
       and ev["moved_m"] > 0.05 and ev["room_ahead_m"] > ev["room_m"] and ev["nearest_mm"] == 283, ev)
 rc = _Recoverer([(0.12, -0.05), (0.10, -0.08)])      # b11 r3's shape: the memory is ahead-right, a creep walks into it
-rc.tof.nearest_mm = 283
+rc.range.mm = 283
 out = rc.recover(0)
 check("... with the memory ahead (a creep would take the room from 0.12 to 0.09 m): the survey alone, no motion",
       out["action"] == "stand" and rc.surveys == 1 and rc.pose == (0.0, 0.0, 0.0) and rc.rows[-1]["moved_m"] == 0.0, rc.rows[-1])
 rc = _Recoverer([(0.0, 0.3)])
-rc.tof.nearest_mm = 600
+rc.range.mm = 600
 rc.drops = [(0.0, 0.4)]
 out = rc.recover(1)
 check("attempt 1 with room and a drop 0.4 m to the left: an arc to the right, away from it", out["action"] == "arc"

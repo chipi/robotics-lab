@@ -6,6 +6,7 @@ import sys
 
 from duck_lab.nav.follow import FollowState, step
 from duck_lab.nav.grid import LETHAL_COST, MARGIN_COST, CostGrid, plan, thin
+from duck_lab.plugins.duck_walk import DuckWalk
 from duck_lab.profile import load
 
 P = load("sim")
@@ -13,7 +14,8 @@ LETHAL_M, INFLATE_M = P.footprint.lethal_m, P.footprint.inflate_m
 DROP_LETHAL_M, DROP_INFLATE_M = P.error_budget.drop_lethal_m, P.error_budget.drop_inflate_m
 FIX = P.localisation.fix
 grid_of = functools.partial(CostGrid.from_map_grid, lethal_m=LETHAL_M, inflate_m=INFLATE_M)
-walk = functools.partial(step, loco=P.locomotion)
+walk = functools.partial(step, loco=P.locomotion, walker=DuckWalk(P, pivot_vx=0.0))     # a pivot with no creep
+walk_b = functools.partial(step, loco=P.locomotion, walker=DuckWalk(P, pivot_vx=-0.06))      # a robot whose pivot creeps forward
 
 failures = []
 
@@ -120,12 +122,12 @@ check("room to pivot: the turn stays on the spot", tw_piv.vx == 0.0, tw_piv)
 # A robot whose pivot creeps forward (the simulator: calibration/sim.json "pivot") turns stepping back against it; an arc
 # and a walk are not changed by it.
 st_b = FollowState()
-tw_b, _ = walk(path, (0.0, 0.0, math.radians(120)), 60.0, st_b, pivot_vx=-0.06)
-tw_b2, _ = walk(path, (0.0, 0.0, math.radians(100)), 61.5, st_b, pivot_vx=-0.06)
+tw_b, _ = walk_b(path, (0.0, 0.0, math.radians(120)), 60.0, st_b)
+tw_b2, _ = walk_b(path, (0.0, 0.0, math.radians(100)), 61.5, st_b)
 check("a pivot kicks standing (vx 0) and holds with the robot's pivot speed", tw_b.vx == 0.0 and tw_b2.vx == -0.06
       and (tw_b.vyaw, tw_b2.vyaw) == (-1.2, -0.8), (tw_b, tw_b2))
-tw_ba, _ = walk(path, (0.0, 0.0, math.radians(120)), 62.0, FollowState(), pivot_ok=False, pivot_vx=-0.06)
-tw_bw, _ = walk(path, (0.0, 0.0, 0.0), 63.0, FollowState(), pivot_vx=-0.06)
+tw_ba, _ = walk_b(path, (0.0, 0.0, math.radians(120)), 62.0, FollowState(), pivot_ok=False)
+tw_bw, _ = walk_b(path, (0.0, 0.0, 0.0), 63.0, FollowState())
 check("an arc and a walk ignore the pivot speed", tw_ba.vx == 0.2 and tw_bw.vx == 0.3, (tw_ba, tw_bw))
 # Turning hard within an obstacle's margin, the duck walks slower (RFC-0012's caution pace): the apartment's goal 12
 # (2026-11-17) cut the office cabinet's corner at 0.3 m/s turning 0.5-0.8 rad/s, 7 cm from it against the 12 cm margin.
@@ -411,12 +413,12 @@ check("held off with room_m: a point with room to turn", roomy is not None and _
 check("... and none within reach with room: no hold-off", nearest_free(shelf, inside_goal, 0.1, room_m=0.17) is None)
 
 # mapd's own account (RFC-0019): its lost reason and counters recorded when they change, so a jump can be read against it.
-from duck_lab.nav.run import Navigator  # noqa: E402
+from duck_lab.plugins.mapd import Mapd  # noqa: E402
 
 
 class _Nav:
     def __init__(self):
-        self.rows, self.loc = [], Localizer(FIX)
+        self.rows, self.mapd = [], Mapd(P)
 
     def record(self, **row):
         self.rows.append(row)
@@ -424,12 +426,12 @@ class _Nav:
 
 w = _Nav()
 ok_st = {"state": {"pose": {"x": 0, "y": 0, "yaw": 0}}, "loops": 0, "relocalizations": 0, "island_keyframes": 0}
-Navigator._watch_mapd(w, ok_st)
-Navigator._watch_mapd(w, ok_st)
+w.mapd._watch(ok_st, w.record)
+w.mapd._watch(ok_st, w.record)
 check("mapd tracking quietly: nothing recorded", w.rows == [], w.rows)
-Navigator._watch_mapd(w, {"state": {"lost": "bumped"}, "loops": 0, "relocalizations": 0, "island_keyframes": 0})
-Navigator._watch_mapd(w, {"state": {"pose": {"x": 0.9, "y": 0, "yaw": 0}}, "loops": 0, "relocalizations": 1,
-                          "island_keyframes": 0})
+w.mapd._watch({"state": {"lost": "bumped"}, "loops": 0, "relocalizations": 0, "island_keyframes": 0}, w.record)
+w.mapd._watch({"state": {"pose": {"x": 0.9, "y": 0, "yaw": 0}}, "loops": 0, "relocalizations": 1,
+                 "island_keyframes": 0}, w.record)
 check("mapd lost (bumped), then found again by a relocalization: both recorded, with what changed",
       [(r["event"], r["lost"], r["relocalizations"], r["changed"]) for r in w.rows]
       == [("mapd_status", "bumped", 0, ["lost"]), ("mapd_status", None, 1, ["lost", "relocalizations"])], w.rows)

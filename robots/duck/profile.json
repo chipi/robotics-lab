@@ -80,7 +80,8 @@
         "measured": "not measured on the real duck: mapd's own settings (maploc/src/project.rs: ranges along the optical axis, the sensor about 3 deg further down than the head's kinematics say)",
         "why": "The real duck keeps mapd's 3 deg and axial ranges (cliff.py's defaults); whether the real sensor's ranges are axial is not checked here."
       },
-      "side_drops": {"cell_m": 0.05, "below_slope": 0.035, "suspect_frames": 5, "suspect_ratio": 3.0, "clear_m": 0.10}
+      "floor_view": {"from_m": 0.20, "to_m": 0.40, "half_width_m": 0.10},
+      "side_drops": {"below_slope": 0.035, "suspect_frames": 5, "suspect_ratio": 3.0, "clear_m": 0.10}
     }
   },
   "looking": {

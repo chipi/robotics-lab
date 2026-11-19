@@ -3,7 +3,12 @@
 import math
 import sys
 
-from duck_lab.nav.step_check import FROM_M, HALF_WIDTH_M, TO_M, strip, unseen_ahead
+from duck_lab.plugins.tof8x8 import Tof8x8
+from duck_lab.profile import load
+
+SENSOR = Tof8x8(load("sim"))
+FROM_M, TO_M, HALF_WIDTH_M = SENSOR.view.from_m, SENSOR.view.to_m, SENSOR.view.half_width_m
+strip, unseen_ahead = SENSOR.strip, SENSOR.unseen_ahead
 
 failures = []
 

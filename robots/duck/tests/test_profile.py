@@ -1,12 +1,11 @@
 """The duck's profile (RFC-0020, robots/duck/profile.json) and its validator (runfile.profile).
 
 Two halves. The profile loaded in the simulator's variant is compared number by number with the value of the constant it replaced
-(RFC-0020 step 1 compared it with the constants themselves; step 2 took them out of the navigator, so the table below holds each
-constant's value as it was, with where it was), and, for the measured ones, with robots/duck/calibration/sim.json, `measured` and
-`why` verbatim. The sensor's own geometry (cliff.py, side_drops.py, sim_camera.py) is still code until step 3: those are compared with
-the module's constants. Every number of the profile must have an expected value here, and every expected value must be in the
-profile, so a number added to either side fails. Then the validator's rules, each with the profile broken in one place and the error
-read for its path.
+(RFC-0020 step 1 compared it with the constants themselves; steps 2 and 3 took them out of the navigator and the plugins, so the
+table below holds each constant's value as it was, with where it was), and, for the measured ones, with robots/duck/calibration/
+sim.json, `measured` and `why` verbatim. The simulated camera's fidelity is also compared with sim_camera.DEFAULTS. Every number of
+the profile must have an expected value here, and every expected value must be in the profile, so a number added to either side
+fails. Then the validator's rules, each with the profile broken in one place and the error read for its path.
 """
 
 import copy
@@ -15,7 +14,7 @@ import math
 import sys
 from pathlib import Path
 
-from duck_lab.nav import cliff, run, side_drops
+from duck_lab.nav import run
 from duck_lab.nav.sim_camera import DEFAULTS as CAMERA_DEFAULTS
 from runfile.profile import FormatError, Profile, load_profile, merge_variant, numbers, validate_profile
 from worldmodel.objects import DUCK_LIMITS
@@ -101,15 +100,17 @@ OLD = {
     },
     "sensors": {
         "tof8x8": {
-            "fov_deg": cliff.FOV_DEG, "rows": cliff.ROWS, "cols": cliff.COLS, "valid_status": sorted(cliff.VALID),
-            "no_target_status": cliff.NO_TARGET, "range_m": cliff.NO_TARGET_RANGE_M, "look_m": cliff.LOOK_M, "extra_m": cliff.EXTRA_M,
-            "min_zones": cliff.MIN_ZONES, "floor_margin_m": cliff.FLOOR_MARGIN_M, "floor_margin_per_m": cliff.FLOOR_MARGIN_PER_M,
-            "low_margin_m": cliff.LOW_MARGIN_M, "low_margin_per_m": cliff.LOW_MARGIN_PER_M,
+            "fov_deg": 45.0, "rows": 8, "cols": 8, "valid_status": [5, 9],                      # cliff.FOV_DEG, ROWS = COLS, VALID
+            "no_target_status": 255, "range_m": 4.0,                                          # cliff.NO_TARGET, NO_TARGET_RANGE_M
+            "look_m": 0.7, "extra_m": 0.06, "min_zones": 2,                                   # cliff.LOOK_M, EXTRA_M, MIN_ZONES
+            "floor_margin_m": 0.08, "floor_margin_per_m": 0.03,                               # cliff.FLOOR_MARGIN_M, FLOOR_MARGIN_PER_M
+            "low_margin_m": 0.035, "low_margin_per_m": 0.02,                                  # cliff.LOW_MARGIN_M, LOW_MARGIN_PER_M
             "emergency_mm": 150,                                       # run.EMERGENCY_MM
             "reflex_ahead_m": 0.30, "reflex_margin_m": 0.04,           # run.REFLEX_AHEAD_M; run.REFLEX_HALF_W_M = 0.083 + 0.04
             "mount": {"pitch_offset_deg": SIM_JSON["tof"]["pitch_offset_deg"]},
-            "side_drops": {"cell_m": side_drops.CELL_M, "below_slope": side_drops.BELOW_SLOPE, "suspect_frames": side_drops.SUSPECT_FRAMES,
-                           "suspect_ratio": side_drops.SUSPECT_RATIO, "clear_m": side_drops.CLEAR_M},
+            "floor_view": {"from_m": 0.20, "to_m": 0.40, "half_width_m": 0.10},                # step_check.FROM_M, TO_M, HALF_WIDTH_M
+            "side_drops": {"below_slope": 0.035, "suspect_frames": 5,                          # side_drops.BELOW_SLOPE, SUSPECT_FRAMES
+                           "suspect_ratio": 3.0, "clear_m": 0.10},                                 # SUSPECT_RATIO, CLEAR_M
         },
         "camera": {k: v for k, v in CAMERA_DEFAULTS.items()},
     },
@@ -133,7 +134,7 @@ OLD = {
         "landmarks": vars(DUCK_LANDMARKS),
     },
     "error_budget": {"cliff_stop_m": 0.60,                                             # run.CLIFF_STOP_M
-                     "corridor_m": cliff.CORRIDOR_DROP_M,                              # (cliff.py: sensor code until step 3)
+                     "corridor_m": 0.25,                                               # cliff.CORRIDOR_DROP_M
                      "drop_lethal_m": 0.35, "drop_inflate_m": 0.55,                    # grid.DROP_LETHAL_M, DROP_INFLATE_M
                      "edge_lethal_m": 0.32, "edge_inflate_m": 0.50,                    # run.EDGE_LETHAL_M, EDGE_INFLATE_M
                      "confirm_m": 0.9, "glanced_m": 0.4, "absorb_m": 0.15,             # run.CONFIRM_M, GLANCED_M, ABSORB_M
@@ -163,7 +164,7 @@ check("the turn thresholds in degrees are the radians the constants were, to the
       and math.radians(SIM.looking.survey_step_deg) == math.pi / 2)
 check("the head joints are the code's four, and the sensor's valid statuses are the code's",
       tuple(SIM.looking.head_joints) == ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
-      and set(tof.valid_status) == cliff.VALID == run.VALID_STATUS)
+      and set(tof.valid_status) == {5, 9})
 check("the world model library's duck limits are the profile's (until a second robot passes its own)",
       (SIM.locomotion.step_over_m, SIM.footprint.overhead_clear_m, SIM.footprint.standoff_m, SIM.error_budget.assoc_m,
        SIM.error_budget.unique_m) == (DUCK_LIMITS.walk_over_m, DUCK_LIMITS.overhead_m, DUCK_LIMITS.stand_m, DUCK_LIMITS.assoc_m,
