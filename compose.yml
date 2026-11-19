@@ -7,4 +7,4 @@
 name: robotics-lab
 include:
   - viewer/compose.yml
-  - control/compose.yml
+  - apps/mission-control/compose.yml

@@ -1,9 +1,9 @@
 # The build context is the repository root (the image installs the libraries (libs/) and the duck package beside Mission Control): only what
 # the Dockerfile copies goes in.
 *
-!control/pyproject.toml
-!control/uv.lock
-!control/src
+!apps/mission-control/pyproject.toml
+!apps/mission-control/uv.lock
+!apps/mission-control/src
 !duck/pyproject.toml
 !duck/src
 !libs/runfile/pyproject.toml

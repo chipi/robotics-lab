@@ -1,13 +1,13 @@
 # Mission Control's service (RFC-0014 §3.13). Published on loopback only; to reach it from the tailnet put the tailnet address
 # in MC_BIND. The robot files are mounted read only, the state (the SQLite store and the gates' logs) is a folder on the host.
 # MC_ROBOTS_DIR and MC_STATE_DIR are the host's folders; the workstation's paths are the defaults here only.
-# Memory is capped (MC_MEM, default 512m); the image is built from control/Dockerfile with the versions of control/uv.lock.
+# Memory is capped (MC_MEM, default 512m); the image is built from apps/mission-control/Dockerfile with the versions of apps/mission-control/uv.lock.
 name: mission-control
 services:
   mission-control:
     build:
-      context: ..
-      dockerfile: control/Dockerfile
+      context: ../..
+      dockerfile: apps/mission-control/Dockerfile
     image: "mission-control:${MC_IMAGE_TAG:-local}"
     user: "${MC_UID:-1000}:${MC_GID:-1000}"
     ports:

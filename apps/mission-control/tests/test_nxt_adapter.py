@@ -22,7 +22,7 @@ from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 NXT_WEB = os.environ.get("NXT_WEB", str(ROOT / "nxt" / ".venv" / "bin" / "nxt-web"))
 if not Path(NXT_WEB).exists():
     print(f"FAIL test_nxt_adapter: {NXT_WEB} is missing (make nxt-sync)")
@@ -70,7 +70,7 @@ def _try(fn):
 
 check("nxt-web --fake is up", wait(lambda: _try(lambda: nxt("GET", "/api/status")[1].get("connected")), 20) and nxt("GET", "/api/status")[1]["fake"] is True)
 
-FILE = json.loads((ROOT / "control" / "robots.nxt" / "nxt-1.json").read_text())
+FILE = json.loads((ROOT / "apps" / "mission-control" / "robots.nxt" / "nxt-1.json").read_text())
 FILE["adapter"]["url"] = NXT
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)

@@ -233,7 +233,7 @@ wheels = [
 [[package]]
 name = "duck-lab"
 version = "0.1.0"
-source = { editable = "../duck" }
+source = { editable = "../../duck" }
 dependencies = [
     { name = "mcap" },
     { name = "robotgate" },
@@ -244,9 +244,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mcap", specifier = ">=1.2" },
-    { name = "robotgate", editable = "../libs/gate" },
-    { name = "runfile", editable = "../libs/runfile" },
-    { name = "worldmodel", editable = "../libs/worldmodel" },
+    { name = "robotgate", editable = "../../libs/gate" },
+    { name = "runfile", editable = "../../libs/runfile" },
+    { name = "worldmodel", editable = "../../libs/worldmodel" },
 ]
 
 [package.metadata.requires-dev]
@@ -531,9 +531,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duck-lab", editable = "../duck" },
+    { name = "duck-lab", editable = "../../duck" },
     { name = "mcp", specifier = ">=2.3.0" },
-    { name = "robotgate", editable = "../libs/gate" },
+    { name = "robotgate", editable = "../../libs/gate" },
 ]
 
 [[package]]
@@ -840,7 +840,7 @@ wheels = [
 [[package]]
 name = "robotgate"
 version = "0.1.0"
-source = { editable = "../libs/gate" }
+source = { editable = "../../libs/gate" }
 
 [[package]]
 name = "rpds-py"
@@ -1110,7 +1110,7 @@ wheels = [
 [[package]]
 name = "runfile"
 version = "0.1.0"
-source = { editable = "../libs/runfile" }
+source = { editable = "../../libs/runfile" }
 dependencies = [
     { name = "foxglove-schemas-protobuf" },
     { name = "mcap" },
@@ -1239,7 +1239,7 @@ wheels = [
 [[package]]
 name = "worldmodel"
 version = "0.1.0"
-source = { editable = "../libs/worldmodel" }
+source = { editable = "../../libs/worldmodel" }
 
 [[package]]
 name = "zstandard"

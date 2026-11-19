@@ -31,7 +31,7 @@ from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 

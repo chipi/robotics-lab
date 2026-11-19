@@ -40,7 +40,7 @@ NXT_DATA       ?= nxt-web-data
 DUCK_DIR       := duck
 VIEWER_DIR     := viewer
 VIEWER_IMAGE   ?= miniview:ci
-CONTROL_DIR    := control
+CONTROL_DIR    := apps/mission-control
 CONTROL_PORT   ?= 8060
 CONTROL_STATE  ?= /work/robotics-lab/state/control
 
@@ -253,7 +253,7 @@ sim-duck: control-sync ## NOT in CI: Mission Control on the real simulator: the 
 	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_duck.py $(ARGS)
 
 .PHONY: control-run
-control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (control/robots.example), state in $(CONTROL_STATE)
+control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (apps/mission-control/robots.example), state in $(CONTROL_STATE)
 	@mkdir -p $(CONTROL_STATE)
 	cd $(CONTROL_DIR) && exec uv run --frozen mission-control serve --robots robots.example --state $(CONTROL_STATE) --host 127.0.0.1 --port $(CONTROL_PORT)
 

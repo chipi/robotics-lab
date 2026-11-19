@@ -11,10 +11,10 @@ dependencies = [
 
 # The gate (RFC-0017) is a library (libs/gate), a path source like the run format, so there is one copy of the rules.
 [tool.uv.sources]
-duck-lab = { path = "../duck", editable = true }
-robotgate = { path = "../libs/gate", editable = true }
-runfile = { path = "../libs/runfile", editable = true }
-worldmodel = { path = "../libs/worldmodel", editable = true }
+duck-lab = { path = "../../duck", editable = true }
+robotgate = { path = "../../libs/gate", editable = true }
+runfile = { path = "../../libs/runfile", editable = true }
+worldmodel = { path = "../../libs/worldmodel", editable = true }
 
 [project.scripts]
 mission-control = "mission_control.cli:main"

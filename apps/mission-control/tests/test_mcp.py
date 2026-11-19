@@ -1,4 +1,4 @@
-"""The MCP server (RFC-0014 §3.2, §3.8, §3.9; control/src/mission_control/mcp_server.py), driven as an MCP client would
+"""The MCP server (RFC-0014 §3.2, §3.8, §3.9; apps/mission-control/src/mission_control/mcp_server.py), driven as an MCP client would
 drive it: in-process for the tools, and once over stdio as a subprocess for the transport. Behind it a real Mission Control
 on the real clock with the fake robot. The refusals are tested as hard as the tools: no firing (O21), no takeover, no
 areas, no real robot, and that the allow-list is the only way out of the process.
