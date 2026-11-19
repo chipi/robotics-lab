@@ -132,11 +132,17 @@ What exists or is planned, and what an arena adds:
 | A scoreboard | none | new: runs, scores, replays, per course and per robot |
 | Real-world runs | none | rules for safety and for an observer's truth |
 
-## 6. Open questions
+## 6. Questions, answered by the operator (2026-11-19)
 
 1. Pollen: offer the league to them, or start as an independent community project and invite them?
-2. Simulator first only, or real homes from the start for those with a duck?
+   **Start independent, and offer it to Pollen.**
+2. Simulator first only, or real homes from the start for those with a duck? **The simulator to
+   start; an idea of how to make real courses** (to work out).
 3. Where the arena lives: a hosted site, or a kit anyone runs locally with a shared scoreboard?
+   **Hosted: we build it and host it.**
 4. What a "submission" is: a plugin package, a container, or a client of Mission Control's API?
+   **Open: something to think through.**
 5. How to keep it fair across bodies: one score with the profile's handicap, or leagues per body
-   class?
+   class? **Start with Pollen's duck (one body); think it through when the LEGO robots join.**
+
+Not planned work: this waits until the operator picks it up (apartment first).
