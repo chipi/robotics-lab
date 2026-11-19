@@ -125,6 +125,30 @@ the operator's word).
 4. The phantom cluster by the dock: investigate it first; it may also explain early "no room to
    turn" (it is near where every run starts).
 
+## Results of stream A (RFC-0020, steps 1–3), branch `p3-profiles`
+
+Written as the steps land; each lists what was proved and what was not.
+
+### Step 1: the schema, the validator, the duck's profile
+
+- `libs/runfile/src/runfile/profile.py`: the validator. Unknown fields are errors at every
+  level; `plugins` names every interface the blocks need; a number that differs between
+  variants needs `measured` and `why` in its block; cruise ≤ the factsheet's maximum speed,
+  slowest ≤ cruise, the turn limits ≤ the maximum angular speed, radius ≤ lethal ≤ inflate,
+  the `max_speed` guardrail ≤ the maximum; every error names its path. It holds Mission
+  Control's factsheet and control parsers, which `robotfile.py` there now re-exports
+  (`scripts/check_boundaries.py` lets `mission_control` import `runfile`).
+- `robots/duck/profile.json`: one profile, variants `sim` and `real`. The simulator's measured
+  numbers (odometry scale and by speed, pivot creep, the depth sensor's mount) keep `measured`
+  and `why` verbatim from `calibration/sim.json`. The base holds the real duck's values (no
+  creep, mapd's 3° axial mount, no odometry scale); `real` is empty, `sim` lays the measured
+  numbers on it.
+- `robots/duck/tests/test_profile.py`: every number of the profile (140) compared with the
+  constant it replaces, exactly, both directions (a number with no expected value fails, an
+  expected value missing from the profile fails). Derived values (`LETHAL_M + 0.05`,
+  `0.083 + 0.04`, the radians) are checked to the last bit; `measured` and `why` against
+  `sim.json`; one case per rule.
+
 ## NOT VERIFIED
 
 Nothing was run, parsed or type-checked; line numbers come from delegated scans and were not
