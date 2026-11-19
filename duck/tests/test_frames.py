@@ -9,8 +9,8 @@ from duck_lab.nav.frames import MOVE_M, Localizer, compose, move_grid, move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid
 from duck_lab.nav.run import LOW_CELL_M, Navigator
 from duck_lab.nav.side_drops import SuspectMemory
-from duck_lab.world_model.objects import Part, load_kinds
-from duck_lab.world_model.semantic_map import SemanticMap, Tracked
+from worldmodel.objects import Part, load_kinds
+from worldmodel.semantic_map import SemanticMap, Tracked
 
 failures = []
 NS = 1_000_000_000

@@ -88,10 +88,10 @@ got = run(lambda r: (project(r, "apps/mission-control", "mission_control", {"duc
 check("a listed exception passes, the same import elsewhere fails", len(got) == 1 and "other.py" in got[0], got)
 
 # a baseline entry lets a breach through, and fails when it is no longer needed
-base = {"duck_lab.world_model.objects": {"duck_lab"}}
-got = run(lambda r: project(r, "robots/duck", "duck_lab", {"world_model/objects.py": "from duck_lab.nav.cliff import OVERHEAD_M\n"}), baseline=base)
+base = {"worldmodel.objects": {"duck_lab"}}
+got = run(lambda r: project(r, "libs/worldmodel", "worldmodel", {"objects.py": "from duck_lab.nav.cliff import OVERHEAD_M\n"}), baseline=base)
 check("a baseline entry lets its breach through", got == [], got)
-got = run(lambda r: project(r, "robots/duck", "duck_lab", {"world_model/objects.py": "OVERHEAD_M = 0.3\n"}), baseline=base)
+got = run(lambda r: project(r, "libs/worldmodel", "worldmodel", {"objects.py": "OVERHEAD_M = 0.3\n"}), baseline=base)
 check("a baseline entry that no longer breaks the table is a failure (the list only shrinks)", len(got) == 1 and "BASELINE" in got[0], got)
 
 # a path source is held to the table

@@ -11,8 +11,8 @@ from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
 from duck_lab.nav.rooms import ROOMS
-from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.site import Site
+from worldmodel.objects import load_kinds
+from worldmodel.site import Site
 
 # the operator's data, not the repository's (git-ignored); DUCK_SITES for another folder (a container's volume)
 SITES = Path(os.environ.get("DUCK_SITES", Path(__file__).resolve().parents[2] / "sites"))

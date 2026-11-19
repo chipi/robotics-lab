@@ -31,7 +31,6 @@ MODULES = {
     "nxt_lab": "nxt_lab",
     "duck_lab": "duck_lab",
     "miniview": "observatory",
-    "duck_lab.world_model": "worldmodel",
 }
 
 # who may import whom, in a project's source: libraries import no other unit, apps never import apps, robots never apps

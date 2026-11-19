@@ -7,9 +7,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.semantic_map import CONFIRM_N, Detection, SemanticMap
-from duck_lab.world_model.site import Site
+from worldmodel.objects import load_kinds
+from worldmodel.semantic_map import CONFIRM_N, Detection, SemanticMap
+from worldmodel.site import Site
 
 failures = []
 

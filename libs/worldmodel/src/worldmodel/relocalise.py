@@ -16,7 +16,7 @@ What it corrects is the belief's position, not its heading, and not mapd's grid:
 import math
 from dataclasses import dataclass, field
 
-from duck_lab.world_model.semantic_map import SemanticMap
+from worldmodel.semantic_map import SemanticMap
 
 MATCH_M = 1.0              # a sighting is of an anchor this close to where the belief places it; farther, no match
 RANGE_M = 1.2              # only sightings from this near count: the placement's error grows with the range

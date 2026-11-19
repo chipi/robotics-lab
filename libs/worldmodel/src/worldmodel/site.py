@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from duck_lab.world_model.semantic_map import ASSOC_M, CONFIRM_N, UNIQUE_M, SemanticMap
+from worldmodel.semantic_map import ASSOC_M, CONFIRM_N, UNIQUE_M, SemanticMap
 
 
 def inside(xy: tuple, polygon: list) -> bool:

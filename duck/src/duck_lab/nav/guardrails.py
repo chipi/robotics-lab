@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 from duck_lab.nav.evaluate import FALLEN_Z_M, FOOTPRINT_M, LAYOUT, footprint_distance, obstacles
-from duck_lab.world_model.site import inside
+from worldmodel.site import inside
 
 WATCH_S = 0.05
 KEEPOUT_SPACING_M = 0.05

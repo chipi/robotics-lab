@@ -22,9 +22,9 @@ from duck_lab.nav import recovery
 from duck_lab.nav.run import EDGE_INFLATE_M, EDGE_LETHAL_M, PIVOT_DROP_M, PIVOT_OBSTACLE_M, Navigator, decision
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.nav.run import CALIBRATION
-from duck_lab.world_model.objects import load_kinds
+from worldmodel.objects import load_kinds
 from duck_lab.site_cli import SITES
-from duck_lab.world_model.site import Site
+from worldmodel.site import Site
 from duck_lab.nav.sim_camera import SimCamera
 
 SURVEY_STEPS = 4            # a full turn in 90 deg steps: the depth sensor sees a 45 deg wedge
@@ -322,7 +322,7 @@ def main() -> None:
     ap.add_argument("--minutes", type=float, default=20.0)
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
     ap.add_argument("--find", metavar="KIND", help="explore until an object of this kind is found, then go to it "
-                    "(RFC-0016; kinds: duck_lab/world_model/kinds.json), e.g. fridge")
+                    "(RFC-0016; kinds: libs/worldmodel/src/worldmodel/kinds.json), e.g. fridge")
     ap.add_argument("--inventory", action="store_true", help="the goal is to find all objects: explore, then say what "
                     "is where (inventory.json is written whenever the objects are on)")
     ap.add_argument("--no-objects", action="store_true", help="no simulated camera and no semantic map")

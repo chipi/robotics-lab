@@ -12,7 +12,7 @@ changes only after it wins ROOM_TICKS looks in a row), an object by kind, and wh
 import math
 from dataclasses import dataclass, field
 
-from duck_lab.world_model.objects import Part, blocking, distance
+from worldmodel.objects import Part, blocking, distance
 
 ASSOC_M = 0.5              # a detection this close to a tracked object of its kind is that object
 UNIQUE_M = 1.5             # ... for a kind the home has one of: drift between two sightings of the fridge

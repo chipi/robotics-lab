@@ -272,7 +272,7 @@ try:
     # --- guardrails, enforced in the real navigator (RFC-0014 section 3.4.8) -----------------------------------
     def watch_truth(rid, timeout, inside_of=None):
         """Follow a run by the truth until it ends: (the peak speed over 0.5 s windows, whether the trunk was ever inside a polygon, the run)."""
-        from duck_lab.world_model.site import inside
+        from worldmodel.site import inside
         peak, entered, last, end = 0.0, False, None, time.monotonic() + timeout
         while time.monotonic() < end:
             p, now = body.pose(), time.monotonic()

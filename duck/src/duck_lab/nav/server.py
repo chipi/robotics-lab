@@ -39,9 +39,9 @@ from duck_lab.nav.guardrails import Guard
 from duck_lab.nav.run import CALIBRATION, Navigator, decision
 from duck_lab.nav.runlog import RunLog
 from duck_lab.nav.sim_camera import SimCamera
-from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.semantic_map import CONFIRM_N, SemanticMap
-from duck_lab.world_model.site import Area, inside
+from worldmodel.objects import load_kinds
+from worldmodel.semantic_map import CONFIRM_N, SemanticMap
+from worldmodel.site import Area, inside
 
 GOAL_KINDS = ("point", "go_to_object", "go_to_area", "explore", "inventory")
 TERMINAL = ("reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted")

@@ -7,12 +7,14 @@ dependencies = [
     "mcap>=1.2",
     "robotgate",
     "runfile",
+    "worldmodel",
 ]
 
 # The navigator writes its runs as miniview runs (ADR-0014): the run format is a path source (libs/runfile), not a release.
 [tool.uv.sources]
 robotgate = { path = "../libs/gate", editable = true }
 runfile = { path = "../libs/runfile", editable = true }
+worldmodel = { path = "../libs/worldmodel", editable = true }
 
 [project.scripts]
 duck-record = "duck_lab.record:main"

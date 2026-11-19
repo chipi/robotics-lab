@@ -13,7 +13,7 @@ left), for the beams that found none.
 
 import math
 
-from duck_lab.world_model.objects import OVERHEAD_M
+from worldmodel.objects import OVERHEAD_M
 
 FOV_DEG = 45.0
 ROWS = COLS = 8

@@ -1,5 +1,5 @@
 {
-  "about": "The simulated apartment's objects (RFC-0016): each an id, a kind (duck_lab/world_model/kinds.json) and the layout's geoms that make it (sim/apartment_layout.json). Walls, floors and stairs are not objects. The lm_* markers are Pollen's per-room landmarks (visual only in the simulator; here they are objects like any other: the depth sensor sees them).",
+  "about": "The simulated apartment's objects (RFC-0016): each an id, a kind (libs/worldmodel/src/worldmodel/kinds.json) and the layout's geoms that make it (sim/apartment_layout.json). Walls, floors and stairs are not objects. The lm_* markers are Pollen's per-room landmarks (visual only in the simulator; here they are objects like any other: the depth sensor sees them).",
   "objects": {
     "kit_counter":   {"kind": "counter",        "parts": ["kit_counter"]},
     "kit_fridge":    {"kind": "fridge",         "parts": ["kit_fridge"]},

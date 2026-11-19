@@ -5,8 +5,8 @@ import math
 import sys
 
 from duck_lab.nav.evaluate import LAYOUT, obstacles
-from duck_lab.world_model.objects import Part, load_kinds, part_from_geom
-from duck_lab.world_model.semantic_map import CONFIRM_N, Detection, SemanticMap
+from worldmodel.objects import Part, load_kinds, part_from_geom
+from worldmodel.semantic_map import CONFIRM_N, Detection, SemanticMap
 from duck_lab.nav.sim_camera import SimCamera
 
 failures = []
@@ -159,7 +159,7 @@ check("the judge counts the six lm_* landmarks as obstacles", {f"lm_{r}" for r i
       ("kitchen", "living", "corridor", "bedroom", "office", "bath")} <= names, sorted(n for n in names if n.startswith("lm")))
 
 # ---- forgetting what is expected in view and not seen (RFC-0016 §4) ------------------------------------------------
-from duck_lab.world_model.semantic_map import FORGET_N  # noqa: E402
+from worldmodel.semantic_map import FORGET_N  # noqa: E402
 
 ORIGIN = (0.0, 0.0, 0.0)
 
@@ -218,7 +218,7 @@ fm.integrate([det("stool", 1.5, 0.0, 0.15, 0.6)], ORIGIN, 99.0)
 check("... and seen again, the flag clears", not fm.objects[0].missing and fm.objects[0].misses == 0)
 
 # ---- landmark relocalisation (RFC-0016 §4) ---------------------------------------------------------------------------
-from duck_lab.world_model.relocalise import MAX_STEP_M, Relocaliser  # noqa: E402
+from worldmodel.relocalise import MAX_STEP_M, Relocaliser  # noqa: E402
 
 
 def fridge_site():

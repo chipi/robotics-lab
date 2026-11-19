@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 from duck_lab.nav.frames import OFFSET_HALF_S, OFFSET_MAX_M, compose, inverse
-from duck_lab.world_model.objects import load_kinds
-from duck_lab.world_model.relocalise import Relocaliser
-from duck_lab.world_model.semantic_map import Detection, SemanticMap
+from worldmodel.objects import load_kinds
+from worldmodel.relocalise import Relocaliser
+from worldmodel.semantic_map import Detection, SemanticMap
 
 
 def replay(run: Path, every: float = 60.0, quiet: bool = False) -> dict:

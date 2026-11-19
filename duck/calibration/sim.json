@@ -4,7 +4,7 @@
   "at_speed_mps": 0.3,
   "camera": {
     "hfov_deg": 60.0, "range_m": 3.0, "p_detect": 0.8, "range_noise": 0.05, "bearing_noise_deg": 2.0, "period_s": 0.5,
-    "about": "The simulated camera's fidelity (RFC-0016, duck_lab/world_model/sim_camera.py): guesses, not measured, until a real camera and detector are. Field of view and range of recognition, the probability of recognising an object in view (falling to half at range), range noise in proportion, bearing noise in degrees, how often it looks."
+    "about": "The simulated camera's fidelity (RFC-0016, duck_lab/nav/sim_camera.py): guesses, not measured, until a real camera and detector are. Field of view and range of recognition, the probability of recognising an object in view (falling to half at range), range noise in proportion, bearing noise in degrees, how often it looks."
   },
   "by_speed": {"0.2": 0.849, "0.3": 0.911, "0.4": 0.930},
   "measured": "2026-11-14, duck/sim/probes/odom_vs_truth.py (straight walks, 3 x 8 s per speed, truth = body server trunk) and duck/sim/odom_scale.py over ~41 m of navigation logs (0.909)",

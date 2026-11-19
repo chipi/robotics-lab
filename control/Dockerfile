@@ -1,6 +1,6 @@
 # Mission Control (RFC-0014 §3.13) as an image, to run on any of the operator's machines.
 #
-#   docker build -f control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate and ../duck too
+#   docker build -f control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate, libs/worldmodel and ../duck too
 #   docker run --rm -p 127.0.0.1:8060:8060 -v $PWD/control/robots.example:/config/robots:ro -v mc-state:/state mission-control:local
 #
 # `make`'s control-up / control-down wrap control/compose.yml. Configuration (the robot files) and data (the SQLite store, the gates'
@@ -21,6 +21,8 @@ COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
 COPY libs/runfile/src ./libs/runfile/src
 COPY libs/gate/pyproject.toml ./libs/gate/pyproject.toml
 COPY libs/gate/src ./libs/gate/src
+COPY libs/worldmodel/pyproject.toml ./libs/worldmodel/pyproject.toml
+COPY libs/worldmodel/src ./libs/worldmodel/src
 COPY duck/pyproject.toml ./duck/pyproject.toml
 COPY duck/src ./duck/src
 COPY control/pyproject.toml control/uv.lock ./control/

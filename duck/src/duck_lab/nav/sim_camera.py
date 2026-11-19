@@ -1,5 +1,5 @@
 """A simulated camera with object recognition (RFC-0016 §3.3), the stand-in until a real camera and detector exist.
-It sits with the simulator's truth (Body), not in the brain's world_model package: it reads the scene
+It sits with the simulator's truth (Body), not in the world model: it reads the scene
 (sim/apartment_layout.json; which geoms make one object, sim/apartment_objects.json) and the duck's true pose.
 
 It reports what a camera on the duck would recognise: the objects with a part inside the field of view and range and
@@ -15,8 +15,8 @@ import math
 import random
 from pathlib import Path
 
-from duck_lab.world_model.objects import part_from_geom
-from duck_lab.world_model.semantic_map import Detection, centre
+from worldmodel.objects import part_from_geom
+from worldmodel.semantic_map import Detection, centre
 
 SIM_DIR = Path(__file__).resolve().parents[3] / "sim"
 DEFAULTS = {"hfov_deg": 60.0, "range_m": 3.0, "p_detect": 0.8, "range_noise": 0.05, "bearing_noise_deg": 2.0,

@@ -123,7 +123,7 @@ test-viewer-pages: viewer-sync ## miniview's two pages in headless Chromium (MIN
 .PHONY: test-control-page
 test-control-page: viewer-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the viewer's Playwright and MINIVIEW_CHROMIUM; control has no browser dependency)
 	@log=$$(mktemp); \
-	  if (cd $(VIEWER_DIR) && PYTHONPATH=../$(CONTROL_DIR)/src:../$(DUCK_DIR)/src:../libs/gate/src uv run --frozen python ../$(CONTROL_DIR)/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
+	  if (cd $(VIEWER_DIR) && PYTHONPATH=../$(CONTROL_DIR)/src:../$(DUCK_DIR)/src:../libs/gate/src:../libs/worldmodel/src uv run --frozen python ../$(CONTROL_DIR)/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-control-page PASS"
 

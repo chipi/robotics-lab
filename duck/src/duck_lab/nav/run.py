@@ -36,8 +36,8 @@ from duck_lab.nav.step_check import unseen_ahead
 from duck_lab.nav.stuck import MOVED_MAX_M as STUCK_MOVED_M, WINDOW_S as STUCK_WINDOW_S, StuckWatch
 from duck_lab.nav.side_drops import (SuspectMemory, below_counts, continuation, continues, edge_from_glance, head_settled, in_the_way,
                                      look_targets)
-from duck_lab.world_model.relocalise import Relocaliser
-from duck_lab.world_model.semantic_map import SemanticMap
+from worldmodel.relocalise import Relocaliser
+from worldmodel.semantic_map import SemanticMap
 from duck_lab.nav.grid import DROP_INFLATE_M, DROP_LETHAL_M, FREE_COST, LETHAL_COST, LETHAL_M, CostGrid, EmptyMap, clearance, keep_current, nearest_free, path_length, plan, thin
 
 TICK_S = 0.1

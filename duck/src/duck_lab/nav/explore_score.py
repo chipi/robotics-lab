@@ -59,8 +59,8 @@ def semantic_score(run: Path, rows: list) -> dict:
     """The semantic map against the truth (RFC-0016): objects confirmed, matched to a real object of their kind (world
     frame, through the start's map-to-world), their position error; rooms named, the share of the time the name was
     the room the duck was in; a "found" goal judged by where the duck stood and faced."""
-    from duck_lab.world_model.objects import distance
-    from duck_lab.world_model.semantic_map import centre
+    from worldmodel.objects import distance
+    from worldmodel.semantic_map import centre
     from duck_lab.nav.sim_camera import SimCamera
 
     cam = SimCamera()
