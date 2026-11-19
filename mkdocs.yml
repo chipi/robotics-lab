@@ -121,6 +121,7 @@ nav:
   - In progress:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md
+    - The plan we execute on: wip/EXECUTION-PLAN.md
     - Roadmap: wip/ROADMAP.md
     - Ideas: wip/IDEAS.md
     - Mission control, requirements: wip/MISSION-CONTROL-REQUIREMENTS.md
