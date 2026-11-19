@@ -1,5 +1,5 @@
 """robotd-lite's protocol and the simulated program's behaviour (no hardware).
-Run: make test-unit, or python nxt/tests/test_deadman.py from the repo."""
+Run: make test-unit, or python apps/nxt-web/tests/test_deadman.py from the repo."""
 
 import sys
 import time

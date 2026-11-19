@@ -6,7 +6,7 @@
     uv run miniview scene apartment --layout ../duck/sim/apartment_layout.json
     uv run miniview import ../duck/runs/explore12 ../duck/runs/phase1-run18 --scene apartment
     uv run miniview import ../duck/runs/explore13 --scene apartment --follow   # a run while it runs
-    uv run miniview import --robot nxt ../nxt/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
+    uv run miniview import --robot nxt ../apps/nxt-web/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
     uv run miniview repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
     uv run miniview compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run miniview index                  # rebuild index.sqlite from the run files

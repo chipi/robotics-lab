@@ -10,7 +10,7 @@ dependencies = [
 
 # nxt-web writes its recordings as miniview runs (ADR-0013): the run format is a path source (libs/runfile), not a release.
 [tool.uv.sources]
-runfile = { path = "../libs/runfile", editable = true }
+runfile = { path = "../../libs/runfile", editable = true }
 
 [project.scripts]
 nxt-web = "nxt_lab.web:main"

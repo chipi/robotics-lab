@@ -146,7 +146,7 @@
           <button class="primary" id="rec">Start recording</button>
         </div>
       </div>
-      <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>nxt/runs/</code>, and the same samples plus the command log to an MCAP file beside it, for Foxglove, Lichtblick or Rerun.</p>
+      <p class="hint">Saves every sample (motor power, tacho counts, sensors) to a CSV file in <code>apps/nxt-web/runs/</code>, and the same samples plus the command log to an MCAP file beside it, for Foxglove, Lichtblick or Rerun.</p>
       <table><thead><tr><th>Run</th><th>Size</th><th></th></tr></thead><tbody id="runs"></tbody></table>
     </div>
     <div class="card">
@@ -154,7 +154,7 @@
         <h2>Command log</h2>
         <a href="/api/events/download"><button>Download log</button></a>
       </div>
-      <p class="hint">Every command sent to the robot, newest first: drive changes, stops, safety stops, fire, programs, uploads, setup and connection changes, errors. Saved to <code>nxt/runs/events.jsonl</code>.</p>
+      <p class="hint">Every command sent to the robot, newest first: drive changes, stops, safety stops, fire, programs, uploads, setup and connection changes, errors. Saved to <code>apps/nxt-web/runs/events.jsonl</code>.</p>
       <div style="max-height: 320px; overflow: auto">
         <table><thead><tr><th>Time</th><th>Command</th><th>Details</th></tr></thead><tbody id="events"></tbody></table>
       </div>
@@ -371,7 +371,7 @@ async function refreshStatus() {
     const dm = s.deadman || {};
     if (dm.running) parts.push(`<span class="ok" title="robotd.rxe stops the tracks 0.5 s after commands stop">deadman on</span>${dm.state && dm.state.deadman_stop ? " · <b>deadman stopped it</b>" : ""}${dm.state && dm.state.obstacle_stop ? " · <b>obstacle stop</b>" : ""}`);
     else if (dm.mode === "direct") parts.push(`<span class="bad" title="Setup → Drive through">direct drive, no deadman</span>`);
-    else parts.push(`<span class="bad" title="start robotd.rxe in Programs (upload nxt/build/robotd.rxe first if it is not listed)">deadman program not running</span>`);
+    else parts.push(`<span class="bad" title="start robotd.rxe in Programs (upload apps/nxt-web/build/robotd.rxe first if it is not listed)">deadman program not running</span>`);
     if (s.program && !dm.running) parts.push(`running <b>${esc(s.program)}</b>`);
     if (s.recording) parts.push(`<span class="rec">● REC</span> ${s.recording.rows} rows`);
   } else {

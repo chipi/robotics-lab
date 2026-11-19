@@ -1,4 +1,4 @@
-"""The setup file and its odometry settings (ADR-0013). Run: make test-unit (or python nxt/tests/test_config.py)."""
+"""The setup file and its odometry settings (ADR-0013). Run: make test-unit (or python apps/nxt-web/tests/test_config.py)."""
 
 import json
 import sys

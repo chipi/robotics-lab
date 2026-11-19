@@ -1,6 +1,6 @@
 site/
 .venv/
 node_modules/
-nxt/.venv/
-nxt/build/
-nxt/runs/
+apps/nxt-web/.venv/
+apps/nxt-web/build/
+apps/nxt-web/runs/

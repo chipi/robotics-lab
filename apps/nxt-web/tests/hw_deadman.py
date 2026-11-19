@@ -1,7 +1,7 @@
 """HARDWARE CHECK — moves the robot: runs both tracks at power 25 for about 1 s. Lift the robot.
 Stop any running nxt-web first (one connection to the brick at a time).
 
-Uploads nxt/build/robotd.rxe (make nxt-programs), starts it, drives through its mailbox, then
+Uploads apps/nxt-web/build/robotd.rxe (make nxt-programs), starts it, drives through its mailbox, then
 stops sending — the way a crashed server or a dropped link would — and reads the motors directly.
 Pass = the tracks ran while commands came, and robotd stopped them by itself 0.5-0.9 s after the
 last one, with its deadman flag set (RFC-0003 §2.3). Leaves robotd.rxe on the brick, stopped.

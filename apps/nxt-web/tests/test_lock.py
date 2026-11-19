@@ -1,6 +1,6 @@
 """nxt-web's exclusive control lock (RFC-0017 step 4): the rules with a fake clock, then /api/lock
 against the simulated brick (--fake; nothing here touches a real robot).
-Run: make test-unit, or python nxt/tests/test_lock.py from the repo."""
+Run: make test-unit, or python apps/nxt-web/tests/test_lock.py from the repo."""
 
 import json
 import os

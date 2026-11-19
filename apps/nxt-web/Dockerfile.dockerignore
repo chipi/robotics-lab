@@ -1,9 +1,9 @@
 # The build context is the repository root (the image installs the run format (libs/runfile) beside nxt-web, ADR-0013): only what
 # the Dockerfile copies goes in.
 *
-!nxt/pyproject.toml
-!nxt/README.md
-!nxt/src
+!apps/nxt-web/pyproject.toml
+!apps/nxt-web/README.md
+!apps/nxt-web/src
 !libs/runfile/pyproject.toml
 !libs/runfile/src
 **/__pycache__/

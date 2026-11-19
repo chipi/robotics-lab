@@ -1,5 +1,5 @@
 """Smoke test for nxt-web against the simulated brick (--fake), plus the no-brick checks when no
-real brick can be reached. Run: make test-unit (or python nxt/tests/test_web_smoke.py from the repo).
+real brick can be reached. Run: make test-unit (or python apps/nxt-web/tests/test_web_smoke.py from the repo).
 
 It never drives a real robot: the real-mode checks are skipped whenever an NXT is on USB or any
 /dev/rfcomm* exists (two incidents on 2026-11-14, see docs/rfc/RFC-0001-nxt-web-ui.md §6)."""
@@ -17,7 +17,7 @@ from pathlib import Path
 
 NXT_DIR = Path(__file__).resolve().parents[1]
 NXT_WEB = os.environ.get("NXT_WEB", str(NXT_DIR / ".venv" / "bin" / "nxt-web"))
-# The server's recordings, command log and miniview runs go to a folder of this test's own, never to nxt/runs.
+# The server's recordings, command log and miniview runs go to a folder of this test's own, never to apps/nxt-web/runs.
 tmp = Path(tempfile.mkdtemp())
 ENV = dict(os.environ, NXT_LAB_DATA=str(tmp), MINIVIEW_DATA=str(tmp / "miniview"))
 RUNS = tmp / "runs"

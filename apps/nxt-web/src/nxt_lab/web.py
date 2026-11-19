@@ -130,7 +130,7 @@ class Controller:
                 if deadman.PROGRAM not in {f["name"] for f in self.call(lambda r: r.list_files())}:
                     self.event("deadman start", ok=False,
                                error=f"{deadman.PROGRAM} is not on the brick: make nxt-programs, "
-                                     "then upload nxt/build/robotd.rxe in Programs")
+                                     "then upload apps/nxt-web/build/robotd.rxe in Programs")
                 else:
                     self.call(lambda r: r.start_program(deadman.PROGRAM))
                     program = deadman.PROGRAM
@@ -231,7 +231,7 @@ class Controller:
             raise RuntimeError(f"program {program} is running on the brick; stop it first")
         if not program and self.config.drive_mode == "deadman":
             raise RuntimeError(f"the deadman program {deadman.PROGRAM} is not running on the brick: "
-                               "start it in Programs (upload nxt/build/robotd.rxe first if it is not "
+                               "start it in Programs (upload apps/nxt-web/build/robotd.rxe first if it is not "
                                "listed), or choose direct drive in Setup")
         self.last_drive = time.monotonic()
         self.call(lambda r: r.drive(left, right))

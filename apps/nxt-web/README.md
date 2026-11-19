@@ -44,7 +44,7 @@ make nxt-web-fake                  # simulated brick with made-up readings, noth
 uv run nxt-web --help              # the same, from nxt/
 ```
 
-**Anywhere, in Docker** (`nxt/Dockerfile`; config and recordings in the `nxt-web-data` volume):
+**Anywhere, in Docker** (`apps/nxt-web/Dockerfile`; config and recordings in the `nxt-web-data` volume):
 
 ```sh
 make nxt-image                     # build robotics-lab/nxt-web:dev
@@ -105,7 +105,7 @@ name the file as `build/<name>.nxc` (an nbc quirk); the line numbers are right.
   about 41 ms per command over Bluetooth with nothing else running; set the sample rate to 2/s
   for Bluetooth (5/s is fine on USB).
 - **Drive through the deadman program** (Setup → Drive through: deadman, the default). It needs
-  `robotd.rxe` on the brick: `make nxt-programs`, then upload `nxt/build/robotd.rxe` in Programs;
+  `robotd.rxe` on the brick: `make nxt-programs`, then upload `apps/nxt-web/build/robotd.rxe` in Programs;
   Connect starts it. In direct mode, if the link drops, the motors keep their last command.
 
 ## The robot as checked (2026-11-14)

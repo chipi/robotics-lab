@@ -29,7 +29,7 @@ DOCS_REQS      := requirements-docs.txt
 DOCS_PORT      ?= 8765
 DOCS_BIND      ?= 127.0.0.1
 
-NXT_DIR        := nxt
+NXT_DIR        := apps/nxt-web
 NXT_PY         := $(NXT_DIR)/.venv/bin/python
 NXT_HOST       ?= 127.0.0.1
 NXT_PORT       ?= 8000
@@ -137,24 +137,24 @@ test-nxt-page: viewer-sync nxt-sync ## nxt-web's page takes, keeps and gives bac
 .PHONY: test-unit
 test-unit: nxt-sync ## The NXT web UI against the simulated brick (never moves a real robot)
 	@$(NXT_PY) $(NXT_DIR)/tests/test_deadman.py >/tmp/robotics-lab-test_deadman.log 2>&1 \
-	  && echo "PASS nxt/tests/test_deadman.py" \
-	  || { echo "FAIL nxt/tests/test_deadman.py"; cat /tmp/robotics-lab-test_deadman.log; exit 1; }
+	  && echo "PASS apps/nxt-web/tests/test_deadman.py" \
+	  || { echo "FAIL apps/nxt-web/tests/test_deadman.py"; cat /tmp/robotics-lab-test_deadman.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_config.py >/tmp/robotics-lab-test_config.log 2>&1 \
-	  && echo "PASS nxt/tests/test_config.py" \
-	  || { echo "FAIL nxt/tests/test_config.py"; cat /tmp/robotics-lab-test_config.log; exit 1; }
+	  && echo "PASS apps/nxt-web/tests/test_config.py" \
+	  || { echo "FAIL apps/nxt-web/tests/test_config.py"; cat /tmp/robotics-lab-test_config.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_recorder_v2.py >/tmp/robotics-lab-test_recorder_v2.log 2>&1 \
-	  && echo "PASS nxt/tests/test_recorder_v2.py" \
-	  || { echo "FAIL nxt/tests/test_recorder_v2.py"; cat /tmp/robotics-lab-test_recorder_v2.log; exit 1; }
+	  && echo "PASS apps/nxt-web/tests/test_recorder_v2.py" \
+	  || { echo "FAIL apps/nxt-web/tests/test_recorder_v2.py"; cat /tmp/robotics-lab-test_recorder_v2.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_lock.py >/tmp/robotics-lab-test_lock.log 2>&1 \
-	  && echo "PASS nxt/tests/test_lock.py" \
-	  || { echo "FAIL nxt/tests/test_lock.py"; cat /tmp/robotics-lab-test_lock.log; exit 1; }
+	  && echo "PASS apps/nxt-web/tests/test_lock.py" \
+	  || { echo "FAIL apps/nxt-web/tests/test_lock.py"; cat /tmp/robotics-lab-test_lock.log; exit 1; }
 	@$(NXT_PY) $(NXT_DIR)/tests/test_web_smoke.py >/tmp/robotics-lab-test_web_smoke.log 2>&1 \
-	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS nxt/tests/test_web_smoke.py"; } \
-	  || { echo "FAIL nxt/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
+	  && { grep -E "^SKIP" /tmp/robotics-lab-test_web_smoke.log || true; echo "PASS apps/nxt-web/tests/test_web_smoke.py"; } \
+	  || { echo "FAIL apps/nxt-web/tests/test_web_smoke.py"; grep -E "^(FAIL|SMOKE)" /tmp/robotics-lab-test_web_smoke.log; cat /tmp/robotics-lab-test_web_smoke.log; exit 1; }
 	@echo "test-unit PASS"
 
 .PHONY: nxt-programs
-nxt-programs: ## Compile every NXC program for the brick (nbc in Docker) into nxt/build/
+nxt-programs: ## Compile every NXC program for the brick (nbc in Docker) into apps/nxt-web/build/
 	@for p in $(NXT_DIR)/programs/*.nxc; do $(NXT_DIR)/scripts/nxc.sh $$p; done
 	@echo "nxt-programs PASS"
 

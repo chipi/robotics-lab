@@ -6,7 +6,7 @@
 0 // APPROXIMATION. Not an official model. Built by hand for robots/nxt-shooterbot from LEGO's 8547 User Guide, pages 5-15 (the
 0 // Quick Start model: NXT brick, three NXT motors side by side, four wheels, two treads, cross beams); the Shooterbot's own
 0 // building instructions are not among the PDFs lego.com offers for 8547, so the ultrasonic sensor, the colour sensor and the
-0 // shooter's arms and ball are placed from what nxt/README.md records (motors A shooter, B right track, C left track, colour
+0 // shooter's arms and ball are placed from what apps/nxt-web/README.md records (motors A shooter, B right track, C left track, colour
 0 // on 3, ultrasonic on 4), not from instructions. Small pins, connectors, cables and most beams are left out.
 0 // Axes are LDraw's: x to the robot's left, y down, forward is -z. The floor is y = 0. Units are LDU (0.4 mm).
 0 // The tread subfiles at the end are LEGO's 36-ridge tread from the OMR model 31313 (Philo, CCAL 2.0).

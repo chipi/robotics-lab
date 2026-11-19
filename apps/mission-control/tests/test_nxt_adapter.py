@@ -23,7 +23,7 @@ from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
 
 ROOT = Path(__file__).resolve().parents[3]
-NXT_WEB = os.environ.get("NXT_WEB", str(ROOT / "nxt" / ".venv" / "bin" / "nxt-web"))
+NXT_WEB = os.environ.get("NXT_WEB", str(ROOT / "apps" / "nxt-web" / ".venv" / "bin" / "nxt-web"))
 if not Path(NXT_WEB).exists():
     print(f"FAIL test_nxt_adapter: {NXT_WEB} is missing (make nxt-sync)")
     sys.exit(1)
