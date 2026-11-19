@@ -93,7 +93,7 @@ and the simulator's truth:
 | dithering | walking with net displacement under 0.12 m in 3 s | quiet | every gate12 stall (but each is also a `stuck`: duplicate) |
 | odometry scale | walking ratio outside 0.95–1.05 over a run or ≥ 3 legs | per leg not quiet (mapd's fixes inflate legs: needs a fix-aware filter) | **gate3 ch11** (all ten out, 0.87–0.92); gate4 ch11 is after the fix (0 of 10) |
 | belief vs truth | p95 warn 0.20 m, major 0.35 m; heading 20° | not quiet at 0.20 (b9 r2 p95 0.28) | no fixture with a real jump |
-| phantom obstacle | an occupied cluster ≥ 3 cells over 0.30 m from any real outline | **fires on every run**: a 2–4 cell cluster at world (−0.29, 0.09…0.17), about 0.5 m from the nearest outline, in every run checked; cause not investigated | — |
+| phantom obstacle | an occupied cluster ≥ 3 cells over 0.30 m from any real outline | **fires on every run**: a 2–4 cell cluster at world (−0.29, 0.09…0.17), about 0.5 m from the nearest outline, in every run checked; cause: a real 7 cm cube the layout lacks ([PHANTOM](PHANTOM.md)) | — |
 | missed obstacle | ≥ 3 outline samples in known cells, no occupied cell within 0.15 m | not quiet until thin legs are left out | b10b r2: 2 |
 | misplaced edge | a glance's rim median over 0.25 m from the hole, with a refusal or trap within 5 s | the plain 0.20 m does not separate | b11 r2: 0.27 m median, 0.475 max |
 | wrong refusal | a path existed by truth | fires on clean runs (b11 r1: 12 of 19) | room disagreement by truth found in b11 r2, r3, b10b r1 |
@@ -110,6 +110,93 @@ truth layouts registered from the duck's side (to decide). A table: t, end, anom
 severity, margin, summary, believed → true place; a footer with counts and the detectors that did
 not apply. Nothing written into the run; the derived index takes the results later, keyed by run,
 detector and version.
+
+### Stream B results: steps 1–2, the Observatory's side (2026-11-19)
+
+**Built:** `observatory anomalies <run> [--detector a,b] [--min-severity info|minor|major|critical]
+[--experimental] [--layout FILE …] [--json]` (the `miniview` script is the same entry point),
+reading the run straight from the data folder (no index, nothing written, the run's MCAP read with
+`keep_raw` so events come whole), in `apps/observatory/src/observatory/anomalies.py`: no robot code
+is imported; the simulator's truth is data, the layout file and
+`robots/duck/sim/apartment_free_bodies.json` together (the free bodies the layout dump omits:
+[PHANTOM](PHANTOM.md)); a detector that needs the layout or the truth pose says it did not apply,
+not "0". The table is: t, end, anomaly, source, severity, margin, summary, belief → truth place; the
+footer counts, names what did not apply and what was not run. The record is RFC-0019 §2.1's, source
+`analysis`, with `detector` and `version`. Tests: `apps/observatory/tests/test_anomalies.py` (each
+rule at its threshold; seven fixtures cut from real recordings by `tests/make_anomaly_fixtures.py`,
+about 260 kB; the command line; nothing written).
+
+**The default track** (quiet on b9 r2, b10b r1, b10b r3, b11 r1, all five at 0): near miss (truth
+clearance of the trunk centre to the layout's solid geoms under 0.090 m; the radius 0.083 m is the
+contact line, an episode that crosses it is critical and links `contact@t`), dithering, odometry
+scale, phantom obstacle (with the free bodies in the truth), misplaced edge. **Behind
+`--experimental`**, each said not quiet in the footer: belief vs truth, missed obstacle, wrong
+refusal, area uncovered.
+
+**Counts per run** (every detector, the layout and the free bodies as truth; `n/a` = did not apply:
+a challenge scene has no layout here; refused legs for scale):
+
+| Run | near miss | dithering | odometry scale | phantom | misplaced edge | belief vs truth | missed obstacle | wrong refusal | area uncovered | refused legs |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| b9 r2 (clean) | 0 | 0 | 0 | 0 | 0 | 1 (p95 0.28 m) | 34 | 0 | 0 | 2 |
+| b10b r1 (clean) | 0 | 0 | 0 | 0 | 0 | 0 | 17 | 9 | 0 | 12 |
+| b10b r3 (clean) | 0 | 0 | 0 | 0 | 0 | 0 | 8 | 6 | 0 | 7 |
+| b11 r1 (clean) | 0 | 0 | 0 | 0 | 0 | 0 | 21 | 16 | 2 (kitchen 0.10, bedroom 0.38) | 19 |
+| b10b r2 (the graze) | **1** (kit_stool2, 0.0709 m, then a contact at 187.7 s) | 0 | 0 | 0 | 0 | 1 (p95 0.25 m) | 21 | 10 | 0 | 10 |
+| b11 r2 (the edge) | 0 | 0 | 0 | 0 | **1** (rim median 0.27 m, max 0.475 m, refused 32.3 s) | 0 | 2 | 9 | 0 | 10 |
+| gate3 ch11 s1–s10 | n/a | 0 each | **10 of 10** (0.890, 0.872, 0.885, 0.894, 0.924, 0.888, 0.902, 0.898, 0.872, 0.904) | n/a | n/a | 7 of 10 | n/a | n/a | n/a | — |
+| gate4 ch11 s1–s10 | n/a | 0 each | **0 of 10** | n/a | n/a | 0 of 10 | n/a | n/a | n/a | — |
+
+The B2 figures that carry over: near miss 0.093 m fires twice on b9 r2 (0.0930 and 0.0907 m at 648.2
+and 652.3 s; the 0.090 m line is quiet); gate3 ch11's ten ratios are 0.87–0.92; gate4's are in the
+band; b9 r2's belief error p95 is 0.28 m; b11 r2's rim median is 0.27 m and its maximum 0.475 m; b11
+r1's kitchen and bedroom are 0.099 and 0.384. Dithering finds the gate12 stalls: all 26 failed runs
+of ch17–ch19 have one episode each, from 20.6 to 27.6 s, net 0.057–0.088 m in 3 s (the 4 that passed
+have none); ch20's 10 runs, which fail otherwise, have none.
+
+**Rules as built, against B2's:**
+
+- *Odometry scale:* the run's walking belief/truth ratio, a belief step over 0.15 m in one tick (a
+  fix) left out with its truth step, under 2 m of walking says nothing. B2's "or on 3 legs" is off
+  by default (`odom_legs_out`): with it, b10b r1, a clean run, fires (3 of 35 legs outside
+  0.95–1.05, at 1.057 and 1.074 among them, the run at 1.004), the per-leg noise B2 named; a
+  fix-aware leg filter was not built.
+- *Phantom:* as B2 (3 cells, 0.30 m), over every map snapshot, one record per place. It fired on
+  every run because the truth lacked the cube; with the free bodies it is quiet on the four clean
+  runs. Over all 65 apartment runs it fires in five (b10a r1 15 places, frames-before-r2 4, b3 r3 3,
+  b4 r3 1, relo-plain-on 1): b10a r1 has K4's mapd jump, relo-plain-on K4's second, frames-before-r2
+  is from before the frame fix; b3 r3 and b4 r3 were not examined.
+- *Misplaced edge:* B2's rim median over 0.25 m from the stairwell, with a refusal or trap within 5
+  s; the plain 0.20 m is not used. Over all 65 runs: b11 r2 (1) and relo-plain-on (5).
+- *Missed obstacle:* B2's rule unchanged (3 samples, 0.15 m), not quiet: it fires on walls, table
+  and stool legs. The thin-legs variant of B2 was not built.
+- *Wrong refusal:* a refused leg whose goal and truth pose lie in one component of the floor a 0.083
+  m disc can occupy (inside a floor, clear of every obstacle and the stairwell by the radius), 0.025
+  m raster. b11 r1: 16 of 19 refused legs (B2: 12 of 19); the planner's margins (0.28 m inflation,
+  0.26 m from an edge) are wider than the radius, so it fires on routine refusals.
+- *Area uncovered:* "nothing left to explore" with a layout room's floor, on a 0.1 m lattice, under
+  50 % in cells the last map knows; the rooms are the layout's `floor_*` decals.
+- *Belief vs truth:* p95 over the run of the belief's distance from the truth in the world (warn
+  0.20 m, major 0.35 m), and of the heading error (20°), as two anomalies.
+
+**Over all 65 apartment runs, the default track fires in 30** (near miss 33 episodes in 23 runs,
+odometry scale in 9 early-batch runs b3–b5 and explore-1117b, dithering in 4, phantom in 5,
+misplaced edge in 2): those are runs with contacts, the pre-fix odometry, displaced maps and stalls,
+not the clean four; no run was read one by one.
+
+**Not built:** the robot-tagged anomalies (B1: `fix_jump_held`, `reloc_refused`, `stuck`,
+`frames_parted`, `refusal_burst`, `room_disagrees`, `head_off_walk`, `refused_unexplained`,
+`camera_failed`, `thread_failed`, `stop_latched`, `lease_lost`): their raise points are inside the
+navigator and wait for the profiles branch to merge; the derived index; the pages; Mission Control;
+the video.
+
+**Not verified:** the detectors ran on the recordings by their MCAP, not on a live run; the fixtures
+are slices trimmed to the fields the rules read (tick rows keep pose, truth, speed, tilt, time; the
+events the rules read); `wrong_refusal`'s "a path existed" ignores the planner's margins on purpose
+and was not compared with a planner replay; `belief vs truth` for runs with several epochs (phase
+1's evaluations) was computed with each tick's epoch and not checked against `observatory state`;
+the challenge scenes (ch11) have no layout here, so nothing that needs one was run on them; the free
+bodies' poses are their reset positions.
 
 ## Decisions for the operator
 

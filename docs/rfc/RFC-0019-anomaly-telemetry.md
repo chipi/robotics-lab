@@ -8,6 +8,17 @@ sensors are telling us … plot on a timeline events that were coming from the s
 not expected … plot those events on the map, and we can see where the physical world went off from
 the world [the robot believes]", and: "are there different kinds of anomalies we should be able to
 detect in the Observatory, even over the sensors and not only the software?"
+**Built so far (2026-11-19, phase 3 stream B):** §5 step 2's command line and the found set of §3.2,
+on the Observatory's side: `observatory anomalies <run>`
+(`apps/observatory/src/observatory/anomalies.py`), nine detectors each with a rule and a version,
+five on the default track because they stay quiet on the clean runs (near miss at 0.090 m,
+dithering, odometry scale, phantom obstacle, misplaced edge) and four behind `--experimental`
+because they do not (belief against truth, missed obstacle, wrong refusal, area uncovered); the
+record of §2.1 as a Python dict, written nowhere yet. Not built: the robot-tagged set (§3.1, §5 step
+1: the navigator's raise points wait for the profiles branch), the derived index, the pages, Mission
+Control, the video (§5 steps 3–5). The counts per run, the rules as built and what was not verified
+are in [PHASE3-PREP](../wip/PHASE3-PREP.md) "Stream B results". The "phantom obstacle" of the first
+measurements was a real cube the truth layout lacked ([PHANTOM](../wip/PHANTOM.md)).
 **Builds on:** [RFC-0010](RFC-0010-run-store-v2.md) (the run store), [RFC-0013](RFC-0013-robot-eye.md)
 (the Eye, the watch page), [RFC-0014](RFC-0014-mission-control.md) (Mission Control's live side),
 [RFC-0016](RFC-0016-objects-and-semantic-map.md) (relocalisation and the fix gate),
@@ -155,9 +166,9 @@ left out (b11 r1 alone has 2056 sightings).
 1. The record and the robot-tagged set (§3.1) in the navigator; mapd's lost reason and counters
    read on every fix (built: 28c5cc9, `mapd_status`); the frame delta in every `world` event (with
    the frame fix, branch nav-frames).
-2. The analysis as a command-line table over one run first (a detector is a function over a run
-   that returns records), used on b11 at once; then the first found set (§3.2) in the Observatory's
-   derived index.
+2. The analysis as a command-line table over one run first (a detector is a function over a run that
+   returns records), used on b11 at once (**built**, 2026-11-19: `observatory anomalies`); then the
+   first found set (§3.2) in the Observatory's derived index (not built).
 3. The Observatory's track, pins, three maps and the Eye's line; the page tests.
 4. Mission Control's live side; the video panel and the watch page (kept: the operator asked for
    them; the review would have cut them from this RFC, and they come after 1–3).
