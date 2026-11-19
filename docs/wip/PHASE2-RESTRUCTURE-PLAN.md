@@ -1,8 +1,9 @@
 # Phase 2 prepared: the restructure (RFC-0018) and the Observatory rename
 
-**Status:** prepared 2026-11-19 (a read-only planning pass over the code), for
-[the plan we execute on](EXECUTION-PLAN.md) phase 2. Not started; it starts on the operator's word
-at the phase 1 checkpoint, with nothing else in flight. Decisions in §6.
+**Status:** started 2026-11-19 on the operator's word ("Yes to all 10 and go for phase 2"): the
+ten decisions of §6 taken as recommended, and the running Observatory on :8070 restarted under its
+new name during the move (the old image kept for rollback). Prepared earlier the same day by a
+read-only planning pass, for [the plan we execute on](EXECUTION-PLAN.md) phase 2.
 
 ## 0. What the code says (it shapes the plan)
 
