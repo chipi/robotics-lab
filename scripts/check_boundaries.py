@@ -1,4 +1,5 @@
-"""Which package may import which (RFC-0018, docs/wip/PHASE2-RESTRUCTURE-PLAN.md §2). Run by `make lint`.
+"""Which package may import which (RFC-0018 section 10). Run by `make check-boundaries`, which is part of `make lint`
+and a step of the CI unit job.
 
     python3 scripts/check_boundaries.py [ROOT]
 

@@ -24,6 +24,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_MTIME = 1_700_000_000
 
 
 def first_dir(*names: str) -> Path:
@@ -56,7 +57,10 @@ def api_answers(tmp: Path) -> list:
     (data / "runs").mkdir(parents=True)
     (data / "scenes").mkdir()
     env = dict(os.environ, MINIVIEW_INDEX=str(idx), OBSERVATORY_INDEX=str(idx))
-    fixture = viewer / "tests" / "fixtures" / "explore9"
+    fixture = tmp / "explore9"
+    shutil.copytree(viewer / "tests" / "fixtures" / "explore9", fixture)
+    for f in [*fixture.iterdir(), fixture]:
+        os.utime(f, (FIXTURE_MTIME, FIXTURE_MTIME))    # the run's start time is the log's mtime (started_at_source file_mtime)
     run(["uv", "run", "--frozen", cli, "--data", str(data), "import", str(fixture), "--scene", "apartment"], viewer, env)
     port = 18000 + os.getpid() % 1000
     srv = subprocess.Popen(["uv", "run", "--frozen", cli, "--data", str(data), "serve", "--host", "127.0.0.1", "--port", str(port)],

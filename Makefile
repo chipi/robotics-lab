@@ -73,14 +73,19 @@ observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, wi
 lint: ## Byte-compile every Python file of every project
 	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
 	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(OBSERVATORY_DIR)/src $(OBSERVATORY_DIR)/tests \
-	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests >/dev/null \
+	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests libs/runfile/src libs/gate/src libs/worldmodel/src scripts >/dev/null \
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
 	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
-	@$(PYTHON) scripts/test_check_boundaries.py >/tmp/robotics-lab-test_check_boundaries.log 2>&1 \
-	  || { cat /tmp/robotics-lab-test_check_boundaries.log; echo "lint FAIL: the boundary checker's self-test"; exit 1; }
-	@$(PYTHON) scripts/check_boundaries.py || { echo "lint FAIL: a package imports one it may not (RFC-0018)"; exit 1; }
+	@$(MAKE) --no-print-directory check-boundaries
 	@echo "lint PASS"
+
+.PHONY: check-boundaries
+check-boundaries: ## Which package may import which (RFC-0018): scripts/check_boundaries.py and its self-test; part of lint
+	@$(PYTHON) scripts/test_check_boundaries.py >/tmp/robotics-lab-test_check_boundaries.log 2>&1 \
+	  || { cat /tmp/robotics-lab-test_check_boundaries.log; echo "check-boundaries FAIL: the checker's self-test"; exit 1; }
+	@$(PYTHON) scripts/check_boundaries.py || { echo "check-boundaries FAIL: a package imports one it may not (RFC-0018 section 10)"; exit 1; }
+	@echo "check-boundaries PASS"
 
 # One line per test file: PASS, or FAIL with its output. $(1) the project dir, $(2) the test files.
 define run_tests

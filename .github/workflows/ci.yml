@@ -3,7 +3,7 @@
 #
 # Each job runs the same make targets as on the workstation, so a red job reproduces locally with
 # the target named in its step:
-#   unit   → make ci-fast            lint + every project's unit tests
+#   unit   → make check-boundaries ci-fast   package boundaries (RFC-0018), lint, every project's unit tests
 #   pages  → make test-observatory-pages test-control-page   the Observatory's two pages and Mission Control's page in headless Chromium
 #   compat → make test-run-compat    a run opens in Rerun and the Observatory (Lichtblick's checks skipped)
 #   images → make test-integration test-observatory-image nxt-programs   the Docker images, the NXC programs
@@ -37,6 +37,8 @@ jobs:
           python-version: '3.12'
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
+      - name: "make check-boundaries (RFC-0018: which package may import which)"
+        run: make check-boundaries
       - name: make ci-fast
         run: make ci-fast
 

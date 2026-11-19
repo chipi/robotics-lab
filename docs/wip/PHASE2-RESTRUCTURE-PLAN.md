@@ -1,9 +1,10 @@
 # Phase 2 prepared: the restructure (RFC-0018) and the Observatory rename
 
-**Status:** started 2026-11-19 on the operator's word ("Yes to all 10 and go for phase 2"): the
-ten decisions of §6 taken as recommended, and the running Observatory on :8070 restarted under its
-new name during the move (the old image kept for rollback). Prepared earlier the same day by a
-read-only planning pass, for [the plan we execute on](EXECUTION-PLAN.md) phase 2.
+**Status:** executed 2026-11-19 on the operator's word ("Yes to all 10 and go for phase 2"): the
+ten decisions of §6 taken as recommended, commits C0 to C10 of §4 on the branch `mission-control`
+(the tag `pre-restructure` is the way back), the running Observatory on :8070 restarted under its
+new name (the old image kept). Prepared earlier the same day by a read-only planning pass, for
+[the plan we execute on](EXECUTION-PLAN.md) phase 2. The result is in §7.
 
 ## 0. What the code says (it shapes the plan)
 
@@ -140,8 +141,47 @@ b1edc2587b3682c92e28225a97985f58d997a362a8d4618d5b334c907ea0d59f  replay report 
   `duck/tests/test_replay.py`), then `duck-replay` prints its report (`REPLAY PASS`), the whole
   report hashed. This deviates from "a committed fixture run": it is generated, deterministically.
 
+**Correction at C10.** The first line (`api run`) depended on the fixture log's file mtime: the run's
+`started_at_ns` comes from it (`started_at_source: file_mtime`), and the history rewrite that
+followed touched the fixture's files, so the hash changed with no code change behind it (the
+other four did not). `scripts/golden.py` now copies the fixture and pins its mtime. With the pinned
+script, run in a fresh worktree of the tag `pre-restructure` and on the final tree, all five equal:
+
+```text
+3e1aa07b152e4d8281ed62a58fbc2ea7a4d52fd1af3f9b4f8d738e5c3d2cf058  api run (6158 bytes)
+f357641de9ace4ba27ab11b5b8603e2317a8591af05fb01e83dcf5264b9a1e8f  api frames (265098 bytes)
+6bfdfddea59457845ef3c4a2c222ebc5e8fac007ae6f5fc923fd872de99966fa  api signals (28 bytes)
+11b9a04a06b935ef7a10f47b2a12d947257daf69915eac1123f785b61ed641a7  api state (342 bytes)
+b1edc2587b3682c92e28225a97985f58d997a362a8d4618d5b334c907ea0d59f  replay report (7 lines)
+```
+
+## 7. Result
+
+- **Golden:** the four unchanged hashes were taken again at C2, C3, C4, C5, C6c, C6d, C7, C8
+  and at the end, each equal to C0's (C6a, C6b and C9 touch neither the Observatory's nor the
+  duck's code).
+- **Gates:** `make ci` passes on the final tree. Per commit, the gate of the commit's own
+  concern ran (§4's proof column, widened where a commit touched a page test, an image or the
+  docs); `make lint` and markdownlint of the tracked Markdown were re-run on every commit in a
+  clean checkout.
+- **Where the code differed from the plan:** `index` moved to `runfile` with `catalog`, which
+  imports it; the `duck-site` command moved to `duck_lab.site_cli` (it draws the simulator's rooms
+  with the navigator's frames); `test-control-page` runs Mission Control's page in the Observatory's
+  environment, so its path to the gate, the world model and the other apps is absolute; the four
+  moved environments held console scripts with the old absolute paths in their shebangs, so each
+  was recreated (the old ones set aside as `.venv-broken-20261119`, ignored by git and
+  markdownlint, for the operator to delete); the Observatory's image is laid out as
+  `/app/apps/observatory` so the run format's relative path source holds.
+- **Not renamed, on purpose:** the MCAP topics, schema names and profile, `window.miniview`, the
+  pages' local-storage keys, `state/miniview`, the `--miniview-data` flags, and nxt-web's default
+  `miniview/` data folder. Revisit with format 3.
+
 ## NOT VERIFIED
 
-The unread parts of `store.py`, `catalog.py`, `se2.py`; whether `uv lock` is stable offline;
-whether branch protection names CI jobs; which `miniview` command wins in a shared environment;
-duck tests that depend on the untracked `duck/runs`.
+Whether branch protection names CI jobs (the jobs were renamed: Observatory pages, Unit tests
+(nxt, duck, observatory), the run-compat job); duck tests that depend on the untracked
+`robots/duck/runs` (the run passed here, where it exists); how the images behave on the CI runner
+(not run: the images were built and run on this workstation). Resolved since the plan: `uv lock
+--offline` kept every pin (only names and paths changed in the four locks, and the three new
+packages were added); the duck's `miniview` script, which collided with the Observatory's, is
+`duck-pic`.

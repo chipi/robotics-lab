@@ -96,6 +96,9 @@ relocalisation, the frame fix, the rim fix, the recovery).
 - Nothing else in flight. Done when every test and the docs build are green and one recorded run
   replays identically.
 
+**Done 2026-11-19** on the branch `mission-control`, not yet on main: the result, the golden and what
+differed from the plan are in [PHASE2-RESTRUCTURE-PLAN.md](PHASE2-RESTRUCTURE-PLAN.md) §7.
+
 ## Phase 3 — two parallel streams on the new layout
 
 - **RFC-0020, steps 1–3:** the duck's profile; the numbers out of code; the four interfaces
