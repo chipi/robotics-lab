@@ -54,6 +54,7 @@ In the bar's order — safety first, then reach, then quality:
 | b9 (+ stand for mapd at each frontier) | `d74a5b1` | 3 | **4 / 6** | **2/6** | 0 / 0 | refused: no room to turn |
 | b10a (+ stuck detection, objects not filled in) | `22c5917` | 3 | 3 / 5 | 2/6 | **1** / 0 | refused: no room to turn |
 | b10b (+ the objects' parts fill the cost map) | `22c5917` | 3 | **5 / 6** | 2/6 | **1 (5)** / 0 | refused: no room to turn |
+| b11 (+ relocalisation, the fix gate, forgetting; 20 min, from scratch) | `e93a59a` | 5 | 2 / 5 | 1/6 | **0 / 0** | refused: no room to turn (4 runs trapped < 4 min) |
 
 Contacts in brackets: re-scored on 2026-11-18 by the judge that counts the six `lm_*` landmarks
 (RFC-0016: the depth sensor sees them, so here they are things the duck would hit): b1 0 → 4, b5 2 →
@@ -402,3 +403,31 @@ jump in b10b. Why the stool was that close is not looked into yet.
 
 The fill helps exploring (rooms 3 → 5 median, objects 33 → 37); the bar is not met (a contact in
 each batch). Find try 5 (the fridge): not found, never seen, 53 legs in 12.1 min.
+
+## b11: safe, but trapped early (2026-11-19)
+
+Five runs of 20 minutes from scratch (no site: constraint #1), with relocalisation, the fix gate
+(never takes a held jump) and forgetting, `--object-costs` on. First batch with **no contact and no
+fall in every run**; belief error mean 0.02–0.07 m, no held fix, no jump.
+
+| Run | Rooms | Ended | Objects found |
+| --- | --- | --- | --- |
+| r1 | 5 | no frontier left, 17.3 min | 32 of 38 |
+| r2 | 1 | trapped, 0.6 min | 5 |
+| r3 | 2 | trapped, 2.3 min | 14 |
+| r4 | 1 | trapped, 2.9 min | 18 |
+| r5 | 3 | trapped, 3.6 min | 18 |
+
+Rooms median 2 against b10b's 5: a regression whose cause is not known (one run per start; the
+navigator changed in many places between them). How the four runs ended: a burst of refusals with
+no motion between (r2: 6 in 0.45 s at t 38.3; r3: 6 in 0.6 s at t 134.5) and then "trapped".
+Where (the advisor's reading of the runs, 2026-11-19): only r2 was at the dock beside the real
+stairwell, and there its glance placed the stairwell's rim at y −0.22 to −0.54 m with the duck at
+y 0.05, when the real edge is at y −0.70: 0.45 m short, against the glance's budget of −18 cm, which
+blocked every pivot and arc. r3, r4 and r5 were trapped against obstacles with the nearest drop 1–3.7
+m away, and r5's map gave 0.136 m of room to turn while the sensor saw 283 mm clear. An earlier
+summary to the operator said "next to the stairwell" for all four; that was wrong for three.
+
+Next (the operator agreed the advisor's order, 2026-11-19): one frame for the grid, the belief and the
+memory; the misplaced edge reproduced from r2's depth frames; a recovery before a refusal counts and
+before "trapped"; then b12, scored by floor coverage as well as rooms.
