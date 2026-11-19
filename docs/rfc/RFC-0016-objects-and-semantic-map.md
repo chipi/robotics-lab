@@ -247,3 +247,55 @@ confidence (not built yet).
     `relo-plain-on` is a natural mapd failure: it came without any
     injected fault, once in the 4 unfaulted runs of this session and once in the 33 earlier
     runs (its cause is not known), and is what led to `hold_n=None`.
+- 2026-11-19, one frame for the grid, the belief and the memory (the advisor's R2; the operator
+  agreed it). Relocalisation above left three things in two frames: `grid()` took mapd's grid
+  scaled only, so after a held jump or a landmarks' nudge the planner's walls sat displaced
+  against the duck; and what the navigator itself remembered (obstacle points, drops, edges, the
+  floor seen, suspected drops, objects) stayed where the old belief had put it when the belief's
+  frame moved (b10a r1: the memory "in the old frame", 6.4 cm from `lm_office`).
+  - **The delta.** `Localizer.delta()` is the belief's frame against mapd's: T with belief = T ∘
+    mapd's pose, from the transform each mapd fix gives (held fixes too) and the belief's own
+    (translation and yaw). A taken fix leaves only the landmarks' offset; a held one leaves the
+    jump. `move_grid` expresses mapd's grid in the belief's frame (a shift of the origin; a turn
+    is resampled onto an axis-aligned grid) and every grid the navigator and the explorer read
+    (`Navigator.mapd_grid`: scaled, then framed) is in that frame. It assumes mapd's pose and
+    grid move together, which is how mapd is built (the grid is rendered from the keyframes at
+    their poses: mapping-design §5). `--fix-fault` shifts the pose only and is not a model of
+    that; `--frame-fault T,DX,DY` shifts the pose and the grid together.
+  - **The memory moves** by the belief's change (new ← old) once the belief's frame has moved
+    5 cm or 0.02 rad from where the memory sits (`Navigator.move_memory`): the obstacle points
+    and low-band cells, the drops and measured edges, the spots glanced and looked at, the floor
+    seen, the suspected drops, the objects (not the landmarks' anchors: they are what the belief
+    is checked against), the explorer's failed, retired and reached frontier points, and the
+    goal of the leg going on. A rigid move of all of it: the memory has no age, so a loop
+    closure's true correction, smaller for what was placed long ago, is applied in full to all.
+    The camera and the depth thread skip what they would add while the memory is behind the
+    belief (they would be moved twice); a landmarks' correction skips its own look. The delta is
+    in every `world` event (`frames`: translation, yaw, parted, moves so far), and a
+    `frames_parted` event (and `frames_joined`) says when it passes 0.25 m or 0.1 rad.
+    `map.wipe` is never used.
+  - **The gate follows mapd's account.** A large fix (over 0.3 m or 0.35 rad) is taken when mapd
+    is not lost, no relocalization stepped and its loop counter stepped within the last 3 s: a
+    loop closure mapd believed after two agreeing stops (mapping-design §3), once; with `lost`
+    set or `relocalizations` stepping it is held as before. The memory then moves by the
+    belief's change.
+  - **Simulator, the injected jump** (`--frame-fault 120,0,0.9`: from 120 s mapd's pose and grid
+    are 0.9 m off in y; 10-minute runs from scratch, no site, step 1's commit; `--no-frames` is
+    the run before: the grid stays in mapd's frame and the memory stays). Walls: the grid's wall
+    cells within 1 m of the duck, taken relative to the belief and placed from the truth, their
+    distance to the nearest real surface (`sim/probes/frames_vs_truth.py`, at the explorer's
+    picks); one run each:
+
+    | Run | Ended | Rooms | Belief off the world after 120 s: mean / max (m) | Walls off the real surface after 120 s: median / worst / p90 (m) | Before 120 s: median / worst / p90 (m) |
+    | --- | --- | --- | --- | --- | --- |
+    | frames-before-r2 (`--no-frames`) | trapped, 2.9 min (10 refusals) | 2 | 0.070 / 0.097 | 0.228 / 0.261 / 0.576 | 0.057 / 0.065 / 0.179 |
+    | frames-after-r2 | time, 10.0 min (8 refusals) | 5 | 0.050 / 0.121 | 0.034 / 0.109 / 0.078 | 0.033 / 0.076 / 0.119 |
+
+    No contact, no fall in either. The memory moved 11 times in the run with frames (10 before the
+    jump: 0.01–0.13 m and up to 4.2° when mapd's pose corrected itself; 1 after it); the jump
+    itself moved none (the belief held, the grid was shifted by the delta: `frames_parted` at
+    120.9 s, delta (−0.016, −0.897) m). One run each: the rooms and the ending differ between
+    runs of the same code, so the table shows the walls' displacement, not a rooms gain.
+  - **Not exercised:** a taken loop closure (mapd's loop counter did not step in the simulator's
+    runs: no `mapd_status` event in either), and a landmarks' nudge with the memory moving (one
+    landmark correction in the run with frames, 0 in the other).

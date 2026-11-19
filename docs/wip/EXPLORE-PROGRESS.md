@@ -431,3 +431,85 @@ summary to the operator said "next to the stairwell" for all four; that was wron
 Next (the operator agreed the advisor's order, 2026-11-19): one frame for the grid, the belief and the
 memory; the misplaced edge reproduced from r2's depth frames; a recovery before a refusal counts and
 before "trapped"; then b12, scored by floor coverage as well as rooms.
+
+## b12: the frame fix, the glance's rim and the recovery (2026-11-19)
+
+Three 20-minute runs from scratch (no site: constraint #1), `--object-costs` as b11, on the three
+commits that answer b11 (`09922a6` one frame for the grid, the belief and the memory; `af7a6fb`
+the glance's rim; `8f96429` the recovery before a refusal counts; the run code is `b2c06a5`).
+The batch was 3 runs, not 5 (the operator, to reach phase 1 sooner). b11's section is on the
+mission-control branch; its numbers are quoted here. Scored with `explore_score` and the
+reachable floor the final map knows (`sim/probes/floor_coverage.py`: the challenge stream's
+`floor.py`, 12206 cells of 0.05 m from the dock; free or occupied cells both count as known).
+
+| Run | Rooms | Ended | Floor known (kitchen / living / office / bedroom / bath / corridor) | Objects found | Contact |
+| --- | --- | --- | --- | --- | --- |
+| b12 r1 | 1 | trapped, 2.0 min | 14.4 % (23 / 2 / 9 / 0 / 0 / 42) | 10 | 0 |
+| b12 r2 | 4 | trapped, 12.5 min | 50.9 % (95 / 12 / 90 / 35 / 0 / 78) | 21 | 0 |
+| b12 r3 | 4 | trapped, 10.3 min | 45.5 % (78 / 1 / 91 / 34 / 0 / 75) | 23 | 0 |
+| b11 r1 | 5 | no frontier left, 17.3 min | 79.2 % (11 / 94 / 89 / 60 / 98 / 95) | 32 | 0 |
+| b11 r2 | 1 | trapped, 0.6 min | 10.3 % | 5 | 0 |
+| b11 r3 | 2 | trapped, 2.3 min | 23.5 % | 14 | 0 |
+| b11 r4 | 1 | trapped, 2.9 min | 21.7 % | 18 | 0 |
+| b11 r5 | 3 | trapped, 3.6 min | 24.0 % | 18 | 0 |
+
+b12: rooms median 4 (b11: 2), best 4 (b11: 5); floor known mean 36.9 %, median 45.5 % (b11: mean
+31.7 %, median 23.5 %); trapped at 2.0, 12.5 and 10.3 min (b11: 0.6, 2.3, 2.9, 3.6 and one run
+that lasted 17.3 min); no contact, no fall in 117 m walked; belief error mean 0.023, 0.080 and
+0.052 m (max 0.059, 0.148, 0.121). The bar (RFC-0008 §8, areas within 25 % and rooms) is not
+met: areas within 25 % best 2/6, bath and living never entered by r2 and r3. Three runs against
+five, one run each: the differences in the table are not tested for chance, and b11's best run
+(r1, 79 %) is better than b12's best (51 %).
+
+### What each part did
+
+- **The glance's rim** (step 2): the first glance at the dock, which in b11 put the stairwell's
+  rim 0.46, 0.47, 0.17 and 0.15 m short (r2 to r5), is 0.053, 0.217 and 0.040 m short in b12
+  (`glance_edge_error.py` over the three runs' 7 glances: worst short −21.7 cm, worst past
+  +2.9 cm). No refusal at the dock in any run.
+- **The frame fix** (step 1): the belief never parted from mapd's frame in these runs (0
+  `frames_parted` events, no held fix, no `mapd_status` event), so the grid's shift was only the
+  landmarks' offset (3 and 2 landmark refusals in r2 and r3, no correction) and what ran was the
+  memory's move with the belief's corrections: 10, 87 and 94 moves in r1, r2 and r3 (r2's up to
+  0.175 m and 4.5° when mapd's pose corrected itself). Its effect here is not separated from the
+  rest: no run without it. Belief error is mean 0.080 m (max 0.148) in r2, above b11's 0.02–0.07;
+  not explained.
+- **The recovery** (step 3): fired at the end of each run, once per trap, three attempts each, 9
+  in all; none freed the duck, and the creep never ran (the room 0.10 m ahead was no better than
+  the room there, or the sensor showed under 250 mm). r1: three stands (the sensor 46–65 mm from
+  a wall ahead); r2: one stand (62 mm), then two arcs, each stopped by an obstacle in the
+  corridor after 2.0° and 14.2°; r3: three arcs (the first stopped by an obstacle in the corridor
+  after 2.8°, the next two by the memory coming nearer, after 12.4° and 15.8°). Then six
+  refusals in 2–3 s, and "trapped" (as before, but only after the recoveries). `leave_drop` did
+  not fire (no drop within 0.45 m at any start).
+
+**How the three ended: the same shape.** At the end of each run the duck stood in the kitchen
+(r1 in the doorway at (−1.02, 1.76), r2 at (−2.71, 0.70), r3 at (−2.77, 1.52)) with room 0.147–0.148
+m by the map (the tight-pivot gate is 0.15, a pivot's is 0.17) and a wall or frame 46–140 mm
+ahead of the sensor. In r1 and r3 a tight pivot (the one allowed at a spot) came within a second
+before the first refusal; r2's last leg ended with a held-off aim at that spot. Nothing
+drop-related: the nearest drop was 2.5–3.3 m away. So the recovery as specified has little to do
+there: a creep needs room ahead, an arc needs 300 mm, the duck does not walk backwards. My
+reading, not tested: what puts the duck there is a frontier target or a hold-off aim at a place
+with room under a pivot's, taken as reachable (the explorer's `reachable` asks for seen floor
+and a non-lethal cell, not for room to turn). The advisor's other findings from b11 r3 and r4
+(the arc has no obstacle check on its inner sweep; the tight pivot has no sensor floor) are not
+built, and not tested against these three.
+
+### NOT DONE / NOT VERIFIED
+
+- No run of the same code with the three changes off: b12 against b11 is a different set of
+  runs and a different code, and three against five.
+- The frame fix's taken loop closure (mapd's loop counter did not step in the simulator's runs of
+  either batch) and its gate branching by `lost` and `relocalizations` are unit-tested only.
+- The creep has not run in the simulator (0 of 9 attempts chose it); its in-walk stops are
+  tested against a stand-in, not the simulator.
+- The explorer's `WALL_M` (0.30) frontier filter leaves no frontier cell in a 0.645 m door (the
+  challenge stream's finding, challenge 23 seed 1): not touched, it may be part of why living and
+  bath were never entered; not measured here.
+- A remembered obstacle point with no layout geom near it: b11 r2's room-setting point at the
+  dock is 0.575 m from the nearest colliding geom, b11 r3's three nearest 0.30–0.36 m from every
+  geom of the layout (r4's are on a wall, r5's on `lm_office`). The lead's phantom at world
+  (−0.29, 0.09..0.17) is a related finding; its cause was not investigated here.
+- `server.py` (the navigator server's `map` method) still serves mapd's grid in mapd's frame.
+- The strict docs build (`make docs-build`) was not run: it installs into a new `.venv`.

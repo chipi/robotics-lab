@@ -13,6 +13,7 @@ import collections
 import math
 
 from duck_lab.nav.cliff import EXTRA_M
+from duck_lab.nav.frames import move_xy
 
 CELL_M = 0.05
 BELOW_SLOPE = 0.035          # m more below the floor per m of range (below_counts; replayed, docs/wip/SIDE-DROPS.md)
@@ -61,6 +62,21 @@ class SuspectMemory:
                 self.suspected.add(c)
                 new.append(c)
         return new
+
+    def move(self, t: tuple) -> None:
+        """Re-place every cell by the frame change t (frames.move_xy): the belief's frame moved, and the cells were counted
+        in the old one. Built beside and swapped in, as the depth-frame thread adds cells meanwhile."""
+        def cell(c):
+            return cell_of(*move_xy(t, (c[0] * CELL_M, c[1] * CELL_M)))
+
+        def counts(old):
+            new = collections.Counter()
+            for c, n in list(old.items()):
+                new[cell(c)] += n
+            return new
+        self.below, self.floor = counts(self.below), counts(self.floor)
+        self.suspected, self.cleared = {cell(c) for c in set(self.suspected)}, {cell(c) for c in set(self.cleared)}
+        self.confirmed = {cell(c) for c in set(self.confirmed)}
 
     def points(self) -> list:
         return [(c[0] * CELL_M, c[1] * CELL_M) for c in sorted(self.suspected)]
@@ -193,7 +209,10 @@ def edge_from_glance(frames: list, origin: tuple, bearing: float) -> tuple:
                 bins_b[b].append((r, (x, y)))
     for b, bs in bins_b.items():
         nearest = min(r for r, _ in bs)
-        short = sorted((r, p) for r, p in bins_f.get(b, ()) if r < nearest)
+        # the floor of this bin and of its neighbours: the sensor's 8 x 8 beams do not fall along the bins, so a bin held only
+        # the near end of a column's floor (the rest of it was in the next bin) and the run ended 0.2-0.4 m short of the edge
+        # (explore-b11 r2: the rim at 0.29 m for an edge 0.76 m away). Still only floor nearer than this bin's nearest below.
+        short = sorted((r, p) for nb in range(b - POOL_BINS, b + POOL_BINS + 1) for r, p in bins_f.get(nb, ()) if r < nearest)
         if not short:
             # below-floor returns and no floor before them: a drop (challenge 11 seed 8: the duck stood ~0.17 m from the
             # pit; this look reported floor and cleared a true suspicion). Its rim is the nearest of them; the edge may lie
@@ -209,12 +228,14 @@ def edge_from_glance(frames: list, origin: tuple, bearing: float) -> tuple:
             if r - r_rim > RIM_GAP_M:
                 break
             r_rim, p_rim = r, p
-        rim.append(p_rim)
+        if p_rim not in rim:        # neighbouring bins may end their runs at the same floor return
+            rim.append(p_rim)
         below.extend(p for r, p in bs if r > r_rim)
     return rim, below, floor
 
 
 BIN_DEG = 4.0
+POOL_BINS = 1               # bins either side whose floor continues a bin's run
 # The floor's run from the duck ends at a gap in range wider than this: floor returns beyond it are not the floor the duck
 # stands on (challenge 10 seed 1: the pit's far wall, whose band at floor height reads as floor, became the rim).
 RIM_GAP_M = 0.15

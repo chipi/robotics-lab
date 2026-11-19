@@ -228,6 +228,48 @@ All 11 challenges with both fixes, 10 seeds each: 1–4 10/10, 5 9/10, 6 8/10, 7
 100 % safety, the stall apart; at least 8/10 reach or refuse). The other failures are reflex loops
 and turn refusals near walls (challenges 5–7): the planner's work, not the drops'.
 
+## The rim at a beam's fragment (2026-11-19)
+
+explore-b11 r2's first glance, at the dock, put the stairwell's rim at y −0.22 to −0.54 with the
+duck at y 0.05 and the real edge at y −0.70: 0.46 m short against the −18 cm above, and the dock
+was then inside the believed turn gate (six refusals in 0.45 s). Reproduced from the run's
+recorded depth frames (`sim/probes/glance_from_run.py`: the frames the navigator pooled, sampled
+at its 10 Hz ticks, give the recorded rim exactly, 6 points, y −0.540 to −0.223).
+
+- **Cause.** The sensor's 8 × 8 beams do not fall along the 4° bins the rim is traced in: the
+  beams of one column run radially from the sensor (2–3 cm off the trunk's origin; the head's yaw
+  and the sensor's pitch bend the pattern), so the floor of one beam column is split over two
+  bins. A bin held the near end of a column's floor, the rest was in the next bin, the floor run
+  in the bin ended at the 0.15 m range gap (0.29 → 0.48 m), and the rim sat at 0.29 m for an
+  edge 0.76 m away. Tracing from the sensor's place instead of the trunk's did not fix it (the
+  rows of a column are not on one bearing either).
+- **Fix** (`side_drops.edge_from_glance`): a bin's floor run takes the floor of the bins either
+  side too (`POOL_BINS` 1), still only floor nearer than the bin's own nearest below-floor
+  return, so a rim is never past a below return of its own bin; a floor return that ends several
+  bins' runs is one rim point.
+- **Failing test first** (`tests/test_side_drops.py`; frames frozen by
+  `sim/probes/glance_fixture.py` from explore-b11-r2, r3 and explore-b9-r1): the rim was short
+  by 0.45–0.48 m at worst, now 0.10–0.16 m at worst.
+- **Replayed** over 379 recorded glances (challenges 8–11 seeds 1–10, and the apartment batches
+  b9–b11 that glanced at the stairwell; `sim/probes/glance_edge_error.py`: each glance replayed
+  from its own run's frames, each rim point measured against the scene's drop box, short = on
+  the floor side):
+
+  | | glances | short by over 18 cm | short by over 30 cm | past the edge by over 6.4 cm | worst short |
+  | --- | --- | --- | --- | --- | --- |
+  | before, apartment | 24 | 9 | 5 | 4 | −47 cm |
+  | after, apartment | 24 | 2 | 0 | 2 | −21 cm |
+  | before, challenges 8–11 | 355 | 206 | 67 | 159 | −52 cm |
+  | after, challenges 8–11 | 355 | 54 | 5 | 71 | −37 cm |
+
+  The two apartment glances still past the edge (b10a r1 +15 cm, b11 r4 +10 cm) are the same as
+  before. By this measure the past side is not the −18/+3 cm above for challenges 8–11 even
+  before the fix (159 of 355 over +6.4 cm: rim points on the far side of the hazard box, most
+  from the "no floor before the below returns" case, which this change does not touch); the
+  budget above came from another measurement that is not in the repo, so the two are not
+  compared here. Of the 355, 11 glances grew past +6.4 cm after the fix (largest +10.8 cm; each
+  of them also lost 12–40 cm of shortness).
+
 ## Not covered
 
 - False suspicions near walls (challenge 10 seeds 5 and 8: 0.28–0.6 m from the drop, 0.15–0.25 m

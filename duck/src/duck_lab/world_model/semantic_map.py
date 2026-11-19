@@ -326,6 +326,13 @@ class SemanticMap:
         found = self.approaches(o, pose, free, stand_m, step_deg)
         return found[0] if found else None
 
+    def move(self, t: tuple) -> None:
+        """Re-place every object by the frame change t (x, y, yaw): the belief's frame moved, and they were placed in the old
+        one. The anchors stay: they are where a landmark was kept, what the belief is checked against."""
+        for o in self.objects:
+            o.x, o.y = math.cos(t[2]) * o.x - math.sin(t[2]) * o.y + t[0], math.sin(t[2]) * o.x + math.cos(t[2]) * o.y + t[1]
+            o.parts = [q.moved(t) for q in o.parts]
+
     def to_json(self) -> dict:
         return {"objects": [o.summary() for o in self.objects]}
 
