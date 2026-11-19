@@ -74,6 +74,9 @@ class Scene:
     time_s: float
     jitter: tuple = (0.0, 0.0, 0.0)   # the start's offset and yaw in the challenge frame
     notes: dict = field(default_factory=dict)   # what the seed drew (widths, depths): kept in the run's results
+    mode: str = "go"              # "go" (one goal), "sequence" (`goals` in turn, one reset), "explore" (cover `areas`)
+    goals: tuple = ()             # a sequence's goals (x, y), in order
+    areas: tuple = ()             # an exploration's rooms, as footprint boxes the coverage is scored in; the start's first
 
     def drops(self) -> list:
         """Floors below 0 beyond an edge: holes to keep away from. A `step*` floor is a step to walk down, not a drop."""
@@ -98,8 +101,10 @@ def moved(scene: Scene, start: tuple) -> Scene:
     duck is at the origin facing +x, where the body server puts it."""
     t = inverse(start)
     gx, gy, _ = compose(t, (scene.goal[0], scene.goal[1], 0.0))
+    goals = tuple((round(x, 4), round(y, 4)) for x, y, _ in (compose(t, (g[0], g[1], 0.0)) for g in scene.goals))
     return replace(scene, boxes=[b.moved(t) for b in scene.boxes], floors=[f.moved(t) for f in scene.floors],
-                   goal=(round(gx, 4), round(gy, 4)), jitter=tuple(start))
+                   goal=(round(gx, 4), round(gy, 4)), jitter=tuple(start), goals=goals,
+                   areas=tuple(a.moved(t) for a in scene.areas))
 
 
 def _geom(b: Box, rgba: str) -> str:

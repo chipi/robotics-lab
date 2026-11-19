@@ -55,12 +55,48 @@ As many as it takes (the operator); this is the first list, from the trials so f
 | 18 | A step up and a step down | walking up and down, not refusing | — |
 | 19 | A short flight of small steps, up | climbing | — |
 | 20 | A short flight of small steps, down | descending | — |
-| 21 | Ten goals in a row without a reset | localization drift | phase 1 run 4 |
-| 22 | One room, mapped completely | exploration coverage | — |
-| 23 | A T-junction with two rooms | frontier choice | trial 6 |
-| 24 | Two rooms joined by a door | room segmentation and area | trials 4–6 |
+| 21 | Ten goals in a row without a reset: one room, about 3 × 3 m, a few boxes, a hole; goals beside the boxes and the hole | localization drift (the belief against the truth, in position and heading, at each goal), pivots beside obstacles, glances | phase 1 run 4, explore b10a |
+| 22 | One room, explored completely, a drop 0.5–0.8 m from the start | exploring coverage, and trapped near a drop | explore b9–b11 |
+| 23 | Two rooms through a door 0.6–0.8 m wide (or a short corridor) | frontier choice, crossing a door | trials 4–6 |
 
-1–20 are getting around safely; 21–24 build to exploring. 16–20 follow what the robot's body can
+1–20 are getting around safely; 21–23 build to exploring and close the course (the operator,
+2026-11-19: §8 has the revision, and why there is no 24). 21–23 are not one goal to reach, so each
+has its own rule, all judged by truth like the others (`duck-challenge --help`):
+
+- **21** visits ten goals in turn on one simulator reset, in a room of about 3 × 3 m with two or
+  three boxes and a stairwell-like hole against a wall. A room with ten plain goals would pass
+  trivially (the belief's error in explore b11 is 0.02–0.07 m); the goals ask for what failed:
+  four 0.25–0.4 m from a box (the duck pivots beside it, arriving and leaving: b10a's 0.9 m belief
+  jump came while pivoting in place), two 0.55–0.7 m from the hole (the planner's zone and its
+  glances at suspected drops), four in the open. Pass: every goal within 0.25 m by truth, and no
+  contact, fall or drop margin broken. The belief's error is recorded at each goal, in position and
+  in heading (yaw, belief against truth), with the goal's kind; it is reported, not judged. The
+  sequence stops at the first goal not reached.
+- **22** runs the explorer (not `go_to`) for 5 minutes in a room of about 3 × 3.5 m with up to three
+  boxes and a stairwell-like hole 0.5–0.8 m from the start. Pass: safe, the run did not end
+  `trapped`, and the map knows at least 75 % of the room's reachable floor.
+- **23** runs the explorer for 8 minutes in two rooms (2.4–3 m a side) joined by a door 0.6–0.8 m
+  wide, in the wall between them or at the end of a corridor 0.4–0.8 m long, the door ahead of the
+  start or behind it. Pass: safe, not `trapped`, at least 75 % of each room's reachable floor
+  known, and the door crossed (the duck's truth entered the second room).
+
+**The coverage bar (22, 23): 75 % of the reachable floor.** The reachable floor is the scene's
+level-0 floor the duck could stand on and walk to: at least the footprint (0.083 m) from every
+obstacle's outline, at least the planner's drop zone (0.35 m) from the drop, and connected to the
+start (a pocket walled all round is not asked for). The map's share is mapd's grid read cell by
+cell against it (a known cell is free or occupied; the grid is put into the world by the run's
+start pose and the odometry scale). 75 % is the apartment's phase 2 bar (a room's map within 25 %
+of its floor, RFC-0002 §3.4), and it fits the scenes: the floor within 0.2 m of a wall, a box or the
+drop is 25–33 % of the reachable floor in the scenes drawn (`tests/test_challenge.py`), the band
+the planner keeps off (lethal zone 0.12 m; frontiers are not taken within 0.3 m of a wall) and the
+8 × 8 sensor sees at a grazing angle. **The 75 % is provisional**: it was fixed before the first
+run, and is to be set again from the first ten seeds of 22 and 23 (the first three seeds of each gave
+22: 94 %, 89 %, 95 %; 23: room A 90 % with room B never entered, then 75 % / 82 % and 96 % / 96 %).
+The coverage function is not challenge-only: `duck_lab.challenge.floor` takes a layout (floors and
+obstacles in `sim/apartment_layout.json`'s shape) and regions, and gives the share known per region,
+so the apartment's scoreboard can use it.
+
+16–20 follow what the robot's body can
 do: each draws its heights under the robot's measured step height (`calibration/<robot>.json`), with
 a variant just over it where refusing (or going round, where there is a way) is right; ordinary home
 stairs stay refusals (8, 9). Under the step height the robot walks over, never round (the operator,
@@ -98,7 +134,7 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
 1. The scenario runner: scene generation with jitter, truth scoring, invariants, pass rates; the
    world-model viewer on every run (`duck-world`). No more 20-minute apartment runs until it is green.
 2. Challenges 1, 2, 3, 5, 8, 9 first — the ones behind the failures so far.
-3. The clearance model and measured margins; then the rest of 1–20; then 21–24.
+3. The clearance model and measured margins; then the rest of 1–20; then 21–23.
 4. The course in sequence, mixed, and the apartment.
 
 ## 6. Open questions
@@ -136,3 +172,14 @@ From the second-opinion review ([REVIEW-2026-11-15-navigator.md](../wip/REVIEW-2
   speed (`docs/wip/STEPS.md`: 1 cm 4/5 at 0.4 m/s, 1.5 cm 0/5, 2 cm 0/5 with falls), so challenge 16's
   bar is 0.5–1.0 cm, built edge to edge; 1.5–3.5 cm becomes a later "too high to cross: stop, do not
   fall" challenge once such a bar can be seen; the numbers go upstream on the operator's call.
+- 2026-11-19, operator: the course closes at 23, with a revised plan. 21 (ten goals in a row, one
+  reset) is one room of about 3 × 3 m; 22 (one room, explored completely) puts a drop 0.5–0.8 m from
+  the start, the "no room to turn" blocker of explore b9–b11, worst beside the stairwell by the
+  dock; 23 is two rooms through a door, the old 23 (a T-junction with two rooms) and 24 (two rooms
+  joined by a door) merged. **24 is removed**: it tested room segmentation and area, and the robot
+  no longer segments rooms — the operator defines the areas (RFC-0014) — so there is nothing left
+  for it to judge. 22 and 23 are judged on the explorer's own run (a challenge mode of
+  `duck-challenge` that reuses the apartment's explorer and its scoring), against the scene's own
+  floors. After an advisor review (same day), 21 was redrawn: ten goals in a plain 3 × 3 m room would
+  pass trivially, so the room has a hole and the goals sit beside the boxes and the hole, and the
+  heading's error is recorded with the position's.

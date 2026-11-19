@@ -65,9 +65,15 @@ class Judge:
         else:   # only a refusal is right: a stall stops safely, but it gave up rather than said why not (the operator, 2026-11-16)
             right = out.get("status") == "refused" and bool(out.get("why"))
             wrong = None if right else f"{out.get('status')} where refusing was right" + (f" ({out['why']})" if out.get("why") else "")
-        failed = [f"{self.broken['rule']} at {self.broken['t']} s: {self.broken['why']}"] if self.broken else []
-        failed += [wrong] if wrong else []
+        failed = self.broken_failures() + ([wrong] if wrong else [])
         return {"pass": not failed, "failed": failed, "status": out.get("status"), "why": out.get("why"),
-                "error_m": round(err, 3), "min_clearance_m": round(self.min_clearance[0], 3), "nearest": self.min_clearance[1],
+                "error_m": round(err, 3), **self.stats()}
+
+    def broken_failures(self) -> list:
+        return [f"{self.broken['rule']} at {self.broken['t']} s: {self.broken['why']}"] if self.broken else []
+
+    def stats(self) -> dict:
+        """What the truth samples said, whatever the challenge's outcome."""
+        return {"min_clearance_m": round(self.min_clearance[0], 3), "nearest": self.min_clearance[1],
                 "min_drop_m": None if self.min_drop == math.inf else round(self.min_drop, 3),
                 "lowest_trunk_m": round(self.lowest, 3), "truth_samples": self.samples}

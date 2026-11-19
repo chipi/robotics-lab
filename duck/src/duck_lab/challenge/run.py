@@ -2,11 +2,21 @@
 
     uv run duck-challenge 1 --runs 10                       # into $MINIVIEW_DATA (the lab data folder)
     uv run duck-challenge 8 --runs 3 --seed 5 --miniview-data /work/robotics-lab/data
+    uv run duck-challenge 22 --runs 3 --miniview-data /work/robotics-lab/data
 
 Each run: the seed's scene written (the simulator's file under ~/.cache/duck-sim/scenarios, miniview's scene in the data
 folder), the simulator restarted on it (~40 s), a navigator given the goal, every truth sample checked against the
 invariants (the first one broken is an `invariant` event in the run), and the outcome judged. Every run is a miniview run,
 `duck/<scene id>/<run>`, with its room. The simulator is stopped at the end (--keep-up leaves it).
+
+Three challenges are not one goal to reach (RFC-0008 §3):
+  21  ten goals in turn on one reset, one room with boxes and a hole, goals beside the boxes and the hole: every goal
+      within 0.25 m by truth, no invariant broken; the belief's error (truth against belief), in position and in
+      heading, is recorded at each goal.
+  22  one room with a drop 0.5-0.8 m from the start, explored (the explorer, not go_to) for 5 minutes: safe, the room's
+      reachable floor known to the map over the bar (explore.COVERAGE_BAR, 0.75 for now), not ended trapped.
+  23  two rooms joined by a door, explored for 8 minutes: as 22 for each room, and the door crossed.
+Pass rates for these are over the same seeds the others use; a run's result.json has the goals, the coverage and the end.
 """
 
 import argparse
@@ -17,6 +27,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from duck_lab.challenge import explore, sequence
 from duck_lab.challenge.challenges import CHALLENGES, build
 from duck_lab.challenge.judge import Judge
 from duck_lab.challenge.scene import miniview_scene, mjcf
@@ -43,8 +54,10 @@ def one(challenge: str, seed: int, data: Path, out: Path) -> dict:
     nav = None
     try:
         nav = Navigator(log=run_out / "ticks.jsonl", runlog=runlog)
+        trail = explore.Trail(scene)
 
         def watch(row):
+            trail.see(row["t"], row["truth"])
             broken = judge.check(row["t"], row["truth"], row.get("truth_z", 1.0))
             if not broken:
                 return None
@@ -56,10 +69,15 @@ def one(challenge: str, seed: int, data: Path, out: Path) -> dict:
             nav.survey()
         if nav.loc.pose() is None:
             out_ = {"status": "refused", "why": "no pose on the map after the survey"}
+            verdict = judge.verdict(out_, nav.body.pose())
+        elif scene.mode == "sequence":
+            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene))
+        elif scene.mode == "explore":
+            verdict = explore.verdict(scene, judge, trail, explore.run(nav, scene, run_out), run_out)
         else:
             map_from_world = compose(nav.loc.pose(), inverse(nav.body.pose()))
             out_ = nav.go_to(compose(map_from_world, (scene.goal[0], scene.goal[1], 0.0))[:2], scene.time_s)
-        verdict = judge.verdict(out_, nav.body.pose())
+            verdict = judge.verdict(out_, nav.body.pose())
         nav.record(event="judged", why="PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
     finally:
         if nav is not None:
@@ -88,8 +106,9 @@ def main() -> None:
         for i in range(args.runs):
             row = one(args.challenge, args.seed + i, args.miniview_data, args.out)
             rows.append(row)
-            print(json.dumps({k: row[k] for k in ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")}),
-                  flush=True)
+            keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
+            more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23
+            print(json.dumps({k: row[k] for k in keys + tuple(m for m in more if m in row)}), flush=True)
     finally:
         if not args.keep_up:
             simreset.down()

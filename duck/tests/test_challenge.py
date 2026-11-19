@@ -40,8 +40,8 @@ for ch in CHALLENGES:
     check(f"challenge {ch}: the duck starts on the start's floor (level 0), clear of every box", on_start and clear > FOOTPRINT_M,
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
-check("the step-downs are refusals, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach", "17": "reach", "18": "reach", "19": "reach", "20": "reach"})
+check("the step-downs are refusals, the explorations are their own, the rest are reaches",
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach", "17": "reach", "18": "reach", "19": "reach", "20": "reach", "21": "reach", "22": "explore", "23": "explore"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -267,6 +267,292 @@ with tempfile.TemporaryDirectory() as tmp:
     check("an unpatched duck-sim (sudo on every down) is refused, the patch named", "duck-sim-sudo-free-down.patch" in refused, refused)
     sim_script.write_text('        if systemctl is-active --quiet "$name" 2>/dev/null; then\n')
     check("a patched duck-sim is used", simreset.duck_sim() == str(sim_script))
+
+# ---- challenges 21-23: ten goals in a row, a room with a drop, two rooms (RFC-0008) -----------------------------------------
+from duck_lab.challenge import explore, floor, sequence  # noqa: E402
+from duck_lab.challenge.challenges import _walled  # noqa: E402
+from duck_lab.nav.frames import compose  # noqa: E402
+
+
+def rect_gap(p, b: Box) -> float:
+    """p's distance to an axis-aligned box's footprint."""
+    return math.hypot(max(abs(p[0] - b.cx) - b.hx, 0.0), max(abs(p[1] - b.cy) - b.hy, 0.0))
+
+
+def extent(sc: Scene) -> tuple:
+    """x0, x1, y0, y1 of the floors (axis-aligned, before the start's jitter)."""
+    return (min(f.cx - f.hx for f in sc.floors), max(f.cx + f.hx for f in sc.floors),
+            min(f.cy - f.hy for f in sc.floors), max(f.cy + f.hy for f in sc.floors))
+
+
+def room_of_floors(sc: Scene) -> Box:
+    x0, x1, y0, y1 = extent(sc)
+    return Box("room", (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2, 0.0, 0.0)
+
+
+def overlap(a: Box, b: Box) -> bool:
+    return min(a.cx + a.hx, b.cx + b.hx) - max(a.cx - a.hx, b.cx - b.hx) > 1e-9 and \
+        min(a.cy + a.hy, b.cy + b.hy) - max(a.cy - a.hy, b.cy - b.hy) > 1e-9
+
+
+def pieces_fit(sc: Scene, areas) -> bool:
+    """The floors in pieces: none over another, and every point of every area (0.1 m in from its edge) on one."""
+    clean = not any(overlap(a, b) for i, a in enumerate(sc.floors) for b in sc.floors[i + 1:])
+    full = all(any(inside((a.cx + dx, a.cy + dy), f) for f in sc.floors)
+               for a in areas for dx in [x * 0.1 for x in range(int(-a.hx / 0.1) + 1, int(a.hx / 0.1))]
+               for dy in [y * 0.1 for y in range(int(-a.hy / 0.1) + 1, int(a.hy / 0.1))])
+    return clean and full
+
+
+WALLS = ("room", "wa", "wb", "pass_")
+P21 = [CHALLENGES["21"](s, random.Random(f"21-{s}")) for s in range(20)]
+P22 = [CHALLENGES["22"](s, random.Random(f"22-{s}")) for s in range(20)]
+P23 = [CHALLENGES["23"](s, random.Random(f"23-{s}")) for s in range(20)]
+hole21 = [sc.drops()[0] for sc in P21]
+check("challenge 21: one room 2.9-3.3 m a side, two or three boxes, the start clear of them (0.7 m)",
+      all(2.9 <= sc.notes["room_m"][0] <= 3.3 and 2.9 <= sc.notes["room_m"][1] <= 3.3 and 2 <= sc.notes["boxes"] <= 3
+          and all(rect_gap((0.0, 0.0), b) >= 0.7 - 1e-6 for b in sc.boxes if b.name.startswith("box")) for sc in P21))
+check("challenge 21: a stairwell-like hole against a wall (one drop, 1-2.7 m down, 0.6-0.8 m a side, 0.6 m or more from the "
+      "start), the floor in pieces edge to edge round it, walls to its floor",
+      all(len(sc.drops()) == 1 and h.name == "stairwell" and 1.0 <= -h.z1 <= 2.7 and 0.6 - 1e-6 <= 2 * h.hx <= 0.8 + 1e-6
+          and 0.6 - 1e-6 <= 2 * h.hy <= 0.8 + 1e-6 and rect_gap((0.0, 0.0), h) >= 0.6 - 1e-6
+          and pieces_fit(sc, [room_of_floors(sc)])
+          and min(b.z0 for b in sc.boxes if b.name.startswith("room_")) <= h.z1 + 1e-9
+          for sc, h in zip(P21, hole21)))
+check("challenge 21: ten goals, each 1 m or more from the one before (the first from the start), 0.3 m from each other, "
+      "0.45 m in from the walls, 0.25 m from every box, 0.55 m from the hole",
+      all(len(sc.goals) == 10 and all(math.dist(a, b) >= 1.0 - 1e-6 for a, b in zip([(0.0, 0.0)] + list(sc.goals), sc.goals))
+          and all(math.dist(a, b) >= 0.3 - 1e-6 for i, a in enumerate(sc.goals) for b in sc.goals[i + 1:])
+          and all(extent(sc)[0] + 0.45 - 1e-6 <= g[0] <= extent(sc)[1] - 0.45 + 1e-6 and extent(sc)[2] + 0.45 - 1e-6 <= g[1] <= extent(sc)[3] - 0.45 + 1e-6
+                  for g in sc.goals)
+          and all(rect_gap(g, b) >= 0.25 - 1e-6 for g in sc.goals for b in sc.boxes if b.name.startswith("box"))
+          and all(rect_gap(g, h) >= 0.55 - 1e-6 for g in sc.goals) for sc, h in zip(P21, hole21)), [len(sc.goals) for sc in P21])
+check("challenge 21: what failed is what the goals ask for: four beside a box (0.25-0.4 m from its outline), two by the "
+      "hole (0.55-0.7 m from its edge), four in the open (0.4 m from boxes, 0.7 m from the hole)",
+      all([k for k in sc.notes["goal_kinds"]].count("box") == 4 and sc.notes["goal_kinds"].count("drop") == 2
+          and sc.notes["goal_kinds"].count("open") == 4
+          and all(min(rect_gap(g, b) for b in sc.boxes if b.name.startswith("box")) <= 0.4 + 2e-3 for g, k in zip(sc.goals, sc.notes["goal_kinds"]) if k == "box")
+          and all(rect_gap(g, h) <= 0.7 + 2e-3 for g, k in zip(sc.goals, sc.notes["goal_kinds"]) if k == "drop")
+          and all(min(rect_gap(g, b) for b in sc.boxes if b.name.startswith("box")) >= 0.4 - 2e-3 and rect_gap(g, h) >= 0.7 - 2e-3
+                  for g, k in zip(sc.goals, sc.notes["goal_kinds"]) if k == "open") for sc, h in zip(P21, hole21)))
+check("challenge 21: a sequence, its first goal the scene's goal, 60 s a goal", all(sc.mode == "sequence" and sc.goal == sc.goals[0] and sc.time_s == 60.0 for sc in P21))
+b21 = [build("21", s) for s in range(1, 6)]
+check("challenge 21: with the start's jitter every goal is on the floor the duck can reach (a goal it can stand on)",
+      all(all(min(math.dist(g, p) for p in floor.reachable(sc)) <= 0.05 for g in sc.goals) for sc in b21))
+
+hole = [next(f for f in sc.floors if f.name == "stairwell") for sc in P22]
+check("challenge 22: one drop, named so the scene's drops() has it, a floor 1-2.7 m below 0 (a stairwell, not a step)",
+      all(sc.drops() == [h] and 1.0 <= -h.z1 <= 2.7 and sc.drops()[0].name == "stairwell" for sc, h in zip(P22, hole)))
+check("challenge 22: the hole's nearest edge 0.5-0.8 m from the start, 0.8-1.0 m wide, 0.6-0.9 m long, either side",
+      all(0.5 - 1e-6 <= rect_gap((0.0, 0.0), h) <= 0.8 + 1e-6 and 0.8 - 1e-6 <= 2 * h.hx <= 1.0 + 1e-6 and 0.6 - 1e-6 <= 2 * h.hy <= 0.9 + 1e-6
+          for h in hole) and {sc.notes["side"] for sc in P22} == {-1, 1})
+check("challenge 22: one room about 3 x 3.5 m, two or three boxes, an explorer's budget of 5 minutes, one area (the room)",
+      all(2.8 <= sc.notes["room_m"][0] <= 3.3 and 3.3 <= sc.notes["room_m"][1] <= 3.7 and 2 <= sc.notes["boxes"] <= 3
+          and sc.mode == "explore" and sc.time_s == 300.0 and [a.name for a in sc.areas] == ["room"] for sc in P22),
+      [sc.notes["room_m"] for sc in P22[:3]])
+check("challenge 22: the floors in pieces (the room's floor round the hole, the hole), edge to edge, none over another",
+      all(pieces_fit(sc, sc.areas) and len(sc.floors) == 4 for sc in P22))
+check("challenge 22: every wall reaches down to the lowest floor (the hole's floor): no gap under a wall",
+      all(min(b.z0 for b in sc.boxes if b.name.startswith("room_")) <= min(f.z1 for f in sc.floors) + 1e-9 for sc in P22))
+check("challenge 22: no box within 0.6 m of the hole",
+      all(math.hypot(max(abs(b.cx - h.cx) - b.hx - h.hx, 0.0), max(abs(b.cy - h.cy) - b.hy - h.hy, 0.0)) >= 0.6 - 1e-6
+          for sc, h in zip(P22, hole) for b in sc.boxes if b.name.startswith("box")))
+
+check("challenge 23: two rooms, a door 0.6-0.8 m wide in the wall between them or at the end of a corridor 0.4-0.8 m long, "
+      "the explorer's budget 8 minutes, one area per room (the start's first)",
+      all(0.6 <= sc.notes["door_m"] <= 0.8 and (sc.notes["corridor_m"] == 0.0 or 0.4 <= sc.notes["corridor_m"] <= 0.8)
+          and sc.mode == "explore" and sc.time_s == 480.0 and [a.name for a in sc.areas] == ["room_a", "room_b"] for sc in P23))
+check("challenge 23: the seeds draw a plain door and a corridor, the door ahead of the start and behind it",
+      {sc.notes["corridor_m"] == 0.0 for sc in P23} == {True, False} and {sc.notes["door_ahead"] for sc in P23} == {True, False})
+check("challenge 23: the start in the first room, 1-3 boxes in each room (each in its own), the start clear of them (0.5 m)",
+      all(inside((0.0, 0.0), sc.areas[0]) and not inside((0.0, 0.0), sc.areas[1])
+          and all(1 <= sum(b.name.startswith(p) and inside((b.cx, b.cy), a) for b in sc.boxes) <= 3
+                  for p, a in zip(("a_box", "b_box"), sc.areas))
+          and all(rect_gap((0.0, 0.0), b) >= 0.5 - 1e-6 for b in sc.boxes if b.name.startswith("a_box")) for sc in P23))
+check("challenge 23: the floors in pieces, edge to edge: each room's floor, the corridor's, none over another",
+      all(pieces_fit(sc, sc.areas) and len(sc.floors) == (3 if sc.notes["corridor_m"] else 2) for sc in P23))
+check("challenge 23: every wall reaches the floor's level", all(min(b.z0 for b in sc.boxes if b.name.startswith(WALLS)) <= min(f.z1 for f in sc.floors) + 1e-9
+                                                                 for sc in P23))
+door_ok = []
+for sc in P23[:10]:
+    pts = floor.reachable(sc)
+    door_ok.append(all(sum(floor.in_area(p, a) for p in pts) > 1000 for a in sc.areas))
+check("challenge 23: both rooms are on the floor the duck can reach from its start (the door is passable at its footprint)", all(door_ok), door_ok)
+
+# the floor the duck could stand on, and the map against it
+ring = _walled("pocket", 0.4, 1.0, 0.4, 1.0)
+yard = Scene("y", "y", ring, [slab("floor", -1, 1, -1, 1)], (0, 0), "explore", 10.0, mode="explore", areas=(Box("room", 0, 0, 1, 1, 0, 0),))
+inside_ring = [p for p in floor.lattice(layout(yard)).values() if 0.5 <= p[0] <= 0.9 and 0.5 <= p[1] <= 0.9]
+check("reachable floor: a pocket walled all round is standable floor but not reachable from the start",
+      len(inside_ring) > 20 and not any(0.45 < p[0] < 0.95 and 0.45 < p[1] < 0.95 for p in floor.reachable(yard)),
+      (len(inside_ring), len(floor.reachable(yard))))
+flat = Scene("f", "f", [], [slab("floor", -1, 1, -1, 1)], (0, 0), "explore", 10.0, mode="explore", areas=(Box("room", 0, 0, 1, 1, 0, 0),))
+pts = floor.reachable(flat)
+check("reachable floor: an open 2 x 2 m floor is 1600 lattice cells of 5 cm", len(pts) == 1600, len(pts))
+check("reachable floor: the layout-level function (floors in, points out) is the scene's own",
+      sorted(floor.reachable_floor(layout(flat))) == sorted(pts))
+
+# not challenge-only (the apartment scoreboard's coverage later): the apartment's layout and its rooms through the same functions
+from duck_lab.nav.evaluate import LAYOUT  # noqa: E402
+from duck_lab.nav.rooms import ROOMS, room_of  # noqa: E402
+
+apartment = json.loads(LAYOUT.read_text())
+walk = floor.reachable_floor(apartment, (0.05, 0.0), step=0.1)
+rooms = {n: (lambda p, n=n: room_of(p) == n) for n in ROOMS}
+heard = floor.coverage_by(walk, lambda p: p[0] > 0.0, rooms)           # a stand-in map: everything east of the dock
+check("the apartment's layout: a floor to stand on from the dock, no point inside the stairwell (the stairs' opening), and "
+      "each room's share of a stand-in map told apart",
+      len(walk) > 500 and not any(-0.40 <= p[0] <= 0.0 and -1.40 <= p[1] <= -0.70 for p in walk)
+      and heard["regions"]["office"] == 1.0 and heard["regions"]["kitchen"] == 0.0, (len(walk), heard["regions"]))
+
+
+def grid_of(x0, y0, w, h, res, known) -> dict:
+    """A mapd grid of w x h cells from (x0, y0) in map metres; `known(x, y)` says whether the cell at its centre is."""
+    cells = "".join("." if known(x0 + (i + 0.5) * res, y0 + (j + 0.5) * res) else "?" for j in range(h) for i in range(w))
+    return {"res_m": res, "origin": [x0, y0], "width": w, "height": h, "cells": cells}
+
+
+at0 = {"map": (0.0, 0.0, 0.0), "truth": (0.0, 0.0, 0.0), "scale": 1.0}
+half = grid_of(-1, -1, 40, 40, 0.05, lambda x, y: x < 0)
+cov = floor.coverage(flat, half, at0)
+check("coverage: a map that knows the west half of the floor knows half of it", abs(cov["all"] - 0.5) < 0.02 and abs(cov["areas"]["room"] - 0.5) < 0.02, cov)
+check("coverage: a map that knows nothing scores 0, one that knows everything 1",
+      floor.coverage(flat, grid_of(-1, -1, 40, 40, 0.05, lambda x, y: False), at0)["all"] == 0.0
+      and floor.coverage(flat, grid_of(-1, -1, 40, 40, 0.05, lambda x, y: True), at0)["all"] == 1.0)
+# the map's frame is not the world's: mapd's origin is its first stop (here 1 m along the world's x)
+shifted = {"map": (1.0, 0.0, 0.0), "truth": (0.0, 0.0, 0.0), "scale": 1.0}
+check("coverage: the world's floor is read through the run's start (map pose against truth pose)",
+      floor.coverage(flat, grid_of(0, -1, 40, 40, 0.05, lambda x, y: True), shifted)["all"] == 1.0
+      and floor.coverage(flat, grid_of(-1, -1, 40, 40, 0.05, lambda x, y: True), shifted)["all"] < 0.6)
+check("coverage: the odometry scale puts the grid's raw metres right (0.5: 0.1 m cells are 5 cm)",
+      floor.coverage(flat, grid_of(-2, -2, 40, 40, 0.1, lambda x, y: True), {**at0, "scale": 0.5})["all"] == 1.0)
+walled = grid_of(-1, -1, 40, 40, 0.05, lambda x, y: True)
+walled["cells"] = "#" * len(walled["cells"])
+check("coverage: an occupied cell is known too", floor.coverage(flat, walled, at0)["all"] == 1.0)
+sc22 = P22[2]                     # before the start's jitter: the boxes are axis-aligned
+h22 = sc22.drops()[0]
+pts22 = floor.reachable(sc22)
+check("coverage: the reachable floor keeps the drop's lethal zone (0.35 m) out of what is asked, and never the hole itself",
+      all(rect_gap(p, h22) >= 0.35 - 1e-6 for p in pts22) and not any(inside(p, h22) for p in pts22), len(pts22))
+all_known = grid_of(-6, -6, 240, 240, 0.05, lambda x, y: True)
+check("coverage: a 22 scene's map that knows everything scores 1, one that knows only x < 0 scores between",
+      floor.coverage(sc22, all_known, at0)["areas"]["room"] == 1.0
+      and 0.1 < floor.coverage(sc22, grid_of(-6, -6, 240, 240, 0.05, lambda x, y: x < 0), at0)["areas"]["room"] < 0.9)
+c23 = build("23", 3)
+two = floor.coverage(c23, grid_of(-6, -6, 240, 240, 0.05, lambda x, y: inside((x, y), c23.areas[0])), at0)
+check("coverage: two rooms are scored apart: a map of the first room only is all but the quantizing of its edge cells (over 0.98) for it and 0 for the second",
+      two["areas"]["room_a"] > 0.98 and two["areas"]["room_b"] == 0.0 and 0.3 < two["all"] < 0.7, two)
+bands = [floor.edge_band(sc, 0.2) for sc in [build(ch, s) for ch in ("21", "22", "23") for s in range(1, 11)]]
+check("the bar: the floor within 0.2 m of a wall, a box or the drop is 15-40 % of the reachable floor, the slack a bar of "
+      f"{explore.COVERAGE_BAR:.0%} leaves (seen {min(bands):.2f}-{max(bands):.2f})", 0.15 <= min(bands) and max(bands) <= 0.40, bands)
+
+# the sequence (challenge 21) on a stand-in navigator: no simulator
+j21 = Scene("s", "s", [Box("wall", 0.0, 1.45, 3.0, 0.02, 0.0, 0.5)], [slab("floor", -1.5, 1.5, -1.5, 1.5)], (1.0, 0.0), "reach", 60.0,
+            mode="sequence", goals=((1.0, 0.0), (1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0)), notes={"goal_kinds": ["open", "box", "drop", "box"]})
+
+
+class StandIn:
+    """go_to walks the truth to the goal (map frame = world frame: the start's transform is the identity) and the belief drifts
+    by `drift` m along x and 3 degrees of heading more on each goal; `fail` maps a goal's number to (status, why, miss)."""
+
+    def __init__(self, drift=0.02, fail=None):
+        self.t, self.b, self.drift, self.fail, self.calls, self.rows = [0.05, 0.0, 0.0], [0.05, 0.0, 0.0], drift, fail or {}, [], []
+        self.body = type("B", (), {"pose": lambda s_: tuple(self.t)})()
+        self.loc = type("L", (), {"pose": lambda s_: tuple(self.b)})()
+
+    def go_to(self, goal, timeout_s):
+        n = len(self.calls) + 1
+        self.calls.append((goal, timeout_s))
+        status, why, miss = self.fail.get(n, ("reached", None, 0.0))
+        self.t[:2] = [goal[0] + miss, goal[1]]
+        self.b[:2] = [goal[0] + n * self.drift, goal[1]]
+        self.b[2] = self.t[2] - math.radians(3 * n)
+        return {"status": status, **({"why": why} if why else {})}
+
+    def record(self, **row):
+        self.rows.append(row)
+
+
+nav = StandIn()
+rows = sequence.run(nav, j21)
+jj = Judge(j21)
+v = sequence.verdict(jj, j21, rows)
+check("sequence: every goal is gone to in order, each within the scene's time, and none is left out",
+      [tuple(round(x, 3) for x in c[0]) for c in nav.calls] == list(j21.goals) and all(c[1] == 60.0 for c in nav.calls), nav.calls)
+check("sequence: all reached by truth, nothing broken: PASS, four goals reached", v["pass"] and v["reached"] == 4 and v["status"] == "reached", v["failed"])
+check("sequence: the belief's error is recorded at each goal (0.02 m more at each here), the mean and the largest in the verdict",
+      [r["belief_error_m"] for r in rows] == [0.02, 0.04, 0.06, 0.08] and v["belief_error_m"] == {"mean": 0.05, "max": 0.08, "last": 0.08}, v["belief_error_m"])
+check("sequence: the heading's error too (belief yaw against the truth's, 3 degrees more at each here, either sign), and the "
+      "kind of place each goal is, in the rows and in the verdict",
+      [r["heading_error_deg"] for r in rows] == [3.0, 6.0, 9.0, 12.0] and v["heading_error_deg"] == {"mean": 7.5, "max": 12.0, "last": 12.0}
+      and [r["kind"] for r in rows] == ["open", "box", "drop", "box"], (v["heading_error_deg"], [r["kind"] for r in rows]))
+check("sequence: each goal is an event in the run, with its number and its truth error",
+      [(r["event"], r["n"]) for r in nav.rows] == [("goal", i) for i in (1, 2, 3, 4)])
+nav = StandIn(fail={3: ("timeout", None, 0.4)})
+rows = sequence.run(nav, j21)
+v = sequence.verdict(Judge(j21), j21, rows)
+check("sequence: a goal not reached stops the sequence there (no fourth goal from where nobody planned), FAIL naming goal 3 of 4",
+      len(nav.calls) == 3 and not v["pass"] and v["reached"] == 2 and v["failed"] == ["goal 3 of 4: timeout"], (len(nav.calls), v["failed"]))
+nav = StandIn(fail={2: ("reached", None, 0.4)})
+v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21))
+check("sequence: said reached 0.4 m from the goal is not reached (over 0.25 m by truth): FAIL with the distance",
+      not v["pass"] and v["failed"] == ["goal 2 of 4: said reached 0.40 m from it (over 0.25 m)"], v["failed"])
+nav = StandIn(fail={1: ("refused", "no path on the map", 0.0)})
+v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21))
+check("sequence: a refusal at the first goal names its reason", v["failed"] == ["goal 1 of 4: refused: no path on the map"] and v["reached"] == 0, v["failed"])
+nav = StandIn()
+rows = sequence.run(nav, j21)
+jb = Judge(j21)
+jb.check(2.0, (0.0, 1.40, 0.0), 0.116)
+v = sequence.verdict(jb, j21, rows)
+check("sequence: every goal reached but a contact on the way: FAIL (safety is part of the pass)",
+      not v["pass"] and v["reached"] == 4 and v["failed"][0].startswith("contact at 2.0 s"), v["failed"])
+check("sequence: a verdict is JSON", json.loads(json.dumps(v)) == v)
+mv = moved(j21, (0.0, 0.0, math.pi / 2))
+check("a start turned +90°: a sequence's goals and an exploration's areas move with the world",
+      all(abs(g[0] - e[0]) < 1e-3 and abs(g[1] - e[1]) < 1e-3 for g, e in zip(mv.goals, [(0.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]))
+      and abs(moved(sc22, (0.0, 0.0, math.pi / 2)).areas[0].yaw - (sc22.areas[0].yaw - math.pi / 2)) < 1e-3)
+
+# the exploration's verdict (challenges 22, 23), from the files a run leaves: start.json, map_grid.json, ticks.jsonl
+sc = build("23", 3)
+b0, b1 = sc.areas
+
+
+def verdict_for(grid, end, entered, why=None, judge=None):
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        (d / "start.json").write_text(json.dumps(at0))
+        (d / "map_grid.json").write_text(json.dumps(grid))
+        (d / "ticks.jsonl").write_text(json.dumps({"t": 1.0, "pose": [0, 0, 0], "truth": [0, 0, 0]}) + "\n")
+        trail = explore.Trail(sc)
+        for a in entered:
+            trail.see(7.0, (a.cx, a.cy))
+        return explore.verdict(sc, judge or Judge(sc), trail, {"end": end, "end_s": 30.0, "legs": 5, "why": why}, d)
+
+
+full = grid_of(-6, -6, 240, 240, 0.05, lambda x, y: True)
+v = verdict_for(full, "no_frontier_left", [b0, b1])
+check("exploration verdict: both rooms known, the door crossed, ended with no frontier left, nothing broken: PASS",
+      v["pass"] and v["coverage"]["areas"] == {"room_a": 1.0, "room_b": 1.0} and v["end"] == "no_frontier_left", v["failed"])
+v = verdict_for(full, "no_frontier_left", [b0])
+check("exploration verdict: the second room never entered is a fail, the door named", not v["pass"] and v["failed"] == ["never entered room_b: the door not crossed"], v["failed"])
+v = verdict_for(grid_of(-6, -6, 240, 240, 0.05, lambda x, y: inside((x, y), b0)), "no_frontier_left", [b0, b1])
+check("exploration verdict: the second room not mapped is a fail with its share and the bar", not v["pass"] and len(v["failed"]) == 1
+      and v["failed"][0] == f"coverage of room_b 0%, under {explore.COVERAGE_BAR:.0%}", v["failed"])
+v = verdict_for(full, "trapped", [b0, b1], why="6 refusals in a row")
+check("exploration verdict: ended trapped is a fail even with the rooms mapped", not v["pass"] and v["failed"] == ["ended trapped: 6 refusals in a row"], v["failed"])
+v = verdict_for(full, "time", [b0, b1])
+check("exploration verdict: the budget running out with both rooms known passes, the end said", v["pass"] and v["end"] == "time")
+jf = Judge(sc)
+jf.check(1.0, (0.0, 0.0, 0.0), 0.02)
+v = verdict_for(full, "aborted", [b0, b1], judge=jf)
+check("exploration verdict: a fall is said once (the abort it caused is not a second failure)", not v["pass"] and len(v["failed"]) == 1 and v["failed"][0].startswith("fall"), v["failed"])
+check("exploration verdict: JSON, with the belief's error and the coverage", json.loads(json.dumps(v)) == v and "mean" in v["belief_error_m"])
+trail = explore.Trail(sc)
+trail.see(1.0, (0.0, 0.0))
+trail.see(2.0, (b1.cx, b1.cy))
+trail.see(3.0, (0.0, 0.0))
+check("the trail: an area is entered once, at the first time", trail.entered == {"room_a": 1.0, "room_b": 2.0}, trail.entered)
 
 print("test_challenge", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
