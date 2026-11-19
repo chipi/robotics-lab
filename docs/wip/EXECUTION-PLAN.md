@@ -3,6 +3,14 @@
 **Status:** the operator's plan, 2026-11-19: "write this down in a file and we execute on this". Each
 phase ends with a checkpoint (§ The checkpoint) before the next one starts.
 
+**What it is for** (the operator, 2026-11-19): "we are creating [a] baseline and after we do all
+RFCs and [the] rest of the plan we will go back to making [the] planner better; now [the] goal is to
+have a baseline and to deliver our vision so we can enable ourselves to evolve [the] planner and
+explore boundaries." So the phases deliver the platform (robot profiles and plugins, anomalies, the
+views, the restructure) and record where the duck stands as the baseline; a weak result is recorded
+as baseline and a known issue, not chased inside the plan. Improving the planner comes after phase
+6.
+
 The order: **land and phase 1 → restructure → profiles and anomalies in parallel → look-far on the
 profiles → views → the EV3.** RFC-0018's restructure moves every file, so it happens in a quiet
 moment with nothing else in flight; the RFCs after it build on the new layout.
