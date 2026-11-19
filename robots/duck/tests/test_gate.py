@@ -3,6 +3,8 @@ the latching STOP, takeover, the log. A fake clock, a fake robot and fake connec
 Run: cd robots/duck && uv run python tests/test_gate.py"""
 
 import json
+import shutil
+import atexit
 import tempfile
 from pathlib import Path
 
@@ -245,6 +247,7 @@ taken = next(e for e in log if e["event"] == "taken_over")
 check("a takeover is logged: who, from whom", taken["by"] == "operator-laptop" and taken["client"] == "mission-control", taken)
 
 tmp = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, tmp, True)
 jl = JsonlLog(tmp / "gate" / "gate.jsonl", wall=lambda: 5.0)
 gate = Gate(Robot(), clock=Clock(), log=jl)
 gate.handle(gate.open("mission-control"), "gate.acquire")

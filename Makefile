@@ -19,6 +19,12 @@ SHELL          := /usr/bin/env bash
 
 # ---- Tunables ----------------------------------------------------------------
 
+# Temporary files go to the disk, not /tmp: /tmp here is a tmpfs whose ~1M inodes every session on the
+# machine shares, and it filled on 2026-11-19. Each test also removes its own folder at exit.
+TEST_TMP       ?= $(HOME)/.cache/robotics-lab-tests
+export TMPDIR  := $(TEST_TMP)
+$(shell mkdir -p $(TEST_TMP))
+
 PYTHON         ?= python3
 VENV_DIR       ?= .venv
 VENV_BIN       := $(VENV_DIR)/bin

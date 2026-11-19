@@ -15,6 +15,7 @@ import math
 import shutil
 import subprocess
 import sys
+import atexit
 import tempfile
 import threading
 import time
@@ -55,6 +56,7 @@ def wait_for(cond, timeout, every=0.5):
 
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-sim-duck-"))
+atexit.register(shutil.rmtree, tmp, True)
 print("working in", tmp, flush=True)
 data = tmp / "data"
 (data / "scenes" / "apartment").mkdir(parents=True)

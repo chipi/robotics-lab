@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import atexit
 import tempfile
 import time
 import urllib.error
@@ -84,6 +85,7 @@ class Server:
 
 
 tmp = Path(tempfile.mkdtemp(prefix="nxt-v2-"))
+atexit.register(shutil.rmtree, tmp, True)
 try:
     # ---- with the wheel geometry: a pose from the fake brick's tachos, live while recording ------------------------------
     mv = tmp / "mv"
@@ -211,6 +213,7 @@ finally:
 from nxt_lab import recorder as rmod  # noqa: E402
 
 own = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, own, True)
 calls, real_chown = [], os.chown
 os.chown = lambda p, uid, gid, follow_symlinks=True: calls.append((Path(p).relative_to(own).as_posix(), uid, gid))
 try:

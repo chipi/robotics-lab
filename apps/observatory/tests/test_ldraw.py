@@ -9,6 +9,8 @@ import json
 import math
 import struct
 import sys
+import shutil
+import atexit
 import tempfile
 from pathlib import Path
 
@@ -86,6 +88,7 @@ check("pitch_deg turns about y, positive lowering the nose: forward at 90 degree
 
 # the robot
 tmp = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, tmp, True)
 summary = ldraw.build(FIX / "robot", lib, tmp)
 check("the summary: four parts, the cable dropped, nothing missing, the whole robot 52 x 16 x 24 mm (the arm 100 LDU back and 40 up, the mirrored "
       "triangle 30 LDU to the left), stand_z 4 mm (the base cube's centre above the lowest point)",

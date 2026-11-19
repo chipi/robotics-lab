@@ -7,6 +7,7 @@ Writes web/proto/data/ (not committed): run.json (the run's summary and streams 
 angles over time at 10 Hz), robot.json (the description: links, visuals, joints from the root out), meshes/*.stl.
 """
 
+import atexit
 import json
 import os
 import shutil
@@ -14,7 +15,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("OBSERVATORY_INDEX", str(Path(tempfile.mkdtemp()) / "index.sqlite"))
+_index_dir = tempfile.mkdtemp()
+atexit.register(shutil.rmtree, _index_dir, True)
+os.environ.setdefault("OBSERVATORY_INDEX", str(Path(_index_dir) / "index.sqlite"))
 from runfile import keys
 from observatory import kinematics  # noqa: E402
 from runfile.catalog import Catalog  # noqa: E402

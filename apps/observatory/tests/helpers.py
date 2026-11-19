@@ -16,6 +16,7 @@ from runfile import keys, mcapio
 from observatory.importer import import_duck
 
 _INDEX_DIR = Path(tempfile.mkdtemp(prefix="miniview-test-index-"))
+atexit.register(shutil.rmtree, _INDEX_DIR, True)
 atexit.register(shutil.rmtree, _INDEX_DIR, ignore_errors=True)
 os.environ["MINIVIEW_INDEX"] = str(_INDEX_DIR / "default.sqlite")     # a test that forgets its own index never touches the real one
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "explore9"
