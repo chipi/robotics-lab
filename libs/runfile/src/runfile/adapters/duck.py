@@ -15,7 +15,7 @@ from runfile.store import build, verdict_of
 
 ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
 NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
-           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance", "found", "camera_failed")
+           "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance", "found", "camera_failed", "anomaly")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
 ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
 
@@ -130,6 +130,8 @@ class DuckLog:
                 e["text"] = f"found {r.get('kind')} {r.get('status')}"
             if ev == "camera_failed":                       # the camera's error, said once each
                 e["text"] = f"camera_failed {r.get('why')}"
+            if ev == "anomaly":                             # a robot-tagged anomaly (RFC-0019): the record is in `raw`, the line says what and how bad
+                e["text"] = f"anomaly {r.get('anomaly')} ({r.get('severity')}): {r.get('summary')}"
             if isinstance(r.get("decision"), dict):         # a rule that fired, with the values it compared (ADR-0014)
                 e["decision"] = r["decision"]
             if ev == "room":                                # the room the duck believes it is in, and the votes behind it, as fields of the event

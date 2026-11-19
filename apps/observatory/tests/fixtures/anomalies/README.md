@@ -13,3 +13,4 @@ time; the events the detectors read are whole; a `world` row is whole.
 | `edge_b11_r2` | explore-b11-r2, 20-42 s, and its last map | the stairwell's rim placed 0.27 m (median) off, then refusals, then "trapped" |
 | `dock_b9_r2` | explore-b9-r2, 28-31 s and the first map (t = 30.9 s) | the 3-cell cluster by the dock: the cube `obj_3`, a phantom only if the truth lacks it |
 | `nothing_left_b11_r1` | explore-b11-r1, 1030-1041 s and the last map | "nothing left to explore" with the kitchen 0.10 and the bedroom 0.38 covered |
+| `robot_tagged_fault` | a 2-minute `duck-explore --fix-fault 30,0.9,0.0` in the simulator (2026-11-19), 29-37 s | the robot's own tags (RFC-0019 step 1): mapd's pose 0.9 m off from 30 s, so four held fixes (`fix_jump_held`) and the frames parting (`frames_parted`), written by the navigator itself |

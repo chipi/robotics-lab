@@ -149,7 +149,7 @@ class Tof8x8:
         self.on_frame = None             # called with each frame (the navigator derives, logs and remembers it)
         self.last, self.frames = None, 0
         self._nearest_mm = None
-        self._sock = self._f = None
+        self._sock = self._f = self._thread = None
         self._stop = threading.Event()
 
     # ---- the stream ------------------------------------------------------------------------------------------------------
@@ -161,7 +161,8 @@ class Tof8x8:
         self._f = self._sock.makefile("rw")
         self._f.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tof.stream"}) + "\n")
         self._f.flush()
-        threading.Thread(target=self._run, daemon=True).start()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
 
     def _run(self):
         while not self._stop.is_set():

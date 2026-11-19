@@ -145,6 +145,12 @@ OLD = {
               "drop_margin_m": 0.15,                  # challenge.judge.DROP_MARGIN_M
               "reached_m": 0.25,                      # evaluate.REACHED_M
               "bounds_margin_m": 0.05},               # challenge.judge.BOUNDS_MARGIN_M
+    # new in RFC-0019 step 1 (no constant before it): the robot-tagged anomalies' numbers, each measured on the recordings, see the
+    # block's own `measured` (the apartment's 66 runs): the walking head pose, how far off it counts and for how long, how long the
+    # state and depth streams may be silent, the sensor's clear distance for room_disagrees, the map's explaining distance
+    "anomalies": {"head_walk_pose": {"neck_pitch": 0.239, "head_pitch": 0.358, "head_yaw": -0.078, "head_roll": -0.023},
+                  "head_off_walk_rad": 0.30, "head_off_walk_s": 1.0, "state_stale_s": 3.0, "depth_stale_s": 3.0,
+                  "room_disagrees_clear_mm": 280, "unexplained_clear_m": 0.30},
     "rates": ROBOT_FILE["rates"],
     "capabilities": ROBOT_FILE["capabilities"],
 }

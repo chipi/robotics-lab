@@ -246,6 +246,8 @@ class GoalRun:
         try:
             state, reason, result = getattr(self, f"_do_{self.kind}")()
         except LeaseLost as exc:
+            if self.nav is not None:
+                self.nav.lease_ended(exc)            # (said once: Navigator.move said it when its own command was the one refused)
             if (exc.reason or "").startswith("taken_over_by"):
                 state, reason, result = "interrupted", f"the robot was {exc.reason.replace('_', ' ')}", None
             elif (exc.reason or "").startswith("stopped_by"):

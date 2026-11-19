@@ -266,11 +266,14 @@ class _Parts:
     _watch_frames = Navigator._watch_frames
 
     def __init__(self, loc):
-        self.rows, self.loc, self._parted_at = [], loc, None
+        self.rows, self.loc, self._parted_at, self.profile, self.anomalies = [], loc, None, P, []
         self.localisation = types.SimpleNamespace(seen=None, frame_delta=loc.delta)
 
     def record(self, **row):
         self.rows.append(row)
+
+    def anomaly(self, kind, summary, severity=None, **fields):     # (the robot-tagged one: tests/test_anomaly.py reads what it says)
+        self.anomalies.append(kind)
 
 
 pl = still()

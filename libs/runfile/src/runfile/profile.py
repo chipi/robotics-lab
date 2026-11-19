@@ -1,6 +1,6 @@
 """A robot's profile (RFC-0020 §3, docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md): one JSON file per robot, `robots/<robot>/profile.json`, with
 the robot file's `factsheet` and `control` (VDA 5050 3.0.0's names, ours beside them) and the blocks the navigator, the judge and the
-views read: `footprint`, `locomotion`, `sensors`, `looking`, `localisation`, `error_budget`, `judge`. A `variants` block holds what
+views read: `footprint`, `locomotion`, `sensors`, `looking`, `localisation`, `error_budget`, `judge`, `anomalies`. A `variants` block holds what
 differs between environments (`sim`, `real`): a variant is merged on the base and the result is validated again.
 
     profile = load_profile("robots/duck/profile.json", "sim")      # a Profile: profile.footprint.radius_m
@@ -185,6 +185,8 @@ SCHEMA = {
                      "edge_inflate_m": "pos", "confirm_m": "pos", "glanced_m": "pos", "absorb_m": "pos", "hold_off_m": "pos",
                      "hold_detour": "pos", "beyond_m": "nums", "assoc_m": "pos", "unique_m": "pos"},
     "judge": {"fall_z_m": "pos", "drop_margin_m": "pos", "reached_m": "pos", "bounds_margin_m": "pos"},
+    "anomalies": {"head_walk_pose": "num_map", "head_off_walk_rad": "pos", "head_off_walk_s": "pos", "state_stale_s": "pos",
+                  "depth_stale_s": "pos", "room_disagrees_clear_mm": "pos", "unexplained_clear_m": "pos"},
     "capabilities": "any",
     "guardrails": "any",
     "rates": {"state_hz": "pos", "map_hz": "pos", "max_state_hz": "pos"},
@@ -387,7 +389,7 @@ class Profile:
         if d is None or name not in d:
             raise AttributeError(name)
         v = d[name]
-        return Profile(v, self.variant) if isinstance(v, dict) and name not in ("by_speed", "walk_command") else v
+        return Profile(v, self.variant) if isinstance(v, dict) and name not in ("by_speed", "walk_command", "head_walk_pose") else v
 
     def get(self, path: str, default=None):
         """A value by its dotted path, for example "locomotion.cruise_mps"."""

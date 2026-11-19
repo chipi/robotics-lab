@@ -25,9 +25,9 @@ check = Checks("ANOMALIES")
 
 # ---- made-up runs ----------------------------------------------------------------------------------------------------
 
-def make(ticks=(), events=(), worlds=(), name="syn"):
-    """A run: ticks (t, belief, truth, cmd), events (t, kind, raw), worlds (t, grid), the identity map-to-world."""
-    recs = [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})]
+def make(ticks=(), events=(), worlds=(), name="syn", m2w=(0.0, 0.0, 0.0)):
+    """A run: ticks (t, belief, truth, cmd), events (t, kind, raw), worlds (t, grid), the identity map-to-world unless m2w says."""
+    recs = [(0.0, "epoch", {"map_to_world": list(m2w)})]
     recs += [(t, "tick", {"belief": b, "truth": tr, "tilt": None, "cmd": c, "depth": None, "t_src": t, "raw": {}}) for t, b, tr, c in ticks]
     recs += [(t, "event", {"kind": k, "text": "", "notable": True, "t_src": t, "raw": raw}) for t, k, raw in events]
     recs += [(t, "world", {"grid": g, "obstacles": [], "drops": [], "raw": {}}) for t, g in worlds]
@@ -213,6 +213,43 @@ check("every detector has a rule, a version and what it needs", all(d.rule and d
 check("the detectors that are not on the default track say why", all(d.note for d in A.DETECTORS.values() if not d.default))
 
 
+# ---- tagged by the robot (RFC-0019 section 3.1): events of the run, read into the same record ----------------------------------------
+def robot_event(kind="stuck", severity="major", belief=(1.0, 2.0), truth=(1.3, 2.4, 0.1), duration=2.7, margin=0.05, module="navigator", detector="stuck_watch"):
+    """The raw of an `anomaly` event as the navigator writes it (duck_lab.nav.anomaly.record, plus the truth `record` adds to every row)."""
+    return {"anomaly": kind, "source": "robot", "module": module, "severity": severity, "detector": detector, "version": 1,
+            "summary": f"{kind} at {belief}", "values": {"moved_m": 0.01}, "margin": margin, "where": {"frame": "map", "belief": list(belief)},
+            "evidence": {}, "related": [], "duration_s": duration, "truth": list(truth)}
+
+
+r = make(still(30, [1.0, 1.0, 0.0]), events=[(1.5, "anomaly", robot_event()), (2.0, "anomaly", robot_event("room_disagrees", "info", duration=0.0, margin=320))],
+         m2w=(1.0, 2.0, 0.0))
+out = A.analyse(r, None, detectors=["dithering"] + ["stuck"])
+rec = [a for a in out["anomalies"] if a["source"] == "robot"]
+check("a robot-tagged anomaly is read from the run's events as a record: the fields of RFC-0019 section 2.1, source robot",
+      len(rec) == 1 and {"anomaly", "source", "module", "severity", "detector", "version", "t", "t_end", "where", "summary", "values", "margin",
+                         "evidence", "related"} <= set(rec[0]) and rec[0]["anomaly"] == "stuck" and rec[0]["module"] == "navigator"
+      and rec[0]["detector"] == "stuck_watch" and rec[0]["severity"] == "major" and rec[0]["margin"] == 0.05, rec)
+check("... t and t_end: the event's time and the duration the raise point knew", rec[0]["t"] == 1.5 and abs(rec[0]["t_end"] - 4.2) < 1e-9, (rec[0]["t"], rec[0]["t_end"]))
+check("... where: the belief placed in the world by the epoch in force, the truth from the event's own row, both in the world frame",
+      rec[0]["where"] == {"frame": "world", "belief": [2.0, 4.0], "truth": [1.3, 2.4]}, rec[0]["where"])
+out = A.analyse(r, None)
+check("analyse with no detector named: the robot's own are all there, beside the found detectors' run", sorted(a["anomaly"] for a in out["anomalies"]
+      if a["source"] == "robot") == ["room_disagrees", "stuck"] and "dithering" in out["ran"], out["ran"])
+out = A.analyse(r, None, detectors=["room_disagrees"])
+check("analyse --detector names a robot kind: only that kind, no found detector runs", [a["anomaly"] for a in out["anomalies"]] == ["room_disagrees"]
+      and out["ran"] == [], out["anomalies"])
+out = A.analyse(r, None, detectors=["dithering"])
+check("analyse --detector names only a found detector: the robot's are not shown", [a for a in out["anomalies"] if a["source"] == "robot"] == [])
+check("analyse --min-severity: the robot's are filtered like the others", [a["anomaly"] for a in A.analyse(r, None, min_severity="major")["anomalies"]
+                                                                          if a["source"] == "robot"] == ["stuck"])
+nobody = A.analyse(make(still(10, [1.0, 1.0, 0.0])), None)
+check("a run that carries none: no robot record", not [a for a in nobody["anomalies"] if a["source"] == "robot"])
+real = make(still(10, [1.0, 1.0, 0.0]), events=[(1.0, "anomaly", {"anomaly": "stuck", "severity": "major"}), (1.1, "leg", {"status": "reached"})])
+check("an anomaly event that does not say it is the robot's (source robot) is not read as one", not [a for a in A.analyse(real, None)["anomalies"]
+                                                                                                                     if a["source"] == "robot"])
+check("the robot's kinds are the RFC's vocabulary, each named once", len(set(A.ROBOT_KINDS)) == len(A.ROBOT_KINDS) == 13 and "fix_jump_held" in A.ROBOT_KINDS)
+
+
 # ---- fixtures: slices of real recordings -----------------------------------------------------------------------------
 
 def sliced(name):
@@ -255,6 +292,20 @@ out = found(end, "area_uncovered", truth=APT)
 rooms = {a["values"]["room"]: a["values"]["covered"] for a in out}
 check("b11 r1's 'nothing left': the kitchen and the bedroom under half covered", set(rooms) >= {"kitchen", "bedroom"} and rooms["kitchen"] < 0.3, rooms)
 
+# the robot's own tags, from a real simulator run: mapd's pose shifted 0.9 m from 30 s on, so every fix is held and the frames part
+tagged = A.analyse(sliced("robot_tagged_fault"), None)["anomalies"]
+kinds = [a["anomaly"] for a in tagged if a["source"] == "robot"]
+check("robot_tagged_fault: the navigator's own tags are read back: four held fixes and the frames parting, all robot, all major",
+      sorted(kinds) == ["fix_jump_held"] * 4 + ["frames_parted"] and all(a["severity"] == "major" and a["source"] == "robot" for a in tagged), kinds)
+jump = next(a for a in tagged if a["anomaly"] == "fix_jump_held")
+check("... the record: the gate's detector, the margin past 0.3 m, the numbers it saw, mapd's raw pose in the evidence",
+      jump["detector"] == "fix_gate" and jump["module"] == "localizer" and abs(jump["margin"] - 0.6) < 0.02 and abs(jump["values"]["jump_m"] - 0.9) < 0.02
+      and jump["evidence"]["raw"] and jump["evidence"]["fix_t_ns"] > 0, jump)
+w = jump["where"]
+check("... where: the belief (it held) and the truth, in the world frame, 5 cm apart: the world the robot believed against the real one",
+      w["frame"] == "world" and math.dist(w["belief"], w["truth"]) < 0.10, w)
+check("... a tag is at the second the navigator said it", 31.9 < jump["t"] < 32.2 and jump["t_end"] == jump["t"], (jump["t"], jump["t_end"]))
+
 
 # ---- the command line ------------------------------------------------------------------------------------------------
 
@@ -265,7 +316,7 @@ import tempfile
 tmp = Path(tempfile.mkdtemp(prefix="anomalies-cli-"))
 atexit.register(shutil.rmtree, tmp, ignore_errors=True)
 data = tmp / "data"
-for name in ("graze_b10b_r2", "odometry_before_ch11_s1", "edge_b11_r2"):
+for name in ("graze_b10b_r2", "odometry_before_ch11_s1", "edge_b11_r2", "robot_tagged_fault"):
     import_duck(FIX / name, "apartment", data, say=lambda *_: None, started_at_ns=T0_NS)
 LAYOUTS = ["--layout", str(SIM / "apartment_layout.json")]
 
@@ -331,6 +382,27 @@ check("anomalies: a missing layout file is said", code != 0 and "missing.json" i
 code, text, _ = cmdline("anomalies", "duck/apartment/graze_b10b_r2", "--json", *LAYOUTS)
 check("anomalies: the run by its key", code == 0 and json.loads(text)["run"] == "duck/apartment/graze_b10b_r2")
 check("anomalies: nothing is written, not into the run, not into the data folder", files(tmp) == before)
+
+# the robot's own tags in the command line, from a recording that carries them
+code, text, _ = cmdline("anomalies", "robot_tagged_fault", *LAYOUTS)
+table = [ln for ln in text.splitlines() if ln.split()[2:3] in (["fix_jump_held"], ["frames_parted"])]
+check("anomalies: the robot's tags are rows of the table, source robot, severity, margin, and the believed place against the true one",
+      code == 0 and len(table) == 5 and all(" robot " in ln and "major" in ln and "belief (" in ln and "truth (" in ln and "->" in ln for ln in table), table[:2])
+check("anomalies: the footer counts what the robot tagged, by kind", "tagged by the robot while it ran" in text and "fix_jump_held 4, frames_parted 1" in text,
+      [ln for ln in text.splitlines() if "tagged by" in ln])
+doc = json.loads(cmdline("anomalies", "robot_tagged_fault", "--json", *LAYOUTS)[1])
+check("anomalies --json: the robot's records are in the list with source robot, beside the analysis ones' fields",
+      sorted(a["anomaly"] for a in doc["anomalies"] if a["source"] == "robot") == ["fix_jump_held"] * 4 + ["frames_parted"]
+      and all({"t", "t_end", "where", "summary", "values", "margin", "evidence", "related", "detector", "version"} <= set(a) for a in doc["anomalies"]))
+doc = json.loads(cmdline("anomalies", "robot_tagged_fault", "--json", "--detector", "frames_parted", *LAYOUTS)[1])
+check("anomalies --detector names a robot kind: only those, and no found detector ran", [a["anomaly"] for a in doc["anomalies"]] == ["frames_parted"] and doc["ran"] == [])
+code, text, _ = cmdline("anomalies", "robot_tagged_fault", "--json", "--detector", "dithering", *LAYOUTS)
+check("anomalies --detector dithering: the robot's tags are not shown, as only that one was asked for", not [a for a in json.loads(text)["anomalies"] if a["source"] == "robot"])
+code, text, _ = cmdline("events", "robot_tagged_fault", "--kinds", "anomaly")
+lines = [ln for ln in text.splitlines() if "anomaly" in ln]
+check("events: the robot's anomalies are in the run's event list, one line each with the kind, the severity and what it said",
+      code == 0 and len(lines) == 5 and sum("anomaly fix_jump_held (major): mapd's fix would move the belief 0.90 m" in ln for ln in lines) == 4
+      and sum("anomaly frames_parted (major)" in ln for ln in lines) == 1, lines[:2])
 
 scripts = tomllib.loads((ROOT / "apps" / "observatory" / "pyproject.toml").read_text())["project"]["scripts"]
 check("`miniview anomalies` is the same command: the old name is kept in the scripts", scripts["miniview"] == scripts["observatory"] == "observatory.cli:main", scripts)
