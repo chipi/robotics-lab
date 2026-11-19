@@ -1,0 +1,41 @@
+# Known issues
+
+**Status:** started 2026-11-19 (the operator: "what we don't cover is OK and let's make a new file with
+known issues and add these there to work later on them"). Each issue: what is wrong, the evidence,
+where it lives, and when it is planned. Closed issues move to the end with the commit that closed
+them. The plan they are scheduled against: [the plan we execute on](EXECUTION-PLAN.md).
+
+## The duck walking and navigating
+
+| # | Issue | Evidence | Where | Planned |
+| --- | --- | --- | --- | --- |
+| K1 | **Stalls at bars, cables, rugs and small steps (0.5–1 cm) the walk can cross.** The navigator's small heading corrections while the feet meet the edge stop the step-over. | Straight walk 21 of 23 over a 0.5 cm bar, the navigator's walk 5 of 18 (STEPS.md, 2026-11-19); challenges 16 2/10, 17 1/10, 18 3/10, 19 0/10, all "stuck" | `follow.py` (the steering), the walking policy (blind to the floor, trained to 1.5 cm) | Phase 4: probe a constant trim against the drift first; a deadband only if needed |
+| K2 | **A narrow door is not explored through.** The frontier filter keeps 0.30 m from walls, which leaves no frontier inside a 0.645 m door; the second room is never entered. | Challenge 23 seed 1: "nothing left to explore" at 174 s, room B never entered; at 0.15–0.25 m a frontier sits at the door (replay) | `nav/explore.py` `WALL_M` | After phase 0's checkpoint; the apartment's doors are 0.8 m, so it bites narrower ones |
+| K3 | **A phantom obstacle by the dock in every run.** A 2–4 cell cluster in mapd's grid at world (−0.29, 0.09…0.17), about 0.5 m from any real outline. | Every run the phase 3 analysis checked (b9 r2, b10b, b11) | mapd's grid near the start | Investigate; may feed "no room to turn" at the start (phase 0's navigator agent told) |
+| K4 | **mapd loses itself and jumps** (0.9 m, 1.79 m) with no fault injected; the cause (mapd's own search, or how its fix is paired with odometry) is not known. | b10a r1 (t 822.5 s), relo-plain-on (t 226 s) | mapd (Pollen's); `frames.py` pairing within 100 ms | Its status is now recorded on every fix (28c5cc9); read the next jump; a report to Pollen if it is mapd's |
+| K5 | **After a held jump, mapd's own map stays built from the wrong place.** The gate keeps the duck's position; mapd cannot be told "you are here" (no set-pose, only a wipe). | 3 of 4 faulted runs ended "trapped" (RFC-0016 §6) | `frames.py` gate, mapd | Phase 0 branches the gate on mapd's status; the rest measured by the frame fix's runs |
+| K6 | **Landmark corrections add noise on top of the gate.** | relo-fault-off 0.028 m mean error vs relo-fault-on 0.065 m, one run each (RFC-0016 §6) | `world_model/relocalise.py` | Measure at more runs; keep only if it helps |
+| K7 | **Heading is not corrected.** Only position is, from landmarks. | b11 heading error median 0.001–0.011 rad, max 0.28 rad once (the advisor's reading) | `relocalise.py` | A `yaw_vs_truth` detector (RFC-0019); built only if it fires |
+| K8 | **One odometry scale for all speeds.** The simulator's odometry is 0.849 at 0.2 m/s, 0.911 at 0.3, 0.930 at 0.4. | `duck/calibration/sim.json` `by_speed` | `run.py` `load_scale` | Measured before RFC-0012's pace makes 0.2 m/s common (phase 4) |
+| K9 | **The fridge is never found** in five tries ("never seen"). | find-fridge-1…5 | the explorer and the camera's range | After the explorer stops trapping early; a find batch then |
+
+## The software around it
+
+| # | Issue | Evidence | Where | Planned |
+| --- | --- | --- | --- | --- |
+| K10 | **The navigator is built for the duck only**: four duck-only assumptions (mapd, the 8×8 depth sensor, a head, the duck's API) and its numbers in code. | The inventory, 2026-11-19 (RFC-0020 §1) | `duck_lab/nav/*` | Phase 3 (RFC-0020), the EV3 in phase 6 |
+| K11 | **Mission Control's simulated-duck explore check also passes an honest "trapped" end**, so it does not prove exploring finishes. | `control/tests/sim_duck.py` (d1ea2e0) | Mission Control's simulator scenarios | Tighten once the explorer stops trapping early |
+| K12 | **Five anomaly detectors are not yet quiet on clean runs**: belief vs truth at 0.20 m, near miss at 0.093 m, wrong refusal, phantom, missed obstacle. | PHASE3-PREP.md §B2 | the planned detectors | Phase 3: a better rule or a fix before each joins the track |
+| K13 | **The simulator's repeatability is unknown** (tick for tick, same seed). | Never measured | the simulator | Phase 3's first step measures it |
+| K14 | **The Mission Control page test failed once in 11 unloaded runs**; two causes under load were fixed, the unloaded one was never reproduced. | 16e5e7d | `control/tests/test_page.py` | Watch CI; reproduce if it recurs |
+| K15 | **The NXT's lock, page lock and adapter have never run on the real brick.** | Tested on `nxt-web --fake` only | `nxt/`, Mission Control's NXT adapter | The NXT hardware test, when the operator is at the brick |
+| K16 | **The NXT's speeds are assumed, not measured** (0.3 m/s, 1.5 rad/s full). | `robots.nxt/nxt-1.json` | the NXT's robot file | Measured with the hardware test |
+| K17 | **Nav2 reaches no goal on the duck** (stands after 0.5–0.7 m); its turn floor, drop memory and clearing do not fit the duck as planned. | RFC-0015 §8 | `nav2/` | Parked |
+| K18 | **"Rooms" counts rooms named by the objects' votes, not floor covered.** | The advisor's review; floor.py now measures coverage | `explore_score.py` | b12 is scored by coverage too; the apartment bar to be set on coverage |
+| K19 | **The MCP server has not been tried with a real agent client**, only the SDK's own client. | 62de2f0 | `control/src/mission_control/mcp_server.py` | When an agent drives Mission Control |
+| K20 | **The planner's LLM path has only run against a local stub.** | 1a13fa0 | `POST /plan` | When an LLM endpoint is chosen (asks the operator first) |
+| K21 | **Docker images were built and run once, before the robot file format changed.** | f010f44, a01ecc5 after it | `control/`, `viewer/` Dockerfiles | Re-run the stack once after phase 2's restructure |
+
+## Closed
+
+(none yet)
