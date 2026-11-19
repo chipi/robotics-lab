@@ -1,7 +1,7 @@
 # The plan we execute on (from 2026-11-19)
 
-**Status:** the operator's plan, 2026-11-19: "write this down in a file and we execute on this". Each
-phase ends with a checkpoint (§ The checkpoint) before the next one starts.
+**Status:** the operator's plan, 2026-11-19: "write this down in a file and we execute on this".
+Each phase ends with a checkpoint (§ The checkpoint) before the next one starts.
 
 **What it is for** (the operator, 2026-11-19): "we are creating [a] baseline and after we do all
 RFCs and [the] rest of the plan we will go back to making [the] planner better; now [the] goal is to
@@ -55,10 +55,10 @@ explorer should not have chosen is the agent's reading, not tested (K22). Safety
 **Not done:** the taken-loop-closure path of the gate never ran (mapd's `loops` never stepped); the
 creep never ran in the simulator; one run per arm for the frame fix; 21 and 23 at 3 seeds.
 
-**Known issues:** closed K-rim (the misplaced edge); new K22–K27 (the explorer's targets without room
-to pivot, the recovery not freeing the duck, the arc's inner sweep and the tight pivot without a
-sensor check, phantom remembered points, the untested loop-closure branch, the glance's error in the
-challenge scenes).
+**Known issues:** closed K-rim (the misplaced edge); new K22–K27 (the explorer's targets without
+room to pivot, the recovery not freeing the duck, the arc's inner sweep and the tight pivot without
+a sensor check, phantom remembered points, the untested loop-closure branch, the glance's error in
+the challenge scenes).
 
 **Recommendation:** proceed to phase 1. The baseline is measured; what did not work is the planner's
 to improve after phase 6, recorded as known issues. The operator had said to start phase 1 as soon
@@ -78,9 +78,9 @@ objects labelled in the view, a compact fixed HUD, `--hide`, `--intro`); CI on `
 `VERDICT GREEN — success 6`.
 
 **Measured:** run 16 (`duck-eval --goals 20`, each goal from the dock with an empty map): navigator
-reached 20, within 0.25 m by truth 20, refused 0, timeouts or stalls 0, contacts 0, falls 0 — the bar
-met, as run 15 met it on 2026-11-15, now on the navigator with everything since (the lease, guardrails,
-relocalisation, the frame fix, the rim fix, the recovery).
+reached 20, within 0.25 m by truth 20, refused 0, timeouts or stalls 0, contacts 0, falls 0 — the
+bar met, as run 15 met it on 2026-11-15, now on the navigator with everything since (the lease,
+guardrails, relocalisation, the frame fix, the rim fix, the recovery).
 
 **Not done:** run 17 (the same goals chained without a reset) was optional and not run.
 
@@ -96,15 +96,15 @@ relocalisation, the frame fix, the rim fix, the recovery).
 - Nothing else in flight. Done when every test and the docs build are green and one recorded run
   replays identically.
 
-**Done 2026-11-19** on the branch `mission-control`, not yet on main: the result, the golden and what
-differed from the plan are in [PHASE2-RESTRUCTURE-PLAN.md](PHASE2-RESTRUCTURE-PLAN.md) §7.
+**Done 2026-11-19** on the branch `mission-control`, not yet on main: the result, the golden and
+what differed from the plan are in [PHASE2-RESTRUCTURE-PLAN.md](PHASE2-RESTRUCTURE-PLAN.md) §7.
 
 ### Phase 2 checkpoint
 
 **Built:** C0–C10, 14 commits (`a3bad74` … `b7c7d13`): `libs/runfile`, `libs/gate` (`robotgate`),
 `libs/worldmodel`; `apps/observatory`, `apps/mission-control`, `apps/nxt-web`; `robots/duck`; the
-rename to the Observatory with compatibility aliases; `OBSERVATORY_*` variables with the old names as
-fallback; an import-boundary check in `make lint` and CI.
+rename to the Observatory with compatibility aliases; `OBSERVATORY_*` variables with the old names
+as fallback; an import-boundary check in `make lint` and CI.
 
 **Verified by the lead, on the final tree:** `make ci` → every stage PASS, `ci PASS`, `MAKE_EXIT=0`;
 the golden (`python3 scripts/golden.py`) gives the same five hashes on `pre-restructure` and on the
@@ -136,8 +136,8 @@ delete; names kept as `miniview` on purpose (K30); nothing run on GitHub yet.
 [PHASE3-PREP.md](PHASE3-PREP.md) results):
 
 - RFC-0020 steps 1–3: the profile format and validator (`libs/runfile`), the duck's profile
-  (`robots/duck/profile.json`, variants `sim` and `real`), the navigator reading its numbers from it,
-  the four interfaces with the duck's plugins behind them.
+  (`robots/duck/profile.json`, variants `sim` and `real`), the navigator reading its numbers from
+  it, the four interfaces with the duck's plugins behind them.
 - RFC-0019 steps 1–2: nine detectors over a recording and `observatory anomalies` (five on the
   default track, quiet on the clean runs); the navigator raising twelve kinds of anomaly itself.
 - The "phantom" by the dock is a real cube the layout omitted ([PHANTOM.md](PHANTOM.md)); the layout
@@ -173,6 +173,14 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
   burst steering only if the trim does not walk straight. Challenge 16 waits on this.
 - An apartment batch scored by floor coverage.
 
+## Phase 4b — the simulator host and the payload (RFC-0021)
+
+On the operator's decision of [RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md) at the phase 4
+checkpoint (the operator, 2026-11-19: "love it"; a dedicated VPS the realistic host): the reset and
+the socket paths out of the navigator into a host file and host tool, the truth read by the runner
+only, a host check script, one course run on a second machine and opened here, a second minimal
+navigator through the same contract.
+
 ## Phase 5 — the views
 
 - **RFC-0019:** the Observatory's anomaly track, map pins and the three maps; Mission Control's live
@@ -194,8 +202,8 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 
 ## Phase 6 — the first other robot
 
-- **The EV3** through RFC-0020 step 5: its profile, a tracked locomotion plugin, its sensors, odometry
-  localisation: the test of "a robot platform where we can load any robot".
+- **The EV3** through RFC-0020 step 5: its profile, a tracked locomotion plugin, its sensors,
+  odometry localisation: the test of "a robot platform where we can load any robot".
 - The NXT after it, once it has a sensor that sees the floor. The NXT hardware test (the operator at
   the brick) can happen at any time.
 
