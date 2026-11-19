@@ -1,7 +1,7 @@
 """Per-client tokens (RFC-0014 §3.9, step 7): the token store, tokens required on the API with STOP and the health check open to
 everybody, the token naming the client (the lease, the event stream and the goal run's record say who), revocation, the event
 stream's ?token=, the command line, the MCP server's token, and the store's migration to the schema that has them.
-Run: cd control && uv run python tests/test_tokens.py"""
+Run: cd apps/mission-control && uv run python tests/test_tokens.py"""
 
 import contextlib
 import io

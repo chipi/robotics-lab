@@ -11,7 +11,7 @@ re-centres meshes, so the original files would sit wrong), with its pose in the 
 
 Writes, next to this file: robot.urdf (committed), meshes/*.stl (generated, not committed: 23 MB), and
 fk_fixture.json (committed): for a few sets of joint angles, every link's pose as MuJoCo computes it, which
-miniview's kinematics must reproduce (viewer/tests/test_kinematics.py).
+miniview's kinematics must reproduce (apps/observatory/tests/test_kinematics.py).
 """
 
 import json

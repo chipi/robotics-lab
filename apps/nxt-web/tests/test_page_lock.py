@@ -3,7 +3,7 @@ gives it back, and its STOP stays open. Headless Chromium against nxt-web --fake
 folder of this test's own); never a real brick.
 
 Needs Chromium and Playwright, which are the viewer's, so it runs in the viewer's environment:
-  make test-nxt-page      (cd viewer && uv run --frozen python ../apps/nxt-web/tests/test_page_lock.py)"""
+  make test-nxt-page      (see the Makefile: it runs in the Observatory's environment)"""
 
 import json
 import os

@@ -1,7 +1,7 @@
 """One goal on several robots (RFC-0014 §3.4.4, step 5): `share: each` and `any` over a team or a list of robots, robots left out
 with their reason, the leases taken in the order of the robot ids and released if one is held, cancel and STOP, and the store's
 migration to the schema that has groups. The fakes, a fake clock; the real gate stands in front of each.
-Run: cd control && uv run python tests/test_teams.py"""
+Run: cd apps/mission-control && uv run python tests/test_teams.py"""
 
 import copy
 import json

@@ -6,7 +6,7 @@ A small JSON-RPC server (newline framed, TCP on loopback) that owns one `Navigat
 of any kind of RFC-0014 §3.4.1 with `goal.start`, polls `goal.status`, and cancels with `goal.cancel`. The server takes the
 robot's lease from the gate at `goal.start` (the navigator is the process that sends `robot.move`, RFC-0017 §3.2) and gives
 it back at the end of the run; STOP never goes through it. Every goal run is also an Observatory run, `duck/<scene>/mc<id>-...`,
-which names its goal run in the run record (`goal_run`, viewer/CONTRACT.md), and `goal.start` answers with its key at once.
+which names its goal run in the run record (`goal_run`, apps/observatory/CONTRACT.md), and `goal.start` answers with its key at once.
 
 Methods:
   goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?}

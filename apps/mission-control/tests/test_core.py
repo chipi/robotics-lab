@@ -2,7 +2,7 @@
 status and lock, goals of every kind, guardrails at three levels, every outcome, the library, the
 sites' objects, the event stream, the rates. The gate of RFC-0017 stands in front of the fake. A fake clock
 drives it all, except the one test of a hung robot, which needs real threads.
-Run: cd control && uv run python tests/test_core.py"""
+Run: cd apps/mission-control && uv run python tests/test_core.py"""
 
 import math
 import tempfile

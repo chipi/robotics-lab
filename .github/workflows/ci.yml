@@ -1,5 +1,5 @@
-# Build, test and check every project in the repo: the NXT web UI (nxt/), the duck's navigator and
-# tools (duck/), and miniview (viewer/). The docs have their own workflow (docs.yml).
+# Build, test and check every project in the repo: the NXT web UI (apps/nxt-web/), the duck's navigator and
+# tools (duck/), and miniview (apps/observatory/). The docs have their own workflow (docs.yml).
 #
 # Each job runs the same make targets as on the workstation, so a red job reproduces locally with
 # the target named in its step:
@@ -51,7 +51,7 @@ jobs:
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
-        run: make viewer-sync && cd viewer && uv run --frozen playwright install --with-deps chromium
+        run: make viewer-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
       - name: make test-viewer-pages
         run: make test-viewer-pages
       - name: make test-control-page
@@ -68,7 +68,7 @@ jobs:
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
       - name: Playwright's Chromium
-        run: make viewer-sync && cd viewer && uv run --frozen playwright install --with-deps chromium
+        run: make viewer-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
       - name: make test-run-compat (Rerun from duck/.venv, miniview)
         run: make test-run-compat
 

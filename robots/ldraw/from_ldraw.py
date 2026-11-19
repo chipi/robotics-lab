@@ -1,9 +1,9 @@
 """A LEGO robot's description (RFC-0011) from an LDraw model: robot.urdf and one STL per link and colour.
 
-Run with the Python of viewer/.venv (standard library only; the parts library is ldraw.org's complete.zip unpacked in
+Run with the Python of apps/observatory/.venv (standard library only; the parts library is ldraw.org's complete.zip unpacked in
 ~/opt/ldraw, or $LDRAW_DIR / --library):
-    viewer/.venv/bin/python robots/ldraw/from_ldraw.py <robot> [<robot> ...] [--library DIR]    # or: make robots-lego
-    viewer/.venv/bin/python robots/ldraw/from_ldraw.py --tree <robot>      # every part, where it is, which link takes it
+    apps/observatory/.venv/bin/python robots/ldraw/from_ldraw.py <robot> [<robot> ...] [--library DIR]    # or: make robots-lego
+    apps/observatory/.venv/bin/python robots/ldraw/from_ldraw.py --tree <robot>      # every part, where it is, which link takes it
 
 `robots/<robot>/kinematics.json` names the model (`source`, an .mpd/.ldr beside it) and says what LDraw does not: which
 parts make which link, and each joint.

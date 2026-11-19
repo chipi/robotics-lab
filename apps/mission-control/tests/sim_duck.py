@@ -1,6 +1,6 @@
 """RFC-0014 step 2 on the real simulator: Mission Control's API, the gate, the navigator server and the real navigator, end to end.
 
-    cd control && uv run python tests/sim_duck.py [--only point,cancel,...]      # make sim-duck
+    cd apps/mission-control && uv run python tests/sim_duck.py [--only point,cancel,...]      # make sim-duck
 
 NOT in `make test-control`: it resets the simulator (via duck/sim/reset_sim.py, ~45 s each time), moves the duck for minutes and
 needs nobody else using it. Everything it writes goes to a folder of its own in the system temp dir: the Observatory's runs

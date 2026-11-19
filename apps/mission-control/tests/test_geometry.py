@@ -1,6 +1,6 @@
 """Areas are polygons the operator draws (RFC-0014 §3.5.3): validation, which area holds a point, merge
 and split geometry. Pure functions.
-Run: cd control && uv run python tests/test_geometry.py"""
+Run: cd apps/mission-control && uv run python tests/test_geometry.py"""
 
 from common import check, finish
 

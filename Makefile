@@ -38,7 +38,7 @@ NXT_IMAGE      ?= robotics-lab/nxt-web:dev
 NXT_DATA       ?= nxt-web-data
 
 DUCK_DIR       := duck
-VIEWER_DIR     := viewer
+VIEWER_DIR     := apps/observatory
 VIEWER_IMAGE   ?= miniview:ci
 CONTROL_DIR    := apps/mission-control
 CONTROL_PORT   ?= 8060
@@ -123,14 +123,14 @@ test-viewer-pages: viewer-sync ## miniview's two pages in headless Chromium (MIN
 .PHONY: test-control-page
 test-control-page: viewer-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the viewer's Playwright and MINIVIEW_CHROMIUM; control has no browser dependency)
 	@log=$$(mktemp); \
-	  if (cd $(VIEWER_DIR) && PYTHONPATH=../$(CONTROL_DIR)/src:../$(DUCK_DIR)/src:../libs/gate/src:../libs/worldmodel/src uv run --frozen python ../$(CONTROL_DIR)/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
+	  if (cd $(VIEWER_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath $(DUCK_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/worldmodel)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-control-page PASS"
 
 .PHONY: test-nxt-page
 test-nxt-page: viewer-sync nxt-sync ## nxt-web's page takes, keeps and gives back the control lock, in headless Chromium against nxt-web --fake (the viewer's Playwright; never a real brick)
 	@log=$$(mktemp); \
-	  if (cd $(VIEWER_DIR) && uv run --frozen python ../$(NXT_DIR)/tests/test_page_lock.py) >$$log 2>&1; then echo "PASS $(NXT_DIR)/tests/test_page_lock.py"; \
+	  if (cd $(VIEWER_DIR) && uv run --frozen python $(abspath $(NXT_DIR))/tests/test_page_lock.py) >$$log 2>&1; then echo "PASS $(NXT_DIR)/tests/test_page_lock.py"; \
 	  else echo "FAIL $(NXT_DIR)/tests/test_page_lock.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-nxt-page PASS"
 
@@ -241,7 +241,7 @@ nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot 
 	cd $(NXT_DIR) && exec .venv/bin/nxt-web --fake --host $(NXT_HOST) --port $(NXT_PORT)
 
 .PHONY: nxt-image
-nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs viewer/ too, ADR-0013)
+nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs libs/runfile too, ADR-0013)
 	docker build -f $(NXT_DIR)/Dockerfile -t $(NXT_IMAGE) .
 
 .PHONY: sim-gate-scenarios
@@ -335,12 +335,12 @@ MINIVIEW_ENV   = MINIVIEW_PORT=$(MINIVIEW_PORT) MINIVIEW_DATA=$(MINIVIEW_DATA) M
 .PHONY: viewer-up viewer-down
 viewer-up: ## miniview's service in Docker on 127.0.0.1:$(MINIVIEW_PORT), data from $(MINIVIEW_DATA) (RFC-0009)
 	@mkdir -p $(MINIVIEW_DATA)/runs $(MINIVIEW_DATA)/scenes $(MINIVIEW_STATE)
-	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml up -d --build --wait \
+	@$(MINIVIEW_ENV) docker compose -f $(VIEWER_DIR)/compose.yml up -d --build --wait \
 	  && echo "miniview at http://127.0.0.1:$(MINIVIEW_PORT)/" \
-	  || { echo "viewer-up FAIL"; $(MINIVIEW_ENV) docker compose -f viewer/compose.yml logs --tail 40; exit 1; }
+	  || { echo "viewer-up FAIL"; $(MINIVIEW_ENV) docker compose -f $(VIEWER_DIR)/compose.yml logs --tail 40; exit 1; }
 
 viewer-down: ## Stop miniview's service
-	@$(MINIVIEW_ENV) docker compose -f viewer/compose.yml down
+	@$(MINIVIEW_ENV) docker compose -f $(VIEWER_DIR)/compose.yml down
 
 .PHONY: nxt-image-run
 nxt-image-run: nxt-image ## Run the image on this machine with the robot's USB/Bluetooth devices, port on 127.0.0.1 only; recordings go to $(MINIVIEW_DATA) as miniview runs

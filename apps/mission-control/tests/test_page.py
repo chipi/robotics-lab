@@ -5,7 +5,7 @@ No fixed sleeps: every wait is for a condition.
 
 Needs Chromium and Playwright, which are the viewer's (control has no browser dependency), so it runs in the viewer's
 environment with Mission Control and the gate on the path:
-  make test-control-page          (cd viewer && PYTHONPATH=../apps/mission-control/src:../duck/src uv run --frozen python ../apps/mission-control/tests/test_page.py)"""
+  make test-control-page          (see the Makefile: it runs in the Observatory's environment)"""
 
 import copy
 import json

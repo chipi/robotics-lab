@@ -1,4 +1,4 @@
-/* Mission Control's page. The tokens (names and values) are the Observatory's, from viewer/web/shell/shell.css:
+/* Mission Control's page. The tokens (names and values) are the Observatory's, from apps/observatory/web/shell/shell.css:
    dark is the default, light follows the system and the switch (data-theme). Mobile first: one column, the
    map near the top, a STOP bar that is always on screen; from 900 px two columns, from 1300 px three. */
 :root {

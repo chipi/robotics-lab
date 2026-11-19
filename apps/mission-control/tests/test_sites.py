@@ -1,7 +1,7 @@
 """Sites, areas and the site's objects (RFC-0014 §3.5): the library, the operator's areas (create, rename,
 redraw, merge, split, which area holds a point), objects with stable ids merged from runs, naming by
 hand, the inventory, and that all of it survives a restart (SQLite).
-Run: cd control && uv run python tests/test_sites.py"""
+Run: cd apps/mission-control && uv run python tests/test_sites.py"""
 
 import tempfile
 from pathlib import Path

@@ -2,7 +2,7 @@
 lock, drive and STOP, goals and runs, sites, areas and objects, and the server-sent event stream. The
 core runs on a fake clock that the test ticks; the last section runs the real thing, with threads and
 the real clock, and sets a point goal over HTTP, watches it reach and STOPs it.
-Run: cd control && uv run python tests/test_api.py"""
+Run: cd apps/mission-control && uv run python tests/test_api.py"""
 
 import json
 import threading

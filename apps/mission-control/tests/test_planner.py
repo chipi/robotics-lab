@@ -1,6 +1,6 @@
 """Goals in words (RFC-0014 §3.4.5): the phrase matcher that needs no model, the optional LLM planner over an OpenAI-compatible API (here a
 stand-in on loopback: no other address is ever called), the validation of what a model says, and that a plan runs nothing.
-Run: cd control && uv run python tests/test_planner.py"""
+Run: cd apps/mission-control && uv run python tests/test_planner.py"""
 
 import ast
 import json

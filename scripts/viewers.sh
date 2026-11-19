@@ -15,7 +15,7 @@ view="$here/.viewers"
 data="${MINIVIEW_DATA:-/work/robotics-lab/data}"
 duck="$here/duck/.venv/bin"
 container=robotics-lichtblick
-# pinned by digest, as in viewer/tests/test_run_compat.py (how to bump it: ADR-0007 "Compatibility")
+# pinned by digest, as in apps/observatory/tests/test_run_compat.py (how to bump it: ADR-0007 "Compatibility")
 lichtblick_image=ghcr.io/lichtblick-suite/lichtblick@sha256:25333a8f57737c8c5866abf75670b8dcf2ed6c2cb5ce3d64f3c63f210a5177e9
 LICHTBLICK_PORT="${LICHTBLICK_PORT:-8090}"
 RERUN_PORT="${RERUN_PORT:-9090}"

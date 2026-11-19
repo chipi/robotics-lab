@@ -1,6 +1,6 @@
 """Goal kinds and their schemas, guardrails at three levels and their merge, and which robot may take which
 goal (RFC-0014 §3.3.2, §3.4.1, §3.4.8). Pure rules, no robot.
-Run: cd control && uv run python tests/test_goals.py"""
+Run: cd apps/mission-control && uv run python tests/test_goals.py"""
 
 import copy
 

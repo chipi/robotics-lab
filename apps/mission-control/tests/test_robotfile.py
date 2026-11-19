@@ -1,6 +1,6 @@
 """The robot file's format (RFC-0014 §3.3.1, docs/wip/ROBOT-FILE-FORMAT-PROPOSAL.md): a `factsheet` with VDA 5050 3.0.0's names, our own
 blocks beside it, and the load-time checks. The shipped files (the fake, the simulated duck, the NXT) are loaded as they are.
-Run: cd control && uv run python tests/test_robotfile.py"""
+Run: cd apps/mission-control && uv run python tests/test_robotfile.py"""
 
 import copy
 import json

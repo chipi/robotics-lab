@@ -3,7 +3,7 @@ proxy in front of it (duck_lab.gate_proxy), a mapd, and a navigator server that 
 what is tested is Mission Control's side: the remote gate (lock, STOP, takeover are the gate's own), the state it builds from
 robotd's stream, the map, the navigator client (start, poll, decisions, objects, refusals, a server that goes away), the run key
 and the Watch link. The real navigator in the real simulator is sim_duck.py.
-Run: cd control && uv run python tests/test_duck_adapter.py"""
+Run: cd apps/mission-control && uv run python tests/test_duck_adapter.py"""
 
 import json
 import socket

@@ -1,7 +1,7 @@
 """The fake robot (RFC-0014 §3.7): it moves a point, answers status, honours STOP and the deadman, drops
 offline when told, carries a fake site; and the gate of RFC-0017 in front of it applies the real rules
 (RFC-0017 §5 step 2). A fake clock; no sockets, no simulator.
-Run: cd control && uv run python tests/test_fake.py"""
+Run: cd apps/mission-control && uv run python tests/test_fake.py"""
 
 import math
 
