@@ -9,6 +9,8 @@ import signal
 import socket
 import subprocess
 import sys
+import shutil
+import atexit
 import tempfile
 import threading
 import time
@@ -29,6 +31,7 @@ if not Path(NXT_WEB).exists():
     sys.exit(1)
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-nxt-"))
+atexit.register(shutil.rmtree, tmp, True)
 with socket.socket() as s:
     s.bind(("127.0.0.1", 0))
     PORT = s.getsockname()[1]

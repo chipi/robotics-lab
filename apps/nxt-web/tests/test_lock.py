@@ -5,6 +5,8 @@ Run: make test-unit, or python apps/nxt-web/tests/test_lock.py from the repo."""
 import json
 import os
 import subprocess
+import shutil
+import atexit
 import tempfile
 import urllib.error
 import urllib.request
@@ -117,6 +119,7 @@ broken.stop_from("y")
 check("a motor stop that fails still ends the lease", broken.who()["holder"] is None)
 
 tmp = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, tmp, True)
 names = tmp / "takeover.txt"
 names.write_text("# the operator's own\noperator\n\n  phone  # mine\n")
 check("takeover list: one name per line, comments skipped", load_names(names) == {"operator", "phone"}, load_names(names))

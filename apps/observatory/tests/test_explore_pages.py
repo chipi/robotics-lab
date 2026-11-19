@@ -11,10 +11,13 @@ import json
 import math
 import os
 import struct
+import shutil
+import atexit
 import tempfile
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, TMP, True)
 os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 os.environ.setdefault("MINIVIEW_INDEX", str(TMP / "index.sqlite"))
 

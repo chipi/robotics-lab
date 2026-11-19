@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import atexit
 import tempfile
 import time
 import urllib.error
@@ -19,6 +20,7 @@ NXT_DIR = Path(__file__).resolve().parents[1]
 NXT_WEB = os.environ.get("NXT_WEB", str(NXT_DIR / ".venv" / "bin" / "nxt-web"))
 # The server's recordings, command log and Observatory runs go to a folder of this test's own, never to apps/nxt-web/runs.
 tmp = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, tmp, True)
 ENV = dict(os.environ, NXT_LAB_DATA=str(tmp), MINIVIEW_DATA=str(tmp / "miniview"))
 RUNS = tmp / "runs"
 

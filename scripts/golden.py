@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
+import atexit
 import tempfile
 import time
 import tomllib
@@ -157,6 +158,7 @@ def main() -> int:
         make_run(Path(sys.argv[2]))
         return 0
     tmp = Path(tempfile.mkdtemp(prefix="golden-"))
+    atexit.register(shutil.rmtree, tmp, True)
     try:
         for name, digest in api_answers(tmp) + replay_answer(tmp):
             print(f"{digest}  {name}")

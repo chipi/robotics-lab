@@ -18,6 +18,8 @@ import os
 import signal
 import subprocess
 import sys
+import shutil
+import atexit
 import tempfile
 import time
 from pathlib import Path
@@ -72,6 +74,7 @@ def scenario(name: str):
     print(f"\n--- {name}", flush=True)
     simreset.reset("apartment_backlash")
     tmp = Path(tempfile.mkdtemp(prefix="gate-scenario-"))
+    atexit.register(shutil.rmtree, tmp, True)
     proxy = Proxy(tmp / "gate.sock", SIM / "duck-a.sock", log=tmp / "gate.jsonl", lease_s=LEASE_S)
     proxy.start()
     return tmp, proxy, Body()
