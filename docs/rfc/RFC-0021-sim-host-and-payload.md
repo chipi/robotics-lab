@@ -4,7 +4,8 @@
 built right after phase 4. The operator, 2026-11-19: "we should assume [the] host has [the] Pollen
 repo and their MuJoCo sim env; can our code easily be transferable there if basic infra is set up
 well? … can we separate sim as host from payload?", and: "[the] DGX is just an example; I could run
-it on some dedicated VPS host, more realistic". **Builds on:**
+it on some dedicated VPS host, more realistic", then: "let's not be specific about [a] VPS as host;
+it can be any Pollen-sim-compatible host". **Builds on:**
 [RFC-0020](RFC-0020-robot-profiles-and-plugins.md) (a robot's profile and plugins),
 [RFC-0008](RFC-0008-challenge-course.md) (the course and its judge),
 [RFC-0010](RFC-0010-run-store-v2.md) (the recording), [RFC-0017](RFC-0017-robot-access.md) (the gate
@@ -31,8 +32,9 @@ this machine's ties (2026-11-19):
 
 **Goals:**
 
-- One machine prepared once (a dedicated VPS is the realistic case: x86-64, no GPU, headless) runs a
-  course for any payload with one command, and writes recordings the Observatory opens unchanged.
+- One machine prepared once (any host that runs Pollen's simulator: a workstation, a server, a VPS)
+  runs a course for any payload with one command, and writes recordings the Observatory opens
+  unchanged.
 - The same course, judge and recording format for every payload, so two runs on two machines
   compare.
 - A payload never sees the simulator's truth.
@@ -68,7 +70,7 @@ added by the runner, not by the payload.
 
 ## 4. Setting up a host
 
-A script in this repository, run once on a fresh VPS, checks and reports each requirement with
+A script in this repository, run once on a fresh host, checks and reports each requirement with
 PASS/FAIL (Pollen's repositories present and built, the MuJoCo environment importable, the
 `duck-sim` patch applied, our packages installed) and writes `host.json`. It installs nothing on its
 own; it prints what is missing. A container image for the payload and runner follows if the host
@@ -84,8 +86,8 @@ script proves the line is clean.
    move to the runner. Proof: phase 1's evaluation and challenges 1–5 judged the same as before
    (pass counts over repeats, the simulator is not deterministic: K13); the recordings open in the
    Observatory with truth where they had it.
-3. **The host check script**, tried on a clean machine (a VPS or a fresh container standing in for
-   one).
+3. **The host check script**, tried on a clean machine (another machine, or a fresh container
+   standing in for one).
 4. **One course on a second machine:** phase 1's 20 goals run there, the recording copied back and
    opened in the Observatory beside a run from this workstation.
 5. **A second payload:** a minimal navigator (straight to the goal, stop on the depth sensor)
@@ -95,8 +97,9 @@ script proves the line is clean.
 
 - **Pollen's code changes shape** (the scene file, the services' arguments): the host check reports
   the version it was tested with; the scene builder already refuses a changed `scene_backlash.xml`.
-- **Timing on a slower host:** the navigator's loop runs on wall-clock time; a slow VPS may change
-  results. The host check measures the simulator's real-time factor and records it with every run.
+- **Timing on a slower host:** the navigator's loop runs on wall-clock time; a slower host may
+  change results. The host check measures the simulator's real-time factor and records it with every
+  run.
 - **Truth leaking:** step 2's proof includes a test that the payload's process has no route to the
   body server's port.
 
