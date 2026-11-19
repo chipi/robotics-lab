@@ -59,12 +59,13 @@ class Explorer:
         self.events = []
         self.attempts = 0         # recoveries in a row since a leg was reached
         self.within = None        # a test of a point (xy -> bool) the frontiers must pass (explore {area}, RFC-0014 §3.4.1), else the whole map
-        self.burst = anom.RefusalBurst()     # refusals in a row at one pose (RFC-0019's refusal_burst)
+        an = getattr(nav, "anomalies", None)  # refusals in a row at one pose (RFC-0019's refusal_burst), the profile's limits
+        self.burst = anom.RefusalBurst(an.refusal_burst_n, an.refusal_burst_moved_m) if an else anom.RefusalBurst()
         nav.on_move = self.move_frame
 
     def watch_burst(self, out: dict, pose: tuple, legs: int) -> None:
         """A leg's outcome: refusals at one pose with no motion between (b11 r2: six in 0.45 s, then "trapped") are one anomaly, said
-        when the streak reaches anomaly.BURST_N; any other outcome ends the streak."""
+        when the streak reaches the profile's refusal_burst_n; any other outcome ends the streak."""
         if out["status"] != "refused":
             self.burst.reset()
             return

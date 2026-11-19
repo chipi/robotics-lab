@@ -486,5 +486,20 @@ for nav, say in ((a, False), (b, True)):
 strip = lambda nav: [{k: v for k, v in r.items() if k != "t"} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
 check("an anomaly between two rows leaves them as they were", strip(a) == strip(b) and len(rows(b)) == len(rows(a)) + 1)
 
+# ---- every limit is the profile's (the operator, 2026-11-19: accepted as they are, and configurable) -----------------------------------
+an = SIM.anomalies
+check("the duck's profile holds the accepted limits",
+      (an.refusal_burst_n, an.refusal_burst_moved_m, an.same_place_moved_m, an.same_place_gap_s, an.room_disagrees_clear_mm,
+       an.head_off_walk_rad, an.head_off_walk_s, an.unexplained_clear_m, an.state_stale_s, an.depth_stale_s)
+      == (3, 0.10, 0.10, 5.0, 280, 0.30, 1.0, 0.30, 3.0, 3.0))
+lim = types.SimpleNamespace(refusal_burst_n=5, refusal_burst_moved_m=0.2, same_place_moved_m=0.5, same_place_gap_s=9.0)
+ex5 = explore_run.Explorer(types.SimpleNamespace(anomaly=lambda *a, **f: None, on_move=None, anomalies=lim), None)
+check("the explorer's burst takes its limits from the profile", (ex5.burst.n, ex5.burst.moved_m) == (5, 0.2), (ex5.burst.n, ex5.burst.moved_m))
+b.__dict__.pop("_gates", None)
+b.anomalies = lim
+b._once_here("room_disagrees", (0.0, 0.0, 0.0))
+g = b._gates["room_disagrees"]
+check("the once-per-place rule takes its limits from the profile", (g.moved_m, g.gap_s) == (0.5, 9.0), (g.moved_m, g.gap_s))
+
 print("ANOMALY", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

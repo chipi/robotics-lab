@@ -439,7 +439,10 @@ class Navigator:
     def _once_here(self, kind: str, pose: tuple) -> bool:
         """False for an anomaly already said for this place (anomaly.PlaceGate): a refusal repeats for every target tried at one pose."""
         gates = self.__dict__.setdefault("_gates", {})
-        return gates.setdefault(kind, anom.PlaceGate()).allow(time.monotonic(), pose)
+        if kind not in gates:
+            an = self.anomalies
+            gates[kind] = anom.PlaceGate(an.same_place_moved_m, an.same_place_gap_s) if an else anom.PlaceGate()
+        return gates[kind].allow(time.monotonic(), pose)
 
     def _watch_fix(self) -> None:
         """fix_jump_held: every fix the gate held, none throttled (the `fix` event is: only the first few and every twentieth)."""

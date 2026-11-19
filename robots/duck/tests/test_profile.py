@@ -150,7 +150,9 @@ OLD = {
     # state and depth streams may be silent, the sensor's clear distance for room_disagrees, the map's explaining distance
     "anomalies": {"head_walk_pose": {"neck_pitch": 0.239, "head_pitch": 0.358, "head_yaw": -0.078, "head_roll": -0.023},
                   "head_off_walk_rad": 0.30, "head_off_walk_s": 1.0, "state_stale_s": 3.0, "depth_stale_s": 3.0,
-                  "room_disagrees_clear_mm": 280, "unexplained_clear_m": 0.30},
+                  "room_disagrees_clear_mm": 280, "unexplained_clear_m": 0.30,
+                  # the refusal burst and the once-per-place rule, out of nav/anomaly.py (the operator: configurable)
+                  "refusal_burst_n": 3, "refusal_burst_moved_m": 0.10, "same_place_moved_m": 0.10, "same_place_gap_s": 5.0},
     "rates": ROBOT_FILE["rates"],
     "capabilities": ROBOT_FILE["capabilities"],
 }
