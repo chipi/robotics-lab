@@ -117,6 +117,29 @@ string module names (`-m duck_lab…`) or `PYTHONPATH` tricks; its docstring say
 9. The NXT's programs and toolchain stay with `apps/nxt-web` for now.
 10. The compatibility aliases (`miniview` CLI, `viewer-*` targets) kept one release, then removed.
 
+## Golden (C0, taken at `pre-restructure`, 3a8d6d7)
+
+Command: `python3 scripts/golden.py` (it finds the Observatory and the duck wherever they sit, so
+the same command runs after every move). Run twice before any change: the five lines were
+identical. `make ci` at the same commit: `ci PASS`, `MAKE_EXIT=0`.
+
+```text
+173e75facba9c8337aecbed8a3a6e3a42a45df2d117479893d7e44364fac3ce1  api run (6158 bytes)
+f357641de9ace4ba27ab11b5b8603e2317a8591af05fb01e83dcf5264b9a1e8f  api frames (265098 bytes)
+6bfdfddea59457845ef3c4a2c222ebc5e8fac007ae6f5fc923fd872de99966fa  api signals (28 bytes)
+11b9a04a06b935ef7a10f47b2a12d947257daf69915eac1123f785b61ed641a7  api state (342 bytes)
+b1edc2587b3682c92e28225a97985f58d997a362a8d4618d5b334c907ea0d59f  replay report (7 lines)
+```
+
+- `api`: the committed fixture `viewer/tests/fixtures/explore9` imported into a temporary data
+  folder with the CLI, the server started on a free port, `GET /api/v1/runs/duck/apartment/explore9`
+  and its `frames?from=0&to=1000`, `signals?from=0&to=1000` and `state?t=5`, each body hashed
+  byte for byte.
+- `replay`: no committed fixture run has depth frames (explore9 and find-fridge-slice have none),
+  so the run is written by the navigator's own `RunLog` from fixed frames (the construction of
+  `duck/tests/test_replay.py`), then `duck-replay` prints its report (`REPLAY PASS`), the whole
+  report hashed. This deviates from "a committed fixture run": it is generated, deterministically.
+
 ## NOT VERIFIED
 
 The unread parts of `store.py`, `catalog.py`, `se2.py`; whether `uv lock` is stable offline;
