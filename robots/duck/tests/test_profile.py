@@ -149,10 +149,12 @@ OLD = {
               "bounds_margin_m": 0.05},               # challenge.judge.BOUNDS_MARGIN_M
     # new in RFC-0019 step 1 (no constant before it): the robot-tagged anomalies' numbers, each measured on the recordings, see the
     # block's own `measured` (the apartment's 66 runs): the walking head pose, how far off it counts and for how long, how long the
-    # state and depth streams may be silent, the sensor's clear distance for room_disagrees, the map's explaining distance
+    # state and depth streams may be silent, the depth rule for room_disagrees (K36), the map's explaining distance
     "anomalies": {"head_walk_pose": {"neck_pitch": 0.239, "head_pitch": 0.358, "head_yaw": -0.078, "head_roll": -0.023},
                   "head_off_walk_rad": 0.30, "head_off_walk_s": 1.0, "state_stale_s": 3.0, "depth_stale_s": 3.0,
-                  "room_disagrees_clear_mm": 280, "unexplained_clear_m": 0.30,
+                  "room_disagrees_window_s": 4.0, "room_disagrees_look_deg": 20.0, "room_disagrees_near_m": 0.6,
+                  "room_disagrees_see_m": 1.5, "room_disagrees_agree_m": 0.08, "room_disagrees_floor_slack_m": 0.02,
+                  "unexplained_clear_m": 0.30,
                   # the refusal burst and the once-per-place rule, out of nav/anomaly.py (the operator: configurable)
                   "refusal_burst_n": 3, "refusal_burst_moved_m": 0.10, "same_place_moved_m": 0.10, "same_place_gap_s": 5.0},
     "rates": ROBOT_FILE["rates"],

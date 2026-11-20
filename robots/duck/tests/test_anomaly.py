@@ -258,25 +258,86 @@ def squeezed(nearest_mm):
     return nav
 
 
+def see(nav, points, ago=0.0):
+    """A depth frame the navigator saw `ago` seconds ago: (x, y, kind) in map metres."""
+    nav._returns.add(time.monotonic() - nav._t0 - ago, [[x, y, 0.0, k] for x, y, k in points])
+
+
+AHEAD_FLOOR = [(1.3, 2.5, "f"), (1.5, 2.5, "f"), (1.8, 2.5, "f")]      # floor 0.3, 0.5 and 0.8 m ahead of the pose, all inside the 1.5 m look
 nav = squeezed(600)
+see(nav, AHEAD_FLOOR + [(1.0, 3.0, "o")])
 out = nav.go_to((0.5, 2.5), 5.0)
 r = anomalies(nav)
-check("no room to turn by the map (0.13 m) while the sensor sees 600 mm clear: refused, and room_disagrees said, info, with both numbers",
+v = r[0]["values"] if r else {}
+check("no room to turn by the map (0.14 m), the sensor returned floor 0.3 m that way and no obstacle: refused, room_disagrees said, info, "
+      "with the bearing, the map's distance and the floor return",
       out["status"] == "refused" and out["why"].startswith("no room to turn") and [x["anomaly"] for x in r] == ["room_disagrees"]
-      and r[0]["severity"] == "info" and r[0]["values"]["nearest_mm"] == 600 and 0.1 < r[0]["values"]["room_m"] < 0.15
-      and r[0]["margin"] == 600 - REAL.anomalies.room_disagrees_clear_mm and r[0]["values"]["margin_unit"] == "mm", (out, r))
+      and r[0]["severity"] == "info" and v["bearing_deg"] == 0.0 and abs(v["map_m"] - 0.14) < 0.005 and v["floor_beyond_m"] == 0.3
+      and v["obstacle_m"] is None and 0.1 < v["room_m"] < 0.15 and v["margin_unit"] == "m"
+      and abs(r[0]["margin"] - (0.3 - (v["map_m"] - REAL.anomalies.room_disagrees_floor_slack_m))) < 1e-3, (out, r))
 check("... the refusal itself is the same row as before: a decision, the room, the sensor's reading",
       any(x.get("event") == "refused" and x["why"] == "no room to turn" and x["nearest_mm"] == 600 and x["decision"]["rule"] == "refused" for x in rows(nav)))
-for mm in (200, 279):
-    nav = squeezed(mm)
-    out = nav.go_to((0.5, 2.5), 5.0)
-    check(f"no room to turn with the sensor at {mm} mm (under the 280): refused, nothing said", out["status"] == "refused"
-          and anomalies(nav) == [], (out, anomalies(nav)))
-nav = squeezed(280)
+check("... the side return (1.0, 3.0), 90 deg off the map's bearing, is not one of the returns that way", v.get("returns") == 3, v)
 nav.go_to((0.5, 2.5), 5.0)
-check("... at exactly 280 mm it is said (the limit is 'or more'), the margin 0", [x["margin"] for x in anomalies(nav)] == [0], anomalies(nav))
 check("a second refusal at the same pose is not said again (one for a place), a refusal 0.3 m away is",
-      nav._once_here("room_disagrees", (1.0, 2.5, 0.0)) is False and nav._once_here("room_disagrees", (1.3, 2.5, 0.0)) is True)
+      len(anomalies(nav)) == 1 and nav._once_here("room_disagrees", (1.0, 2.5, 0.0)) is False and nav._once_here("room_disagrees", (1.3, 2.5, 0.0)) is True)
+
+nav = squeezed(600)
+see(nav, AHEAD_FLOOR + [(1.16, 2.5, "o")])
+out = nav.go_to((0.5, 2.5), 5.0)
+check("an obstacle return 0.16 m ahead (within 8 cm of the map's 0.14 m): the sensor agrees, refused, nothing said",
+      out["status"] == "refused" and anomalies(nav) == [], (out, anomalies(nav)))
+nav = squeezed(600)
+see(nav, AHEAD_FLOOR + [(1.4, 2.5, "o")])
+out = nav.go_to((0.5, 2.5), 5.0)
+check("an obstacle return 0.4 m ahead, far past the map's 0.14 m, with floor beyond the map's: disagrees, said (a farther obstacle is no agreement)",
+      out["status"] == "refused" and [x["anomaly"] for x in anomalies(nav)] == ["room_disagrees"], (out, anomalies(nav)))
+for name, frames in (("no frame at all", []), ("only frames to the side, 90 deg off", [([(1.0, 3.0, "f"), (1.0, 3.4, "f")], 0.0)]),
+                     ("only a frame 5 s old, outside the 4 s", [(AHEAD_FLOOR, 5.0)]),
+                     ("floor only farther than the 1.5 m", [([(2.8, 2.5, "f")], 0.0)]),
+                     ("only a below-the-floor return that way: neither floor nor obstacle (unclear)", [([(1.3, 2.5, "b")], 0.0)])):
+    nav = squeezed(600)
+    for pts, ago in frames:
+        see(nav, pts, ago)
+    out = nav.go_to((0.5, 2.5), 5.0)
+    check(f"no verdict, nothing said ({name}): refused", out["status"] == "refused" and anomalies(nav) == [], (out, anomalies(nav)))
+nav = squeezed(200)
+see(nav, AHEAD_FLOOR)
+out = nav.go_to((0.5, 2.5), 5.0)
+check("the sensor's own nearest reading (200 mm here) is no part of the rule: floor returned beyond the map's obstacle says it at any reading",
+      [x["anomaly"] for x in anomalies(nav)] == ["room_disagrees"], anomalies(nav))
+
+# the check only raises an anomaly: the leg ends the same way and every other row is the same, with the sensor agreeing and disagreeing
+quiet, loud = squeezed(600), squeezed(600)
+see(quiet, AHEAD_FLOOR + [(1.16, 2.5, "o")])
+see(loud, AHEAD_FLOOR)
+oq, ol = quiet.go_to((0.5, 2.5), 5.0), loud.go_to((0.5, 2.5), 5.0)
+keep = lambda nav: [{k: v for k, v in r.items() if k not in ("t", "time_s")} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
+check("driving is unchanged: the same refusal and the same rows (the anomaly aside) whether the sensor agreed or disagreed",
+      {k: v for k, v in oq.items() if k != "time_s"} == {k: v for k, v in ol.items() if k != "time_s"} and keep(quiet) == keep(loud)
+      and len(anomalies(quiet)) == 0 and len(anomalies(loud)) == 1, (oq, ol))
+
+# the returns' memory: bounded in time and in size, and moved with the memory
+ret = anom.Returns(4.0)
+for i in range(2000):
+    ret.add(i * 0.01, [[1.0, 0.0, 0.0, "f"]] * 64)
+check("the returns are bounded in size: 2000 frames 10 ms apart hold the frame cap, the newest last",
+      len(ret._frames) == anom.RETURNS_MAX_FRAMES and ret._frames[-1][0] == 1999 * 0.01, len(ret._frames))
+ret = anom.Returns(4.0)
+for i in range(40):
+    ret.add(i * 0.5, [[1.0, 0.0, 0.0, "f"]])
+check("... and in time: frames 0.5 s apart over 20 s hold the last 4 s (9 frames)", len(ret._frames) == 9 and ret._frames[0][0] == 15.5, len(ret._frames))
+ret = anom.Returns(4.0)
+ret.add(1.0, [[1.0, 0.0, 0.0, "o"]])
+ret.add(2.0, [[2.0, 0.0, 0.0, "f"]])
+check("the returns of the window only, [t - 4, t]: older and later ones are not read", [len(ret.last(t)) for t in (0.5, 1.0, 2.0, 5.0, 5.1)] == [0, 1, 2, 2, 1])
+ret.move(lambda p: (p[0], p[1] + 1.0))
+check("the returns move with the memory (the frame change), their kinds kept", ret.last(2.0) == [(1.0, 1.0, "o"), (2.0, 1.0, "f")], ret.last(2.0))
+GRID = make_grid(100, 100, walls=[(1.0, 2.0, 1.0, 3.0)])
+w = anom.nearest_obstacle((0.8, 2.5, 0.0), GRID, [], 0.6)
+check("the map's nearest obstacle: a wall cell's centre 0.2 m away; a remembered point nearer wins; none inside the radius is None",
+      w is not None and abs(w[0] - 0.225) < 0.03 and anom.nearest_obstacle((0.8, 2.5, 0.0), GRID, [(0.85, 2.5)], 0.6)[1] == (0.85, 2.5)
+      and anom.nearest_obstacle((3.0, 3.0, 0.0), GRID, [], 0.6) is None, w)
 
 BOX = [(3.5, 3.5, 3.55, 4.5), (4.45, 3.5, 4.5, 4.5), (3.5, 3.5, 4.5, 3.55), (3.5, 4.45, 4.5, 4.5)]      # a closed box, 1 m inside
 nav = navigator(make_grid(100, 100, walls=BOX), pose=(1.0, 1.0, 0.0))
@@ -489,9 +550,10 @@ check("an anomaly between two rows leaves them as they were", strip(a) == strip(
 # ---- every limit is the profile's (the operator, 2026-11-19: accepted as they are, and configurable) -----------------------------------
 an = SIM.anomalies
 check("the duck's profile holds the accepted limits",
-      (an.refusal_burst_n, an.refusal_burst_moved_m, an.same_place_moved_m, an.same_place_gap_s, an.room_disagrees_clear_mm,
-       an.head_off_walk_rad, an.head_off_walk_s, an.unexplained_clear_m, an.state_stale_s, an.depth_stale_s)
-      == (3, 0.10, 0.10, 5.0, 280, 0.30, 1.0, 0.30, 3.0, 3.0))
+      (an.refusal_burst_n, an.refusal_burst_moved_m, an.same_place_moved_m, an.same_place_gap_s, an.room_disagrees_window_s,
+       an.room_disagrees_look_deg, an.room_disagrees_near_m, an.room_disagrees_see_m, an.room_disagrees_agree_m,
+       an.room_disagrees_floor_slack_m, an.head_off_walk_rad, an.head_off_walk_s, an.unexplained_clear_m, an.state_stale_s, an.depth_stale_s)
+      == (3, 0.10, 0.10, 5.0, 4.0, 20.0, 0.6, 1.5, 0.08, 0.02, 0.30, 1.0, 0.30, 3.0, 3.0))
 lim = types.SimpleNamespace(refusal_burst_n=5, refusal_burst_moved_m=0.2, same_place_moved_m=0.5, same_place_gap_s=9.0)
 ex5 = explore_run.Explorer(types.SimpleNamespace(anomaly=lambda *a, **f: None, on_move=None, anomalies=lim), None)
 check("the explorer's burst takes its limits from the profile", (ex5.burst.n, ex5.burst.moved_m) == (5, 0.2), (ex5.burst.n, ex5.burst.moved_m))

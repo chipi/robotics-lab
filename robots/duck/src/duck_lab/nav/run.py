@@ -205,6 +205,7 @@ class Navigator:
     _walking = False         # the last command asked for a forward walk (the head watch reads it on the state thread)
     _lease_said = False
     anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
+    _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
 
     def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None,
@@ -323,6 +324,7 @@ class Navigator:
         self.anomalies = profile.anomalies if an else None
         if an:
             self._head = anom.HeadWatch(an["head_walk_pose"], an["head_off_walk_rad"], an["head_off_walk_s"])
+            self._returns = anom.Returns(an["room_disagrees_window_s"])
             now = time.monotonic()
             self._beat = {"state": anom.Staleness(an["state_stale_s"], now), "depth": anom.Staleness(an["depth_stale_s"], now)}
 
@@ -389,6 +391,8 @@ class Navigator:
         self.floor_seen = {(round(q[0] / FLOOR_CELL_M), round(q[1] / FLOOR_CELL_M))
                            for q in (mv((cx * FLOOR_CELL_M, cy * FLOOR_CELL_M)) for cx, cy in list(self.floor_seen))}
         self.suspects.move(d)
+        if self._returns is not None:
+            self._returns.move(mv)
         if self.semantic is not None:
             with self._sem_lock:
                 self.semantic.move(d)
@@ -465,18 +469,28 @@ class Navigator:
                      evidence={"fix_t_ns": f["t_ns"], "odom_t_ns": f["odom_t_ns"], "raw": f["raw"], "before": f.get("before"), "after": f["after"]})
 
     def _check_room(self, room: float, nearest_drop: float) -> None:
-        """room_disagrees: the map says there is no room to turn while the depth sensor sees `room_disagrees_clear_mm` or more clear
-        ahead. Half of the refusals for no room to turn in the recordings are such (profile anomalies.measured): it is a note beside
-        them, not a verdict on which of the two was right."""
-        if self.anomalies is None:
+        """room_disagrees: at a refusal for no room to turn, the sensor looked at the map's nearest obstacle (anomaly.room_verdict) and
+        returned floor at or beyond it, with no obstacle return near it. Said for "disagrees" only: "agrees", "unclear" and "unseen"
+        (the sensor did not look that way) say nothing. A note beside the refusal (profile anomalies.measured says how often it is
+        the map that is wrong); it changes no decision."""
+        an, returns = self.anomalies, self._returns
+        if an is None or returns is None:
             return
-        near, pose = self.range.nearest_mm(), self.localisation.pose()
-        limit = self.anomalies.room_disagrees_clear_mm
-        if near is None or near < limit or not self._once_here("room_disagrees", pose):
+        pose = self.localisation.pose()
+        v = anom.room_verdict(pose, self._map_raw, self.blocked, returns, time.monotonic() - self._t0,
+                              look_deg=an.room_disagrees_look_deg, near_m=an.room_disagrees_near_m, see_m=an.room_disagrees_see_m,
+                              agree_m=an.room_disagrees_agree_m, floor_slack_m=an.room_disagrees_floor_slack_m)
+        if v is None or v["verdict"] != "disagrees" or not self._once_here("room_disagrees", pose):
             return
-        self.anomaly("room_disagrees", f"the map has {room:.2f} m of room to turn, the depth sensor sees {near:.0f} mm clear ahead",
-                     margin=near - limit, values={"room_m": round(room, 3), "nearest_mm": near, "limit_mm": limit,
-                                                  "nearest_drop_m": round(nearest_drop, 3), "margin_unit": "mm"})
+        bearing = math.degrees(v["bearing_rad"])
+        self.anomaly("room_disagrees",
+                     f"the map has {room:.2f} m of room to turn, its nearest obstacle {v['map_m']:.2f} m away at {bearing:.0f} deg; the depth "
+                     f"sensor returned floor {v['floor_beyond_m']:.2f} m that way and no obstacle near it",
+                     margin=v["floor_beyond_m"] - (v["map_m"] - an.room_disagrees_floor_slack_m),
+                     values={"room_m": round(room, 3), "bearing_deg": round(bearing, 1), "map_m": round(v["map_m"], 3),
+                             "floor_beyond_m": round(v["floor_beyond_m"], 3),
+                             "obstacle_m": None if v["obstacle_m"] is None else round(v["obstacle_m"], 3), "returns": v["returns"],
+                             "nearest_drop_m": round(nearest_drop, 3), "margin_unit": "m"})
 
     def _check_unexplained(self, grid: CostGrid, pose: tuple, goal: tuple, why: str, start_cost: float, goal_cost: float) -> None:
         """refused_unexplained: the planner found no way, the start is not boxed in, the goal is not lethal, and nothing the robot's
@@ -814,6 +828,8 @@ class Navigator:
                     if kind == "floor":
                         self.floor_seen.add((round(x / FLOOR_CELL_M), round(y / FLOOR_CELL_M)))
             self.suspects.add_frame(seen)
+            if self._returns is not None and fv.points:
+                self._returns.add(arrived, fv.points)
         if self.runlog and not self._logging_failed:
             try:
                 self.runlog.frame(self._sid, arrived, fv.payload())

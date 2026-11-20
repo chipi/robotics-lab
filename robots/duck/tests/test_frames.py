@@ -7,6 +7,7 @@ import sys
 import time
 import types
 
+from duck_lab.nav.anomaly import Returns
 from duck_lab.nav.frames import Localizer, compose, move_grid, move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid
 from duck_lab.nav.run import LOW_CELL_M, Navigator
@@ -172,6 +173,8 @@ class _Mem:
         import threading
         self._sem_lock = threading.Lock()
         self._moves, self.on_move = [], None
+        self._returns = Returns(4.0)
+        self._returns.add(1.0, [[1.0, 0.0, 0.0, "f"]])
         self.told = []
 
     def record(self, **row):
@@ -189,6 +192,8 @@ check("the drops, the measured edges, what was glanced at and looked at move",
       (mem.drops, mem.edges, mem.glanced, mem.step_looked))
 check("the tight-pivot spot moves, its time stays", mem.locomotion.tight_spots == [[(0.1, 1.0), 5.0]], mem.locomotion.tight_spots)
 check("the floor the sensor saw moves (5 cm cells)", mem.floor_seen == {(20, 18), (21, 18)}, sorted(mem.floor_seen))
+check("the depth returns of the last seconds (room_disagrees) move, their kind kept", mem._returns.last(1.0) == [(1.0, 0.9, "f")],
+      mem._returns.last(1.0))
 check("the low-band cells move with their frames", mem._low == {(round(1.0 / LOW_CELL_M), round(0.9 / LOW_CELL_M)): {1, 2, 3}}, mem._low)
 check("the suspected drops and their counts move", mem.suspects.suspected == {(10, 28)} and mem.suspects.below[(10, 28)] == 7,
       (mem.suspects.suspected, dict(mem.suspects.below)))

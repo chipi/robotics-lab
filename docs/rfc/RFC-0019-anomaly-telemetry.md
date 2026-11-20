@@ -108,7 +108,7 @@ alike:
 | `stuck` | navigator | walking, the belief going nowhere (`stuck.py`) |
 | `frames_parted` | localizer | the belief's frame and mapd's differ by more than a threshold (the landmark offset plus a held fix's residual, known every tick; recorded in every `world` event as a value too) |
 | `refusal_burst` | explorer | refusals in a row at one pose with no motion between (b11 r2: 6 in 0.45 s, then "trapped") |
-| `room_disagrees` | navigator | the map says no room to turn while the depth sensor sees nothing near (b11 r5: room 0.136 m, nearest 283 mm) |
+| `room_disagrees` | navigator | the map says no room to turn, and the depth sensor, looking at the map's nearest obstacle (last 4 s, within 20° of its bearing), returned floor at or beyond it and no obstacle near it (K36; the sensor not looking that way says nothing; was "nothing near ahead": b11 r5, room 0.136 m, nearest 283 mm) |
 | `head_off_walk` | navigator | head joints away from the walking command while walking (the glance that tilted the odometry, EXPLORE-PROGRESS.md) |
 | `refused_unexplained` | navigator | a leg refused with no obstacle or drop near by the robot's own map |
 | `camera_failed`, `thread_failed` | camera, navigator | an observer stopped with an error |

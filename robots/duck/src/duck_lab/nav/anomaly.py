@@ -12,7 +12,9 @@ camera, the streams' watchdog, the lease), explore_run.py (the refusal burst) an
 duck's are its profile's `anomalies` block (with their measurement); the policy numbers are here, each with where it came from.
 """
 
+import collections
 import math
+import threading
 
 SEVERITIES = ("info", "minor", "major", "critical")
 VERSION = 1
@@ -111,6 +113,96 @@ class RefusalBurst:
             self.said = True
             return self.count
         return None
+
+
+# The most frames Returns holds, whatever the window: 240 is 4 s of a 60 Hz sensor, four times the tof8x8's 15 Hz, and at 64 returns
+# a frame (8x8) under 16 000 small tuples. The window prunes first; this is the bound if frames ever come faster.
+RETURNS_MAX_FRAMES = 240
+
+
+class Returns:
+    """The depth returns of the last `window_s` seconds, one entry per frame (time, then (x, y, kind) in map metres, kind the first
+    letter the sensor's FrameView gives: o obstacle or overhead, f floor, b below), newest last. Bounded in time (older frames go at each `add`)
+    and in size (RETURNS_MAX_FRAMES). Written from the depth stream's thread, read from the navigator's: under a lock."""
+
+    def __init__(self, window_s: float):
+        self.window_s = window_s
+        self._frames = collections.deque(maxlen=RETURNS_MAX_FRAMES)
+        self._lock = threading.Lock()
+
+    def add(self, t: float, points) -> None:
+        """A frame's points, [x, y, z, kind] each (FrameView.points), at time t (seconds, one clock for add and `last`)."""
+        kept = tuple((p[0], p[1], p[3]) for p in points)
+        with self._lock:
+            self._frames.append((t, kept))
+            while self._frames[0][0] < t - self.window_s:
+                self._frames.popleft()
+
+    def move(self, mv) -> None:
+        """The frame change the memory moved by (`mv` maps (x, y) to the new (x, y)): the returns are placed with the belief too."""
+        with self._lock:
+            self._frames = collections.deque(((t, tuple(mv((x, y)) + (k,) for x, y, k in pts)) for t, pts in self._frames),
+                                             maxlen=RETURNS_MAX_FRAMES)
+
+    def last(self, t: float) -> list:
+        """The returns of the frames in [t - window_s, t], flattened."""
+        with self._lock:
+            frames = list(self._frames)
+        return [q for ft, pts in frames if t - self.window_s <= ft <= t for q in pts]
+
+
+def nearest_obstacle(pose: tuple, grid: dict | None, points, near_m: float) -> tuple | None:
+    """(distance, (x, y)) of the map's nearest obstacle within `near_m` of the pose: the centres of mapd's occupied cells (`grid` as
+    the navigator reads it: res_m, origin, width, height, cells with "#" for a wall) and the remembered points; None when none is."""
+    best = (math.inf, None)
+    if grid:
+        res, (ox, oy), w, h, cells = grid["res_m"], grid["origin"], grid["width"], grid["height"], grid["cells"]
+        r = int(near_m / res) + 1
+        cx0, cy0 = math.floor((pose[0] - ox) / res), math.floor((pose[1] - oy) / res)
+        for cy in range(max(0, cy0 - r), min(h, cy0 + r + 1)):
+            for cx in range(max(0, cx0 - r), min(w, cx0 + r + 1)):
+                if cells[cy * w + cx] == "#":
+                    q = (ox + (cx + .5) * res, oy + (cy + .5) * res)
+                    d = math.hypot(q[0] - pose[0], q[1] - pose[1])
+                    if d < best[0]:
+                        best = (d, q)
+    for q in points:
+        d = math.hypot(q[0] - pose[0], q[1] - pose[1])
+        if d < best[0]:
+            best = (d, (q[0], q[1]))
+    return best if best[0] <= near_m else None
+
+
+def room_verdict(pose: tuple, grid: dict | None, points, returns: Returns, t: float, *, look_deg: float, near_m: float, see_m: float,
+                 agree_m: float, floor_slack_m: float) -> dict | None:
+    """Which of the map and the depth sensor a refusal for no room to turn can be believed (K36; the rule is
+    sim/probes/room_rule.py's, measured on the apartment recordings). The map's nearest obstacle (nearest_obstacle) gives a bearing and
+    a distance; the returns of the last window within `look_deg` of that bearing and `see_m` of the pose are what the sensor saw
+    that way. "agrees": an obstacle return at or nearer than the map's distance plus `agree_m`; "disagrees": none, and a floor return
+    at or beyond the map's distance less `floor_slack_m`; "unclear": returns, but neither; "unseen": no return that way. None when
+    the map has no obstacle within `near_m`. `obstacle_m`: the nearest obstacle return that way; `floor_beyond_m`: the nearest floor
+    return at or beyond the map's distance (less the slack)."""
+    near = nearest_obstacle(pose, grid, points, near_m)
+    if near is None:
+        return None
+    dm, (qx, qy) = near
+    bearing = math.atan2(qy - pose[1], qx - pose[0])
+    looked, obstacle, floor = 0, None, None
+    for x, y, kind in returns.last(t):
+        dx, dy = x - pose[0], y - pose[1]
+        d = math.hypot(dx, dy)
+        if d > see_m or d < 0.02:
+            continue
+        if abs(math.degrees((math.atan2(dy, dx) - bearing + math.pi) % (2 * math.pi) - math.pi)) > look_deg:
+            continue
+        looked += 1
+        if kind == "o" and (obstacle is None or d < obstacle):
+            obstacle = d
+        if kind == "f" and d >= dm - floor_slack_m and (floor is None or d < floor):
+            floor = d
+    near_obstacle = obstacle is not None and obstacle <= dm + agree_m
+    verdict = "unseen" if not looked else "agrees" if near_obstacle else "disagrees" if floor is not None else "unclear"
+    return {"verdict": verdict, "bearing_rad": bearing, "map_m": dm, "obstacle_m": obstacle, "floor_beyond_m": floor, "returns": looked}
 
 
 class HeadWatch:
