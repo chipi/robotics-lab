@@ -162,6 +162,27 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    move to the runner. Proof: phase 1's evaluation and challenges 1–5 judged the same as before
    (pass counts over repeats, the simulator is not deterministic: K13); the recordings open in the
    Observatory with truth where they had it.
+   *Design (2026-11-20, with the advisor's review):* a format 2 tick holds its truth inside it and a
+   run has one writer (`wire.py`, `mcapio.py`), so the truth cannot be added by a second writer or
+   a side file without a format change. Instead the runner is the official run's one writer: the
+   payload writes its own run, without truth, into a scratch folder the runner owns (outside the
+   Observatory's data folder); the runner follows it live (`Follower`) and copies every record into
+   the official run, putting into each tick the truth sample nearest it in wall-clock time (every
+   row gains `wall_ns`; ticks with no sample within 100 ms keep no truth, counted), and writing the
+   map ← world epochs, its own judged events and the run's end. Live viewing keeps its truth, about
+   a poll period late. Sub-steps, each green on its own: (a) `wall_ns` on every row; (b) the copier
+   in `libs/runfile`, tested record by record against today's path, live, multi-goal and offline;
+   (c) the truth sampler (`Body` moves to `simhost`) and the judge on its samples, still in one
+   process; (d) the payload as its own process under the runner (the nav server given only its
+   sockets, a goal sequence kind for challenge 21, cancel with a reason, the runner stopping the
+   robot itself if the payload dies); (e) truth removed from the navigator, and the test that the
+   payload's process connects to no truth port (a test-owned fake body server that counts
+   connections). Later than step 2: the simulated camera becomes a sensor socket the host serves (it
+   reads truth today; `duck-explore` and the nav server keep it, behind an explicit interim, until
+   then), and Mission Control's truth guardrails (fall, contact, drop clearance) move to the runner
+   when it fronts the navigator API. Traps to keep: the body server's port also writes joint targets
+   (the "no route" test guards actuation, not only truth); a payload killed mid-goal leaves the
+   robot walking, so the runner cancels, waits, and sends a zero move itself.
 3. **The setup and check scripts** (§4), each platform proven on a clean machine: Linux in a fresh
    container standing in for a new machine; macOS on the operator's MacBook Pro (M4 Pro), the
    simulation environment first, since it is the open risk; phase 1's 20 goals run there and the
