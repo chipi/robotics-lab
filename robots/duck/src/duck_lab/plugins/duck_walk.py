@@ -32,6 +32,7 @@ class DuckWalk:
         self.pivot_drop_m, self.pivot_edge_m = loco.pivot.drop_clear_m, loco.pivot.edge_clear_m
         self.tight_pivot_m, self.tight_spot_m, self.tight_gap_s = loco.pivot.tight_m, loco.pivot.tight_spot_m, loco.pivot.tight_gap_s
         self.arc = loco.arc
+        self.deadband = float(loco.get("steer.deadband_rad") or 0.0)
         self.drop_lethal_m = profile.error_budget.drop_lethal_m
         self.tight_spots = []        # [(x, y), last tick] of each tight pivot: one per spot (tight_pivot_ok)
         self.robot = None
@@ -69,6 +70,17 @@ class DuckWalk:
             kicking = now - st.turn_started < loco.kick_s
             return Twist(0.0 if kicking else self.pivot_vx, math.copysign(loco.kick_rad_s if kicking else loco.hold_rad_s, err))
         vyaw = max(-loco.yaw_max_rad_s, min(loco.yaw_max_rad_s, loco.yaw_gain * err))
+        if self.deadband and not close:
+            # not in a squeeze: no turn while the heading is within the band, a correction once past it (K1: a turn commanded while the
+            # feet meet a 0.5-1 cm edge stops the step-over; the walk's own drift, 0.07 rad/s, does not)
+            if abs(err) >= self.deadband:
+                st.steering = True
+            elif abs(err) <= self.deadband / 2:
+                st.steering = False
+            if not st.steering:
+                vyaw = 0.0
+        else:
+            st.steering = False
         return Twist(loco.slowest_mps if (near or close) and abs(vyaw) >= loco.slow_yaw_rad_s else loco.cruise_mps, vyaw)
 
     def pivot_clear_of_drops(self, xy: tuple, drops: list, edges: list) -> bool:

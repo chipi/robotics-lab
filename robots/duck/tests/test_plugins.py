@@ -194,6 +194,26 @@ mr.bind(rpc3)
 mr.fix(lambda **kw: None)
 check("a profile without a table keeps its one scale at every speed (the real duck's 1.0)", abs(mr.pose()[0] - 1.0) < 1e-9, mr.pose())
 
+# ---- the walk's steering deadband (off in the profile: K1) ----------------------------------------------------------------------
+import copy  # noqa: E402
+from duck_lab.nav.follow import FollowState  # noqa: E402
+
+check("the profile has no deadband: steering is proportional, as it was", DuckWalk(P).deadband == 0.0)
+data = copy.deepcopy(P.data)
+data["locomotion"]["steer"] = {"deadband_rad": 0.3}
+dw = DuckWalk(Profile(data, "sim"))
+st = FollowState()
+
+
+def vyaw_at(err, close=False):
+    return dw.drive(err, 0.0, 0.0, st, False, True, close).vyaw
+
+
+check("with a deadband: no turn inside the band, a correction once past it, kept until inside half of it",
+      vyaw_at(0.2) == 0.0 and vyaw_at(0.35) > 0 and vyaw_at(0.2) > 0 and vyaw_at(0.12) == 0.0, st.steering)
+check("... and never in a squeeze (an obstacle within slow_clearance_m): proportional there",
+      vyaw_at(0.2, close=True) == dw.loco.yaw_gain * 0.2 and st.steering is False)
+
 # ---- looking --------------------------------------------------------------------------------------------------------------------
 
 

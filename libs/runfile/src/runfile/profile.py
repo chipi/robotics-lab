@@ -152,6 +152,7 @@ SCHEMA = {
         "cruise_mps": "pos", "slowest_mps": "pos", "yaw_max_rad_s": "pos", "yaw_gain": "pos", "kick_rad_s": "pos", "kick_s": "pos",
         "hold_rad_s": "pos", "restep_rad": "pos", "pivot_first_deg": "pos", "pivot_done_deg": "pos", "slow_yaw_rad_s": "pos",
         "slow_clearance_m": "pos", "lookahead_m": "pos", "lookahead_near_m": "pos", "goal_tol_m": "pos", "step_over_m": "pos",
+        "steer": {"deadband_rad": "pos"},
         "pace": {"caution_mps": "pos", "look_m": "pos", "unknown_reach_m": "pos"},
         "pivot": {"vx_mps": "num", "drop_clear_m": "pos", "edge_clear_m": "pos", "obstacle_margin_m": "pos", "tight_m": "pos",
                   "tight_spot_m": "pos", "tight_gap_s": "pos"},

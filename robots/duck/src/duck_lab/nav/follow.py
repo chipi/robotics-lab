@@ -28,6 +28,7 @@ class FollowState:
     target_index: int = 0
     check_t: float | None = None     # pivot progress check: when, and the yaw then
     check_yaw: float = 0.0
+    steering: bool = False           # a heading correction is going on (the walk's deadband: it starts past the band, ends inside half of it)
     log: list = field(default_factory=list)
 
 

@@ -110,3 +110,61 @@ skill (microduck_rl PR #25) trained with no turn at all.
 
 Next (not built): steer in short corrections only past a heading error, zero turn the rest of the
 time; replay, then challenges 16–19, then the full gate (it changes every challenge's walking).
+
+## Phase 4: a constant trim, then a deadband (2026-11-19)
+
+`robots/duck/sim/trim_probe.py`, the simulator, 0.3 m/s, a 1 m wide corridor, truth sampled every tick.
+
+**The walk's drift.** With no turn commanded, the heading falls 0.0706 rad/s on average (clockwise;
+the trials' slopes −0.054 to −0.097, 5 trials), −0.56 to −0.88 rad in 10–12 s, 0.41 m off the
+line in that time (the trial's 0.4 m limit).
+
+**A constant trim** (a fixed turn added while walking), 5 trials each:
+
+| Trim | Heading slope, flat floor | Crossed a 0.5 cm bar |
+| --- | --- | --- |
+| 0 (no turn commanded) | −0.0706 rad/s | 5 of 5 |
+| +0.07 rad/s | −0.0263 (drift not cancelled) | 3 of 5 |
+| +0.11 rad/s | −0.0095 (cancelled on average; the ends of the trials −0.19 to +0.10 rad) | 3 of 5 |
+
+So the trim does not walk straight at 0.07, and at 0.11 walks straight on average but crosses no
+better than a commanded turn does: with the drift left alone (heading falling 0.5 rad on the way)
+the straight walk crossed 5 of 5; with the turn commanded, 3 of 5. The drift is not what stops the
+step-over, a commanded turn is, which agrees with the table above (±0.1 rad/s: 3 of 5). The plan's
+next step, a deadband, was built.
+
+**A deadband** (`locomotion.steer.deadband_rad`, `DuckWalk.drive`): no turn while the heading
+error is inside the band, a correction once past it, kept until inside half of it; never in a
+squeeze (`close`). The navigator's own `go_to` over the 0.5 cm bar, 5 trials each:
+
+| Deadband | Pace on; off in a margin ring or on unseen floor (first run) | Pace off; off only in a squeeze (second run) |
+| --- | --- | --- |
+| 0 | 1 of 5 | 2 of 5 |
+| 0.15 / 0.2 rad | 1 of 5 (0.15) | 2 of 5 (0.2) |
+| 0.25 / 0.3 rad | 3 of 5 (0.25) | 3 of 5 (0.3) |
+
+(In the first run the deadband was also off wherever `near` was true, in a margin ring or on unseen
+floor: 0 to 49 turn commands over 0.1 rad/s within 0.5 m of the bar per trial at every
+setting, so it was off for much of the walk.) A trace of one trial at 0.3 rad: no turn until the
+heading error reached 0.35 rad at x = 0.51 m, then a 0.52 rad/s correction while the feet were at
+the bar (0.6 m), then the stuck rule fired after 2.9 s with zero turn commanded. The drift makes
+the correction fall due where the feet meet the edge as often as anywhere else, and a foot caught
+once is not freed by walking straight on (above).
+
+**Challenges 16–19**, seeds 1–3, two repeats (24 runs per row), the navigator as it is:
+
+| What | 16 | 17 | 18 | 19 | Total |
+| --- | --- | --- | --- | --- | --- |
+| Base `c79fe6b` | 0/6 | 1/6 | 0/6 | 0/6 | 1/24 |
+| The pace (phase 4) | 0/6 | 0/6 | 2/6 | 0/6 | 2/24 |
+| The pace and a 0.3 rad deadband | 2/6 | 3/6 | 0/6 | 0/6 | 5/24 |
+| A 0.3 rad deadband, pace off | 1/6 | 0/6 | 2/6 | 1/6 | 4/24 |
+
+Every failure "stuck", no contact or fall in any of the 96 runs. One to five of 24 do not separate
+the rows (Fisher's exact test, base 1/24 against 5/24: p about 0.2). **The deadband did not fix
+the crossing, and is off in the duck's profile.** The code, its test and the probe stay.
+
+What is left: the crossing needs a walk that makes no commanded turn while the feet are at an
+edge, at a time the navigator cannot know (it cannot see a 0.5–1 cm bar); or a walking policy
+that steps over (upstream); or a navigator that goes back a step and tries again after the stuck
+rule fires (the duck does not walk backwards, 2026-11-17). None was tried.
