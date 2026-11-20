@@ -1,7 +1,9 @@
 # RFC-0012 — Look far, get ready early: where to look and how fast to go
 
 **Status:** Accepted (2026-11-18, the operator: "3A": accept, and build it in the challenge stream,
-the first thing when it resumes); proposed 2026-11-16 on the operator's direction
+the first thing when it resumes); proposed 2026-11-16 on the operator's direction.
+Built so far: step 1 (the unseen floor beside the way; SIDE-DROPS.md) and, in phase 4
+(2026-11-19), step 2's pace (section 5 says what was measured). Steps 3-5 are not built.
 **Builds on:** [RFC-0008](RFC-0008-challenge-course.md) (the challenge course, its error budget per
 robot), [RFC-0002](RFC-0002-robot-brain.md) (the robot brain), [RFC-0011](RFC-0011-robot-models.md)
 (each robot's description).
@@ -127,6 +129,19 @@ from pace.
    (zero false drops with the head turned; every pit in 10 and 11 seen; 1–9 unchanged).
 2. Pace: caution near known drops, unknown ground within reach and narrow passages, with the
    odometry scale per speed. Measured on 6, 7, 10 and 11: refusals, closest approach, time.
+   **Built, 2026-11-19 (phase 4):** `nav/pace.py` (cruise or caution from the path's next
+   0.7 m: a known drop beside the way, a narrow passage, unseen floor within 0.4 m), its
+   numbers in the duck's profile (`locomotion.pace`, with the measurement beside them), a
+   `pace` decision event on each change, and the odometry scale by speed (K8). Measured
+   against the base (seeds 1–3, two repeats): passes 6 1/6 → 2/6, 7 0/6 → 0/6, 10 and 11
+   6/6 → 6/6; refusals 11 → 10; contacts and falls 0 → 0; closest approach unchanged (within
+   0.01 m); the mean time of a run +7 s on 10 and 11 (about 15 %), +8 s on 6, +0.6 s on 7.
+   Caution covered 79 % of the straight walking, started mostly by unseen floor, because the
+   map grows at stops. So for the duck pace buys nothing measurable on these four, as §3
+   expected ("most of what this RFC gives the duck is attention"); whether it stays on is a
+   decision for the apartment batch's time and coverage (`locomotion.pace.caution_mps` =
+   `cruise_mps` turns it off). Walking at 0.2 m/s with the scale by speed: belief/truth
+   0.993 over 30.8 m.
 3. Turn and opening triggers (5, 7, 2–4), then the vertical look with challenges 12–14.
 4. Exploration looks with 22–24.
 5. The real duck's numbers; then a second robot's, to check that nothing duck-specific is left in

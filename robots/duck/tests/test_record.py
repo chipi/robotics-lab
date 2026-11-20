@@ -41,6 +41,9 @@ class Pose:
     def memory_delta(self):
         return None
 
+    def commanded(self, vx, vyaw=0.0):
+        pass
+
 
 class Latest:
     latest = None

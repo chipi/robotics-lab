@@ -5,7 +5,10 @@ the navigator stands still to let it (`settle`). Its pose is a fix, not a stream
 it (RFC-0002 §3.7, nav/frames.py's Localizer, which this plugin owns as the robot's belief). Odometry, mapd's poses and mapd's grid
 all come from robotd's odometry; one scale corrects all three (`localisation.odometry.scale`, the simulator's reads about 10 % long),
 so the map and the pose stay in the same (true) metres. The map's origin is its first stop, so scaling about it keeps the duck where
-it is.
+it is. That one scale (`odometry.scale`, the table's value at `at_speed_mps`) is the map's and mapd's pose's: mapd builds both from
+robotd's odometry, and the grid cannot be re-metred per step. The navigator's own dead reckoning between fixes does better: each
+odometry step is scaled by the table's scale at the speed commanded while it was walked (`odometry.by_speed`, K8); a fix at a stop
+then puts the belief back on mapd's pose.
 
 Numbers: the profile's `localisation` block (`fix`: the gate's thresholds, `loop_credit_s`, `record_m`; `odometry.scale`;
 `grid_res_m`).
@@ -15,6 +18,7 @@ or moves the belief far (the next jump shows its source: mapd's raw pose and its
 `mapd_status` event when mapd's own account of itself changes.
 """
 
+import math
 import time
 
 from duck_lab.nav.decision import decision
@@ -24,12 +28,18 @@ from duck_lab.nav.frames import Localizer, move_grid
 class Mapd:
     name = "mapd"
     version = 1
+    STRAIGHT_MIN_MPS = 0.05          # forward slower than this is a stand or a pivot's creep, not a walk
 
     def __init__(self, profile):
         loc = profile.localisation
         self.fixcfg = loc.fix
         self.belief = Localizer(loc.fix, max_jump_m=loc.fix.jump_m, hold_n=None)
         self.scale = float(loc.odometry.scale)
+        self.by_speed = sorted((float(k), float(v)) for k, v in (loc.get("odometry.by_speed") or {}).items())
+        self.straight_rad_s = float(loc.get("odometry.straight_rad_s") or math.inf)
+        self._speed = None           # the straight walk's speed last commanded (None: not walking straight), which picks the scale
+        self._last = None            # the previous odometry sample (robotd's) and its corrected pose, for the next step
+        self._corrected = {}         # raw odometry pose -> corrected pose, the newest ones: to_map is asked with a raw pose
         self.grid_res_m = loc.grid_res_m
         self.stops_to_map = loc.maps_only_at_stops
         self.rpc = None
@@ -43,13 +53,52 @@ class Mapd:
     def scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
 
+    def scale_at(self, speed: float) -> float:
+        """The odometry scale at a forward speed (m/s): the table's, interpolated between its speeds and held beyond the
+        ends; `odometry.scale` where the profile has no table."""
+        if not self.by_speed:
+            return self.scale
+        v = abs(speed)
+        if v <= self.by_speed[0][0]:
+            return self.by_speed[0][1]
+        for (v0, s0), (v1, s1) in zip(self.by_speed, self.by_speed[1:]):
+            if v <= v1:
+                return s0 + (s1 - s0) * (v - v0) / (v1 - v0)
+        return self.by_speed[-1][1]
+
+    def commanded(self, vx: float, vyaw: float = 0.0) -> None:
+        """The motion now commanded. The odometry steps that follow are corrected by the scale at this forward speed when the
+        duck walks straight (a turn under `odometry.straight_rad_s`, forward faster than a creep); a turn on the spot or an arc
+        is corrected by `odometry.scale`, the one measured in navigation (over 8 m of arcs at 0.2 m/s the belief walked 0.986
+        of the truth with it, where the straight walk's table would put 0.2 m/s at 1.06)."""
+        straight = vx > self.STRAIGHT_MIN_MPS and abs(vyaw) < self.straight_rad_s
+        self._speed = vx if straight else None
+
+    def corrected(self, odom_pose: tuple) -> tuple:
+        """Robotd's odometry pose, corrected: its steps scaled by the scale at the speed commanded while they were walked, so
+        a slow walk and a fast one are each in true metres (one scale was right at one speed only). The first sample is
+        scaled about the odometry's origin, as the single scale did."""
+        if not self.by_speed:
+            return self.scaled(odom_pose)
+        if self._last is None:
+            c = self.scaled(odom_pose)
+        else:
+            raw0, c0 = self._last
+            s = self.scale if self._speed is None else self.scale_at(self._speed)
+            c = (c0[0] + (odom_pose[0] - raw0[0]) * s, c0[1] + (odom_pose[1] - raw0[1]) * s, odom_pose[2])
+        self._last = (odom_pose, c)
+        self._corrected[odom_pose] = c
+        if len(self._corrected) > 400:
+            self._corrected.pop(next(iter(self._corrected)))
+        return c
+
     def on_odom(self, t_ns: int, odom_pose: tuple) -> None:
         """Every odometry sample (robotd's, unscaled)."""
-        self.belief.on_odom(t_ns, self.scaled(odom_pose))
+        self.belief.on_odom(t_ns, self.corrected(odom_pose))
 
     def to_map(self, odom_pose: tuple) -> tuple | None:
         """An odometry pose (robotd's, unscaled) on the map: the pose at the odometry's own instant, not the latest."""
-        return self.belief.to_map(self.scaled(odom_pose))
+        return self.belief.to_map(self._corrected.get(odom_pose) or self.scaled(odom_pose))
 
     def pose(self) -> tuple | None:
         return self.belief.pose()

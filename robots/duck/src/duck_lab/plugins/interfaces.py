@@ -94,6 +94,9 @@ class Localisation(Protocol):
     def on_odom(self, t_ns: int, odom_pose: tuple) -> None:
         """Every odometry sample (the robot's own, unscaled)."""
 
+    def commanded(self, vx: float, vyaw: float = 0.0) -> None:
+        """The motion now commanded: a source whose odometry error depends on speed corrects the steps that follow by it."""
+
     def to_map(self, odom_pose: tuple) -> tuple | None:
         """An odometry pose on the map, at the odometry's own instant."""
 
