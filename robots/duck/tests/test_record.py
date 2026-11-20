@@ -102,7 +102,12 @@ check("... a run without a state yet, or a state with no odometry, has none, and
 check("the same commands reach the robot with and without it", with_odom.robot.calls == without.robot.calls and len(without.robot.calls) == 2,
       (with_odom.robot.calls, without.robot.calls))
 check("... and the rows are the same but for those two fields (the pose, the command, the extras)",
-      [strip(x) | {"t": 0} for x in a] == [x | {"t": 0} for x in b], (a, b))
+      [strip(x) | {"t": 0, "wall_ns": 0} for x in a] == [x | {"t": 0, "wall_ns": 0} for x in b], (a, b))
+# The host's wall clock on every row (RFC-0021 step 2): how the runner, another process, pairs its truth samples with the rows.
+import time  # noqa: E402
+check("every row, tick and event, carries the host's wall clock in ns, in order",
+      all(isinstance(x["wall_ns"], int) and abs(x["wall_ns"] - time.time_ns()) < 60e9 for x in a)
+      and [x["wall_ns"] for x in a] == sorted(x["wall_ns"] for x in a), [x.get("wall_ns") for x in a])
 from pathlib import Path  # noqa: E402
 from runfile.adapters.duck import DuckLog  # noqa: E402
 
@@ -112,6 +117,8 @@ tick = next(p for _, k, p in log.feed_row(a[0]) if k == "tick")
 check("the recorder keeps it in the tick's raw, the belief and the command where they were",
       tick["raw"]["odom_raw"] == [3.04, -1.25, 1.0] and tick["raw"]["odom_raw_t_ns"] == 7_000_000_000 and tick["belief"] == [1.0, 2.0, 0.5]
       and tick["cmd"] == [0.2, 0.0], tick)
+check("... and the wall clock in the tick's raw too (unknown fields are kept: the runner reads it back)",
+      tick["raw"].get("wall_ns") == a[0]["wall_ns"], tick["raw"])
 partial = navigator((1.0, 2.0, 0.5))
 partial.state.latest = {"t_ns": 1, "imu": {"quat": [1, 0, 0, 0], "gyro": [0, 0, 0]}}
 partial.move(Twist())

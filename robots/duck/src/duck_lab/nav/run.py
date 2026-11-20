@@ -954,6 +954,9 @@ class Navigator:
                 pass
         if self._log or self.runlog:
             row["t"] = round(time.monotonic() - self._t0, 3)
+            # the host's wall clock beside the run's own: how a second process on the host (RFC-0021's runner, with the
+            # simulator's truth) pairs its samples with these rows; `t` is this process's monotonic clock, which it cannot read
+            row["wall_ns"] = time.time_ns()
             if self.body:
                 row["truth"] = [round(v, 4) for v in self.body.pose()]
                 row["truth_z"] = round(self.body.height, 4)

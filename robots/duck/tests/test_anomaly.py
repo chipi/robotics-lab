@@ -379,7 +379,7 @@ quiet, loud = squeezed(600), squeezed(600)
 see(quiet, AHEAD_FLOOR + [(1.16, 2.5, "o")])
 see(loud, AHEAD_FLOOR)
 oq, ol = quiet.go_to((0.5, 2.5), 5.0), loud.go_to((0.5, 2.5), 5.0)
-keep = lambda nav: [{k: v for k, v in r.items() if k not in ("t", "time_s")} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
+keep = lambda nav: [{k: v for k, v in r.items() if k not in ("t", "time_s", "wall_ns")} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
 check("driving is unchanged: the same refusal and the same rows (the anomaly aside) whether the sensor agreed or disagreed",
       {k: v for k, v in oq.items() if k != "time_s"} == {k: v for k, v in ol.items() if k != "time_s"} and keep(quiet) == keep(loud)
       and len(anomalies(quiet)) == 0 and len(anomalies(loud)) == 1, (oq, ol))
@@ -611,7 +611,7 @@ for nav, say in ((a, False), (b, True)):
     if say:
         nav.anomaly("stuck", "x")
     nav.record(event="reached", pose=[1.0, 2.5, 0.0])
-strip = lambda nav: [{k: v for k, v in r.items() if k != "t"} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
+strip = lambda nav: [{k: v for k, v in r.items() if k not in ("t", "wall_ns")} for r in rows(nav) if r.get("event") != "anomaly"]  # noqa: E731
 check("an anomaly between two rows leaves them as they were", strip(a) == strip(b) and len(rows(b)) == len(rows(a)) + 1)
 
 # ---- every limit is the profile's (the operator, 2026-11-19: accepted as they are, and configurable) -----------------------------------
