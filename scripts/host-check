@@ -8,6 +8,8 @@ PASS, FAIL (with what to do) or NOT RUN, then HOST-CHECK PASS or FAIL. Installs 
 Standard library only, so it runs with the system python3 before any of our environments exist (Linux and macOS).
 Not checked: the simulator's real-time factor (it needs the simulator up: step 4's course run measures it)."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import platform

@@ -19,6 +19,8 @@ The steps:
 The network is used by steps 2, 3 and 5 (clones, crates, wheels) and by the first `duck-sim up` (the walking policy).
 Standard library only."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import platform
