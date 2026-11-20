@@ -127,10 +127,16 @@ FLOOR_CELL_M = 0.05
 # Each is the turn gate of its kind plus the following's (~3 cm) and the belief's (~2.5 cm) error, so the duck can turn
 # on the spot wherever the planner may put it; each gate less the pivot's drift (max 7.9 cm over 87 pivots on 2026-11-17,
 # sim/probes/turn_drift.py) keeps the judge's 0.15 m and the belief. A cliff stop's rough points: error_budget.drop_lethal_m (0.35)
-# and pivot.drop_clear_m (0.30). A drop edge a glance measured (-14/+6.4 cm aside, -18/+3 cm ahead, 54 glances): pivot.edge_clear_m
-# 0.26 and edge_lethal_m 0.32 round it, which also keeps a path held at it out of the cliff check's 0.25 m corridor (0.305 with the
-# errors). 0.22 put such a path inside that corridor: the duck was stopped for the edge it had measured, and stood where
-# it was not allowed to turn. A suspected drop (side_drops.SuspectMemory) costs what it becomes when a glance confirms it
+# and pivot.drop_clear_m (0.30). A drop edge a glance measured: pivot.edge_clear_m 0.26 and edge_lethal_m 0.32 round it. The glance's
+# error over the 355 glances of challenges 8-11 (2026-11-19, sim/probes/glance_edge_error.py; KNOWN-ISSUES K27): on the short side
+# the worst rim point is -36.5 cm, 54 of 355 over 18 cm; on the past side, a glance's least-past rim point (the one that bounds the
+# real edge) is +8.8 cm at worst, 11 of 355 glances with every rim point past the edge, 1 over 3 cm. The worst glance leaves
+# 0.26 - 0.088 (the glance) - 0.079 (a pivot's drift) - 0.025 (the belief) = 0.068 m to the real edge, under the judge's 0.15 m; the
+# older statement (-18/+3 cm, 54 glances) was a measurement not in the repo and is not in the gate's sums (0.26 + 0.03 + 0.025 = 0.315).
+# Whether the edge gate rises (KNOWN-ISSUES K27 names 0.35 m, ring 0.41) is for the operator to decide, against reach (K22); this
+# comment states the budget and changes nothing: 0.26 stands. The 0.26 and 0.32 also keep a path held at the edge out of the cliff
+# check's 0.25 m corridor (0.305 with the errors). 0.22 put such a path inside that corridor: the duck was stopped for the edge it
+# had measured, and stood where it was not allowed to turn. A suspected drop (side_drops.SuspectMemory) costs what it becomes when a glance confirms it
 # (a smaller ring, 0.25, let the duck walk where the confirmed ring then put it inside, unable to turn: challenge 11 seed
 # 1); one within error_budget.confirm_m (0.9) triggers that glance, and a false one that closes the way is looked at, not refused for.
 # The suspect rings are the edge's (edge_lethal_m, edge_inflate_m).
