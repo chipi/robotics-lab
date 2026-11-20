@@ -182,15 +182,6 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 - Staying with their phases: the planner's (K22–K24, K38, K2, K9, K11) after phase 6; the EV3's
   (K10) in phase 6; hardware and choices waiting on the operator (K15–K17, K19, K20).
 
-## Phase 4b — the simulator host and the payload (RFC-0021)
-
-[RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md), accepted by the operator 2026-11-19, built
-after the phase 4 checkpoint (any host that runs Pollen's simulator; the first is this workstation):
-the reset and the socket paths out of the navigator into a host file and host tool, the truth read
-by the runner only, a host setup script and a host check script (Linux and macOS on Apple Silicon
-from the start), one course run through the split on this workstation (the first host; another host
-later, the operator's, with the arena), a second minimal navigator through the same contract.
-
 ### Phase 4 results (2026-11-20, branch `p4-nav`, not pushed; the apartment batch not run)
 
 **Built** (3 commits on `c79fe6b`):
@@ -222,6 +213,58 @@ now reached, 0.103 m).
 **Not done:** the apartment exploring batch (the lead); the map's error against truth by pace
 (K39); 10 seeds anywhere (3 seeds, per the operator); the pace's measurement on 16–19 beyond the
 table in STEPS.md; any cause for K40.
+
+### Phase 4 checkpoint (2026-11-20)
+
+**Built and merged** on the branch `mission-control` (34 commits ahead of main, not pushed): the
+three above (K8, the pace, the deadband left off); the tooling items (K28 the probes, K33
+`duck-replay` on old runs, K34 the radial model, K25, K12's belief-vs-truth rule, K13's first
+divergence, K29); K36's room rule in the navigator; K27's comment; the STOP race in Mission
+Control's fake robot (the page test's 1-in-4 failure, `b8fca06`); every anomaly limit in the
+profile; and three safety fixes found by the apartment batch:
+
+- **K24, the recovery arc** (`2ce1990`): it caused b13 r3's contact (the sensor read 408 mm with the
+  head turned away, the memory held 0.098 m; the arc moved 0.043 m into the office landmark). An
+  arc now needs the memory's room. Replay of the 16 recorded recoveries: the old rule reproduces 16
+  of 16, the new one turns 5 of 10 arcs into a survey, the contact's among them.
+- **K26, loop closures** (`8f40737`): the gate took mapd's loop closures unchecked; both ever
+  recorded made the belief worse (one by 2.28 m, error 0.11 → 2.22 m). A large closure is now held
+  unless the landmarks agree. Replay: both held (error stays 0.11 and 0.17 m); the other 65 recorded
+  fix events of 1614 runs unchanged.
+- **Raw odometry recorded on every tick** (`6ade19d`), so dead reckoning can be replayed (K41).
+
+**K40 (challenges 6 and 7) found and decided:** the cause is `3ceef19`, the tight-pivot rule of
+2026-11-18 (0.15 m, once per spot; parent 7 of 12, it 0 of 12 on seeds 1–3, which are these
+challenges' hard seeds). The operator kept the rule (option A); the fix goes to the planner after
+phase 6.
+
+**Measured:** apartment batch b13 (3 × 20 min): r1 the full 20 min, 72.6 % of the floor, 5 rooms;
+r2 11.1 % (25 refusals at one spot); r3 36.6 %, trapped, the contact (fixed by K24). The live check
+after K24 and K26 (6 + 3 runs of 10 min): 0 contacts, 0 falls. The navigator's own anomalies fire
+live (`refusal_burst`, once per place).
+
+**Verified by the lead:** `make ci` on the final tree: every stage PASS, `ci PASS`, `MAKE_EXIT=0`.
+
+**Not done or not proven:** a held loop closure has not happened live (no closure in the 3 runs
+after K26; unit-tested, replayed); a right closure was never recorded, so `closure.agree_m` 0.2 m is
+untested on one; K1 (the crossing) stays open; K41 (0.2 m/s 3 % long) is not re-fitted; most
+exploring runs still end trapped or boxed in early (K22, the planner); the pace shows no measured
+gain (it stays on; its cost is about 15 % time); the edge gate (K27) is the operator's decision.
+
+**For the operator:** the edge gate (K27): the worst measured glance leaves 0.068 m to a real edge,
+under the judge's 0.15 m (over 566 runs the closest real approach was 0.108 m, once). Raise the
+gate from 0.26 m (measured first), or keep it.
+
+**Recommendation:** decide the edge gate, push phase 4 to main, then phase 4b.
+
+## Phase 4b — the simulator host and the payload (RFC-0021)
+
+[RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md), accepted by the operator 2026-11-19, built
+after the phase 4 checkpoint (any host that runs Pollen's simulator; the first is this workstation):
+the reset and the socket paths out of the navigator into a host file and host tool, the truth read
+by the runner only, a host setup script and a host check script (Linux and macOS on Apple Silicon
+from the start), one course run through the split on this workstation (the first host; another host
+later, the operator's, with the arena), a second minimal navigator through the same contract.
 
 ## Phase 5 — the views
 
