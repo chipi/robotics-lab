@@ -314,17 +314,12 @@ class FakeNavigator:
         now = self.clock()
         elapsed = now - r.t0
         if r.lost:
-            if r.lost.startswith("taken_over_by"):
-                self._finish(r, "interrupted", f"the robot was {r.lost.replace('_', ' ')}", None, release=False)
-            elif r.lost.startswith("stopped_by"):
-                self._finish(r, "cancelled", f"{r.lost.replace('_', ' ')}", None, release=False)
-            else:
-                self._finish(r, "interrupted", f"the lease ended: {r.lost}", None, release=False)
+            self._end_lost(r)
             return
         try:
             state = self.gate.handle(self._cid, "robot.state")
         except GateError as exc:
-            self._finish(r, "interrupted", str(exc), None, release=False)
+            self._refused_by_gate(r, exc)
             return
         except Exception as exc:
             self._finish(r, "interrupted", f"the robot stopped answering: {exc}", None)
@@ -340,7 +335,7 @@ class FakeNavigator:
         except StopIteration as done:
             outcome = done.value
         except GateError as exc:
-            self._finish(r, "interrupted", str(exc), None, release=False)
+            self._refused_by_gate(r, exc)
             return
         except _Refused as exc:
             self._finish(r, "refused", str(exc), None)
@@ -406,6 +401,24 @@ class FakeNavigator:
 
     def _lease_lost(self, r: _Run, params: dict) -> None:
         r.lost = params.get("reason") or "lease lost"
+
+    def _end_lost(self, r: _Run) -> None:
+        """The lease is gone: a STOP cancels the run, a takeover or anything else interrupts it."""
+        if r.lost.startswith("taken_over_by"):
+            self._finish(r, "interrupted", f"the robot was {r.lost.replace('_', ' ')}", None, release=False)
+        elif r.lost.startswith("stopped_by"):
+            self._finish(r, "cancelled", f"{r.lost.replace('_', ' ')}", None, release=False)
+        else:
+            self._finish(r, "interrupted", f"the lease ended: {r.lost}", None, release=False)
+
+    def _refused_by_gate(self, r: _Run, exc: GateError) -> None:
+        # The gate's lease-lost callback and Mission Control's ticker race: when step() reaches the gate first, the refusal
+        # carries the same reason the callback would have (2026-11-20: STOP ALL read "interrupted" 1 run in 4).
+        if exc.code == "lease_ended":
+            r.lost = r.lost or exc.data.get("reason") or "lease lost"
+            self._end_lost(r)
+        else:
+            self._finish(r, "interrupted", str(exc), None, release=False)
 
     def _decide(self, text: str, **data) -> None:
         self._on_decision(text, **data)

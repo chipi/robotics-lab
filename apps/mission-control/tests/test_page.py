@@ -66,8 +66,16 @@ seen_run = [0]
 def wait_state(page, states, timeout=30000, new=True):
     """Wait until the run the page shows is in one of `states`. By default it must be a run newer than the last one
     waited for, so the state of the run before cannot satisfy it."""
-    wait(page, """([s, prev, isNew]) => { const e = document.getElementById('run-state'), d = document.getElementById('run-detail');
-        return !!e && s.includes(e.textContent) && (!isNew || Number(d.dataset.run) > prev); }""", timeout, [states, seen_run[0], new])
+    try:
+        wait(page, """([s, prev, isNew]) => { const e = document.getElementById('run-state'), d = document.getElementById('run-detail');
+            return !!e && s.includes(e.textContent) && (!isNew || Number(d.dataset.run) > prev); }""", timeout, [states, seen_run[0], new])
+    except Exception:
+        # A timeout says nothing about why: say what the page and the service showed instead of the state waited for.
+        runs = get("/goal-runs")["runs"]
+        print(f"wait_state({states}) timed out: the page shows {page.locator('#run-state').inner_text()!r} for run "
+              f"{page.locator('#run-detail').get_attribute('data-run')}; the service's newest runs "
+              f"{[(r.get('id'), r.get('state'), r.get('why')) for r in runs[:3]]}", flush=True)
+        raise
     seen_run[0] = int(page.locator("#run-detail").get_attribute("data-run"))
 
 

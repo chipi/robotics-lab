@@ -217,6 +217,20 @@ res = mc.stop("fake-1", "page")
 r = mc.get_run(run["id"])
 check("STOP: the run is cancelled at once (the latch), with who stopped it", r["state"] == "cancelled" and "stopped by page" in r["reason"], r["reason"])
 check("the STOP is confirmed: the robot answered", res == {"robot": "fake-1", "confirmed": True, "online": True})
+# The page test failed 1 run in 4 (2026-11-20): STOP ALL ended a run "interrupted". The gate's lease-lost callback and Mission
+# Control's ticker race; when the ticker's step() reaches the gate first, it is refused with lease_ended. Held back here, so
+# step() always meets the refusal first: the STOP must still read as a STOP.
+run = start(mc, {"kind": "point", "params": {"x": 3.5, "y": -2.0}})
+run_for(mc, clock, 1.0)
+nav = mc.robot("fake-1").navigator
+late, nav._lease_lost = nav._lease_lost, lambda r, params: None
+try:
+    mc.stop("fake-1", "page")
+finally:
+    nav._lease_lost = late
+r = mc.get_run(run["id"])
+check("STOP with the lease-lost callback late: still cancelled, with who stopped it (not interrupted)",
+      r["state"] == "cancelled" and "stopped by page" in (r["reason"] or ""), (r["state"], r["reason"]))
 run = start(mc, {"kind": "point", "params": {"x": 3.5, "y": -2.0}})
 run_for(mc, clock, 1.0)
 tk = mc.robot("fake-1").acquire("operator-laptop", takeover=True)
