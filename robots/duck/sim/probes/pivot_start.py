@@ -10,23 +10,23 @@ import sys
 import time
 from pathlib import Path
 
-from duck_lab.nav import simreset
+import simhost
 from duck_lab.nav.follow import FollowState, step
 from duck_lab.plugins.duck_walk import DuckWalk
 from duck_lab.profile import load as load_profile
 
 PROFILE = load_profile("sim")
 LOCO = PROFILE.locomotion
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 
 scene_id, side, tries = sys.argv[1], sys.argv[2], int(sys.argv[3])
-scene_xml = Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"
+scene_xml = simhost.load().scenarios / scene_id / "scene.xml"
 sign = 1.0 if side == "left" else -1.0
 for vx in [float(v) for v in sys.argv[4:]]:
     for k in range(tries):
-        simreset.reset(str(scene_xml))
+        simhost.reset(simhost.load(), str(scene_xml))
         try:
-            nav = Navigator(calibration="sim", truth=True)
+            nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
             time.sleep(3.0)
             x0, y0, a0 = nav.body.pose()
             target = [(math.cos(a0 + sign * 2.5), math.sin(a0 + sign * 2.5))]     # a point behind, to the given side: a pivot
@@ -43,4 +43,4 @@ for vx in [float(v) for v in sys.argv[4:]]:
             print(f"vx {vx:+.3f} try {k + 1}: turned {math.degrees(turned):+5.0f} deg in 6 s, moved {math.hypot(x - x0, y - y0):.3f} m",
                   flush=True)
         finally:
-            simreset.down()
+            simhost.down(simhost.load())

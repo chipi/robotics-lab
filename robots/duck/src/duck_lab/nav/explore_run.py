@@ -19,12 +19,13 @@ from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import anomaly as anom, recovery
-from duck_lab.nav.run import Navigator, decision
+from duck_lab.nav.run import Navigator, decision, host_links
 from duck_lab.nav.runlog import add_args, open_from_args
 from worldmodel.objects import load_kinds
 from duck_lab.site_cli import SITES
 from worldmodel.site import Site
 from duck_lab.nav.sim_camera import SimCamera
+import simhost
 
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
@@ -332,6 +333,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--minutes", type=float, default=20.0)
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     ap.add_argument("--find", metavar="KIND", help="explore until an object of this kind is found, then go to it "
                     "(RFC-0016; kinds: libs/worldmodel/src/worldmodel/kinds.json), e.g. fridge")
     ap.add_argument("--inventory", action="store_true", help="the goal is to find all objects: explore, then say what "
@@ -355,7 +357,7 @@ def main() -> None:
         ap.error("--find and --inventory need the objects (drop --no-objects)")
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "exploration", args.out)
-    nav = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
+    nav = Navigator(**host_links(simhost.load(args.host), truth=True), log=args.out / "ticks.jsonl", runlog=runlog)
     if args.no_fix_gate:
         nav.loc.max_jump_m = None
     if args.fix_fault and args.frame_fault:

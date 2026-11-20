@@ -1,7 +1,7 @@
 """Record a Microduck run as MCAP (RFC-0007): robotd's state stream, and in the simulator its ground
 truth, so the same file opens in Foxglove, Lichtblick or Rerun.
 
-    uv run duck-record runs/duck-run.mcap --seconds 30            # simulator (duck-sim's sockets)
+    uv run duck-record runs/duck-run.mcap --seconds 30            # simulator (the host file's sockets, RFC-0021)
     uv run duck-record out.mcap --robot-socket /run/robotd.sock --no-truth   # a real duck
 
 Topics (JSON with JSON Schemas):
@@ -24,8 +24,6 @@ import time
 from pathlib import Path
 
 from mcap.writer import CompressionType, Writer
-
-SIM = Path(os.path.expanduser("~/.cache/duck-sim"))
 
 STATE_SCHEMA = {"type": "object", "title": "microduck.RobotState",
                 "description": "robotd's robot.state notification params, unchanged"}
@@ -177,9 +175,10 @@ def main() -> None:
     ap.add_argument("out", type=Path, nargs="?")
     ap.add_argument("--add-frames", nargs=2, type=Path, metavar=("OLD", "NEW"))
     ap.add_argument("--seconds", type=float, default=30.0)
-    ap.add_argument("--robot-socket", type=Path, default=SIM / "duck-a.sock")
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    ap.add_argument("--robot-socket", type=Path, help="robotd's socket (default: the host file's)")
     ap.add_argument("--hz", type=int, default=20, help="robotd state rate")
-    ap.add_argument("--body-port", type=int, default=int(os.environ.get("DUCK_SIM_PORT", "7801")))
+    ap.add_argument("--body-port", type=int, help="the body server's port (default: the host file's truth_port)")
     ap.add_argument("--no-truth", action="store_true", help="a real duck: no simulator to ask")
     args = ap.parse_args()
     if args.add_frames:
@@ -189,6 +188,14 @@ def main() -> None:
     if args.out is None:
         ap.error("the output file is required")
 
+    if args.robot_socket is None or (args.body_port is None and not args.no_truth):
+        import simhost
+        sim = simhost.load(args.host)
+        args.robot_socket = args.robot_socket or sim.sockets["robot"]
+        if args.body_port is None and not args.no_truth:
+            if sim.truth_port is None:
+                ap.error(f"{sim.source}: this host has no truth: --no-truth")
+            args.body_port = sim.truth_port
     args.out.parent.mkdir(parents=True, exist_ok=True)
     rec = Recorder(args.out, {"robot": "microduck", "simulator": not args.no_truth,
                               "scene": os.environ.get("DUCK_SIM_SCENE", ""), "state_hz": args.hz})

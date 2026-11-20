@@ -11,14 +11,17 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-from duck_lab.nav.client import SIM, StateStream  # noqa: E402
+from duck_lab.nav.client import StateStream  # noqa: E402
+import simhost  # noqa: E402
+
+host = simhost.load()
 
 n = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 20
 out = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
-state = StateStream(SIM / "duck-a.sock", hz=50)
+state = StateStream(host.sockets["robot"], hz=50)
 time.sleep(0.5)
 s = socket.socket(socket.AF_UNIX)
-s.connect(str(SIM / "duck-a-tof.sock"))
+s.connect(str(host.sockets["depth"]))
 f = s.makefile("rw")
 f.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tof.stream"}) + "\n")
 f.flush()

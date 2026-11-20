@@ -1,7 +1,8 @@
 """The gate in front of robotd's socket (RFC-0017 §3.2, §5 step 3): a Unix-socket proxy that puts `robotgate.Gate` between
 our clients (the navigator, Mission Control, a script) and the duck's one robotd connection.
 
-    duck-gate --listen ~/.cache/duck-sim/duck-a-gate.sock --upstream ~/.cache/duck-sim/duck-a.sock
+    duck-gate                     # listen on the host file's gate socket, upstream its robot socket (RFC-0021)
+    duck-gate --listen /tmp/gate.sock --upstream /run/robotd.sock
 
 One Gate, one upstream connection. The clients speak robotd's JSON-RPC (newline-framed, RFC-0003) and the gate's own
 methods (gate.acquire, gate.release, gate.who, gate.keepalive, gate.takeover). The proxy gives each request its own id
@@ -314,14 +315,19 @@ class Proxy:
 
 
 def main() -> None:
-    sim = Path(os.path.expanduser("~/.cache/duck-sim"))
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--listen", type=Path, default=sim / "duck-a-gate.sock", help="the gate's socket: what our clients connect to")
-    ap.add_argument("--upstream", type=Path, default=sim / "duck-a.sock", help="robotd's socket")
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    ap.add_argument("--listen", type=Path, help="the gate's socket: what our clients connect to (default: the host file's gate)")
+    ap.add_argument("--upstream", type=Path, help="robotd's socket (default: the host file's robot)")
     ap.add_argument("--takeover-names", type=Path, help="file of client names that may take the robot from its holder, one per line")
     ap.add_argument("--log", type=Path, help="the gate's jsonl log (RFC-0017 §3.6)")
     ap.add_argument("--lease-s", type=float, default=LEASE_SECONDS, help="the lease: 10 to 30 s (RFC-0017 §3.3)")
     args = ap.parse_args()
+    if args.listen is None or args.upstream is None:
+        import simhost
+        sim = simhost.load(args.host)
+        args.listen = args.listen or sim.sockets["gate"]
+        args.upstream = args.upstream or sim.sockets["robot"]
     proxy = Proxy(args.listen, args.upstream, takeover_names=load_names(args.takeover_names) if args.takeover_names else (),
                   log=args.log, lease_s=args.lease_s)
     proxy.start()

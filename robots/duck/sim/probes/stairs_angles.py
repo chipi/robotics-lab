@@ -15,8 +15,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from duck_lab.nav.frames import compose, inverse  # noqa: E402
-from duck_lab.nav.run import Navigator  # noqa: E402
-from duck_lab.nav.simreset import reset  # noqa: E402
+from duck_lab.nav.run import Navigator, host_links  # noqa: E402
+import simhost  # noqa: E402
 
 STAIRS = (-0.40, 0.00, -1.40, -0.70)
 GUARD_M = 0.05
@@ -42,8 +42,8 @@ results = []
 for i, (name, start, target) in enumerate(APPROACHES):
     if ONLY and i not in ONLY:
         continue
-    reset()
-    nav = Navigator(log=os.path.join(RUNS, f"stairs-{i}.jsonl"))
+    simhost.reset(simhost.load())
+    nav = Navigator(**host_links(simhost.load(), truth=True), log=os.path.join(RUNS, f"stairs-{i}.jsonl"))
     closest = [9.0]
 
     def guard(nav=nav, closest=closest):

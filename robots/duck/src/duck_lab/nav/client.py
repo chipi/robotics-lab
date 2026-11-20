@@ -1,13 +1,11 @@
 """JSON-RPC 2.0 over the duck's Unix sockets (RFC-0003): robotd and mapd. The same code drives the
-simulator (~/.cache/duck-sim/*.sock) and, through ssh-forwarded sockets, the real duck (RFC-0002 §3.3)."""
+simulator (the host file's sockets, RFC-0021) and, through ssh-forwarded sockets, the real duck (RFC-0002 §3.3)."""
 
 import json
-import os
 import socket
 import threading
 from pathlib import Path
 
-SIM = Path(os.path.expanduser("~/.cache/duck-sim"))
 GATE_LEASE_CODES = ("lease_ended", "held", "no_lease")
 
 

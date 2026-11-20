@@ -1,5 +1,5 @@
-"""Reset the simulator to the dock with a fresh mapd (simreset.reset), as duck-eval does before each goal."""
-from duck_lab.nav import simreset
+"""Reset the simulator to the dock with a fresh mapd (the host's reset, simhost.reset), as duck-eval does before each goal."""
+import simhost
 
-simreset.reset("apartment_backlash")
+simhost.reset(simhost.load(), "apartment_backlash")
 print("RESET OK")

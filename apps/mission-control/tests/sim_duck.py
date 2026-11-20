@@ -26,7 +26,7 @@ from pathlib import Path
 from common import check, finish
 
 from duck_lab.gate_proxy import Proxy
-from duck_lab.nav.client import SIM
+import simhost
 from duck_lab.nav.run import Body
 from mission_control.api import serve
 from mission_control.core import MissionControl
@@ -63,6 +63,7 @@ data = tmp / "data"
 shutil.copy(REAL_DATA / "scenes" / "apartment" / "scene.json", data / "scenes" / "apartment" / "scene.json")     # a read of the real folder, a copy
 (data / "runs").mkdir()
 
+HOST = simhost.load()      # the host this test drives (RFC-0021); the nav server reads the same file
 proxy = body = None
 
 
@@ -74,8 +75,8 @@ def fresh_sim():
         proxy.stop()
     print("resetting the simulator (robots/duck/sim/reset_sim.py) ...", flush=True)
     subprocess.run([str(REPO / "robots" / "duck" / ".venv" / "bin" / "python"), "sim/reset_sim.py"], cwd=REPO / "robots" / "duck", check=True, timeout=400)
-    body = Body()
-    proxy = Proxy(tmp / "gate.sock", SIM / "duck-a.sock", log=tmp / "gate.jsonl", lease_s=20.0, takeover_names={"operator-laptop"})
+    body = Body(HOST.truth_port)
+    proxy = Proxy(tmp / "gate.sock", HOST.sockets["robot"], log=tmp / "gate.jsonl", lease_s=20.0, takeover_names={"operator-laptop"})
     proxy.start()
 
 
@@ -89,7 +90,7 @@ wait_for(lambda: "duck-nav-server" in (tmp / "nav-server.log").read_text(), 30, 
 FILE = {
     "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
     "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
-                "mapd_socket": str(SIM / "duck-a-map.sock"), "observatory": "http://127.0.0.1:8070"},
+                "mapd_socket": str(HOST.sockets["map"]), "observatory": "http://127.0.0.1:8070"},
     "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED"},
                   "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}},
     "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},

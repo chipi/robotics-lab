@@ -7,6 +7,7 @@ dependencies = [
     "mcap>=1.2",
     "robotgate",
     "runfile",
+    "simhost",
     "worldmodel",
 ]
 
@@ -14,6 +15,7 @@ dependencies = [
 [tool.uv.sources]
 robotgate = { path = "../../libs/gate", editable = true }
 runfile = { path = "../../libs/runfile", editable = true }
+simhost = { path = "../../libs/simhost", editable = true }
 worldmodel = { path = "../../libs/worldmodel", editable = true }
 
 [project.scripts]

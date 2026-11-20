@@ -13,7 +13,8 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from duck_lab.nav.frames import compose, inverse  # noqa: E402
-from duck_lab.nav.run import Navigator  # noqa: E402
+import simhost
+from duck_lab.nav.run import Navigator, host_links  # noqa: E402
 
 STAIRS = (-0.40, 0.00, -1.40, -0.70)   # x min, x max, y min, y max (apartment_layout.json)
 GUARD_M = 0.05
@@ -30,7 +31,7 @@ def edge_distance(p):
 RUNS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "runs")     # robots/duck/runs, wherever this is run from
 os.makedirs(RUNS, exist_ok=True)
 LOG = os.path.join(RUNS, "cliff-test.jsonl")
-nav = Navigator(log=LOG)
+nav = Navigator(**host_links(simhost.load(), truth=True), log=LOG)
 closest = [9.0]
 
 

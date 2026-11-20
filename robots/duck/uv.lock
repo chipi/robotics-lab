@@ -24,6 +24,7 @@ dependencies = [
     { name = "mcap" },
     { name = "robotgate" },
     { name = "runfile" },
+    { name = "simhost" },
     { name = "worldmodel" },
 ]
 
@@ -39,6 +40,7 @@ requires-dist = [
     { name = "mcap", specifier = ">=1.2" },
     { name = "robotgate", editable = "../../libs/gate" },
     { name = "runfile", editable = "../../libs/runfile" },
+    { name = "simhost", editable = "../../libs/simhost" },
     { name = "worldmodel", editable = "../../libs/worldmodel" },
 ]
 
@@ -872,6 +874,11 @@ requires-dist = [
     { name = "mcap", specifier = ">=1.2" },
     { name = "protobuf", specifier = ">=7.36.2" },
 ]
+
+[[package]]
+name = "simhost"
+version = "0.1.0"
+source = { editable = "../../libs/simhost" }
 
 [[package]]
 name = "typing-extensions"

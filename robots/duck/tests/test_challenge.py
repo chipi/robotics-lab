@@ -251,22 +251,7 @@ v = ref.verdict({"status": "refused", "why": "drop ahead"}, (0.95, 0.0, 0.0))
 check("verdict refuse: the right refusal, but too near the edge on the way: FAIL, the margin named", not v["pass"] and "drop_margin" in v["failed"][0], v["failed"])
 check("a verdict is JSON (it is written to result.json)", json.loads(json.dumps(v)) == v)
 
-# The runner never calls a duck-sim that asks sudo with no terminal (docs/wip/DUCK-SIM-FOR-AGENTS.md).
-from duck_lab.nav import simreset  # noqa: E402
-
-with tempfile.TemporaryDirectory() as tmp:
-    (Path(tmp) / "scripts").mkdir()
-    sim_script = Path(tmp) / "scripts" / "duck-sim"
-    simreset.REPO = Path(tmp)
-    sim_script.write_text('        if sudo systemctl is-active --quiet "$name" 2>/dev/null; then\n')
-    try:
-        simreset.duck_sim()
-        refused = ""
-    except RuntimeError as e:
-        refused = str(e)
-    check("an unpatched duck-sim (sudo on every down) is refused, the patch named", "duck-sim-sudo-free-down.patch" in refused, refused)
-    sim_script.write_text('        if systemctl is-active --quiet "$name" 2>/dev/null; then\n')
-    check("a patched duck-sim is used", simreset.duck_sim() == str(sim_script))
+# (The reset's refusal of a duck-sim that asks sudo moved with the reset: tests/test_simhost.py.)
 
 # ---- challenges 21-23: ten goals in a row, a room with a drop, two rooms (RFC-0008) -----------------------------------------
 from duck_lab.challenge import explore, floor, sequence  # noqa: E402

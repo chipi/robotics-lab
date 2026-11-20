@@ -14,17 +14,18 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-from duck_lab.nav.client import SIM, StateStream  # noqa: E402
+from duck_lab.nav.client import StateStream  # noqa: E402
+import simhost  # noqa: E402
 
 vx = float(sys.argv[1]) if len(sys.argv) > 1 else 0.3
 seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 8.0
 runs = int(sys.argv[3]) if len(sys.argv) > 3 else 3
-sim = os.path.expanduser("~/.cache/duck-sim")
+host = simhost.load()
 
-body = socket.create_connection(("127.0.0.1", int(os.environ.get("DUCK_SIM_PORT", "7801")))).makefile("rw")
+body = socket.create_connection(("127.0.0.1", host.truth_port)).makefile("rw")
 body.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n"); body.flush(); body.readline()
-rpc = socket.socket(socket.AF_UNIX); rpc.connect(f"{sim}/duck-a.sock"); rf = rpc.makefile("rw")
-state = StateStream(SIM / "duck-a.sock", hz=50)   # a reader thread: always the latest state
+rpc = socket.socket(socket.AF_UNIX); rpc.connect(str(host.sockets["robot"])); rf = rpc.makefile("rw")
+state = StateStream(host.sockets["robot"], hz=50)   # a reader thread: always the latest state
 time.sleep(0.5)
 n = [0]
 

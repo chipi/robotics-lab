@@ -109,6 +109,20 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
 1. **Host file and reset out of the payload:** `simreset` becomes a host tool; the navigator reads
    socket paths from `host.json` (the profile's `control` block keeps no paths: phase 5 needs this
    too); the data folder from the installation, not a default path.
+   *Built 2026-11-20:* `libs/simhost` (standard library only) reads the host file (`--host`, else
+   `$ROBOTICS_LAB_HOST`, else `~/.config/robotics-lab/host.json`; a missing or wrong file is an
+   error, never this workstation's paths) and owns the reset (`simhost.reset`, `simhost.down`, moved
+   from `nav/simreset.py`, deleted); `simhost init` and `simhost show`. The navigator takes its
+   three sockets and its truth reader as arguments (`Navigator(sockets, body)`); the commands that
+   start it (`duck-go`, `duck-eval`, `duck-explore`, `duck-challenge`, `duck-nav-server`,
+   `duck-record`, `duck-gate`) and the probes build them from the host file (`host_links`). The
+   data folder was already the installation's (`OBSERVATORY_DATA`). Proof: `test_simhost.py`
+   (refusals, sockets, `init`, the sudo guard); `make lint test-duck test-control
+   test-control-page` PASS; challenge 1 seed 1 through the host file passed; `make sim-duck`
+   (point, cancel: the gate and the nav server) PASS. Still tied to this machine: eight standalone
+   probes that open port 7801 or `~/.cache/duck-sim` themselves (`backward`, `head_walk`,
+   `kick_turn`, `move`, `still`, `where`, `record_session`, `repeat_sim`) and Mission Control's
+   robot-file defaults (`duck.py`), for phase 5's control panel.
 2. **Truth out of the payload:** the runner reads the body server and merges truth into the
    recording; the navigator stops reading port 7801. The judge, the evaluation and the challenges
    move to the runner. Proof: phase 1's evaluation and challenges 1–5 judged the same as before

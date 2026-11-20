@@ -14,6 +14,7 @@ dependencies = [
 duck-lab = { path = "../../robots/duck", editable = true }
 robotgate = { path = "../../libs/gate", editable = true }
 runfile = { path = "../../libs/runfile", editable = true }
+simhost = { path = "../../libs/simhost", editable = true }
 worldmodel = { path = "../../libs/worldmodel", editable = true }
 
 [project.scripts]

@@ -27,6 +27,7 @@ MODULES = {
     "runfile": "runfile",
     "robotgate": "robotgate",
     "worldmodel": "worldmodel",
+    "simhost": "simhost",
     "observatory": "observatory",
     "mission_control": "mission_control",
     "nxt_lab": "nxt_lab",
@@ -38,16 +39,17 @@ ALLOWED = {
     "runfile": set(),
     "robotgate": set(),
     "worldmodel": set(),
+    "simhost": set(),
     "observatory": {"runfile"},
     "mission_control": {"robotgate", "runfile"},
     "nxt_lab": {"runfile"},
-    "duck_lab": {"runfile", "robotgate", "worldmodel"},
+    "duck_lab": {"runfile", "robotgate", "worldmodel", "simhost"},
 }
 
 # tests, probes and perf scripts of a project also drive neighbours: Chromium through the Observatory's shots, a run's writer
 TESTS_EXTRA = {
     "observatory": set(),
-    "mission_control": {"runfile", "observatory", "duck_lab", "worldmodel"},
+    "mission_control": {"runfile", "observatory", "duck_lab", "worldmodel", "simhost"},
     "nxt_lab": {"observatory"},
     "duck_lab": set(),
 }

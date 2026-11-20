@@ -1,5 +1,5 @@
 """Does stopping the simulator from a script stay clear of sudo? One `duck-sim down` through the runner's own path
-(simreset.down), and the user's pam_faillock tally before and after: a sudo that asks for a password with no terminal to
+(the host's reset, simhost.down), and the user's pam_faillock tally before and after: a sudo that asks for a password with no terminal to
 ask on is a failed login, and ten of them lock the user's sudo for two minutes (docs/wip/DUCK-SIM-FOR-AGENTS.md).
 
     uv run python sim/probes/sudo_free_down.py
@@ -15,7 +15,7 @@ import struct
 import sys
 import time
 
-from duck_lab.nav import simreset
+import simhost
 
 TALLY = f"/run/faillock/{getpass.getuser()}"
 
@@ -44,7 +44,7 @@ def written() -> float | None:
 def main() -> None:
     before = written()
     t0 = time.monotonic()
-    simreset.down()
+    simhost.down(simhost.load())
     after = written()
     print(f"duck-sim down: {time.monotonic() - t0:.1f} s")
     for t, source in records():

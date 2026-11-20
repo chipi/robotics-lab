@@ -1,6 +1,6 @@
 """The navigator API: the duck's navigator as its own process (RFC-0014 §3.7, O22), for Mission Control.
 
-    duck-nav-server --robot-socket ~/.cache/duck-sim/duck-a-gate.sock --data /work/robotics-lab/data --out state/nav
+    duck-nav-server --data /work/robotics-lab/data --out state/nav       # the robot: the host file's gate socket (RFC-0021)
 
 A small JSON-RPC server (newline framed, TCP on loopback) that owns one `Navigator` per goal. Mission Control starts a goal
 of any kind of RFC-0014 §3.4.1 with `goal.start`, polls `goal.status`, and cancels with `goal.cancel`. The server takes the
@@ -32,10 +32,10 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.client import SIM, LeaseLost, Rpc
+from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.guardrails import Guard
-from duck_lab.nav.run import Navigator, decision
+from duck_lab.nav.run import Body, Navigator, decision, host_links
 from duck_lab.nav.runlog import RunLog
 from duck_lab.nav.sim_camera import SimCamera
 from runfile.catalog import default_data
@@ -147,7 +147,8 @@ class GoalRun:
                                        "robot": "duck"})
         self.run_key = self.runlog.key
         try:
-            self.nav = Navigator(log=out / "ticks.jsonl", runlog=self.runlog, sim_dir=srv.sim_dir, robot_sock=srv.robot_sock,
+            self.nav = Navigator(sockets=srv.sockets, body=Body(srv.truth_port) if srv.truth_port else None,
+                                 log=out / "ticks.jsonl", runlog=self.runlog,
                                  client=srv.client)
         except BaseException:
             self.runlog.finish()
@@ -405,9 +406,12 @@ class GoalRun:
 
 
 class NavServer:
-    def __init__(self, robot_sock: Path, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
-                 sim_dir: Path = SIM):
-        self.robot_sock, self.data, self.out, self.scene, self.client, self.sim_dir = robot_sock, data, out, scene, client, sim_dir
+    def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
+                 truth_port: int | None = None):
+        # sockets: the navigator's ("robot": a gate's, "depth", "map"), from the host file; truth_port: the host's body server
+        # (each goal's navigator records the truth with its run), None on a host with no truth
+        self.sockets, self.data, self.out, self.scene, self.client, self.truth_port = sockets, data, out, scene, client, truth_port
+        self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
         self._lock = threading.Lock()
 
@@ -502,7 +506,8 @@ class Server(socketserver.ThreadingTCPServer):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--listen", default="127.0.0.1:8061", help="host:port (loopback by default: the API has no login)")
-    ap.add_argument("--robot-socket", type=Path, default=SIM / "duck-a-gate.sock", help="the robot's socket: a gate's (duck-gate)")
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the host file's gate socket)")
     ap.add_argument("--client", default="duck-nav-server", help="the name the navigator takes the lease under")
     ap.add_argument("--data", type=Path, default=default_data(),
                     help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
@@ -511,9 +516,14 @@ def main() -> None:
     args = ap.parse_args()
     if args.data is None:
         sys.exit("duck-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
-    host, _, port = args.listen.rpartition(":")
-    srv = Server((host or "127.0.0.1", int(port)), NavServer(args.robot_socket, args.data, args.out, args.scene, args.client))
-    print(f"duck-nav-server: {args.listen}, robot {args.robot_socket}, runs in {args.data}", flush=True)
+    import simhost
+    sim = simhost.load(args.host)
+    sockets = host_links(sim, robot="gate")["sockets"]
+    if args.robot_socket:
+        sockets["robot"] = args.robot_socket
+    listen, _, port = args.listen.rpartition(":")
+    srv = Server((listen or "127.0.0.1", int(port)), NavServer(sockets, args.data, args.out, args.scene, args.client, sim.truth_port))
+    print(f"duck-nav-server: {args.listen}, robot {sockets['robot']}, runs in {args.data}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

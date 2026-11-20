@@ -11,21 +11,21 @@ import sys
 import time
 from pathlib import Path
 
-from duck_lab.nav import simreset
+import simhost
 from duck_lab.profile import load as load_profile
 
 _LOCO = load_profile("sim").locomotion
 KICK_RAD_S, KICK_S, TURN_RAD_S = _LOCO.kick_rad_s, _LOCO.kick_s, _LOCO.hold_rad_s
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 
 HOLD_VX = -0.06
 scene_id, tries = sys.argv[1], int(sys.argv[2])
-scene_xml = Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"
+scene_xml = simhost.load().scenarios / scene_id / "scene.xml"
 for kick_vx in [float(v) for v in sys.argv[3:]]:
     for k in range(tries):
-        simreset.reset(str(scene_xml))
+        simhost.reset(simhost.load(), str(scene_xml))
         try:
-            nav = Navigator(calibration="sim", truth=True)
+            nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
             time.sleep(3.0)
             x0, y0, a0 = nav.body.pose()
             start, turned, last, at1, along1 = time.monotonic(), 0.0, a0, None, None
@@ -43,4 +43,4 @@ for kick_vx in [float(v) for v in sys.argv[3:]]:
             print(f"kick vx {kick_vx:+.3f} try {k + 1}: {math.degrees(at1):+4.0f} deg at 1 s, {math.degrees(turned):+4.0f} deg at 3 s; "
                   f"forward in the kick {along1 * 1000:+4.0f} mm", flush=True)
         finally:
-            simreset.down()
+            simhost.down(simhost.load())

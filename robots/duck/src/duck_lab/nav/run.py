@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.client import SIM, LeaseLost, Rpc, StateStream, odom_pose
+from duck_lab.nav.client import LeaseLost, Rpc, StateStream, odom_pose
 from duck_lab import plugins
 from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived: re-exported for the tools that read it)
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
@@ -158,10 +158,19 @@ WATCHDOG_S = 0.5         # how often the streams' watchdog looks (the limits are
 
 
 
-class Body:
-    """The simulator's ground truth (the body server); absent on a real duck."""
+def host_links(host, robot: str = "robot", truth: bool = False) -> dict:
+    """Navigator(**host_links(host), ...): a host's sockets (RFC-0021: `simhost.load()`), the robot's own or, with
+    robot="gate", its gate's; and the body server's truth when asked (the judge's, on a host that has it)."""
+    if truth and host.truth_port is None:
+        raise ValueError(f"{host.source}: this host has no truth (truth_port is null)")
+    return {"sockets": {"robot": host.sockets[robot], "depth": host.sockets["depth"], "map": host.sockets["map"]},
+            "body": Body(host.truth_port) if truth else None}
 
-    def __init__(self, port: int = 7801):
+
+class Body:
+    """The simulator's ground truth (the body server, on the host's truth_port); absent on a real duck."""
+
+    def __init__(self, port: int):
         self._f = socket.create_connection(("127.0.0.1", port)).makefile("rw")
         self._f.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n")
         self._f.flush()
@@ -214,16 +223,18 @@ class Navigator:
     anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
     _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
 
-    def __init__(self, sim_dir: Path = SIM, truth: bool = True, log: Path | None = None,
-                 calibration: str | None = "sim", runlog: RunLog | None = None,
-                 robot_sock: Path | None = None, client: str | None = None, profile=None):
+    def __init__(self, sockets: dict, body: "Body | None" = None, log: Path | None = None,
+                 calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None):
+        # `sockets`: the robot's ("robot", "depth", "map": paths), handed in by whoever starts the navigator, from the host
+        # file (RFC-0021: host_links); the navigator knows no machine's paths. `body`: the simulator's truth, for the
+        # record and the simulated camera, or None (the real duck; and in time the runner's only, RFC-0021 step 2).
         # `calibration` names the environment ("sim", or None for the real duck); the profile is the duck's, in that environment
         # (robots/duck/profile.json), unless one is given.
         # The robot's socket is a setting (RFC-0017 §5 step 3): robotd's own, or a gate's (duck-gate). With a `client` name
         # this navigator speaks to a gate: hello {client}, then it takes the lease before anything else, and a gate that
         # holds the robot for another client refuses it here (LeaseLost), before a run, a thread or a map exists.
         self.client = client
-        self.robot_sock = Path(robot_sock) if robot_sock else sim_dir / "duck-a.sock"
+        self.robot_sock = Path(sockets["robot"])
         self.robot = Rpc(self.robot_sock, client=client)
         if client:
             try:
@@ -243,11 +254,11 @@ class Navigator:
         self.sense = {}          # what go_to decides on this tick (room_m, turning), for the signals; empty outside go_to
         self._logging_failed = False
 
-        self.mapd = Rpc(sim_dir / "duck-a-map.sock")
+        self.mapd = Rpc(Path(sockets["map"]))
         self.localisation.bind(self.mapd)
         self.state = StateStream(self.robot_sock, hz=20, on_state=self._on_state, client=client)
 
-        self.body = Body() if truth else None
+        self.body = body
         self._log = open(log, "a") if log else None
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
@@ -274,7 +285,7 @@ class Navigator:
         self._parted_at = None   # the frames' delta when "frames_parted" was last said, None while they are together
         self._world_key = None
         self.range.on_frame = self._on_frame
-        self.range.open(sim_dir / "duck-a-tof.sock")
+        self.range.open(Path(sockets["depth"]))
         self.drops = []      # where the cliff check found no floor, in map metres
         self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
         self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
@@ -1387,14 +1398,19 @@ def main() -> None:
     ap.add_argument("y", type=float)
     ap.add_argument("--log", type=Path)
     ap.add_argument("--timeout", type=float, default=90.0)
-    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: robotd's own (the default) or a gate's (duck-gate)")
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: robotd's own (the host's, the default) or a gate's (duck-gate)")
     ap.add_argument("--client", help="the name to speak to a gate as (hello, then gate.acquire): needed with a gate's socket")
     add_args(ap)
     args = ap.parse_args()
+    import simhost
+    links = host_links(simhost.load(args.host), truth=True)
+    if args.robot_socket:
+        links["sockets"]["robot"] = args.robot_socket
     stamp = time.strftime("go-%Y%m%d-%H%M%S")
     runlog = open_from_args(args, args.log.stem if args.log else stamp, "go-to", args.log.parent if args.log else None)
     try:
-        nav = Navigator(log=args.log, runlog=runlog, robot_sock=args.robot_socket, client=args.client)
+        nav = Navigator(**links, log=args.log, runlog=runlog, client=args.client)
     except LeaseLost as exc:
         print(json.dumps({"status": "refused", "why": str(exc), "gate": exc.code, "holder": exc.holder}))
         if runlog:

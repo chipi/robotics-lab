@@ -14,8 +14,8 @@ import time
 from pathlib import Path
 
 from cliff_shim import cliff
-from duck_lab.nav import simreset
-from duck_lab.nav.run import Navigator
+import simhost
+from duck_lab.nav.run import Navigator, host_links
 
 GLANCE_X_M, GLANCE_Y_M = 0.25, 0.45          # the floor point aimed at, in the trunk frame (ahead, aside)
 FLOOR_Z_M = -0.116                            # the floor below the trunk's origin (stand height)
@@ -28,9 +28,9 @@ def sensor_yaw(state) -> float:
 
 
 for scene_id in sys.argv[1:]:
-    simreset.reset(str(Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"))
+    simhost.reset(simhost.load(), str(simhost.load().scenarios / scene_id / "scene.xml"))
     try:
-        nav = Navigator(calibration="sim", truth=True)
+        nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
         time.sleep(3.0)
         for side, name in ((1.0, "left"), (-1.0, "right")):
             ans = nav.robot.call("robot.look", {"x": GLANCE_X_M, "y": side * GLANCE_Y_M, "z": FLOOR_Z_M, "neck_pitch": 0.0}) or {}
@@ -99,4 +99,4 @@ for scene_id in sys.argv[1:]:
                   f"floor height error median {1000 * zerr[len(zerr) // 2] if zerr else float('nan'):+.0f} mm, "
                   f"p95 |err| {1000 * sorted(abs(v) for v in zerr)[int(len(zerr) * 0.95)] if zerr else float('nan'):.0f} mm", flush=True)
     finally:
-        simreset.down()
+        simhost.down(simhost.load())

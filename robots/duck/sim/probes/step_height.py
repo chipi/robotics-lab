@@ -15,10 +15,10 @@ import time
 from pathlib import Path
 
 from duck_lab.challenge.scene import Scene, mjcf, slab, wall
-from duck_lab.nav import simreset
+import simhost
 from duck_lab.nav.evaluate import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 
 BAR_X, WALK_MPS, WALK_S, TICK_S = 0.6, 0.3, 30.0, 0.1
 YAW_RPS, YAW_HOLD_RAD = 0.0, 0.1   # --yaw: turn while walking (the navigator does, 0.1-0.2 rad/s), the sign flipped to hold the heading within YAW_HOLD_RAD   # it walks ~0.13 m/s: 30 s reaches a 0.5 m-tread flight's top
@@ -59,14 +59,14 @@ def scene(kind: str, h: float, trial: int) -> Scene:
 
 def trial(kind: str, h: float, k: int) -> dict:
     sc = scene(kind, h, k)
-    simreset.reset(str(mjcf(sc)))
+    simhost.reset(simhost.load(), str(mjcf(sc, simhost.load().scenarios, simhost.load().scene_dir)))
     floors = [f for f in sc.floors if f.name != "threshold"]
 
     def floor_under(x: float) -> float:
         """The top of the floor under x (the walking floors, the bar left out: it is walked over, not stood on)."""
         return next((f.z1 for f in floors if f.cx - f.hx <= x < f.cx + f.hx), 0.0)
 
-    nav = Navigator(truth=True)
+    nav = Navigator(**host_links(simhost.load(), truth=True))
     if CMD_LOG:
         log, call = open(CMD_LOG, "a"), nav.robot.call
 

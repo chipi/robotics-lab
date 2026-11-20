@@ -104,7 +104,7 @@ endef
 
 DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recovery.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py \
-                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py tests/test_gate_proxy.py tests/test_guardrails.py tests/test_profile.py tests/test_plugins.py tests/test_anomaly.py tests/test_goals.py tests/test_probe_rows.py tests/test_pace.py
+                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py tests/test_gate_proxy.py tests/test_guardrails.py tests/test_profile.py tests/test_plugins.py tests/test_anomaly.py tests/test_goals.py tests/test_probe_rows.py tests/test_pace.py tests/test_simhost.py
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
@@ -134,7 +134,7 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
 	@log=$$(mktemp); \
-	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath $(DUCK_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/worldmodel)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
+	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath $(DUCK_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/worldmodel)/src:$(abspath libs/simhost)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-control-page PASS"
 

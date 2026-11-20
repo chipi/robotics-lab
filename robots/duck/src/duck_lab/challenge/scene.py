@@ -13,8 +13,6 @@ from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
 
-UPSTREAM = Path(os.environ.get("DUCK_SIM_RL", "/work/pollen/microduck_rl")) / "src" / "mjlab_microduck" / "robot" / "microduck"
-SCENARIOS = Path(os.path.expanduser("~/.cache/duck-sim/scenarios"))
 SLAB_M = 0.05                 # a floor slab's thickness
 TOF_RANGE_M = 4.0             # the simulated depth sensor's range (microduck_rl sim/tof.py MAX_RANGE): beyond it, "no target"
 # The trunk stands this far ahead of the start once the duck has settled (truth at a run's start, 2026-11-16's challenge
@@ -114,8 +112,9 @@ def _geom(b: Box, rgba: str) -> str:
             f'quat="{qw:.6f} 0 0 {qz:.6f}" rgba="{rgba}"/>')
 
 
-def mjcf(scene: Scene, root: Path = SCENARIOS, upstream: Path = UPSTREAM) -> Path:
-    """The simulator's scene file, in the scenario's own folder (never upstream's): upstream's scene_backlash.xml (its
+def mjcf(scene: Scene, root: Path, upstream: Path) -> Path:
+    """The simulator's scene file, in the scenario's own folder under `root` (the host's scenarios: simhost Host.scenarios),
+    never upstream's (`upstream`: the host's Pollen scene folder, Host.scene_dir): upstream's scene_backlash.xml (its
     keyframes), the full-collision backlash robot by absolute path, `assets` linked (the robot's meshdir is relative to
     the scene file), and the floor plane replaced by the scene's slabs and boxes."""
     out = root / scene.id

@@ -7,7 +7,7 @@ The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept duri
 
 Goals are drawn once, with a fixed seed, from free floor in the apartment layout (sim/apartment_layout.json,
 from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom and the staircase. Every goal starts
-from the dock with an empty map (simreset.reset: the simulator restarted, mapd fresh), as the bar
+from the dock with an empty map (the host's reset, simhost.reset: the simulator restarted, mapd fresh), as the bar
 says; --chain runs them one after another instead (run 4 did, by mistake: drift and failures carried
 from goal to goal). Each goal is given in world coordinates
 and converted to the map with the map ← world transform measured at the first fix.
@@ -27,10 +27,10 @@ import time
 from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav import simreset
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.profile import load as load_profile
+import simhost
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 GOALS = Path(__file__).resolve().parents[3] / "sim" / "phase1_goals.json"
@@ -121,8 +121,10 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=90.0)
     ap.add_argument("--out", type=Path, default=Path("runs/phase1"))
     ap.add_argument("--chain", action="store_true", help="goal after goal, no reset (not the bar)")
+    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     add_args(ap)
     args = ap.parse_args()
+    host = simhost.load(args.host)
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)
     if args.draw:
@@ -136,7 +138,7 @@ def main() -> None:
     nav = None
 
     def start():
-        n_ = Navigator(log=args.out / "ticks.jsonl", runlog=runlog)
+        n_ = Navigator(**host_links(host, truth=True), log=args.out / "ticks.jsonl", runlog=runlog)
         if n_.loc.pose() is None and not n_.fix():
             n_.survey()
         return n_, compose(n_.loc.pose(), inverse(n_.body.pose()))
@@ -148,7 +150,7 @@ def main() -> None:
             if not args.chain:
                 if nav is not None:
                     nav.close()
-                simreset.reset()
+                simhost.reset(host)
                 nav, map_from_world = start()
             goal_map = compose(map_from_world, (gx, gy, 0.0))[:2]
             started = time.monotonic()

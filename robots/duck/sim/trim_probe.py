@@ -24,10 +24,10 @@ import time
 import types
 
 from duck_lab.challenge.scene import Scene, mjcf, slab, wall
-from duck_lab.nav import simreset
+import simhost
 from duck_lab.nav.evaluate import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 
 BAR_X, BAR_DEEP_M, TICK_S, STUCK_M, STUCK_S, START_S = 0.6, 0.04, 0.1, 0.02, 3.0, 6.0
 LENGTH_M = 4.0
@@ -63,8 +63,8 @@ def unwrap(yaws: list) -> list:
 
 def trial(h: float | None, trim: float, k: int, speed: float, seconds: float) -> dict:
     sc = scene(h, k)
-    simreset.reset(str(mjcf(sc)))
-    nav = Navigator(truth=True)
+    simhost.reset(simhost.load(), str(mjcf(sc, simhost.load().scenarios, simhost.load().scene_dir)))
+    nav = Navigator(**host_links(simhost.load(), truth=True))
     try:
         past = BAR_X + BAR_DEEP_M + 0.25
         ts, yaws, ys, xs, lowest = [], [], [], [], 1.0
@@ -99,8 +99,8 @@ def trial(h: float | None, trim: float, k: int, speed: float, seconds: float) ->
 
 def nav_trial(h: float, deadband: float, k: int, seconds: float, pace: bool = True) -> dict:
     sc = scene(h, k)
-    simreset.reset(str(mjcf(sc)))
-    nav = Navigator(truth=True)
+    simhost.reset(simhost.load(), str(mjcf(sc, simhost.load().scenarios, simhost.load().scene_dir)))
+    nav = Navigator(**host_links(simhost.load(), truth=True))
     try:
         nav.locomotion.deadband = deadband
         if not pace:

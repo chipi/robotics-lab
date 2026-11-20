@@ -10,19 +10,19 @@ import sys
 import time
 from pathlib import Path
 
-from duck_lab.nav import simreset
+import simhost
 from duck_lab.profile import load as load_profile
 
 _LOCO = load_profile("sim").locomotion
 KICK_RAD_S, KICK_S, TURN_RAD_S = _LOCO.kick_rad_s, _LOCO.kick_s, _LOCO.hold_rad_s
-from duck_lab.nav.run import Navigator
+from duck_lab.nav.run import Navigator, host_links
 
 scene_id = sys.argv[1]
-scene_xml = Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"
+scene_xml = simhost.load().scenarios / scene_id / "scene.xml"
 for vx in [float(v) for v in sys.argv[2:]]:
-    simreset.reset(str(scene_xml))
+    simhost.reset(simhost.load(), str(scene_xml))
     try:
-        nav = Navigator(calibration="sim", truth=True)
+        nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
         time.sleep(3.0)
         x0, y0, a0 = nav.body.pose()
         turned, last, start = 0.0, a0, time.monotonic()
@@ -42,4 +42,4 @@ for vx in [float(v) for v in sys.argv[2:]]:
         print(f"vx {vx:+.3f}: turned {math.degrees(turned):4.0f} deg in {time.monotonic() - start:4.1f} s; moved {math.hypot(dx, dy):.3f} m "
               f"(along the start heading {along:+.3f}, to the left {side:+.3f})", flush=True)
     finally:
-        simreset.down()
+        simhost.down(simhost.load())

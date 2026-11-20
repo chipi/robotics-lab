@@ -19,7 +19,8 @@ What the simulator gives, checked on 2026-11-16:
   robot's `meshdir` is relative to the scene file): MuJoCo loaded it with the keyframes, and the
   simulator booted on it with the duck standing (trunk 0.116 m) in 39.8 s.
 - **A fixed start.** The body server puts the duck at (0, 0) facing +x on every start and takes no
-  position (`Body.place`). The only reset is a restart (`simreset.reset`, ~40 s).
+  position (`Body.place`). The only reset is a restart (`simreset.reset`, now `simhost.reset`
+  (RFC-0021), ~40 s).
 - **Every world geom is seen.** The depth sensor casts `mj_ray` against all of them.
 - **No contact list.** The body server does not expose MuJoCo's contacts; truth is the trunk pose.
 

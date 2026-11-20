@@ -3,7 +3,8 @@
 Pollen's `scripts/duck-sim` (in `/work/pollen/microduck`, pinned at `094d4bb4`) is written for a
 person at a terminal. Driven by an agent or a script, from a process with no terminal, two of its
 habits change meaning. This page is how robotics-lab runs it unattended: the challenge runner
-(`duck-challenge`), the explorers and the probes all go through `duck_lab.nav.simreset`.
+(`duck-challenge`), the explorers and the probes all go through the host's reset,
+`simhost.reset` (`libs/simhost`, RFC-0021).
 
 ## Why: the sudo lockout (2026-11-16)
 
@@ -50,11 +51,11 @@ Re-apply it after any update or reset of the Pollen checkout. The operator decid
 
 ## The guards
 
-- **`simreset.duck_sim()`** refuses to run a `duck-sim` that still has the sudo check, and names
+- **`simhost.duck_sim()`** refuses to run a `duck-sim` that still has the sudo check, and names
   the patch. Every runner fails at its first reset instead of locking the user out.
-  `tests/test_challenge.py` checks it both ways.
-- **`duck/sim/probes/sudo_free_down.py`** runs one real `down` through `simreset` and fails if the
-  user's faillock tally was written during it. It also prints the tally's records (time,
+  `robots/duck/tests/test_simhost.py` checks it both ways.
+- **`robots/duck/sim/probes/sudo_free_down.py`** runs one real `down` through `simhost.down` and
+  fails if the user's faillock tally was written during it. It also prints the tally's records (time,
   service or terminal), which is how a lockout is read without root. Run it with no simulator
   in use: it stops the simulator.
 

@@ -14,17 +14,17 @@ import sys
 import time
 from pathlib import Path
 
-from duck_lab.nav import simreset
-from duck_lab.nav.run import Navigator
+import simhost
+from duck_lab.nav.run import Navigator, host_links
 
 DISTANCES = (0.12, 0.16, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50)
 BEARINGS = (0, 45, 90, 120, -90)          # degrees from the heading, left positive
 TRIALS = 1
 
 for scene_id in sys.argv[1:]:
-    simreset.reset(str(Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"))
+    simhost.reset(simhost.load(), str(simhost.load().scenarios / scene_id / "scene.xml"))
     try:
-        nav = Navigator(calibration="sim", truth=True)
+        nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
         time.sleep(3.0)
         for _ in range(30):                      # the localizer has no pose before mapd's first fix
             if nav.fix() and nav.loc.pose() is not None:
@@ -45,4 +45,4 @@ for scene_id in sys.argv[1:]:
             nav.close()
         except Exception:  # noqa: BLE001
             pass
-        simreset.down(str(Path.home() / ".cache" / "duck-sim" / "scenarios" / scene_id / "scene.xml"))
+        simhost.down(simhost.load(), str(simhost.load().scenarios / scene_id / "scene.xml"))

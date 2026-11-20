@@ -282,9 +282,10 @@ with tempfile.TemporaryDirectory() as tmp:
     for k in real:
         setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {})())
     try:
-        sim_nav = Navigator(calibration="sim", truth=False)
+        stub = {"robot": "/nonexistent/robot.sock", "depth": "/nonexistent/tof.sock", "map": "/nonexistent/map.sock"}
+        sim_nav = Navigator(stub, calibration="sim")
         sim_applied = (sim_nav.range.pitch_offset_rad, sim_nav.range.range_kind) == (math.radians(2.5), "radial")
-        real_nav = Navigator(calibration=None, truth=False)
+        real_nav = Navigator(stub, calibration=None)
         default_applied = (real_nav.range.pitch_offset_rad, real_nav.range.range_kind) == (math.radians(3.0), "axial")
     finally:
         Tof8x8.open = real_open

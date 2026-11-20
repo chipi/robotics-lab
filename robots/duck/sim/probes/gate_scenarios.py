@@ -25,8 +25,8 @@ import time
 from pathlib import Path
 
 from duck_lab.gate_proxy import Proxy
-from duck_lab.nav import simreset
-from duck_lab.nav.client import SIM, LeaseLost, Rpc
+import simhost
+from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.run import Body
 
 LEASE_S = 10.0
@@ -72,12 +72,13 @@ def displacement(body: Body, seconds: float) -> float:
 
 def scenario(name: str):
     print(f"\n--- {name}", flush=True)
-    simreset.reset("apartment_backlash")
+    host = simhost.load()
+    simhost.reset(host, "apartment_backlash")
     tmp = Path(tempfile.mkdtemp(prefix="gate-scenario-"))
     atexit.register(shutil.rmtree, tmp, True)
-    proxy = Proxy(tmp / "gate.sock", SIM / "duck-a.sock", log=tmp / "gate.jsonl", lease_s=LEASE_S)
+    proxy = Proxy(tmp / "gate.sock", host.sockets["robot"], log=tmp / "gate.jsonl", lease_s=LEASE_S)
     proxy.start()
-    return tmp, proxy, Body()
+    return tmp, proxy, Body(host.truth_port)
 
 
 def who(gate: Path) -> dict:
