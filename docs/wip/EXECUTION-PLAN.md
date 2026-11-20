@@ -287,6 +287,33 @@ runner, the judge, the recording, the Observatory or Mission Control.
     URLs: today its `control` block has this machine's socket paths and the Observatory's URL, which
     move to a per-installation file); export and import of a profile as one file, checked by the
     validator on import, with a version and a checksum; a diff between two profiles.
+  - **Subsystems** (the operator, 2026-11-20: "the robot has a few subsystems, and each of them has
+    a different status … which of the systems are running as the robot is exploring"): the profile
+    lists a robot's subsystems, each with how its state is checked (a socket that answers, a pid
+    file, a status call), where its logs are, and what it conflicts with. For the simulated duck:
+    Pollen's robotd, tofd, configd, sounds, updaterd (mediad and duck-ether with a camera), mapd,
+    and `autod`, Pollen's autonomous brain (an intent client like our navigator, switched by
+    `robot.state.autonomous`): the panel shows which client holds the robot and why the others
+    cannot drive (the gate's one driver, RFC-0017).
+  - **Calibration per robot:** the probes that measured the profile's numbers today (odometry by
+    speed, the depth sensor's pitch and range kind, the pivot's creep) as guided procedures on a
+    chosen robot: run, the measured value beside the current one, saved as a new profile version.
+    The real duck's `real` variant needs all of them (REAL-DUCK.md).
+  - **The body's health** (the operator: "his knee is not working … that engine is blinking red, and
+    there's an error message next to it"): the robot's 3D model with each joint coloured by its
+    state, live in Mission Control and on replay in the Observatory. robotd sends per joint, every
+    tick, the measured angle (recorded today), the commanded one (`targets`: tracking error), the
+    velocity and the current (`currents_ma`: load, the robot's only measure of external force; an
+    empty list is "not reported", never zero); robot-wide the safety and control-loop state, a
+    health flag with its reason, the motor-bus voltage, the hottest servo's and the board's
+    temperature; per servo over its life the vetbook (time hot, current drawn, peak current, trips
+    by cause: overheat, encoder, shock, overload). The simulator sends angle, command, velocity and
+    current only. Needs the recording to keep the three per-joint values it drops today.
+- **Telemetry out** (the operator: "observability from those systems going to either my system or
+  some standard observability systems"): the subsystems' states, the joints' health and the run's
+  anomalies sent live in OpenTelemetry's form, to the homelab's stack or any standard backend.
+  **Open for the operator:** the OpenTelemetry library is a new dependency (yes or no); without it
+  the same format can be written by hand.
 
 ## Phase 6 — the first other robot
 
