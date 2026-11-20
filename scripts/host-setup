@@ -115,6 +115,12 @@ def main() -> int:
     else:
         run("4 ours", [paths["microduck_rl"] / ".venv" / "bin" / "python", ROOT / "robots" / "duck" / "sim" / "apartment_backlash.py",
                        paths["microduck_rl"]], cwd=ROOT)
+    # the walking policy, fetched as duck-sim's own policies() fetches it on a first `up` (its seed script, the network)
+    state = Path.home() / ".cache" / "duck-sim"
+    if (paths["microduck"] / "policies" / "velstand.onnx").exists() or (state / "policies" / "current" / "velstand.onnx").exists():
+        say("4 ours", "the walking policy is there, nothing to do")
+    else:
+        run("4 ours", ["sh", paths["microduck"] / "scripts" / "seed-policies.sh", state / "policies"])
 
     # 5. our environments
     run("5 ours", ["make", "duck-sync", "observatory-sync", "control-sync"], cwd=ROOT)
