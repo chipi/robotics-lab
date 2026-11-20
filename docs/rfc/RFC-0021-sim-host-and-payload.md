@@ -183,10 +183,37 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    when it fronts the navigator API. Traps to keep: the body server's port also writes joint targets
    (the "no route" test guards actuation, not only truth); a payload killed mid-goal leaves the
    robot walking, so the runner cancels, waits, and sends a zero move itself.
+   *Built for the challenge course (2026-11-20):* `duck-challenge` runs the navigator as a payload
+   process (`duck_lab.payload`, `duck-payload`) with no truth; the runner side is
+   `duck_lab.challenge.runner.Remote` (the copier live, the runner's own events, stop then signals
+   then its own zero move), the judge on the runner's sampler (`simhost.truth`). The payload's
+   contract (open question 2, answered: a smaller one than Mission Control's, which another navigator
+   can implement): newline JSON-RPC on a socket the runner names; `hello` (name, version, kinds),
+   `localise` (its pose in its map), `start` (`point {goal, time_s}` in its map, `explore
+   {minutes}`), `status` (state, why, pose, result), `cancel {reason}`, `stop`; the navigator is
+   kept between starts, so challenge 21 is ten points on one map and memory. The payload is given
+   `--robot`, `--depth`, `--map`, `--listen`, `--out`, `--data`, `--scene`, `--name`, `--variant`:
+   no host file, no port. Proof: challenges 1–5, seeds 1–3, two repeats, the payload process against
+   the navigator in the runner with the truth in its rows (same commit, alternating): 30 of 30 both
+   ways; every one of the payload runs' 12142 ticks paired with a truth sample (largest gap 49.7
+   ms); the payload process's connections to the truth's port, counted from its own sockets every
+   2 s, 0 in all 583 checks (`test_payload.py` shows the counter counts a real connection; it reads
+   `/proc`, so on macOS it records "not measured"); importing the payload loads no `simhost`. Not yet
+   through the split: the phase 1 evaluation (`duck-eval`, step 4), `duck-explore` and Mission
+   Control's nav server (the camera and guardrails above); challenge 21 through the payload ran
+   once and missed one goal by 1 cm (8 of 10), not repeated yet.
 3. **The setup and check scripts** (§4), each platform proven on a clean machine: Linux in a fresh
    container standing in for a new machine; macOS on the operator's MacBook Pro (M4 Pro), the
    simulation environment first, since it is the open risk; phase 1's 20 goals run there and the
    recording opened in the Observatory.
+   *Linux proven 2026-11-20:* in a fresh `ubuntu:24.04` container with only the base tools a person
+   installs by hand (git, a C toolchain, python3, rustup, uv), our repository cloned and
+   `scripts/host-setup` run: Pollen's checkouts cloned at the pins, mapd built, the simulation
+   environment synced, our patch, the apartment scene, the walking policy fetched, our three
+   environments, the host file; `HOST-CHECK PASS (17 pass, 0 fail, 1 not run)`, `HOST-SETUP PASS`.
+   Found on the way: macOS's system `python3` is 3.9 (the MacBook's: 3.9.6), so the two scripts
+   and `simhost` defer their annotations. Not yet: the simulator run inside the container, and
+   macOS (the operator's go for the installs on the laptop is asked).
 4. **One course through the split on this workstation** (the operator's X3, Omarchy, the first
    host): phase 1's 20 goals run by the runner with the host file, the recording opened in the
    Observatory beside a run made the old way. A second host is the operator's, later, with the basic
@@ -206,14 +233,21 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
 
 ## 7. Open questions
 
-1. Pollen's licences for `microduck` and `microduck_rl`: what a host may run and what we may
-   distribute (to check before step 3).
-2. The payload's contract: Mission Control's navigator API as it is, or a smaller one for the runner
-   (arena question 4)?
+1. ~~Pollen's licences~~ Read 2026-11-20, late: it was to be read before step 3 and was read after
+   it was built. `microduck`: Apache-2.0. `microduck_rl`: Apache-2.0 for the code, its 3D model
+   files CC-BY-NC-SA-4.0 (`LICENSE-MODELS.md`: non-commercial, share-alike). A host clones both from
+   Pollen and runs them; this repository distributes neither (challenge scenes include Pollen's
+   robot model by path, not a copy). Open for the arena: a hosted service that charges money would
+   run the models under a non-commercial licence; ask Pollen before that.
+2. ~~The payload's contract~~ Answered 2026-11-20: a smaller contract than Mission Control's (step 2,
+   above), which another navigator can implement (arena question 4).
 3. Several robots on one host (one simulator with several ducks: the body server takes `--ducks`),
    or one robot per host?
 4. ~~How the lead reaches the MacBook~~ Answered 2026-11-20 (the operator: "you can SSH to it", and
    the `prod` session on the laptop to discuss what the laptop needs): ssh over the tailnet,
-   `markodragoljevic@markos-macbook-pro-1` with `~/.ssh/macbook`. Read then: arm64, macOS 15.7.3,
-   Apple M4 Pro; Homebrew and uv in `/opt/homebrew/bin` (not on a non-interactive shell's PATH);
-   Xcode present; no Rust (cargo) yet; no Pollen checkout.
+   `markodragoljevic@markos-macbook-pro-1` with `~/.ssh/macbook`. Read then: arm64, macOS 15.7.3
+   (read again 2026-11-20 evening, `sw_vers`: 27.2.1; which reading was wrong, or whether it was
+   upgraded between, is not known), Apple M4 Pro, 14 cores, 48 GB, 260 GiB free, system python3
+   3.9.6, uv a pyenv shim (the laptop's prod session: use it as it is); Homebrew and uv in
+   `/opt/homebrew/bin` (not on a non-interactive shell's PATH); Xcode present; no Rust (cargo) yet;
+   no Pollen checkout.

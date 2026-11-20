@@ -13,6 +13,8 @@ Where it is read from: `--host` where a command takes one, else $ROBOTICS_LAB_HO
 ~/.config/robotics-lab/host.json. A missing or wrong file is an error that says which file and why; there is no
 fallback to this workstation's paths."""
 
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass, field

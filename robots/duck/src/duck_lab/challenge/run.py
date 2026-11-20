@@ -29,16 +29,14 @@ from pathlib import Path
 from duck_lab.challenge import explore, sequence
 from duck_lab.challenge.challenges import CHALLENGES, build
 from duck_lab.challenge.judge import Judge
+from duck_lab.challenge.runner import Remote
 from duck_lab.challenge.scene import miniview_scene, mjcf
 from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav.run import Navigator, host_links
-from duck_lab.nav.runlog import RunLog
+from runfile import keys
 from runfile.catalog import default_data
+from runfile.truthcopy import TruthLog
 import simhost
 from simhost.truth import Sample, Sampler
-from duck_lab.challenge.runner import Remote
-from runfile import keys
-from runfile.truthcopy import TruthLog
 
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
@@ -127,68 +125,6 @@ def with_truth(rows: list, log: TruthLog) -> list:
     return out
 
 
-def one_in_process(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) -> dict:
-    """The navigator in the runner's own process, with the truth in its rows: the way before RFC-0021 step 2, kept for the
-    comparison of the two (--in-process) and removed after it."""
-    scene = build(challenge, seed)
-    path = mjcf(scene, host.scenarios, host.scene_dir)
-    sc = data / "scenes" / scene.id / "scene.json"
-    sc.parent.mkdir(parents=True, exist_ok=True)
-    sc.write_text(json.dumps(miniview_scene(scene), separators=(",", ":")))
-    name = datetime.now().strftime("run-%Y%m%d-%H%M%S")
-    run_out = out / scene.id / name
-    run_out.mkdir(parents=True, exist_ok=True)
-    simhost.reset(host, str(path))
-    runlog = RunLog(data, scene.id, name, "challenge", run_out)
-    judge = Judge(scene)
-    nav = sampler = None
-    try:
-        nav = Navigator(**host_links(host, truth=True), log=run_out / "ticks.jsonl", runlog=runlog)
-        trail = explore.Trail(scene)
-
-        # The judge reads the truth itself, from the runner's own sampler (RFC-0021 step 2), not from the navigator's
-        # rows; its times are the navigator's clock, so an invariant sits where it happened in the run.
-        def watch(s: Sample) -> None:
-            t = round(time.monotonic() - nav._t0, 3)
-            trail.see(t, s.pose)
-            broken = judge.check(t, s.pose, s.z)
-            if not broken:
-                return
-            if broken["rule"] in STOPS:
-                nav.abort = f"invariant {broken['rule']}: {broken['why']}"
-            nav.record(event="invariant", rule=broken["rule"], why=broken["why"])
-        sampler = Sampler(host, on_sample=watch).start()
-        truth = lambda: sampler.latest.pose  # noqa: E731 - at most a sample period old: the duck stands at each use
-        if nav.loc.pose() is None and not nav.fix():
-            nav.survey()
-        if nav.loc.pose() is None:
-            out_ = {"status": "refused", "why": "no pose on the map after the survey"}
-            verdict = judge.verdict(out_, truth())
-        elif scene.mode == "sequence":
-            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene, truth))
-        elif scene.mode == "explore":
-            verdict = explore.verdict(scene, judge, trail, explore.run(nav, scene, run_out, truth), run_out)
-        else:
-            map_from_world = compose(nav.loc.pose(), inverse(truth()))
-            out_ = nav.go_to(compose(map_from_world, (scene.goal[0], scene.goal[1], 0.0))[:2], scene.time_s)
-            verdict = judge.verdict(out_, truth())
-        if sampler.error:
-            verdict = {**verdict, "pass": False, "failed": verdict["failed"] + [f"the truth sampler stopped: {sampler.error}"]}
-        nav.record(event="judged", why="PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
-    finally:
-        if sampler is not None:
-            sampler.stop()
-        if nav is not None:
-            nav.close()
-        runlog.finish()
-    row = {"challenge": challenge, "seed": seed, "scene": scene.id, "run": runlog.key, "right": scene.right,
-           "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict,
-           "truth_hz": round(sampler.samples / max(time.monotonic() - nav._t0, 1e-9), 1) if sampler and nav else None,
-           "rtf": sampler.rtf() if sampler else None}
-    (run_out / "result.json").write_text(json.dumps(row, indent=1))
-    return row
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("challenge", choices=sorted(CHALLENGES))
@@ -197,7 +133,6 @@ def main() -> None:
     ap.add_argument("--miniview-data", type=Path, default=default_data())
     ap.add_argument("--out", type=Path, default=Path("runs/challenges"), help="per run: ticks.jsonl and result.json")
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
-    ap.add_argument("--in-process", action="store_true", help="the navigator in this process with the truth in its rows (the way before RFC-0021 step 2), for comparison")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     args = ap.parse_args()
     if args.miniview_data is None:
@@ -207,7 +142,7 @@ def main() -> None:
     started = time.monotonic()
     try:
         for i in range(args.runs):
-            row = (one_in_process if args.in_process else one)(host, args.challenge, args.seed + i, args.miniview_data, args.out)
+            row = one(host, args.challenge, args.seed + i, args.miniview_data, args.out)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23

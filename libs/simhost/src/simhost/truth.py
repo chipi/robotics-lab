@@ -8,6 +8,8 @@
 stamps its rows with (`wall_ns`), so a sample pairs with a row by it. `sim_time` is the simulator's own time: the real-time
 factor is how fast it moves against the wall clock (`rtf`)."""
 
+from __future__ import annotations
+
 import json
 import math
 import socket
