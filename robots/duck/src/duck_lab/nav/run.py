@@ -947,6 +947,13 @@ class Navigator:
                 row["truth"] = [round(v, 4) for v in self.body.pose()]
                 row["truth_z"] = round(self.body.height, 4)
                 row["truth_quat"] = [round(v, 6) for v in self.body.quat]
+            if "pose" in row and "event" not in row:
+                # robotd's odometry as it came, before any scale (K41: a run can be replayed through the dead reckoning); recorded
+                # only, nothing reads it back while driving
+                st = getattr(getattr(self, "state", None), "latest", None)
+                if st and st.get("odom"):
+                    row["odom_raw"] = [round(v, 5) for v in odom_pose(st)]
+                    row["odom_raw_t_ns"] = st.get("t_ns")
             if self._log:
                 self._log.write(json.dumps(row) + "\n")
                 self._log.flush()

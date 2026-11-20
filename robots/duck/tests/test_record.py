@@ -83,6 +83,40 @@ r = rows(follow)
 check("path following adds its own fields to the same row, one row per command",
       len(r) == 1 and r[0]["nearest_mm"] == 400 and r[0]["turning"] is False and r[0]["vx"] == 0.2, r)
 
+# Robotd's odometry as it came (K41), on every tick row, recorded only: what the navigator sends and what the row says otherwise are
+# the same with the odometry as without.
+STATE = {"t_ns": 7_000_000_000, "odom": {"position": [3.04, -1.25, 0.0], "yaw": 1.0}}
+with_odom, without = navigator((1.0, 2.0, 0.5)), navigator((1.0, 2.0, 0.5))
+with_odom.state.latest = STATE
+for n in (with_odom, without):
+    n.move(Twist(0.2, 0.0), nearest_mm=400)
+    n.move(Twist(0.0, 0.8))
+    n.record(event="reached", goal=1)
+a, b = rows(with_odom), rows(without)
+strip = lambda r: {k: v for k, v in r.items() if k not in ("odom_raw", "odom_raw_t_ns")}  # noqa: E731
+check("every tick row carries robotd's odometry pose and its time, unscaled", [x["odom_raw"] for x in a[:2]] == [[3.04, -1.25, 1.0]] * 2
+      and all(x["odom_raw_t_ns"] == 7_000_000_000 for x in a[:2]), a[:2])
+check("... an event row does not", "odom_raw" not in a[2] and a[2]["event"] == "reached", a[2])
+check("... a run without a state yet, or a state with no odometry, has none, and no row is lost",
+      not any("odom_raw" in x for x in b) and len(a) == len(b) == 3)
+check("the same commands reach the robot with and without it", with_odom.robot.calls == without.robot.calls and len(without.robot.calls) == 2,
+      (with_odom.robot.calls, without.robot.calls))
+check("... and the rows are the same but for those two fields (the pose, the command, the extras)",
+      [strip(x) | {"t": 0} for x in a] == [x | {"t": 0} for x in b], (a, b))
+from pathlib import Path  # noqa: E402
+from runfile.adapters.duck import DuckLog  # noqa: E402
+
+log = DuckLog(Path("/nonexistent/duck-run"), "apartment")     # what the run recorder turns a row into
+log.start, log.header, log.fresh = None, [], True
+tick = next(p for _, k, p in log.feed_row(a[0]) if k == "tick")
+check("the recorder keeps it in the tick's raw, the belief and the command where they were",
+      tick["raw"]["odom_raw"] == [3.04, -1.25, 1.0] and tick["raw"]["odom_raw_t_ns"] == 7_000_000_000 and tick["belief"] == [1.0, 2.0, 0.5]
+      and tick["cmd"] == [0.2, 0.0], tick)
+partial = navigator((1.0, 2.0, 0.5))
+partial.state.latest = {"t_ns": 1, "imu": {"quat": [1, 0, 0, 0], "gyro": [0, 0, 0]}}
+partial.move(Twist())
+check("a state with only an IMU adds no odometry", "odom_raw" not in rows(partial)[0] and len(rows(partial)) == 1)
+
 # The measured joint angles (ADR-0016): robotd's 15, in its order, become the run's joint_* signals; a state with another
 # count says nothing about them (a joint guessed into the wrong name is worse than none).
 from duck_lab.nav.runlog import JOINTS, SIGNALS  # noqa: E402
