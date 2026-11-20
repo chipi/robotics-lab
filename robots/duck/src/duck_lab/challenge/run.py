@@ -35,6 +35,7 @@ from duck_lab.nav.run import Navigator, host_links
 from duck_lab.nav.runlog import RunLog
 from runfile.catalog import default_data
 import simhost
+from simhost.truth import Sample, Sampler
 
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
@@ -51,40 +52,50 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) ->
     simhost.reset(host, str(path))
     runlog = RunLog(data, scene.id, name, "challenge", run_out)
     judge = Judge(scene)
-    nav = None
+    nav = sampler = None
     try:
         nav = Navigator(**host_links(host, truth=True), log=run_out / "ticks.jsonl", runlog=runlog)
         trail = explore.Trail(scene)
 
-        def watch(row):
-            trail.see(row["t"], row["truth"])
-            broken = judge.check(row["t"], row["truth"], row.get("truth_z", 1.0))
+        # The judge reads the truth itself, from the runner's own sampler (RFC-0021 step 2), not from the navigator's
+        # rows; its times are the navigator's clock, so an invariant sits where it happened in the run.
+        def watch(s: Sample) -> None:
+            t = round(time.monotonic() - nav._t0, 3)
+            trail.see(t, s.pose)
+            broken = judge.check(t, s.pose, s.z)
             if not broken:
-                return None
+                return
             if broken["rule"] in STOPS:
                 nav.abort = f"invariant {broken['rule']}: {broken['why']}"
-            return {"event": "invariant", "rule": broken["rule"], "why": broken["why"]}
-        nav.watch = watch
+            nav.record(event="invariant", rule=broken["rule"], why=broken["why"])
+        sampler = Sampler(host, on_sample=watch).start()
+        truth = lambda: sampler.latest.pose  # noqa: E731 - at most a sample period old: the duck stands at each use
         if nav.loc.pose() is None and not nav.fix():
             nav.survey()
         if nav.loc.pose() is None:
             out_ = {"status": "refused", "why": "no pose on the map after the survey"}
-            verdict = judge.verdict(out_, nav.body.pose())
+            verdict = judge.verdict(out_, truth())
         elif scene.mode == "sequence":
-            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene))
+            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene, truth))
         elif scene.mode == "explore":
-            verdict = explore.verdict(scene, judge, trail, explore.run(nav, scene, run_out), run_out)
+            verdict = explore.verdict(scene, judge, trail, explore.run(nav, scene, run_out, truth), run_out)
         else:
-            map_from_world = compose(nav.loc.pose(), inverse(nav.body.pose()))
+            map_from_world = compose(nav.loc.pose(), inverse(truth()))
             out_ = nav.go_to(compose(map_from_world, (scene.goal[0], scene.goal[1], 0.0))[:2], scene.time_s)
-            verdict = judge.verdict(out_, nav.body.pose())
+            verdict = judge.verdict(out_, truth())
+        if sampler.error:
+            verdict = {**verdict, "pass": False, "failed": verdict["failed"] + [f"the truth sampler stopped: {sampler.error}"]}
         nav.record(event="judged", why="PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
     finally:
+        if sampler is not None:
+            sampler.stop()
         if nav is not None:
             nav.close()
         runlog.finish()
     row = {"challenge": challenge, "seed": seed, "scene": scene.id, "run": runlog.key, "right": scene.right,
-           "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict}
+           "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict,
+           "truth_hz": round(sampler.samples / max(time.monotonic() - nav._t0, 1e-9), 1) if sampler and nav else None,
+           "rtf": sampler.rtf() if sampler else None}
     (run_out / "result.json").write_text(json.dumps(row, indent=1))
     return row
 

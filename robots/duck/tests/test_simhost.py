@@ -120,6 +120,75 @@ check("an unpatched duck-sim (sudo on every down) is refused, the patch named", 
 sim_script.write_text('        if systemctl is-active --quiet "$name" 2>/dev/null; then\n')
 check("a patched duck-sim is used, from the host's microduck checkout", simhost.duck_sim(h) == str(sim_script))
 
+# ---- the truth sampler (RFC-0021 step 2): the runner's own reader of the body server ---------------------------------------
+import math  # noqa: E402
+import socketserver  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+from simhost.truth import Sampler  # noqa: E402
+
+
+class FakeBody(socketserver.ThreadingTCPServer):
+    """The body server's two ops a sampler uses; the trunk at x = sim_time (it moves 1 m per simulated second), its
+    simulated time running at `rtf` of the wall clock. Counts its connections."""
+    allow_reuse_address = daemon_threads = True
+
+    def __init__(self, rtf: float):
+        self.rtf, self.t0, self.connections = rtf, time.monotonic(), 0
+        super().__init__(("127.0.0.1", 0), Handler)
+
+
+class Handler(socketserver.StreamRequestHandler):
+    def handle(self):
+        self.server.connections += 1
+        for line in self.rfile:
+            req = json.loads(line)
+            if req["op"] == "hello":
+                out = {"ok": True}
+            else:
+                st = (time.monotonic() - self.server.t0) * self.server.rtf
+                yaw = 0.5
+                out = {"trunk": [st, -1.0, 0.116], "sim_time": st,
+                       "imu": {"quat": [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]}}
+            self.wfile.write((json.dumps(out) + "\n").encode())
+
+
+body = FakeBody(rtf=0.5)
+threading.Thread(target=body.serve_forever, daemon=True).start()
+seen = []
+port_host = simhost.parse({**GOOD, "truth_port": body.server_address[1]}, tmp / "fake.json")
+sampler = Sampler(port_host, on_sample=seen.append, hz=50).start()
+first = sampler.latest
+time.sleep(0.6)
+sampler.stop()
+check("start() returns with a sample in hand: the trunk's x, y, yaw, its height and orientation",
+      first is not None and first.pose[1] == -1.0 and abs(first.pose[2] - 0.5) < 1e-9 and first.z == 0.116
+      and len(first.quat) == 4, first)
+check("samples come on their own thread, at about the rate asked (50 Hz for 0.6 s)", 20 <= len(seen) <= 40, len(seen))
+check("each sample carries the host's wall clock (what a navigator row is paired by) and the runner's own t, in order",
+      all(abs(s.wall_ns - time.time_ns()) < 5e9 for s in seen) and [s.t for s in seen] == sorted(s.t for s in seen))
+check("the real-time factor is the simulated time against the wall clock (0.5 here)", abs(sampler.rtf() - 0.5) < 0.05,
+      sampler.rtf())
+check("one connection to the body server", body.connections == 1, body.connections)
+try:
+    Sampler(simhost.parse({**GOOD, "truth_port": None}, tmp / "none.json"))
+    msg = ""
+except ValueError as e:
+    msg = str(e)
+check("a host with no truth has no sampler, and says so", "no truth" in msg, msg)
+body2 = FakeBody(rtf=1.0)
+threading.Thread(target=body2.serve_forever, daemon=True).start()
+gone = Sampler(simhost.parse({**GOOD, "truth_port": body2.server_address[1]}, tmp / "gone.json"), hz=50).start()
+body2.shutdown()
+body2.server_close()
+gone._body._sock.shutdown(2)          # the body server gone: the next read fails
+time.sleep(0.3)
+check("a body server that goes away stops the sampler with the error said (a judge with no truth must know)",
+      gone.error is not None, gone.error)
+gone.stop()
+body.shutdown()
+
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")
 raise SystemExit(1 if failures else 0)

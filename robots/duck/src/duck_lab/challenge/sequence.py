@@ -12,21 +12,21 @@ from duck_lab.nav.evaluate import REACHED_M
 from duck_lab.nav.frames import compose, inverse
 
 
-def run(nav, scene: Scene) -> list:
+def run(nav, scene: Scene, truth) -> list:
     """Visit scene.goals in order, each within scene.time_s; stop at the first goal not reached (the run after it would
     start from a place nobody planned). One row per goal tried: the status the navigator gave, the truth's distance to the
     goal, and the belief's distance and heading difference from the truth (both in the map frame, the truth put there by the
     start's transform), and what kind of place the goal is (beside a box, by the hole, in the open)."""
-    map_from_world = compose(nav.loc.pose(), inverse(nav.body.pose()))
+    map_from_world = compose(nav.loc.pose(), inverse(truth()))
     kinds = scene.notes.get("goal_kinds", [])
     rows = []
     for i, goal in enumerate(scene.goals, 1):
-        began = nav.body.pose()
+        began = truth()
         out = nav.go_to(compose(map_from_world, (goal[0], goal[1], 0.0))[:2], scene.time_s)
-        truth, belief = nav.body.pose(), nav.loc.pose()
-        in_map = compose(map_from_world, truth)
+        here, belief = truth(), nav.loc.pose()
+        in_map = compose(map_from_world, here)
         row = {"n": i, "goal": [round(goal[0], 3), round(goal[1], 3)], "kind": kinds[i - 1] if i <= len(kinds) else None,
-               "status": out["status"], "why": out.get("why"), "error_m": round(math.dist(truth[:2], goal), 3),
+               "status": out["status"], "why": out.get("why"), "error_m": round(math.dist(here[:2], goal), 3),
                "belief_error_m": round(math.dist(belief[:2], in_map[:2]), 3) if belief else None,
                "heading_error_deg": round(abs(math.degrees(math.remainder(belief[2] - in_map[2], math.tau))), 1) if belief else None,
                "leg_m": round(math.dist(began[:2], goal), 2)}

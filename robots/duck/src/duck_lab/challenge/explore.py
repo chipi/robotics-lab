@@ -35,10 +35,10 @@ class Trail:
                 self.entered[a.name] = round(t, 1)
 
 
-def run(nav, scene: Scene, out_dir: Path) -> dict:
+def run(nav, scene: Scene, out_dir: Path, truth) -> dict:
     """The explorer for the scene's budget; the run's start and its final map are written beside the run (start.json,
     map_grid.json: what explore_score reads). Returns the explorer's result and how it ended."""
-    (out_dir / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": nav.body.pose(), "scale": nav.scale}))
+    (out_dir / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": truth(), "scale": nav.scale}))
     explorer = Explorer(nav, out_dir)
     result = explorer.run(scene.time_s / 60)
     ended = [e for e in explorer.events if e.get("event") in ENDS]
