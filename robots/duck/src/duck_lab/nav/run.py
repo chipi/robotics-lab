@@ -587,7 +587,8 @@ class Navigator:
         except EmptyMap:
             room_now, room_ahead = recovery.projected_room(pose, self.blocked, recovery.CREEP_M)
         nearest_mm = self.range.nearest_mm()
-        kind = recovery.choose(attempt, nearest_mm, front, haz, recovery.creep_gains_room(room_now, room_ahead, self.pivot_obstacle_m))
+        kind = recovery.choose(attempt, nearest_mm, front, haz, recovery.creep_gains_room(room_now, room_ahead, self.pivot_obstacle_m),
+                               recovery.arc_room_ok(room_now, self.fp.radius_m))
         why = None
         if kind == "creep":
             why = self._walk(0.0, recovery.CREEP_M, self.loco.slowest_mps, 0.0)

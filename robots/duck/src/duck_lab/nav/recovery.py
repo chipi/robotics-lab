@@ -15,7 +15,8 @@ CREEP_FLOOR_MM = 150      # the sensor's reading at the end of a creep: the foot
 CREEP_M = 0.10            # a creep of 0.1-0.2 m; the advisor's derivation (2026-11-19): short, to where a pivot is allowed, not a nudge
 CREEP_CLEAR_MM = CREEP_FLOOR_MM + round(CREEP_M * 1000)    # what the sensor must show to begin one: 250 mm
 ARC_CLEAR_MM = 300        # an arc needs more: it reaches 0.2 m ahead plus the footprint (run.ARC_CLEAR_MM, the same number)
-MAX_ATTEMPTS = 3          # recoveries in a row (no leg reached between) before a refusal counts
+ARC_MOVE_M = 0.06         # the most an arc moved the duck in the 10 recoveries of b12 and b13 (0.057 m): what it may spend of the room
+MAX_ATTEMPTS = 3         # recoveries in a row (no leg reached between) before a refusal counts
 HAZARD_DROP_M = 1.0       # a remembered drop this near is what an arc turns away from; else the nearest obstacle point ...
 HAZARD_OBSTACLE_M = 0.4   # ... this near
 DROP_AHEAD_M = 0.6        # a remembered drop within this (cliff.CLIFF_STOP_M) in front of the duck forbids a creep
@@ -63,13 +64,22 @@ def projected_room(pose: tuple, points: list, ahead_m: float) -> tuple:
             min((math.dist(ahead, p[:2]) for p in points), default=math.inf))
 
 
-def choose(attempt: int, clear_mm: float | None, drop_in_front: bool, haz: tuple | None, creep_ok: bool = True) -> str:
+def arc_room_ok(room_now: float, footprint_m: float) -> bool:
+    """An arc may walk ARC_MOVE_M and the trunk centre must still be a footprint from the remembered obstacles. The sensor's
+    ARC_CLEAR_MM does not say it: b13 r3 arced at 0.098 m of room (0.016 m ahead) because the head, turned away, showed 408 mm,
+    and ended 0.052 m from the obstacle's outline (footprint 0.083)."""
+    return room_now >= footprint_m + ARC_MOVE_M - 1e-9
+
+
+def choose(attempt: int, clear_mm: float | None, drop_in_front: bool, haz: tuple | None, creep_ok: bool = True,
+           arc_ok: bool = True) -> str:
     """The motion of recovery attempt number `attempt` (0, 1, 2 ...): "creep" (odd attempts try the other motion first when
     both are possible, so a creep that did not free the duck is followed by an arc, and the reverse), "arc", or "stand" (the
     survey alone). Creep: the sensor shows CREEP_CLEAR_MM ahead, no remembered drop is in front and creep_ok (the room ahead
-    is a turn's room: creep_gains_room). Arc: there is a hazard to turn away from and the sensor shows ARC_CLEAR_MM."""
+    is a turn's room: creep_gains_room). Arc: there is a hazard to turn away from, the sensor shows ARC_CLEAR_MM and arc_ok (the
+    memory's room: arc_room_ok)."""
     can_creep = clear_mm is not None and clear_mm >= CREEP_CLEAR_MM and not drop_in_front and creep_ok
-    can_arc = clear_mm is not None and clear_mm >= ARC_CLEAR_MM and haz is not None
+    can_arc = clear_mm is not None and clear_mm >= ARC_CLEAR_MM and haz is not None and arc_ok
     order = ("creep", "arc") if attempt % 2 == 0 else ("arc", "creep")
     for kind in order:
         if (kind == "creep" and can_creep) or (kind == "arc" and can_arc):

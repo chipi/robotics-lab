@@ -245,5 +245,22 @@ out = rc.recover(1)
 check("attempt 1 with room and a drop 0.4 m to the left: an arc to the right, away from it", out["action"] == "arc"
       and out["turned_rad"] > 0.3 and rc.pose[2] < 0.0, (out, rc.pose))
 
+# b13 r3 (t 408.2): an arc at 0.098 m of room, 0.016 m ahead, with the sensor showing 408 mm (the head was looking elsewhere) walked
+# the trunk centre from 0.094 m to 0.052 m of the obstacle's outline (footprint 0.083): the memory said no, the arc did not ask it
+rc = _Recoverer([(0.0, -0.098)])
+rc.range.mm = 420
+out = rc.recover(1)
+check("an arc with the room under the footprint and an arc's travel (0.098 m of room): the survey alone, no motion (b13 r3)",
+      out["action"] == "stand" and rc.surveys == 1 and rc.pose == (0.0, 0.0, 0.0) and rc.rows[-1]["moved_m"] == 0.0, (out, rc.rows[-1]))
+rc = _Recoverer([(0.0, -0.16)])
+rc.range.mm = 420
+out = rc.recover(1)
+check("... and with the room (0.16 m, above 0.083 + 0.06): the arc away, as before", out["action"] == "arc" and rc.pose[2] > 0.0, (out, rc.pose))
+check("the arc's room: the footprint and the largest travel an arc made in b12 and b13 (0.057 m): 0.143 m is enough, 0.142 is not",
+      recovery.arc_room_ok(0.143, 0.083) and not recovery.arc_room_ok(0.142, 0.083) and recovery.arc_room_ok(math.inf, 0.083))
+check("choose: an arc the room forbids is the survey alone; the rest of the choice is as it was",
+      recovery.choose(1, 420, False, drop_left, arc_ok=False) == "creep" and recovery.choose(1, 240, False, drop_left, arc_ok=False) == "stand"
+      and recovery.choose(1, 420, False, drop_left) == "arc")
+
 print("RECOVERY", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)
