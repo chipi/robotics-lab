@@ -143,5 +143,8 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    (arena question 4)?
 3. Several robots on one host (one simulator with several ducks: the body server takes `--ducks`),
    or one robot per host?
-4. How the lead reaches the MacBook to prove step 3 there: the operator runs the script and pastes
-   its output, or a way in (ssh over the tailnet) the operator sets up.
+4. ~~How the lead reaches the MacBook~~ Answered 2026-11-20 (the operator: "you can SSH to it", and
+   the `prod` session on the laptop to discuss what the laptop needs): ssh over the tailnet,
+   `markodragoljevic@markos-macbook-pro-1` with `~/.ssh/macbook`. Read then: arm64, macOS 15.7.3,
+   Apple M4 Pro; Homebrew and uv in `/opt/homebrew/bin` (not on a non-interactive shell's PATH);
+   Xcode present; no Rust (cargo) yet; no Pollen checkout.
