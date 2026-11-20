@@ -271,6 +271,31 @@ runner, the judge, the recording, the Observatory or Mission Control.
 
 ## Phase 5 — the views
 
+**First, a design round, before any build** (the operator, 2026-11-20: "I don't want to rush. I want
+to consolidate all of these things and make a round of how exactly we're going to do that and in
+which surfaces. I'd like to see some proposals and some mock-ups"). Everything below consolidated
+into one design: which surface each thing lives on (Mission Control, the Observatory, the shared
+observability stack), proposals with options, and clickable mock-ups the operator reviews and
+decides on, decision by decision (the `ux-baseline-review` way: decisions recorded, prototypes as
+before/after). Built only after the decisions. What the design starts from, in the operator's words:
+
+- **Think as the operator, journey by journey.** Before a mission, the control panel: "I'm in the
+  robot configuring, things are working"; calibration with what to look at highlighted and a step
+  guide. While the robot works, the Observatory's explorer with the robot's small model at the side,
+  the option to see a simulation or animation of what it is doing, the status of everything, shown
+  visually. Something off: a small alarm, click it, inspect it. "A dose of interactivity, that it's
+  not only nice looking, but actually you can do something with it."
+- **Close the loop with anomalies:** the anomalies (RFC-0019) observed across all of the
+  observability, not only the navigator's.
+- **OpenTelemetry: yes** (answers the open question below). "Our system should not be a sink into
+  all of these things": configuration management that points every robot's and subsystem's logs,
+  metrics and traces at the operator's VictoriaLogs, VictoriaMetrics and VictoriaTraces (the Mac
+  mini), the homelab session asked to create what is needed there; our own views keep a simplified
+  viewer on top of that store, not a store of their own.
+- **The data we collect now, reassessed:** whether the runs (format 2 MCAP in the data folder, the
+  Observatory's index) also belong somewhere else in the long run; a system design that scales out
+  to more robots and more data.
+
 - **RFC-0019:** the Observatory's anomaly track, map pins and the three maps; Mission Control's live
   side; the anomaly panel in the video and the watch page.
 - **RFC-0020:** the robot page in the Observatory; runs carrying their profile and plugin versions;
@@ -312,8 +337,8 @@ runner, the judge, the recording, the Observatory or Mission Control.
 - **Telemetry out** (the operator: "observability from those systems going to either my system or
   some standard observability systems"): the subsystems' states, the joints' health and the run's
   anomalies sent live in OpenTelemetry's form, to the homelab's stack or any standard backend.
-  **Open for the operator:** the OpenTelemetry library is a new dependency (yes or no); without it
-  the same format can be written by hand.
+  **Decided (the operator, 2026-11-20): OpenTelemetry, yes**, the data sent to the operator's
+  Victoria stack, not kept by us (the design round above).
 
 ## Phase 6 — the first other robot
 
