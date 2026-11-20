@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Is this machine a host that runs our navigator on Pollen's simulator (RFC-0021 section 4)? One line per requirement,
+PASS, FAIL (with what to do) or NOT RUN, then HOST-CHECK PASS or FAIL. Installs nothing, changes nothing.
+
+    scripts/host-check                 # the host file from $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json
+    scripts/host-check --host FILE
+
+Standard library only, so it runs with the system python3 before any of our environments exist (Linux and macOS).
+Not checked: the simulator's real-time factor (it needs the simulator up: step 4's course run measures it)."""
+
+import argparse
+import json
+import platform
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "libs" / "simhost" / "src"))
+import simhost  # noqa: E402
+
+PINS = ROOT / "robots" / "duck" / "sim" / "pollen-pins.json"
+# What a host may carry on top of Pollen's commits: our duck-sim patch, and our apartment scene written into Pollen's tree
+# (robots/duck/sim/apartment_backlash.py). Anything else is a local change the pins do not describe.
+ALLOWED = {"microduck": {" M scripts/duck-sim"},
+           "microduck_rl": {"?? src/mjlab_microduck/robot/microduck/scene_apartment_backlash.xml"}}
+INSTALL = {   # how a missing tool is installed, per platform: printed, never run (a system package is the person's)
+    "Linux-arch": {"git": "sudo pacman -S git", "cc": "sudo pacman -S base-devel", "python3": "sudo pacman -S python",
+                   "cargo": "curl https://sh.rustup.rs -sSf | sh   (rustup)", "uv": "curl -LsSf https://astral.sh/uv/install.sh | sh"},
+    "Linux-debian": {"git": "sudo apt install git", "cc": "sudo apt install build-essential", "python3": "sudo apt install python3",
+                     "cargo": "curl https://sh.rustup.rs -sSf | sh   (rustup)", "uv": "curl -LsSf https://astral.sh/uv/install.sh | sh"},
+    "Darwin": {"git": "xcode-select --install", "cc": "xcode-select --install", "python3": "xcode-select --install",
+               "cargo": "brew install rustup && rustup-init", "uv": "brew install uv"},
+}
+
+results = []
+
+
+def line(status: str, name: str, detail: str = "") -> None:
+    results.append(status)
+    print(f"{status:8} {name}" + (f"  — {detail}" if detail else ""), flush=True)
+
+
+def flavour() -> str:
+    if platform.system() == "Darwin":
+        return "Darwin"
+    try:
+        os_release = Path("/etc/os-release").read_text()
+    except OSError:
+        os_release = ""
+    return "Linux-arch" if "arch" in os_release.lower() else "Linux-debian"
+
+
+def run(cmd: list, cwd: Path | None = None, strip: bool = True) -> tuple:
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, str(e)
+    out = p.stdout + p.stderr
+    return p.returncode, out.strip() if strip else out
+
+
+def which(tool: str, host) -> str | None:
+    """A tool on PATH, or (cargo) in the host's cargo_bin, or (uv) where Homebrew and the installer put it: a
+    non-interactive shell's PATH often has neither."""
+    extra = [host.cargo_bin] if host else []
+    extra += [Path("/opt/homebrew/bin"), Path.home() / ".local" / "bin", Path.home() / ".cargo" / "bin"]
+    found = shutil.which(tool)
+    if found:
+        return found
+    for d in extra:
+        if (Path(d) / tool).exists():
+            return str(Path(d) / tool)
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--host", help="the host file (default: $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    args = ap.parse_args()
+    fl = flavour()
+    print(f"host-check on {platform.system()} {platform.machine()} ({fl}), python {platform.python_version()}", flush=True)
+
+    host = None
+    try:
+        host = simhost.load(args.host)
+        line("PASS", "the host file", str(host.source))
+    except simhost.HostError as e:
+        line("FAIL", "the host file", f"{e}")
+
+    for tool in ("git", "python3", "cc", "cargo", "uv"):
+        path = which(tool, host)
+        if path:
+            line("PASS", f"tool {tool}", path)
+        else:
+            line("FAIL", f"tool {tool}", f"not found; install: {INSTALL[fl][tool]}")
+
+    pins = json.loads(PINS.read_text())
+    if host is None:
+        line("NOT RUN", "Pollen's checkouts, the patch, mapd, the policy, the simulator environment", "no host file")
+    else:
+        for name, path in (("microduck", host.microduck), ("microduck_rl", host.microduck_rl)):
+            want = pins[name]["commit"]
+            if not (path / ".git").exists():
+                line("FAIL", f"{name} checkout", f"none at {path}; scripts/host-setup clones {pins[name]['url']} at {want[:8]}")
+                continue
+            code, head = run(["git", "rev-parse", "HEAD"], path)
+            if code or head != want:
+                line("FAIL", f"{name} at the pinned commit", f"{path} is at {head[:8] if not code else head}, the pin is {want[:8]} "
+                     f"({PINS.relative_to(ROOT)})")
+            else:
+                line("PASS", f"{name} at the pinned commit", f"{path} {want[:8]}")
+            code, status = run(["git", "status", "--porcelain"], path, strip=False)    # its first column is meaningful
+            extra = sorted(set(s for s in status.splitlines() if s.strip()) - ALLOWED[name]) if not code else [status]
+            if extra:
+                line("FAIL", f"{name} has no local changes but ours", f"also: {extra[:5]}")
+            else:
+                line("PASS", f"{name} has no local changes but ours")
+        try:
+            simhost.duck_sim(host)
+            line("PASS", "duck-sim is patched (no sudo on down)")
+        except (RuntimeError, OSError) as e:
+            line("FAIL", "duck-sim is patched (no sudo on down)", str(e))
+        mapd = host.microduck / "target" / "debug" / "mapd"
+        line("PASS" if mapd.exists() else "FAIL", "mapd built", str(mapd) if mapd.exists()
+             else f"no {mapd}: cd {host.microduck} && cargo build -p mapd")
+        # duck-sim's own rule (its policies()): the checkout's policies/, else the fetched set under the state folder
+        policy = next((p for p in (host.microduck / "policies" / "velstand.onnx", host.state / "policies" / "current" / "velstand.onnx")
+                       if p.exists()), host.state / "policies" / "current" / "velstand.onnx")
+        line("PASS" if policy.exists() else "FAIL", "the walking policy", str(policy) if policy.exists()
+             else f"no {policy}: the first `duck-sim up` fetches it (needs the network once)")
+        py = host.microduck_rl / ".venv" / "bin" / "python"
+        if not py.exists():
+            line("FAIL", "the simulator environment", f"no {py}: cd {host.microduck_rl} && uv sync")
+        else:
+            code, out = run([str(py), "-c", "import mujoco, onnxruntime, mjlab_microduck; print(mujoco.__version__)"])
+            line("PASS" if code == 0 else "FAIL", "the simulator environment imports (mujoco, onnxruntime, mjlab_microduck)",
+                 f"mujoco {out}" if code == 0 else out.splitlines()[-1] if out else "")
+        scene = host.scene_dir / "scene_apartment_backlash.xml"
+        line("PASS" if scene.exists() else "FAIL", "the apartment scene", str(scene) if scene.exists()
+             else f"no {scene}: {host.microduck_rl}/.venv/bin/python robots/duck/sim/apartment_backlash.py {host.microduck_rl}")
+
+    for project, imports in (("robots/duck", "duck_lab, simhost, runfile"), ("apps/observatory", "observatory, runfile")):
+        py = ROOT / project / ".venv" / "bin" / "python"
+        if not py.exists():
+            line("FAIL", f"our environment {project}", f"no {py}: make {'duck-sync' if 'duck' in project else 'observatory-sync'}")
+            continue
+        code, out = run([str(py), "-c", f"import {imports}"])
+        line("PASS" if code == 0 else "FAIL", f"our environment {project} imports {imports}",
+             "" if code == 0 else (out.splitlines()[-1] if out else ""))
+
+    line("NOT RUN", "the simulator's real-time factor", "needs the simulator up; measured by a course run (RFC-0021 step 4)")
+    bad = results.count("FAIL")
+    print(f"HOST-CHECK {'PASS' if not bad else 'FAIL'} ({results.count('PASS')} pass, {bad} fail, "
+          f"{results.count('NOT RUN')} not run)", flush=True)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

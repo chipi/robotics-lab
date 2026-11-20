@@ -265,6 +265,9 @@ the reset and the socket paths out of the navigator into a host file and host to
 by the runner only, a host setup script and a host check script (Linux and macOS on Apple Silicon
 from the start), one course run through the split on this workstation (the first host; another host
 later, the operator's, with the arena), a second minimal navigator through the same contract.
+The runner keeps RFC-0021 §3.1's rule (the operator, 2026-11-20): everything that knows a simulator
+lives behind the host file's `kind`, so a second simulator is a new kind, not a change to the
+runner, the judge, the recording, the Observatory or Mission Control.
 
 ## Phase 5 — the views
 
@@ -291,6 +294,16 @@ later, the operator's, with the arena), a second minimal navigator through the s
   odometry localisation: the test of "a robot platform where we can load any robot".
 - The NXT after it, once it has a sensor that sees the floor. The NXT hardware test (the operator at
   the brick) can happen at any time.
+
+## After the plan
+
+- **TurtleBot3 in Gazebo under ROS 2** (the operator, 2026-11-20: "a different robot, different
+  sensor and different sim: it tests our capabilities of abstraction"; "it comes after we finish our
+  vision"; a real one maybe bought later). The second simulator kind (RFC-0021 §3.1,
+  `gazebo-turtlebot3`): wheeled, a 2D LiDAR, ROS 2 topics, Gazebo's truth, SDF scenes; its profile
+  and ROS plugins (RFC-0020), its host setup and check, then a phase-1-style course and challenges
+  1–5 judged by the same runner. Needs ROS 2 and Gazebo installed on a host: the operator approves
+  that install first.
 
 ## Parked
 

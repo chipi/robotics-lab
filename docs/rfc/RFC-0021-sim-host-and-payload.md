@@ -69,6 +69,40 @@ the host per goal, starts the payload with the sockets, gives it the goal, reads
 (the judge stays ours: RFC-0008's rules, the phase 1 bar), and writes the recording with the truth
 added by the runner, not by the payload.
 
+### 3.1 Simulator kinds
+
+The operator, 2026-11-20: "different robots bring different simulators … we want our mini explorer
+and control to work with all of those combinations", and: "let's add support for TurtleBot3, that is
+the ROS standard, which I don't have but plan buying maybe".
+
+**The rule:** a host file's `kind` names the simulator, and everything that knows a simulator lives
+behind that kind. Nothing outside it names Pollen, MuJoCo, Gazebo or ROS. A kind provides four
+things:
+
+1. **Reset** to a named scene, with the robot at its start and an empty map.
+2. **The robot's connections**, by the names its profile's plugins take (RFC-0020): for the duck,
+   robotd, the depth sensor and mapd sockets; for a ROS robot, topics and services.
+3. **A truth reader** for the runner: the robot's pose in the world, its height and orientation,
+   on the runner's clock.
+4. **A scene writer**: a challenge scene (ADR-0015's boxes and floor slabs) in the simulator's own
+   format (MuJoCo XML for Pollen's; an SDF world for Gazebo).
+
+The runner, the judge, the recording (format 2), the Observatory and Mission Control are the same for
+every kind. A robot is a profile and plugins (RFC-0020); a simulator is a kind; a host file pairs
+them. The Observatory already reads only the run format, and Mission Control picks an adapter by type
+in the robot file, so both need no change for a new kind beyond its adapter.
+
+**Kinds:** `pollen-duck-sim` (built: `libs/simhost`). **Planned second: `gazebo-turtlebot3`**,
+ROBOTIS's TurtleBot3 (Burger or Waffle Pi) in Gazebo under ROS 2, the ROS standard's reference
+robot. It proves the rule on a second simulator, a second robot (wheeled, 2D LiDAR) and ROS together:
+its plugins would speak ROS 2 topics (`/cmd_vel`, `/scan`, `/odom`, a map from slam_toolbox or its
+own), its truth Gazebo's model pose, its scenes SDF. ADR-0001 holds: no ROS foundation under our
+code, ROS terms and shapes; a ROS bridge is that kind's plugins, not the navigator's core. A real
+TurtleBot3 later (the operator may buy one) is the same profile with real plugins, as the real duck
+is to the simulated one. Not built: ROS 2 and Gazebo are not installed on any host (an install
+the operator approves first), and the operator placed it after the current plan ("it comes after we
+finish our vision": EXECUTION-PLAN, "After the plan").
+
 ## 4. Setting up a host
 
 The operator, 2026-11-20: a setup script beside the check, "I want to set up this project on a new

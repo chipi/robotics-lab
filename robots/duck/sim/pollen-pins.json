@@ -1,0 +1,5 @@
+{
+  "why": "The Pollen commits every host runs (RFC-0021 section 4): scripts/host-setup clones these, scripts/host-check checks them. Change a pin only with a run of phase 1 and challenges 1-5 on the new commits.",
+  "microduck": {"url": "https://github.com/pollen-robotics/microduck.git", "commit": "094d4bb4af31ec181156e1ea772437fdd7a55978"},
+  "microduck_rl": {"url": "https://github.com/pollen-robotics/microduck_rl.git", "commit": "0daab160d3fb1c2cbaba16a4a19052f36709dd9e"}
+}
