@@ -46,7 +46,9 @@ def run(nav, scene: Scene, out_dir: Path, truth) -> dict:
             "why": ended[-1].get("why") if ended else None}
 
 
-def verdict(scene: Scene, judge: Judge, trail: Trail, out: dict, out_dir: Path) -> dict:
+def verdict(scene: Scene, judge: Judge, trail: Trail, out: dict, out_dir: Path, rows: list | None = None) -> dict:
+    """`rows`: the navigator's rows with the truth in them; default its ticks.jsonl (a navigator that recorded the truth
+    itself). A payload's rows have none: the runner puts its own in first (run.with_truth)."""
     grid = json.loads((out_dir / "map_grid.json").read_text())
     start = json.loads((out_dir / "start.json").read_text())
     cov = floor.coverage(scene, grid, start)
@@ -60,7 +62,8 @@ def verdict(scene: Scene, judge: Judge, trail: Trail, out: dict, out_dir: Path) 
         for a in scene.areas[1:]:
             if a.name not in trail.entered:
                 failed.append(f"never entered {a.name}: the door not crossed")
-    rows = [json.loads(line) for line in open(out_dir / "ticks.jsonl")]
+    if rows is None:
+        rows = [json.loads(line) for line in open(out_dir / "ticks.jsonl")]
     belief = belief_score(out_dir, rows)
     return {"pass": not failed, "failed": failed, "status": out["end"], "why": out.get("why"), "error_m": None,
             "end": out["end"], "end_s": out["end_s"], "legs": out["legs"], "coverage": cov, "bar": COVERAGE_BAR,

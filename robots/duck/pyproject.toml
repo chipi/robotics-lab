@@ -31,6 +31,7 @@ duck-world = "duck_lab.world:main"
 duck-challenge = "duck_lab.challenge.run:main"
 duck-gate = "duck_lab.gate_proxy:main"
 duck-nav-server = "duck_lab.nav.server:main"
+duck-payload = "duck_lab.payload:main"
 duck-pic = "duck_lab.miniview:main"
 
 [build-system]

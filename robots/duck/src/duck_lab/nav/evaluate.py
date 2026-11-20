@@ -30,7 +30,6 @@ from duck_lab.nav.frames import compose, inverse
 from duck_lab.nav.run import Navigator, host_links
 from duck_lab.nav.runlog import add_args, open_from_args
 from duck_lab.profile import load as load_profile
-import simhost
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 GOALS = Path(__file__).resolve().parents[3] / "sim" / "phase1_goals.json"
@@ -124,6 +123,7 @@ def main() -> None:
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     add_args(ap)
     args = ap.parse_args()
+    import simhost      # the command's: this module's scoring is also imported where there is no host (the payload)
     host = simhost.load(args.host)
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)

@@ -36,11 +36,100 @@ from duck_lab.nav.runlog import RunLog
 from runfile.catalog import default_data
 import simhost
 from simhost.truth import Sample, Sampler
+from duck_lab.challenge.runner import Remote
+from runfile import keys
+from runfile.truthcopy import TruthLog
 
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
 
 def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) -> dict:
+    """One challenge run, the navigator as a payload process (RFC-0021 §3): it gets the robot's sockets and nothing else;
+    the runner reads the truth (its own sampler), judges, and writes the official run with the truth put in (runner.Remote,
+    runfile.truthcopy)."""
+    scene = build(challenge, seed)
+    path = mjcf(scene, host.scenarios, host.scene_dir)
+    sc = data / "scenes" / scene.id / "scene.json"
+    sc.parent.mkdir(parents=True, exist_ok=True)
+    sc.write_text(json.dumps(miniview_scene(scene), separators=(",", ":")))
+    name = datetime.now().strftime("run-%Y%m%d-%H%M%S")
+    run_out = out / scene.id / name
+    run_out.mkdir(parents=True, exist_ok=True)
+    key = keys.make_key("duck", scene.id, name)
+    simhost.reset(host, str(path))
+    judge = Judge(scene)
+    trail = explore.Trail(scene)
+    truth_log = TruthLog(run_out / "truth.jsonl")
+    nav = sampler = None
+    t0 = time.monotonic()
+    try:
+        sampler = Sampler(host).start()
+        nav = Remote(host, run_out, scene.id, name, data, key, truth_log)
+
+        route = {"checks": 0, "max": None}       # the payload's connections to the truth's port, looked at every 2 s
+
+        def watch(s: Sample) -> None:
+            truth_log.add(s.wall_ns, s.pose, s.z, s.quat)
+            if sampler.samples % 40 == 1:
+                n = nav.truth_connections(host.truth_port)
+                if n is not None:
+                    route["checks"] += 1
+                    route["max"] = max(route["max"] or 0, n)
+            trail.see(s.t, s.pose)
+            broken = judge.check(s.t, s.pose, s.z)
+            if not broken:
+                return
+            if broken["rule"] in STOPS:
+                nav.abort = f"invariant {broken['rule']}: {broken['why']}"
+            nav.record(event="invariant", rule=broken["rule"], why=broken["why"])
+        sampler.on_sample = watch
+        truth = lambda: sampler.latest.pose  # noqa: E731 - at most a sample period old: the duck stands at each use
+        pose = nav.localise()
+        if pose is None:
+            out_ = {"status": "refused", "why": "no pose on the map after the survey"}
+            verdict = judge.verdict(out_, truth())
+        elif scene.mode == "sequence":
+            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene, truth))
+        elif scene.mode == "explore":
+            (run_out / "start.json").write_text(json.dumps({"map": list(pose), "truth": truth(), "scale": nav.scale}))
+            result = nav.explore(scene.time_s / 60)
+            rows = with_truth([json.loads(line) for line in open(run_out / "ticks.jsonl")], truth_log)
+            verdict = explore.verdict(scene, judge, trail, result, run_out, rows)
+        else:
+            map_from_world = compose(pose, inverse(truth()))
+            out_ = nav.go_to(compose(map_from_world, (scene.goal[0], scene.goal[1], 0.0))[:2], scene.time_s)
+            verdict = judge.verdict(out_, truth())
+        if sampler.error:
+            verdict = {**verdict, "pass": False, "failed": verdict["failed"] + [f"the truth sampler stopped: {sampler.error}"]}
+        nav.record(event="judged", why="PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
+    finally:
+        if sampler is not None:
+            sampler.stop()
+        if nav is not None:
+            nav.close()
+        truth_log.close()
+    copy = nav.copy.stats() if nav is not None else None
+    row = {"challenge": challenge, "seed": seed, "scene": scene.id, "run": key, "right": scene.right,
+           "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict,
+           "truth_hz": round(sampler.samples / max(time.monotonic() - t0, 1e-9), 1) if sampler else None,
+           "rtf": sampler.rtf() if sampler else None, "truth_copy": copy, "payload": "process",
+           "payload_truth_connections": route if nav is not None else None}
+    (run_out / "result.json").write_text(json.dumps(row, indent=1))
+    return row
+
+
+def with_truth(rows: list, log: TruthLog) -> list:
+    """The navigator's rows with the runner's truth put in by wall clock, for the scores that read rows (explore_score)."""
+    out = []
+    for r in rows:
+        s = log.nearest(r["wall_ns"]) if isinstance(r.get("wall_ns"), int) else None
+        out.append({**r, "truth": s["pose"]} if s and "event" not in r else r)
+    return out
+
+
+def one_in_process(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) -> dict:
+    """The navigator in the runner's own process, with the truth in its rows: the way before RFC-0021 step 2, kept for the
+    comparison of the two (--in-process) and removed after it."""
     scene = build(challenge, seed)
     path = mjcf(scene, host.scenarios, host.scene_dir)
     sc = data / "scenes" / scene.id / "scene.json"
@@ -108,6 +197,7 @@ def main() -> None:
     ap.add_argument("--miniview-data", type=Path, default=default_data())
     ap.add_argument("--out", type=Path, default=Path("runs/challenges"), help="per run: ticks.jsonl and result.json")
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
+    ap.add_argument("--in-process", action="store_true", help="the navigator in this process with the truth in its rows (the way before RFC-0021 step 2), for comparison")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     args = ap.parse_args()
     if args.miniview_data is None:
@@ -117,7 +207,7 @@ def main() -> None:
     started = time.monotonic()
     try:
         for i in range(args.runs):
-            row = one(host, args.challenge, args.seed + i, args.miniview_data, args.out)
+            row = (one_in_process if args.in_process else one)(host, args.challenge, args.seed + i, args.miniview_data, args.out)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23

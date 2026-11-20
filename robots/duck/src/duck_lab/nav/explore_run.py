@@ -25,7 +25,6 @@ from worldmodel.objects import load_kinds
 from duck_lab.site_cli import SITES
 from worldmodel.site import Site
 from duck_lab.nav.sim_camera import SimCamera
-import simhost
 
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
@@ -357,6 +356,7 @@ def main() -> None:
         ap.error("--find and --inventory need the objects (drop --no-objects)")
     args.out.mkdir(parents=True, exist_ok=True)
     runlog = open_from_args(args, args.out.name, "exploration", args.out)
+    import simhost      # the command's, not the explorer's: the explorer also runs inside a payload, which has no host
     nav = Navigator(**host_links(simhost.load(args.host), truth=True), log=args.out / "ticks.jsonl", runlog=runlog)
     if args.no_fix_gate:
         nav.loc.max_jump_m = None
