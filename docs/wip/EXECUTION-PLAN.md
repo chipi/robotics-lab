@@ -173,6 +173,38 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
   burst steering only if the trim does not walk straight. Challenge 16 waits on this.
 - An apartment batch scored by floor coverage.
 
+### Phase 4 results (2026-11-20, branch `p4-nav`, not pushed; the apartment batch not run)
+
+**Built** (3 commits on `c79fe6b`):
+
+- **K8 closed for the navigator's dead reckoning:** the profile's `odometry.by_speed` table, its
+  validator, each odometry step of a straight walk scaled by the speed commanded (arcs and pivots
+  keep `scale`, which measured right on arcs). Re-measured: truth/odometry 0.856, 0.893, 0.913,
+  0.940 at 0.2, 0.25, 0.3, 0.4 m/s. Walking at 0.2 m/s in navigation, belief/truth 0.993 over
+  30.8 m. The map stays in one scale: K39.
+- **RFC-0012 step 2, the pace:** `nav/pace.py`, `locomotion.pace` in the profile. On challenges
+  6, 7, 10, 11 (seeds 1–3, two repeats) against the base: no gain in refusals or closeness, about
+  15 % more time on 10 and 11. Caution covers 79 % of the straight walking.
+  `caution_mps` = `cruise_mps` turns it off.
+- **K1, the crossing, open:** a constant trim does not help (3 of 5 against 5 of 5 with no turn
+  commanded); a heading deadband built and left off: challenges 16–19 base 1/24, pace 2/24,
+  pace and deadband 5/24, deadband alone 4/24 (STEPS.md). Challenge 16 still waits.
+
+**The regression gate** (the tree with the pace, deadband off): challenges 1–11, seeds 1–3 once:
+1–4 3/3 each, 5 2/3 (seed 2 refused "no room to turn", the flip K13 describes), 6 0/3, 7 0/3,
+8 and 9 3/3 (the right answer is a refusal; all refused), 10 3/3, 11 3/3; 0 contacts, 0 falls,
+the closest approach by truth 0.126 m (challenge 11, the contact line 0.083 m). Phase 1's
+evaluation: `PHASE1 goals 20: navigator reached 20, within 0.25 m by truth 20, refused 0,
+timeouts or stalls 0, goals with a contact 0, falls 0 — bar MET` (run 19: 19 of 20; goal 20 is
+now reached, 0.103 m).
+
+**Challenges 6 and 7 do not meet the 8-of-10 bar, on the base too (K40):** 1/6 and 0/6 on
+`c79fe6b`, 2/3 and 0/3 before phase 3 (`c61ca7f`); last recorded 6–10 of 10 on 2026-11-16.
+
+**Not done:** the apartment exploring batch (the lead); the map's error against truth by pace
+(K39); 10 seeds anywhere (3 seeds, per the operator); the pace's measurement on 16–19 beyond the
+table in STEPS.md; any cause for K40.
+
 ## Phase 5 — the views
 
 - **RFC-0019:** the Observatory's anomaly track, map pins and the three maps; Mission Control's live
