@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Make this machine a host that runs our navigator on Pollen's simulator (RFC-0021 section 4). Run once on a new machine,
+safe to run again: each step skips what is already done, prints what it did, and the script stops at the first failure.
+
+    scripts/host-setup --dry-run                     # what each step would do; changes nothing
+    scripts/host-setup                               # Pollen's checkouts under ~/pollen
+    scripts/host-setup --pollen-dir /work/pollen     # or where they are (or go)
+
+The steps:
+  1. tools: git, python3, a C toolchain, cargo, uv. A missing one is printed with the command that installs it on this
+     platform and the script stops: system packages are the person's to install (never a system upgrade).
+  2. Pollen's microduck and microduck_rl, cloned at the commits in robots/duck/sim/pollen-pins.json (an existing checkout
+     at another commit is not moved: that is the person's decision, said and stopped).
+  3. mapd built (cargo build -p mapd; duck-sim builds its other daemons itself); the simulator's environment (uv sync).
+  4. our patch to duck-sim (robots/duck/sim/patches/duck-sim-sudo-free-down.patch) and our apartment scene in Pollen's tree.
+  5. our environments (make duck-sync observatory-sync control-sync).
+  6. the host file, ~/.config/robotics-lab/host.json (simhost init; an existing one is kept).
+  7. scripts/host-check.
+The network is used by steps 2, 3 and 5 (clones, crates, wheels) and by the first `duck-sim up` (the walking policy).
+Standard library only."""
+
+import argparse
+import json
+import platform
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "libs" / "simhost" / "src"))
+import simhost  # noqa: E402
+from simhost.simulator import SUDO_ASK  # noqa: E402
+
+PINS = json.loads((ROOT / "robots" / "duck" / "sim" / "pollen-pins.json").read_text())
+PATCH = ROOT / "robots" / "duck" / "sim" / "patches" / "duck-sim-sudo-free-down.patch"
+DRY = False
+
+
+def say(step: str, what: str) -> None:
+    print(f"[{step}] {what}", flush=True)
+
+
+def stop(step: str, why: str) -> None:
+    print(f"[{step}] STOP: {why}\nHOST-SETUP FAIL", flush=True)
+    sys.exit(1)
+
+
+def run(step: str, cmd: list, cwd: Path | None = None) -> None:
+    say(step, ("would run: " if DRY else "run: ") + " ".join(map(str, cmd)) + (f"   (in {cwd})" if cwd else ""))
+    if DRY:
+        return
+    p = subprocess.run([str(c) for c in cmd], cwd=cwd)
+    if p.returncode:
+        stop(step, f"{cmd[0]} exited {p.returncode}")
+
+
+def tool(name: str, cargo_bin: Path) -> str | None:
+    for d in (None, cargo_bin, Path("/opt/homebrew/bin"), Path.home() / ".local" / "bin"):
+        p = shutil.which(name) if d is None else (str(d / name) if (d / name).exists() else None)
+        if p:
+            return p
+    return None
+
+
+def main() -> int:
+    global DRY
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--pollen-dir", type=Path, default=Path.home() / "pollen", help="where Pollen's two checkouts are or go")
+    ap.add_argument("--dry-run", action="store_true", help="print what each step would do; change nothing")
+    a = ap.parse_args()
+    DRY = a.dry_run
+    cargo_bin = Path.home() / ".cargo" / "bin"
+    print(f"host-setup on {platform.system()} {platform.machine()}" + (" (dry run: nothing is changed)" if DRY else ""), flush=True)
+
+    # 1. tools: checked, never installed
+    hc = subprocess.run([sys.executable, str(ROOT / "scripts" / "host-check")], capture_output=True, text=True)
+    missing = [line for line in hc.stdout.splitlines() if line.startswith("FAIL") and " tool " in line]
+    for name in ("git", "python3", "cc", "cargo", "uv"):
+        p = tool(name, cargo_bin)
+        say("1 tools", f"{name}: {p or 'MISSING'}")
+    if missing:
+        stop("1 tools", "install these first, then run this again:\n  " + "\n  ".join(missing))
+    git, cargo, uv = tool("git", cargo_bin), tool("cargo", cargo_bin), tool("uv", cargo_bin)
+
+    # 2. Pollen's checkouts at the pins
+    paths = {"microduck": a.pollen_dir / "microduck", "microduck_rl": a.pollen_dir / "microduck_rl"}
+    for name, path in paths.items():
+        want = PINS[name]["commit"]
+        if (path / ".git").exists():
+            head = subprocess.run([git, "rev-parse", "HEAD"], cwd=path, capture_output=True, text=True).stdout.strip()
+            if head != want:
+                stop("2 pollen", f"{path} is at {head[:8]}, the pin is {want[:8]}: moving an existing checkout is yours to "
+                                 f"decide (git -C {path} fetch && git -C {path} checkout {want})")
+            say("2 pollen", f"{name}: at the pin {want[:8]}, nothing to do")
+            continue
+        if path.exists() and any(path.iterdir()):
+            stop("2 pollen", f"{path} exists and is not a git checkout")
+        run("2 pollen", [git, "clone", PINS[name]["url"], path])
+        run("2 pollen", [git, "-C", path, "checkout", "--detach", want])
+
+    # 3. mapd built, the simulator's environment
+    run("3 build", [cargo, "build", "-p", "mapd"], cwd=paths["microduck"])
+    run("3 build", [uv, "sync"], cwd=paths["microduck_rl"])
+
+    # 4. our duck-sim patch and our apartment scene
+    script = paths["microduck"] / "scripts" / "duck-sim"
+    if script.exists() and SUDO_ASK not in script.read_text():
+        say("4 ours", "duck-sim already patched, nothing to do")
+    else:
+        run("4 ours", [git, "-C", paths["microduck"], "apply", PATCH])
+    scene = paths["microduck_rl"] / "src" / "mjlab_microduck" / "robot" / "microduck" / "scene_apartment_backlash.xml"
+    if scene.exists():
+        say("4 ours", "the apartment scene is there, nothing to do")
+    else:
+        run("4 ours", [paths["microduck_rl"] / ".venv" / "bin" / "python", ROOT / "robots" / "duck" / "sim" / "apartment_backlash.py",
+                       paths["microduck_rl"]], cwd=ROOT)
+
+    # 5. our environments
+    run("5 ours", ["make", "duck-sync", "observatory-sync", "control-sync"], cwd=ROOT)
+
+    # 6. the host file
+    where = simhost.where()
+    if where.exists():
+        say("6 host file", f"{where} exists, kept (simhost init --force replaces it)")
+    else:
+        run("6 host file", [sys.executable, "-c",
+                            f"import sys; sys.path.insert(0, {str(ROOT / 'libs' / 'simhost' / 'src')!r}); "
+                            "from simhost.cli import main; sys.exit(main(sys.argv[1:]))",
+                            "init", "--microduck", paths["microduck"], "--microduck-rl", paths["microduck_rl"]])
+
+    # 7. the check
+    if DRY:
+        say("7 check", f"would run: {ROOT / 'scripts' / 'host-check'}")
+        print("HOST-SETUP DRY RUN (nothing was changed)", flush=True)
+        return 0
+    code = subprocess.run([sys.executable, str(ROOT / "scripts" / "host-check")]).returncode
+    print("HOST-SETUP " + ("PASS" if code == 0 else "FAIL (host-check, above)"), flush=True)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
