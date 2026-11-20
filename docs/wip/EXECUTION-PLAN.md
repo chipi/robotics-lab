@@ -170,8 +170,8 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 
 - **Odometry by speed (K8)** first, since look-far makes slow walking common.
 - **RFC-0012, look far:** the pace from the map ahead, its numbers read from the robot's profile.
-- **Crossing edges (K1):** first probe a constant trim against the walk's drift (5 tries); a deadband
-  or burst steering only if the trim does not walk straight. Challenge 16 waits on this.
+- **Crossing edges (K1):** first probe a constant trim against the walk's drift (5 tries); a
+  deadband or burst steering only if the trim does not walk straight. Challenge 16 waits on this.
 - A regression gate: challenges 1–11 (3 seeds), phase 1's evaluation on the fixed goals.
 - **Open items closed alongside** (the operator, 2026-11-19: "close all open items along the way"):
   the probes run and fixed (K28), old runs marked in `duck-replay` (K33), the radial model on
@@ -187,9 +187,9 @@ refusal burst 3 legs within 0.10 m, room disagrees 280 mm, head off its walking 
 [RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md), accepted by the operator 2026-11-19, built
 after the phase 4 checkpoint (any host that runs Pollen's simulator; the first is this workstation):
 the reset and the socket paths out of the navigator into a host file and host tool, the truth read
-by the runner only, a host check script, one course run through the split on this workstation (the
-first host; another host later, the operator's, with the arena), a second minimal navigator through
-the same contract.
+by the runner only, a host setup script and a host check script (Linux and macOS on Apple Silicon
+from the start), one course run through the split on this workstation (the first host; another host
+later, the operator's, with the arena), a second minimal navigator through the same contract.
 
 ### Phase 4 results (2026-11-20, branch `p4-nav`, not pushed; the apartment batch not run)
 

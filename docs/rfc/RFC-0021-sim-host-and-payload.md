@@ -71,11 +71,38 @@ added by the runner, not by the payload.
 
 ## 4. Setting up a host
 
-A script in this repository, run once on a fresh host, checks and reports each requirement with
-PASS/FAIL (Pollen's repositories present and built, the MuJoCo environment importable, the
-`duck-sim` patch applied, our packages installed) and writes `host.json`. It installs nothing on its
-own; it prints what is missing. A container image for the payload and runner follows if the host
-script proves the line is clean.
+The operator, 2026-11-20: a setup script beside the check, "I want to set up this project on a new
+laptop, run that script and it sets up the Pollen repo, the sim, everything", and macOS from the
+start: "I would like to run all of this on my laptop, a MacBook Pro M4 Pro".
+
+**Platforms from the start:** Linux x86-64 (Arch/Omarchy, the operator's workstation; Debian and
+Ubuntu, servers) and macOS on Apple Silicon (the operator's MacBook Pro, M4 Pro).
+
+**The setup script** (`scripts/host-setup`), run once on a new machine, safe to run again (each step
+skips what is done), each step printing what it did and stopping at the first failure:
+
+1. The tools: git, Rust (cargo), uv, a C toolchain, what MuJoCo needs headless. What is missing is
+   printed with the command that installs it on that platform (pacman, apt, Homebrew); system
+   packages are the person's to install, never a system upgrade.
+2. Pollen's `microduck` and `microduck_rl`, cloned from Pollen's own repositories at the commits
+   this repository pins (one pin file, the versions every host runs).
+3. Pollen's Rust services built; their simulation environment created with uv.
+4. Our patch to `duck-sim` applied (the sudo-free stop, `robots/duck/sim/patches/`).
+5. Our environments, by the Makefile's sync targets.
+6. `host.json` written for this machine.
+7. The check script run, its PASS/FAIL lines printed.
+
+**The check script** (`scripts/host-check`) reports each requirement with PASS/FAIL (Pollen's
+repositories present at the pinned commits and built, the simulation environment importable, the
+`duck-sim` patch applied, our packages installed, the simulator's real-time factor) and installs
+nothing. A container image for the payload and runner follows if the scripts prove the line clean.
+
+**macOS, what is known and what is not (read 2026-11-20, nothing built on a Mac yet):** Pollen's
+`duck-sim` already handles a laptop and a Mac (its own comments: "`setsid` is util-linux: Linux has
+it, a Mac does not", and the laptop's paths and identity). Their Rust services keep the Linux-only
+parts (the head's I2C bus, the camera capture) to the real robot. The open risk is their simulation
+environment: it pins `warp-lang`, `mjlab` (built on MuJoCo Warp) and `torch`; whether that runs on
+Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 finds out.
 
 ## 5. Steps
 
@@ -87,8 +114,10 @@ script proves the line is clean.
    move to the runner. Proof: phase 1's evaluation and challenges 1–5 judged the same as before
    (pass counts over repeats, the simulator is not deterministic: K13); the recordings open in the
    Observatory with truth where they had it.
-3. **The host check script**, tried on a clean machine (another machine, or a fresh container
-   standing in for one).
+3. **The setup and check scripts** (§4), each platform proven on a clean machine: Linux in a fresh
+   container standing in for a new machine; macOS on the operator's MacBook Pro (M4 Pro), the
+   simulation environment first, since it is the open risk; phase 1's 20 goals run there and the
+   recording opened in the Observatory.
 4. **One course through the split on this workstation** (the operator's X3, Omarchy, the first
    host): phase 1's 20 goals run by the runner with the host file, the recording opened in the
    Observatory beside a run made the old way. A second host is the operator's, later, with the basic
@@ -114,3 +143,5 @@ script proves the line is clean.
    (arena question 4)?
 3. Several robots on one host (one simulator with several ducks: the body server takes `--ducks`),
    or one robot per host?
+4. How the lead reaches the MacBook to prove step 3 there: the operator runs the script and pastes
+   its output, or a way in (ssh over the tailnet) the operator sets up.
