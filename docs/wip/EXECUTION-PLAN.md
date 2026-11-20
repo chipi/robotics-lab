@@ -290,6 +290,10 @@ runner, the judge, the recording, the Observatory or Mission Control.
 
 ## Phase 6 — the first other robot
 
+**Order changed (the operator, 2026-11-20):** "I still don't have EV3, so we go to 5, then planner,
+and then we're gonna see where we are." Phase 4b, then phase 5, then the planner (K22, K40's fix,
+K42 and the rest); phase 6 waits for the EV3 and is decided after the planner.
+
 - **The EV3** through RFC-0020 step 5: its profile, a tracked locomotion plugin, its sensors,
   odometry localisation: the test of "a robot platform where we can load any robot".
 - The NXT after it, once it has a sensor that sees the floor. The NXT hardware test (the operator at
@@ -304,6 +308,15 @@ runner, the judge, the recording, the Observatory or Mission Control.
   and ROS plugins (RFC-0020), its host setup and check, then a phase-1-style course and challenges
   1–5 judged by the same runner. Needs ROS 2 and Gazebo installed on a host: the operator approves
   that install first.
+- **A robot arm, starting with the SO-ARM101** (the operator, 2026-11-20: "that's completely
+  different kind of robot. Just put it on the list … something to think about"). To think through,
+  not planned: an arm does not navigate, so what it shares with the platform is the parts around the
+  navigator: a profile and plugins (joints, gripper, a camera), the gate and its lease (RFC-0017),
+  the run format and the Observatory (joint states and a 3D view of the arm, as the duck's body
+  explorer is), Mission Control's robot page and goals of another kind (reach, pick, place), and a
+  simulator kind (RFC-0021 §3.1; which simulator models of the SO-ARM101 exist is not checked yet).
+  Questions for then: what a goal is for an arm, what the judge measures, and whether the
+  navigator's interfaces (RFC-0020) have an arm's counterpart or the arm is a second kind of payload.
 
 ## Parked
 
