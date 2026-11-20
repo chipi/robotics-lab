@@ -303,5 +303,43 @@ look_at_fridge(rel2, (0.0, 0.0), n=1)
 look_at_fridge(rel2, (0.3, 0.0), n=3, t0=20.0)
 check("sightings that disagree make no anchor", sm2.anchors == {})
 
+# a hypothesis (a held loop closure's frame, K26): do the sightings sit on their anchors at a pose that is only a guess?
+AGREE_M = 0.2
+
+
+def probe_fridge(rel, pose, n=6, rng=1.1, t0=10.0, noise=0.0, window=None):
+    """n sightings of the fridge placed from `pose` (as the hypothesis would place the duck), 0.5 s apart; the window and the verdict."""
+    window = window or []
+    for k in range(n):
+        d = det("fridge", 1.0 + (noise if k % 2 else -noise), 0.5, 0.3, 1.8)
+        d.range_m = rng
+        window = rel.probe([d], pose, t0 + 0.5 * k, window)
+    return window, rel.agreement(window, AGREE_M)
+
+
+sm, rel = fridge_site()
+sm.anchor_landmarks()
+w, v = probe_fridge(rel, (0.05, 0.0, 0.0))
+check("a pose that puts the fridge on its anchor: agrees", v and v["status"] == "agrees" and v["n"] == 6 and v["landmarks"] == ["fridge_1"], v)
+w, v = probe_fridge(rel, (0.3, -0.2, 0.0))
+check("a pose 0.36 m off the anchor: disagrees, with the median that says how far", v and v["status"] == "disagrees"
+      and math.dist(v["median"], (-0.3, 0.2)) < 1e-9, v)
+w, v = probe_fridge(rel, (0.05, 0.0, 0.0), noise=0.2)
+check("residuals that disagree with each other: refused", v and v["status"] == "refused", v)
+w, v = probe_fridge(rel, (0.05, 0.0, 0.0), n=3)
+check("fewer than min_n residuals: no verdict yet", v is None and len(w) == 3, v)
+w, v = probe_fridge(rel, (1.5, 0.0, 0.0))
+check("a pose 1.5 m off is no match to any anchor: nothing to judge by", v is None and w == [], (w, v))
+w, v = probe_fridge(rel, (0.05, 0.0, 0.0), n=4, t0=10.0)
+w2, v2 = probe_fridge(rel, (0.05, 0.0, 0.0), n=1, t0=30.0, window=w)
+check("residuals older than window_s drop out", len(w2) == 1 and v2 is None, w2)
+check("a probe changes nothing of the relocaliser's: its own window and the anchors", rel.window == [] and list(sm.anchors) == ["fridge_1"])
+sm = SemanticMap(kinds)
+for k in range(CONFIRM_N):
+    sm.integrate([det("fridge", 1.0, 0.5, 0.3, 1.8)], ORIGIN, float(k))
+rel = Relocaliser(sm)
+w, v = probe_fridge(rel, (0.0, 0.0, 0.0), n=8)
+check("a run without anchors: a probe makes none, and has nothing to judge by", sm.anchors == {} and rel.pending == {} and v is None, (sm.anchors, v))
+
 print("WORLD-MODEL", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

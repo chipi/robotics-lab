@@ -141,6 +141,11 @@
       "deadband_m": 0.15,
       "gain": 0.7,
       "max_step_m": 0.3
+    },
+    "closure": {
+      "agree_m": 0.2,
+      "measured": "2026-11-20, robots/duck/sim/probes/closure_replay.py over the 1614 recorded runs (the data folder and the phase 4 safety runs): mapd's loop counter stepped in 2, and both closures, taken unchecked, made the belief worse (explore-p4s-fix-r2 at 318.8 s: the belief moved 2.279 m and 0.70 rad, error 0.11 -> 2.22 m; explore-p4s-base-r2 at 250.0 s: moved 0.427 m, error 0.17 -> 0.37 m). After each, the belief's error vector changed by at most 0.11 m in 15 s: mapd's later fixes stayed on the closure's frame, so fixes agreeing with the closure (hold_n of them within hold_agree_m) do not tell a wrong closure from a right one. A landmark seen under the closure's frame does: in base-r2 the coat rack sat 0.36-0.52 m off its anchor under it (7 verdicts, all 'disagrees', 2 more 'refused'), and in fix-r2 no anchored landmark was within match_m of where the closure put the duck. The relocaliser's own median against the truth, 12 corrections in 6 runs: p50 0.127 m, p90 0.194 m, max 0.322 m. No right closure was recorded, so the tolerance is not measured against one.",
+      "why": "A loop closure mapd believed was taken at once (K26), and both seen were wrong. It is held like any large fix, and taken only when min_n sightings within spread_m of each other, placed as the closure's frame would place the duck, put the anchored landmarks within this of their anchors: the relocaliser's p90 error, since a closer agreement cannot be told from its noise, and about the belief's own error before the two closures (0.11 and 0.17 m). With no landmark in sight it stays held."
     }
   },
   "error_budget": {

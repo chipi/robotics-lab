@@ -100,3 +100,34 @@ class Relocaliser:
         if n > k.max_step_m:
             dx, dy = dx * k.max_step_m / n, dy * k.max_step_m / n
         return {"status": "corrected", "dx": round(dx, 3), "dy": round(dy, 3), **info}
+
+    def probe(self, detections: list, pose: tuple, t: float, window: list) -> list:
+        """Would these sightings sit on their anchors if the duck were at `pose`? `window` (the caller's, not the relocaliser's)
+        and the residuals of this sighting's anchored landmarks, the last window_s seconds of them. A pose that is only a
+        hypothesis (a held loop closure's frame, K26) changes nothing here: no anchor is made, the relocaliser's own window stays."""
+        sm, k = self.semantic, self.numbers
+        out = list(window)
+        for d in detections:
+            if not sm.is_landmark(d.kind) or d.range_m > k.range_m:
+                continue
+            p = d.part().moved(pose)
+            hit = self._anchor_for(d, p)
+            if hit is not None:
+                out.append((t, hit[0], hit[1][0] - p.x, hit[1][1] - p.y))
+        return [w for w in out if t - w[0] <= k.window_s]
+
+    def agreement(self, window: list, agree_m: float) -> dict | None:
+        """What a probe's window says of its hypothesis: None until min_n residuals; "refused" when they disagree with each
+        other by over spread_m; else "agrees" when their median is within agree_m of the anchors (the hypothesis puts the
+        landmarks where they were kept), "disagrees" when it is not."""
+        k = self.numbers
+        if len(window) < k.min_n:
+            return None
+        xs, ys = sorted(w[2] for w in window), sorted(w[3] for w in window)
+        mx, my = xs[len(xs) // 2], ys[len(ys) // 2]
+        spread = max(math.hypot(w[2] - mx, w[3] - my) for w in window)
+        info = {"n": len(window), "median": [round(mx, 3), round(my, 3)], "spread_m": round(spread, 3),
+                "landmarks": sorted({w[1] for w in window}), "agree_m": agree_m}
+        if spread > k.spread_m:
+            return {"status": "refused", **info}
+        return {"status": "agrees" if math.hypot(mx, my) <= agree_m else "disagrees", **info}

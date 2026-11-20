@@ -143,7 +143,7 @@ def navigator(grid=None, pose=(1.0, 2.5, 0.0), nearest_mm=600, profile=REAL):
     nav.suspects = SuspectMemory(sd.suspect_frames, sd.suspect_ratio, sd.clear_m)
     nav._map_raw, nav.fix_fault, nav.fault_grid, nav.frames_on, nav._world_key = None, None, False, True, None
     nav.abort, nav.semantic, nav.room, nav.area, nav.area_agrees = None, None, None, None, None
-    nav._sem_lock, nav._closing = threading.Lock(), threading.Event()
+    nav._sem_lock, nav._closing, nav._closure_window = threading.Lock(), threading.Event(), []
     nav.range._nearest_mm = nearest_mm
     nav.range.unseen_ahead = lambda *a, **k: None          # the step check looks at floor not yet seen: not what is under test here
     nav.localisation.on_odom(NS, pose)
@@ -198,6 +198,73 @@ fix_at(turn, 2, 1.0, 2.5, 0.6)
 r = anomalies(turn, "fix_jump_held")
 check("a fix that only turns the belief 0.6 rad (limit 0.35) is held too, the margin in radians", len(r) == 1 and r[0]["values"]["margin_unit"] == "rad"
       and abs(r[0]["margin"] - 0.25) < 1e-3, r)
+
+# ---- a loop closure (K26): held with the same anomaly; the landmarks take it, or it stays held --------------------------------
+from worldmodel.objects import load_kinds  # noqa: E402
+from worldmodel.relocalise import Relocaliser  # noqa: E402
+from worldmodel.semantic_map import CONFIRM_N, Detection, SemanticMap  # noqa: E402
+
+
+def closure_at(nav, k, x, y, loops):
+    """mapd's pose at second k with its loop counter at `loops` (the odometry standing still at (1.0, 2.5))."""
+    nav.localisation.on_odom(k * NS, (1.0, 2.5, 0.0))
+    nav.mapd.status = {"state": {"pose": {"x": x, "y": y, "yaw": 0.0}, "t_ns": k * NS}, "loops": loops}
+    return nav.fix()
+
+
+def closed_navigator(fridge_at):
+    """A navigator whose mapd closed a loop at second 3 and moved the belief 0.9 m, with a fridge anchored at `fridge_at`."""
+    nav = navigator()
+    closure_at(nav, 2, 1.0, 2.5, 0)
+    closure_at(nav, 3, 1.0, 3.4, 1)
+    sm = SemanticMap(load_kinds(), "apartment")
+    for k in range(CONFIRM_N):
+        sm.integrate([Detection("fridge", fridge_at[0], fridge_at[1], 0.3, 0.0, 1.8, math.hypot(*fridge_at))], (0.0, 0.0, 0.0), float(k))
+    sm.anchor_landmarks()
+    nav.semantic, nav.reloc = sm, Relocaliser(sm, numbers=nav.profile.localisation.landmarks)
+    return nav
+
+
+def look_at_fridge(nav, looks, t0=10.0):
+    """`looks` sightings of a fridge 1 m ahead of the belief, 0.5 s apart; what _probe_closure said to each."""
+    fridge = [Detection("fridge", 1.0, 0.0, 0.3, 0.0, 1.8, 1.0)]
+    return [nav._probe_closure(fridge, nav.loc.pose(), t0 + 0.5 * k) for k in range(looks)]
+
+
+nav = closed_navigator((2.0, 3.4))
+r = anomalies(nav, "fix_jump_held")
+fixes = [x for x in rows(nav) if x.get("event") == "fix"]
+check("mapd's loop closure moving the belief 0.9 m: held, the belief stays, the one anomaly says it was the loop closure",
+      nav.loc.last_fix["status"] == "held" and abs(nav.loc.pose()[1] - 2.5) < 1e-9 and len(r) == 1 and r[0]["values"]["closure"] == "loop closure"
+      and "loop closure" in r[0]["summary"] and r[0]["severity"] == "major", (nav.loc.last_fix, r))
+check("... and the `fix` event's decision says it is held until the landmarks agree", len(fixes) == 1 and fixes[0]["status"] == "held"
+      and fixes[0]["closure"] == "loop closure" and "until the landmarks agree" in fixes[0]["decision"]["reason"], fixes)
+fix_at(nav, 4, 1.0, 3.4)
+check("a fix after it, the credit spent: held with the closure still pending; the duck's fixes go on", nav.loc.last_fix["status"] == "held"
+      and nav.loc.closure_pending() and len(anomalies(nav, "fix_jump_held")) == 2, nav.loc.last_fix)
+check("no sighting yet: nothing to judge by, still held", look_at_fridge(nav, 1) == [False] and nav.loc.closure_pending())
+taken = look_at_fridge(nav, 4, t0=20.0)
+checks = [x for x in rows(nav) if x.get("event") == "closure_check"]
+check("a fridge sighted where the closure puts it (4 looks, min_n): the closure is taken, the belief moves with it",
+      taken == [False, False, False, True] and abs(nav.loc.pose()[1] - 3.4) < 1e-9 and not nav.loc.closure_pending(), (taken, nav.loc.pose()))
+check("... and the check is a row with the numbers", len(checks) == 1 and checks[0]["status"] == "agrees" and checks[0]["taken"] is True
+      and checks[0]["n"] == 4 and abs(checks[0]["median"][1]) < 1e-6 and checks[0]["agree_m"] == SIM.localisation.closure.agree_m
+      and "; taken" in checks[0]["decision"]["reason"], checks)
+check("... the memory follows (the move is the closure's)", nav.loc.memory_pending() and abs(nav.loc.memory_delta()[1] - 0.9) < 1e-9)
+
+nav = closed_navigator((2.0, 2.5))
+taken = look_at_fridge(nav, 4)
+checks = [x for x in rows(nav) if x.get("event") == "closure_check"]
+check("a fridge where the belief put it, not where the closure does (0.9 m off): the landmarks disagree, the closure stays held",
+      taken == [False] * 4 and len(checks) == 1 and checks[0]["status"] == "disagrees" and checks[0]["taken"] is False
+      and abs(checks[0]["median"][1] + 0.9) < 1e-6 and nav.loc.closure_pending() and abs(nav.loc.pose()[1] - 2.5) < 1e-9, (taken, checks))
+check("... a later fix still comes in and is held: the duck does not freeze", fix_at(nav, 5, 1.0, 3.4) and nav.loc.last_fix["status"] == "held"
+      and nav.localisation.pose() is not None)
+fix_at(nav, 6, 1.0, 2.55)
+check("... and mapd back at the belief's frame ends it, with nothing taken", not nav.loc.closure_pending() and nav.loc.last_fix["status"] == "taken")
+nav = closed_navigator((2.0, 3.4))
+nav.frames_on = False
+check("without the frames (--no-frames) there is no closure to judge", look_at_fridge(nav, 4) == [False] * 4)
 
 # ---- frames_parted: the existing event's moments ------------------------------------------------------------------------------------
 

@@ -274,11 +274,21 @@ confidence (not built yet).
     in every `world` event (`frames`: translation, yaw, parted, moves so far), and a
     `frames_parted` event (and `frames_joined`) says when it passes 0.25 m or 0.1 rad.
     `map.wipe` is never used.
-  - **The gate follows mapd's account.** A large fix (over 0.3 m or 0.35 rad) is taken when mapd
-    is not lost, no relocalization stepped and its loop counter stepped within the last 3 s: a
-    loop closure mapd believed after two agreeing stops (mapping-design §3), once; with `lost`
-    set or `relocalizations` stepping it is held as before. The memory then moves by the
-    belief's change.
+  - **The gate follows mapd's account.** A large fix (over 0.3 m or 0.35 rad) is a *loop closure*
+    when mapd is not lost, no relocalization stepped and its loop counter stepped within the last
+    3 s (mapd believed one after two agreeing stops, mapping-design §3). It is held like any large
+    fix, and so is every large fix after it, until the landmarks agree with it (K26, 2026-11-20:
+    the first version took it unchecked, and both closures seen, 2.28 m and 0.43 m, made the belief
+    worse). Agreeing means: each camera look is placed as the closure's frame would place the duck
+    (`Localizer.closure_frame`), and `min_n` sightings within `spread_m` of each other put the
+    anchored landmarks within `localisation.closure.agree_m` (0.2 m) of their anchors
+    (`Relocaliser.probe`, `agreement`); then the belief takes mapd's frame and the memory moves by
+    the belief's change. Fixes that keep agreeing with the closure's frame are no evidence: after
+    both recorded closures mapd stayed within 0.11 m of its new frame for 15 s while the belief was
+    2.2 m and 0.4 m off the truth. With no landmark in sight nothing takes it: the duck goes on in
+    the belief's frame, mapd's grid moved by the delta as for any held jump, and `fix_jump_held`
+    (with `closure`) is said for each fix. mapd coming back to the belief's frame ends it. With
+    `lost` set or `relocalizations` stepping a large fix is held as before.
   - **Simulator, the injected jump** (`--frame-fault 120,0,0.9`: from 120 s mapd's pose and grid
     are 0.9 m off in y; 10-minute runs from scratch, no site, step 1's commit; `--no-frames` is
     the run before: the grid stays in mapd's frame and the memory stays). Walls: the grid's wall

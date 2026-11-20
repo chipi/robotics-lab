@@ -44,7 +44,7 @@ class Mapd:
         self.stops_to_map = loc.maps_only_at_stops
         self.rpc = None
         self.seen = None             # mapd's last account of itself (lost, loops, relocalizations, islands)
-        self._loop_credit = None     # until when a loop closure mapd believed lets a large fix through (time.monotonic)
+        self._loop_credit = None     # until when a large fix is taken to be the loop closure mapd believed (time.monotonic)
 
     def bind(self, rpc) -> None:
         """The channel mapd answers on (a robot RPC with `call(method, params)`)."""
@@ -133,26 +133,26 @@ class Mapd:
         st = self.rpc.call("map.status")
         pose = (st.get("state") or {}).get("pose")
         t_ns = (st.get("state") or {}).get("t_ns")
-        trust = self._watch(st, record) if frames_on else None
+        closure = self._watch(st, record) if frames_on else None
         raw = self.scaled((pose["x"], pose["y"], pose["yaw"])) if pose else None
         if raw and fault and time.monotonic() - t0 >= fault[0]:
             raw = (raw[0] + fault[1], raw[1] + fault[2], raw[2])
-        if not (pose and t_ns and self.belief.on_fix(t_ns, raw, trust=trust)):
+        if not (pose and t_ns and self.belief.on_fix(t_ns, raw, closure=closure)):
             return False
         f = self.belief.last_fix
-        if f.get("trusted"):
+        if f.get("closure") and closure:
             self._loop_credit = None          # one large fix per loop closure
         rejected = self.belief.rejected
         if (f["status"] != "taken" and (rejected <= 3 or rejected % 20 == 0)) or (f["status"] == "taken"
                                                                                  and f["moved_m"] > self.fixcfg.record_m):
             jump_m = self.fixcfg.jump_m
+            held = (f"a {f['closure']} mapd believed would move the belief {f['moved_m']:.2f} m: held until the landmarks agree with it"
+                    if f.get("closure") else
+                    f"a fix that would move the belief {f['moved_m']:.2f} m is held, not taken (limit {jump_m})")
             record(event="fix", **f, rejected=rejected, mapd=self.seen,
-                   decision=decision("fix", {"held": "a fix that would move the belief "
-                                             f"{f['moved_m']:.2f} m is held, not taken (limit {jump_m})",
+                   decision=decision("fix", {"held": held,
                                              "late": f"a jump of {f['moved_m']:.2f} m taken: held fixes agreed",
-                                             "taken": (f"a {f['trusted']} mapd believed moved the belief {f['moved_m']:.2f} m: taken"
-                                                       if f.get("trusted") else
-                                                       f"a fix moved the belief {f['moved_m']:.2f} m")}[f["status"]],
+                                             "taken": f"a fix moved the belief {f['moved_m']:.2f} m"}[f["status"]],
                                      moved_m=f["moved_m"], limit_m=jump_m))
         return True
 
@@ -176,9 +176,9 @@ class Mapd:
         `contradiction`; absent while it knows), and its loop closures, relocalizations and island stops since it started.
         Recorded when any of them changes, so a jump in the belief can be read against what mapd did at that moment
         (RFC-0019: the first robot-tagged anomalies; b10a r1's 0.9 m jump had none of this).
-        Returns "loop closure" when a large fix may be taken now: the loops counter stepped within loop_credit_s, mapd is not
-        lost and no relocalization stepped (mapd believed a loop closure after two agreeing stops, mapping-design §3); None
-        otherwise, and the gate holds a large fix as it always did."""
+        Returns "loop closure" when a large fix now is mapd's loop closure: the loops counter stepped within loop_credit_s, mapd
+        is not lost and no relocalization stepped (mapd believed a loop closure after two agreeing stops, mapping-design §3).
+        The gate holds it for the landmarks (Localizer.on_fix, K26); None otherwise, a large fix is held as ever."""
         now = {"lost": (st.get("state") or {}).get("lost"), "loops": st.get("loops"),
                "relocalizations": st.get("relocalizations"), "islands": st.get("island_keyframes")}
         before = self.seen

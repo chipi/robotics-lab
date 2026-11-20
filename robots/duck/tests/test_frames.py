@@ -68,17 +68,66 @@ r.on_fix(0, (0.0, 0.0, 0.0))
 r.on_fix(1 * NS, (0.0, 0.0, 0.5))                       # mapd turned 0.5 rad: over the gate's 0.35, held
 check("a held turn: the delta is the turn back", r.last_fix["status"] == "held" and near(r.delta(), (0.0, 0.0, -0.5)), r.delta())
 
-# --- the gate lets a trusted fix through ----------------------------------------------------------------------------------
+# --- a loop closure is held like any large fix, and the landmarks take it (K26) -----------------------------------------
 t = still()
-t.on_fix(1 * NS, (1.0, 1.9, 0.0), trust="loop closure")
-check("a trusted large fix is taken: the belief moves, the record says why",
-      t.last_fix["status"] == "taken" and t.last_fix["trusted"] == "loop closure" and near(t.pose(), (1.0, 1.9, 0.0))
-      and t.rejected == 0, t.last_fix)
-t.on_fix(2 * NS, (1.0, 1.9, 0.0), trust="loop closure")
-check("a trusted fix that is not large is not marked trusted", "trusted" not in t.last_fix, t.last_fix)
+t.on_fix(1 * NS, (1.0, 1.9, 0.0), closure="loop closure")
+check("a large loop closure is held: the belief stays, the record says why",
+      t.last_fix["status"] == "held" and t.last_fix["closure"] == "loop closure" and near(t.pose(), (1.0, 1.0, 0.0))
+      and t.rejected == 1, t.last_fix)
+check("... it is pending, as the frame change it would make", t.closure_pending() and near(t.closure_frame(), (0.0, 0.9, 0.0)),
+      t.closure_frame())
+check("... and the frames are parted by it", t.parted() and near(t.delta(), (0.0, -0.9, 0.0)), t.delta())
+for k in range(2, 12):
+    t.on_fix(k * NS, (1.0, 1.9, 0.0))                     # mapd goes on in the closure's frame, as it did in both recorded closures
+check("mapd's later fixes agreeing with the closure's frame do not take it", t.last_fix["status"] == "held"
+      and t.last_fix["closure"] == "loop closure" and near(t.pose(), (1.0, 1.0, 0.0)) and t.closure_pending(), t.last_fix)
+n = Localizer(FIX, history=1000, max_jump_m=0.3)          # the gate's hold_n (5): an ordinary jump is taken once 5 fixes agree
+for k in range(400):
+    n.on_odom(k * NS, (0.0, 0.0, 0.0))
+n.on_fix(0, (1.0, 1.0, 0.0))
+for k in range(1, 6):
+    n.on_fix(k * NS, (1.0, 1.9, 0.0))
+check("with hold_n, an ordinary large fix is taken late as before", n.last_fix["status"] == "late" and near(n.pose(), (1.0, 1.9, 0.0)),
+      n.last_fix)
+c = Localizer(FIX, history=1000, max_jump_m=0.3)
+for k in range(400):
+    c.on_odom(k * NS, (0.0, 0.0, 0.0))
+c.on_fix(0, (1.0, 1.0, 0.0))
+c.on_fix(1 * NS, (1.0, 1.9, 0.0), closure="loop closure")
+for k in range(2, 12):
+    c.on_fix(k * NS, (1.0, 1.9, 0.0))
+check("with hold_n, a loop closure is not taken late however many fixes agree", c.last_fix["status"] == "held"
+      and near(c.pose(), (1.0, 1.0, 0.0)) and c.closure_pending(), c.last_fix)
+h = t.accept_closure()
+check("the landmarks agree: the belief takes mapd's frame, nothing is pending, the frames are one",
+      near(h, (0.0, 0.9, 0.0)) and near(t.pose(), (1.0, 1.9, 0.0)) and not t.closure_pending() and t.closure_frame() is None
+      and near(t.delta(), (0.0, 0.0, 0.0), 1e-9), (h, t.pose()))
+check("... and nothing is left to accept", t.accept_closure() is None)
+t.on_fix(12 * NS, (1.0, 1.9, 0.0))
+check("... the next fix, in the same frame, is an ordinary taken one", t.last_fix["status"] == "taken" and "closure" not in t.last_fix, t.last_fix)
+b = still()
+b.on_fix(1 * NS, (1.0, 1.9, 0.0), closure="loop closure")
+b.on_fix(2 * NS, (1.0, 1.05, 0.0))
+check("mapd back at the belief's frame ends it: a fix that is not large is taken, nothing pending",
+      b.last_fix["status"] == "taken" and not b.closure_pending() and "closure" not in b.last_fix, b.last_fix)
+b.on_fix(3 * NS, (1.0, 1.95, 0.0))
+check("... and a large fix after that, with no closure behind it, is held as ever", b.last_fix["status"] == "held"
+      and "closure" not in b.last_fix and not b.closure_pending(), b.last_fix)
+s = still()
+s.on_fix(1 * NS, (1.0, 1.05, 0.0), closure="loop closure")
+check("a loop closure that is not large is taken, not marked, nothing pending",
+      s.last_fix["status"] == "taken" and "closure" not in s.last_fix and not s.closure_pending(), s.last_fix)
+r = Localizer(FIX, max_jump_m=0.3, hold_n=None)
+for k in range(10):
+    r.on_odom(k * NS, (0.0, 0.0, 0.0))
+r.on_fix(0, (0.0, 0.0, 0.0))
+r.on_fix(1 * NS, (0.0, 0.0, 0.7), closure="loop closure")  # explore-p4s-fix-r2's closure turned the belief 0.70 rad, and moved it 2.3 m
+check("a loop closure that only turns the belief (0.7 rad) is held too, and its frame is the turn",
+      r.last_fix["status"] == "held" and near(r.closure_frame(), (0.0, 0.0, 0.7)), (r.last_fix, r.closure_frame()))
 u = still()
 u.on_fix(1 * NS, (1.0, 1.9, 0.0))
-check("the same fix without trust is held", u.last_fix["status"] == "held" and "trusted" not in u.last_fix, u.last_fix)
+check("the same fix without a closure is held, and no closure is pending", u.last_fix["status"] == "held"
+      and "closure" not in u.last_fix and not u.closure_pending() and u.closure_frame() is None, u.last_fix)
 
 # --- when the memory moves ------------------------------------------------------------------------------------------------
 m = still()
@@ -93,9 +142,11 @@ check("... and the memory then sits in the new frame", m.memory_delta() is None 
 h = still()
 h.on_fix(1 * NS, (1.0, 1.9, 0.0))
 check("a held jump moves no memory: the belief did not move", h.memory_delta() is None)
-h.on_fix(2 * NS, (1.0, 1.9, 0.0), trust="loop closure")
+h.on_fix(2 * NS, (1.0, 1.9, 0.0), closure="loop closure")
+check("a loop closure held after it moves no memory either", h.memory_delta() is None)
+h.accept_closure()
 d = h.memory_delta()
-check("a loop closure taken after it: the memory moves by the belief's change", d is not None and near(d, (0.0, 0.9, 0.0), 1e-9), d)
+check("a loop closure the landmarks took: the memory moves by the belief's change", d is not None and near(d, (0.0, 0.9, 0.0), 1e-9), d)
 k = still()
 k.nudge(0.1, -0.2)
 check("a nudge moves the memory by the step", near(k.memory_delta(), (0.1, -0.2, 0.0), 1e-9))

@@ -182,6 +182,7 @@ SCHEMA = {
                 "parted_m": "pos", "parted_rad": "pos"},
         "landmarks": {"match_m": "pos", "range_m": "pos", "anchor_range_m": "pos", "anchor_n": "int", "anchor_spread_m": "pos",
                       "window_s": "pos", "min_n": "int", "spread_m": "pos", "deadband_m": "pos", "gain": "pos", "max_step_m": "pos"},
+        "closure": {"agree_m": "pos"},
     },
     "error_budget": {"cliff_stop_m": "pos", "corridor_m": "pos", "drop_lethal_m": "pos", "drop_inflate_m": "pos", "edge_lethal_m": "pos",
                      "edge_inflate_m": "pos", "confirm_m": "pos", "glanced_m": "pos", "absorb_m": "pos", "hold_off_m": "pos",

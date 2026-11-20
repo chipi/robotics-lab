@@ -9,6 +9,12 @@ duck pivoted and the duck later touched a landmark): a gate on a fix that would 
 (it is held, and taken only when hold_n fixes in a row agree with each other), and an offset, the landmarks' correction
 (nudge), kept across fixes — each fix replaces the transform, so a correction made once would be gone in a second.
 
+A large fix that is mapd's loop closure (K26) is held too, and hold_n fixes agreeing do not take it: after a closure mapd's
+later fixes agree with the closure's frame whether it was right or not (the two closures of 2026-11-20 both stayed within
+0.1 m of themselves for 15 s while 2.2 m and 0.4 m off the truth). Only the landmarks take it (accept_closure, called
+when the relocaliser, placing sightings as the closure's frame would, finds them on their anchors), or mapd coming back to
+the belief's frame (a fix that is not large).
+
 The gate's numbers are the robot's, the profile's `localisation.fix` block, passed as `fix`:
   jump_m, jump_rad   a fix moving the belief further than this (or turning it further) is a large one
   hold_n             fixes in a row that must agree before a jump is taken (at one fix a second: 5 s), agreeing to within
@@ -81,6 +87,7 @@ class Localizer:
         self.hold_n = fix.hold_n if hold_n is FROM_FIX else hold_n   # fixes in a row that must agree before a held jump is taken; None: never
         self.offset = (0.0, 0.0)          # the landmarks' correction, added to every fix's transform
         self._held = []                   # the transforms of the fixes held back, in a row
+        self._closure = None              # why a loop closure is held (a reason); None when none is
         self._fix_t_ns = None
         self.rejected = 0
         self.last_fix = None              # what the latest fix was, for the run's record
@@ -91,12 +98,13 @@ class Localizer:
         self._odom.append((t_ns, pose))
         del self._odom[:-self._history]
 
-    def on_fix(self, t_ns: int, map_pose: tuple, trust: str | None = None) -> bool:
+    def on_fix(self, t_ns: int, map_pose: tuple, closure: str | None = None) -> bool:
         """A mapd pose. Returns False when no odometry near that time is held. With max_jump_m, a fix that would move the
         belief further is held (last_fix["status"] "held"; the belief stays) until hold_n in a row agree ("late"); it still
         returns True. last_fix says what it was: the raw pose, its t_ns, the odometry paired with it, the belief before and
-        after and how far it moved. trust (a reason, e.g. "loop closure"): the gate lets this fix through, and last_fix
-        says so ("trusted") when the gate would have held it."""
+        after and how far it moved. closure (a reason, e.g. "loop closure": mapd says it closed a loop): a large fix with it
+        is held, and so is every large fix after it, with no "late": last_fix["closure"] says why, and only accept_closure
+        or a fix that is not large ends it."""
         near = min(self._odom, key=lambda e: abs(e[0] - t_ns), default=None)
         if near is None or abs(near[0] - t_ns) > 100_000_000:
             return False
@@ -113,13 +121,18 @@ class Localizer:
         status = "taken"
         large = before is not None and self.max_jump_m is not None and (jump > self.max_jump_m
                                                                       or abs(_wrap(after[2] - before[2])) > self.fix.jump_rad)
-        if large and trust is None:
+        if large and closure is not None:
+            self._closure = closure
+        if large:
             if self._held and (math.dist(self._held[-1][:2], new[:2]) > self.fix.hold_agree_m
                                or abs(_wrap(self._held[-1][2] - new[2])) > self.fix.hold_agree_rad):
                 self._held = []
             self._held = (self._held + [new])[-(self.hold_n or self.fix.hold_n):]
             self.rejected += 1
-            status = "late" if self.hold_n is not None and len(self._held) >= self.hold_n else "held"
+            status = ("late" if self.hold_n is not None and len(self._held) >= self.hold_n and self._closure is None
+                      else "held")
+        elif before is not None:
+            self._closure = None          # mapd is back where the belief is
         if status != "held":
             self.map_from_odom = new
             self._held = []
@@ -129,9 +142,29 @@ class Localizer:
                          "odom_t_ns": near[0], "odom": [round(v, 4) for v in near[1]],
                          "before": None if before is None else [round(v, 4) for v in before],
                          "after": [round(v, 4) for v in after], "moved_m": round(jump, 3)}
-        if large and trust is not None:
-            self.last_fix["trusted"] = trust
+        if large and self._closure is not None:
+            self.last_fix["closure"] = self._closure
         return True
+
+    def closure_pending(self) -> bool:
+        return self._closure is not None and bool(self._held)
+
+    def closure_frame(self) -> tuple | None:
+        """The frame change the held closure would make, h with belief' = h ∘ belief (x, y, yaw), from mapd's latest held fix;
+        None when no closure is held. (The camera's thread asks while the navigator's thread takes fixes: each field is read once.)"""
+        held, base = self._held, self.map_from_odom
+        if self._closure is None or not held or base is None:
+            return None
+        return compose(held[-1], inverse(base))
+
+    def accept_closure(self) -> tuple | None:
+        """The landmarks agree with the held closure: the belief takes mapd's latest held frame. Returns the frame change made
+        (closure_frame's), None when no closure is held."""
+        held, base = self._held, self.map_from_odom
+        if self._closure is None or not held or base is None:
+            return None
+        self.map_from_odom, self._held, self._closure = held[-1], [], None
+        return compose(held[-1], inverse(base))
 
     def nudge(self, dx: float, dy: float) -> tuple:
         """The landmarks' correction: move the belief by (dx, dy) on the map, kept across fixes; the total is capped at

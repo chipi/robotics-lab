@@ -35,7 +35,7 @@ from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived:
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
 from duck_lab.nav import anomaly as anom, pace as pacing, recovery
 from duck_lab.nav.decision import decision
-from duck_lab.nav.frames import move_xy
+from duck_lab.nav.frames import compose, move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog, add_args, open_from_args
 from duck_lab.nav.stuck import StuckWatch
 from duck_lab.nav.side_drops import (SuspectMemory, continuation, continues, edge_from_glance, head_settled, in_the_way,
@@ -95,8 +95,9 @@ FOLLOW_SPACING_M = 0.10
 DROP_FRAMES = 3
 # (profile localisation.fix: jump_m 0.3, a mapd fix that would move the belief more than this is held (frames.Localizer); the 33
 # recorded exploring runs hold one such jump (explore-b10a-r1: 0.9 m in one tick, belief error 0.2 -> 0.7 m); record_m 0.1, every
-# fix that moves the belief more than this is recorded with its raw pose and paired odometry; loop_credit_s 3.0, a loop closure
-# mapd believed (its counter stepped, it is not lost) lets a large fix through for this long)
+# fix that moves the belief more than this is recorded with its raw pose and paired odometry; loop_credit_s 3.0, a large fix this
+# soon after mapd's loop counter stepped (and it is not lost) is its loop closure: held, taken only when the landmarks agree
+# with it, localisation.closure, K26)
 PARTED_REPORT_M = 0.25   # a "frames_parted" is said again when the frames part this much further
 SNAPSHOT_S, SNAPSHOT_MOVED_M = 2.0, 0.05    # the objects re-recorded every 2 s while any moved more than 5 cm
 LOW_FRAMES, LOW_CELL_M = 3, 0.05    # a low-band cell is an obstacle once this many frames saw it (sim/probes/low_persistence.py)
@@ -287,6 +288,7 @@ class Navigator:
         self.room = None         # the area type the objects suggest (a guess; was "room")
         self.area, self.area_agrees = None, None    # the operator's area the pose is in, and whether the guess agrees
         self._sem_lock = threading.Lock()
+        self._closure_window = []   # the residuals the held loop closure's frame would give (Navigator._probe_closure)
         self._closing = threading.Event()
         self._start_watchdog()
         # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
@@ -458,6 +460,29 @@ class Navigator:
             gates[kind] = anom.PlaceGate(an.same_place_moved_m, an.same_place_gap_s) if an else anom.PlaceGate()
         return gates[kind].allow(time.monotonic(), pose)
 
+    def _probe_closure(self, found: list, pose: tuple, now: float) -> bool:
+        """A held loop closure (K26) is taken when the landmarks agree with it: the sightings are placed as the closure's frame
+        would place the duck (Localizer.closure_frame), and once min_n of them, within spread_m of each other, put the anchored
+        landmarks within closure.agree_m of their anchors, the belief takes the closure's frame. "closure_check" says each verdict.
+        Nothing agreeing (no landmark seen, or none where the closure puts it) leaves it held: the duck goes on in the belief's
+        frame, with mapd's grid moved by the delta as for any held jump. True when the closure was taken this look."""
+        h = self.loc.closure_frame() if self.frames_on else None
+        if h is None:
+            self._closure_window = []
+            return False
+        agree_m = self.profile.localisation.closure.agree_m
+        window = self.reloc.probe(found, compose(h, pose), now, self._closure_window)
+        v = self.reloc.agreement(window, agree_m)
+        self._closure_window = window if v is None else (window[-1:] if v["status"] == "refused" else [])
+        if v is None:
+            return False
+        taken = v["status"] == "agrees" and self.loc.accept_closure() is not None
+        self.record(event="closure_check", **v, taken=taken, frame=[round(x, 4) for x in h], pose=[round(x, 4) for x in pose],
+                    decision=decision("closure_check", f"the landmarks {v['status']} with the held loop closure: median {v['median']} m "
+                                      f"off their anchors under it (within {agree_m} m to agree)" + ("; taken" if taken else "; held"),
+                                      n=v["n"], median=v["median"], spread_m=v["spread_m"], agree_m=agree_m))
+        return taken
+
     def _watch_fix(self) -> None:
         """fix_jump_held: every fix the gate held, none throttled (the `fix` event is: only the first few and every twentieth)."""
         f = self.loc.last_fix
@@ -467,11 +492,12 @@ class Navigator:
         turn = abs(wrap(f["after"][2] - f["before"][2])) if f.get("before") else 0.0
         margin, unit = anom.over(f["moved_m"], fx.jump_m, turn, fx.jump_rad)
         seen = self.localisation.seen or {}
-        self.anomaly("fix_jump_held", f"mapd's fix would move the belief {f['moved_m']:.2f} m and turn it {math.degrees(turn):.0f} deg; held",
+        what = f"mapd's {f['closure']} would move" if f.get("closure") else "mapd's fix would move"
+        self.anomaly("fix_jump_held", f"{what} the belief {f['moved_m']:.2f} m and turn it {math.degrees(turn):.0f} deg; held",
                      margin=margin, mapd=f["raw"][:2],
                      values={"jump_m": f["moved_m"], "turn_deg": round(math.degrees(turn), 1), "limit_m": fx.jump_m, "limit_rad": fx.jump_rad,
                              "held_in_a_row": len(self.loc._held), "held_total": self.loc.rejected, "mapd_lost": seen.get("lost"),
-                             "relocalizations": seen.get("relocalizations"), "margin_unit": unit},
+                             "relocalizations": seen.get("relocalizations"), "margin_unit": unit, "closure": f.get("closure")},
                      evidence={"fix_t_ns": f["t_ns"], "odom_t_ns": f["odom_t_ns"], "raw": f["raw"], "before": f.get("before"), "after": f["after"]})
 
     def _check_room(self, room: float, nearest_drop: float) -> None:
@@ -1279,7 +1305,8 @@ class Navigator:
                                  f"(limit {lm.spread_m}); no correction", margin=fixed["spread_m"] - lm.spread_m,
                                  values={"n": fixed["n"], "spread_m": fixed["spread_m"], "median": fixed["median"], "landmarks": fixed["landmarks"],
                                          "limit_m": lm.spread_m, "window_s": lm.window_s, "min_n": lm.min_n})
-            if self.frames_on and fixed and fixed["status"] == "corrected":
+            closed = self._probe_closure(found, pose, now) if relocalise else False
+            if self.frames_on and ((fixed and fixed["status"] == "corrected") or closed):
                 return           # the objects are in the old frame until the navigator's thread moves them: this look is not placed
             with self._sem_lock:
                 changes = self.semantic.integrate(found, pose, now)

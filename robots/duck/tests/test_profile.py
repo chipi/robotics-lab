@@ -134,6 +134,7 @@ OLD = {
                 "parted_m": 0.25, "parted_rad": 0.1},                                  # frames.PARTED_M, PARTED_RAD
         # relocalise.MATCH_M ... MAX_STEP_M: the library keeps the duck's as its default numbers (DUCK_LANDMARKS)
         "landmarks": vars(DUCK_LANDMARKS),
+        "closure": {"agree_m": 0.2},      # new with K26 (no constant before it); its `measured` says how it was chosen
     },
     "error_budget": {"cliff_stop_m": 0.60,                                             # run.CLIFF_STOP_M
                      "corridor_m": 0.25,                                               # cliff.CORRIDOR_DROP_M
