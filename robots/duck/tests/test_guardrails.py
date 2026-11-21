@@ -1,11 +1,12 @@
-"""A goal's guardrails in the navigator (RFC-0014 §3.4.8, duck_lab/nav/guardrails.py): the keep-out points of a no-go area, the speed
-cap, and each check against a stand-in truth (a body with a pose and a height) and a small layout. No simulator.
+"""A goal's guardrails (RFC-0014 §3.4.8, duck_lab/nav/guardrails.py): the keep-out points of a no-go area, the speed cap and
+the clock (the navigator's `Guard`, which reads no truth), and each truth check (the runner's `TruthGuard`, RFC-0021 step 6)
+against a stand-in truth and a small layout. No simulator.
 Run: cd robots/duck && uv run python tests/test_guardrails.py"""
 
 import threading
 import time
 
-from duck_lab.nav.guardrails import Guard, keepout_points
+from duck_lab.nav.guardrails import Guard, TruthGuard, keepout_points
 
 failures = []
 
@@ -16,17 +17,8 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-class Body:
-    def __init__(self):
-        self.xy, self.height = (0.0, 0.0), 0.116
-
-    def pose(self):
-        return (self.xy[0], self.xy[1], 0.0)
-
-
 class Nav:
-    def __init__(self, body=True):
-        self.body = Body() if body else None
+    def __init__(self):
         self.speed_cap = None
         self.keepout = []
 
@@ -37,10 +29,15 @@ def box(name, x, y, hx=0.2, hy=0.2):
 
 LAYOUT = ([box("sofa", 2.0, 0.0)], [box("stairs", -2.0, 0.0, 0.3, 0.3)])
 NO_GO = {"name": "no_go_area", "area": "stairwell", "outline": [[1.0, -1.0], [1.5, -1.0], [1.5, 1.0], [1.0, 1.0]]}
+STANDING = 0.116
 
 
 def guard(nav, rails, broke=None):
-    return Guard(nav, rails, (broke or (lambda n, d: None)), t0=100.0, layout=LAYOUT)
+    return Guard(nav, rails, (broke or (lambda n, d: None)), t0=100.0)
+
+
+def at(x, y):
+    return (x, y, 0.0)
 
 
 # --- keep-out points -------------------------------------------------------------------------------
@@ -60,48 +57,36 @@ nav = Nav()
 guard(nav, [{"name": "contact"}]).arm()
 check("no speed cap and no keep-out when the list has none", nav.speed_cap is None and nav.keepout == [])
 
-# --- the checks --------------------------------------------------------------------------------------
-nav = Nav()
-g = guard(nav, [{"name": "time_limit", "seconds": 30.0}])
+# --- the navigator's checks: the clock only --------------------------------------------------------------
+g = guard(Nav(), [{"name": "time_limit", "seconds": 30.0}])
 check("time_limit: not yet, then spent", g.check(now=120.0) is None and g.check(now=131.0)[0] == "time_limit")
-nav = Nav()
-g = guard(nav, [{"name": "fall"}])
-check("fall: standing is fine", g.check(now=100.0) is None)
-nav.body.height = 0.03
-check("fall: the trunk down is a fall", g.check(now=100.0)[0] == "fall")
-nav = Nav()
-g = guard(nav, [{"name": "contact"}])
-nav.body.xy = (1.0, 0.0)
-check("contact: 0.8 m from the sofa is clear", g.check(now=100.0) is None)
-nav.body.xy = (1.75, 0.0)
-c = g.check(now=100.0)
-check("contact: the trunk centre within 8.3 cm of the sofa's outline, a part can touch it", c and c[0] == "contact" and "sofa" in c[1], c)
-nav.body.xy = (1.6, 0.0)
-check("contact: 0.2 m from the outline is clear", g.check(now=100.0) is None)
-nav = Nav()
-g = guard(nav, [{"name": "drop_clearance", "m": 0.5}])
-nav.body.xy = (-1.0, 0.0)
-check("drop_clearance: 0.7 m from the drop's outline is clear for 0.5 m", g.check(now=100.0) is None)
-nav.body.xy = (-1.5, 0.0)
-d = g.check(now=100.0)
-check("drop_clearance: 0.2 m from the drop is nearer than 0.5 m", d and d[0] == "drop_clearance" and "stairs" in d[1], d)
-nav = Nav()
-g = guard(nav, [NO_GO])
-nav.body.xy = (0.5, 0.0)
-check("no_go_area: outside it is fine", g.check(now=100.0) is None)
-nav.body.xy = (1.2, 0.3)
-n = g.check(now=100.0)
-check("no_go_area: the robot inside it is a break, naming the area", n and n[0] == "no_go_area" and "stairwell" in n[1], n)
-nav = Nav()
-g = guard(nav, [{"name": "contact"}, {"name": "fall"}, {"name": "time_limit", "seconds": 10.0}])
-nav.body.xy = (1.75, 0.0)
-check("the time limit is checked first", g.check(now=200.0)[0] == "time_limit")
-check("without a truth (a real robot) only the clock is checked, and the truth ones are not listed as checked",
-      (lambda n: Guard(n, [{"name": "contact"}, {"name": "time_limit", "seconds": 5.0}], lambda *_: None, t0=0.0, layout=LAYOUT).checked)(Nav(body=False)) == ["time_limit"])
-check("a guard with a truth lists all of them as checked", Guard(Nav(), [{"name": "contact"}, {"name": "stuck"}], lambda *_: None, layout=LAYOUT).checked == ["contact", "stuck"])
+check("the navigator lists as checked only what it can check: no truth one",
+      Guard(Nav(), [{"name": "contact"}, {"name": "time_limit", "seconds": 5.0}, {"name": "stuck"}, NO_GO], lambda *_: None).checked
+      == ["time_limit", "stuck", "no_go_area"])
 
-# --- the watchdog thread --------------------------------------------------------------------------------
-nav = Nav()
+# --- the runner's checks, by the truth ---------------------------------------------------------------------
+t = TruthGuard([{"name": "fall"}], layout=LAYOUT)
+check("fall: standing is fine", t.check(at(0, 0), STANDING) is None)
+check("fall: the trunk down is a fall", t.check(at(0, 0), 0.03)[0] == "fall")
+t = TruthGuard([{"name": "contact"}], layout=LAYOUT)
+check("contact: 0.8 m from the sofa is clear", t.check(at(1.0, 0.0), STANDING) is None)
+c = t.check(at(1.75, 0.0), STANDING)
+check("contact: the trunk centre within 8.3 cm of the sofa's outline, a part can touch it", c and c[0] == "contact" and "sofa" in c[1], c)
+check("contact: 0.2 m from the outline is clear", t.check(at(1.6, 0.0), STANDING) is None)
+t = TruthGuard([{"name": "drop_clearance", "m": 0.5}], layout=LAYOUT)
+check("drop_clearance: 0.7 m from the drop's outline is clear for 0.5 m", t.check(at(-1.0, 0.0), STANDING) is None)
+d = t.check(at(-1.5, 0.0), STANDING)
+check("drop_clearance: 0.2 m from the drop is nearer than 0.5 m", d and d[0] == "drop_clearance" and "stairs" in d[1], d)
+t = TruthGuard([NO_GO], layout=LAYOUT)
+check("no_go_area: outside it is fine", t.check(at(0.5, 0.0), STANDING) is None)
+n = t.check(at(1.2, 0.3), STANDING)
+check("no_go_area: the robot inside it is a break, naming the area", n and n[0] == "no_go_area" and "stairwell" in n[1], n)
+t = TruthGuard([{"name": "contact"}, {"name": "fall"}, {"name": "time_limit", "seconds": 10.0}, {"name": "max_speed", "mps": 0.2}],
+               layout=LAYOUT)
+check("the runner lists as checked only the truth ones", t.checked == ["contact", "fall"], t.checked)
+check("a fall is said before a contact", t.check(at(1.75, 0.0), 0.03)[0] == "fall")
+
+# --- the navigator's watchdog thread --------------------------------------------------------------------------
 broke, seen = threading.Event(), []
 
 
@@ -110,12 +95,11 @@ def on_break(name, detail):
     broke.set()
 
 
-g = Guard(nav, [NO_GO], on_break, layout=LAYOUT)
+g = Guard(Nav(), [{"name": "time_limit", "seconds": 0.3}], on_break)
 g.arm()
-time.sleep(0.2)
-check("the watchdog says nothing while the robot is outside", not seen)
-nav.body.xy = (1.2, 0.0)
-check("and breaks the run once, when it enters", broke.wait(2.0) and len(seen) == 1 and seen[0][0] == "no_go_area", seen)
+time.sleep(0.1)
+check("the watchdog says nothing while the time is not spent", not seen)
+check("and breaks the run once, when it is", broke.wait(2.0) and len(seen) == 1 and seen[0][0] == "time_limit", seen)
 time.sleep(0.2)
 check("the watchdog ends after a break: no second report", len(seen) == 1)
 g.stop()

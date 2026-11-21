@@ -48,7 +48,8 @@ def refused(d) -> str:
 h = simhost.load(write(GOOD))
 check("the sockets are duck-sim's, in the state folder, by the robot's name",
       h.sockets == {"robot": tmp / "state/duck-a.sock", "depth": tmp / "state/duck-a-tof.sock",
-                    "map": tmp / "state/duck-a-map.sock", "gate": tmp / "state/duck-a-gate.sock"}, h.sockets)
+                    "map": tmp / "state/duck-a-map.sock", "gate": tmp / "state/duck-a-gate.sock",
+                    "camera": tmp / "state/duck-a-camera.sock"}, h.sockets)
 check("the scenarios and Pollen's scene folder come from the host",
       h.scenarios == tmp / "state/scenarios" and h.scene_dir == tmp / "rl/src/mjlab_microduck/robot/microduck")
 check("~ in a path is this user's home", h.cargo_bin == Path(os.path.expanduser("~/.cargo/bin")), h.cargo_bin)
@@ -65,7 +66,7 @@ for why, d, says in [("an unknown key", {**GOOD, "data": "/x"}, "unknown keys"),
                      ("one Pollen checkout missing", {**GOOD, "pollen": {"microduck": "/a"}}, "pollen"),
                      ("a port out of range", {**GOOD, "truth_port": 70000}, "truth_port"),
                      ("a port that is a bool", {**GOOD, "truth_port": True}, "truth_port"),
-                     ("a socket key not known", {**GOOD, "sockets": {"camera": "/c"}}, "sockets")]:
+                     ("a socket key not known", {**GOOD, "sockets": {"lidar": "/c"}}, "sockets")]:
     msg = refused(d)
     check(f"refused: {why}, the reason named with the file", says in msg and "bad.json" in msg, msg)
 

@@ -316,10 +316,15 @@ between Mission Control and the simulator, both from the duck package:
   `lease_s` and `takeover` do not apply: they are the gate's flags). A robot's `lock` is the
   gate's `who`; `unreachable` appears in it when the gate does not answer, and the robot is then
   offline.
-- **`duck-nav-server`** (O22, `duck_lab/nav/server.py`): the real navigator as its own process,
-  JSON-RPC over TCP on loopback (newline framed, RFC-0003's shape). It takes the lease from the
-  gate at `goal.start` and gives it back at the end, and writes each goal run as an Observatory
-  run `duck/<scene>/mc<id>-<time>`.
+- **`duck-nav-server`** (O22; RFC-0021 step 6, `duck_lab/nav_runner.py`): the runner in front of
+  the navigator, JSON-RPC over TCP on loopback (newline framed, RFC-0003's shape). It reads the host
+  file and the simulator's truth, serves the simulated camera on the host file's camera socket, and
+  starts the navigator API (`duck_lab/nav/server.py`) as its own process with only the robot's
+  sockets; every call below passes through to it. The navigator takes the lease from the gate at
+  `goal.start` and gives it back at the end. Each goal run's Observatory run,
+  `duck/<scene>/mc<id>-<time>`, is the runner's copy of the navigator's run with the truth put in,
+  and the guardrails only the truth can check (`contact`, `fall`, `drop_clearance`, the robot inside
+  a `no_go_area`) are the runner's.
 
 Adapter options: `gate_socket`, `navigator` (host:port), `mapd_socket`, `observatory` (the base of
 the Watch links), `calibration`. The state is built from robotd's `robot.subscribe` stream (robotd
@@ -331,9 +336,11 @@ The navigator API, as the server speaks it:
 
 | Method | Meaning |
 | --- | --- |
-| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key}` at once, or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind` |
+| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key}` at once, or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
 | `goal.status {decisions_since, objects_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, objects, objects_v}`; `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel` | the navigator stops, ends the run, gives the lease back |
+| `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
+| `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
 | `state`, `objects`, `inventory`, `map` | what the navigator sees now, while a run is active |
 
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as

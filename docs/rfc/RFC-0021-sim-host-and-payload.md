@@ -248,6 +248,60 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    of 5 passed, each failure the judge's (1 and 2 said reached 0.37 m short by truth; 3 and 4
    refused at something under 300 mm; 5 timed out), no contact, no fall; every tick with truth; 0
    connections to the truth's port.
+6. **Every path through the split** (the operator's go, 2026-11-21): the apartment's exploration
+   (`duck-explore`) and Mission Control's navigator API still ran the navigator with the truth in
+   its process, for two jobs that are not the navigator's:
+   - **The simulated camera becomes a sensor the host serves.** `duck_lab.camera_server` answers on
+     a socket (`camera.info`: its field of view, range and period; `camera.detect`: what it
+     recognises now, as `worldmodel` Detections, relative to the duck). It reads the truth and the
+     scene's layout itself, so the navigator gets only what a real camera's detector would give.
+     The navigator's `CameraClient` asks it; on the real duck the same socket would be its camera's
+     detector. The runner serves it for the run, as a connection the host provides (§3.1, 2); the
+     host file names it `camera` (`<robot>-camera.sock`).
+   - **The runner sits in front of Mission Control's navigator API.** `duck-nav-server`, the
+     command an operator starts, becomes the runner: it reads the host file and the truth, serves
+     the camera, and starts the navigator API (`duck_lab.nav.server`, given only sockets) as its
+     own process. Mission Control's calls pass through unchanged. Each goal run's official
+     recording is the runner's (the navigator's run copied with the truth put in, as a course's),
+     and the truth guardrails (`contact`, `fall`, `drop_clearance`, the robot inside a
+     `no_go_area`) are checked by the runner, which breaks the run through the API's
+     `goal.break {name, detail}`. The guardrails that need no truth stay the navigator's: the speed
+     cap, the no-go area in the planner, the time limit, stuck.
+   - **`duck-explore` goes through the runner** (`runner.Remote`, as a course does): the
+     payload's `explore` goal takes the explorer's options (find, inventory, a site, the test
+     faults), and the truth guard by the staircase is the runner's.
+
+   Proven by: the payload and the navigator API holding no connection to the truth's port; an
+   apartment exploration that finds objects through the camera's socket; `make sim-duck`, every
+   scenario, including the drop clearance and contact stops, through the runner.
+
+   *Done 2026-11-21:* `duck_lab/camera_server.py` and `nav/camera.py` (the host file's `camera`
+   socket), `duck_lab/nav_runner.py` (`duck-nav-server`), the navigator API given only sockets
+   (`goal.break`, `no_camera`), `guardrails.TruthGuard`, `duck-explore` through `runner.Remote`.
+   - A 5-minute exploration through the runner, `--inventory`: 18 objects in 4 rooms, 598
+     sightings from 598 looks the camera served (120 a minute, its period), no camera failure; the
+     payload held 0 connections to the truth's port in 150 checks; the official run 3063 of 3063
+     ticks with the truth, `kind: exploration`. Earlier explorations the old way found 18 objects in
+     3.6 and 6.9 minutes at 119 sightings a minute: the same order, not a controlled comparison
+     (one run, other lengths).
+   - `make sim-duck` through the runner: 44 checks passed, none failed (`PASS sim_duck`), every
+     scenario (point, cancel, STOP, takeover, explore, inventory, an object, an area, max speed, a
+     no-go area, the time limit, drop clearance); drop clearance broke by the runner's truth check
+     ("the trunk is 0.71 m from the drop stairwell, nearer than 3 m"); the navigator API's process
+     held 0 connections to the truth's port in 282 checks over 15 goals; the last goal's official
+     run 307 of 307 ticks paired.
+   - Unit: `test_camera_server.py` (a fake body server: detections relative to the duck, nothing
+     of the world over the socket, the same as the sensor model in process, a restarted body server
+     connected again), `test_guardrails.py` (the navigator's guard and the runner's), and
+     `test_payload.py` (importing the payload or the navigator API loads no `simhost` and no
+     runner side).
+
+   Not proven: a contact or a fall stopping a run through the runner live (the scenarios arm
+   them and a good run is not stopped; the checks themselves are unit-tested); `duck-explore`'s
+   `--find`, `--site` and the test faults through the payload (only `--inventory` ran; finding an
+   object ran through Mission Control's path); the MacBook; the runs opened in the Observatory's
+   page. `duck-explore` now refuses to run with no data folder (the run is the record). Two
+   runners on one host would share the camera's socket path: not guarded.
 
 ## 6. Risks
 

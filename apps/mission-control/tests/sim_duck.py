@@ -6,13 +6,15 @@ NOT in `make test-control`: it resets the simulator (via robots/duck/sim/reset_s
 needs nobody else using it. Everything it writes goes to a folder of its own in the system temp dir: the Observatory's runs
 (a data folder with a copy of the apartment scene), the navigator's output, Mission Control's state.
 
-The processes: duck-gate (in this process, a thread, as the scenario test), duck-nav-server (a subprocess of its own, O22),
-Mission Control (this process). Judged by the simulator's truth (the body server), as the challenge judge is."""
+The processes: duck-gate (in this process, a thread, as the scenario test), duck-nav-server (the runner, a subprocess of its own, which
+starts the navigator API as its own: RFC-0021 step 6), Mission Control (this process). Judged by the simulator's truth (the body
+server), as the challenge judge is; the navigator API has no route to it (the last section)."""
 
 import argparse
 import json
 import math
 import shutil
+import socket
 import subprocess
 import sys
 import atexit
@@ -83,7 +85,7 @@ def fresh_sim():
 clean = [True]
 fresh_sim()
 navlog = open(tmp / "nav-server.log", "w")
-nav_proc = subprocess.Popen([sys.executable, "-m", "duck_lab.nav.server", "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
+nav_proc = subprocess.Popen([sys.executable, "-m", "duck_lab.nav_runner", "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
                              "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
 wait_for(lambda: "duck-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
@@ -349,6 +351,27 @@ try:
         end = finished(run["id"], 200)
         check("with 0.1 m, no contact, no fall, no stuck the same robot reaches its point: the guardrails do not stop a good run",
               end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
+
+    # --- the split (RFC-0021 step 6): the navigator behind its runner, with no route to the truth ---------------------
+    print("\n--- the split", flush=True)
+    time.sleep(1.0)                  # the runner's watch finishes the last goal's copy within a poll
+
+    def runner_status():
+        with socket.create_connection(("127.0.0.1", NAV_PORT), timeout=10) as s:
+            s.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "runner.status"}) + "\n").encode())
+            return json.loads(s.makefile().readline())["result"]
+    st = runner_status()
+    last = st["last_goal"] or {}
+    route = {"checks": st["truth_connections"]["checks"] + last.get("truth_connections", {}).get("checks", 0),
+             "max": max(v for v in (st["truth_connections"]["max"], last.get("truth_connections", {}).get("max"), 0) if v is not None)}
+    check("the navigator API's process held no connection to the truth's port, looked at while each goal ran",
+          route["checks"] > 0 and route["max"] == 0, (st["goals"], route))
+    copy = last.get("truth_copy") or {}
+    check("the last goal's official run is the runner's copy with the truth put in: every tick paired",
+          copy.get("ticks", 0) > 0 and copy.get("paired") == copy.get("ticks"), copy)
+    key = last.get("key")
+    check("that run is in the Observatory's data folder under the key goal.start answered with",
+          bool(key) and (data / "runs" / key).is_dir(), key)
 
 finally:
     srv.shutdown()

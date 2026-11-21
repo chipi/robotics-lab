@@ -494,7 +494,7 @@ class Camera:
     def __init__(self, error=None):
         self.error = error
 
-    def detect(self, truth_pose):
+    def detect(self):            # a CameraClient: no truth comes in (RFC-0021 step 6)
         if self.error:
             raise self.error
         return []
@@ -502,7 +502,6 @@ class Camera:
 
 def watch_camera(camera, fixed=None, seconds=0.4):
     nav = navigator()
-    nav.body = types.SimpleNamespace(pose=lambda: (1.0, 2.5, 0.0), height=0.27, quat=(1.0, 0.0, 0.0, 0.0))
     nav.enable_objects(camera, load_kinds())
     if fixed is not None:
         nav.reloc = types.SimpleNamespace(observe=lambda found, pose, now: fixed)

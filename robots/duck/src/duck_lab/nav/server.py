@@ -1,8 +1,13 @@
 """The navigator API: the duck's navigator as its own process (RFC-0014 §3.7, O22), for Mission Control.
 
-    duck-nav-server --data /work/robotics-lab/data --out state/nav       # the robot: the host file's gate socket (RFC-0021)
+    python -m duck_lab.nav.server --robot GATE.sock --depth T.sock --map M.sock [--camera C.sock] --listen API.sock \
+        --data DIR --out DIR
 
-A small JSON-RPC server (newline framed, TCP on loopback) that owns one `Navigator` per goal. Mission Control starts a goal
+It is given only the robot's sockets and never reads the simulator's truth: in the simulator it runs behind its runner
+(`duck-nav-server`, duck_lab.nav_runner: RFC-0021 step 6), which an operator starts, which Mission Control talks to, and
+which keeps the truth, the truth guardrails and the official recording.
+
+A small JSON-RPC server (newline framed, on a unix socket or TCP on loopback) that owns one `Navigator` per goal. Mission Control starts a goal
 of any kind of RFC-0014 §3.4.1 with `goal.start`, polls `goal.status`, and cancels with `goal.cancel`. The server takes the
 robot's lease from the gate at `goal.start` (the navigator is the process that sends `robot.move`, RFC-0017 §3.2) and gives
 it back at the end of the run; STOP never goes through it. Every goal run is also an Observatory run, `duck/<scene>/mc<id>-...`,
@@ -14,20 +19,21 @@ Methods:
   goal.status {decisions_since, objects_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
       decisions_n, objects: [...] | null, objects_v}
   goal.cancel -> {ok}
+  goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
   inventory -> RFC-0016's inventory                           map -> mapd's grid
 `seed.objects` are Mission Control's confirmed objects of the site (their ids are Mission Control's; they come back as `seed`
 beside the navigator's own ids), `seed.areas` the operator's outlines [{id, name, type, outline}].
 
 States of a run, as RFC-0014 §3.4.3: running, then reached, done, refused, failed, stopped_by_guardrail, not_found, cancelled,
-interrupted. The simulator only: the truth (the body server) is read for the guardrails that need it, as the challenge
-judge reads it (guardrails.py); the brain's own decisions never use it."""
+interrupted. The guardrails it checks are its own (the speed cap, the no-go area in the planner, the clock, stuck); the
+ones only the truth can tell are its runner's (guardrails.TruthGuard), which breaks the run with `goal.break`. The kinds that
+look for objects (go_to_object, inventory, explore) need the camera's socket."""
 
 import argparse
 import json
 import math
 import socketserver
-import sys
 import threading
 import time
 from pathlib import Path
@@ -35,10 +41,9 @@ from pathlib import Path
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.guardrails import Guard
-from duck_lab.nav.run import Body, Navigator, decision, host_links
+from duck_lab.nav.camera import CameraClient
+from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
-from duck_lab.nav.sim_camera import SimCamera
-from runfile.catalog import default_data
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 from worldmodel.site import Area, inside
@@ -132,6 +137,7 @@ class GoalRun:
         self.target = None
         self.seed_ids: dict = {}
         self.areas: list = []
+        self.camera = None
         self._lock = threading.Lock()
 
     # --- starting ---------------------------------------------------------------------------------
@@ -147,7 +153,7 @@ class GoalRun:
                                        "robot": "duck"})
         self.run_key = self.runlog.key
         try:
-            self.nav = Navigator(sockets=srv.sockets, body=Body(srv.truth_port) if srv.truth_port else None,
+            self.nav = Navigator(sockets=srv.sockets, body=None,
                                  log=out / "ticks.jsonl", runlog=self.runlog,
                                  client=srv.client)
         except BaseException:
@@ -168,9 +174,11 @@ class GoalRun:
         by_id = {a.aid: a for a in self.areas}
         if self.kind == "go_to_object" and self.params.get("area") in by_id:
             semantic.only_in = by_id[self.params["area"]].polygon
-        cal = self.nav.profile.get("sensors.camera", {})
-        self.nav.enable_objects(SimCamera(config=cal), kinds, semantic=semantic,
-                                area_at=lambda xy: next((a for a in self.areas if inside(xy, a.polygon)), None))
+        cam = self.server.sockets.get("camera")
+        if cam:
+            self.camera = CameraClient(cam)
+            self.nav.enable_objects(self.camera, kinds, semantic=semantic,
+                                    area_at=lambda xy: next((a for a in self.areas if inside(xy, a.polygon)), None))
         self.kinds = kinds
         self._arm_guardrails()
 
@@ -269,6 +277,8 @@ class GoalRun:
         self.progress = self._progress()
         try:
             nav.close()
+            if self.camera is not None:
+                self.camera.close()
         except Exception:                                          # noqa: BLE001
             pass
         if nav.semantic is not None:
@@ -331,7 +341,7 @@ class GoalRun:
     def _coverage(self, ex: Explorer, ended_by: str) -> dict:
         grid = self.nav.mapd.call("map.grid", {"res_m": 0.05})
         known = sum(1 for c in grid.get("cells", "") if c != "?")
-        return {"cells_explored": known, "objects_found": len(self.nav.semantic.objects), "ended_by": ended_by}
+        return {"cells_explored": known, "objects_found": len(self.nav.semantic.objects) if self.nav.semantic else 0, "ended_by": ended_by}
 
     def _do_go_to_object(self) -> tuple:
         p = self.params
@@ -406,11 +416,9 @@ class GoalRun:
 
 
 class NavServer:
-    def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
-                 truth_port: int | None = None):
-        # sockets: the navigator's ("robot": a gate's, "depth", "map"), from the host file; truth_port: the host's body server
-        # (each goal's navigator records the truth with its run), None on a host with no truth
-        self.sockets, self.data, self.out, self.scene, self.client, self.truth_port = sockets, data, out, scene, client, truth_port
+    def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server"):
+        # sockets: the navigator's ("robot": a gate's, "depth", "map", and "camera" when it has one), handed in by its runner
+        self.sockets, self.data, self.out, self.scene, self.client = sockets, data, out, scene, client
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
         self._lock = threading.Lock()
@@ -438,6 +446,10 @@ class NavServer:
             if run is None:
                 return {"state": "idle"}
             return run.snapshot(int(p.get("decisions_since", 0)), int(p.get("objects_since", -1)))
+        if method == "goal.break":
+            if run is not None and run.state not in TERMINAL:
+                run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"))
+            return {"ok": True}
         if method == "goal.cancel":
             if run is not None and run.state not in TERMINAL:
                 run.cancel()
@@ -460,6 +472,8 @@ class NavServer:
         with self._lock:
             if self.run is not None and self.run.state not in TERMINAL:
                 return {"error": {"code": "busy", "message": "a goal is running here"}}
+            if spec.get("kind") in ("go_to_object", "inventory") and not self.sockets.get("camera"):
+                return {"error": {"code": "no_camera", "message": f"a {spec['kind']} goal looks for objects: this navigator has no camera"}}
             if spec.get("kind") not in GOAL_KINDS:
                 return {"error": {"code": "unknown_kind", "message": f"no goal kind {spec.get('kind')!r}"}}
             holder = self._gate_holder()
@@ -503,31 +517,41 @@ class Server(socketserver.ThreadingTCPServer):
         self.nav = nav
 
 
+class UnixServer(socketserver.ThreadingUnixStreamServer):
+    daemon_threads = True
+
+    def __init__(self, path: str, nav: NavServer):
+        super().__init__(path, Handler)
+        self.nav = nav
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--listen", default="127.0.0.1:8061", help="host:port (loopback by default: the API has no login)")
-    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
-    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the host file's gate socket)")
+    for k, what in (("robot", "the robot's socket: a gate's"), ("depth", "the depth sensor's socket"), ("map", "mapd's socket")):
+        ap.add_argument(f"--{k}", type=Path, required=True, help=what)
+    ap.add_argument("--camera", type=Path, help="the camera's socket (the host's, RFC-0021 step 6); none: no goal that looks for objects")
+    ap.add_argument("--listen", required=True, help="a unix socket's path, or host:port (loopback: the API has no login)")
     ap.add_argument("--client", default="duck-nav-server", help="the name the navigator takes the lease under")
-    ap.add_argument("--data", type=Path, default=default_data(),
-                    help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
+    ap.add_argument("--data", type=Path, required=True, help="where each goal run's own run is written (its runner copies it on)")
     ap.add_argument("--out", type=Path, default=Path("state/nav"), help="the navigator's own output folders, one per goal run")
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
     args = ap.parse_args()
-    if args.data is None:
-        sys.exit("duck-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
-    import simhost
-    sim = simhost.load(args.host)
-    sockets = host_links(sim, robot="gate")["sockets"]
-    if args.robot_socket:
-        sockets["robot"] = args.robot_socket
-    listen, _, port = args.listen.rpartition(":")
-    srv = Server((listen or "127.0.0.1", int(port)), NavServer(sockets, args.data, args.out, args.scene, args.client, sim.truth_port))
-    print(f"duck-nav-server: {args.listen}, robot {sockets['robot']}, runs in {args.data}", flush=True)
+    sockets = {"robot": args.robot, "depth": args.depth, "map": args.map, **({"camera": args.camera} if args.camera else {})}
+    nav = NavServer(sockets, args.data, args.out, args.scene, args.client)
+    if "/" in args.listen:
+        Path(args.listen).unlink(missing_ok=True)
+        srv = UnixServer(args.listen, nav)
+    else:
+        listen, _, port = args.listen.rpartition(":")
+        srv = Server((listen or "127.0.0.1", int(port)), nav)
+    print(f"navigator API: {args.listen}, robot {sockets['robot']}, runs in {args.data}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        if "/" in args.listen:
+            Path(args.listen).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

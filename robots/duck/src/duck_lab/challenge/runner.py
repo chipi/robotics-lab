@@ -94,9 +94,12 @@ class Remote:
     """The payload as a navigator for the course code (go_to, loc.pose(), record, scale), across a process boundary."""
 
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
-                 copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None):
+                 copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None,
+                 camera: Path | None = None, extra: list | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
-        on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`)."""
+        on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
+        `camera`: the camera's socket the runner serves (duck_lab.camera_server), handed to the payload as one of the robot's;
+        `extra`: more of the payload's own options (a navigator's test switches)."""
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
@@ -112,7 +115,7 @@ class Remote:
         cmd = list(payload or [sys.executable, "-m", "duck_lab.payload"]) + [      # any navigator that keeps the contract
                "--robot", str(host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
-               "--scene", scene, "--name", name, "--variant", variant]
+               "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + list(extra or [])
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}    # nothing of the host but its sockets
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -189,8 +192,9 @@ class Remote:
         out["status"], out["why"] = st["state"], st.get("why")
         return out
 
-    def explore(self, minutes: float) -> dict:
-        st = self._goal({"kind": "explore", "minutes": float(minutes)})
+    def explore(self, minutes: float, **opts) -> dict:
+        """`opts`: the explore goal's options (objects, find, site, object_costs, relocalise: duck_lab.payload)."""
+        st = self._goal({"kind": "explore", "minutes": float(minutes), **opts})
         if st["state"] == "failed":
             raise PayloadError(f"explore failed in the payload: {st.get('why')}")
         return st["result"]

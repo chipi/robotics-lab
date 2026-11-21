@@ -314,10 +314,14 @@ the bigger item"):**
 
 **Not done or not proven:**
 
-- **Not through the split yet:** `duck-explore` (the apartment) and Mission Control's nav server
-  still run the navigator with the truth in its process, for the simulated camera (it reads the
-  truth) and Mission Control's truth guardrails; both wait for the camera as a host-served sensor
-  and the runner in front of the navigator API (RFC-0021, after step 2).
+- ~~**Not through the split yet:** `duck-explore` and Mission Control's nav server~~ Done
+  2026-11-21 (the operator's go, RFC-0021 step 6): the camera is a socket the runner serves,
+  `duck-nav-server` is the runner in front of the navigator API, `duck-explore` runs the navigator
+  as a payload. A 5-minute exploration found 18 objects through the camera's socket, 0 truth
+  connections in 150 checks; `make sim-duck` 44 checks passed, 0 failed, 0 truth connections in
+  282 checks over 15 goals. Not proven live: a contact or a fall stopping a run through the runner
+  (unit-tested), `duck-explore --find`, `--site` and the test faults, the MacBook (RFC-0021 step 6
+  lists them).
 - **The MacBook's phase 1 run stalled once** (goal 19, 1.55 m short, 7 reflex stops by a wall, the
   laptop at load average 354); goal 19 alone then reached 3 of 3 there. One stall in 20, not
   repeated in 3: its cause (the load, or the simulator's repeat noise, K13) is not known.
@@ -335,10 +339,24 @@ the bigger item"):**
 workstation's reboot (the week of 2026-11-23), fs-verity stays on; the configd note to Pollen: kept
 for later, not sent (`docs/wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md`). And phase 5 waits: "I don't want
 to go to phase 5 until we are really rock solid on the phase 4". The loose ends above are closed;
-what is left before phase 5 is the first bullet below this checkpoint's list, the apartment
-exploration and Mission Control's nav server through the split (the camera as a host-served
-sensor, the runner in front of the navigator API), which the operator wants explained first,
-with the platform's modular architecture as a whole.
+what was left before phase 5, the apartment exploration and Mission Control's nav server through
+the split (the camera as a host-served sensor, the runner in front of the navigator API), was
+explained to the operator first, with the platform's modular architecture as a whole, and is done
+(the first bullet above).
+
+**Then, still before phase 5, the architecture written down** (the operator, 2026-11-21: "after this
+is done all architecture to be like this well documented and explained in some nice diagram in main
+project README, and we should update architecture docs and any others before phase 5 as well"):
+
+- The README: the pieces (robot profile and plugins, host, navigator, runner, gate, run format and
+  Observatory, Mission Control), what each knows, and diagrams of how a goal flows, one path for a
+  course and one for Mission Control, both through the runner.
+- One architecture page in the docs site (there is none today: the pieces are spread over
+  RFC-0011, 0014, 0017, 0018, 0020 and 0021), linked from the README and the RFC index.
+- Every other page that describes how the pieces fit, brought up to date. Known stale today: the
+  README's Mission Control line ("against a fake robot so far") and its table, which has no
+  `libs/simhost`. The rest are found by a sweep of the docs and the projects' READMEs and
+  CONTRACT.md files.
 
 ## Phase 5 — the views
 

@@ -5,8 +5,9 @@ default in the navigator. One JSON file per machine, written once (`simhost init
      "pollen": {"microduck": "/work/pollen/microduck", "microduck_rl": "/work/pollen/microduck_rl"},
      "state": "~/.cache/duck-sim", "truth_port": 7801, "cargo_bin": "~/.cargo/bin"}
 
-`state` is duck-sim's own folder: the robot's sockets are `<robot>.sock`, `<robot>-tof.sock`, `<robot>-map.sock` and
-the gate's `<robot>-gate.sock` there, unless `sockets` names one (keys robot, depth, map, gate). `truth_port` is the
+`state` is duck-sim's own folder: the robot's sockets are `<robot>.sock`, `<robot>-tof.sock`, `<robot>-map.sock`,
+the gate's `<robot>-gate.sock` and the camera's `<robot>-camera.sock` there, unless `sockets` names one (keys robot, depth,
+map, gate, camera; the camera is served by the runner, RFC-0021 step 6). `truth_port` is the
 body server's (the judge's only); null on a host with no truth (the real duck behind its forwarded sockets).
 
 Where it is read from: `--host` where a command takes one, else $ROBOTICS_LAB_HOST, else
@@ -24,7 +25,8 @@ VERSION = 1
 KINDS = ("pollen-duck-sim",)
 ENV = "ROBOTICS_LAB_HOST"
 DEFAULT = Path("~/.config/robotics-lab/host.json")
-SOCKETS = {"robot": "{robot}.sock", "depth": "{robot}-tof.sock", "map": "{robot}-map.sock", "gate": "{robot}-gate.sock"}
+SOCKETS = {"robot": "{robot}.sock", "depth": "{robot}-tof.sock", "map": "{robot}-map.sock", "gate": "{robot}-gate.sock",
+           "camera": "{robot}-camera.sock"}
 KEYS = {"host", "kind", "robot", "pollen", "state", "truth_port", "cargo_bin", "sockets"}
 
 
@@ -46,7 +48,7 @@ class Host:
     state: Path
     truth_port: int | None
     cargo_bin: Path
-    sockets: dict = field(default_factory=dict)     # robot, depth, map, gate -> Path
+    sockets: dict = field(default_factory=dict)     # robot, depth, map, gate, camera -> Path
 
     @property
     def scenarios(self) -> Path:

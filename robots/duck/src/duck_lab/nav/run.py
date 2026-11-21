@@ -1267,7 +1267,7 @@ class Navigator:
     def enable_objects(self, camera, kinds: dict, costs: bool = False, semantic: SemanticMap | None = None,
                        area_at=None, relocalise: bool = True) -> None:
         """Objects (RFC-0016): every camera period, what the camera recognises joins the semantic map, placed with the
-        belief taken right after the camera's truth (50 ms apart at most: 1.5 cm walking, under the camera's noise); a
+        belief taken right before the camera's look (a socket call apart: under the camera's noise); a
         "semantic" event when an object is new or confirmed, a "room" event when the room the objects say the duck is in
         changes (mapd's last grid decides what is in sight). costs: the confirmed objects' parts join the cost map too
         (semantic_points) — off by default: the depth sensor already sees them, and a drifted copy beside the fresh
@@ -1296,9 +1296,9 @@ class Navigator:
 
         def look():
             pose = self.localisation.pose()
-            if pose is None or self.body is None or (self.frames_on and self.loc.memory_pending()):
+            if pose is None or (self.frames_on and self.loc.memory_pending()):
                 return           # (pending: the memory is not yet in the belief's frame, the navigator's thread moves it)
-            found = camera.detect(self.body.pose())
+            found = camera.detect()      # (a CameraClient: the host's camera, RFC-0021 step 6)
             # every look, what it recognised, relative to the duck: a "sighting" (RFC-0016 rev. 3; the Observatory's eye
             # view and video, ADR-0019), with each recogniser's evidence when it has any (a real camera's frame and box)
             self.record(event="sighting", pose=[round(v, 4) for v in pose], hfov_deg=camera.cfg["hfov_deg"],

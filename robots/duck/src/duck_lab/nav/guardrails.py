@@ -1,7 +1,9 @@
-"""A goal's guardrails in the navigator (RFC-0014 §3.4.8): what a goal run must not do, checked where it can act.
+"""A goal's guardrails (RFC-0014 §3.4.8): what a goal run must not do, checked where it can act: by the navigator, or by the
+runner where only the simulator's truth can tell (RFC-0021 step 6).
 
 Mission Control merges the robot's, the site's and the goal's guardrails into one list and hands it to `goal.start`
-(duck_lab.nav.server); `Guard` arms the navigator with it and watches the run:
+(duck_lab.nav.server); `Guard` arms the navigator with it and watches the clock, and `TruthGuard` is the runner's
+(duck_lab.nav_runner), which reads the truth:
 
 - `max_speed {mps}`: the navigator's forward command is clamped (`Navigator.speed_cap`), at the source of every move.
 - `no_go_area {area, outline}`: the outline's points are obstacles for the planner (`Navigator.keepout`), so a path never
@@ -11,11 +13,12 @@ Mission Control merges the robot's, the site's and the goal's guardrails into on
 - `contact`, `fall`, `drop_clearance {m}`: in the simulator by the truth (the body server's trunk pose and height) against the
   apartment's layout, as the challenge judge and the phase 1 evaluation read it: contact is the trunk centre within
   FOOTPRINT_M of an obstacle's outline, a fall is the trunk below FALLEN_Z_M, a drop_clearance is the trunk centre within `m`
-  of a drop's outline. The brain never reads the truth for navigating; only this watchdog does, and a real robot would
+  of a drop's outline. The navigator never reads the truth; the runner does, and a real robot would
   report these itself (RFC-0014 §3.4.1: a run says which conditions were checkable).
 
-A broken guardrail stops the run: the guard calls `on_break(name, detail)`, the run sets `nav.abort` (every loop of the
-navigator and the explorer ends at its next tick, the robot is stopped) and ends `stopped_by_guardrail`."""
+A broken guardrail stops the run: the guard calls `on_break(name, detail)` (the runner, through the API's `goal.break`), the
+run sets `nav.abort` (every loop of the navigator and the explorer ends at its next tick, the robot is stopped) and ends
+`stopped_by_guardrail`."""
 
 import json
 import math
@@ -28,6 +31,8 @@ from worldmodel.site import inside
 
 WATCH_S = 0.05
 KEEPOUT_SPACING_M = 0.05
+NAVIGATOR = ("stuck", "time_limit", "no_go_area", "max_speed")      # the navigator checks (no_go_area: in its planner)
+TRUTH = ("contact", "fall", "drop_clearance", "no_go_area")         # the runner checks, by the truth (no_go_area: the robot inside)
 SUPPORTED = ("contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed")
 
 
@@ -64,20 +69,17 @@ def load_layout(path: Path = LAYOUT) -> tuple:
                   "size": [(x1 - x0) / 2, (y1 - y0) / 2, 0.0], "yaw": 0.0}]
     return obstacles(lay), drops
 
-
 class Guard:
-    def __init__(self, nav, guardrails: list, on_break, t0: float | None = None, layout: tuple | None = None):
+    """The navigator's side: the speed cap and the keep-out armed, the clock watched. It reads no truth."""
+
+    def __init__(self, nav, guardrails: list, on_break, t0: float | None = None):
         self.nav, self.guardrails, self.on_break = nav, guardrails, on_break
         self.t0 = time.monotonic() if t0 is None else t0
         self.by_name: dict = {}
         for g in guardrails:
             self.by_name.setdefault(g["name"], []).append(g)
-        self.obs, self.drops = layout if layout is not None else load_layout()
         self._stop = threading.Event()
-        self.checked = [n for n in self.by_name if n in SUPPORTED and (n not in ("contact", "fall", "drop_clearance") or self.can_see_truth())]
-
-    def can_see_truth(self) -> bool:
-        return self.nav.body is not None
+        self.checked = [n for n in self.by_name if n in NAVIGATOR]
 
     def arm(self) -> None:
         speeds = [g["mps"] for g in self.by_name.get("max_speed", [])]
@@ -109,25 +111,36 @@ class Guard:
         for g in self.by_name.get("time_limit", []):
             if elapsed > g["seconds"]:
                 return "time_limit", f"the time limit of {g['seconds']:g} s is spent"
-        body = self.nav.body
-        if body is None:
-            return None
-        p = body.pose()
-        z = body.height
+        return None
+
+
+class TruthGuard:
+    """The runner's side (RFC-0021 step 6): the guardrails only the simulator's truth can check, against the layout."""
+
+    def __init__(self, guardrails: list, layout: tuple | None = None):
+        self.by_name: dict = {}
+        for g in guardrails:
+            if g["name"] in TRUTH:
+                self.by_name.setdefault(g["name"], []).append(g)
+        self.obs, self.drops = layout if layout is not None else load_layout()
+        self.checked = list(self.by_name)
+
+    def check(self, pose: tuple, z: float) -> tuple | None:
+        """(name, detail) of the first guardrail the truth (the trunk's x, y, yaw and height) breaks, else None."""
         if "fall" in self.by_name and z < FALLEN_Z_M:
             return "fall", f"the trunk is {z:.3f} m high: the robot fell"
         for g in self.by_name.get("no_go_area", []):
-            if inside(p[:2], [tuple(q) for q in g["outline"]]):
+            if inside(pose[:2], [tuple(q) for q in g["outline"]]):
                 return "no_go_area", f"the robot is inside the no-go area {g['area']}"
         if "contact" in self.by_name and self.obs:
-            best = min(self.obs, key=lambda o: footprint_distance(p[:2], o))
-            d = footprint_distance(p[:2], best)
+            best = min(self.obs, key=lambda o: footprint_distance(pose[:2], o))
+            d = footprint_distance(pose[:2], best)
             if d < FOOTPRINT_M:
                 return "contact", f"the trunk is {d:.3f} m from {best['name']}: a part can touch it"
         for g in self.by_name.get("drop_clearance", []):
             if self.drops:
-                best = min(self.drops, key=lambda o: footprint_distance(p[:2], o))
-                d = footprint_distance(p[:2], best)
+                best = min(self.drops, key=lambda o: footprint_distance(pose[:2], o))
+                d = footprint_distance(pose[:2], best)
                 if d < g["m"]:
                     return "drop_clearance", f"the trunk is {d:.2f} m from the drop {best['name']}, nearer than {g['m']:g} m"
         return None

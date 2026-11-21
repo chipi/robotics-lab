@@ -1,8 +1,8 @@
 """Explore the apartment: survey, go to the nearest frontier, repeat (RFC-0002 phase 2, "the brain
-explores"). The simulator's truth is logged for scoring only; the brain never reads it.
+explores"). The navigator runs as a payload (duck_lab.payload); this command is its runner, which has the
+simulator's truth, for the guard and the run only (RFC-0021 step 6); the brain never reads it.
 
-    uv run duck-explore --minutes 20 --out runs/explore
-    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # a live Observatory run too
+    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # the run is the record
 
 The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 """
@@ -10,6 +10,7 @@ The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept duri
 import argparse
 import json
 import math
+import sys
 import threading
 import time
 from pathlib import Path
@@ -19,12 +20,11 @@ from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import anomaly as anom, recovery
-from duck_lab.nav.run import Navigator, decision, host_links
-from duck_lab.nav.runlog import add_args, open_from_args
+from duck_lab.nav.run import Navigator, decision
+from duck_lab.nav.runlog import add_args
+from runfile.catalog import default_data
 from worldmodel.objects import load_kinds
 from duck_lab.site_cli import SITES
-from worldmodel.site import Site
-from duck_lab.nav.sim_camera import SimCamera
 
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
@@ -329,6 +329,9 @@ class Explorer:
 
 
 def main() -> None:
+    """The exploration as a runner (RFC-0021 step 6): the navigator is a payload process (duck_lab.payload) given the
+    robot's sockets and the camera's; this process has the host file and the truth, serves the camera, keeps the truth
+    guard, and writes the official run with the truth put in."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--minutes", type=float, default=20.0)
     ap.add_argument("--out", type=Path, default=Path("runs/explore"))
@@ -348,74 +351,90 @@ def main() -> None:
     ap.add_argument("--no-frames", action="store_true", help="the grid stays in mapd's frame and the memory does not move with the "
                     "belief's (the run before RFC-0016 §6's frame fix; a test)")
     ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (the run before the fix gate)")
+    ap.add_argument("--payload", help="another navigator's command, keeping the payload contract (default: ours)")
     add_args(ap)
     args = ap.parse_args()
     if args.find and args.find not in load_kinds():
         ap.error(f"no kind {args.find!r}; the kinds: {', '.join(sorted(load_kinds()))}")
     if (args.find or args.inventory) and args.no_objects:
         ap.error("--find and --inventory need the objects (drop --no-objects)")
-    args.out.mkdir(parents=True, exist_ok=True)
-    runlog = open_from_args(args, args.out.name, "exploration", args.out)
-    import simhost      # the command's, not the explorer's: the explorer also runs inside a payload, which has no host
-    nav = Navigator(**host_links(simhost.load(args.host), truth=True), log=args.out / "ticks.jsonl", runlog=runlog)
-    if args.no_fix_gate:
-        nav.loc.max_jump_m = None
     if args.fix_fault and args.frame_fault:
         ap.error("--fix-fault and --frame-fault are one fault: give one")
-    if args.fix_fault or args.frame_fault:
-        nav.fix_fault = tuple(float(v) for v in (args.fix_fault or args.frame_fault).split(","))
-        nav.fault_grid = bool(args.frame_fault)
-    nav.frames_on = not args.no_frames
+    data = args.miniview_data or default_data()
+    if data is None:
+        ap.error("the run is the record: give --miniview-data (or OBSERVATORY_DATA)")
+    # the runner's, not the explorer's: the explorer also runs inside a payload, which has no host and no truth
+    import shlex
+    import simhost
+    from duck_lab.camera_server import CameraServer
+    from duck_lab.challenge.runner import Remote
+    from runfile import keys
+    from runfile.truthcopy import TruthLog
+    from simhost.truth import Sampler
 
-    def guard():
-        while not nav.abort:
-            p = nav.body.pose()
-            if stairs_distance(p) < GUARD_M or nav.body.height < 0.06:
-                nav.abort = f"truth guard: {stairs_distance(p):.2f} m from the staircase, trunk {nav.body.height:.3f} m"
-            time.sleep(0.05)
-
-    threading.Thread(target=guard, daemon=True).start()
+    host = simhost.load(args.host)
+    if host.truth_port is None:
+        sys.exit(f"duck-explore: {host.source} has no truth (truth_port is null): the runner needs it for the guard and the run")
+    args.out.mkdir(parents=True, exist_ok=True)
+    name = args.run or args.out.name
+    key = keys.make_key("duck", args.scene, name)
+    if keys.run_dir(Path(data), key).exists():
+        sys.exit(f"duck-explore: the run {key} exists in {data}: give another --run or --out")
+    extra = ["--sites", str(args.sites)] + (["--no-fix-gate"] if args.no_fix_gate else []) + \
+        (["--no-frames"] if args.no_frames else []) + (["--fix-fault", args.fix_fault] if args.fix_fault else []) + \
+        (["--frame-fault", args.frame_fault] if args.frame_fault else [])
+    truth_log = TruthLog(args.out / "truth.jsonl")
+    camera = sampler = nav = None
+    route = {"checks": 0, "max": None}
     try:
-        if nav.loc.pose() is None and not nav.fix():
-            nav.survey()
-        (args.out / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": nav.body.pose(),
-                                                          "scale": nav.scale}))
-        site = None
         if not args.no_objects:
-            cal = nav.profile.get("sensors.camera", {})
-            if args.site:
-                # the site's map from earlier runs: its objects are known before they are seen again (the run starts at
-                # the dock, the site frame, so its map frame is the site's; RFC-0016 rev. 3)
-                site = Site.load(args.sites, args.site, load_kinds())
-                nav.record(event="site", id=site.sid, name=site.name, kind=site.kind,
-                           objects=len(site.semantic.objects), areas=[a.to_json() for a in site.areas])
-            nav.enable_objects(SimCamera(config=cal), load_kinds(), costs=args.object_costs,
-                               semantic=site.semantic if site else None,
-                               area_at=site.area_at if site and site.areas else None, relocalise=not args.no_relocalise)
-        explorer = Explorer(nav, args.out)
-        explorer.find = args.find
-        result = explorer.run(args.minutes)
+            camera = CameraServer(host, host.sockets["camera"]).start()
+        sampler = Sampler(host).start()
+        nav = Remote(host, args.out, args.scene, name, Path(data), key, truth_log, run={"kind": "exploration"},
+                     payload=shlex.split(args.payload) if args.payload else None, camera=camera.path if camera else None,
+                     extra=extra)
+        print(f"Observatory run {key} -> {keys.run_dir(Path(data), key)}", file=sys.stderr)
+        guarded = threading.Event()
+
+        def watch(s) -> None:
+            truth_log.add(s.wall_ns, s.pose, s.z, s.quat)
+            if sampler.samples % 40 == 1:
+                n = nav.truth_connections(host.truth_port)
+                if n is not None:
+                    route["checks"] += 1
+                    route["max"] = max(route["max"] or 0, n)
+            # the test harness's kill switch (GUARD_M, above): the runner's, by the truth; the brain never reads it
+            if not guarded.is_set() and (stairs_distance(s.pose) < GUARD_M or s.z < 0.06):
+                guarded.set()
+                why = f"truth guard: {stairs_distance(s.pose):.2f} m from the staircase, trunk {s.z:.3f} m"
+                nav.abort = why
+                nav.record(event="truth_guard", why=why)
+        sampler.on_sample = watch
+        pose = nav.localise()
+        (args.out / "start.json").write_text(json.dumps({"map": list(pose) if pose else None, "truth": list(sampler.latest.pose),
+                                                          "scale": nav.scale}))
+        if pose is None:
+            sys.exit("duck-explore: no pose on the map after the survey")
+        opts = {} if args.no_objects else {"objects": True, "find": args.find, "site": args.site,
+                                           "object_costs": args.object_costs, "relocalise": not args.no_relocalise}
+        result = nav.explore(args.minutes, **opts)
         print(json.dumps(result))
+        inv = result.get("inventory")
+        if args.inventory and inv:
+            print(f"INVENTORY {inv['objects']} objects: " + "; ".join(f"{room}: {', '.join(kinds)}" for room, kinds in inv["rooms"].items()))
+        if result.get("site"):
+            print(f"SITE {result['site']['id']}: {result['site']['objects']} objects saved to {result['site']['folder']}")
     finally:
-        nav.close()
-        if nav.semantic is not None:
-            with nav._sem_lock:
-                (args.out / "semantic_map.json").write_text(json.dumps(nav.semantic.to_json(), indent=1))
-                inventory = nav.semantic.inventory(nav._map_raw)
-            (args.out / "inventory.json").write_text(json.dumps(inventory, indent=1))
-            # the inventory in the run too (RFC-0016 rev. 3): the Observatory and Mission Control read runs, not files
-            nav.record(event="inventory", objects=inventory["objects"], rooms=inventory["rooms"],
-                       decision=decision("inventory", f"{inventory['objects']} objects found",
-                                         objects=inventory["objects"]))
-            if args.inventory:
-                print(f"INVENTORY {inventory['objects']} objects: " + "; ".join(
-                    f"{room}: {', '.join(o['kind'] for o in objs)}" for room, objs in inventory["rooms"].items()))
-            if site is not None:
-                with nav._sem_lock:
-                    site.save()       # the run worked on the site's own map: its ids stay, the new objects join
-                print(f"SITE {site.sid}: {len(site.semantic.objects)} objects saved to {site.folder}")
-        if runlog:
-            runlog.finish()
+        if sampler is not None:
+            sampler.stop()
+        if nav is not None:
+            nav.close()
+            print(f"the official run's truth copy: {nav.copy.stats()}", file=sys.stderr)
+        if camera is not None:
+            print(f"camera: {camera.looks} looks served", file=sys.stderr)
+            camera.stop()
+        truth_log.close()
+        print(f"the payload's connections to the truth's port: {route}", file=sys.stderr)
 
 
 if __name__ == "__main__":

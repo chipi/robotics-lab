@@ -22,10 +22,12 @@ def check(name, cond, detail=""):
         failures.append(name)
 
 
-code = "import sys, duck_lab.payload; print(sorted(m for m in sys.modules if m.split('.')[0] in ('simhost',)))"
-out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
-check("importing the payload loads no host library (simhost: the host file, the reset, the truth sampler)",
-      out.returncode == 0 and out.stdout.strip() == "[]", (out.returncode, out.stdout, out.stderr[-300:]))
+for module, what in (("duck_lab.payload", "the payload"), ("duck_lab.nav.server", "Mission Control's navigator API (RFC-0021 step 6)")):
+    code = (f"import sys, {module}; print(sorted(m for m in sys.modules if m.split('.')[0] in ('simhost',) "
+            f"or m in ('duck_lab.camera_server', 'duck_lab.nav_runner')))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    check(f"importing {what} loads no host library (simhost: the host file, the reset, the truth sampler) and no runner side",
+          out.returncode == 0 and out.stdout.strip() == "[]", (out.returncode, out.stdout, out.stderr[-300:]))
 
 from duck_lab.challenge.runner import event  # noqa: E402
 
