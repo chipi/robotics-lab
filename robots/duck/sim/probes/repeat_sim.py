@@ -24,11 +24,14 @@ import threading
 import time
 from pathlib import Path
 
-SIM = Path(os.path.expanduser("~/.cache/duck-sim"))
+import simhost  # noqa: E402
+
+HOST = simhost.load()      # the host's truth port and sockets (RFC-0021)
+
 
 
 def record(out: Path, mode: str, seconds: float) -> None:
-    body = socket.create_connection(("127.0.0.1", 7801)).makefile("rw")
+    body = socket.create_connection(("127.0.0.1", HOST.truth_port)).makefile("rw")
     body.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n")
     body.flush()
     body.readline()
@@ -36,7 +39,7 @@ def record(out: Path, mode: str, seconds: float) -> None:
 
     def tof() -> None:
         s = socket.socket(socket.AF_UNIX)
-        s.connect(str(SIM / "duck-a-tof.sock"))
+        s.connect(str(HOST.sockets["depth"]))
         s.settimeout(1.0)
         f = s.makefile("rw")
         f.write(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tof.stream"}) + "\n")
@@ -55,7 +58,7 @@ def record(out: Path, mode: str, seconds: float) -> None:
     t = threading.Thread(target=tof)
     t.start()
     rob = socket.socket(socket.AF_UNIX)
-    rob.connect(str(SIM / "duck-a.sock"))
+    rob.connect(str(HOST.sockets["robot"]))
     rf = rob.makefile("rw")
     i = 0
     poses, start, last_move = {}, time.monotonic(), 0.0

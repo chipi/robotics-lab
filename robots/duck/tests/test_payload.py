@@ -33,37 +33,50 @@ e = event("goal", "goal n 3", n=3, kind="box", text="kept")
 check("a runner's event keeps a row's own `kind` and `text` fields as data (challenge 21's goal rows name a place kind)",
       e["kind"] == "goal" and e["text"] == "goal n 3" and e["raw"] == {"n": 3, "kind": "box", "text": "kept"}, e)
 
-if sys.platform.startswith("linux"):
-    srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
-    srv.listen()
-    port = srv.getsockname()[1]
-    other = socket.socket()
-    other.bind(("127.0.0.1", 0))
-    other.listen()
-    accepted = []
-    threading.Thread(target=lambda: accepted.append(srv.accept()), daemon=True).start()
-    child = subprocess.Popen([sys.executable, "-c",
-                              f"import socket, time; s = socket.create_connection(('127.0.0.1', {port})); time.sleep(30)"])
-    try:
-        for _ in range(50):
-            if accepted:
-                break
-            time.sleep(0.1)
+import shutil  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from duck_lab.challenge import runner  # noqa: E402
+
+srv = socket.socket()
+srv.bind(("127.0.0.1", 0))
+srv.listen()
+port = srv.getsockname()[1]
+other = socket.socket()
+other.bind(("127.0.0.1", 0))
+other.listen()
+accepted = []
+threading.Thread(target=lambda: accepted.append(srv.accept()), daemon=True).start()
+child = subprocess.Popen([sys.executable, "-c",
+                          f"import socket, time; s = socket.create_connection(('127.0.0.1', {port})); time.sleep(30)"])
+ways = []
+if Path("/proc").exists():
+    ways.append((Path("/proc"), "/proc"))
+if shutil.which("lsof"):
+    ways.append((Path("/nonexistent/proc"), "lsof (no /proc, as on macOS)"))
+try:
+    for _ in range(50):
+        if accepted:
+            break
+        time.sleep(0.1)
+    for proc, way in ways:
+        runner.PROC = proc
         fake = types.SimpleNamespace(proc=child)
         n = Remote.truth_connections(fake, port)
         m = Remote.truth_connections(fake, other.getsockname()[1])
-        check("the counter sees a process's connection to the port (1), and none to another (0)", n == 1 and m == 0, (n, m))
+        check(f"{way}: the counter sees a process's connection to the port (1), and none to another (0)", n == 1 and m == 0,
+              (n, m))
         me = types.SimpleNamespace(proc=types.SimpleNamespace(pid=999_999_999))
-        check("a process that is gone is not counted as clean: None (not measured)",
+        check(f"{way}: a process that is gone is not counted as clean: None (not measured)",
               Remote.truth_connections(me, port) is None)
-    finally:
-        child.kill()
-        child.wait()
-        srv.close()
-        other.close()
-else:
-    print("NOT RUN the connection counter (no /proc on this platform: a run records it as not measured)")
+    if not ways:
+        print("NOT RUN the connection counter (no /proc and no lsof: a run records it as not measured)")
+finally:
+    runner.PROC = Path("/proc")
+    child.kill()
+    child.wait()
+    srv.close()
+    other.close()
 
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")

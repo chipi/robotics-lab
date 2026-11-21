@@ -6,8 +6,12 @@ import socket
 import sys
 import time
 
+import simhost  # noqa: E402
+
+HOST = simhost.load()      # the host's truth port and sockets (RFC-0021)
+
 vx, vyaw, with_id = float(sys.argv[1]), float(sys.argv[2]), sys.argv[3] == "id"
-port = 7801
+port = HOST.truth_port
 body = socket.create_connection(("127.0.0.1", port)).makefile("rw")
 body.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n"); body.flush(); body.readline()
 
@@ -19,7 +23,7 @@ def pose():
 
 
 s = socket.socket(socket.AF_UNIX)
-s.connect(os.path.expanduser("~/.cache/duck-sim/duck-a.sock"))
+s.connect(str(HOST.sockets["robot"]))
 f = s.makefile("rw")
 (x0, yaw0), turned = pose(), 0.0
 prev = yaw0

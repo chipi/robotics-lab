@@ -327,4 +327,30 @@ check("with the gate gone the duck is offline, and STOP is accepted but cannot b
 srv.shutdown()
 srv.server_close()
 mc.close()
+
+# The robot's sockets come from the machine's host file (RFC-0021) when the robot file names none; named ones are kept.
+import os  # noqa: E402
+
+from mission_control.duck import DuckAdapter  # noqa: E402
+
+host_file = tmp / "host.json"
+host_file.write_text(json.dumps({"host": 1, "kind": "pollen-duck-sim", "robot": "duck-b",
+                                 "pollen": {"microduck": "/p/m", "microduck_rl": "/p/rl"}, "state": str(tmp / "hoststate"),
+                                 "truth_port": 7801, "cargo_bin": "/c"}))
+was = os.environ.get("ROBOTICS_LAB_HOST")
+os.environ["ROBOTICS_LAB_HOST"] = str(host_file)
+try:
+    a = DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim"}}))
+    check("a robot file with no sockets takes the host file's gate and map sockets",
+          str(a.gate_socket) == str(tmp / "hoststate" / "duck-b-gate.sock") and str(a.mapd_socket) == str(tmp / "hoststate" / "duck-b-map.sock"),
+          (a.gate_socket, a.mapd_socket))
+    b = DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock",
+                                                                         "mapd_socket": "/x/m.sock"}}))
+    check("... and one that names them keeps its own", str(b.gate_socket) == "/x/g.sock" and str(b.mapd_socket) == "/x/m.sock",
+          (b.gate_socket, b.mapd_socket))
+finally:
+    if was is None:
+        os.environ.pop("ROBOTICS_LAB_HOST", None)
+    else:
+        os.environ["ROBOTICS_LAB_HOST"] = was
 finish("test_duck_adapter")

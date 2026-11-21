@@ -57,7 +57,7 @@ TESTS_EXTRA = {
 # permanent, by importing module: Mission Control's duck adapter drives the navigator over its own client (nav.client,
 # nav.run.load_scale), retired by RFC-0020's plugins
 EXCEPTIONS = {
-    "mission_control.duck": {"duck_lab"},
+    "mission_control.duck": {"duck_lab", "simhost"},       # and the host file for its sockets (RFC-0021)
 }
 
 # to be removed (each a knot cut by a later commit of the restructure)

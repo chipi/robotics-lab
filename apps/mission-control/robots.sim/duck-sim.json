@@ -4,9 +4,7 @@
   "kind": "duck",
   "adapter": {
     "type": "duck-sim",
-    "gate_socket": "~/.cache/duck-sim/duck-a-gate.sock",
     "navigator": "127.0.0.1:8061",
-    "mapd_socket": "~/.cache/duck-sim/duck-a-map.sock",
     "observatory": "http://127.0.0.1:8070"
   },
   "factsheet": {

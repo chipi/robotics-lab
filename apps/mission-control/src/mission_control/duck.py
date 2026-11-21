@@ -250,15 +250,20 @@ class DuckNavigatorClient:
 
 
 class DuckAdapter:
-    """Robot file: {"type": "duck-sim", "gate_socket": "~/.cache/duck-sim/duck-a-gate.sock", "navigator": "127.0.0.1:8061",
-    "mapd_socket": "~/.cache/duck-sim/duck-a-map.sock", "observatory": "http://127.0.0.1:8070"}. `observatory` is where the
+    """Robot file: {"type": "duck-sim", "navigator": "127.0.0.1:8061", "observatory": "http://127.0.0.1:8070"}, and
+    `gate_socket`, `mapd_socket` when they are not this machine's host file's (RFC-0021: the host file says where the
+    robot's sockets are; a robot file that names none takes the host's gate and map sockets). `observatory` is where the
     goal runs' Watch links point (the Observatory's /watch/<run key>)."""
 
     def __init__(self, cfg, clock=time.monotonic):
         options = cfg.adapter
-        self.gate_socket = _addr(options.get("gate_socket", "~/.cache/duck-sim/duck-a-gate.sock"))
+        if "gate_socket" not in options or "mapd_socket" not in options:
+            import simhost
+            host = simhost.load(options.get("host"))
+            options = {"gate_socket": str(host.sockets["gate"]), "mapd_socket": str(host.sockets["map"]), **options}
+        self.gate_socket = _addr(options["gate_socket"])
         self.nav_address = options.get("navigator", "127.0.0.1:8061")
-        self.mapd_socket = _addr(options.get("mapd_socket", "~/.cache/duck-sim/duck-a-map.sock"))
+        self.mapd_socket = _addr(options["mapd_socket"])
         self.observatory = (options.get("observatory") or "").rstrip("/") or None
         self.clock = clock
         self.scale = load_scale(options.get("calibration", "sim"))

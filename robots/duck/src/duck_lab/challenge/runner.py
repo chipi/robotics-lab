@@ -35,6 +35,52 @@ def event(kind: str, text: str, /, **raw) -> dict:          # positional: a row'
     return {"kind": kind, "text": text, "notable": True, "t_src": None, "raw": raw}
 
 
+PROC = Path("/proc")       # where a process's sockets are read, when the host has it (a test points it elsewhere)
+
+
+def truth_connections(pid: int, port: int) -> int | None:
+    """The TCP connections process `pid` holds to `port` on this host: its own sockets (/proc/<pid>/fd) matched by inode in
+    the kernel's TCP tables; where there is no /proc (macOS), `lsof` on the process. None when the process is gone or
+    neither can say: not measured, never 0."""
+    if PROC.exists():
+        try:
+            fds = list((PROC / str(pid) / "fd").iterdir())
+        except FileNotFoundError:
+            return None
+        inodes = set()
+        for fd in fds:
+            try:
+                link = os.readlink(fd)
+            except OSError:
+                continue
+            if link.startswith("socket:["):
+                inodes.add(link[8:-1])
+        n = 0
+        for table in ("net/tcp", "net/tcp6"):
+            try:
+                lines = (PROC / table).read_text().splitlines()[1:]
+            except OSError:
+                continue
+            for line in lines:
+                f = line.split()
+                if len(f) > 9 and f[9] in inodes and int(f[2].rsplit(":", 1)[1], 16) == port:
+                    n += 1
+        return n
+    try:
+        os.kill(pid, 0)               # lsof says nothing for a process that is gone: that is not 0
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        pass
+    try:
+        out = subprocess.run(["lsof", "-nP", "-a", "-p", str(pid), "-iTCP", "-Fn"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    # -Fn: one `n<local>-><remote>` line per connection; lsof exits 1 when the process has none at all
+    return sum(1 for line in out.stdout.splitlines() if line.startswith("n") and "->" in line
+               and line.rsplit("->", 1)[1].rsplit(":", 1)[-1] == str(port))
+
+
 class _Loc:
     def __init__(self, remote: "Remote"):
         self.remote = remote
@@ -197,30 +243,10 @@ class Remote:
 
     def truth_connections(self, port: int) -> int | None:
         """How many TCP connections the payload's process holds to `port` now (the truth's): its own sockets (/proc/<pid>/fd)
-        matched by inode against the kernel's TCP tables. None where there is no /proc (macOS): not measured, not zero.
-        The body server's port also takes joint targets (op `write`), so a connection would be an actuation path too."""
-        try:
-            inodes = set()
-            for fd in Path(f"/proc/{self.proc.pid}/fd").iterdir():
-                try:
-                    link = os.readlink(fd)
-                except OSError:
-                    continue
-                if link.startswith("socket:["):
-                    inodes.add(link[8:-1])
-            n = 0
-            for table in ("/proc/net/tcp", "/proc/net/tcp6"):
-                try:
-                    lines = Path(table).read_text().splitlines()[1:]
-                except OSError:
-                    continue
-                for line in lines:
-                    f = line.split()
-                    if len(f) > 9 and f[9] in inodes and int(f[2].rsplit(":", 1)[1], 16) == port:
-                        n += 1
-            return n
-        except FileNotFoundError:
-            return None
+        matched by inode against the kernel's TCP tables, or where there is no /proc (macOS) `lsof`; None when neither can
+        tell (not measured, not zero). The body server's port also takes joint targets (op `write`), so a connection would
+        be an actuation path too."""
+        return truth_connections(self.proc.pid, port)
 
     def _zero_move(self) -> None:
         """robotd keeps the last command it was given: a payload that died mid-goal leaves the duck walking."""

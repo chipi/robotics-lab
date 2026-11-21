@@ -19,7 +19,10 @@ import threading
 import time
 from pathlib import Path
 
-SIM = Path(os.path.expanduser("~/.cache/duck-sim"))
+import simhost  # noqa: E402
+
+HOST = simhost.load()      # the host's truth port and sockets (RFC-0021)
+
 
 
 def stream(sock: Path, request: dict, method: str, out, stop: threading.Event, every: int = 1, extra=None) -> None:
@@ -51,7 +54,7 @@ def main() -> None:
     n_stops, vx, vyaw, walk_s, stop_s = (int(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]), float(sys.argv[5]),
                                          float(sys.argv[6])) if len(sys.argv) > 6 else (6, 0.2, 0.25, 6.0, 4.0)
     out_dir.mkdir(parents=True, exist_ok=True)
-    body = socket.create_connection(("127.0.0.1", 7801)).makefile("rw")
+    body = socket.create_connection(("127.0.0.1", HOST.truth_port)).makefile("rw")
     body.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n")
     body.flush()
     body.readline()
@@ -68,17 +71,17 @@ def main() -> None:
     stop = threading.Event()
     state_f, tof_f = open(out_dir / "state.jsonl", "w"), open(out_dir / "tof.jsonl", "w")
     threads = [
-        threading.Thread(target=stream, args=(SIM / "duck-a.sock", {"jsonrpc": "2.0", "id": 1, "method": "robot.subscribe",
+        threading.Thread(target=stream, args=(HOST.sockets["robot"], {"jsonrpc": "2.0", "id": 1, "method": "robot.subscribe",
                                                                       "params": {"hz": 50}}, "robot.state", state_f, stop, 5,
                                               sample_truth)),
-        threading.Thread(target=stream, args=(SIM / "duck-a-tof.sock", {"jsonrpc": "2.0", "id": 1, "method": "tof.stream"},
+        threading.Thread(target=stream, args=(HOST.sockets["depth"], {"jsonrpc": "2.0", "id": 1, "method": "tof.stream"},
                                               "tof.frame", tof_f, stop)),
     ]
     for t in threads:
         t.start()
     time.sleep(1.0)
     s = socket.socket(socket.AF_UNIX)
-    s.connect(str(SIM / "duck-a.sock"))
+    s.connect(str(HOST.sockets["robot"]))
     f = s.makefile("rw")
     i = 0
 

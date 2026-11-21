@@ -5,7 +5,11 @@ import re
 import socket
 from pathlib import Path
 
-body = socket.create_connection(("127.0.0.1", 7801)).makefile("rw")
+import simhost  # noqa: E402
+
+HOST = simhost.load()      # the host's truth port and sockets (RFC-0021)
+
+body = socket.create_connection(("127.0.0.1", HOST.truth_port)).makefile("rw")
 body.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n"); body.flush(); body.readline()
 body.write('{"op":"read"}\n'); body.flush(); r = json.loads(body.readline())
 w, x, y, z = r["imu"]["quat"]
