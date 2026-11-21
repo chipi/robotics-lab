@@ -290,32 +290,55 @@ Found and fixed on the way: Pollen's configd does not build on macOS (our patch,
 for Pollen drafted); simhost left mapd running on macOS; the setup scripts broke on python 3.9; the
 explorer and the evaluation imported the host library at load (caught by the payload's test).
 
+**Closed after the checkpoint (2026-11-21, the operator: "close all the loose ends before we go to
+the bigger item"):**
+
+- **Challenge 21 through the split:** seeds 1–3, twice: 6 of 6, every run all 10 goals.
+- **The simulator on a clean Linux machine:** a fresh `ubuntu:24.04` container did the whole setup
+  and then challenge 1 in one run (no `docker commit`): `HOST-SETUP PASS`, challenge 1 passed
+  (0.151 m, real-time factor 1.0, 366 of 366 ticks with truth, 0 truth-port connections).
+- **The split's recordings in the Observatory's page** (the operator's, headless Chromium): the
+  phase 1 run through the split, run 19 the old way, and the MacBook's run all load with no page
+  error, the page holding a belief and a truth at each time read; the MacBook's run, recorded on
+  another machine, opens here unchanged.
+- **The MacBook:** phase 1's 20 goals through the split, 19 of 20 (one stall, below), 0 contacts;
+  challenge 1 again with the truth-port count by `lsof`: 0 in 18 checks; no mapd left.
+- **The eight standalone probes** read the truth's port and the sockets from the host file.
+- **The truth-port check on macOS:** `lsof` where there is no `/proc` (tested both ways here; live
+  on the MacBook above).
+- **Mission Control without this machine's paths:** the duck adapter takes its sockets from the
+  host file when the robot file names none; the shipped robot file and the duck profile's copy
+  name none. Live: the simulator, `duck-gate`, `duck-nav-server` and Mission Control started
+  with no socket path given, the shipped robot file, one point goal through the API: reached, the
+  lease given back.
+
 **Not done or not proven:**
 
 - **Not through the split yet:** `duck-explore` (the apartment) and Mission Control's nav server
   still run the navigator with the truth in its process, for the simulated camera (it reads the
   truth) and Mission Control's truth guardrails; both wait for the camera as a host-served sensor
   and the runner in front of the navigator API (RFC-0021, after step 2).
-- **Challenge 21 through the split ran once,** 8 of 10 (a goal missed by 1 cm); not repeated.
-- **The simulator inside the clean Linux container did not run:** saving the container fails 3 of
-  3 on this workstation's Docker store (fs-verity "FILE CORRUPTED", no disk errors; the operator's
-  root checks found the disk healthy); a reboot or fs-verity off for containerd is the operator's.
-- **On the MacBook:** phase 1's 20 goals not run, the recording not opened in the Observatory there.
-- **The split runs not opened in the Observatory's page** (read by its run builder only).
-- **Eight standalone probes** still open port 7801 or `~/.cache/duck-sim` themselves; Mission
-  Control's robot-file defaults keep this machine's sockets (phase 5's control panel).
-- **The truth-port check reads `/proc`:** on macOS it records "not measured".
-- **host-check does not measure the real-time factor;** every run records it instead (1.0 here and
-  on the MacBook).
+- **The MacBook's phase 1 run stalled once** (goal 19, 1.55 m short, 7 reflex stops by a wall, the
+  laptop at load average 354); goal 19 alone then reached 3 of 3 there. One stall in 20, not
+  repeated in 3: its cause (the load, or the simulator's repeat noise, K13) is not known.
+- **host-check does not measure the real-time factor;** every run records it instead (1.0 here, on
+  the MacBook and in the container).
+- **The eight probes rewritten to the host file compile but were not run live** (one-off tools).
+- **Docker commits and builds are held on this workstation** until its reboot (the week of
+  2026-11-23, the operator's decision; fs-verity "FILE CORRUPTED" on new layers, also seen at
+  other projects' builds since 2026-11-06; the disk checks clean). Runs are not affected.
 - **Pollen's licences were read after step 3, not before** as the RFC said; the models'
   non-commercial clause is open for a paid arena.
 - **The straight navigator's 0.37 m shortfall** is put down to raw odometry; not measured.
 
-**For the operator:** the Docker store (a reboot or fs-verity off for containerd); whether to send
-the configd note to Pollen (`docs/wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md`).
-
-**Recommendation:** phase 5, starting with its design round (proposals and mock-ups per surface,
-for the operator to decide on), as the order says (4b, then 5, then the planner).
+**Decided by the operator (2026-11-21):** the Docker store: hold commits and builds until the
+workstation's reboot (the week of 2026-11-23), fs-verity stays on; the configd note to Pollen: kept
+for later, not sent (`docs/wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md`). And phase 5 waits: "I don't want
+to go to phase 5 until we are really rock solid on the phase 4". The loose ends above are closed;
+what is left before phase 5 is the first bullet below this checkpoint's list, the apartment
+exploration and Mission Control's nav server through the split (the camera as a host-served
+sensor, the runner in front of the navigator API), which the operator wants explained first,
+with the platform's modular architecture as a whole.
 
 ## Phase 5 — the views
 
