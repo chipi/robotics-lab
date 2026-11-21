@@ -27,9 +27,10 @@ import time
 from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav.run import Navigator, host_links
-from duck_lab.nav.runlog import add_args, open_from_args
+from duck_lab.nav.runlog import add_args
 from duck_lab.profile import load as load_profile
+from runfile import keys
+from runfile.catalog import default_data
 
 LAYOUT = Path(__file__).resolve().parents[3] / "sim" / "apartment_layout.json"
 GOALS = Path(__file__).resolve().parents[3] / "sim" / "phase1_goals.json"
@@ -133,36 +134,60 @@ def main() -> None:
         goals = [tuple(g) for g in json.loads(args.goals_file.read_text())["goals"]]
         args.goals = len(goals)
     args.out.mkdir(parents=True, exist_ok=True)
-    runlog = open_from_args(args, args.out.name, "go-to evaluation", args.out, evaluation=not args.chain)
+    data = args.miniview_data or default_data()
+    if data is None:
+        raise SystemExit("no Observatory data folder (--miniview-data or OBSERVATORY_DATA): the evaluation's record is its run")
+    # The navigator is a payload (RFC-0021 step 2): a process per goal (a reset simulator, a new map), given only the
+    # robot's sockets; the runner here reads the truth, scores each goal, and copies the goals' runs into one official run.
+    from duck_lab.challenge.runner import Remote
+    from runfile.truthcopy import TruthLog
+    from simhost.truth import Sampler
+    name = args.run or args.out.name
+    key = keys.make_key("duck", args.scene, name)
+    if keys.run_dir(Path(data), key).exists():
+        raise SystemExit(f"cannot write the Observatory run: {key} exists")
+    truth_log = TruthLog(args.out / "truth.jsonl")
     results = []
-    nav = None
+    nav = sampler = copy = None
+    samples = []
 
-    def start():
-        n_ = Navigator(**host_links(host, truth=True), log=args.out / "ticks.jsonl", runlog=runlog)
-        if n_.loc.pose() is None and not n_.fix():
-            n_.survey()
-        return n_, compose(n_.loc.pose(), inverse(n_.body.pose()))
+    def watch(s) -> None:
+        truth_log.add(s.wall_ns, s.pose, s.z, s.quat)
+        samples.append(s)
+
+    def start(i: int):
+        """A reset simulator, the truth sampled, a payload for this goal (all goals in one, with --chain)."""
+        nonlocal sampler, copy
+        simhost.reset(host)
+        sampler = Sampler(host, on_sample=watch).start()
+        n_ = Remote(host, args.out, args.scene, f"{name}-g{i}", Path(data), key, truth_log, copy=copy,
+                    run={"kind": "go-to evaluation"})
+        copy = n_.copy
+        pose = n_.localise()
+        return n_, compose(pose, inverse(sampler.latest.pose)) if pose is not None else None
 
     try:
         if args.chain:
-            nav, map_from_world = start()
+            nav, map_from_world = start(1)
         for i, (gx, gy, room) in enumerate(goals, 1):
             if not args.chain:
                 if nav is not None:
-                    nav.close()
-                simhost.reset(host)
-                nav, map_from_world = start()
-            goal_map = compose(map_from_world, (gx, gy, 0.0))[:2]
+                    nav.close(finish=False)
+                    sampler.stop()
+                nav, map_from_world = start(i)
             started = time.monotonic()
-            ticks_before = sum(1 for _ in open(args.out / "ticks.jsonl")) if (args.out / "ticks.jsonl").exists() else 0
-            out = nav.go_to(goal_map, args.timeout)
-            ticks = [json.loads(l) for l in list(open(args.out / "ticks.jsonl"))[ticks_before:]]
-            tr = [t["truth"] for t in ticks if "truth" in t]
-            low = min((t["truth_z"] for t in ticks if "truth_z" in t), default=1.0)
+            samples.clear()
+            if map_from_world is None:
+                goal_map, out = (gx, gy), {"status": "refused", "why": "no pose on the map after the survey"}
+            else:
+                goal_map = compose(map_from_world, (gx, gy, 0.0))[:2]
+                out = nav.go_to(goal_map, args.timeout)
+            tr = [s.pose for s in samples]
+            low = min((s.z for s in samples), default=1.0)
             outside = any(not (APARTMENT[0] < p[0] < APARTMENT[1] and APARTMENT[2] < p[1] < APARTMENT[3])
                           for p in tr)
             near = min((clearance(p, obs) for p in tr), default=(math.inf, None))
-            end = nav.body.pose()
+            end = sampler.latest.pose
             row = {"goal": i, "room": room, "world": [gx, gy], "map": [round(v, 3) for v in goal_map],
                    **out, "truth_end": [round(v, 3) for v in end[:2]],
                    "error_m": round(math.dist(end[:2], (gx, gy)), 3),
@@ -176,11 +201,14 @@ def main() -> None:
                 print("ABORT: the duck fell (or left the apartment); the run stops here", flush=True)
                 break
     finally:
+        if sampler is not None:
+            sampler.stop()
         if nav is not None:
-            nav.close()
+            nav.close()             # the last goal's run copied, then the official run ends
+        truth_log.close()
         (args.out / "results.json").write_text(json.dumps(results, indent=1))
-        if runlog:
-            runlog.finish()
+    if copy is not None:
+        print(f"Observatory run {key}: {copy.sources} payload runs, ticks {copy.stats()}", flush=True)
     n = len(results)
     said = sum(r["status"] == "reached" for r in results)
     true_ok = sum(r["reached_truth"] for r in results)

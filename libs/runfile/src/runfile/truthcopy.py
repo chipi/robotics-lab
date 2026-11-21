@@ -67,10 +67,12 @@ class TruthLog:
 
 class TruthCopy:
     def __init__(self, src_dir: Path, dst_dir: Path, key: str, truth, reset_per_goal: bool = False,
-                 max_gap_ns: int = MAX_GAP_NS):
+                 max_gap_ns: int = MAX_GAP_NS, run: dict | None = None):
         """`truth(wall_ns, max_gap_ns)` -> a TruthLog sample or None. `reset_per_goal`: every goal starts on a reset simulator
-        with its own map (an evaluation), so each segment's first tick with a truth gets its own epoch, as DuckLog does."""
+        with its own map (an evaluation), so each segment's first tick with a truth gets its own epoch, as DuckLog does.
+        `run`: fields of the official run's record that are the runner's, not the payload's (its `kind`)."""
         self.src, self.dst, self.key, self.truth = Path(src_dir), Path(dst_dir), key, truth
+        self.run_fields = dict(run or {})
         self.reset_per_goal, self.max_gap_ns = reset_per_goal, max_gap_ns
         self.follower = Follower(self.src, keep_raw=True)
         self.rec = None
@@ -78,31 +80,67 @@ class TruthCopy:
         self.src_end = None          # the payload's own end record, not copied
         self.ticks = self.paired = self.unpaired = 0
         self.max_gap_seen_ns = 0
+        self.offset = 0.0            # added to the current source's times (0 for the first source)
+        self._seg_next = 0           # the official run's segments are numbered as they are written, across sources
+        self._held = None            # a segment with no goal, written only if the run goes on in the same source or ends
+        self.sources = 1
 
     @property
     def last_t(self) -> float:
         return self.rec.last_t if self.rec else 0.0
+
+    def next_source(self, src_dir: Path) -> None:
+        """Copy the next payload run into the same official run, after the one before (an evaluation: a reset simulator and
+        a new payload per goal). Its times follow the last record by a second, as DuckLog leaves a second between goals;
+        its segments are numbered on from the last; its first tick with a truth opens a new map <- world epoch."""
+        self.pump()
+        if self.rec is None:
+            raise ValueError(f"{self.src}: no run copied before the next source")
+        # A payload's run ends with a short segment of its own, no goal in it (what it logs while it stops); in one run
+        # across goals those records were the next goal's. It is dropped when a next goal follows, kept at the very end.
+        self._held = None
+        self.src, self.follower = Path(src_dir), Follower(Path(src_dir), keep_raw=True)
+        self.offset, self.fresh = self.rec.last_t + 1.0, True
+        self.sources += 1
+
+    def _segment(self, t: float, p: dict) -> None:
+        self.rec.add(t, "segment", dict(p, index=self._seg_next))
+        self._seg_next += 1
+        if self.reset_per_goal:
+            self.fresh = True
 
     def pump(self) -> int:
         """Copy what the payload has written since the last call; the number of records copied."""
         n = 0
         for t, kind, p in self.follower.poll():
             if kind == "run":
-                if self.rec is not None:
+                if self.rec is None:
+                    self.rec = Recorder(self.dst, {**p, **self.run_fields, "key": self.key, "uuid": str(uuid.uuid4())})
+                elif self.sources == 1:
                     raise ValueError(f"{self.src}: a second run record")
-                self.rec = Recorder(self.dst, dict(p, key=self.key, uuid=str(uuid.uuid4())))
-                continue
+                continue                 # a later source's own run record: the official run has its own
             if self.rec is None:
                 raise ValueError(f"{self.src}: a {kind} record before the run record")
             if kind == "end":
                 self.src_end = p
                 continue
+            t += self.offset
+            if self._held is not None:   # a segment with no goal that was not the run's last: written as it came
+                self._segment(*self._held)
+                self._held = None
+            if kind == "segment":
+                p = dict(p, **{k: round(p[k] + self.offset, 6) for k in ("t_start", "t_end")
+                               if isinstance(p.get(k), (int, float))})
+                if p.get("outcome") is None:
+                    self._held = (t, p)
+                else:
+                    self._segment(t, p)
+                n += 1
+                continue
             if kind == "tick":
                 self._pair(t, p)
             self.rec.add(t, kind, p)
             n += 1
-            if kind == "segment" and self.reset_per_goal:
-                self.fresh = True
         errors = self.follower.take_errors()
         if errors:
             raise ValueError(f"{self.src}: records that are not what they say: {errors[:3]}")
@@ -134,6 +172,9 @@ class TruthCopy:
         self.pump()
         if self.rec is None:
             raise ValueError(f"{self.src}: no run to copy")
+        if self._held is not None:       # the last source's own last segment: the run's last, kept
+            self._segment(*self._held)
+            self._held = None
         end = dict(self.src_end or {"verdict": "ended"})
         if verdict is not None:
             end["verdict"] = verdict

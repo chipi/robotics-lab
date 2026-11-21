@@ -191,4 +191,52 @@ except ValueError:
 check("a truth sample before the last one is refused", went_back)
 check("nearest: within the gap, else None", log.nearest(150, 60)["wall_ns"] == 100 and log.nearest(300, 60) is None)
 
+# An evaluation through the split: a reset simulator and a new payload per goal, so one payload run per goal (its own times
+# from 0, its own map), copied one after the other into one official run (next_source).
+two = rows_of(2)
+cut = next(i for i, r in enumerate(two) if r.get("event") == "reached") + 1
+goal1, goal2 = two[:cut], [dict(r, t=round(r["t"] - two[cut]["t"] + 0.1, 3)) for r in two[cut:]]   # goal 2 from t 0.1
+data = tmp / "multi"
+src1 = write(data / "p1", "p1", without_truth(goal1), False)
+src2 = write(data / "p2", "p2", without_truth(goal2), False)
+key = keys.make_key("duck", "room", "official")
+copy = TruthCopy(src1, keys.run_dir(data / "official", key), key, truth_log(two).nearest)
+copy.pump()
+copy.next_source(src2)
+copy.finish("passed")
+recs = comparable(keys.run_dir(data / "official", key))
+times = [t for t, _, _ in recs]
+first2 = next(i for i, (_, k, p) in enumerate(recs) if k == "epoch" and i > 1)
+check("two goals' runs into one: time never goes back", times == sorted(times), times[:5])
+check("... the second goal starts a second after the first ends", abs(recs[first2][0] - (recs[first2 - 1][0] + 1.0 + 0.1)) < 1e-6,
+      (recs[first2 - 1][0], recs[first2][0]))
+epochs = [p["map_to_world"] for _, k, p in recs if k == "epoch"]
+golden_epochs = [p["map_to_world"] for _, k, p in comparable(write(data / "golden", "g", two, True)) if k == "epoch"]
+check("... one map <- world epoch per goal, each that goal's own (the same as today's evaluation run)",
+      epochs == golden_epochs and len(epochs) == 2, (epochs, golden_epochs))
+ticks = [p for _, k, p in recs if k == "tick"]
+check("... every tick of both goals has its truth", len(ticks) == 12 and all(p.get("truth") for p in ticks), copy.stats())
+segs = [(p["index"], p["t_start"], p["t_end"]) for _, k, p in recs if k == "segment"]
+check("... segments numbered on from the first run's, each inside its own goal's time",
+      [s[0] for s in segs] == list(range(len(segs))) and all(a <= b for _, a, b in segs)
+      and segs[-1][1] >= recs[first2][0] - 1e-6, segs)
+check("... the runner's verdict ends it", recs[-1][1] == "end" and recs[-1][2]["verdict"] == "passed")
+
+# A payload's run goes on a moment after its goal (what it logs while it stops): a short segment of its own, no goal in it.
+# One per goal would double the goals' segments; the one before a next goal is dropped, the run's very last one kept.
+after = dict(goal1[-2], t=round(goal1[-1]["t"] + 0.05, 3), wall_ns=goal1[-1]["wall_ns"] + 50_000_000)
+data = tmp / "trailing"
+src1 = write(data / "p1", "p1", without_truth(goal1 + [after]), False)
+src2 = write(data / "p2", "p2", without_truth(goal2 + [dict(after, t=round(goal2[-1]["t"] + 0.05, 3))]), False)
+own = [p.get("outcome") for _, k, p in comparable(src1) if k == "segment"]
+key = keys.make_key("duck", "room", "official")
+copy = TruthCopy(src1, keys.run_dir(data / "official", key), key, truth_log(goal1 + [after] + two[cut:]).nearest)
+copy.pump()
+copy.next_source(src2)
+copy.finish()
+segs = [(p["index"], p.get("outcome")) for _, k, p in comparable(keys.run_dir(data / "official", key)) if k == "segment"]
+check("a payload's run has its goal's segment and a trailing one with no goal", own == ["reached", None], own)
+check("... copied with a next goal after it: its trailing one dropped, the last run's kept, numbered in order",
+      segs == [(0, "reached"), (1, "reached"), (2, None)], segs)
+
 check.done()

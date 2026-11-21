@@ -47,13 +47,20 @@ class _Loc:
 class Remote:
     """The payload as a navigator for the course code (go_to, loc.pose(), record, scale), across a process boundary."""
 
-    def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim"):
+    def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
+                 copy: TruthCopy | None = None, run: dict | None = None):
+        """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
+        on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`)."""
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
         self.payload_data = self.run_out / "payload-data"         # the payload's own run: not the Observatory's data folder
         src = keys.run_dir(self.payload_data, keys.make_key("duck", scene, name))
-        self.copy = TruthCopy(src, keys.run_dir(Path(data), key), key, truth_log.nearest)
+        if copy is None:
+            self.copy = TruthCopy(src, keys.run_dir(Path(data), key), key, truth_log.nearest, run=run)
+        else:
+            self.copy = copy
+            copy.next_source(src)
         self._lock = threading.Lock()                             # the copy is written by the pump and by the runner's events
         self._stop = threading.Event()
         cmd = [sys.executable, "-m", "duck_lab.payload",
@@ -61,7 +68,7 @@ class Remote:
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant]
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}    # nothing of the host but its sockets
-        self.log = open(self.run_out / "payload.log", "w")
+        self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
         self.rpc = None
         try:
@@ -154,8 +161,9 @@ class Remote:
             except PayloadError:
                 pass
 
-    def close(self, verdict: str | None = None):
-        """The payload stopped (asked, then signalled); the robot stopped by the runner itself as well; the run copied whole."""
+    def close(self, verdict: str | None = None, finish: bool = True):
+        """The payload stopped (asked, then signalled); the robot stopped by the runner itself as well; the run copied whole.
+        `finish`: the official run ends here (False: an evaluation's next goal copies on into it)."""
         self._stop.set()
         try:
             if self.rpc is not None and self.proc.poll() is None:
@@ -182,6 +190,9 @@ class Remote:
         except OSError:
             pass
         with self._lock:
+            if not finish:
+                self.copy.pump()        # all of this payload's run, before the next one's
+                return None
             return self.copy.finish(verdict) if self.copy.rec is not None or self.copy.follower.dir.exists() else None
 
     def truth_connections(self, port: int) -> int | None:
