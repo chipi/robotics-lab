@@ -12,6 +12,7 @@ The navigator's side is duck_lab.nav.camera.CameraClient."""
 from __future__ import annotations
 
 import json
+import socket
 import socketserver
 import threading
 import time
@@ -65,6 +66,18 @@ class CameraServer:
         raise AssertionError("unreachable")
 
     def start(self) -> "CameraServer":
+        if self.path.exists():
+            probe = socket.socket(socket.AF_UNIX)
+            try:
+                probe.connect(str(self.path))
+                in_use = True
+            except OSError:
+                in_use = False         # a file left by a runner that ended: no one answers on it
+            finally:
+                probe.close()
+            if in_use:
+                raise RuntimeError(f"{self.path}: a camera is already served there (another runner on this host): "
+                                   f"one runner per simulator")
         self._body = Body(self.port)
         self.path.unlink(missing_ok=True)
         server = self

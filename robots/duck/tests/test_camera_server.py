@@ -114,6 +114,13 @@ except RuntimeError as e:
 check("with no body server at all, the look is an error the navigator records (camera_failed), not a made-up answer",
       gone is not None and "camera.detect" in gone, gone)
 
+try:
+    CameraServer(host, host.sockets["camera"], camera=exact).start()
+    second = None
+except RuntimeError as e:
+    second = str(e)
+check("a second runner on the same host is refused the camera's socket while the first serves it (one runner per simulator)",
+      second is not None and "already served" in second and host.sockets["camera"].exists(), second)
 client.close()
 server.stop()
 check("stopped: the socket is gone", not host.sockets["camera"].exists())

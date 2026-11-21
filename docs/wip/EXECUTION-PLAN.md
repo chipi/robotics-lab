@@ -319,9 +319,9 @@ the bigger item"):**
   `duck-nav-server` is the runner in front of the navigator API, `duck-explore` runs the navigator
   as a payload. A 5-minute exploration found 18 objects through the camera's socket, 0 truth
   connections in 150 checks; `make sim-duck` 44 checks passed, 0 failed, 0 truth connections in
-  282 checks over 15 goals. Not proven live: a contact or a fall stopping a run through the runner
-  (unit-tested), `duck-explore --find`, `--site` and the test faults, the MacBook (RFC-0021 step 6
-  lists them).
+  282 checks over 15 goals; then a contact stopped live through the runner, `--find`, `--site` and a
+  fault through the payload, the runs opened in the Observatory. Not proven live: a fall stopping a
+  run through the runner (unit-tested), the MacBook (RFC-0021 step 6 lists them).
 - **The MacBook's phase 1 run stalled once** (goal 19, 1.55 m short, 7 reflex stops by a wall, the
   laptop at load average 354); goal 19 alone then reached 3 of 3 there. One stall in 20, not
   repeated in 3: its cause (the load, or the simulator's repeat noise, K13) is not known.

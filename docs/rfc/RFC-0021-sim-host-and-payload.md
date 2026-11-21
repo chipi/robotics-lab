@@ -296,12 +296,26 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
      `test_payload.py` (importing the payload or the navigator API loads no `simhost` and no
      runner side).
 
-   Not proven: a contact or a fall stopping a run through the runner live (the scenarios arm
-   them and a good run is not stopped; the checks themselves are unit-tested); `duck-explore`'s
-   `--find`, `--site` and the test faults through the payload (only `--inventory` ran; finding an
-   object ran through Mission Control's path); the MacBook; the runs opened in the Observatory's
-   page. `duck-explore` now refuses to run with no data folder (the run is the record). Two
-   runners on one host would share the camera's socket path: not guarded.
+   Then the gaps, closed the same day (`k27/a1_a2_live.sh`, `contact_live.py`):
+   - **A contact through the runner, live:** the runner's truth check given one box the navigator
+     cannot see (on the path from the dock to a point goal: an obstacle the sensor misses); the
+     duck walked toward it and the run ended `stopped_by_guardrail`, "the trunk is 0.083 m from
+     unseen_box: a part can touch it", the robot standing, the lease back, 0 truth connections in
+     14 checks, 258 of 258 ticks paired.
+   - **`duck-explore --find fridge --site home`, twice from resets:** the fridge found and reached
+     each time (3.3 and 2.8 minutes); the second run started from the site's 16 objects saved by the
+     first and saved 17. **`--fix-fault 30,0.9,0.0`:** the 0.9 m jump injected, all 4 such fixes
+     held by the fix gate. 0 truth connections in each (99, 84, 60 checks), every tick paired.
+     The payload said `end: time` for a find that ended by reaching its object: now `found`.
+   - **A second runner on the same host** is refused the camera's socket while the first serves
+     it (unit-tested).
+   - **The runs in the Observatory** (headless, against the operator's :8070): the exploration,
+     the contact's goal run and a find run open with no page error, with the sightings, the
+     objects, the room and the runner's stop drawn. One flaw seen, older than the split: K43.
+
+   Not proven: a fall stopping a run through the runner live (the same path as the contact; the
+   check unit-tested); the MacBook. `duck-explore` now refuses to run with no data folder (the run
+   is the record).
 
 ## 6. Risks
 

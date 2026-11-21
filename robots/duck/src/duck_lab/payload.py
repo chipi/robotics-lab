@@ -118,7 +118,9 @@ class Payload:
                 finally:
                     kept = self._keep_objects()
                 ended = [e for e in ex.events if e.get("event") in ENDS]
-                result = {**res, "end": ended[-1]["event"] if ended else "time", "end_s": ended[-1]["t"] if ended else None,
+                reached = (res.get("found") or {}).get("status") == "reached"     # a find ends when it stands at the object
+                result = {**res, "end": ended[-1]["event"] if ended else ("found" if reached else "time"),
+                          "end_s": ended[-1]["t"] if ended else None,
                           "why": ended[-1].get("why") if ended else None, **kept}
                 state, why = "reached", None
         except Exception as e:      # noqa: BLE001 - a goal's failure is its outcome, said to the runner
