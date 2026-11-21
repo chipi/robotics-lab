@@ -1,0 +1,18 @@
+--- a/configd/src/wifi_ssh.rs	2026-11-21 01:29:09.961435250 +0100
++++ b/configd/src/wifi_ssh.rs	2026-11-21 01:29:20.730739137 +0100
+@@ -53,8 +53,13 @@
+         tv_sec: 0,
+         tv_nsec: 0,
+     };
+-    // SAFETY: a valid out-pointer; CLOCK_BOOTTIME exists on every kernel this runs on.
+-    unsafe { libc::clock_gettime(libc::CLOCK_BOOTTIME, &mut ts) };
++    // macOS has no CLOCK_BOOTTIME; its CLOCK_MONOTONIC counts sleep too (robotics-lab's patch, so duck-sim builds on a Mac).
++    #[cfg(target_os = "linux")]
++    let clock = libc::CLOCK_BOOTTIME;
++    #[cfg(not(target_os = "linux"))]
++    let clock = libc::CLOCK_MONOTONIC;
++    // SAFETY: a valid out-pointer; the clock exists on every kernel this runs on.
++    unsafe { libc::clock_gettime(clock, &mut ts) };
+     ts.tv_sec as u64
+ }
+ 

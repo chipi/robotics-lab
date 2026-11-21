@@ -23,9 +23,10 @@ sys.path.insert(0, str(ROOT / "libs" / "simhost" / "src"))
 import simhost  # noqa: E402
 
 PINS = ROOT / "robots" / "duck" / "sim" / "pollen-pins.json"
-# What a host may carry on top of Pollen's commits: our duck-sim patch, and our apartment scene written into Pollen's tree
-# (robots/duck/sim/apartment_backlash.py). Anything else is a local change the pins do not describe.
-ALLOWED = {"microduck": {" M scripts/duck-sim"},
+# What a host may carry on top of Pollen's commits: our duck-sim patch, on macOS our configd clock patch, and our apartment
+# scene written into Pollen's tree (robots/duck/sim/apartment_backlash.py). Anything else is a local change the pins do not
+# describe.
+ALLOWED = {"microduck": {" M scripts/duck-sim"} | ({" M configd/src/wifi_ssh.rs"} if platform.system() == "Darwin" else set()),
            "microduck_rl": {"?? src/mjlab_microduck/robot/microduck/scene_apartment_backlash.xml"}}
 INSTALL = {   # how a missing tool is installed, per platform: printed, never run (a system package is the person's)
     "Linux-arch": {"git": "sudo pacman -S git", "cc": "sudo pacman -S base-devel", "python3": "sudo pacman -S python",
@@ -124,6 +125,11 @@ def main() -> int:
             line("PASS", "duck-sim is patched (no sudo on down)")
         except (RuntimeError, OSError) as e:
             line("FAIL", "duck-sim is patched (no sudo on down)", str(e))
+        if platform.system() == "Darwin":
+            clock_file = host.microduck / "configd" / "src" / "wifi_ssh.rs"
+            ok = clock_file.exists() and "robotics-lab's patch, so duck-sim builds on a Mac" in clock_file.read_text()
+            line("PASS" if ok else "FAIL", "configd's clock patched for macOS (Pollen's reads CLOCK_BOOTTIME)",
+                 "" if ok else "git -C {} apply {}".format(host.microduck, ROOT / "robots/duck/sim/patches/configd-macos-clock.patch"))
         mapd = host.microduck / "target" / "debug" / "mapd"
         line("PASS" if mapd.exists() else "FAIL", "mapd built", str(mapd) if mapd.exists()
              else f"no {mapd}: cd {host.microduck} && cargo build -p mapd")

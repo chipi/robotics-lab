@@ -36,6 +36,10 @@ from simhost.simulator import SUDO_ASK  # noqa: E402
 
 PINS = json.loads((ROOT / "robots" / "duck" / "sim" / "pollen-pins.json").read_text())
 PATCH = ROOT / "robots" / "duck" / "sim" / "patches" / "duck-sim-sudo-free-down.patch"
+# macOS only: Pollen's configd reads CLOCK_BOOTTIME, which macOS has not (since Pollen's 2026-11-13 wifi-ssh change), so
+# duck-sim up cannot build it on a Mac; ours uses CLOCK_MONOTONIC there and leaves Linux as it is
+MAC_PATCH = ROOT / "robots" / "duck" / "sim" / "patches" / "configd-macos-clock.patch"
+MAC_PATCHED = "robotics-lab's patch, so duck-sim builds on a Mac"
 DRY = False
 
 
@@ -111,6 +115,12 @@ def main() -> int:
         say("4 ours", "duck-sim already patched, nothing to do")
     else:
         run("4 ours", [git, "-C", paths["microduck"], "apply", PATCH])
+    if platform.system() == "Darwin":
+        clock_file = paths["microduck"] / "configd" / "src" / "wifi_ssh.rs"
+        if clock_file.exists() and MAC_PATCHED in clock_file.read_text():
+            say("4 ours", "configd's macOS clock already patched, nothing to do")
+        else:
+            run("4 ours", [git, "-C", paths["microduck"], "apply", MAC_PATCH])
     scene = paths["microduck_rl"] / "src" / "mjlab_microduck" / "robot" / "microduck" / "scene_apartment_backlash.xml"
     if scene.exists():
         say("4 ours", "the apartment scene is there, nothing to do")
