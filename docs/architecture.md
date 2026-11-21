@@ -24,18 +24,20 @@ truth's port in any run since (583 checks in the proof batch, 150 in an explorat
 | Piece | Its job | Knows | Never knows | Where | Its contract |
 | --- | --- | --- | --- | --- | --- |
 | **Robot profile and plugins** | What a robot is: its size, speeds, sensors, error budget; how to walk it, read its ranges, localise it, turn its head | The robot | Any machine, any run | `robots/duck/profile.json`, `duck_lab/plugins/` | [RFC-0020](rfc/RFC-0020-robot-profiles-and-plugins.md) |
-| **Host** (a simulator kind) | A machine that runs a simulator: the robot's sockets, a reset, the truth, the scenes, the simulated camera | The machine and its simulator | Any navigator | `libs/simhost` (the host file), `duck_lab/camera_server.py` | [RFC-0021 §3](rfc/RFC-0021-sim-host-and-payload.md) |
+| **Host** (a simulator kind) | A machine that runs a simulator: the robot's sockets, a reset, the truth, the scenes, the simulated camera | The machine and its simulator | Any navigator | `libs/simhost` (the host file), `libs/runner` (`labrunner.camera`: the simulated camera it serves) | [RFC-0021 §3](rfc/RFC-0021-sim-host-and-payload.md) |
 | **Navigator** (the payload) | The brain: localise, plan, walk to a goal, explore, recognise objects | The robot's sockets and profile | The truth, the host file | `duck_lab/nav/`, `duck_lab/payload.py`, `duck_lab/nav/server.py` | the payload contract (`duck_lab/payload.py`); the navigator API ([Mission Control's contract](https://github.com/chipi/robotics-lab/blob/main/apps/mission-control/CONTRACT.md)) |
-| **Runner** | The referee: starts the navigator, gives it goals, reads the truth, judges, stops it when a guardrail breaks, writes the official run | The host, the truth, the course's rules | How the navigator thinks | `duck_lab/challenge/` (courses), `duck_lab/nav_runner.py` (in front of Mission Control), `duck_lab/nav/explore_run.py` | [RFC-0021 step 2 and 6](rfc/RFC-0021-sim-host-and-payload.md), [RFC-0008](rfc/RFC-0008-challenge-course.md) |
-| **Gate** | The one lock in front of a robot: one driver at a time, a STOP that always works, takeover by name | Who holds the robot | What they do with it | `libs/gate` (`robotgate`), `duck_lab/gate_proxy.py` | [RFC-0017](rfc/RFC-0017-robot-access.md) |
+| **Runner** | The referee: starts the navigator, gives it goals, reads the truth, judges, stops it when a guardrail breaks, writes the official run | The host, the truth, the course's rules | How the navigator thinks | `libs/runner` (`labrunner`): `lab-challenge`, `lab-eval`, `lab-explore`, `lab-go`, `lab-nav-server` (in front of Mission Control) | [RFC-0021 step 2 and 6](rfc/RFC-0021-sim-host-and-payload.md), [RFC-0008](rfc/RFC-0008-challenge-course.md) |
+| **Gate** | The one lock in front of a robot: one driver at a time, a STOP that always works, takeover by name | Who holds the robot | What they do with it | `libs/gate` (`robotgate`, the rules), `libs/runner` (`lab-gate`, the proxy) | [RFC-0017](rfc/RFC-0017-robot-access.md) |
 | **Run format and the Observatory** | Every run recorded one way (format 2, MCAP); the viewer and its API, live and replay | Runs | Robots, hosts | `libs/runfile`, `apps/observatory` | [ADR-0007](adr/ADR-0007-run-file-format-2.md), [the Observatory's contract](https://github.com/chipi/robotics-lab/blob/main/apps/observatory/CONTRACT.md) |
 | **World model** | Objects, the semantic map, sites and their areas, for any robot | Places and things | Robots | `libs/worldmodel` | [RFC-0016](rfc/RFC-0016-objects-and-semantic-map.md) |
 | **Mission Control** | The operator's control panel: robots, sites, goals, live status, STOP | Robots through their adapters | How a navigator works, the truth | `apps/mission-control` | [RFC-0014](rfc/RFC-0014-mission-control.md) |
 
 Which package may import which is checked on every `make lint` (`scripts/check_boundaries.py`, the
-table in [RFC-0018 §10](rfc/RFC-0018-lab-projects-and-seams.md)): the navigator's modules may not
-load the host library, and a test checks that importing the payload or the navigator API loads
-neither `simhost` nor the runner's side.
+table in [RFC-0018 §10](rfc/RFC-0018-lab-projects-and-seams.md)): the navigator (`duck_lab.nav`, the
+payload, the plugins, the profile) may import neither the runner (`labrunner`) nor the host library;
+the runner imports no robot's package, it finds a robot by name (the entry-point group
+`robotics_lab.robots`, [RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)); and a test checks that
+importing the payload or the navigator API loads neither.
 
 ## The whole picture
 
@@ -78,10 +80,11 @@ Dotted lines read the truth; only the runner's pieces have them.
 
 ### A course: a challenge, the phase 1 evaluation, an exploration
 
-`duck-challenge`, `duck-eval`, `duck-explore` and `duck-go` are runners. Each starts the navigator
-as a payload process with only the robot's sockets (and the camera's, for objects) and drives it
-over the payload contract; `duck-challenge` and `duck-eval` reset the host for each goal first
-(`duck-explore` starts where the robot stands: reset it before, `robots/duck/sim/reset_sim.py`):
+`lab-challenge`, `lab-eval`, `lab-explore` and `lab-go` are runners (`--robot duck`). Each starts
+the navigator as a payload process with only the robot's sockets (and the camera's, for objects)
+and drives it over the payload contract; `lab-challenge` and `lab-eval` reset the host for each
+goal first (`lab-explore` starts where the robot stands: reset it before,
+`robots/duck/sim/reset_sim.py`):
 
 ```mermaid
 sequenceDiagram
@@ -105,14 +108,14 @@ sequenceDiagram
 
 ### Mission Control
 
-The operator starts `duck-gate` and `duck-nav-server`, and Mission Control talks to
-`duck-nav-server` as its robot's navigator. `duck-nav-server` is the runner; the navigator API
+The operator starts `lab-gate` and `lab-nav-server`, and Mission Control talks to
+`lab-nav-server` as its robot's navigator. `lab-nav-server` is the runner; the navigator API
 behind it is its own process:
 
 ```mermaid
 sequenceDiagram
   participant MC as Mission Control
-  participant R as duck-nav-server (runner)
+  participant R as lab-nav-server (runner)
   participant N as Navigator API
   participant G as Gate
   participant H as Host (simulator, truth)
@@ -166,8 +169,10 @@ the robot's own to report. The navigator is the same code with the profile's `re
   generic when a second robot (the EV3 in phase 6, the TurtleBot3 after the plan) runs it.
 - **Only one simulator kind exists** (`pollen-duck-sim`); the rule of §3.1 is tested when Gazebo
   is the second.
-- **Platform pieces still live in the duck's package** (the runner, the judge and the challenges,
-  the camera service, the run tools), and their commands are named `duck-*`.
-  [RFC-0022](rfc/RFC-0022-platform-layout-and-names.md) proposes where they move and what they are
-  called.
+- **The runner reads its robot's numbers once, when it starts** (the judge's footprint and
+  thresholds): with one robot registered that is it; a second robot needs its `--robot` read before
+  the course's modules load ([RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)).
+- **The duck's operator tools and the apartment stay the duck's** (`duck-record`, `duck-replay`,
+  `duck-world`, `duck-pic`, `duck-site`; the apartment's layout in `robots/duck/sim/`): they read
+  the duck's own perception or the simulated apartment (RFC-0022 §8).
 - **The real robot's path is designed, not run.**

@@ -1,8 +1,9 @@
-"""The gate in front of robotd's socket (RFC-0017 §3.2, §5 step 3): a Unix-socket proxy that puts `robotgate.Gate` between
-our clients (the navigator, Mission Control, a script) and the duck's one robotd connection.
+"""The gate in front of a robot's socket (RFC-0017 §3.2, §5 step 3): a Unix-socket proxy that puts `robotgate.Gate`
+between our clients (the navigator, Mission Control, a script) and the robot's one connection (RFC-0003 JSON-RPC on a
+unix socket: robotd for the duck).
 
-    duck-gate                     # listen on the host file's gate socket, upstream its robot socket (RFC-0021)
-    duck-gate --listen /tmp/gate.sock --upstream /run/robotd.sock
+    lab-gate                      # listen on the host file's gate socket, upstream its robot socket (RFC-0021)
+    lab-gate --listen /tmp/gate.sock --upstream /run/robotd.sock
 
 One Gate, one upstream connection. The clients speak robotd's JSON-RPC (newline-framed, RFC-0003) and the gate's own
 methods (gate.acquire, gate.release, gate.who, gate.keepalive, gate.takeover). The proxy gives each request its own id
@@ -331,14 +332,14 @@ def main() -> None:
     proxy = Proxy(args.listen, args.upstream, takeover_names=load_names(args.takeover_names) if args.takeover_names else (),
                   log=args.log, lease_s=args.lease_s)
     proxy.start()
-    print(f"duck-gate: {args.listen} -> {args.upstream}", flush=True)
+    print(f"lab-gate: {args.listen} -> {args.upstream}", flush=True)
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())
     signal.signal(signal.SIGINT, lambda *_: done.set())
     try:
         while not done.wait(1.0):
             if not proxy.upstream.alive:
-                print("duck-gate: robotd closed the connection", flush=True)
+                print("lab-gate: the robot's socket closed the connection", flush=True)
                 break
     finally:
         proxy.stop()

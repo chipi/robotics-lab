@@ -2,7 +2,7 @@
 
     cd robots/duck && .venv/bin/python sim/probes/gate_scenarios.py        # resets the simulator before each scenario (~45 s each)
 
-The gate (duck_lab.gate_proxy) listens on a socket of its own in a temporary folder and forwards to ~/.cache/duck-sim/duck-a.sock;
+The gate (labrunner.gate) listens on a socket of its own in a temporary folder and forwards to ~/.cache/duck-sim/duck-a.sock;
 each navigator is a `duck-go` process (python -m duck_lab.nav.run) started with --robot-socket and --client, so it takes the
 lease before it does anything. The simulator is the shared one and needs no one else using it; the runs write no Observatory run.
 
@@ -24,7 +24,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from duck_lab.gate_proxy import Proxy
+from labrunner.gate import Proxy
 import simhost
 from duck_lab.nav.client import LeaseLost, Rpc
 from simhost.truth import Body

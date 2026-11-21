@@ -4,10 +4,10 @@ import json
 import math
 import sys
 
-from duck_lab.nav.evaluate import LAYOUT, obstacles
+from labrunner.geometry import LAYOUT, obstacles
 from worldmodel.objects import Part, load_kinds, part_from_geom
 from worldmodel.semantic_map import CONFIRM_N, Detection, SemanticMap
-from duck_lab.nav.sim_camera import SimCamera
+from labrunner.sim_camera import SimCamera
 
 failures = []
 

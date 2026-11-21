@@ -17,9 +17,9 @@ with a name, a type, a position, a size and a yaw; floors are `floor_*`, a floor
 import math
 from collections import deque
 
-from duck_lab.challenge.scene import Scene, _inside, layout
-from duck_lab.nav.evaluate import FOOTPRINT_M, PROFILE, footprint_distance, obstacles
-from duck_lab.nav.frames import compose, inverse
+from labrunner.scene import Scene, _inside, layout
+from labrunner.geometry import FOOTPRINT_M, PROFILE, footprint_distance, obstacles
+from labrunner.frames import compose, inverse
 
 DROP_LETHAL_M = PROFILE.error_budget.drop_lethal_m
 

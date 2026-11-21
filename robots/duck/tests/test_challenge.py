@@ -7,10 +7,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from duck_lab.challenge.challenges import CHALLENGES, build
-from duck_lab.challenge.judge import DROP_MARGIN_M, Judge
-from duck_lab.challenge.scene import TRUNK_START, Box, Scene, layout, miniview_scene, mjcf, moved, slab
-from duck_lab.nav.evaluate import FOOTPRINT_M, footprint_distance
+from labrunner.challenges import CHALLENGES, build
+from labrunner.judge import DROP_MARGIN_M, Judge
+from labrunner.scene import TRUNK_START, Box, Scene, layout, miniview_scene, mjcf, moved, slab
+from labrunner.geometry import FOOTPRINT_M, footprint_distance
 
 failures = []
 
@@ -101,7 +101,7 @@ check("a step-down has exactly one lower floor, 0.1-0.3 m down", all(len(build(c
 # challenge 12: a table edge with no return. Past the edge the floor is out of the sensor's range (4 m), so every beam
 # that crosses it returns "no target" (the simulator's status 255): the drop the cliff check must stop for without one
 # below-floor return (RFC-0008 §3).
-from duck_lab.challenge.scene import TOF_RANGE_M  # noqa: E402
+from labrunner.scene import TOF_RANGE_M  # noqa: E402
 
 t12 = [build("12", s) for s in range(10)]
 check("challenge 12: one lower floor, beyond the sensor's range, and the goal on it (a refusal)",
@@ -111,7 +111,7 @@ check("challenge 12: the edge 0.9-1.1 m ahead, met at 0-45 deg", all(0.9 <= sc.n
                                                                       0 <= abs(sc.notes["angle_deg"]) <= 45 for sc in t12))
 
 # challenges 13-16 (RFC-0008 §3), before the start's jitter: the start at the origin facing +x
-from duck_lab.nav.evaluate import OVERHEAD_CLEAR_M  # noqa: E402
+from labrunner.geometry import OVERHEAD_CLEAR_M  # noqa: E402
 
 c13 = [CHALLENGES["13"](s, random.Random(f"13-{s}")) for s in range(10)]
 shelves = [next(b for b in sc.boxes if b.name == "shelf") for sc in c13]
@@ -254,8 +254,8 @@ check("a verdict is JSON (it is written to result.json)", json.loads(json.dumps(
 # (The reset's refusal of a duck-sim that asks sudo moved with the reset: tests/test_simhost.py.)
 
 # ---- challenges 21-23: ten goals in a row, a room with a drop, two rooms (RFC-0008) -----------------------------------------
-from duck_lab.challenge import explore, floor, sequence  # noqa: E402
-from duck_lab.challenge.challenges import _walled  # noqa: E402
+from labrunner import explore, floor, sequence  # noqa: E402
+from labrunner.challenges import _walled  # noqa: E402
 from duck_lab.nav.frames import compose  # noqa: E402
 
 
@@ -378,8 +378,8 @@ check("reachable floor: the layout-level function (floors in, points out) is the
       sorted(floor.reachable_floor(layout(flat))) == sorted(pts))
 
 # not challenge-only (the apartment scoreboard's coverage later): the apartment's layout and its rooms through the same functions
-from duck_lab.nav.evaluate import LAYOUT  # noqa: E402
-from duck_lab.nav.rooms import ROOMS, room_of  # noqa: E402
+from labrunner.geometry import LAYOUT  # noqa: E402
+from labrunner.rooms import ROOMS, room_of  # noqa: E402
 
 apartment = json.loads(LAYOUT.read_text())
 walk = floor.reachable_floor(apartment, (0.05, 0.0), step=0.1)

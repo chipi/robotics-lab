@@ -31,25 +31,35 @@ MODULES = {
     "observatory": "observatory",
     "mission_control": "mission_control",
     "nxt_lab": "nxt_lab",
+    "labrunner": "labrunner",
     "duck_lab": "duck_lab",
+    # the duck's navigator, a unit of its own (RFC-0022): it never imports the runner or the host library
+    "duck_lab.nav": "duck_nav",
+    "duck_lab.payload": "duck_nav",
+    "duck_lab.plugins": "duck_nav",
+    "duck_lab.profile": "duck_nav",
+    "duck_lab.robot": "duck_nav",
 }
 
-# who may import whom, in a project's source: libraries import no other unit, apps never import apps, robots never apps
+# who may import whom, in a project's source: libraries import only libraries, apps never import apps, robots never apps;
+# the runner (labrunner) never a robot: it finds them by name (RFC-0022)
 ALLOWED = {
     "runfile": set(),
     "robotgate": set(),
     "worldmodel": set(),
     "simhost": set(),
+    "labrunner": {"runfile", "robotgate", "worldmodel", "simhost"},
     "observatory": {"runfile"},
     "mission_control": {"robotgate", "runfile"},
     "nxt_lab": {"runfile"},
-    "duck_lab": {"runfile", "robotgate", "worldmodel", "simhost"},
+    "duck_nav": {"runfile", "robotgate", "worldmodel"},
+    "duck_lab": {"runfile", "robotgate", "worldmodel", "simhost", "labrunner", "duck_nav"},
 }
 
 # tests, probes and perf scripts of a project also drive neighbours: Chromium through the Observatory's shots, a run's writer
 TESTS_EXTRA = {
     "observatory": set(),
-    "mission_control": {"runfile", "observatory", "duck_lab", "worldmodel", "simhost"},
+    "mission_control": {"runfile", "observatory", "duck_lab", "duck_nav", "labrunner", "worldmodel", "simhost"},
     "nxt_lab": {"observatory"},
     "duck_lab": set(),
 }
@@ -57,7 +67,7 @@ TESTS_EXTRA = {
 # permanent, by importing module: Mission Control's duck adapter drives the navigator over its own client (nav.client,
 # nav.run.load_scale), retired by RFC-0020's plugins
 EXCEPTIONS = {
-    "mission_control.duck": {"duck_lab", "simhost"},       # and the host file for its sockets (RFC-0021)
+    "mission_control.duck": {"duck_lab", "duck_nav", "simhost"},       # and the host file for its sockets (RFC-0021)
 }
 
 # to be removed (each a knot cut by a later commit of the restructure)

@@ -1,6 +1,6 @@
 """Phase 2's score (RFC-0002 §3.4): all six rooms visited; each room's area on the map within ±25 %.
 
-    uv run duck-rooms runs/explore1
+    uv run lab-rooms runs/explore1
 
 Rooms are the apartment's rooms between their walls (sim/apartment_layout.json). Five match their floor
 boxes exactly; the corridor's floor boxes are a 40 cm carpet strip, so the corridor is taken between its
@@ -19,7 +19,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from duck_lab.nav.frames import compose, inverse
+from labrunner.frames import compose, inverse
 
 ROOMS = {   # x0, x1, y0, y1 (world), from the walls in apartment_layout.json
     "kitchen": (-4.0, -1.0, 0.5, 3.0),

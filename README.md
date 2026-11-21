@@ -39,9 +39,9 @@ flowchart LR
 | Mission Control ([RFC-0014](docs/rfc/RFC-0014-mission-control.md)) | robots, through their adapters | the truth, how a navigator works |
 
 The whole map, with how a goal flows on each path and where every seam is:
-[How the platform fits together](docs/architecture.md). Where the platform's pieces should live
-and what they should be called, now that they are not only the duck's:
-[RFC-0022](docs/rfc/RFC-0022-platform-layout-and-names.md) (proposed).
+[How the platform fits together](docs/architecture.md). The runner is a library of its own
+(`libs/runner`, `lab-*` commands) that finds a robot by name and never imports it:
+[RFC-0022](docs/rfc/RFC-0022-platform-layout-and-names.md).
 
 ## Projects
 
@@ -51,13 +51,14 @@ Three kinds of folder (RFC-0018). Every project is its own uv project with its o
 | Path | What |
 | --- | --- |
 | [apps/observatory/](apps/observatory/) | The Observatory (once miniview): runs as MCAP, an API with live runs, the workbench pages (`make observatory-up`; [CONTRACT.md](apps/observatory/CONTRACT.md)) |
-| [apps/mission-control/](apps/mission-control/) | Mission Control (RFC-0014): robots, goals, sites and areas behind one API; adapters for a fake robot, the simulated duck (behind `duck-gate` and `duck-nav-server`) and the NXT (`make test-control`, `make control-run`, `make sim-duck`; [CONTRACT.md](apps/mission-control/CONTRACT.md)) |
+| [apps/mission-control/](apps/mission-control/) | Mission Control (RFC-0014): robots, goals, sites and areas behind one API; adapters for a fake robot, the simulated duck (behind `lab-gate` and `lab-nav-server`) and the NXT (`make test-control`, `make control-run`, `make sim-duck`; [CONTRACT.md](apps/mission-control/CONTRACT.md)) |
 | [apps/nxt-web/](apps/nxt-web/) | LEGO Mindstorms NXT 2.0 driven from our own Python code: web UI, NXC programs |
 | [libs/simhost/](libs/simhost/) | The simulator host (RFC-0021): the host file (`simhost init`, `show`, `reset`, `down`), the reset, the truth sampler; standard library only. A machine is set up for it by `scripts/host-setup` and checked by `scripts/host-check` |
+| [libs/runner/](libs/runner/) | The runner (RFC-0021, RFC-0022), `labrunner`: starts a robot's navigator as a payload, judges it by the truth, writes the official run; the course and its judge, the scores, the simulated camera, the gate proxy; `lab-challenge`, `lab-eval`, `lab-explore`, `lab-go`, `lab-nav-server`, `lab-gate` (`--robot duck`; the old `duck-*` names work for one release) |
 | [libs/runfile/](libs/runfile/) | The run format: schemas, writer and reader, keys, the truth copy, the importers of a robot's log, the catalog |
 | [libs/gate/](libs/gate/) | The robot gate (RFC-0017), `robotgate`: one driver per robot |
 | [libs/worldmodel/](libs/worldmodel/) | Objects, the semantic map and sites, which know no robot |
-| [robots/duck/](robots/duck/) | Pollen's Microduck: its profile and plugins, its navigator (a payload), its simulator scenes and probes, and for now the platform's runner, judge and course (RFC-0022 proposes moving them out) |
+| [robots/duck/](robots/duck/) | Pollen's Microduck: its profile and plugins, its navigator (a payload), its simulator scenes and probes, its tools (`duck-replay`, `duck-site`, `duck-pic` ...); registered for the runner as `duck` |
 | [robots/](robots/) | Each robot's description and meshes (RFC-0011): the duck, the EV3s, the NXT Shooterbot |
 
 Which package may import which is checked by `scripts/check_boundaries.py` (run by `make lint`);

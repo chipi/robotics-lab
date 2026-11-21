@@ -4,7 +4,7 @@
         --data DIR --out DIR
 
 It is given only the robot's sockets and never reads the simulator's truth: in the simulator it runs behind its runner
-(`duck-nav-server`, duck_lab.nav_runner: RFC-0021 step 6), which an operator starts, which Mission Control talks to, and
+(`lab-nav-server`, labrunner.navapi: RFC-0021 step 6, RFC-0022), which an operator starts, which Mission Control talks to, and
 which keeps the truth, the truth guardrails and the official recording.
 
 A small JSON-RPC server (newline framed, on a unix socket or TCP on loopback) that owns one `Navigator` per goal. Mission Control starts a goal

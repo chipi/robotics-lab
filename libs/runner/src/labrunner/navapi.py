@@ -1,15 +1,16 @@
-"""duck-nav-server: the runner in front of Mission Control's navigator API (RFC-0021 step 6).
+"""lab-nav-server: the runner in front of Mission Control's navigator API (RFC-0021 step 6, RFC-0022).
 
-    duck-nav-server --data /work/robotics-lab/data --out state/nav      # the host file's sockets, its gate's for the robot
+    lab-nav-server --data /work/robotics-lab/data --out state/nav      # the host file's sockets, its gate's for the robot
 
 Mission Control talks to this as it talked to the navigator API (the same methods, on the same TCP address), and every
-call passes through unchanged to the navigator API (duck_lab.nav.server), which this starts as its own process with only
-the robot's sockets and the camera's. What the navigator does not get stays here:
+call passes through unchanged to the navigator API (the robot's registered NAVIGATOR_API: duck_lab.nav.server for the
+duck), which this starts as its own process with only the robot's sockets and the camera's. What the navigator does not
+get stays here:
 
 - **The truth:** the host's body server, sampled while a goal runs (simhost.truth).
-- **The camera:** served on the host file's camera socket (duck_lab.camera_server), from the truth.
+- **The camera:** served on the host file's camera socket (labrunner.camera), from the truth.
 - **The truth guardrails** (`contact`, `fall`, `drop_clearance`, the robot inside a `no_go_area`): checked against the
-  truth (guardrails.TruthGuard); a broken one stops the run through the API's `goal.break`, and the run ends
+  truth (labrunner.guard.TruthGuard); a broken one stops the run through the API's `goal.break`, and the run ends
   `stopped_by_guardrail` as one the navigator broke itself.
 - **The official recording:** each goal run's run is the navigator's (written to `--out`/payload-data) copied into the
   Observatory's data folder with the truth put in (runfile.truthcopy), under the key `goal.start` answered with.
@@ -32,10 +33,11 @@ import time
 from pathlib import Path
 
 import simhost
-from duck_lab.camera_server import CameraServer
-from duck_lab.challenge.runner import truth_connections
-from duck_lab.nav.client import Rpc
-from duck_lab.nav.guardrails import TruthGuard
+from labrunner import robots
+from labrunner.camera import CameraServer
+from labrunner.remote import truth_connections
+from labrunner.rpc import Rpc
+from labrunner.guard import TruthGuard
 from runfile import keys
 from runfile.catalog import default_data
 from runfile.truthcopy import TruthCopy, TruthLog
@@ -86,7 +88,7 @@ class GoalWatch:
             try:
                 self.runner.api("goal.break", {"name": b[0], "detail": b[1]})
             except Exception as e:      # noqa: BLE001 - said where the operator reads the runner, and the next sample tries again
-                print(f"duck-nav-server: goal.break {b[0]} failed: {type(e).__name__}: {e}", flush=True)
+                print(f"lab-nav-server: goal.break {b[0]} failed: {type(e).__name__}: {e}", flush=True)
                 self.broken = None
 
     def _watch(self) -> None:
@@ -117,11 +119,11 @@ class GoalWatch:
             try:
                 self.copy.finish()
             except (FileNotFoundError, ValueError) as e:
-                print(f"duck-nav-server: the run {self.key} could not be copied: {e}", flush=True)
+                print(f"lab-nav-server: the run {self.key} could not be copied: {e}", flush=True)
         self.truth_log.close()
         summary = self.summary()
         (self.dir / "runner.json").write_text(json.dumps(summary, indent=1))
-        print(f"duck-nav-server: {self.key} {self.state}: {json.dumps(summary)}", flush=True)
+        print(f"lab-nav-server: {self.key} {self.state}: {json.dumps(summary)}", flush=True)
 
     def summary(self) -> dict:
         return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked,
@@ -130,11 +132,11 @@ class GoalWatch:
 
 
 class NavRunner:
-    def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
+    def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
                  robot_socket: Path | None = None):
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null): Mission Control talks to the "
-                             f"navigator API itself there (python -m duck_lab.nav.server)")
+                             f"navigator API itself there (the robot's NAVIGATOR_API)")
         self.host, self.data, self.out = host, Path(data), Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.payload_data = self.out / "payload-data"           # the navigator's own runs: not the Observatory's data folder
@@ -145,7 +147,7 @@ class NavRunner:
         self.route = {"checks": 0, "max": None}
         self.camera = CameraServer(host, host.sockets["camera"]).start()
         robot = robot_socket or host.sockets["gate"]
-        cmd = [sys.executable, "-m", "duck_lab.nav.server", "--robot", str(robot), "--depth", str(host.sockets["depth"]),
+        cmd = list(robots.get().NAVIGATOR_API) + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
                "--map", str(host.sockets["map"]), "--camera", str(self.camera.path), "--listen", str(self.sock),
                "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene]
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}     # nothing of the host but its sockets
@@ -259,20 +261,22 @@ def main() -> None:
     ap.add_argument("--listen", default="127.0.0.1:8061", help="host:port (loopback by default: the API has no login)")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the host file's gate socket)")
-    ap.add_argument("--client", default="duck-nav-server", help="the name the navigator takes the lease under")
+    ap.add_argument("--client", default="lab-nav-server", help="the name the navigator takes the lease under")
     ap.add_argument("--data", type=Path, default=default_data(),
                     help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
     ap.add_argument("--out", type=Path, default=Path("state/nav"), help="the navigator's own output folders, one per goal run")
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
+    ap.add_argument("--robot", help="the robot, by its registered name (default: the only one registered)")
     args = ap.parse_args()
+    robots.select(args.robot)
     if args.data is None:
-        sys.exit("duck-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
+        sys.exit("lab-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
     host = simhost.load(args.host)
     runner = NavRunner(host, args.data, args.out, args.scene, args.client, args.robot_socket)
     listen, _, port = args.listen.rpartition(":")
     srv = Server((listen or "127.0.0.1", int(port)), runner)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # a terminate stops the navigator API too (runner.close)
-    print(f"duck-nav-server: {args.listen}, the navigator API pid {runner.proc.pid}, robot "
+    print(f"lab-nav-server: {args.listen}, the navigator API pid {runner.proc.pid}, robot "
           f"{args.robot_socket or host.sockets['gate']}, camera {runner.camera.path}, runs in {args.data}", flush=True)
     try:
         srv.serve_forever()

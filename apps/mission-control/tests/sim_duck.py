@@ -6,7 +6,7 @@ NOT in `make test-control`: it resets the simulator (via robots/duck/sim/reset_s
 needs nobody else using it. Everything it writes goes to a folder of its own in the system temp dir: the Observatory's runs
 (a data folder with a copy of the apartment scene), the navigator's output, Mission Control's state.
 
-The processes: duck-gate (in this process, a thread, as the scenario test), duck-nav-server (the runner, a subprocess of its own, which
+The processes: the gate (in this process, a thread, as the scenario test), lab-nav-server (the runner, a subprocess of its own, which
 starts the navigator API as its own: RFC-0021 step 6), Mission Control (this process). Judged by the simulator's truth (the body
 server), as the challenge judge is; the navigator API has no route to it (the last section)."""
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 from common import check, finish
 
-from duck_lab.gate_proxy import Proxy
+from labrunner.gate import Proxy
 import simhost
 from simhost.truth import Body
 from mission_control.api import serve
@@ -85,9 +85,9 @@ def fresh_sim():
 clean = [True]
 fresh_sim()
 navlog = open(tmp / "nav-server.log", "w")
-nav_proc = subprocess.Popen([sys.executable, "-m", "duck_lab.nav_runner", "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
+nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
                              "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
-wait_for(lambda: "duck-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
+wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
 FILE = {
     "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
@@ -150,7 +150,7 @@ try:
         run = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}})
         check("the run starts with its Observatory run key at once and a Watch link", run["state"] == "running" and (run["run_key"] or "").startswith("duck/apartment/mc")
               and run["watch"] == "http://127.0.0.1:8070/watch/" + run["run_key"], run)
-        check("the navigator holds the lease while it moves the robot", wait_for(lambda: robot()["lock"]["holder"] == "duck-nav-server", 60) is not None, robot()["lock"])
+        check("the navigator holds the lease while it moves the robot", wait_for(lambda: robot()["lock"]["holder"] == "lab-nav-server", 60) is not None, robot()["lock"])
         end = finished(run["id"], 180)
         check("the real navigator reaches the point (truth within 0.5 m)", end and end["state"] == "reached" and math.dist(body.pose()[:2], (1.5, 0.5)) < 0.5,
               end and (end["state"], end["reason"], body.pose()))
@@ -179,7 +179,7 @@ try:
     def long_goal():
         need_clean()
         run = start({"kind": "explore", "params": {"site": True}, "budget": {"minutes": 5}})
-        wait_for(lambda: robot()["lock"]["holder"] == "duck-nav-server", 60)
+        wait_for(lambda: robot()["lock"]["holder"] == "lab-nav-server", 60)
         t0 = body.pose()
         wait_for(lambda: math.dist(body.pose()[:2], t0[:2]) > 0.2, 120)       # the survey turns first; it walks after
         return run
@@ -236,7 +236,7 @@ try:
         call("POST", "/sites/home/areas", {"name": "Flat", "outline": [[-4.2, -3.2], [4.2, -3.2], [4.2, 3.2], [-4.2, 3.2]]})
         run = start({"kind": "inventory", "params": {"areas": []}, "budget": {"minutes": 1}})
         end = finished(run["id"], 400)
-        listed = (end or {}).get("result", {}).get("areas", [])
+        listed = ((end or {}).get("result") or {}).get("areas", [])     # a run that did not end done has no result: reported below
         confirmed = [o for o in call("GET", "/sites/home/objects")["objects"] if o["confirmed"]]
         check("inventory: done, the confirmed objects listed by the operator's area, with the site's ids", end and end["state"] == "done" and listed
               and listed[0]["name"] == "Flat" and {o["id"] for o in listed[0]["objects"]} <= {o["id"] for o in confirmed}, end and (end["state"], end["reason"], end["result"]))

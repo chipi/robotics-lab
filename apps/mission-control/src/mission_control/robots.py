@@ -343,7 +343,7 @@ class RobotRuntime:
 
 
 def make_adapter(cfg: RobotConfig, clock):
-    """The adapter for a robot file's adapter type. Built: fake; duck-sim (the simulated duck behind duck-gate and duck-nav-server,
+    """The adapter for a robot file's adapter type. Built: fake; duck-sim (the simulated duck behind lab-gate and lab-nav-server,
     RFC-0014 step 2); nxt-web (the NXT behind nxt-web's HTTP API and lock, step 4)."""
     if cfg.adapter["type"] == "fake":
         from .fake import FakeAdapter

@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.gate_proxy import Proxy
+from labrunner.gate import Proxy
 
 failures = []
 

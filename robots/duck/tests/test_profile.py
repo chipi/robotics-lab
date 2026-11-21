@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from duck_lab.nav import run
-from duck_lab.nav.sim_camera import DEFAULTS as CAMERA_DEFAULTS
+from labrunner.sim_camera import DEFAULTS as CAMERA_DEFAULTS
 from runfile.profile import FormatError, Profile, load_profile, merge_variant, numbers, validate_profile
 from worldmodel.objects import DUCK_LIMITS
 from worldmodel.relocalise import DUCK_LANDMARKS

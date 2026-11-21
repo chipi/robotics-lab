@@ -6,7 +6,8 @@ Run: cd robots/duck && uv run python tests/test_guardrails.py"""
 import threading
 import time
 
-from duck_lab.nav.guardrails import Guard, TruthGuard, keepout_points
+from duck_lab.nav.guardrails import Guard, keepout_points
+from labrunner.guard import TruthGuard
 
 failures = []
 

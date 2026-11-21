@@ -14,7 +14,7 @@ from runfile.mcapio import Follower
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import glance_from_run as g  # noqa: E402
-from duck_lab.nav.explore_run import STAIRS  # noqa: E402
+from labrunner.guard import STAIRS  # noqa: E402
 
 run, n = sys.argv[1], int(sys.argv[2])
 records = list(Follower(g.DATA / "runs" / "duck" / run, keep_raw=True).poll())

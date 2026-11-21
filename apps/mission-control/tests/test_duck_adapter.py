@@ -1,5 +1,5 @@
 """The simulated duck's adapter (RFC-0014 step 2) against stand-ins for the three processes behind it: a robotd, the real gate
-proxy in front of it (duck_lab.gate_proxy), a mapd, and a navigator server that speaks the navigator API. No simulator:
+proxy in front of it (labrunner.gate), a mapd, and a navigator server that speaks the navigator API. No simulator:
 what is tested is Mission Control's side: the remote gate (lock, STOP, takeover are the gate's own), the state it builds from
 robotd's stream, the map, the navigator client (start, poll, decisions, objects, refusals, a server that goes away), the run key
 and the Watch link. The real navigator in the real simulator is sim_duck.py.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from common import check, finish
 
-from duck_lab.gate_proxy import Proxy
+from labrunner.gate import Proxy
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig

@@ -4,7 +4,7 @@
   `mission-control`; `RemoteGate` gives Mission Control's robot runtime the interface of an in-process `robotgate.Gate`
   over the gate's socket, one connection per client, so the lock, STOP and takeover are the gate's own and Mission Control
   keeps no second copy.
-- **duck-nav-server** (O22, `duck_lab.nav.server`): the real navigator as its own process. `DuckNavigatorClient` is the
+- **lab-nav-server** (O22, RFC-0022: `labrunner.navapi`, the runner in front of the navigator API `duck_lab.nav.server`): the real navigator as its own process. `DuckNavigatorClient` is the
   navigator API of §3.7 for the goal runs: goal.start, goal.status, goal.cancel. The server holds the lease while a run
   moves the robot and writes the Observatory run; Mission Control only starts, watches and cancels.
 
@@ -165,7 +165,7 @@ class RemoteGate:
 
 class DuckNavigatorClient:
     """The navigator API of RFC-0014 §3.7 for goal runs: the same interface as the fake's navigator, over TCP to
-    duck-nav-server. `step()` polls the server's status (decisions and objects since the last poll) and hands them to the
+    lab-nav-server. `step()` polls the server's status (decisions and objects since the last poll) and hands them to the
     callbacks; `goal_status()` is what the last poll saw."""
 
     def __init__(self, address: str, clock=time.monotonic):

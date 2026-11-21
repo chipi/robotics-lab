@@ -13,9 +13,9 @@ import threading
 from pathlib import Path
 
 import simhost
-from duck_lab.camera_server import CameraServer
+from labrunner.camera import CameraServer
 from duck_lab.nav.camera import CameraClient
-from duck_lab.nav.sim_camera import SimCamera
+from labrunner.sim_camera import SimCamera
 from worldmodel.semantic_map import Detection
 
 failures = []

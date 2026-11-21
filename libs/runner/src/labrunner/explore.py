@@ -1,6 +1,6 @@
 """Challenges 22 and 23: the explorer in a challenge's scene, scored against the scene's own floors (RFC-0008).
 
-The apartment's explorer (duck_lab.nav.explore_run.Explorer) runs as it is, without objects, for the scene's time budget.
+The robot's explorer runs as it is, as a payload's explore goal without objects, for the scene's time budget.
 Judged by truth: the judge's invariants over the run, how the run ended (explore_score's ENDS: `no_frontier_left` is the right
 end, `trapped` and `aborted` fail, `time` is the budget running out), and the share of each room's reachable floor
 (floor.py) that mapd's grid knows, against COVERAGE_BAR; where there are two rooms, the duck's truth must have entered both.
@@ -9,11 +9,10 @@ end, `trapped` and `aborted` fail, `time` is the budget running out), and the sh
 import json
 from pathlib import Path
 
-from duck_lab.challenge import floor
-from duck_lab.challenge.judge import Judge
-from duck_lab.challenge.scene import Scene
-from duck_lab.nav.explore_run import Explorer
-from duck_lab.nav.explore_score import ENDS, belief_score
+from labrunner import floor
+from labrunner.judge import Judge
+from labrunner.scene import Scene
+from labrunner.explore_score import belief_score
 
 # The bar, set from the ten seeds of challenge 22 (RFC-0008 §3): the nine runs that did not end trapped knew 87.8-96.6 % of the
 # room's reachable floor (median 92.1 %), the trapped one 65.4 %. 80 % sits 7.8 points under the lowest healthy run and 14.6
@@ -33,17 +32,6 @@ class Trail:
         for a in self.areas:
             if a.name not in self.entered and floor.in_area(truth[:2], a):
                 self.entered[a.name] = round(t, 1)
-
-
-def run(nav, scene: Scene, out_dir: Path, truth) -> dict:
-    """The explorer for the scene's budget; the run's start and its final map are written beside the run (start.json,
-    map_grid.json: what explore_score reads). Returns the explorer's result and how it ended."""
-    (out_dir / "start.json").write_text(json.dumps({"map": nav.loc.pose(), "truth": truth(), "scale": nav.scale}))
-    explorer = Explorer(nav, out_dir)
-    result = explorer.run(scene.time_s / 60)
-    ended = [e for e in explorer.events if e.get("event") in ENDS]
-    return {**result, "end": ended[-1]["event"] if ended else "time", "end_s": ended[-1]["t"] if ended else None,
-            "why": ended[-1].get("why") if ended else None}
 
 
 def verdict(scene: Scene, judge: Judge, trail: Trail, out: dict, out_dir: Path, rows: list | None = None) -> dict:

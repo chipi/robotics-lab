@@ -14,9 +14,9 @@ from pathlib import Path
 
 import legacy_rows
 
-from duck_lab.challenge.floor import coverage_by, known_test, reachable_floor
-from duck_lab.nav.evaluate import LAYOUT
-from duck_lab.nav.rooms import ROOMS
+from labrunner.floor import coverage_by, known_test, reachable_floor
+from labrunner.geometry import LAYOUT
+from labrunner.rooms import ROOMS
 
 layout = json.loads(LAYOUT.read_text())
 regions = {name: (lambda p, b=b: b[0] <= p[0] <= b[1] and b[2] <= p[1] <= b[3]) for name, b in ROOMS.items()}

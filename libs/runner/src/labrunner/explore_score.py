@@ -1,7 +1,7 @@
 """The scoreboard for exploring the apartment (stream A, docs/wip/EXPLORE-PROGRESS.md): one row per run, the batch's
 summary, and the blockers ranked by the exploring they cost.
 
-    python -m duck_lab.nav.explore_score runs/explore-b1-r1 runs/explore-b1-r2 runs/explore-b1-r3 [--md]
+    python -m labrunner.explore_score runs/explore-b1-r1 runs/explore-b1-r2 runs/explore-b1-r3 [--md]
 
 Per run, from its ticks.jsonl, start.json and map_grid.json (the simulator's truth is used for scoring only):
 - rooms visited (rooms.score: the truth inside a room) and each room's map area within 25 % (phase 2's bar);
@@ -19,9 +19,9 @@ import re
 import statistics
 from pathlib import Path
 
-from duck_lab.nav.evaluate import FOOTPRINT_M, LAYOUT, clearance, obstacles
-from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav.rooms import ROOMS, room_of, score as rooms_score
+from labrunner.geometry import FOOTPRINT_M, LAYOUT, clearance, obstacles
+from labrunner.frames import compose, inverse
+from labrunner.rooms import ROOMS, room_of, score as rooms_score
 
 ENDS = ("trapped", "no_frontier_left", "aborted")
 
@@ -61,7 +61,7 @@ def semantic_score(run: Path, rows: list) -> dict:
     the room the duck was in; a "found" goal judged by where the duck stood and faced."""
     from worldmodel.objects import distance
     from worldmodel.semantic_map import centre
-    from duck_lab.nav.sim_camera import SimCamera
+    from labrunner.sim_camera import SimCamera
 
     cam = SimCamera()
     out = {}

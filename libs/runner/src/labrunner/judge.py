@@ -1,13 +1,13 @@
 """Judged by the simulator's truth (ADR-0015): invariants on every truth sample, then whether the outcome was the right one.
 
-The footprint geometry and thresholds are the phase 1 evaluation's (duck_lab.nav.evaluate), so a challenge and the
+The footprint geometry and thresholds are the phase 1 evaluation's (labrunner.geometry), so a challenge and the
 apartment are scored the same way.
 """
 
 import math
 
-from duck_lab.challenge.scene import Scene, layout
-from duck_lab.nav.evaluate import FALLEN_Z_M, FOOTPRINT_M, PROFILE, REACHED_M, footprint_distance, obstacles
+from labrunner.scene import Scene, layout
+from labrunner.geometry import FALLEN_Z_M, FOOTPRINT_M, PROFILE, REACHED_M, footprint_distance, obstacles
 
 DROP_MARGIN_M = PROFILE.judge.drop_margin_m      # the trunk centre's nearest distance to a drop's outline (ADR-0015, the operator's)
 BOUNDS_MARGIN_M = PROFILE.judge.bounds_margin_m

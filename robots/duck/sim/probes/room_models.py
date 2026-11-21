@@ -12,7 +12,7 @@ from pathlib import Path
 
 from runfile.mcapio import Follower
 
-from duck_lab.nav.evaluate import footprint_distance
+from labrunner.geometry import footprint_distance
 from duck_lab.nav.grid import CostGrid, clearance
 from duck_lab.profile import load as load_profile
 

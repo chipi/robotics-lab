@@ -19,8 +19,8 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from duck_lab.nav.sim_camera import SimCamera
-from duck_lab.profile import load as load_profile
+from labrunner.sim_camera import SimCamera
+from labrunner import robots
 from simhost.truth import Body
 
 
@@ -29,7 +29,7 @@ class CameraServer:
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null): no simulated camera")
         self.path = Path(path)
-        self.camera = camera or SimCamera(config=load_profile(variant).get("sensors.camera", {}), seed=seed)
+        self.camera = camera or SimCamera(config=robots.profile(variant).get("sensors.camera", {}), seed=seed)
         self.port = host.truth_port
         self._body = None
         self._lock = threading.Lock()        # one truth read, and the camera's random draws, at a time

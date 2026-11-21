@@ -13,7 +13,7 @@ from pathlib import Path
 import legacy_rows
 
 from duck_lab.nav import explore
-from duck_lab.nav.explore_score import room_of
+from labrunner.explore_score import room_of
 
 
 def main() -> None:

@@ -4,7 +4,7 @@ Pollen's `scripts/duck-sim` (in the host's Pollen checkout, named in its host fi
 `/work/pollen/microduck` on the operator's workstation; pinned at `094d4bb4`,
 `robots/duck/sim/pollen-pins.json`) is written for a person at a terminal. Driven by an agent or a
 script, from a process with no terminal, two of its habits change meaning. This page is how
-robotics-lab runs it unattended: the challenge runner (`duck-challenge`), the evaluation, the
+robotics-lab runs it unattended: the challenge runner (`lab-challenge`), the evaluation, the
 explorers and the probes all go through the host's reset, `simhost.reset` (`libs/simhost`,
 RFC-0021).
 

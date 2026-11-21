@@ -8,9 +8,9 @@ import json
 import math
 import sys
 
-from duck_lab.challenge.challenges import build
-from duck_lab.challenge.judge import Judge
-from duck_lab.nav.evaluate import footprint_distance
+from labrunner.challenges import build
+from labrunner.judge import Judge
+from labrunner.geometry import footprint_distance
 
 ch, seed, path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 judge = Judge(build(ch, seed))

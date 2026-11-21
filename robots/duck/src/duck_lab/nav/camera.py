@@ -1,5 +1,5 @@
 """The navigator's camera: a recogniser on a socket (RFC-0021 step 6). In the simulator the host serves it
-(duck_lab.camera_server); on a real duck it would be the camera's detector. Either way the navigator gets Detections
+(labrunner.camera); on a real duck it would be the camera's detector. Either way the navigator gets Detections
 relative to the duck and nothing of the world."""
 
 from __future__ import annotations

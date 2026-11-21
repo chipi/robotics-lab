@@ -3,7 +3,8 @@
 import json
 import sys
 
-from duck_lab.nav.evaluate import GOAL_CLEARANCE_M, GOALS, LAYOUT, clearance, draw_goals, obstacles
+from labrunner.evaluate import draw_goals
+from labrunner.geometry import GOAL_CLEARANCE_M, GOALS, LAYOUT, clearance, obstacles
 
 failures = []
 

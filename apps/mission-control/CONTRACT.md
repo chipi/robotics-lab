@@ -309,19 +309,20 @@ and fits a 390 px phone. `window.__mc` is a hook for the page test.
 ## The simulated duck and the navigator API
 
 The adapter type `duck-sim` (`duck.py`; example `robots.sim/duck-sim.json`) puts two processes
-between Mission Control and the simulator, both from the duck package:
+between Mission Control and the simulator, both the runner's (`libs/runner`, RFC-0022):
 
-- **`duck-gate`** (RFC-0017): the one door to robotd. Mission Control is a client of it as
-  `mission-control`; the lock, STOP and takeover of the API are the gate's own (the robot file's
-  `lease_s` and `takeover` do not apply: they are the gate's flags). A robot's `lock` is the
-  gate's `who`; `unreachable` appears in it when the gate does not answer, and the robot is then
-  offline.
-- **`duck-nav-server`** (O22; RFC-0021 step 6, `duck_lab/nav_runner.py`): the runner in front of
-  the navigator, JSON-RPC over TCP on loopback (newline framed, RFC-0003's shape). It reads the host
-  file and the simulator's truth, serves the simulated camera on the host file's camera socket, and
-  starts the navigator API (`duck_lab/nav/server.py`) as its own process with only the robot's
-  sockets; every call below passes through to it. The navigator takes the lease from the gate at
-  `goal.start` and gives it back at the end. Each goal run's Observatory run,
+- **`lab-gate`** (RFC-0017; `duck-gate` for one release): the one door to robotd. Mission Control
+  is a client of it as `mission-control`; the lock, STOP and takeover of the API are the gate's own
+  (the robot file's `lease_s` and `takeover` do not apply: they are the gate's flags). A robot's
+  `lock` is the gate's `who`; `unreachable` appears in it when the gate does not answer, and the
+  robot is then offline.
+- **`lab-nav-server`** (O22; RFC-0021 step 6, RFC-0022: `labrunner.navapi`; `duck-nav-server` for
+  one release): the runner in front of the navigator, JSON-RPC over TCP on loopback (newline
+  framed, RFC-0003's shape). It reads the host file and the simulator's truth, serves the simulated
+  camera on the host file's camera socket, and starts the robot's navigator API
+  (`duck_lab/nav/server.py` for the duck) as its own process with only the robot's sockets; every
+  call below passes through to it. The navigator takes the lease from the gate (as
+  `lab-nav-server`) at `goal.start` and gives it back at the end. Each goal run's Observatory run,
   `duck/<scene>/mc<id>-<time>`, is the runner's copy of the navigator's run with the truth put in,
   and the guardrails only the truth can check (`contact`, `fall`, `drop_clearance`, the robot inside
   a `no_go_area`) are the runner's.

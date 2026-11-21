@@ -1,9 +1,10 @@
 [project]
 name = "duck-lab"
 version = "0.1.0"
-description = "Our tools around Pollen's Microduck: simulator scenes, probes, MCAP recording"
+description = "Pollen's Microduck: its profile and plugins, its navigator (a payload), its simulator scenes and probes, its tools"
 requires-python = ">=3.10"
 dependencies = [
+    "labrunner",
     "mcap>=1.2",
     "robotgate",
     "runfile",
@@ -11,8 +12,11 @@ dependencies = [
     "worldmodel",
 ]
 
-# The navigator writes its runs as Observatory runs (ADR-0014): the run format is a path source (libs/runfile), not a release.
+# The navigator writes its runs as Observatory runs (ADR-0014): the libraries are path sources (libs/), not releases.
+# labrunner is the runner (RFC-0022): the duck's tools and the runner's commands live in one environment; the navigator
+# itself never imports it (scripts/check_boundaries.py).
 [tool.uv.sources]
+labrunner = { path = "../../libs/runner", editable = true }
 robotgate = { path = "../../libs/gate", editable = true }
 runfile = { path = "../../libs/runfile", editable = true }
 simhost = { path = "../../libs/simhost", editable = true }
@@ -21,18 +25,22 @@ worldmodel = { path = "../../libs/worldmodel", editable = true }
 [project.scripts]
 duck-record = "duck_lab.record:main"
 duck-to-rerun = "duck_lab.to_rerun:main"
-duck-go = "duck_lab.nav.run:main"
-duck-eval = "duck_lab.nav.evaluate:main"
-duck-explore = "duck_lab.nav.explore_run:main"
+duck-go = "labrunner.aliases:duck_go"
+duck-eval = "labrunner.aliases:duck_eval"
+duck-explore = "labrunner.aliases:duck_explore"
 duck-site = "duck_lab.site_cli:main"
 duck-replay = "duck_lab.replay:main"
-duck-rooms = "duck_lab.nav.rooms:main"
+duck-rooms = "labrunner.aliases:duck_rooms"
 duck-world = "duck_lab.world:main"
-duck-challenge = "duck_lab.challenge.run:main"
-duck-gate = "duck_lab.gate_proxy:main"
-duck-nav-server = "duck_lab.nav_runner:main"
+duck-challenge = "labrunner.aliases:duck_challenge"
+duck-gate = "labrunner.aliases:duck_gate"
+duck-nav-server = "labrunner.aliases:duck_nav_server"
 duck-payload = "duck_lab.payload:main"
 duck-pic = "duck_lab.miniview:main"
+
+# The duck as a robot the runner can find by name (labrunner.robots, RFC-0022)
+[project.entry-points."robotics_lab.robots"]
+duck = "duck_lab.robot"
 
 [build-system]
 requires = ["hatchling"]

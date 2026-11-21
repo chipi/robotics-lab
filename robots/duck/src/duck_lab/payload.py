@@ -29,10 +29,10 @@ from pathlib import Path
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.decision import decision
 from duck_lab.nav.explore_run import Explorer
-from duck_lab.nav.explore_score import ENDS
+from duck_lab.nav.explore_run import ENDS
 from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import RunLog
-from duck_lab.site_cli import SITES
+from duck_lab.robot import SITES
 from worldmodel.objects import load_kinds
 from worldmodel.site import Site
 

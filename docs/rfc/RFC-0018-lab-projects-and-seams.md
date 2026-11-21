@@ -271,6 +271,12 @@ package of the lab; apps never import apps; robots never import apps.
 | nxt_lab | yes | - | - | tests (Chromium shots) | - | self | - |
 | duck_lab | yes | yes | yes | - | - | - | self |
 
+**Since then (2026-11-21):** two libraries joined, `libs/simhost` (RFC-0021, imports no other
+unit) and `libs/runner` (`labrunner`, RFC-0022: imports runfile, robotgate, worldmodel and simhost,
+never a robot's package); and the duck's navigator (`duck_lab.nav`, the payload, the plugins, the profile)
+is a unit of its own that may import neither `labrunner` nor `simhost`, while the duck's tools may.
+The table in force is `scripts/check_boundaries.py`'s.
+
 The one exception, by module: `mission_control.duck` (Mission Control's duck adapter) imports
 `duck_lab.nav.client` and `duck_lab.nav.run.load_scale`; RFC-0020's plugins retire it. A test
 or probe of a project may also use what the table lists as "tests".

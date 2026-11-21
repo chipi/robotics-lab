@@ -1,13 +1,13 @@
 """Run a challenge N times on its generated scenes, judged by truth, and report its pass rate (RFC-0008 step 1, ADR-0015).
 
-    uv run duck-challenge 1 --runs 10                       # into $OBSERVATORY_DATA (the lab data folder)
-    uv run duck-challenge 8 --runs 3 --seed 5 --miniview-data /work/robotics-lab/data
-    uv run duck-challenge 22 --runs 3 --miniview-data /work/robotics-lab/data
+    uv run lab-challenge 1 --runs 10                       # into $OBSERVATORY_DATA (the lab data folder)
+    uv run lab-challenge 8 --runs 3 --seed 5 --miniview-data /work/robotics-lab/data
+    uv run lab-challenge 22 --runs 3 --miniview-data /work/robotics-lab/data
 
 Each run: the seed's scene written (the simulator's file under the host's scenarios folder, Observatory's scene in the data
 folder), the simulator restarted on it (~40 s), a navigator given the goal, every truth sample checked against the
 invariants (the first one broken is an `invariant` event in the run), and the outcome judged. Every run is an Observatory run,
-`duck/<scene id>/<run>`, with its room. The simulator is stopped at the end (--keep-up leaves it).
+`<robot>/<scene id>/<run>` (`duck/...` for the duck), with its room. The simulator is stopped at the end (--keep-up leaves it).
 
 Three challenges are not one goal to reach (RFC-0008 §3):
   21  ten goals in turn on one reset, one room with boxes and a hole, goals beside the boxes and the hole: every goal
@@ -27,12 +27,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from duck_lab.challenge import explore, sequence
-from duck_lab.challenge.challenges import CHALLENGES, build
-from duck_lab.challenge.judge import Judge
-from duck_lab.challenge.runner import Remote
-from duck_lab.challenge.scene import miniview_scene, mjcf
-from duck_lab.nav.frames import compose, inverse
+from labrunner import explore, robots, sequence
+from labrunner.challenges import CHALLENGES, build
+from labrunner.judge import Judge
+from labrunner.remote import Remote
+from labrunner.scene import miniview_scene, mjcf
+from labrunner.frames import compose, inverse
 from runfile import keys
 from runfile.catalog import default_data
 from runfile.truthcopy import TruthLog
@@ -54,7 +54,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
     name = datetime.now().strftime("run-%Y%m%d-%H%M%S")
     run_out = out / scene.id / name
     run_out.mkdir(parents=True, exist_ok=True)
-    key = keys.make_key("duck", scene.id, name)
+    key = keys.make_key(robots.get().NAME, scene.id, name)
     simhost.reset(host, str(path))
     judge = Judge(scene)
     trail = explore.Trail(scene)
@@ -135,8 +135,10 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("runs/challenges"), help="per run: ticks.jsonl and result.json")
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
-    ap.add_argument("--payload", help="the navigator to run, a command that keeps the payload contract (default: duck_lab.payload, ours)")
+    ap.add_argument("--payload", help="the navigator to run, a command that keeps the payload contract (default: the robot's own)")
+    robots.add_robot_arg(ap)
     args = ap.parse_args()
+    robots.select(args.robot)
     if args.miniview_data is None:
         raise SystemExit("no miniview data folder (--miniview-data or OBSERVATORY_DATA): every challenge run is a miniview run")
     host = simhost.load(args.host)

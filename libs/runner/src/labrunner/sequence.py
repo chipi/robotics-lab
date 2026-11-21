@@ -6,10 +6,10 @@ heading (a heading belief off by tens of degrees puts every remembered obstacle 
 
 import math
 
-from duck_lab.challenge.judge import Judge
-from duck_lab.challenge.scene import Scene
-from duck_lab.nav.evaluate import REACHED_M
-from duck_lab.nav.frames import compose, inverse
+from labrunner.judge import Judge
+from labrunner.scene import Scene
+from labrunner.geometry import REACHED_M
+from labrunner.frames import compose, inverse
 
 
 def run(nav, scene: Scene, truth) -> list:

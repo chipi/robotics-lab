@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from duck_lab.challenge.runner import Remote
+from labrunner.remote import Remote
 
 failures = []
 
@@ -23,10 +23,9 @@ def check(name, cond, detail=""):
 
 
 for module, what in (("duck_lab.payload", "the payload"), ("duck_lab.nav.server", "Mission Control's navigator API (RFC-0021 step 6)")):
-    code = (f"import sys, {module}; print(sorted(m for m in sys.modules if m.split('.')[0] in ('simhost',) "
-            f"or m in ('duck_lab.camera_server', 'duck_lab.nav_runner')))")
+    code = f"import sys, {module}; print(sorted(m for m in sys.modules if m.split('.')[0] in ('simhost', 'labrunner')))"
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
-    check(f"importing {what} loads no host library (simhost: the host file, the reset, the truth sampler) and no runner side",
+    check(f"importing {what} loads no host library (simhost: the host file, the reset, the truth sampler) and no runner (labrunner, RFC-0022)",
           out.returncode == 0 and out.stdout.strip() == "[]", (out.returncode, out.stdout, out.stderr[-300:]))
 
 import inspect  # noqa: E402
@@ -53,7 +52,7 @@ for f in list((root / "src").rglob("*.py")) + list((root / "sim").rglob("*.py"))
             bad += [f"{f.relative_to(root)}:{node.lineno} {k.arg}" for k in node.keywords if k.arg and k.arg not in known]
 check("every call of the navigator names only the arguments it takes", not bad, bad)
 
-from duck_lab.challenge.runner import event  # noqa: E402
+from labrunner.remote import event  # noqa: E402
 
 e = event("goal", "goal n 3", n=3, kind="box", text="kept")
 check("a runner's event keeps a row's own `kind` and `text` fields as data (challenge 21's goal rows name a place kind)",
@@ -62,7 +61,7 @@ check("a runner's event keeps a row's own `kind` and `text` fields as data (chal
 import shutil  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-from duck_lab.challenge import runner  # noqa: E402
+from labrunner import remote as runner  # noqa: E402
 
 srv = socket.socket()
 srv.bind(("127.0.0.1", 0))
@@ -103,6 +102,12 @@ finally:
     child.wait()
     srv.close()
     other.close()
+
+from duck_lab.nav import explore_run  # noqa: E402
+from labrunner import explore_score  # noqa: E402
+
+check("the runner reads the explorer's end events by the names the explorer writes (one copy each side, RFC-0022)",
+      explore_run.ENDS == explore_score.ENDS, (explore_run.ENDS, explore_score.ENDS))
 
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")

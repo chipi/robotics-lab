@@ -5,17 +5,16 @@ It lives in the duck's package, not the world model's, because `sim-areas` draws
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
-from duck_lab.nav.rooms import ROOMS
+from labrunner.rooms import ROOMS
 from worldmodel.objects import load_kinds
 from worldmodel.site import Site
 
 # the operator's data, not the repository's (git-ignored); DUCK_SITES for another folder (a container's volume)
-SITES = Path(os.environ.get("DUCK_SITES", Path(__file__).resolve().parents[2] / "sites"))
+from duck_lab.robot import SITES  # noqa: E402 - the sites' folder (the navigator's default too)
 
 
 def main() -> None:

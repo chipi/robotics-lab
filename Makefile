@@ -260,7 +260,7 @@ sim-gate-scenarios: duck-sync ## NOT in CI: RFC-0017 step 3 on the real simulato
 	cd $(DUCK_DIR) && .venv/bin/python sim/probes/gate_scenarios.py
 
 .PHONY: sim-duck
-sim-duck: control-sync ## NOT in CI: Mission Control on the real simulator: the gate, duck-nav-server and the real navigator behind the API (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
+sim-duck: control-sync ## NOT in CI: Mission Control on the real simulator: the gate, lab-nav-server and the real navigator behind the API (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
 	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_duck.py $(ARGS)
 
 .PHONY: control-run

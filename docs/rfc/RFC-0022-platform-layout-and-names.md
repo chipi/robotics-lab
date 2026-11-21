@@ -1,10 +1,13 @@
 # RFC-0022 — The platform's layout and names: what is the duck's, and what is everyone's
 
-**Status:** Proposed (2026-11-21), for the operator's decision; nothing has moved. The operator,
-2026-11-21: "do we have to use duck in names still since now all is generic and we keep robot
-profiles?" The answer given then: partly; some of it is rightly the duck's, some is the platform's
-and only lives in the duck's package, and the navigator is not yet proven generic. The operator
-agreed to "not a rename sweep, but a move", written as a proposal before anything moves. **Builds
+**Status:** Accepted (2026-11-21, the operator: "1A, 2 choose best name, 3 before phase 5"):
+option A; the prefix `lab-` (chosen by the lead, §7); done before phase 5. Built 2026-11-21 (§9);
+§8 is the plan as refined by the code, with what changed from §3–§6 and why. Proposed the same
+day. The operator, 2026-11-21: "do we have to use duck in names still since now all is generic and
+we keep robot profiles?" The answer given then: partly; some of it is rightly the duck's, some is
+the platform's and only lives in the duck's package, and the navigator is not yet proven generic.
+The operator agreed to "not a rename sweep, but a move", written as a proposal before anything
+moves. **Builds
 on:** [RFC-0018](RFC-0018-lab-projects-and-seams.md) (the three kinds of folder and the boundary
 check), [RFC-0020](RFC-0020-robot-profiles-and-plugins.md) (profiles and plugins),
 [RFC-0021](RFC-0021-sim-host-and-payload.md) (the host, the payload and the runner). The map of
@@ -100,9 +103,86 @@ name, as the `miniview` names did for the Observatory (K30).
    never a robot's package; a robot's package never imports `libs/runner`.
 6. The proof above, then the docs (the architecture page, the READMEs, `DUCK-SIM-FOR-AGENTS.md`).
 
-## 7. Open questions for the operator
+## 7. Answered (2026-11-21)
 
-1. **The option:** A, B or C?
-2. **The prefix:** `lab-` (the repository's name), or another?
-3. **When:** right after this RFC is decided, before phase 5's build (phase 5's design round can
-   start meanwhile: it does not depend on where the runner lives); or after phase 5?
+1. ~~The option~~ **A**.
+2. ~~The prefix~~ **`lab-`**, chosen by the lead as the operator asked: short, the repository's
+   own name, says "the lab's tool" and not any robot's, and no command of ours starts with it.
+3. ~~When~~ **Before phase 5.**
+
+## 8. The plan, refined by the code (2026-11-21)
+
+Reading the imports before moving anything changed four things in §3–§6:
+
+- **A robot is found by name through a Python entry point, not a profile field.** The profile
+  describes the robot, not code. A robot package registers itself in the group
+  `robotics_lab.robots` (the duck: `duck = "duck_lab.robot"`, a small module that names its
+  profile, its navigator's command and its simulator files); `labrunner.robots` finds it for
+  `--robot duck`. With one robot registered, it is the default.
+- **The boundary is the navigator, not the whole duck package.** `duck_lab.nav`,
+  `duck_lab.payload`, `duck_lab.plugins` and `duck_lab.profile` (the navigator) never import
+  `labrunner` or `simhost`; the duck's operator tools may, as a runner does.
+- **The tools tied to the simulated apartment stay the duck's for now** (`duck-record`,
+  `duck-replay`, `duck-world`, `duck-pic`, `duck-site`, `duck-to-rerun`): `duck-replay` replays the
+  duck's own perception; `world`, `pic` and `site` read the apartment's layout and rooms. They keep
+  their names; moving them is a follow-up when a second robot needs them. `duck-rooms` moves with
+  the scores it is part of.
+- **The apartment's files stay in `robots/duck/sim/`** (its layout, objects, phase 1's goals): they
+  are the scene built for the duck's simulator; the duck's registration names the folder and the
+  runner reads them from there. A second simulator kind brings its own scenes (RFC-0021 §3.1).
+
+| Today (`robots/duck/src/duck_lab/`) | Moves to |
+| --- | --- |
+| `challenge/runner.py` | `labrunner/remote.py` |
+| `challenge/run.py` (`duck-challenge`) | `labrunner/challenge.py` (`lab-challenge`) |
+| `challenge/judge.py`, `challenges.py`, `scene.py`, `sequence.py`, `explore.py`, `floor.py` | `labrunner/`; the scene writer's MuJoCo part (`mjcf`) stays in `labrunner/scene.py` for now: it takes the runner's `Scene`, and `simhost` (the standard library only) cannot import the runner. It moves to the kind when a second kind brings its own writer |
+| `nav_runner.py` (`duck-nav-server`) | `labrunner/navapi.py` (`lab-nav-server`) |
+| `camera_server.py`, `nav/sim_camera.py` | `labrunner/camera.py`, `labrunner/sim_camera.py` |
+| `nav/evaluate.py` (`duck-eval`) | `labrunner/geometry.py` (the footprint and the layout) and `labrunner/evaluate.py` (`lab-eval`) |
+| `nav/explore_score.py`, `nav/rooms.py` (`duck-rooms`) | `labrunner/explore_score.py`, `labrunner/rooms.py` (`lab-rooms`) |
+| `nav/guardrails.py`'s `TruthGuard`, `nav/explore_run.py`'s staircase guard | `labrunner/guard.py` |
+| `nav/explore_run.py`'s `main` (`duck-explore`), `nav/run.py`'s `main` (`duck-go`) | `labrunner/explore.py` (`lab-explore`), `labrunner/go.py` (`lab-go`) |
+| `gate_proxy.py` (`duck-gate`) | `labrunner/gate.py` (`lab-gate`): not `libs/gate`, which is pure rules and the standard library only (the proxy does socket I/O and reads the host file) |
+
+The runner keeps its own `compose` and `inverse` (the navigator's wrap the angle, `runfile.se2`'s do
+not; a move changes no number). Every `duck-*` command that moves keeps working for one release
+and says its new name. The proof is §5's: before and after, the same tests and runs.
+
+## 9. Built (2026-11-21)
+
+`libs/runner` (`labrunner`) holds the moved modules of §8's table plus what the move needed:
+`robots.py` (a robot by name, the entry-point group `robotics_lab.robots`), `geometry.py` (the
+judge's footprint, thresholds and layout, from the evaluation), `guard.py` (the truth guard and the
+staircase guard), `explore_run.py` and `go.py` (the runners of `lab-explore` and `lab-go`), `cli.py`,
+`frames.py` and `rpc.py` (the runner's own copies, so it imports no robot), and `aliases.py` (the
+`duck-*` names for one release). The duck registers itself (`duck_lab/robot.py`: its profile, its
+payload's and navigator API's commands, its simulator files, its sites folder). Taken out of the
+navigator: `explore_run`'s and `run`'s `main`s, the staircase guard, `TruthGuard`; dead code
+removed: the challenges' in-process exploration (`explore.run`, no caller). The run keys name the
+robot (`robots.get().NAME`), and `lab-nav-server` takes the lease as `lab-nav-server`.
+
+The boundary check (`scripts/check_boundaries.py`) has two new units: `labrunner` (may import the
+libraries, never a robot's package) and `duck_nav` (the navigator: `duck_lab.nav`, the payload,
+the plugins, the profile, the registration; may import neither `labrunner` nor `simhost`). Its own
+test has cases for both, and a mutation (the navigator importing `labrunner.remote`) fails the
+check. `test_payload.py`: importing the payload or the navigator API loads no `labrunner` and no
+`simhost`; the explorer's end events and the runner's are the same names.
+
+**The proof (§5), after the move:**
+
+- `make ci-fast` PASS (lint, the boundaries and their test, every project's unit tests); the docs
+  PASS.
+- `lab-challenge` 1–5, seed 1: 5 of 5 passed (errors 0.11–0.18 m); `duck-challenge 1` seed 2 (the
+  old name): passed, and said its new name. Every run: all ticks paired, 0 truth connections.
+- `lab-explore`, 5 minutes with the inventory: 601 sightings from 601 looks (119.5 a minute, as
+  before), no camera failure, 11 objects in 3 rooms (the run before the move: 18 in 4; one run
+  each, explorations differ by where they go); the official run 3083 of 3083 ticks with the truth;
+  0 truth connections in 150 checks.
+- `lab-go 1.5 0.5`: reached; 351 of 351 ticks with the truth.
+- `make sim-duck`: first run, 21 checks passed, then the test itself crashed in the inventory
+  scenario (it read a missing result: an inventory that did not end `done`; the run's files went
+  with its temporary folder, so why it did not is not known). The inventory scenario alone: passed.
+  The test now reports such a run instead of crashing. The second full run: 44 passed, 0 failed
+  (`PASS sim_duck`), the inventory `done`, drop clearance broken by the runner's check, 0 truth
+  connections in 308 checks over 15 goals. One failure in two full runs, of a scenario that starts
+  where the one before left the robot: not explained, not repeated.

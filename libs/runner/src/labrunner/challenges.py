@@ -7,7 +7,7 @@ import math
 import random
 from dataclasses import replace
 
-from duck_lab.challenge.scene import TOF_RANGE_M, TRUNK_START, Box, Scene, moved, slab, wall
+from labrunner.scene import TOF_RANGE_M, TRUNK_START, Box, Scene, moved, slab, wall
 
 START_JITTER = (0.05, math.radians(10))     # ±m, ±rad
 

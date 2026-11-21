@@ -82,18 +82,31 @@ got = run(lambda r: (project(r, "apps/nxt-web", "nxt_lab", {"nxt.py": "from obse
 check("... its source may not", len(got) == 1, got)
 
 # an exception is by module and unit, and only that
-exc = {"mission_control.duck": {"duck_lab"}}
+exc = {"mission_control.duck": {"duck_nav"}}     # (duck_lab.nav is the navigator's own unit, RFC-0022)
 got = run(lambda r: (project(r, "apps/mission-control", "mission_control", {"duck.py": "from duck_lab.nav.client import Rpc\n",
                                                                            "other.py": "from duck_lab.nav.client import Rpc\n"}),
                      project(r, "robots/duck", "duck_lab", {})), exceptions=exc)
 check("a listed exception passes, the same import elsewhere fails", len(got) == 1 and "other.py" in got[0], got)
 
 # a baseline entry lets a breach through, and fails when it is no longer needed
-base = {"worldmodel.objects": {"duck_lab"}}
+base = {"worldmodel.objects": {"duck_nav"}}
 got = run(lambda r: project(r, "libs/worldmodel", "worldmodel", {"objects.py": "from duck_lab.nav.cliff import OVERHEAD_M\n"}), baseline=base)
 check("a baseline entry lets its breach through", got == [], got)
 got = run(lambda r: project(r, "libs/worldmodel", "worldmodel", {"objects.py": "OVERHEAD_M = 0.3\n"}), baseline=base)
 check("a baseline entry that no longer breaks the table is a failure (the list only shrinks)", len(got) == 1 and "BASELINE" in got[0], got)
+
+# the runner and the navigator (RFC-0022): the navigator never imports the runner or the host library, the runner never a
+# robot's package, and a robot's tools may use the runner
+got = run(lambda r: (project(r, "robots/duck", "duck_lab", {"nav/run.py": "import labrunner.remote\n",
+                                                             "payload.py": "import simhost\n",
+                                                             "site_cli.py": "from labrunner.rooms import ROOMS\nimport simhost\n"}),
+                     project(r, "libs/runner", "labrunner", {}), project(r, "libs/simhost", "simhost", {})))
+check("the navigator may not import the runner nor the host library; the duck's tools may",
+      len(got) == 2 and any("nav/run.py" in g for g in got) and any("payload.py" in g for g in got), got)
+got = run(lambda r: (project(r, "libs/runner", "labrunner", {"remote.py": "from duck_lab.nav.client import Rpc\n",
+                                                             "go.py": "import duck_lab.robot\n"}),
+                     project(r, "robots/duck", "duck_lab", {})))
+check("the runner may not import a robot's package (it finds robots by name)", len(got) == 2, got)
 
 # a path source is held to the table
 got = run(lambda r: (project(r, "libs/runfile", "runfile", {}, '[tool.uv.sources]\nduck-lab = { path = "../../robots/duck" }\n'),

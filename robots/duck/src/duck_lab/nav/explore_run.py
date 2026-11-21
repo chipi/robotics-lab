@@ -1,17 +1,10 @@
-"""Explore the apartment: survey, go to the nearest frontier, repeat (RFC-0002 phase 2, "the brain
-explores"). The navigator runs as a payload (duck_lab.payload); this command is its runner, which has the
-simulator's truth, for the guard and the run only (RFC-0021 step 6); the brain never reads it.
-
-    uv run duck-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # the run is the record
-
-The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept during the transition.
+"""The duck's explorer: survey, go to the nearest frontier, repeat (RFC-0002 phase 2, "the brain explores"). It runs in
+the navigator's process, as the payload's explore goal (duck_lab.payload) or a Mission Control goal (duck_lab.nav.server);
+its runner is `lab-explore` (labrunner.explore_run, RFC-0022), which has the simulator's truth; the explorer never does.
 """
 
-import argparse
 import json
 import math
-import sys
-import threading
 import time
 from pathlib import Path
 
@@ -21,26 +14,13 @@ from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import anomaly as anom, recovery
 from duck_lab.nav.run import Navigator, decision
-from duck_lab.nav.runlog import add_args
-from runfile.catalog import default_data
-from worldmodel.objects import load_kinds
-from duck_lab.site_cli import SITES
 
+ENDS = ("trapped", "no_frontier_left", "aborted")      # the events that end an exploration before its time (its runner reads them)
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
 MAX_REFUSALS = 6       # refusals in a row before the run stops as trapped
 RETIRE_M = 0.6         # a target with no path on the map retires the frontier within this of it
 FIND_RETRY_LEGS = 5    # an object found but out of reach is tried again after this many more legs
-# The test harness's kill switch, not the brain's: the simulator's truth aborts the run when the duck
-# comes within GUARD_M of the staircase opening or its trunk drops - so a failing cliff check ends in an
-# abort, not another fall. The brain never reads it.
-STAIRS = (-0.40, 0.00, -1.40, -0.70)
-GUARD_M = 0.05
-
-
-def stairs_distance(p) -> float:
-    x0, x1, y0, y1 = STAIRS
-    return math.hypot(max(x0 - p[0], 0, p[0] - x1), max(y0 - p[1], 0, p[1] - y1))
 
 
 def wrap(a: float) -> float:
@@ -326,116 +306,3 @@ class Explorer:
             self.note(event="found", kind=self.find, status="not_found", why=why,
                       decision=decision("found", f"no {self.find}: {why}", legs=legs))
         return {"legs": legs, "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}
-
-
-def main() -> None:
-    """The exploration as a runner (RFC-0021 step 6): the navigator is a payload process (duck_lab.payload) given the
-    robot's sockets and the camera's; this process has the host file and the truth, serves the camera, keeps the truth
-    guard, and writes the official run with the truth put in."""
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--minutes", type=float, default=20.0)
-    ap.add_argument("--out", type=Path, default=Path("runs/explore"))
-    ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
-    ap.add_argument("--find", metavar="KIND", help="explore until an object of this kind is found, then go to it "
-                    "(RFC-0016; kinds: libs/worldmodel/src/worldmodel/kinds.json), e.g. fridge")
-    ap.add_argument("--inventory", action="store_true", help="the goal is to find all objects: explore, then say what "
-                    "is where (inventory.json is written whenever the objects are on)")
-    ap.add_argument("--no-objects", action="store_true", help="no simulated camera and no semantic map")
-    ap.add_argument("--site", help="a site's id: start from its map, save it back at the end (duck-site create first)")
-    ap.add_argument("--sites", type=Path, default=SITES, help=f"the sites' folder (default {SITES})")
-    ap.add_argument("--object-costs", action="store_true", help="confirmed objects join the cost map (off by default)")
-    ap.add_argument("--no-relocalise", action="store_true", help="landmarks do not correct the belief (the run before relocalisation)")
-    ap.add_argument("--fix-fault", help="T,DX,DY: from T s on, mapd's pose is shifted by (DX, DY) m, a persistent jump like explore-b10a-r1 (a test)")
-    ap.add_argument("--frame-fault", help="T,DX,DY: as --fix-fault, and mapd's grid shifts with its pose (its frame jumped as a "
-                    "whole: pose and grid come from one graph, mapping-design §5) (a test)")
-    ap.add_argument("--no-frames", action="store_true", help="the grid stays in mapd's frame and the memory does not move with the "
-                    "belief's (the run before RFC-0016 §6's frame fix; a test)")
-    ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (the run before the fix gate)")
-    ap.add_argument("--payload", help="another navigator's command, keeping the payload contract (default: ours)")
-    add_args(ap)
-    args = ap.parse_args()
-    if args.find and args.find not in load_kinds():
-        ap.error(f"no kind {args.find!r}; the kinds: {', '.join(sorted(load_kinds()))}")
-    if (args.find or args.inventory) and args.no_objects:
-        ap.error("--find and --inventory need the objects (drop --no-objects)")
-    if args.fix_fault and args.frame_fault:
-        ap.error("--fix-fault and --frame-fault are one fault: give one")
-    data = args.miniview_data or default_data()
-    if data is None:
-        ap.error("the run is the record: give --miniview-data (or OBSERVATORY_DATA)")
-    # the runner's, not the explorer's: the explorer also runs inside a payload, which has no host and no truth
-    import shlex
-    import simhost
-    from duck_lab.camera_server import CameraServer
-    from duck_lab.challenge.runner import Remote
-    from runfile import keys
-    from runfile.truthcopy import TruthLog
-    from simhost.truth import Sampler
-
-    host = simhost.load(args.host)
-    if host.truth_port is None:
-        sys.exit(f"duck-explore: {host.source} has no truth (truth_port is null): the runner needs it for the guard and the run")
-    args.out.mkdir(parents=True, exist_ok=True)
-    name = args.run or args.out.name
-    key = keys.make_key("duck", args.scene, name)
-    if keys.run_dir(Path(data), key).exists():
-        sys.exit(f"duck-explore: the run {key} exists in {data}: give another --run or --out")
-    extra = ["--sites", str(args.sites)] + (["--no-fix-gate"] if args.no_fix_gate else []) + \
-        (["--no-frames"] if args.no_frames else []) + (["--fix-fault", args.fix_fault] if args.fix_fault else []) + \
-        (["--frame-fault", args.frame_fault] if args.frame_fault else [])
-    truth_log = TruthLog(args.out / "truth.jsonl")
-    camera = sampler = nav = None
-    route = {"checks": 0, "max": None}
-    try:
-        if not args.no_objects:
-            camera = CameraServer(host, host.sockets["camera"]).start()
-        sampler = Sampler(host).start()
-        nav = Remote(host, args.out, args.scene, name, Path(data), key, truth_log, run={"kind": "exploration"},
-                     payload=shlex.split(args.payload) if args.payload else None, camera=camera.path if camera else None,
-                     extra=extra)
-        print(f"Observatory run {key} -> {keys.run_dir(Path(data), key)}", file=sys.stderr)
-        guarded = threading.Event()
-
-        def watch(s) -> None:
-            truth_log.add(s.wall_ns, s.pose, s.z, s.quat)
-            if sampler.samples % 40 == 1:
-                n = nav.truth_connections(host.truth_port)
-                if n is not None:
-                    route["checks"] += 1
-                    route["max"] = max(route["max"] or 0, n)
-            # the test harness's kill switch (GUARD_M, above): the runner's, by the truth; the brain never reads it
-            if not guarded.is_set() and (stairs_distance(s.pose) < GUARD_M or s.z < 0.06):
-                guarded.set()
-                why = f"truth guard: {stairs_distance(s.pose):.2f} m from the staircase, trunk {s.z:.3f} m"
-                nav.abort = why
-                nav.record(event="truth_guard", why=why)
-        sampler.on_sample = watch
-        pose = nav.localise()
-        (args.out / "start.json").write_text(json.dumps({"map": list(pose) if pose else None, "truth": list(sampler.latest.pose),
-                                                          "scale": nav.scale}))
-        if pose is None:
-            sys.exit("duck-explore: no pose on the map after the survey")
-        opts = {} if args.no_objects else {"objects": True, "find": args.find, "site": args.site,
-                                           "object_costs": args.object_costs, "relocalise": not args.no_relocalise}
-        result = nav.explore(args.minutes, **opts)
-        print(json.dumps(result))
-        inv = result.get("inventory")
-        if args.inventory and inv:
-            print(f"INVENTORY {inv['objects']} objects: " + "; ".join(f"{room}: {', '.join(kinds)}" for room, kinds in inv["rooms"].items()))
-        if result.get("site"):
-            print(f"SITE {result['site']['id']}: {result['site']['objects']} objects saved to {result['site']['folder']}")
-    finally:
-        if sampler is not None:
-            sampler.stop()
-        if nav is not None:
-            nav.close()
-            print(f"the official run's truth copy: {nav.copy.stats()}", file=sys.stderr)
-        if camera is not None:
-            print(f"camera: {camera.looks} looks served", file=sys.stderr)
-            camera.stop()
-        truth_log.close()
-        print(f"the payload's connections to the truth's port: {route}", file=sys.stderr)
-
-
-if __name__ == "__main__":
-    main()

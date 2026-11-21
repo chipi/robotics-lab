@@ -358,6 +358,18 @@ project README, and we should update architecture docs and any others before pha
   `libs/simhost`. The rest are found by a sweep of the docs and the projects' READMEs and
   CONTRACT.md files.
 
+*Done 2026-11-21* (8534ef0): the README's diagram and pieces, the page
+[How the platform fits together](../architecture.md), the stale pages of the sweep. It surfaced
+`duck-go` as a path with the truth in the navigator (a6e67a5) and the question of names.
+
+**Then, the platform's layout and names**
+([RFC-0022](../rfc/RFC-0022-platform-layout-and-names.md); the operator, 2026-11-21: "1A, 2 choose
+best name, 3 before phase 5"): the runner, the judge, the course, the scores, the simulated camera
+and the gate proxy moved out of the duck's package into `libs/runner` (`labrunner`), with `lab-*`
+commands that take `--robot` and the `duck-*` names for one release; a robot is found by name
+(an entry point); the navigator may import neither the runner nor the host library (the boundary
+check). Built 2026-11-21; its proof is RFC-0022 §9.
+
 ## Phase 5 — the views
 
 **First, a design round, before any build** (the operator, 2026-11-20: "I don't want to rush. I want

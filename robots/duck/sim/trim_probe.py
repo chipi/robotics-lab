@@ -23,9 +23,9 @@ import math
 import time
 import types
 
-from duck_lab.challenge.scene import Scene, mjcf, slab, wall
+from labrunner.scene import Scene, mjcf, slab, wall
 import simhost
-from duck_lab.nav.evaluate import FALLEN_Z_M
+from labrunner.geometry import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator, host_links
 from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)

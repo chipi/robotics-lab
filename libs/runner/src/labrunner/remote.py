@@ -1,6 +1,7 @@
 """The runner's side of the payload (RFC-0021 §3, step 2): the navigator started as its own process with only the robot's
-connections (duck_lab.payload), driven over its contract, and its run copied into the official one with the truth put in
-(runfile.truthcopy) while it runs. The runner keeps what the payload never gets: the host file, the truth, the judge.
+connections (the robot's registered PAYLOAD: duck_lab.payload for the duck), driven over its contract, and its run copied
+into the official one with the truth put in (runfile.truthcopy) while it runs. The runner keeps what the payload never
+gets: the host file, the truth, the judge.
 
     with Remote(host, run_out, scene_id, name, data, key, truth_log) as nav:     # nav.go_to, nav.loc.pose(), nav.record
         ...
@@ -16,7 +17,8 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav.client import Rpc
+from labrunner import robots
+from labrunner.rpc import Rpc
 from runfile import keys
 from runfile.truthcopy import TruthCopy
 
@@ -98,14 +100,14 @@ class Remote:
                  camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
-        `camera`: the camera's socket the runner serves (duck_lab.camera_server), handed to the payload as one of the robot's;
+        `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
         `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
         host's (a gate's), spoken to as `client`."""
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
         self.payload_data = self.run_out / "payload-data"         # the payload's own run: not the Observatory's data folder
-        src = keys.run_dir(self.payload_data, keys.make_key("duck", scene, name))
+        src = keys.run_dir(self.payload_data, keys.make_key(robots.get().NAME, scene, name))
         if copy is None:
             self.copy = TruthCopy(src, keys.run_dir(Path(data), key), key, truth_log.nearest, run=run)
         else:
@@ -113,7 +115,7 @@ class Remote:
             copy.next_source(src)
         self._lock = threading.Lock()                             # the copy is written by the pump and by the runner's events
         self._stop = threading.Event()
-        cmd = list(payload or [sys.executable, "-m", "duck_lab.payload"]) + [      # any navigator that keeps the contract
+        cmd = list(payload or robots.get().PAYLOAD) + [      # the robot's navigator, or any that keeps the contract
                "--robot", str(robot or host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
