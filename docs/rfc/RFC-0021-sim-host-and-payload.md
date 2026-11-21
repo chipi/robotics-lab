@@ -234,8 +234,20 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    host): phase 1's 20 goals run by the runner with the host file, the recording opened in the
    Observatory beside a run made the old way. A second host is the operator's, later, with the basic
    arena setup.
+   *Done 2026-11-21:* `duck-eval` through the split (a payload per goal, one official run copied
+   from the 20 payload runs: `TruthCopy.next_source`), phase 1's fixed 20 goals: bar MET, 20 of 20
+   reached within 0.25 m by truth (largest error 0.206 m), 0 contacts, 0 falls, 0 timeouts, closest
+   0.134 m; 9016 of 9016 ticks with truth. The run read by the Observatory's run builder beside run
+   19 (the old way): the same kind, 20 epochs each, a segment per goal (21 against 20: the last
+   payload's trailing one kept). Not done: the run opened in the Observatory's page (it was
+   written to a scratch data folder, not the one the operator's Observatory serves).
 5. **A second payload:** a minimal navigator (straight to the goal, stop on the depth sensor)
    through the same contract, to prove the contract is not ours alone.
+   *Done 2026-11-21:* `robots/duck/payloads/straight.py` (the standard library and `runfile`, none
+   of `duck_lab`), run by `duck-challenge --payload`: challenges 1–5 seed 1, judged the same way, 0
+   of 5 passed, each failure the judge's (1 and 2 said reached 0.37 m short by truth; 3 and 4
+   refused at something under 300 mm; 5 timed out), no contact, no fall; every tick with truth; 0
+   connections to the truth's port.
 
 ## 6. Risks
 

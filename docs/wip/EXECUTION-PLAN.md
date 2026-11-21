@@ -269,6 +269,54 @@ The runner keeps RFC-0021 §3.1's rule (the operator, 2026-11-20): everything th
 lives behind the host file's `kind`, so a second simulator is a new kind, not a change to the
 runner, the judge, the recording, the Observatory or Mission Control.
 
+### Phase 4b checkpoint (2026-11-21)
+
+**Built and on main** (each step's proof in RFC-0021 §5):
+
+1. **The host file and the reset out of the navigator** (`libs/simhost`, `simhost init/show`); the
+   navigator takes its sockets as arguments and knows no machine's paths.
+2. **The truth out of the navigator** for the challenge course: the navigator is a payload process
+   (`duck-payload`) given only the robot's sockets; the runner samples the truth, judges, and
+   writes the official run with the truth put in (`runfile.truthcopy`). Challenges 1–5, seeds 1–3,
+   twice: 30 of 30 through the payload against 30 of 30 the old way; 12142 of 12142 ticks with
+   truth; 0 connections from the payload to the truth's port in 583 checks.
+3. **`scripts/host-setup` and `scripts/host-check`**: proven on a fresh Linux container
+   (`HOST-SETUP PASS`) and on the operator's MacBook Pro M4 Pro (`HOST-SETUP PASS`, also with
+   macOS's python3 3.9; challenge 1 through the split passed there twice at real-time factor 1.0).
+4. **Phase 1's 20 goals through the split** on this workstation: bar MET, 20 of 20, 0 contacts.
+5. **A second, minimal navigator** (`payloads/straight.py`) through the same contract and judge.
+
+Found and fixed on the way: Pollen's configd does not build on macOS (our patch, macOS only; a note
+for Pollen drafted); simhost left mapd running on macOS; the setup scripts broke on python 3.9; the
+explorer and the evaluation imported the host library at load (caught by the payload's test).
+
+**Not done or not proven:**
+
+- **Not through the split yet:** `duck-explore` (the apartment) and Mission Control's nav server
+  still run the navigator with the truth in its process, for the simulated camera (it reads the
+  truth) and Mission Control's truth guardrails; both wait for the camera as a host-served sensor
+  and the runner in front of the navigator API (RFC-0021, after step 2).
+- **Challenge 21 through the split ran once,** 8 of 10 (a goal missed by 1 cm); not repeated.
+- **The simulator inside the clean Linux container did not run:** saving the container fails 3 of
+  3 on this workstation's Docker store (fs-verity "FILE CORRUPTED", no disk errors; the operator's
+  root checks found the disk healthy); a reboot or fs-verity off for containerd is the operator's.
+- **On the MacBook:** phase 1's 20 goals not run, the recording not opened in the Observatory there.
+- **The split runs not opened in the Observatory's page** (read by its run builder only).
+- **Eight standalone probes** still open port 7801 or `~/.cache/duck-sim` themselves; Mission
+  Control's robot-file defaults keep this machine's sockets (phase 5's control panel).
+- **The truth-port check reads `/proc`:** on macOS it records "not measured".
+- **host-check does not measure the real-time factor;** every run records it instead (1.0 here and
+  on the MacBook).
+- **Pollen's licences were read after step 3, not before** as the RFC said; the models'
+  non-commercial clause is open for a paid arena.
+- **The straight navigator's 0.37 m shortfall** is put down to raw odometry; not measured.
+
+**For the operator:** the Docker store (a reboot or fs-verity off for containerd); whether to send
+the configd note to Pollen (`docs/wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md`).
+
+**Recommendation:** phase 5, starting with its design round (proposals and mock-ups per surface,
+for the operator to decide on), as the order says (4b, then 5, then the planner).
+
 ## Phase 5 — the views
 
 **First, a design round, before any build** (the operator, 2026-11-20: "I don't want to rush. I want
