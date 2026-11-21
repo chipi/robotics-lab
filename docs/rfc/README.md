@@ -71,6 +71,8 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0021 — The simulator host and the payload: run a navigator on any machine that has Pollen's
   simulator](RFC-0021-sim-host-and-payload.md) (Accepted, 2026-11-19; steps 1–6 built 2026-11-21)
 - [RFC-0022 — The platform's layout and names: what is the duck's, and what is
-  everyone's](RFC-0022-platform-layout-and-names.md) (Proposed, 2026-11-21; for the operator's decision)
+  everyone's](RFC-0022-platform-layout-and-names.md) (Accepted and built, 2026-11-21)
+- [RFC-0023 — The views: the operator's journeys, which surface does what, and where the telemetry
+  goes](RFC-0023-the-views.md) (Draft, 2026-11-21: phase 5's design round, twelve decisions)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).

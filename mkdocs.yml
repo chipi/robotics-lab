@@ -94,6 +94,7 @@ nav:
     - RFC-0020 — Robot profiles and plugins: rfc/RFC-0020-robot-profiles-and-plugins.md
     - RFC-0021 — The simulator host and the payload: rfc/RFC-0021-sim-host-and-payload.md
     - RFC-0022 — The platform's layout and names: rfc/RFC-0022-platform-layout-and-names.md
+    - RFC-0023 — The views: rfc/RFC-0023-the-views.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
