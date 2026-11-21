@@ -127,6 +127,10 @@ nav:
     - "The phantom obstacle by the dock: a real cube": wip/PHANTOM.md
     - "The simulated depth sensor's ranges": wip/RANGE.md
     - "Draft note to Pollen: mapd's range model (not sent)": wip/UPSTREAM-MAPD-RANGE-DRAFT.md
+    - "Draft note to Pollen: configd on macOS (not sent)": wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md
+    - "Draft note to Pollen: the odometry (not sent)": wip/UPSTREAM-ODOMETRY-DRAFT.md
+    - "Draft note to Pollen: the step height (not sent)": wip/UPSTREAM-STEP-HEIGHT-DRAFT.md
+    - "Robot file format proposal": wip/ROBOT-FILE-FORMAT-PROPOSAL.md
     - When the real duck arrives: wip/REAL-DUCK.md
     - Opportunities and competitions: wip/OPPORTUNITIES.md
     - "Vision: an arena for any robot": wip/VISION-ARENA.md
