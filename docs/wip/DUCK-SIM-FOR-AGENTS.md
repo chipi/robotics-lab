@@ -1,10 +1,12 @@
 # Running the simulated duck from an agent
 
-Pollen's `scripts/duck-sim` (in `/work/pollen/microduck`, pinned at `094d4bb4`) is written for a
-person at a terminal. Driven by an agent or a script, from a process with no terminal, two of its
-habits change meaning. This page is how robotics-lab runs it unattended: the challenge runner
-(`duck-challenge`), the explorers and the probes all go through the host's reset,
-`simhost.reset` (`libs/simhost`, RFC-0021).
+Pollen's `scripts/duck-sim` (in the host's Pollen checkout, named in its host file:
+`/work/pollen/microduck` on the operator's workstation; pinned at `094d4bb4`,
+`robots/duck/sim/pollen-pins.json`) is written for a person at a terminal. Driven by an agent or a
+script, from a process with no terminal, two of its habits change meaning. This page is how
+robotics-lab runs it unattended: the challenge runner (`duck-challenge`), the evaluation, the
+explorers and the probes all go through the host's reset, `simhost.reset` (`libs/simhost`,
+RFC-0021).
 
 ## Why: the sudo lockout (2026-11-16)
 
@@ -35,15 +37,15 @@ means:
 
 ## The patch (a local change, not sent upstream)
 
-[`duck/sim/patches/duck-sim-sudo-free-down.patch`](https://github.com/chipi/robotics-lab/blob/main/duck/sim/patches/duck-sim-sudo-free-down.patch)
+[`robots/duck/sim/patches/duck-sim-sudo-free-down.patch`](https://github.com/chipi/robotics-lab/blob/main/robots/duck/sim/patches/duck-sim-sudo-free-down.patch)
 drops `sudo` from the `is-active` check. Asking whether a unit runs needs no root. The
 `stop` and `umount` that follow are reached only when a container really runs, and still prompt
 a person as before. On this machine no `duck-*` unit exists, so they are never reached.
 
 ```bash
-cd /work/pollen/microduck
-git apply /work/robotics-lab/main/duck/sim/patches/duck-sim-sudo-free-down.patch          # apply
-git apply --reverse --check /work/robotics-lab/main/duck/sim/patches/duck-sim-sudo-free-down.patch && echo applied
+cd /path/to/pollen/microduck     # the host file's `pollen.microduck` (`simhost show`); scripts/host-setup applies the patch itself
+git apply /path/to/robotics-lab/robots/duck/sim/patches/duck-sim-sudo-free-down.patch          # apply
+git apply --reverse --check /path/to/robotics-lab/robots/duck/sim/patches/duck-sim-sudo-free-down.patch && echo applied
 ```
 
 Re-apply it after any update or reset of the Pollen checkout. The operator decided on
@@ -61,7 +63,7 @@ Re-apply it after any update or reset of the Pollen checkout. The operator decid
 
 ## When sudo says "Sorry, try again"
 
-1. Read the tally: `uv run python sim/probes/sudo_free_down.py` (in `duck/`, nothing running),
+1. Read the tally: `uv run python sim/probes/sudo_free_down.py` (in `robots/duck/`, nothing running),
    or the record file `/run/faillock/<user>` directly. Many entries seconds apart, whose source
    is the service `sudo` rather than a terminal, mean a script is failing sudo. The operator's
    own attempts carry a terminal (`/dev/pts/N`).

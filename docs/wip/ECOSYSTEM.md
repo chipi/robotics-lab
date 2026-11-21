@@ -9,12 +9,12 @@ not a plan; each step gets its own plan when it starts.
 
 | Piece | Role | Exists today |
 | --- | --- | --- |
-| **NXT** (`nxt/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC programs, diagnostics, Docker image; running on the robot over USB and Bluetooth since 2026-11-14 |
-| **Microduck** | Walking robot with camera, 8×8 depth sensor, beak gripper; behaviours trained in simulation | Not arrived; nothing in this repo |
-| **Robot interface** | One JSON-RPC interface for every robot (RFC-0003): status, actions, live telemetry, run logs | The NXT web server is the first robot service; mission control ([RFC-0006](../rfc/RFC-0006-mission-control.md)) grows from it |
+| **NXT** (`apps/nxt-web/`) | Cheap, sturdy robot with simple sensors; fast loops run on the brick | Web UI, logging, NXC programs, diagnostics, Docker image; running on the robot over USB and Bluetooth since 2026-11-14 |
+| **Microduck** | Walking robot with camera, 8×8 depth sensor, beak gripper; behaviours trained in simulation | In simulation (Pollen's simulator, the robot not arrived): its profile and plugins, its navigator, explorer and world model, the challenge course, all run behind the runner ([RFC-0021](../rfc/RFC-0021-sim-host-and-payload.md)); see [how the platform fits together](../architecture.md) (2026-11-21) |
+| **Robot interface** | One JSON-RPC interface for every robot (RFC-0003): status, actions, live telemetry, run logs | Mission Control ([RFC-0014](../rfc/RFC-0014-mission-control.md), `apps/mission-control`) drives the robots through adapters: a fake robot, the simulated duck, the NXT (2026-11-21) |
 | **eval-harness** | Decides whether a behaviour or model change is really better | Exists, not connected to robots |
 | **flotilla** | Decides what AI may make a robot do; approvals; timeline per case | Exists; cases, policy, host agents not built yet |
-| **AI** | Perception, planning, language; runs on the PC, the duck, or the homelab | Not started |
+| **AI** | Perception, planning, language; runs on the PC, the duck, or the homelab | The duck's navigator (planning, exploring, a semantic map from a simulated camera) is built; language and a real camera's perception are not (2026-11-21) |
 
 The homelab already has an observability stack and an LLM gateway and GPU (per the
 workstation rules); whether robot telemetry and models should use them is open.

@@ -1,14 +1,17 @@
 # robotics-lab
 
-A lab for the operator's robots — a LEGO Mindstorms NXT 2.0 and a Hugging Face / Pollen Robotics
-Microduck — and for the software around them: a web UI, a robot brain, and the operator's
-eval-harness and flotilla stretched into robotics.
+A robot platform where any robot can be loaded: the operator's LEGO Mindstorms NXT 2.0 and EV3s,
+Pollen Robotics' Microduck (in simulation first), and a TurtleBot3 later. A robot brings a profile
+and plugins, a simulator brings a host, a navigator is tested behind a runner that judges it by the
+simulator's truth, every run is recorded one way and watched in the Observatory, and the operator
+drives it all from Mission Control.
 
 ## Where to start
 
-- **Where do things stand?** [Status and open decisions](wip/STATUS.md).
-- **Proposals under review:** [Proposals (RFC)](rfc/README.md) — the NXT web UI, the robot brain
-  and its parts.
+- **How the pieces fit:** [How the platform fits together](architecture.md).
+- **Where do things stand?** [The plan we execute on](wip/EXECUTION-PLAN.md): each phase, its
+  checkpoint, what is done and what is not.
+- **Proposals:** [Proposals (RFC)](rfc/README.md).
 - **Accepted decisions:** [Decisions (ADR)](adr/README.md).
 - **Ideas and notes:** [In progress](wip/README.md).
 - **How it got here:** [History](history/README.md).
@@ -17,10 +20,18 @@ eval-harness and flotilla stretched into robotics.
 
 | Folder | What |
 | --- | --- |
-| [`nxt/`](https://github.com/chipi/robotics-lab/tree/main/nxt) | The NXT: Python control, web UI, NXC programs for the brick |
+| [`apps/observatory/`](https://github.com/chipi/robotics-lab/tree/main/apps/observatory) | The Observatory: every run, live and replayed |
+| [`apps/mission-control/`](https://github.com/chipi/robotics-lab/tree/main/apps/mission-control) | Mission Control: robots, sites, goals, STOP |
+| [`apps/nxt-web/`](https://github.com/chipi/robotics-lab/tree/main/apps/nxt-web) | The NXT: Python control, web UI, NXC programs for the brick |
+| [`libs/simhost/`](https://github.com/chipi/robotics-lab/tree/main/libs/simhost) | The simulator host: the host file, the reset, the truth sampler |
+| [`libs/runfile/`](https://github.com/chipi/robotics-lab/tree/main/libs/runfile) | The run format |
+| [`libs/gate/`](https://github.com/chipi/robotics-lab/tree/main/libs/gate) | The robot gate: one driver per robot |
+| [`libs/worldmodel/`](https://github.com/chipi/robotics-lab/tree/main/libs/worldmodel) | Objects, the semantic map, sites |
+| [`robots/`](https://github.com/chipi/robotics-lab/tree/main/robots) | Each robot: the duck's profile, plugins and navigator; the robots' descriptions and meshes |
 
-The Microduck's upstream code lives outside this repo, in `/work/pollen/` on the workstation
-([MICRODUCK.md](wip/MICRODUCK.md)).
+Pollen's own code (the Microduck's simulator and services) is not in this repository: each machine
+that runs the simulator has its checkouts, named in its host file (`simhost init`,
+[RFC-0021](rfc/RFC-0021-sim-host-and-payload.md) §4; [MICRODUCK.md](wip/MICRODUCK.md)).
 
 ---
 

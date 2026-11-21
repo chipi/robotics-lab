@@ -176,6 +176,9 @@ Decided (D) or proposed only (P). Line numbers for RFC-0006 are given by section
 
 ## 4. What exists to build on
 
+As it stood when these requirements were written (2026-11-17), before Mission Control was built; the
+paths are the old layout. What exists now: [how the platform fits together](../architecture.md).
+
 | Piece | What it gives | Where |
 | --- | --- | --- |
 | Duck navigator | `go_to((x, y))`, exploring; Python and CLI only (`duck-go x y`, `duck-explore`); **no API server** | `duck/src/duck_lab/nav/run.py` (`Navigator`), `explore_run.py` |

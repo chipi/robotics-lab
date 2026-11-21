@@ -52,8 +52,8 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0013 — The robot's eye: what it sees, what it builds, and a page to watch
   it](RFC-0013-robot-eye.md) (Accepted, 2026-11-17)
 - [RFC-0014 — Mission Control: one API for every robot, goals in words, places and
-  objects](RFC-0014-mission-control.md) (Accepted, revision 2, 2026-11-18; first slice built: the
-  fake robot, the core and the API)
+  objects](RFC-0014-mission-control.md) (Accepted, revision 2, 2026-11-18; built: the core and the API,
+  the fake robot, the simulated duck (`duck-sim`, behind its runner since RFC-0021 step 6) and the NXT)
 - [RFC-0015 — Nav2 on the simulated duck: learn how the standard stack works, and
   compare](RFC-0015-nav2-comparison.md) (Accepted, 2026-11-18)
 - [RFC-0016 — Objects, landmarks and a semantic map: "this is the kitchen", "go to the
@@ -69,4 +69,8 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0020 — Robot profiles and capability plugins: each robot brings what it is and how it
   moves](RFC-0020-robot-profiles-and-plugins.md) (Accepted, 2026-11-19)
 - [RFC-0021 — The simulator host and the payload: run a navigator on any machine that has Pollen's
-  simulator](RFC-0021-sim-host-and-payload.md) (Accepted, 2026-11-19)
+  simulator](RFC-0021-sim-host-and-payload.md) (Accepted, 2026-11-19; steps 1–6 built 2026-11-21)
+- [RFC-0022 — The platform's layout and names: what is the duck's, and what is
+  everyone's](RFC-0022-platform-layout-and-names.md) (Proposed, 2026-11-21; for the operator's decision)
+
+The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).

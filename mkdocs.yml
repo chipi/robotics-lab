@@ -69,6 +69,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - How it fits together: architecture.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — The NXT web UI: rfc/RFC-0001-nxt-web-ui.md
@@ -92,6 +93,7 @@ nav:
     - RFC-0019 — Anomalies: rfc/RFC-0019-anomaly-telemetry.md
     - RFC-0020 — Robot profiles and plugins: rfc/RFC-0020-robot-profiles-and-plugins.md
     - RFC-0021 — The simulator host and the payload: rfc/RFC-0021-sim-host-and-payload.md
+    - RFC-0022 — The platform's layout and names: rfc/RFC-0022-platform-layout-and-names.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
