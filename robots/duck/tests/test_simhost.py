@@ -120,6 +120,34 @@ check("an unpatched duck-sim (sudo on every down) is refused, the patch named", 
 sim_script.write_text('        if systemctl is-active --quiet "$name" 2>/dev/null; then\n')
 check("a patched duck-sim is used, from the host's microduck checkout", simhost.duck_sim(h) == str(sim_script))
 
+# Stopping mapd: the pid file's process is stopped only when it is mapd, and it is known on a host with no /proc (macOS: on
+# the MacBook on 2026-11-21 mapd was left running and its pid file deleted, as the check read /proc only).
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+from simhost import simulator  # noqa: E402
+
+(tmp / "state").mkdir(exist_ok=True)
+for proc_root, where in ((Path("/proc"), "with /proc"), (tmp / "no-proc", "with no /proc (ps, as on macOS)")):
+    simulator.PROC = proc_root
+    stand_in = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "mapd", "--config", "x"])
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "not-the-map"])
+    try:
+        (tmp / "state" / "mapd.pid").write_text(str(other.pid))
+        simulator.stop_mapd(h)
+        check(f"{where}: a process that is not mapd is not stopped", other.poll() is None)
+        (tmp / "state" / "mapd.pid").write_text(str(stand_in.pid))
+        simulator.stop_mapd(h)
+        stand_in.wait(5)
+        check(f"{where}: mapd is stopped, and its pid file goes with it",
+              stand_in.returncode is not None and not (tmp / "state" / "mapd.pid").exists(), stand_in.returncode)
+    finally:
+        for p in (stand_in, other):
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+simulator.PROC = Path("/proc")
+
 # ---- the truth sampler (RFC-0021 step 2): the runner's own reader of the body server ---------------------------------------
 import math  # noqa: E402
 import socketserver  # noqa: E402

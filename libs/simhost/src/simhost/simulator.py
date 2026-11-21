@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import time
+from pathlib import Path
 
 from simhost.host import Host
 
@@ -18,6 +19,7 @@ DEFAULT_SCENE = "apartment_backlash"
 # (2026-11-16: locked all day by the challenge runs). docs/wip/DUCK-SIM-FOR-AGENTS.md has the patch and the check.
 SUDO_ASK = 'if sudo systemctl is-active --quiet "$name"'
 PATCH = "robots/duck/sim/patches/duck-sim-sudo-free-down.patch"
+PROC = Path("/proc")      # where a process's command line is read, when the host has it (a test points it elsewhere)
 
 
 def duck_sim(host: Host) -> str:
@@ -36,19 +38,35 @@ def _env(host: Host, scene: str) -> dict:
     return env
 
 
+def command_of(pid: int) -> str | None:
+    """A running process's command line; None when there is no such process. /proc where the host has it, else `ps`
+    (macOS has no /proc: there the check read nothing, and mapd was left running, 2026-11-21)."""
+    if pid <= 0:
+        return None
+    try:
+        return (PROC / str(pid) / "cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    except FileNotFoundError:
+        if PROC.exists():
+            return None              # /proc is there and has no such process
+    except OSError:
+        return None
+    out = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True)
+    return out.stdout.strip() or None if out.returncode == 0 else None
+
+
 def stop_mapd(host: Host) -> None:
+    """The mapd our reset started, stopped: the pid file's process, only if it is mapd (a pid can be reused)."""
     pid_file = host.state / "mapd.pid"
     if not pid_file.exists():
         return
     pid = int(pid_file.read_text().strip() or 0)
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            mine = b"mapd" in f.read()
-    except OSError:
-        mine = False
-    if mine:
+    cmd = command_of(pid)
+    if cmd and "mapd" in cmd:
         os.kill(pid, 15)
-        time.sleep(1)
+        for _ in range(50):
+            if command_of(pid) is None:
+                break
+            time.sleep(0.1)
     pid_file.unlink(missing_ok=True)
 
 
