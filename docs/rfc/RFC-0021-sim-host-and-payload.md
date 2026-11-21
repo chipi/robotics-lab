@@ -212,8 +212,24 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    environment synced, our patch, the apartment scene, the walking policy fetched, our three
    environments, the host file; `HOST-CHECK PASS (17 pass, 0 fail, 1 not run)`, `HOST-SETUP PASS`.
    Found on the way: macOS's system `python3` is 3.9 (the MacBook's: 3.9.6), so the two scripts
-   and `simhost` defer their annotations. Not yet: the simulator run inside the container, and
-   macOS (the operator's go for the installs on the laptop is asked).
+   and `simhost` defer their annotations. Not done: the simulator run inside that container; saving
+   it as an image (`docker commit`) fails three times out of three on this workstation's Docker
+   store (fs-verity "FILE CORRUPTED" on the blobs being written, no disk errors; the homelab
+   session's report, the next step the operator's).
+   *macOS proven 2026-11-21* on the operator's MacBook Pro (M4 Pro, macOS 27.2.1; the operator's go
+   for the installs, and the laptop's prod session agreed the paths): Rust installed for the user
+   (rustup `--no-modify-path`), our repository cloned, `scripts/host-setup`: `HOST-SETUP PASS`,
+   `HOST-CHECK PASS (18 pass, 0 fail, 1 not run)`, also with macOS's own python3 3.9.6. Pollen's
+   simulation environment installs and imports on Apple Silicon (MuJoCo 3.10.0), the risk named
+   above. Found: Pollen's configd does not build on macOS since Pollen's 2026-11-13 change
+   (`CLOCK_BOOTTIME`, Linux-only, `configd/src/wifi_ssh.rs:57`; still so on Pollen's main): our
+   patch `configd-macos-clock.patch` (the operator's yes), applied and checked on macOS only, and a
+   note for Pollen drafted, not sent (`docs/wip/UPSTREAM-CONFIGD-MACOS-DRAFT.md`); and simhost left
+   mapd running on a host with no `/proc` (fixed, 63062ae). Then challenge 1 seed 1 through the
+   payload split passed on the MacBook twice (0.103 m from the goal; real-time factor 1.0; 345 of
+   345 ticks with truth; the truth-port counter "not measured" there, no `/proc`), and no mapd was
+   left after the second. Not yet: phase 1's 20 goals on the MacBook, and the recording opened in
+   the Observatory there.
 4. **One course through the split on this workstation** (the operator's X3, Omarchy, the first
    host): phase 1's 20 goals run by the runner with the host file, the recording opened in the
    Observatory beside a run made the old way. A second host is the operator's, later, with the basic
