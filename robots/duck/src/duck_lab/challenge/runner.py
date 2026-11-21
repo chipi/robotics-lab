@@ -48,7 +48,7 @@ class Remote:
     """The payload as a navigator for the course code (go_to, loc.pose(), record, scale), across a process boundary."""
 
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
-                 copy: TruthCopy | None = None, run: dict | None = None):
+                 copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`)."""
         self.host, self.run_out = host, Path(run_out)
@@ -63,7 +63,7 @@ class Remote:
             copy.next_source(src)
         self._lock = threading.Lock()                             # the copy is written by the pump and by the runner's events
         self._stop = threading.Event()
-        cmd = [sys.executable, "-m", "duck_lab.payload",
+        cmd = list(payload or [sys.executable, "-m", "duck_lab.payload"]) + [      # any navigator that keeps the contract
                "--robot", str(host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant]

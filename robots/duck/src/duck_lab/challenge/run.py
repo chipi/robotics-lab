@@ -21,6 +21,7 @@ Pass rates for these are over the same seeds the others use; a run's result.json
 
 import argparse
 import json
+import shlex
 import sys
 import time
 from datetime import datetime
@@ -41,7 +42,7 @@ from simhost.truth import Sample, Sampler
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
 
-def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) -> dict:
+def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, payload: list | None = None) -> dict:
     """One challenge run, the navigator as a payload process (RFC-0021 §3): it gets the robot's sockets and nothing else;
     the runner reads the truth (its own sampler), judges, and writes the official run with the truth put in (runner.Remote,
     runfile.truthcopy)."""
@@ -62,7 +63,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path) ->
     t0 = time.monotonic()
     try:
         sampler = Sampler(host).start()
-        nav = Remote(host, run_out, scene.id, name, data, key, truth_log)
+        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload)
 
         route = {"checks": 0, "max": None}       # the payload's connections to the truth's port, looked at every 2 s
 
@@ -134,6 +135,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=Path("runs/challenges"), help="per run: ticks.jsonl and result.json")
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
+    ap.add_argument("--payload", help="the navigator to run, a command that keeps the payload contract (default: duck_lab.payload, ours)")
     args = ap.parse_args()
     if args.miniview_data is None:
         raise SystemExit("no miniview data folder (--miniview-data or OBSERVATORY_DATA): every challenge run is a miniview run")
@@ -142,7 +144,7 @@ def main() -> None:
     started = time.monotonic()
     try:
         for i in range(args.runs):
-            row = one(host, args.challenge, args.seed + i, args.miniview_data, args.out)
+            row = one(host, args.challenge, args.seed + i, args.miniview_data, args.out, shlex.split(args.payload) if args.payload else None)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23
