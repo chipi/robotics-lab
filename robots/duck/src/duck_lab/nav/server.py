@@ -153,7 +153,7 @@ class GoalRun:
                                        "robot": "duck"})
         self.run_key = self.runlog.key
         try:
-            self.nav = Navigator(sockets=srv.sockets, body=None,
+            self.nav = Navigator(sockets=srv.sockets,
                                  log=out / "ticks.jsonl", runlog=self.runlog,
                                  client=srv.client)
         except BaseException:

@@ -18,6 +18,7 @@ from duck_lab.profile import load as load_profile
 PROFILE = load_profile("sim")
 LOCO = PROFILE.locomotion
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 scene_id, side, tries = sys.argv[1], sys.argv[2], int(sys.argv[3])
 scene_xml = simhost.load().scenarios / scene_id / "scene.xml"
@@ -26,20 +27,21 @@ for vx in [float(v) for v in sys.argv[4:]]:
     for k in range(tries):
         simhost.reset(simhost.load(), str(scene_xml))
         try:
-            nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
+            nav = Navigator(**host_links(simhost.load()), calibration="sim")
+            truth = Body(simhost.load().truth_port)
             time.sleep(3.0)
-            x0, y0, a0 = nav.body.pose()
+            x0, y0, a0 = truth.pose()
             target = [(math.cos(a0 + sign * 2.5), math.sin(a0 + sign * 2.5))]     # a point behind, to the given side: a pivot
             st, start, turned, last = FollowState(), time.monotonic(), 0.0, a0
             while time.monotonic() - start < 6.0:
-                x, y, a = nav.body.pose()
+                x, y, a = truth.pose()
                 tw, _ = step([(x0 + 2 * target[0][0], y0 + 2 * target[0][1])], (x, y, a), time.monotonic(), st, LOCO, DuckWalk(PROFILE, pivot_vx=vx))
                 nav.robot.call("robot.move", {"vx": tw.vx, "vy": 0.0, "vyaw": tw.vyaw})
                 turned += math.atan2(math.sin(a - last), math.cos(a - last))
                 last = a
                 time.sleep(0.1)
             nav.robot.call("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0})
-            x, y, _ = nav.body.pose()
+            x, y, _ = truth.pose()
             print(f"vx {vx:+.3f} try {k + 1}: turned {math.degrees(turned):+5.0f} deg in 6 s, moved {math.hypot(x - x0, y - y0):.3f} m",
                   flush=True)
         finally:

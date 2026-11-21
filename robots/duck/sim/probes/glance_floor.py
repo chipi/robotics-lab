@@ -16,6 +16,7 @@ from pathlib import Path
 from cliff_shim import cliff
 import simhost
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 GLANCE_X_M, GLANCE_Y_M = 0.25, 0.45          # the floor point aimed at, in the trunk frame (ahead, aside)
 FLOOR_Z_M = -0.116                            # the floor below the trunk's origin (stand height)
@@ -30,7 +31,8 @@ def sensor_yaw(state) -> float:
 for scene_id in sys.argv[1:]:
     simhost.reset(simhost.load(), str(simhost.load().scenarios / scene_id / "scene.xml"))
     try:
-        nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
+        nav = Navigator(**host_links(simhost.load()), calibration="sim")
+        truth = Body(simhost.load().truth_port)
         time.sleep(3.0)
         for side, name in ((1.0, "left"), (-1.0, "right")):
             ans = nav.robot.call("robot.look", {"x": GLANCE_X_M, "y": side * GLANCE_Y_M, "z": FLOOR_Z_M, "neck_pitch": 0.0}) or {}

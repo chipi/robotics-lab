@@ -17,6 +17,7 @@ from duck_lab.profile import load as load_profile
 _LOCO = load_profile("sim").locomotion
 KICK_RAD_S, KICK_S, TURN_RAD_S = _LOCO.kick_rad_s, _LOCO.kick_s, _LOCO.hold_rad_s
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 HOLD_VX = -0.06
 scene_id, tries = sys.argv[1], int(sys.argv[2])
@@ -25,16 +26,17 @@ for kick_vx in [float(v) for v in sys.argv[3:]]:
     for k in range(tries):
         simhost.reset(simhost.load(), str(scene_xml))
         try:
-            nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
+            nav = Navigator(**host_links(simhost.load()), calibration="sim")
+            truth = Body(simhost.load().truth_port)
             time.sleep(3.0)
-            x0, y0, a0 = nav.body.pose()
+            x0, y0, a0 = truth.pose()
             start, turned, last, at1, along1 = time.monotonic(), 0.0, a0, None, None
             while time.monotonic() - start < 3.0:
                 kicking = time.monotonic() - start < KICK_S
                 nav.robot.call("robot.move", {"vx": kick_vx if kicking else HOLD_VX, "vy": 0.0,
                                               "vyaw": KICK_RAD_S if kicking else TURN_RAD_S})
                 time.sleep(0.05)
-                x, y, a = nav.body.pose()
+                x, y, a = truth.pose()
                 turned += math.atan2(math.sin(a - last), math.cos(a - last))
                 last = a
                 if at1 is None and not kicking:

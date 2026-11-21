@@ -95,11 +95,12 @@ class Remote:
 
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
                  copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None,
-                 camera: Path | None = None, extra: list | None = None):
+                 camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
         `camera`: the camera's socket the runner serves (duck_lab.camera_server), handed to the payload as one of the robot's;
-        `extra`: more of the payload's own options (a navigator's test switches)."""
+        `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
+        host's (a gate's), spoken to as `client`."""
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
@@ -113,9 +114,10 @@ class Remote:
         self._lock = threading.Lock()                             # the copy is written by the pump and by the runner's events
         self._stop = threading.Event()
         cmd = list(payload or [sys.executable, "-m", "duck_lab.payload"]) + [      # any navigator that keeps the contract
-               "--robot", str(host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
+               "--robot", str(robot or host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
-               "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + list(extra or [])
+               "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
+            (["--client", client] if client else []) + list(extra or [])
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}    # nothing of the host but its sockets
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)

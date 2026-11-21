@@ -19,6 +19,7 @@ import simhost
 from duck_lab.nav.evaluate import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 BAR_X, WALK_MPS, WALK_S, TICK_S = 0.6, 0.3, 30.0, 0.1
 YAW_RPS, YAW_HOLD_RAD = 0.0, 0.1   # --yaw: turn while walking (the navigator does, 0.1-0.2 rad/s), the sign flipped to hold the heading within YAW_HOLD_RAD   # it walks ~0.13 m/s: 30 s reaches a 0.5 m-tread flight's top
@@ -66,7 +67,8 @@ def trial(kind: str, h: float, k: int) -> dict:
         """The top of the floor under x (the walking floors, the bar left out: it is walked over, not stood on)."""
         return next((f.z1 for f in floors if f.cx - f.hx <= x < f.cx + f.hx), 0.0)
 
-    nav = Navigator(**host_links(simhost.load(), truth=True))
+    nav = Navigator(**host_links(simhost.load()))
+    truth = Body(simhost.load().truth_port)
     if CMD_LOG:
         log, call = open(CMD_LOG, "a"), nav.robot.call
 
@@ -78,7 +80,7 @@ def trial(kind: str, h: float, k: int) -> dict:
         nav.robot.call = logged
     try:
         past = BAR_X + (FLIGHT * STEP_DEPTH_M if kind.startswith("flight") else 0.0) + 0.25
-        x0 = nav.body.pose()[0]
+        x0 = truth.pose()[0]
         if NAV:
             if NO_STUCK:
                 import duck_lab.nav.run as nav_run
@@ -98,7 +100,7 @@ def trial(kind: str, h: float, k: int) -> dict:
                 nav.move = straight
             t0 = time.monotonic()
             out = nav.go_to((past + 0.4 - x0, 0.0), WALK_S)
-            x = nav.body.pose()[0]
+            x = truth.pose()[0]
             return {"kind": kind, "height_m": h, "mode": "nav" + ("-no-stuck" if NO_STUCK else "") + ("-no-steer" if NO_STEER else ""), "bar_deep_m": BAR_DEEP_M,
                     "trial": k, "crossed": x > past, "status": out.get("status"), "why": out.get("why"),
                     "furthest_m": round(x, 3), "seconds": round(time.monotonic() - t0, 1)}
@@ -106,7 +108,7 @@ def trial(kind: str, h: float, k: int) -> dict:
         while time.monotonic() < stand_until:
             nav.move(Twist())
             time.sleep(TICK_S)
-        x0 = nav.body.pose()[0]
+        x0 = truth.pose()[0]
         if GLANCE_FIRST:
             pose = nav.loc.pose() or (0.0, 0.0, 0.0)
             nav.glance_at((pose[0] + 0.3, pose[1] + 0.25), pose)
@@ -115,10 +117,10 @@ def trial(kind: str, h: float, k: int) -> dict:
         gained = t0                      # when it last got STUCK_M further: it walks ~0.13 m/s, starting included
         while time.monotonic() - t0 < WALK_S and furthest <= past:
             nav.move(Twist(WALK_MPS, turn))
-            x, _, yaw = nav.body.pose()
+            x, _, yaw = truth.pose()
             if abs(yaw) > YAW_HOLD_RAD:
                 turn = -math.copysign(YAW_RPS, yaw)
-            lowest = min(lowest, nav.body.height - floor_under(x))
+            lowest = min(lowest, truth.height - floor_under(x))
             if x > furthest + STUCK_M:
                 furthest, gained = x, time.monotonic()
             started = furthest > x0 + STUCK_M or time.monotonic() - t0 > START_S   # 0.15 m/s: not moving after 3 s

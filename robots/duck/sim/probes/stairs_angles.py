@@ -16,6 +16,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 from duck_lab.nav.frames import compose, inverse  # noqa: E402
 from duck_lab.nav.run import Navigator, host_links  # noqa: E402
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 import simhost  # noqa: E402
 
 STAIRS = (-0.40, 0.00, -1.40, -0.70)
@@ -43,12 +44,13 @@ for i, (name, start, target) in enumerate(APPROACHES):
     if ONLY and i not in ONLY:
         continue
     simhost.reset(simhost.load())
-    nav = Navigator(**host_links(simhost.load(), truth=True), log=os.path.join(RUNS, f"stairs-{i}.jsonl"))
+    nav = Navigator(**host_links(simhost.load()), log=os.path.join(RUNS, f"stairs-{i}.jsonl"))
+    truth = Body(simhost.load().truth_port)
     closest = [9.0]
 
     def guard(nav=nav, closest=closest):
         while not nav.abort:
-            d = edge_distance(nav.body.pose()[:2])
+            d = edge_distance(truth.pose()[:2])
             closest[0] = min(closest[0], d)
             if d < GUARD_M:
                 nav.abort = f"truth guard: {d:.2f} m from the opening"
@@ -57,7 +59,7 @@ for i, (name, start, target) in enumerate(APPROACHES):
     try:
         if not nav.fix():
             nav.survey()
-        map_from_world = compose(nav.loc.pose(), inverse(nav.body.pose()))
+        map_from_world = compose(nav.loc.pose(), inverse(truth.pose()))
         threading.Thread(target=guard, daemon=True).start()
         first = None
         if start:

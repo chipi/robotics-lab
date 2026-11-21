@@ -312,10 +312,20 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    - **The runs in the Observatory** (headless, against the operator's :8070): the exploration,
      the contact's goal run and a find run open with no page error, with the sightings, the
      objects, the room and the runner's stop drawn. One flaw seen, older than the split: K43.
+   - **`duck-go` was still a path with the truth in the navigator's process** (it handed the
+     navigator the truth to write into its own rows; no decision read it), found while writing the
+     architecture page, after this step had been called done. It is now a runner too (`Remote`,
+     with `--robot-socket` and `--client` for a gate); live: reached, 499 of 499 ticks paired, 0
+     rows with the truth in the navigator's own file. And the navigator can no longer be given the
+     truth at all: no `body` argument, no truth reader in its module, `host_links` gives sockets
+     only (`test_payload.py` checks all three, and that every call of the navigator names only its
+     real arguments). The probes and the test tools that judge by the truth read it with
+     `simhost.truth.Body`, their own.
 
    Not proven: a fall stopping a run through the runner live (the same path as the contact; the
-   check unit-tested); the MacBook. `duck-explore` now refuses to run with no data folder (the run
-   is the record).
+   check unit-tested); the MacBook; the ten probes moved to `simhost.truth.Body` compile but were
+   not run. `duck-explore` and `duck-go` now refuse to run with no data folder (the run is the
+   record), and `duck-go`'s `--log` is `--out`.
 
 ## 6. Risks
 

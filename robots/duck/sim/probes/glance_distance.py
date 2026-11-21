@@ -16,6 +16,7 @@ from pathlib import Path
 
 import simhost
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 DISTANCES = (0.12, 0.16, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50)
 BEARINGS = (0, 45, 90, 120, -90)          # degrees from the heading, left positive
@@ -24,7 +25,8 @@ TRIALS = 1
 for scene_id in sys.argv[1:]:
     simhost.reset(simhost.load(), str(simhost.load().scenarios / scene_id / "scene.xml"))
     try:
-        nav = Navigator(**host_links(simhost.load(), truth=True), calibration="sim")
+        nav = Navigator(**host_links(simhost.load()), calibration="sim")
+        truth = Body(simhost.load().truth_port)
         time.sleep(3.0)
         for _ in range(30):                      # the localizer has no pose before mapd's first fix
             if nav.fix() and nav.loc.pose() is not None:

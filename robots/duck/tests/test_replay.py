@@ -276,7 +276,7 @@ with tempfile.TemporaryDirectory() as tmp:
           load_tof(None) == {"pitch_offset_deg": 3.0, "range_kind": "axial"}, load_tof(None))
     # A navigator applies its robot's mounting when it starts (its sockets stubbed: no simulator here).
     from duck_lab.nav import run as nav_run
-    real = {k: getattr(nav_run, k) for k in ("Rpc", "StateStream", "Body")}
+    real = {k: getattr(nav_run, k) for k in ("Rpc", "StateStream")}
     real_open = Tof8x8.open
     Tof8x8.open = lambda self, path: None
     for k in real:

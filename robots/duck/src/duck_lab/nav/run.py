@@ -1,8 +1,6 @@
 """Drive the duck to goals: the navigator's loop around the pure functions (RFC-0002 §3.8).
 
-    uv run duck-go 1.5 0.5            # one goal in map coordinates, simulator sockets
-    uv run duck-go 1.5 0.5 --log run.jsonl
-    uv run duck-go 1.5 0.5 --miniview-data /work/robotics-lab/data   # also written as a live Observatory run (ADR-0014)
+    uv run duck-go 1.5 0.5 --out runs/go1 --miniview-data /work/robotics-lab/data   # the navigator as a payload, behind its runner
 
 With an Observatory data folder (--miniview-data or OBSERVATORY_DATA) the run is also written in format 2, while it runs: that run
 is the record, with every depth frame and the IMU (`duck-replay` checks it is complete); ticks.jsonl is kept during the
@@ -23,7 +21,6 @@ import argparse
 import collections
 import json
 import math
-import socket
 import sys
 import threading
 import time
@@ -158,36 +155,10 @@ WATCHDOG_S = 0.5         # how often the streams' watchdog looks (the limits are
 
 
 
-def host_links(host, robot: str = "robot", truth: bool = False) -> dict:
+def host_links(host, robot: str = "robot") -> dict:
     """Navigator(**host_links(host), ...): a host's sockets (RFC-0021: `simhost.load()`), the robot's own or, with
-    robot="gate", its gate's; and the body server's truth when asked (the judge's, on a host that has it)."""
-    if truth and host.truth_port is None:
-        raise ValueError(f"{host.source}: this host has no truth (truth_port is null)")
-    return {"sockets": {"robot": host.sockets[robot], "depth": host.sockets["depth"], "map": host.sockets["map"]},
-            "body": Body(host.truth_port) if truth else None}
-
-
-class Body:
-    """The simulator's ground truth (the body server, on the host's truth_port); absent on a real duck."""
-
-    def __init__(self, port: int):
-        self._f = socket.create_connection(("127.0.0.1", port)).makefile("rw")
-        self._f.write(json.dumps({"op": "hello", "protocol": 1, "joints": 15}) + "\n")
-        self._f.flush()
-        self._f.readline()
-        # one request and its reply at a time: the record (main thread), an exploring run's truth guard and the
-        # simulated camera (RFC-0016) all read the truth from their own threads over this one socket
-        self._lock = threading.Lock()
-
-    def pose(self) -> tuple:
-        with self._lock:
-            self._f.write('{"op":"read"}\n')
-            self._f.flush()
-            r = json.loads(self._f.readline())
-        w, x, y, z = r["imu"]["quat"]
-        self.height = r["trunk"][2]
-        self.quat = (w, x, y, z)          # the trunk's whole orientation, for the run's full truth pose (ADR-0016)
-        return r["trunk"][0], r["trunk"][1], math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    robot="gate", its gate's. Never the truth: that is the runner's (simhost.truth, RFC-0021 step 6)."""
+    return {"sockets": {"robot": host.sockets[robot], "depth": host.sockets["depth"], "map": host.sockets["map"]}}
 
 
 def load_scale(variant: str | None) -> float:
@@ -223,11 +194,11 @@ class Navigator:
     anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
     _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
 
-    def __init__(self, sockets: dict, body: "Body | None" = None, log: Path | None = None,
+    def __init__(self, sockets: dict, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None):
         # `sockets`: the robot's ("robot", "depth", "map": paths), handed in by whoever starts the navigator, from the host
-        # file (RFC-0021: host_links); the navigator knows no machine's paths. `body`: the simulator's truth, for the
-        # record and the simulated camera, or None (the real duck; and in time the runner's only, RFC-0021 step 2).
+        # file (RFC-0021: host_links); the navigator knows no machine's paths, and never the simulator's truth: that is its
+        # runner's (RFC-0021 step 6), which puts it into the official run.
         # `calibration` names the environment ("sim", or None for the real duck); the profile is the duck's, in that environment
         # (robots/duck/profile.json), unless one is given.
         # The robot's socket is a setting (RFC-0017 §5 step 3): robotd's own, or a gate's (duck-gate). With a `client` name
@@ -258,7 +229,6 @@ class Navigator:
         self.localisation.bind(self.mapd)
         self.state = StateStream(self.robot_sock, hz=20, on_state=self._on_state, client=client)
 
-        self.body = body
         self._log = open(log, "a") if log else None
         self.blocked = []    # what the depth sensor saw as obstacles, in map metres
         self._seen = set()   # the memory's points, on a LAYER_SPACING_M grid (no duplicates)
@@ -957,10 +927,6 @@ class Navigator:
             # the host's wall clock beside the run's own: how a second process on the host (RFC-0021's runner, with the
             # simulator's truth) pairs its samples with these rows; `t` is this process's monotonic clock, which it cannot read
             row["wall_ns"] = time.time_ns()
-            if self.body:
-                row["truth"] = [round(v, 4) for v in self.body.pose()]
-                row["truth_z"] = round(self.body.height, 4)
-                row["truth_quat"] = [round(v, 6) for v in self.body.quat]
             if "pose" in row and "event" not in row:
                 # robotd's odometry as it came, before any scale (K41: a run can be replayed through the dead reckoning); recorded
                 # only, nothing reads it back while driving
@@ -1396,38 +1362,63 @@ class Navigator:
 
 
 def main() -> None:
+    """duck-go as a runner (RFC-0021 step 6): the navigator is a payload process given only the robot's sockets; this
+    process has the host file and the truth, and writes the official run with the truth put in."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("x", type=float)
     ap.add_argument("y", type=float)
-    ap.add_argument("--log", type=Path)
+    ap.add_argument("--out", type=Path, help="the navigator's own files (default runs/<the run's name>)")
     ap.add_argument("--timeout", type=float, default=90.0)
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     ap.add_argument("--robot-socket", type=Path, help="the robot's socket: robotd's own (the host's, the default) or a gate's (duck-gate)")
     ap.add_argument("--client", help="the name to speak to a gate as (hello, then gate.acquire): needed with a gate's socket")
     add_args(ap)
     args = ap.parse_args()
+    data = args.miniview_data or default_data()
+    if data is None:
+        ap.error("the run is the record: give --miniview-data (or OBSERVATORY_DATA)")
+    # the runner's side, imported here: the navigator's module is also the payload's, which has no host and no truth
     import simhost
-    links = host_links(simhost.load(args.host), truth=True)
-    if args.robot_socket:
-        links["sockets"]["robot"] = args.robot_socket
-    stamp = time.strftime("go-%Y%m%d-%H%M%S")
-    runlog = open_from_args(args, args.log.stem if args.log else stamp, "go-to", args.log.parent if args.log else None)
+    from duck_lab.challenge.runner import PayloadError, Remote
+    from runfile import keys
+    from runfile.truthcopy import TruthLog
+    from simhost.truth import Sampler
+
+    host = simhost.load(args.host)
+    if host.truth_port is None:
+        sys.exit(f"duck-go: {host.source} has no truth (truth_port is null): the runner needs it for the run")
+    name = args.run or time.strftime("go-%Y%m%d-%H%M%S")
+    out = args.out or Path("runs") / name
+    out.mkdir(parents=True, exist_ok=True)
+    key = keys.make_key("duck", args.scene, name)
+    if keys.run_dir(Path(data), key).exists():
+        sys.exit(f"duck-go: the run {key} exists in {data}: give another --run")
+    truth_log = TruthLog(out / "truth.jsonl")
+    sampler = nav = None
+    code = 0
     try:
-        nav = Navigator(**links, log=args.log, runlog=runlog, client=args.client)
-    except LeaseLost as exc:
-        print(json.dumps({"status": "refused", "why": str(exc), "gate": exc.code, "holder": exc.holder}))
-        if runlog:
-            runlog.finish()
-        sys.exit(3)
-    try:
-        print(json.dumps(nav.go_to((args.x, args.y), args.timeout)))
-    except LeaseLost as exc:
-        print(json.dumps({"status": "interrupted", "why": str(exc), "gate": exc.code, "reason": exc.reason}))
-        sys.exit(4)
+        sampler = Sampler(host, on_sample=lambda s: truth_log.add(s.wall_ns, s.pose, s.z, s.quat)).start()
+        try:
+            nav = Remote(host, out, args.scene, name, Path(data), key, truth_log, run={"kind": "go-to"},
+                         robot=args.robot_socket, client=args.client)
+        except PayloadError as exc:
+            print(json.dumps({"status": "refused", "why": str(exc)}))
+            code = 3
+            return
+        print(f"Observatory run {key} -> {keys.run_dir(Path(data), key)}", file=sys.stderr)
+        result = nav.go_to((args.x, args.y), args.timeout)
+        print(json.dumps(result))
+        if "LeaseLost" in str(result.get("why") or ""):
+            code = 4
     finally:
-        nav.close()
-        if runlog:
-            runlog.finish()
+        if sampler is not None:
+            sampler.stop()
+        if nav is not None:
+            nav.close()
+            print(f"the official run's truth copy: {nav.copy.stats()}", file=sys.stderr)
+        truth_log.close()
+        if code:
+            sys.exit(code)
 
 
 if __name__ == "__main__":

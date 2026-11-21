@@ -29,7 +29,7 @@ from common import check, finish
 
 from duck_lab.gate_proxy import Proxy
 import simhost
-from duck_lab.nav.run import Body
+from simhost.truth import Body
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig

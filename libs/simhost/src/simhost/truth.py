@@ -38,15 +38,23 @@ class Body:
     def __init__(self, port: int, host: str = "127.0.0.1", timeout: float = 5.0):
         self._sock = socket.create_connection((host, port), timeout=timeout)
         self._f = self._sock.makefile("rw")
+        self._lock = threading.Lock()        # one request and its reply at a time (a test's threads share one Body)
+        self.height, self.quat = None, None
         self._call({"op": "hello", "protocol": 1, "joints": 15})
 
     def _call(self, req: dict) -> dict:
-        self._f.write(json.dumps(req) + "\n")
-        self._f.flush()
-        line = self._f.readline()
+        with self._lock:
+            self._f.write(json.dumps(req) + "\n")
+            self._f.flush()
+            line = self._f.readline()
         if not line:
             raise ConnectionError("the body server closed the connection")
         return json.loads(line)
+
+    def pose(self) -> tuple:
+        """(x, y, yaw) now; `height` and `quat` kept beside it (what a judge, a probe or a test reads)."""
+        pose, self.height, self.quat, _ = self.read()
+        return pose
 
     def read(self) -> tuple:
         """(pose, z, quat, sim_time) now."""

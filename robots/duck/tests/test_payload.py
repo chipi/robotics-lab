@@ -29,6 +29,30 @@ for module, what in (("duck_lab.payload", "the payload"), ("duck_lab.nav.server"
     check(f"importing {what} loads no host library (simhost: the host file, the reset, the truth sampler) and no runner side",
           out.returncode == 0 and out.stdout.strip() == "[]", (out.returncode, out.stdout, out.stderr[-300:]))
 
+import inspect  # noqa: E402
+
+from duck_lab.nav import run as nav_run  # noqa: E402
+
+check("the navigator cannot be handed the truth: no `body` among its arguments, no truth reader in its module, and "
+      "host_links gives sockets only (RFC-0021 step 6)",
+      "body" not in inspect.signature(nav_run.Navigator).parameters and not hasattr(nav_run, "Body")
+      and "truth" not in inspect.signature(nav_run.host_links).parameters,
+      list(inspect.signature(nav_run.Navigator).parameters))
+
+import ast  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# Every Navigator(...) in the package and its tools names only arguments the navigator takes (2026-11-21: `body` was removed
+# and the navigator API still passed it; no unit test starts a goal there, only the live run found it).
+known = set(inspect.signature(nav_run.Navigator).parameters)
+root = Path(nav_run.__file__).resolve().parents[3]          # robots/duck
+bad = []
+for f in list((root / "src").rglob("*.py")) + list((root / "sim").rglob("*.py")) + list((root / "payloads").rglob("*.py")):
+    for node in ast.walk(ast.parse(f.read_text(), str(f))):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", None)) == "Navigator":
+            bad += [f"{f.relative_to(root)}:{node.lineno} {k.arg}" for k in node.keywords if k.arg and k.arg not in known]
+check("every call of the navigator names only the arguments it takes", not bad, bad)
+
 from duck_lab.challenge.runner import event  # noqa: E402
 
 e = event("goal", "goal n 3", n=3, kind="box", text="kept")

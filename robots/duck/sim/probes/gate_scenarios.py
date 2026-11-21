@@ -27,7 +27,7 @@ from pathlib import Path
 from duck_lab.gate_proxy import Proxy
 import simhost
 from duck_lab.nav.client import LeaseLost, Rpc
-from duck_lab.nav.run import Body
+from simhost.truth import Body
 
 LEASE_S = 10.0
 failures = []

@@ -43,14 +43,14 @@ TERMINAL = ("reached", "refused", "timeout", "stalled", "aborted", "failed")
 
 class Payload:
     def __init__(self, sockets: dict, out: Path, data: Path, scene: str, name: str, variant: str | None,
-                 camera: Path | None = None, sites: Path = SITES, faults: dict | None = None):
+                 camera: Path | None = None, sites: Path = SITES, faults: dict | None = None, client: str | None = None):
         """`faults`: the navigator's test switches, set before it localises (duck-explore's --no-fix-gate, --no-frames,
         --fix-fault, --frame-fault)."""
         self.out = Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.sites = Path(sites)
         self.runlog = RunLog(Path(data), scene, name, "challenge", self.out)
-        self.nav = Navigator(sockets, body=None, log=self.out / "ticks.jsonl", runlog=self.runlog, calibration=variant)
+        self.nav = Navigator(sockets, log=self.out / "ticks.jsonl", runlog=self.runlog, calibration=variant, client=client)
         f = faults or {}
         if f.get("no_fix_gate"):
             self.nav.loc.max_jump_m = None
@@ -209,6 +209,7 @@ def main() -> None:
     ap.add_argument("--scene", required=True)
     ap.add_argument("--name", required=True)
     ap.add_argument("--variant", default="sim", help="the robot profile's variant (sim, or real)")
+    ap.add_argument("--client", help="the name to speak to a gate as, when --robot is a gate's socket")
     ap.add_argument("--camera", type=Path, help="the camera's socket (a recogniser: the host's, RFC-0021 step 6); none: no objects")
     ap.add_argument("--sites", type=Path, default=SITES, help=f"the sites' folder (default {SITES})")
     ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (a test)")
@@ -222,7 +223,7 @@ def main() -> None:
     faults = {"no_fix_gate": a.no_fix_gate, "no_frames": a.no_frames, "fault_grid": bool(a.frame_fault),
               "fault": [float(v) for v in fault.split(",")] if fault else None}
     payload = Payload({"robot": a.robot, "depth": a.depth, "map": a.map}, a.out, a.data, a.scene, a.name,
-                      None if a.variant == "real" else a.variant, camera=a.camera, sites=a.sites, faults=faults)
+                      None if a.variant == "real" else a.variant, camera=a.camera, sites=a.sites, faults=faults, client=a.client)
     a.listen.unlink(missing_ok=True)
     srv = Server(str(a.listen), Handler)
     srv.payload = payload

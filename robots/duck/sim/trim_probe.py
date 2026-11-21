@@ -28,6 +28,7 @@ import simhost
 from duck_lab.nav.evaluate import FALLEN_Z_M
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator, host_links
+from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)
 
 BAR_X, BAR_DEEP_M, TICK_S, STUCK_M, STUCK_S, START_S = 0.6, 0.04, 0.1, 0.02, 3.0, 6.0
 LENGTH_M = 4.0
@@ -64,20 +65,21 @@ def unwrap(yaws: list) -> list:
 def trial(h: float | None, trim: float, k: int, speed: float, seconds: float) -> dict:
     sc = scene(h, k)
     simhost.reset(simhost.load(), str(mjcf(sc, simhost.load().scenarios, simhost.load().scene_dir)))
-    nav = Navigator(**host_links(simhost.load(), truth=True))
+    nav = Navigator(**host_links(simhost.load()))
+    truth = Body(simhost.load().truth_port)
     try:
         past = BAR_X + BAR_DEEP_M + 0.25
         ts, yaws, ys, xs, lowest = [], [], [], [], 1.0
-        x0 = nav.body.pose()[0]
+        x0 = truth.pose()[0]
         furthest, gained, t0 = x0, time.monotonic(), time.monotonic()
         while time.monotonic() - t0 < seconds:
             nav.move(Twist(speed, trim))
-            x, y, yaw = nav.body.pose()
+            x, y, yaw = truth.pose()
             ts.append(time.monotonic() - t0)
             xs.append(x)
             ys.append(y)
             yaws.append(yaw)
-            lowest = min(lowest, nav.body.height)
+            lowest = min(lowest, truth.height)
             if x > furthest + STUCK_M:
                 furthest, gained = x, time.monotonic()
             started = furthest > x0 + STUCK_M or time.monotonic() - t0 > START_S
@@ -100,24 +102,25 @@ def trial(h: float | None, trim: float, k: int, speed: float, seconds: float) ->
 def nav_trial(h: float, deadband: float, k: int, seconds: float, pace: bool = True) -> dict:
     sc = scene(h, k)
     simhost.reset(simhost.load(), str(mjcf(sc, simhost.load().scenarios, simhost.load().scene_dir)))
-    nav = Navigator(**host_links(simhost.load(), truth=True))
+    nav = Navigator(**host_links(simhost.load()))
+    truth = Body(simhost.load().truth_port)
     try:
         nav.locomotion.deadband = deadband
         if not pace:
             nav.pace_cfg = types.SimpleNamespace(caution_mps=nav.loco.cruise_mps, look_m=0.7, unknown_reach_m=0.4)
         past = BAR_X + BAR_DEEP_M + 0.25
-        x0 = nav.body.pose()[0]
+        x0 = truth.pose()[0]
         turns, move = [], nav.move
 
         def logged(tw, **kw):
-            x = nav.body.pose()[0]
+            x = truth.pose()[0]
             if abs(tw.vyaw) > 0.1 and tw.vx > 0 and abs(x - BAR_X) < 0.5:
                 turns.append(round(tw.vyaw, 2))
             return move(tw, **kw)
         nav.move = logged
         t0 = time.monotonic()
         out = nav.go_to((past + 0.4 - x0, 0.0), seconds)
-        x = nav.body.pose()[0]
+        x = truth.pose()[0]
     finally:
         nav.close()
     return {"bar_m": h, "deadband_rad": deadband, "trial": k, "crossed": x > past, "status": out.get("status"), "why": out.get("why"),
