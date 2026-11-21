@@ -1,6 +1,7 @@
 # RFC-0023 — The views: the operator's journeys, which surface does what, and where the telemetry goes
 
-**Status:** Draft (2026-11-21), phase 5's design round: proposals and mock-ups for the operator to
+**Status:** Accepted (2026-11-21: the operator chose A for all twelve decisions, §5). Phase 5's design
+round: proposals and mock-ups for the operator to
 decide, decision by decision, before anything is built (the operator, 2026-11-20: "I don't want to
 rush. I want to consolidate all of these things and make a round of how exactly we're going to do
 that and in which surfaces. I'd like to see some proposals and some mock-ups"). The round's inputs
@@ -125,6 +126,12 @@ object store (MinIO or S3) holding the runs and the index pointing at it. Decisi
 Each is the operator's, made on the mock-up page (section 6) and recorded here with the answer.
 The first option of each is the recommendation.
 
+**Decided by the operator (2026-11-21, on the page): A for all twelve.** One comment, on D3: "Lets
+use icons where applicable also and when we show robot it should be very realistic". So: icons on
+the robot page and the views where they help reading (a part, a module, a state, an alarm), and
+the robot drawn from its own 3D model and meshes (RFC-0011), as the Observatory's Explore tab
+already does, never a schematic like the mock-up's.
+
 - **D1. Which surface does what** (§3). A: the table as written (Mission Control operates and
   configures, the Observatory explains runs, the homelab stack keeps the long-term telemetry).
   B: one app for both (Mission Control grows the Observatory's views).
@@ -183,3 +190,40 @@ for the operator's choice and comment, saved with the page and read back before 
 <https://claude.ai/artifact/UgoSQef1rJDiV3UE1dzMSA> (private to the operator). Built from today's
 surfaces, surveyed 2026-11-21: the Observatory's workbench already draws the duck's 3D body (its
 Explore tab), no anomaly view exists yet, Mission Control is one page of panels with no robot page.
+
+## 7. The build, from the decisions
+
+In this order, each step proven before the next (its own tests, the views opened headless, a live
+run where it touches the simulator), committed and pushed at each:
+
+1. **The installation file and profile versions** (D9, D10's base). A per-machine file takes the
+   Observatory's URL, the navigator's address, the telemetry endpoints and the data folder out of the
+   profile; the profile gets a version and a checksum; every run records the version it used.
+2. **The run keeps the body** (D4's data). Per joint, beside the angle: the commanded angle, the
+   velocity and the current (an empty list is "not reported", never zero); robot-wide what robotd
+   reports of its health. The simulator's bridge carries velocities and currents
+   (`duck-control/src/sim.rs`); which of them reach our state stream is checked first.
+3. **One alarm feed** (D5). The anomalies of every source in RFC-0019's shape: the navigator's
+   (built), the runner's truth guardrails, the subsystems (a part down, a stale stream), the joints
+   (load, tracking error, a trip; limits in the profile). Served live by Mission Control, kept in the
+   run, and the Observatory's timeline and map marks (RFC-0019's views, not built yet).
+4. **Mission Control's robot page** (D2, D3, D10, D11), with icons: Overview (fit to go, and why
+   not), Parts (the profile's subsystem list, each with its check, its logs, its conflicts; who holds
+   the robot), Modules (the four plugins, live), Settings (edit a copy, validated, a new version from
+   the next run; export, import, diff), Calibration (today's probes as step guides run by the
+   runner), Body (step 5's component).
+5. **The body, realistic** (D4, D12, the operator's comment): the Observatory's Explore body (the
+   duck's own meshes) coloured by each joint's worst state, as one component, on the watch page
+   beside the map with the parts strip and the alarm marks, and in Mission Control live.
+6. **Telemetry out** (D6, D7). Goal runs and legs as spans to VictoriaTraces; anomalies, events and
+   subsystem logs to VictoriaLogs; health at most one sample per 15 s to VictoriaMetrics; ADR-0010's
+   names (`namespace=robotics-lab`, `environment=dev` for the simulator). One test send per signal
+   first; dashboards in a robotics-lab folder.
+7. **The runs over time** (D8): a retention rule (official runs kept, the rest archived after N
+   days).
+
+**Needs the operator before it starts:** step 6's OpenTelemetry SDK for Python
+(`opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`: new dependencies); step 6's test
+sends into the Victoria stack (the operator's production observability); asking the homelab session
+for the robotics-lab Grafana folder's token and the tailnet access for this workstation's sends;
+step 7's N.

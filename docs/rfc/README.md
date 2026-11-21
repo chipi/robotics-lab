@@ -73,6 +73,6 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0022 — The platform's layout and names: what is the duck's, and what is
   everyone's](RFC-0022-platform-layout-and-names.md) (Accepted and built, 2026-11-21)
 - [RFC-0023 — The views: the operator's journeys, which surface does what, and where the telemetry
-  goes](RFC-0023-the-views.md) (Draft, 2026-11-21: phase 5's design round, twelve decisions)
+  goes](RFC-0023-the-views.md) (Accepted, 2026-11-21: A for all twelve decisions)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).
