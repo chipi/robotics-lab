@@ -162,6 +162,8 @@ check("the judge counts the six lm_* landmarks as obstacles", {f"lm_{r}" for r i
 from worldmodel.semantic_map import FORGET_N  # noqa: E402
 
 ORIGIN = (0.0, 0.0, 0.0)
+# mapd's grid, every cell mapped and free, around the duck and the stool: a miss counts only on a line the map has seen (K45)
+FREE = {"res_m": 0.1, "origin": (-4.0, -2.0), "width": 80, "height": 40, "cells": "." * 3200}
 
 
 def confirmed_stool(pinned=False):
@@ -172,7 +174,7 @@ def confirmed_stool(pinned=False):
     return fm
 
 
-def looks(fm, n, pose=ORIGIN, found=(), grid=None):
+def looks(fm, n, pose=ORIGIN, found=(), grid=FREE):
     out = []
     for k in range(n):
         fm.integrate(list(found), pose, 10.0 + k)
@@ -209,6 +211,17 @@ for y in range(10):
 fm = confirmed_stool()
 looks(fm, FORGET_N + 2, grid=wall)
 check("behind a wall of mapd's grid: not expected in view, not forgotten", fm.objects[0].misses == 0 and not fm.objects[0].gone)
+fm = confirmed_stool()
+looks(fm, FORGET_N + 2, grid=None)
+check("must fail (K45): no grid yet, the looks say nothing: no miss, not forgotten", fm.objects[0].misses == 0 and not fm.objects[0].gone,
+      fm.objects[0].misses)
+unknown = list(FREE["cells"])
+for y in range(40):
+    unknown[y * 80 + 47] = "?"                         # a column mapd has not mapped, at x = 0.7, between the duck and the stool
+fm = confirmed_stool()
+looks(fm, FORGET_N + 2, grid=dict(FREE, cells="".join(unknown)))
+check("must fail (K45): a sight line through cells mapd has not mapped says nothing: no miss, not forgotten",
+      fm.objects[0].misses == 0 and not fm.objects[0].gone, fm.objects[0].misses)
 
 fm = confirmed_stool(pinned=True)
 ch = looks(fm, FORGET_N * 2)

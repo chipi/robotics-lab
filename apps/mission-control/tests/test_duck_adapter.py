@@ -105,32 +105,6 @@ class StubRobotd:
                 send({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32601, "message": "no such method"}})
 
 
-class StubMapd:
-    """mapd's map.grid, counted: the map Mission Control reads itself when the installation names the map's socket."""
-
-    def __init__(self, path: Path, grid: dict | None = None):
-        self.calls = 0
-        self.grid = grid or {"res_m": 0.05, "origin": [0.0, 0.0], "width": 2, "height": 1, "cells": "#."}
-        self.server = socket.socket(socket.AF_UNIX)
-        self.server.bind(str(path))
-        self.server.listen(4)
-        threading.Thread(target=self._accept, daemon=True).start()
-
-    def _accept(self):
-        while True:
-            try:
-                sock, _ = self.server.accept()
-            except OSError:
-                return
-            threading.Thread(target=self._serve, args=(sock,), daemon=True).start()
-
-    def _serve(self, sock):
-        for line in sock.makefile("r"):
-            req = json.loads(line)
-            self.calls += 1
-            sock.sendall((json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": self.grid}) + "\n").encode())
-
-
 class StubNav:
     """duck-nav-server's API, scripted by the test through its attributes."""
 
@@ -145,6 +119,7 @@ class StubNav:
         self.reason = None
         self.key = "duck/apartment/mc1-20261118-120000"
         self.profile = None                  # what goal.start says the goal runs (the navigator's calibration event)
+        self.map_calls = 0
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
         self.address = f"127.0.0.1:{self.server.server_address[1]}"
@@ -164,6 +139,9 @@ class StubNav:
                         stub.started.append(p)
                         result = {"error": {"code": "held", "message": "driven by script since 12:00", "holder": "script"}} \
                             if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile}
+                    elif m == "map":
+                        stub.map_calls += 1
+                        result = {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"}
                     elif m == "goal.status":
                         objs = stub.objects
                         stub.objects = None
@@ -191,13 +169,12 @@ atexit.register(shutil.rmtree, tmp, True)
 # no installation file: this machine's would point Mission Control at the real gate (each test names its own)
 os.environ[installation.ENV] = str(tmp / "no-installation.json")
 robotd = StubRobotd(tmp / "robotd.sock")
-mapd = StubMapd(tmp / "mapd.sock", {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"})
 proxy = Proxy(tmp / "gate.sock", tmp / "robotd.sock", takeover_names={"operator-laptop"}, log=tmp / "gate.jsonl", lease_s=10.0)
 proxy.start()
 nav = StubNav()
 
 FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
-        "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "map_socket": str(tmp / "mapd.sock"),
+        "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"),
                     "navigator": nav.address,
                     "observatory": "http://127.0.0.1:8070"}}
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
@@ -233,10 +210,10 @@ check("its state is in the page's shape: pose in the site frame, mode, flags, ba
       st["pose"]["frame"] == "site" and st["mode"] == "idle" and st["flags"]["fall"] is False and st["battery_pct"] == 63.0 and st["link"] == "duck-gate", st)
 check("the lock is the gate's own: free", robot()["lock"]["holder"] is None)
 m = call("GET", "/robots/duck-sim/map")["map"]
-check("the map is mapd's grid, read by Mission Control itself, in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
-n0, t0 = mapd.calls, time.monotonic()
+check("the map is the navigator API's (mapd's grid), in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
+n0, t0 = nav.map_calls, time.monotonic()
 time.sleep(3.0)
-rate = (mapd.calls - n0) / (time.monotonic() - t0)
+rate = (nav.map_calls - n0) / (time.monotonic() - t0)
 check(f"the map is asked for at the robot's map_hz ({mc.robots['duck-sim'].cfg.rates['map_hz']:g} Hz), not every tick, while it does not "
       f"change: {rate:.1f} requests/s",
       rate <= 2.5 * mc.robots["duck-sim"].cfg.rates["map_hz"], rate)
@@ -375,20 +352,12 @@ except ConfigError as exc:
     said = str(exc)
 check("must fail: a gate named nowhere (no installation, no gate_socket) is an error saying where to name it",
       "robots.duck.gate" in said and "no-installation.json" in said, said)
-try:
-    DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock"}}))
-    said = "accepted"
-except ConfigError as exc:
-    said = str(exc)
-check("must fail: a map named nowhere is an error saying where to name it (Mission Control reads the simulator's mapd itself)",
-      "robots.duck.map" in said and "map_socket" in said, said)
 
 store = Store(tmp / "inst-state" / "profiles")
 store.seed("duck", REPO_PROFILE)
 inst_file = tmp / "installation.json"
 inst_file.write_text(json.dumps({"installation": 1, "observatory": "http://obs.example:8070/", "state": str(tmp / "inst-state"),
                                  "robots": {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
-                                                     "map": str(tmp / "inst-map.sock"),
                                                      "profile": str(tmp / "inst-state" / "profiles" / "duck")}}}))
 os.environ[installation.ENV] = str(inst_file)
 a = DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}))
@@ -400,10 +369,6 @@ b = DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim",
 check("... and a robot file that names an address keeps its own", str(b.gate_socket) == "/x/g.sock" and b.nav_address == "127.0.0.1:7",
       (b.gate_socket, b.nav_address))
 check("the profile is the installation's: the store's current version (1)", a.profile.meta["version"] == 1, a.profile.meta)
-stub_mapd = StubMapd(tmp / "inst-map.sock")
-m = a.map()
-check("with the map's socket named, Mission Control reads mapd itself: no load on the navigator API or its runner",
-      stub_mapd.calls == 1 and m["data"] == [100, 0] and str(a.map_socket) == str(tmp / "inst-map.sock"), (stub_mapd.calls, m["data"]))
 
 v2 = json.loads(REPO_PROFILE.read_text())
 old_scale = v2["variants"]["sim"]["localisation"]["odometry"]["scale"]

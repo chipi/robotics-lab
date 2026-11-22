@@ -157,16 +157,53 @@ Not built or not covered yet:
   for the fastest rate any subscriber wants and streams each subscriber at its own rate
   (`labrunner.gate`, test_gate_proxy, mutation-checked). It passes on robotd's integer rate as
   given: robotd refuses `hz: 5.0` ("expected u32"), which a first version of the fix sent.
-- **On the simulator, Mission Control reads mapd itself; the runner path is not understood.**
-  `duck-sim` requires the map's socket (`robots.<robot>.map`, or `map_socket`), as it requires
-  the gate's. With the map read through the runner, sim_duck's explore-then-inventory passed 1
-  run in 8, even after the gate fix. Seeded objects near where explore ended were marked gone
-  (8 looks expected in view, not seen; `worldmodel.semantic_map.forget`). The same sequence passed
-  5 runs in 5 with Mission Control reading mapd itself, with its map poll off, or on HEAD. A
-  runner answering a fixed grid, never reading mapd, failed 1 run in 2. The extra work measured is
-  2.3 KiB a grid, parsed in 0.03 ms. Mission Control's `goal.status` polls at 5 Hz go through the
-  runner either way. **The cause is not found.** A robot reached only through its navigator API
-  (a real robot's, no runner) would read its map there; that case is not tested.
+- **K45: seeded objects marked gone behind walls mapd had not mapped. Fixed in the world model,
+  not in Mission Control.** sim_duck's explore-then-inventory failed when seeded objects were
+  marked gone: 8 looks expected in view and not seen (`worldmodel.semantic_map.forget`). The
+  forget rule counted a miss unless mapd's grid had a wall on the sight line, so no grid or
+  unmapped cells counted as seen-through. The simulated camera hides an object behind the real
+  walls, so a seed behind a wall mapd had not mapped yet was missed at every look. That was found
+  by the second review and confirmed by a replay: three kept goals through the real
+  `SemanticMap`, with the rule of before, mark gone exactly what each run marked gone, 4 objects
+  (`test_forget_replay`, fixture `k45_inventory.json.gz`). The rule is now `sight_clear`: only a
+  sight line mapd has mapped and found free counts, and the replay then marks none gone. Two
+  mutants are killed (an unmapped cell counted free, no grid counted clear).
+
+  I had first blamed Mission Control's map read through the runner, made a direct mapd read
+  mandatory, and wrote "the cause is not found". That was wrong. The map is back on the
+  navigator API, and the installation's `robots.<robot>.map` key is gone. The 1-in-8 against
+  5-in-5 split between configurations is not explained; it is consistent with chance and with how
+  long the opening survey faced an unmapped wall, and neither was measured.
+
+  Live, 2026-11-22: 12 runs of explore then inventory through the navigator API's map (a batch
+  of 8, then 4 kept with `--keep`): 0 objects wrongly marked gone. 2 of the 12 inventory goals
+  ended "the robot was trapped", a different failure whose cause is not known (K46).
 - **Mission Control's map poll is paced at the robot's `map_hz`.** Before, it asked for the map on
   every 0.1 s tick while the map did not change: 7 requests a second measured, against a map_hz
   of 1 (test_duck_adapter).
+
+## The second review (the advisor, 2026-11-22) and the operator's decisions
+
+The second review (read-only) found the cause of K45 (above), the referee judging with the
+repository's profile while the navigator runs the store's version, the checksum taken after
+migration, and smaller debts. It also listed decisions not written down. The operator decided,
+2026-11-22:
+
+- **(a) How a robot is registered: in the installation file.** A robot's registration is a file
+  named by `robots.<name>.registration`, with the robot's name, its profile and its commands. No
+  package is installed into Mission Control or the runner to add a robot. Entry points stay as a
+  fallback for packaged robots.
+- **(b) The checksum is taken over the profile as stored** (validated, not migrated), with `label`,
+  `measured` and `why` included. Any change is a new identity. The schema version is recorded
+  beside it, and a diff whose only changes are notes says so.
+- **(d) "Mission Control is the store's one writer" stays a convention for now** (no lock).
+- **(e) Kept simple: the referee reads the same profile version the navigator runs**, the one the
+  run records. One source. A saved version can therefore move the judge's numbers; the run says
+  which version that was.
+- **(h) The state stream's rate:** `rates.state_hz` stays the rate a client reads the robot at.
+  The stream a client subscribes to is the integer `ceil(state_hz)`, at most `max_state_hz`. The
+  gate refuses a rate that is not an integer, with its own message.
+- **(i) The navigator does not read the installation file.** It gets everything as arguments
+  from whoever starts it (the runner, or a launcher on a real robot). The runner strips
+  `ROBOTICS_LAB_INSTALLATION` from its environment, and the boundary check refuses a navigator
+  module importing `runfile.installation`.

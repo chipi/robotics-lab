@@ -94,7 +94,6 @@ wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0
 # a pointer to the duck's profile (phase 5 step 1): the addresses are this test's own, so this machine's installation file is not read
 FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
         "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
-                    "map_socket": str(HOST.sockets["map"]),
                     "observatory": "http://127.0.0.1:8070"}}
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
@@ -131,7 +130,7 @@ def start(goal, **extra):
 
 try:
     check("the duck is online through the gate", wait_for(lambda: robot()["online"], 30) is not None and robot()["status"]["pose"]["frame"] == "site", robot()["status"])
-    check("the map is mapd's, read by Mission Control itself, in the site frame", call("GET", "/robots/duck-sim/map")["map"]["kind"] == "occupancy_grid")
+    check("the map is the navigator API's (mapd's), in the site frame", call("GET", "/robots/duck-sim/map")["map"]["kind"] == "occupancy_grid")
     call("POST", "/sites", {"name": "Home", "kind": "apartment"})
     call("PUT", "/robots/duck-sim/site", {"site": "home"})
 

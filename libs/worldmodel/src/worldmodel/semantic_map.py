@@ -105,6 +105,22 @@ def wall_between(grid: dict, a: tuple, b: tuple) -> bool:
     return False
 
 
+def sight_clear(grid: dict, a: tuple, b: tuple) -> bool:
+    """Whether mapd's grid shows the whole line a-b mapped and free: only then can an object not seen there count as a miss.
+    No grid, a cell off the grid, an unmapped cell or a wall on the line: the look says nothing about what is behind (K45:
+    seeded objects behind walls mapd had not mapped yet were marked gone in 4 of 4 recorded cases)."""
+    if not grid or grid.get("res_m", 0) <= 0 or not grid.get("cells"):
+        return False
+    res, (ox, oy), w, h, cells = grid["res_m"], grid["origin"], grid["width"], grid["height"], grid["cells"]
+    n = max(1, int(math.dist(a, b) / (res / 2)))
+    for i in range(1, n):
+        x, y = a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n
+        cx, cy = math.floor((x - ox) / res), math.floor((y - oy) / res)
+        if not (0 <= cx < w and 0 <= cy < h) or cells[cy * w + cx] in "#?":
+            return False
+    return True
+
+
 class SemanticMap:
     def __init__(self, kinds: dict, site_kind: str | None = None, limits: Limits = DUCK_LIMITS):
         self.kinds = kinds
@@ -186,7 +202,7 @@ class SemanticMap:
 
     def forget(self, pose: tuple, hfov_deg: float, range_m: float, grid: dict = None, t: float = 0.0) -> list:
         """After a look's integrate(): each confirmed object that should be in the camera's view — inside the field and
-        range (FORGET_FOV of both) and not behind a wall of mapd's grid — and was not matched in this look loses
+        range (FORGET_FOV of both) with the whole sight line mapped and free in mapd's grid (sight_clear) — and was not matched in this look loses
         confidence and counts a miss; FORGET_N misses in a row and it is gone (kept, not deleted; summary() says so), or,
         pinned (named by the operator), only flagged missing. A sighting resets the count. Returns the changes as
         ("gone" | "missing", object) pairs. Call once per look, after integrate()."""
@@ -199,7 +215,7 @@ class SemanticMap:
             if r > range_m * FORGET_FOV or r < FORGET_MIN_M:
                 continue
             b = math.atan2(o.y - pose[1], o.x - pose[0]) - pose[2]
-            if abs(math.atan2(math.sin(b), math.cos(b))) > half or wall_between(grid, pose[:2], (o.x, o.y)):
+            if abs(math.atan2(math.sin(b), math.cos(b))) > half or not sight_clear(grid, pose[:2], (o.x, o.y)):
                 continue
             o.misses += 1
             o.confidence *= FORGET_DECAY

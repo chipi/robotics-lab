@@ -338,17 +338,16 @@ between Mission Control and the simulator, both the runner's (`libs/runner`, RFC
   a `no_go_area`) are the runner's.
 
 A `duck-sim` robot file is a pointer to the robot's profile (`robot`, `variant`; see Robot files).
-Adapter options, each optional: `gate_socket`, `map_socket` (mapd's), `navigator` (host:port),
-`observatory` (the base of the Watch links). An address the robot file names is used as it is; one
-it does not name is this machine's installation file's (`runfile.installation`:
-`robots.<robot>.gate`, `robots.<robot>.map`, `robots.<robot>.navigator`, `observatory`), and the
-navigator's default is `127.0.0.1:8061`. A gate or a map named in neither is an error at start
-saying where to name it. The adapter imports neither the duck's navigator nor the host library. The
-state is built from robotd's `robot.subscribe` stream through the gate (robotd has no `robot.state`
-request); the gate streams each subscriber at its own rate, so Mission Control's 5 Hz never slows
-the navigator's. The map is mapd's grid in the site frame, read by Mission Control itself on the
-map's socket at the robot's `map_hz` (read through the runner instead, sim_duck's inventory passed
-1 run in 8 against 5 in 5; the cause is not found, `docs/wip/PHASE5-STEP1-DESIGN.md`); the
+Adapter options, each optional: `gate_socket`, `navigator` (host:port), `observatory` (the base of
+the Watch links). An address the robot file names is used as it is; one it does not name is this
+machine's installation file's (`runfile.installation`: `robots.<robot>.gate`,
+`robots.<robot>.navigator`, `observatory`), and the navigator's default is `127.0.0.1:8061`. A gate
+named in neither is an error at start saying where to name it. The adapter imports neither the
+duck's navigator nor the host library, and opens nothing of the robot's past its gate and its
+navigator API. The state is built from robotd's `robot.subscribe` stream through the gate (robotd
+has no `robot.state` request); the gate streams each subscriber at its own rate, so Mission
+Control's stream never slows the navigator's. The map is the navigator API's `map` (mapd's grid,
+unscaled, in mapd's frame) at the robot's `map_hz`, shown in the site frame; the
 poses and the map are scaled by the profile's `localisation.odometry.scale`, from the version read
 again at every goal's start (a version saved since applies from that goal). When `goal.start` says
 the navigator runs another version (another checksum) than Mission Control read, the goal run gets

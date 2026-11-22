@@ -282,12 +282,11 @@ class DuckNavigatorClient:
 
 class DuckAdapter:
     """Robot file: {"robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}: a pointer to the robot's profile
-    (robots.py). Addresses, each the robot file's adapter block's when it names one (`gate_socket`, `map_socket`, `navigator`,
-    `observatory`: a file that names an address means it), else this machine's installation file's (`robots.<robot>.gate`,
-    `.map` and `.navigator`, `observatory`), else the navigator's default 127.0.0.1:8061. A gate or a map named nowhere is an
-    error saying where to name it: the simulator is on this machine, and Mission Control reads its map from mapd itself (read
-    through the runner instead, sim_duck's inventory passed 1 run in 8 against 5 in 5, 2026-11-22, cause not found).
-    `observatory` is where the goal runs' Watch links point (the Observatory's /watch/<run key>)."""
+    (robots.py). Addresses, each the robot file's adapter block's when it names one (`gate_socket`, `navigator`,
+    `observatory`: a file that names an address means it), else this machine's installation file's (`robots.<robot>.gate` and
+    `.navigator`, `observatory`), else the navigator's default 127.0.0.1:8061; a gate named nowhere is an error saying where to
+    name it. The map is the navigator API's `map`: Mission Control opens nothing of the robot's past its gate and its navigator
+    API. `observatory` is where the goal runs' Watch links point (the Observatory's /watch/<run key>)."""
 
     def __init__(self, cfg, clock=time.monotonic):
         from .robots import ConfigError
@@ -309,8 +308,8 @@ class DuckAdapter:
             return _addr(str(value))
 
         self.gate_socket = socket_of("gate_socket", "gate", "gate")
-        self.map_socket = socket_of("map_socket", "map", "map (mapd's socket)")
         self.nav_address = options.get("navigator") or (mine.navigator if mine is not None else None) or "127.0.0.1:8061"
+        self._map_nav = DuckNavigatorClient(self.nav_address, clock)
         self.observatory = (options.get("observatory") or (inst.observatory if inst is not None else None) or "").rstrip("/") or None
         self.cfg, self.clock = cfg, clock
         self.profile = cfg.profile
@@ -398,18 +397,14 @@ class DuckAdapter:
             self._health = (self.clock(), value)
         return value
 
-    # --- the map: mapd's grid, in the site frame ----------------------------------------------------------
+    # --- the map: the navigator API's (mapd's grid), in the site frame -----------------------------------
 
     def _grid(self) -> dict:
-        """mapd's grid, read by Mission Control itself on the map's socket."""
-        with socket.socket(socket.AF_UNIX) as sock:
-            sock.settimeout(CALL_TIMEOUT_S)
-            sock.connect(str(self.map_socket))
-            sock.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "map.grid", "params": {"res_m": 0.05}}) + "\n").encode())
-            reply = json.loads(sock.makefile("r").readline())
-        if "error" in reply:
-            raise ConnectionError(f"mapd: {reply['error'].get('message', reply['error'])}")
-        return reply["result"]
+        """The robot's map as its navigator API answers `map`: mapd's grid, unscaled, in mapd's frame."""
+        g = self._map_nav._rpc("map")
+        if "error" in g:
+            raise ConnectionError(f"the navigator API has no map: {g['error']}")
+        return g
 
     def map(self) -> dict:
         g = self._grid()
