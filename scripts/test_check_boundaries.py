@@ -107,6 +107,13 @@ got = run(lambda r: (project(r, "libs/runner", "labrunner", {"remote.py": "from 
                                                              "go.py": "import duck_lab.robot\n"}),
                      project(r, "robots/duck", "duck_lab", {})))
 check("the runner may not import a robot's package (it finds robots by name)", len(got) == 2, got)
+got = run(lambda r: (project(r, "robots/duck", "duck_lab", {"nav/server.py": "from runfile import installation\n",
+                                                             "profile.py": "import runfile.registry\nfrom runfile.profile import checksum\n",
+                                                             "site_cli.py": "from runfile import installation\n"}),
+                     project(r, "libs/runfile", "runfile", {})))
+check("must fail: the navigator may not read the installation file (runfile.installation, runfile.registry; the operator's "
+      "decision i); the rest of runfile and the duck's tools may",
+      len(got) == 2 and any("nav/server.py:1" in g for g in got) and any("profile.py:1" in g for g in got), got)
 
 # a path source is held to the table
 got = run(lambda r: (project(r, "libs/runfile", "runfile", {}, '[tool.uv.sources]\nduck-lab = { path = "../../robots/duck" }\n'),

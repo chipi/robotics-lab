@@ -42,9 +42,9 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | `GET /api/v1/robots/{id}/profile` | the robot's profile on this machine (phase 5 step 1, `profiles.py`): `running {path, checksum}` (the file a goal started now runs), `current`, `versions [{version, checksum, current}]`, `writable` and `why_not`, `profile` (the running file, whole); `404 no_profile` for a robot file that holds the robot itself |
 | `POST /api/v1/robots/{id}/profile` | `{profile}`, the whole profile: validated, saved as the next version of the store under the installation's `state` folder and made current (the store seeded with the robot's own file first when empty); `201 {saved {version, checksum, applies}}`. It runs from the next goal. `409 profile_not_writable` when the installation would not run it (no `state`, or `robots.<robot>.profile` is not the store's folder for the robot), saying what to set; nothing is written. `422 profile`: invalid, or the same as the current version |
 | `PUT /api/v1/robots/{id}/profile/current` | `{version}`: an existing version made current again (going back), from the next goal |
-| `GET /api/v1/robots/{id}/profile/export?version=` | one version (default the current) as `{export, robot, version, checksum, profile}`, to import on another machine |
+| `GET /api/v1/robots/{id}/profile/export?version=` | one version (default the current) as `{export, robot, version, checksum, profile_version, profile}`, to import on another machine; the checksum is over the profile as stored (validated, not migrated), its notes included, `profile_version` the schema version it was taken in |
 | `POST /api/v1/robots/{id}/profile/import` | `{export}`: the checksum checked against the profile (`422 profile` when it does not match, nothing written), saved as the next version and made current; one with a checksum already in the store is not saved twice |
-| `GET /api/v1/robots/{id}/profile/diff?a=&b=[&notes=1]` | `{changes [{path, a, b}]}`, leaf by leaf; `measured` and `why` only with `notes` |
+| `GET /api/v1/robots/{id}/profile/diff?a=&b=[&notes=1]` | `{changes [{path, a, b}], notes_changed, only_notes}`, leaf by leaf; `measured` and `why` only with `notes`; `notes_changed` counts the notes that differ, and `only_notes` is true when nothing but notes does (two checksums, no value changed) |
 | `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; a command lasts the robot's deadman time, so a driver repeats it |
 | `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is true when the robot answered `robot.stop` |
 | `POST /api/v1/stop` | every robot at once, each reported, a silent one after 3 s: `{robots: [...], all_confirmed}` |
@@ -346,7 +346,10 @@ named in neither is an error at start saying where to name it. The adapter impor
 duck's navigator nor the host library, and opens nothing of the robot's past its gate and its
 navigator API. The state is built from robotd's `robot.subscribe` stream through the gate (robotd
 has no `robot.state` request); the gate streams each subscriber at its own rate, so Mission
-Control's stream never slows the navigator's. The map is the navigator API's `map` (mapd's grid,
+Control's stream never slows the navigator's. Mission Control subscribes at the whole number
+`ceil(rates.state_hz)`, at most `rates.max_state_hz`; the gate refuses a rate that is not a whole
+number above 0 (`bad_rate`, in its own words, robotd not asked), and a refused subscription is
+said as the robot's state error, not waited out. The map is the navigator API's `map` (mapd's grid,
 unscaled, in mapd's frame) at the robot's `map_hz`, shown in the site frame; the
 poses and the map are scaled by the profile's `localisation.odometry.scale`, from the version read
 again at every goal's start (a version saved since applies from that goal). When `goal.start` says

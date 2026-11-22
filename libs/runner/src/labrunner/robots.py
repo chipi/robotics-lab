@@ -4,18 +4,22 @@ by name and never imports its navigator. The registry itself is runfile.registry
 
     robots.select("duck")       # a command's --robot; with one robot registered it is the default
     r = robots.get()            # r.NAME, r.PROFILE, r.PAYLOAD, r.NAVIGATOR_API, r.SIM
-    robots.profile("sim")       # its profile in an environment (runfile.profile)
+    robots.profile("sim")       # its profile in an environment: the version this machine runs (profile_file), with .meta
 
 A robot's module: NAME (str), PROFILE (the profile's path), PAYLOAD and NAVIGATOR_API (commands, lists), SIM (the folder of
 its simulator's files: the apartment's layout, objects and phase 1's goals for the duck)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from runfile import registry
 from runfile.profile import load_profile
+from runfile.profilestore import describe
 from runfile.registry import GROUP, ProfileSourceError, names, profile_source  # noqa: F401 - the runner's names for them
 
 _selected: str | None = None
+_resolved: dict = {}
 
 
 def select(name: str | None) -> None:
@@ -40,9 +44,38 @@ def get(name: str | None = None):
         raise SystemExit(str(e)) from None
 
 
+def _resolve(name: str | None) -> tuple:
+    """(the installation's source or None, the file) for a robot, resolved once in this process."""
+    name = get(name).NAME
+    if name not in _resolved:
+        _resolved[name] = (registry.profile_source(name), registry.profile_file(name))
+    return _resolved[name]
+
+
+def profile_file(name: str | None = None) -> Path:
+    """The one profile file this process judges the robot by and hands its navigator (phase 5 step 1, the operator's decision e):
+    the installation's (a store folder's current version) else the robot's own, resolved at the first call and the same after,
+    so a course's referee and its navigator read one version. lab-nav-server, which runs many goals, reads it again per goal."""
+    return _resolve(name)[1]
+
+
+def given_profile(name: str | None = None) -> Path | None:
+    """The file to hand the robot's navigator as --profile: profile_file when the installation names one, None for the robot's own
+    (the navigator then records source: repository)."""
+    src, path = _resolve(name)
+    return path if src is not None else None
+
+
+def read_profile(path, variant: str | None = "sim"):
+    """A profile file in one environment, with `meta` {path, checksum, version}: what a run records the referee judged by."""
+    p = load_profile(path, variant or "real")
+    p.meta = describe(path)
+    return p
+
+
 def profile(variant: str | None = "sim", name: str | None = None):
-    """A robot's profile in one environment ("sim", or "real" / None for the robot itself)."""
-    return load_profile(get(name).PROFILE, variant or "real")
+    """A robot's profile in one environment ("sim", or "real" / None for the robot itself), from profile_file."""
+    return read_profile(profile_file(name), variant)
 
 
 def add_robot_arg(ap) -> None:

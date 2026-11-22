@@ -12,15 +12,10 @@ import json
 from pathlib import Path
 
 from runfile.profile import Profile, checksum, merge_variant, validate_profile
-from runfile.profilestore import resolve
+from runfile.profilestore import resolve, version_of  # noqa: F401 - version_of: the duck's name for it
 
 PROFILE = Path(__file__).resolve().parents[2] / "profile.json"
 SIM, REAL = "sim", "real"
-
-
-def version_of(path: Path):
-    """A stored version's number from its file name (`profiles/<robot>/<n>.json`), else None."""
-    return int(path.stem) if path.stem.isdigit() else None
 
 
 def load(variant: str | None = SIM, path=None) -> Profile:
@@ -30,5 +25,5 @@ def load(variant: str | None = SIM, path=None) -> Profile:
     raw = validate_profile(json.loads(p.read_text()))
     profile = Profile(merge_variant(raw, variant or REAL), variant or REAL)
     profile.meta = {"source": "given" if path else "repository", "path": str(p), "checksum": checksum(raw),
-                    "version": version_of(p) if path else None}
+                    "version": version_of(p) if path else None, "profile_version": raw["profile_version"]}
     return profile

@@ -274,8 +274,12 @@ class Proxy:
         """A client's robot.subscribe: robotd is asked for the fastest rate of all subscribers (through the gate, its rules),
         the client streamed at its own. Serialised, so robotd's last subscribe is always the fastest."""
         hz = params.get("hz")
-        # kept as the client gave it: robotd takes an integer rate and refuses 5.0 (invalid type ... expected u32)
-        rate = hz if isinstance(hz, (int, float)) and not isinstance(hz, bool) and hz > 0 else None
+        # robotd takes an integer rate and refuses 5.0 (invalid type ... expected u32): refused here, in the gate's words, rather
+        # than passed on to fail upstream (the operator's decision h)
+        if hz is not None and not (isinstance(hz, int) and not isinstance(hz, bool) and hz > 0):
+            raise GateError("bad_rate", f"robot.subscribe: hz must be a whole number of states a second above 0, not {hz!r} "
+                            f"(the robot takes an integer rate)")
+        rate = hz
         with self._sub_lock:
             with self._lock:
                 others = [r for c, r in self._rates.items() if c is not client]

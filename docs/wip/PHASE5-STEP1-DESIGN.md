@@ -195,15 +195,34 @@ migration, and smaller debts. It also listed decisions not written down. The ope
   fallback for packaged robots.
 - **(b) The checksum is taken over the profile as stored** (validated, not migrated), with `label`,
   `measured` and `why` included. Any change is a new identity. The schema version is recorded
-  beside it, and a diff whose only changes are notes says so.
+  beside it, and a diff whose only changes are notes says so. *Built:* `runfile.profile.canonical`
+  validates and then hashes the profile as stored (a mutant hashing the migrated form is killed
+  in `test_profile_schema`); `profile_version` is beside the checksum in an export, in a run's
+  `judge_profile` and in the navigator's profile meta; the diff answers `notes_changed` and
+  `only_notes` (`test_profile_api`).
 - **(d) "Mission Control is the store's one writer" stays a convention for now** (no lock).
 - **(e) Kept simple: the referee reads the same profile version the navigator runs**, the one the
   run records. One source. A saved version can therefore move the judge's numbers; the run says
-  which version that was.
+  which version that was. *Built:* a course's runner (`labrunner.remote`) resolves the version once
+  (`labrunner.robots.profile_file`), judges by it (`labrunner.geometry`) and hands the navigator
+  that file, not the store's folder. `lab-nav-server` reads it again at each `goal.start`
+  (`registry.profile_file`) and its truth guard judges by that goal's footprint and fall height.
+  The official run records `judge_profile` {path, checksum, version}; `runner.json` records it
+  beside the navigator's own answer. If the navigator answers another checksum (a version chosen
+  between the two reads), the goal is cancelled and the caller is told; it is never judged by
+  other numbers than it ran (`test_profile_source`, four mutants killed).
 - **(h) The state stream's rate:** `rates.state_hz` stays the rate a client reads the robot at.
   The stream a client subscribes to is the integer `ceil(state_hz)`, at most `max_state_hz`. The
-  gate refuses a rate that is not an integer, with its own message.
+  gate refuses a rate that is not an integer, with its own message. *Built:* `labrunner.gate`
+  refuses `bad_rate` before robotd is asked (`test_gate_proxy`, six bad rates); Mission Control's
+  `stream_hz` subscribes at `ceil(state_hz)` capped at `max_state_hz` (the duck: 2 Hz, was a
+  fixed 5), and its stream keeps the subscribe reply, so a refusal is said at once rather than
+  as "no robot.state" after 2 s (`test_duck_adapter`). Three mutants killed.
 - **(i) The navigator does not read the installation file.** It gets everything as arguments
   from whoever starts it (the runner, or a launcher on a real robot). The runner strips
   `ROBOTICS_LAB_INSTALLATION` from its environment, and the boundary check refuses a navigator
-  module importing `runfile.installation`.
+  module importing `runfile.installation`. *Built:* `labrunner.remote.navigator_env` (used by
+  `remote` and `lab-nav-server`) leaves out the host's and the installation's variables
+  (`test_profile_source`); `scripts/check_boundaries.py` `FORBIDDEN_MODULES` refuses
+  `runfile.installation` and `runfile.registry` (which reads it) in the duck's navigator
+  (`test_check_boundaries`). Both mutants are killed.

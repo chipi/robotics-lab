@@ -4,6 +4,7 @@ blocks, and the profile holding no machine's addresses. A small profile of its o
 Run: cd libs/runfile && uv run python tests/test_profile_schema.py"""
 
 import copy
+import hashlib
 import json
 
 from helpers import Checks
@@ -49,6 +50,12 @@ changed = copy.deepcopy(BASE)
 changed["locomotion"]["cruise_mps"] = 0.31
 check("any changed value changes it", checksum(changed) != a)
 check("the canonical text has no spaces and sorted keys", ", " not in canonical(BASE) and canonical(BASE).startswith('{"control"'))
+for name, edit in (("label", lambda p: p.__setitem__("label", "Another rover")),
+                   ("measured", lambda p: p["locomotion"].update(cruise_mps=0.3, measured="2026-11-22, a tape")),
+                   ("why", lambda p: p["locomotion"].update(why="the walk's own"))):
+    noted = copy.deepcopy(BASE)
+    edit(noted)
+    check(f"a changed {name} changes it too (a note is part of the identity)", checksum(noted) != a)
 
 # schema versions
 newer = copy.deepcopy(BASE)
@@ -76,6 +83,9 @@ try:
     check("a version-1 profile read by a version-2 reader is migrated, not refused", up["profile_version"] == 2
           and up["label"].endswith("(migrated)"), up["label"])
     check("the migration works on a copy: the stored profile is untouched", old["profile_version"] == 1 and "migrated" not in old["label"])
+    as_stored = "sha256:" + hashlib.sha256(json.dumps(old, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    check("must fail: the checksum is the file as stored (version 1), not as migrated: a newer reader keeps its identity "
+          "(the operator's decision b)", checksum(copy.deepcopy(old)) == as_stored == a, (checksum(old), as_stored, a))
     P.MIGRATIONS.clear()
     ok, why = refused(copy.deepcopy(BASE), "no migration from it")
     check("an older version with no migration registered is an error that says so", ok, why)

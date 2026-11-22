@@ -551,14 +551,15 @@ def numbers(data: dict, prefix: str = ""):
 
 
 def canonical(raw: dict) -> str:
-    """The profile as one canonical JSON text (validated, in this reader's schema, keys sorted, no spaces): what the checksum hashes
-    and what an export carries."""
-    return json.dumps(validate_profile(raw), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    """The profile as one canonical JSON text (validated, then as stored: in its own schema version, not migrated; keys sorted, no
+    spaces): what the checksum hashes. The operator's decision b: a file keeps its identity when a newer reader migrates it."""
+    validate_profile(raw)
+    return json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 def checksum(raw: dict) -> str:
     """A profile's identity across machines (phase 5 step 1): sha256 of its canonical JSON. 0.30 and 0.3 are one number, so one
-    checksum; key order and spacing do not count; any changed value does."""
+    checksum; key order and spacing do not count; any changed value does, `label`, `measured` and `why` included."""
     return "sha256:" + hashlib.sha256(canonical(raw).encode()).hexdigest()
 
 

@@ -117,6 +117,19 @@ r = call("POST", "/robots/duck-1/profile/import", {"export": tampered})
 check("must fail: an export changed on the way is refused, nothing written",
       r["error"]["code"] == "profile" and "does not match" in r["error"]["message"] and sorted(p.name for p in FOLDER.glob("*.json")) == ["1.json", "2.json"], r)
 
+noted = copy.deepcopy(v2)
+noted["locomotion"]["why"] = "walked slower on the rug"
+r = call("POST", "/robots/duck-1/profile", {"profile": noted})
+check("a change of a note alone is a new version (the checksum covers the notes, the operator's decision b)",
+      r.get("saved", {}).get("version") == 3, r)
+d = call("GET", "/robots/duck-1/profile/diff?a=2&b=3")["diff"]
+check("must fail: the diff of two versions that differ only in a note says so, not an empty list that reads as the same",
+      d["changes"] == [] and d["only_notes"] is True and d["notes_changed"] == 1, d)
+d = call("GET", "/robots/duck-1/profile/diff?a=2&b=3&notes=1")["diff"]
+check("... and with notes it shows the note", d["changes"] == [{"path": "locomotion.why", "a": None, "b": "walked slower on the rug"}], d)
+d = call("GET", "/robots/duck-1/profile/diff?a=1&b=2")["diff"]
+check("a diff of values is not only notes", d["only_notes"] is False and d["notes_changed"] == 0, d)
+
 srv.shutdown()
 srv.server_close()
 mc.close()

@@ -235,6 +235,15 @@ with tempfile.TemporaryDirectory() as tmp:
     check("... and the earlier one still gets its own 20 Hz, not more", 15 <= ra <= 23 and 24 <= re_ <= 34, (ra, re_))
     e.close()
     check("when the fastest leaves, robotd goes back to the fastest left (20 Hz)", wait_for(lambda: upstream_hz() == 20), upstream_hz())
+    f = Client(tmp / "gate.sock", hello="float-rate")
+    asked = sum(1 for _, m, _ in robotd.calls if m == "robot.subscribe")
+    for bad in (5.0, 2.5, 0, -1, True, "5"):
+        r = f.call("robot.subscribe", {"hz": bad})
+        check(f"must fail: hz {bad!r} is refused by the gate in its own words (the operator's decision h), robotd not asked",
+              (r.get("error") or {}).get("data", {}).get("gate") == "bad_rate" and "whole number" in r["error"]["message"]
+              and sum(1 for _, m, _ in robotd.calls if m == "robot.subscribe") == asked, r)
+    check("... and the refused client gets no stream", not any(n.get("method") == "robot.state" for n in f.notes))
+    f.close()
 
     # STOP latches, and the holder is told
     c = Client(tmp / "gate.sock", hello="bystander")

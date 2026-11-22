@@ -218,6 +218,22 @@ check(f"the map is asked for at the robot's map_hz ({mc.robots['duck-sim'].cfg.r
       f"change: {rate:.1f} requests/s",
       rate <= 2.5 * mc.robots["duck-sim"].cfg.rates["map_hz"], rate)
 
+# the state stream's rate (the operator's decision h): a whole number, ceil(state_hz), at most max_state_hz
+from mission_control.duck import _Stream, stream_hz  # noqa: E402
+rates_ = mc.robots["duck-sim"].cfg.rates
+asked = [p.get("hz") for m_, p in robotd.calls if m_ == "robot.subscribe"]
+check(f"Mission Control subscribes at the profile's state_hz as a whole number ({rates_['state_hz']:g} -> {stream_hz(rates_)})",
+      asked and asked[-1] == stream_hz(rates_) == 2 and isinstance(asked[-1], int), asked)
+check("stream_hz: ceil of state_hz, capped at max_state_hz, never 0",
+      [stream_hz(r) for r in ({"state_hz": 2.0}, {"state_hz": 2.2}, {"state_hz": 0.4}, {"state_hz": 9.5, "max_state_hz": 9.7},
+                              {"state_hz": 5.0, "max_state_hz": 10.0})] == [2, 3, 1, 9, 5])
+t0 = time.monotonic()
+s = _Stream(tmp / "gate.sock", "rate-probe", hz=2.5)
+check("must fail: a subscription the gate refuses is read and said, not dropped (no states, the gate's own words)",
+      wait_for(lambda: s.refused is not None, 3.0) and "whole number" in s.refused and s.latest is None
+      and time.monotonic() - t0 < 2.0, (s.refused, s.latest))
+s.close()
+
 # the lock, over the gate's socket
 a = call("POST", "/robots/duck-sim/lock", {"client": "script"})["lock"]
 check("acquire takes the gate's lease in the client's name", a["lease_id"] == 1 and robot()["lock"]["holder"] == "script", a)

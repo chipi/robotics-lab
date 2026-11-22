@@ -20,6 +20,7 @@ from pathlib import Path
 from labrunner import robots
 from labrunner.rpc import Rpc
 from runfile import keys
+from runfile.profilestore import describe
 from runfile.truthcopy import TruthCopy
 
 STARTED_S = 60.0         # the payload process answers within this, or it is stopped
@@ -38,6 +39,14 @@ def event(kind: str, text: str, /, **raw) -> dict:          # positional: a row'
 
 
 PROC = Path("/proc")       # where a process's sockets are read, when the host has it (a test points it elsewhere)
+# what a navigator's process does not inherit: the host file (it gets the sockets) and the installation file (it gets its profile
+# as an argument and never reads this machine's installation: the operator's decision i)
+NOT_INHERITED = ("ROBOTICS_LAB_HOST", "ROBOTICS_LAB_INSTALLATION")
+
+
+def navigator_env() -> dict:
+    """The environment a navigator's process starts with: this one, less NOT_INHERITED."""
+    return {k: v for k, v in os.environ.items() if k not in NOT_INHERITED}
 
 
 def truth_connections(pid: int, port: int) -> int | None:
@@ -103,9 +112,11 @@ class Remote:
         `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
         `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
         host's (a gate's), spoken to as `client`."""
-        # the profile version this machine runs the robot on, resolved before anything starts: a named one that does not exist
-        # refuses the run here (labrunner.robots.profile_source); only the robot's own navigator takes --profile
-        profile = robots.profile_source(robots.get().NAME) if payload is None else None
+        # the profile version this machine runs the robot on, resolved once before anything starts (a named one that does not exist
+        # refuses the run here): the file the referee judges by (labrunner.geometry) is the file handed to the navigator, so both
+        # read one version, and the official run records it as judge_profile; only the robot's own navigator takes --profile
+        profile = robots.given_profile() if payload is None else None
+        run = {**(run or {}), "judge_profile": describe(robots.profile_file())}
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
@@ -123,7 +134,7 @@ class Remote:
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
             (["--client", client] if client else []) + (["--profile", str(profile)] if profile else []) + list(extra or [])
-        env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}    # nothing of the host but its sockets
+        env = navigator_env()                                     # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
         self.rpc = None

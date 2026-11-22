@@ -106,10 +106,12 @@ class Store:
         self._write(self.folder(robot) / "current", f"{n}\n")
 
     def export(self, robot: str, n: int | None = None) -> dict:
-        """One version as one file to carry to another machine: the profile, its version here and its checksum."""
+        """One version as one file to carry to another machine: the profile, its version here, its checksum and the schema version
+        the checksum was taken in."""
         n = self.current(robot) if n is None else n
         raw = self.read(robot, n)
-        return {"export": EXPORT, "robot": robot, "version": n, "checksum": checksum(raw), "profile": raw}
+        return {"export": EXPORT, "robot": robot, "version": n, "checksum": checksum(raw),
+                "profile_version": raw.get("profile_version"), "profile": raw}
 
     def import_(self, robot: str, exported: dict) -> int:
         """An exported version saved here as the next version: its checksum checked against its profile first (a file changed on
@@ -141,6 +143,20 @@ def resolve(path: Path) -> Path:
     if n is None:
         raise StoreError(f"{path}: no version yet (seed it from the robot's own profile)")
     return store.path(path.name, n)
+
+
+def version_of(path: Path):
+    """A stored version's number from its file name (`profiles/<robot>/<n>.json`), else None."""
+    path = Path(path)
+    return int(path.stem) if path.stem.isdigit() else None
+
+
+def describe(path: Path) -> dict:
+    """Which profile a file is, as a run records it: {path, checksum, version, profile_version} (version None for a file not in a
+    store; profile_version the schema version the checksum was taken in)."""
+    path = Path(path)
+    raw = json.loads(path.read_text())
+    return {"path": str(path), "checksum": checksum(raw), "version": version_of(path), "profile_version": raw.get("profile_version")}
 
 
 def leaves(data, prefix: str = ""):

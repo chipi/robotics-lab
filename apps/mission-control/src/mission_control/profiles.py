@@ -151,5 +151,9 @@ def compare(rt, a: int, b: int, notes: bool = False) -> dict:
     store, _ = _store(robot)
     if store is None:
         raise conflict("no_store", "this machine has no version store (no installation state folder)")
-    rows = diff(_call(store.read, robot, a), _call(store.read, robot, b), notes)
-    return {"robot": robot, "a": a, "b": b, "changes": [{"path": p, "a": x, "b": y} for p, x, y in rows]}
+    ra, rb = _call(store.read, robot, a), _call(store.read, robot, b)
+    rows = diff(ra, rb, notes)
+    values, all_rows = diff(ra, rb, False), diff(ra, rb, True)
+    # two versions that differ only in their notes (measured, why) have two checksums: said, so an empty list does not read "same"
+    return {"robot": robot, "a": a, "b": b, "changes": [{"path": p, "a": x, "b": y} for p, x, y in rows],
+            "notes_changed": len(all_rows) - len(values), "only_notes": not values and len(all_rows) > 0}

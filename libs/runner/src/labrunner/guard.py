@@ -42,7 +42,10 @@ def load_layout(path: Path = LAYOUT) -> tuple:
 class TruthGuard:
     """The runner's side (RFC-0021 step 6): the guardrails only the simulator's truth can check, against the layout."""
 
-    def __init__(self, guardrails: list, layout: tuple | None = None):
+    def __init__(self, guardrails: list, layout: tuple | None = None, profile=None):
+        """`profile`: the robot's profile this goal is judged by (its footprint and fall height); None: labrunner.geometry's."""
+        self.fallen_z = profile.judge.fall_z_m if profile is not None else FALLEN_Z_M
+        self.footprint = profile.footprint.radius_m if profile is not None else FOOTPRINT_M
         self.by_name: dict = {}
         for g in guardrails:
             if g["name"] in TRUTH:
@@ -52,7 +55,7 @@ class TruthGuard:
 
     def check(self, pose: tuple, z: float) -> tuple | None:
         """(name, detail) of the first guardrail the truth (the trunk's x, y, yaw and height) breaks, else None."""
-        if "fall" in self.by_name and z < FALLEN_Z_M:
+        if "fall" in self.by_name and z < self.fallen_z:
             return "fall", f"the trunk is {z:.3f} m high: the robot fell"
         for g in self.by_name.get("no_go_area", []):
             if inside(pose[:2], [tuple(q) for q in g["outline"]]):
@@ -60,7 +63,7 @@ class TruthGuard:
         if "contact" in self.by_name and self.obs:
             best = min(self.obs, key=lambda o: footprint_distance(pose[:2], o))
             d = footprint_distance(pose[:2], best)
-            if d < FOOTPRINT_M:
+            if d < self.footprint:
                 return "contact", f"the trunk is {d:.3f} m from {best['name']}: a part can touch it"
         for g in self.by_name.get("drop_clearance", []):
             if self.drops:

@@ -11,7 +11,8 @@ get stays here:
 - **The camera:** served on the host file's camera socket (labrunner.camera), from the truth.
 - **The truth guardrails** (`contact`, `fall`, `drop_clearance`, the robot inside a `no_go_area`): checked against the
   truth (labrunner.guard.TruthGuard); a broken one stops the run through the API's `goal.break`, and the run ends
-  `stopped_by_guardrail` as one the navigator broke itself.
+  `stopped_by_guardrail` as one the navigator broke itself. Judged by the profile version read at each `goal.start`,
+  the one the navigator reads; a navigator answering another one has its goal cancelled.
 - **The official recording:** each goal run's run is the navigator's (written to `--out`/payload-data) copied into the
   Observatory's data folder with the truth put in (runfile.truthcopy), under the key `goal.start` answered with.
 
@@ -35,10 +36,10 @@ from pathlib import Path
 import simhost
 from labrunner import robots
 from labrunner.camera import CameraServer
-from labrunner.remote import truth_connections
+from labrunner.remote import navigator_env, truth_connections
 from labrunner.rpc import Rpc
 from labrunner.guard import TruthGuard
-from runfile import keys
+from runfile import keys, registry
 from runfile.catalog import default_data
 from runfile.truthcopy import TruthCopy, TruthLog
 from simhost.truth import Sampler
@@ -53,14 +54,18 @@ READS = ("map", "state", "objects", "inventory")   # what the navigator sees: an
 class GoalWatch:
     """One goal run: its truth sampled, its truth guardrails checked, its run copied into the official one."""
 
-    def __init__(self, runner: "NavRunner", key: str, guardrails: list):
+    def __init__(self, runner: "NavRunner", key: str, guardrails: list, judge, navigator_profile: dict | None = None):
+        """`judge`: the profile this goal is judged by (labrunner.robots.read_profile, read at its goal.start), recorded in the
+        official run and runner.json beside what the navigator said it runs (`navigator_profile`)."""
         self.runner, self.key = runner, key
+        self.judge, self.navigator_profile = judge.meta, navigator_profile
         _, _, name = keys.split_key(key)
         self.dir = runner.out / name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.truth_log = TruthLog(self.dir / "truth.jsonl")
-        self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key, self.truth_log.nearest)
-        self.guard = TruthGuard(guardrails)
+        self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key, self.truth_log.nearest,
+                              run={"judge_profile": self.judge})
+        self.guard = TruthGuard(guardrails, profile=judge)
         self.broken = None
         self.state = None
         self._objects_v = -1          # the objects version last seen: asked again, the API leaves them out
@@ -129,7 +134,7 @@ class GoalWatch:
     def summary(self) -> dict:
         return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked,
                 "truth_samples": self.sampler.samples, "truth_error": self.sampler.error, "truth_copy": self.copy.stats(),
-                "truth_connections": dict(self.route)}
+                "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile}
 
 
 class NavRunner:
@@ -153,7 +158,7 @@ class NavRunner:
                "--map", str(host.sockets["map"]), "--camera", str(self.camera.path), "--listen", str(self.sock),
                "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene] + \
             (["--profile", str(profile)] if profile else [])
-        env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}     # nothing of the host but its sockets
+        env = navigator_env()                                   # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.out / "navigator.log", "a")
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
         self._rpc_lock = threading.Lock()
@@ -205,11 +210,22 @@ class NavRunner:
         if self.goal is not None:
             self.goal.finish()          # (the navigator API refuses a second goal while one runs: this one is over)
             self._merge(self.goal.route)
+        # the referee reads the profile again at each goal, from the one source the navigator reads it from (the installation's
+        # version, or the robot's own): a version chosen since applies to both from this goal (the operator's decision e)
+        judge = robots.read_profile(registry.profile_file(robots.get().NAME), "sim")
         reply = self.api("goal.start", p)
         if isinstance(reply, dict) and reply.get("run_key"):
             guardrails = (p.get("conditions") or {}).get("guardrails") or []
-            self.goal = GoalWatch(self, reply["run_key"], guardrails).start()
+            theirs = reply.get("profile")
+            self.goal = GoalWatch(self, reply["run_key"], guardrails, judge, theirs).start()
             self.goals += 1
+            if theirs and theirs.get("checksum") and theirs["checksum"] != judge.meta["checksum"]:
+                # a version chosen between the two reads: never judged by other numbers than it runs; the run is cancelled
+                self.api("goal.cancel")
+                raise RuntimeError(f"the navigator started {reply['run_key']} on profile {theirs['checksum'][:15]}… (version "
+                                   f"{theirs.get('version')}), the runner read {judge.meta['checksum'][:15]}… (version "
+                                   f"{judge.meta['version']}): the profile changed while the goal started; it is cancelled, "
+                                   f"start it again")
         return reply
 
     def _merge(self, route: dict) -> None:

@@ -64,6 +64,12 @@ TESTS_EXTRA = {
     "duck_lab": set(),
 }
 
+# modules of an allowed unit that a unit's source still may not import: the navigator gets everything as arguments from whoever
+# starts it and never reads this machine's installation file (the operator's decision i, phase 5 step 1); runfile.registry reads it
+FORBIDDEN_MODULES = {
+    "duck_nav": ("runfile.installation", "runfile.registry"),
+}
+
 # by importing module, each with its retiring RFC; none now (the last, Mission Control's duck adapter importing the duck's
 # navigator and the host library, was retired by phase 5 step 1, RFC-0023)
 EXCEPTIONS: dict = {}
@@ -159,6 +165,10 @@ def check(root: Path) -> list:
                 continue
             seen = set()
             for line, name in imports(tree, module, f.name == "__init__.py"):
+                bad = [m for m in FORBIDDEN_MODULES.get(unit, ()) if module and (name == m or name.startswith(m + "."))]
+                if bad and (line, bad[0]) not in seen:
+                    seen.add((line, bad[0]))
+                    problems.append(f"{rel}:{line}: {unit} imports {name}, a module it may not import (FORBIDDEN_MODULES)")
                 target = unit_of(name)
                 if (line, target) in seen:
                     continue

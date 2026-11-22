@@ -16,6 +16,7 @@ API's `map`, the odometry scale from the robot's profile version (read again at 
 installation file (runfile.installation), else the robot file's adapter block."""
 
 import json
+import math
 import socket
 import threading
 import time
@@ -37,6 +38,14 @@ FAILS_BEFORE_LOST = 15      # polls in a row that fail before the navigator is c
 
 def _addr(text: str) -> Path:
     return Path(text).expanduser()
+
+
+def stream_hz(rates: dict) -> int:
+    """The rate Mission Control subscribes to a robot's state at (the operator's decision h): the whole number ceil(state_hz),
+    at most max_state_hz. The gate and robotd take whole numbers only; state_hz stays the rate Mission Control reads at."""
+    hz = math.ceil(rates["state_hz"])
+    cap = rates.get("max_state_hz")
+    return max(1, min(hz, math.floor(cap))) if cap is not None else hz
 
 
 class _Wire:
@@ -125,9 +134,18 @@ class _Stream(_Wire):
     def __init__(self, path: Path, client: str, hz: int, on_state=None):
         self.latest, self._on_state = None, on_state
         super().__init__(path, client)
-        with self._lock:            # the subscription's answer is not waited for: the states that follow are the answer
+        # the answer is not waited for here (the states that follow are the answer), but it is kept: a refusal is `refused`
+        self.answered, self._answer = threading.Event(), {}
+        with self._lock:
+            self._pending["subscribe"] = (self.answered, self._answer)
             self.sock.sendall((json.dumps({"jsonrpc": "2.0", "id": "subscribe", "method": "robot.subscribe",
                                            "params": {"hz": hz}}) + "\n").encode())
+
+    @property
+    def refused(self) -> str | None:
+        """The gate's (or the robot's) refusal of the subscription, in its words, once answered; else None."""
+        err = self._answer.get("error") if self.answered.is_set() and "result" not in self._answer else None
+        return err.get("message", str(err)) if err else None
 
     def _note(self, method: str, params: dict) -> None:
         if method == "robot.state":
@@ -366,14 +384,15 @@ class DuckAdapter:
             if self._stream is not None:
                 self._stream.close()
                 self._stream = None
-            self._stream = _Stream(self.gate_socket, GATE_NAME + "-state", hz=5, on_state=self._on_state)
+            self._stream = _Stream(self.gate_socket, GATE_NAME + "-state", hz=stream_hz(self.cfg.rates), on_state=self._on_state)
             deadline = time.monotonic() + 2.0
-            while self._stream.latest is None and time.monotonic() < deadline:
+            while self._stream.latest is None and not self._stream.refused and time.monotonic() < deadline:
                 time.sleep(0.02)
             if self._stream.latest is None:
+                why = self._stream.refused
                 self._stream.close()
                 self._stream = None
-                raise ConnectionError("no robot.state from the gate")
+                raise ConnectionError(f"the gate refused robot.subscribe: {why}" if why else "no robot.state from the gate")
             self._stream_at = self.clock()
         s = self._stream.latest
         pos, yaw = s["odom"]["position"], s["odom"]["yaw"]
