@@ -1,12 +1,21 @@
 # Phase 5: the plan after step 1
 
 **Status:** written 2026-11-22, at the end of phase 5 step 1 (parts 1 to 10, last commit `11cad9d`),
-for the next session to start from. The order is [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items
-3 to 6 and the [architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list.
-Nothing below is started.
+for the next session to start from; updated the same day after item 1 (`0488ca3`, `642a82b`, both CI
+green). The order is [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
+[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Next: item 2,
+the apartment out of the runner.** Items 2 to 5 are not started.
 
 ## Where things stand
 
+- **Item 1, one navigator contract, is done** (both commits, below). After it, on the operator's go
+  (2026-11-22): the main checkout (`/work/robotics-lab/main`) was pulled to `642a82b` and the
+  installation file (`~/.config/robotics-lab/installation.json`) registers the duck from it
+  (`/work/robotics-lab/main/robots/duck/registration.json`, before: a test folder); the Observatory's
+  index was rebuilt (219 scenes, 1629 runs; backup in
+  `/work/robotics-lab/state/miniview/backup-20261122-before-stops/`; 0 `aborted` left, 9
+  `stopped_by_guardrail` events, no data file changed) and the Observatory redeployed from main
+  (`make observatory-up`, healthy, 1629 runs); the old `--keep` test folders were deleted.
 - Phase 5 step 1 and the second review are done and pushed: the installation file and profile
   versions, robots registered by file (Mission Control and the runner have no robot's package), the
   checksum over the profile as stored, the referee judging by the version the navigator runs,
@@ -74,8 +83,9 @@ recorded reason (`runfile.navcontract.stop_before`: the index's 9 are all guardr
 2 truth guards, 1 contact). Proof: `test_stops_before.py` (a run file and a navigator log written
 the old way, read back), the stop rule in `test_contract.py`, 5 mutants killed; `make sim-duck
 --keep` PASS 48, its 34 runs: the time-limit and drop-clearance stops `stopped_by_guardrail`, the
-cancel `cancelled`, events and verdicts, no `aborted`. Not done: the Observatory's index keeps its 9
-old rows as `aborted` until it is rebuilt (the operator's: it serves the Observatory).
+cancel `cancelled`, events and verdicts, no `aborted`. The Observatory's index was rebuilt after it
+(above): its 9 old rows now read `stopped_by_guardrail`. Not covered: the payload's `goal.break` path
+is unit-tested only (no challenge in 1-11, seed 1, breaks an invariant).
 
 ### 2. The apartment out of the runner
 
@@ -95,8 +105,16 @@ old rows as `aborted` until it is rebuilt (the operator's: it serves the Observa
   module-level `robots.get()`).
 
 **Proof.** Unit tests of the scene reader (a second, small scene with no stairwell: no drop added);
-the challenge batch as in item 1, verdicts matching; `make sim-duck`; the explore score of one
-apartment run equal before and after (`explore_score.py` reads the rooms).
+the challenge batch as in item 1, verdicts matching (the old code in a worktree at `642a82b`,
+alternating runs, seed 1; challenge 7 is expected to fail on both, K40); `make sim-duck`; the
+explore score of one apartment run equal before and after (`explore_score.py` reads the rooms); a
+run records the scene's checksum beside `judge_profile`, and a run whose scene file changed says so.
+
+**Start here.** Read `labrunner/geometry.py` (`APARTMENT`), `rooms.py` (`ROOMS`, `STAIRS`),
+`guard.py` (`STAIRS`, the drop it adds), `sim_camera.py`, `challenge.py` (the `scene.json` it
+writes), and the data folder's `data/scenes/apartment/scene.json`; compare the code's copy with the
+file's before writing `scenes/apartment/scene.json`, and list every difference for the operator if
+they disagree.
 
 **Size:** one to two parts; it touches every course.
 
@@ -156,6 +174,13 @@ For item 2; **decided (the operator accepted the recommendation, 2026-11-22).**
   `TMPDIR=$HOME/.cache/robotics-lab-tests`; `make sim-duck` takes about 10 minutes and resets the
   simulator.
 - Test folders kept in `~/.cache/robotics-lab-tests` (`mc-sim-duck-*`, `k46-run-*.log`) are not
-  deleted without the operator's go (the earlier ones were deleted with it, 2026-11-22).
+  deleted without the operator's go (the earlier ones were deleted with it, 2026-11-22). The
+  installation file is not pointed at a test folder; it stays on the main checkout.
+- After a push to main, pull the main checkout (`git -C /work/robotics-lab/main pull --ff-only`)
+  so the installation's duck and the Observatory run the pushed code; rebuilding the Observatory's
+  index or redeploying it (`observatory index`, `make observatory-up`) needs the operator's go.
+- Not to be touched: Rerun (pid 735512), the `robotics-lichtblick` container, the NXT and EV3 (no
+  scripts against them); never `uv sync --no-dev` in `robots/duck`; no new dependencies without
+  approval (OpenTelemetry approved for step 6 only).
 - Each item: a failing test first, the fix, a mutation check, the gates, the docs, a commit with its
   numbers.
