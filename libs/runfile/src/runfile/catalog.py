@@ -19,7 +19,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from runfile import env, keys, mcapio
+from runfile import env, installation, keys, mcapio
 from runfile.index import Index
 from runfile.store import RunData
 from runfile.validate import BrokenRun
@@ -32,8 +32,12 @@ FINAL = ("ended", "stopped", "broken")
 
 
 def default_data() -> Path | None:
+    """The lab's data folder: $OBSERVATORY_DATA, else the installation file's `data` (phase 5 step 1), else None."""
     v = env.get("DATA", "").strip()
-    return Path(v) if v else None
+    if v:
+        return Path(v)
+    inst = installation.load(required=False)
+    return inst.data if inst is not None else None
 
 
 def _file_of(d: Path) -> Path:

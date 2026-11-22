@@ -17,7 +17,9 @@ first epoch and events are lost from them.
 ## Decision
 
 - **The index is the service's own**: `index.sqlite` outside the data folder (`MINIVIEW_INDEX`;
-  default `/work/robotics-lab/state/miniview/`), WAL with a busy timeout. The commands read it;
+  default `/work/robotics-lab/state/miniview/`; *updated 2026-11-22, phase 5 step 1: no built-in
+  default any more, `OBSERVATORY_INDEX` else the installation file's `index`, K44*), WAL with a busy
+  timeout. The commands read it;
   `miniview index` (rebuild) refuses while a service holds its lock.
 - **It is read.** Tables: `runs` (key, uuid, robot, scene, kind, status, verdict, started_at, t0,
   t1, ticks, events, rejects, error, file size, mtime, inode), `streams`, `events`, `segments`. The

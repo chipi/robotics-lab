@@ -7,11 +7,12 @@ The variables are `OBSERVATORY_*`; the `MINIVIEW_*` names of before the rename a
 new one is not set (the new one wins when both are).
 
 `observatory serve` (or `make observatory-up`, in Docker) serves the pages and the API over the
-lab's data folder (`OBSERVATORY_DATA`, or `--data`; there is no default in the code, the workstation's
-`/work/robotics-lab/data` is the default of the compose file and the Makefile only). The service's
-own index is at `OBSERVATORY_INDEX` (default `/work/robotics-lab/state/miniview/index.sqlite`), outside
-the
-data. The loaded-run cache is bounded by `OBSERVATORY_CACHE_MB` (default 1024). Units SI (metres,
+lab's data folder (`--data`, else `OBSERVATORY_DATA`, else the installation file's `data`,
+`runfile.installation`; no machine's path in the code, the workstation's `/work/robotics-lab/data`
+is the default of the compose file and the Makefile only). The service's own index is at
+`OBSERVATORY_INDEX`, else the installation file's `index` (no built-in default: naming neither is an
+error saying where to name it), outside the data. The loaded-run cache is bounded by
+`OBSERVATORY_CACHE_MB` (default 1024). Units SI (metres,
 radians, seconds). Frames: **world** (the scene's, where truth is) and **map** (the robot's own). A
 pose
 is `[x, y, yaw]`.

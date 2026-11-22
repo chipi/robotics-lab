@@ -18,9 +18,20 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from runfile import env
+from runfile import env, installation
 
-DEFAULT_INDEX = "/work/robotics-lab/state/miniview/index.sqlite"
+
+def default_index() -> Path:
+    """The index this machine uses: $OBSERVATORY_INDEX, else the installation file's `index` (phase 5 step 1, K44). No
+    machine's path is built in: naming neither is an error saying where to name it."""
+    v = (env.get("INDEX") or "").strip()
+    if v:
+        return Path(v)
+    inst = installation.load(required=False)
+    if inst is not None and inst.index is not None:
+        return inst.index
+    where = inst.source if inst is not None else installation.where()
+    raise SystemExit(f"no index: set OBSERVATORY_INDEX, or name `index` in {where} (the installation file)")
 
 SCHEMA = """
 create table if not exists scenes (id text primary key, name text, kind text, json text);
@@ -44,7 +55,7 @@ class IndexBusy(Exception):
 
 class Index:
     def __init__(self, path: Path | None = None):
-        self.path = Path(path or env.get("INDEX") or DEFAULT_INDEX)
+        self.path = Path(path) if path else default_index()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path, check_same_thread=False, timeout=5.0)
         self.db.execute("pragma journal_mode = wal")

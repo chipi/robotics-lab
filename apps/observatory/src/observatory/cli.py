@@ -1,7 +1,8 @@
 """Observatory — runs into the lab's data folder, the service for the pages, answers for the agent
-(RFC-0009, ADR-0004, ADR-0005). The data folder is OBSERVATORY_DATA or --data: there is no default in the code
-(the compose file and the Makefile default to /work/robotics-lab/data). The index is OBSERVATORY_INDEX (default
-/work/robotics-lab/state/miniview/index.sqlite); while a service holds it, the commands read it and write nothing.
+(RFC-0009, ADR-0004, ADR-0005). The data folder is --data, else OBSERVATORY_DATA, else the installation file's `data`
+(runfile.installation; the compose file and the Makefile default to /work/robotics-lab/data). The index is
+OBSERVATORY_INDEX, else the installation file's `index`; no machine's path is built in (K44). While a service holds the
+index, the commands read it and write nothing.
 Every OBSERVATORY_* variable also reads as MINIVIEW_* (the names before the rename) when the new one is not set.
 
     uv run observatory scene apartment --layout ../robots/duck/sim/apartment_layout.json
