@@ -37,7 +37,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from runfile import env, keys, mcapio
+from runfile import env, installation, keys, mcapio
 from observatory import query
 from runfile.catalog import Catalog, default_data
 from runfile.validate import BrokenRun
@@ -69,8 +69,11 @@ def cmd_import(args) -> None:
         if args.follow:
             raise SystemExit("--follow is for the duck's log; nxt-web writes its runs live itself (ADR-0013)")
         for f in args.logs:
-            nxt.import_csv(Path(f), data, args.scene or nxt.SCENE, tz=args.tz, sprocket=args.sprocket_diameter,
-                           track=args.track_width, config_path=Path(args.config) if args.config else None)
+            try:
+                nxt.import_csv(Path(f), data, args.scene or nxt.SCENE, tz=args.tz, sprocket=args.sprocket_diameter,
+                               track=args.track_width, config_path=Path(args.config) if args.config else None)
+            except nxt.CsvImportError as e:     # the library raises; the command says it and exits
+                raise SystemExit(str(e)) from None
     else:
         for log_dir in args.logs:
             import_duck(Path(log_dir), args.scene or "apartment", data, follow=args.follow, idle_s=args.idle)
@@ -497,7 +500,10 @@ def main() -> None:
     p.add_argument("--state", help="where the videos go, in videos/ (OBSERVATORY_STATE)")
     p.set_defaults(fn=cmd_render_serve)
     args = ap.parse_args()
-    args.fn(args)
+    try:
+        args.fn(args)
+    except installation.NotNamed as e:      # the library raises; the command says it and exits
+        raise SystemExit(str(e)) from None
 
 
 if __name__ == "__main__":

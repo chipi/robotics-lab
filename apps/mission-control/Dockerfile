@@ -1,6 +1,6 @@
 # Mission Control (RFC-0014 §3.13) as an image, to run on any of the operator's machines.
 #
-#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate, libs/worldmodel and robots/duck too
+#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile and libs/gate too
 #   docker run --rm -p 127.0.0.1:8060:8060 -v $PWD/apps/mission-control/robots.example:/config/robots:ro -v mc-state:/state mission-control:local
 #
 # `make`'s control-up / control-down wrap apps/mission-control/compose.yml. Configuration (the robot files) and data (the SQLite store, the gates'
@@ -8,9 +8,11 @@
 # network, never through a device on this host. The API has no login by default: publish the port on loopback (as above) or on the
 # tailnet's address, never on a public interface (RFC-0014 §3.9); `--require-tokens` adds per-client tokens.
 #
-# The versions are apps/mission-control/uv.lock's, installed with `uv sync --frozen`. The gate (RFC-0017) is a library (libs/gate) and the
-# duck package depends on the run format: both are path sources in apps/mission-control/pyproject.toml, so the three folders sit side by side
-# as they do in the repository, and the two are installed editable from there.
+# The versions are apps/mission-control/uv.lock's, installed with `uv sync --frozen --no-dev`. The gate (RFC-0017, libs/gate) and the run
+# format (libs/runfile) are path sources in apps/mission-control/pyproject.toml, so the folders sit side by side as they do in the
+# repository, and are installed editable from there. No robot's package is in the image (phase 5 step 1): a robot file that points at a
+# robot's profile (`"robot": "duck"`) needs an installation file mounted (ROBOTICS_LAB_INSTALLATION) whose robots.<name>.registration
+# names the robot's registration file, mounted with the profile beside it; the fake robot (robots.example) needs none.
 
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
@@ -21,10 +23,6 @@ COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
 COPY libs/runfile/src ./libs/runfile/src
 COPY libs/gate/pyproject.toml ./libs/gate/pyproject.toml
 COPY libs/gate/src ./libs/gate/src
-COPY libs/worldmodel/pyproject.toml ./libs/worldmodel/pyproject.toml
-COPY libs/worldmodel/src ./libs/worldmodel/src
-COPY robots/duck/pyproject.toml ./robots/duck/pyproject.toml
-COPY robots/duck/src ./robots/duck/src
 COPY apps/mission-control/pyproject.toml apps/mission-control/uv.lock ./apps/mission-control/
 COPY apps/mission-control/src ./apps/mission-control/src
 RUN cd apps/mission-control && uv sync --frozen --no-dev \

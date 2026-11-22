@@ -65,9 +65,10 @@ TESTS_EXTRA = {
 }
 
 # modules of an allowed unit that a unit's source still may not import: the navigator gets everything as arguments from whoever
-# starts it and never reads this machine's installation file (the operator's decision i, phase 5 step 1); runfile.registry reads it
+# starts it and never reads this machine's installation file (the operator's decision i, phase 5 step 1); runfile.registry reads it,
+# and so do two functions that fall back to it (named as `from m import f` gives m.f; a call through `m.f` after `import m` is not seen)
 FORBIDDEN_MODULES = {
-    "duck_nav": ("runfile.installation", "runfile.registry"),
+    "duck_nav": ("runfile.installation", "runfile.registry", "runfile.catalog.default_data", "runfile.index.default_index"),
 }
 
 # by importing module, each with its retiring RFC; none now (the last, Mission Control's duck adapter importing the duck's

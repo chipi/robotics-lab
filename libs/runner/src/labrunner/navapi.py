@@ -140,7 +140,8 @@ class GoalWatch:
 class NavRunner:
     def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
                  robot_socket: Path | None = None):
-        profile = robots.profile_source(robots.get().NAME)      # resolved first: a named version that does not exist refuses here
+        self.robot_name = robots.get().NAME                     # read once, at start: robots.get() exits on a bad name, a server must not
+        profile = robots.profile_source(self.robot_name)        # resolved first: a named version that does not exist refuses here
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null): Mission Control talks to the "
                              f"navigator API itself there (the robot's NAVIGATOR_API)")
@@ -153,7 +154,7 @@ class NavRunner:
         self.goals = 0
         self.route = {"checks": 0, "max": None}
         self.camera = CameraServer(host, host.sockets["camera"]).start()
-        robot = robot_socket or host.sockets["gate"]
+        robot = self.robot_socket = robot_socket or robots.gate_socket(host)     # the installation's gate, where Mission Control's is
         cmd = list(robots.get().NAVIGATOR_API) + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
                "--map", str(host.sockets["map"]), "--camera", str(self.camera.path), "--listen", str(self.sock),
                "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene] + \
@@ -212,7 +213,7 @@ class NavRunner:
             self._merge(self.goal.route)
         # the referee reads the profile again at each goal, from the one source the navigator reads it from (the installation's
         # version, or the robot's own): a version chosen since applies to both from this goal (the operator's decision e)
-        judge = robots.read_profile(registry.profile_file(robots.get().NAME), "sim")
+        judge = robots.read_profile(registry.profile_file(self.robot_name), "sim")   # errors are the caller's answer, never an exit
         reply = self.api("goal.start", p)
         if isinstance(reply, dict) and reply.get("run_key"):
             guardrails = (p.get("conditions") or {}).get("guardrails") or []
@@ -292,7 +293,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--listen", default="127.0.0.1:8061", help="host:port (loopback by default: the API has no login)")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
-    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the host file's gate socket)")
+    ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the installation's robots.<robot>.gate, where Mission Control reads it, "
+                    "else the host file's gate socket)")
     ap.add_argument("--client", default="lab-nav-server", help="the name the navigator takes the lease under")
     ap.add_argument("--data", type=Path, default=default_data(),
                     help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
@@ -309,7 +311,7 @@ def main() -> None:
     srv = Server((listen or "127.0.0.1", int(port)), runner)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # a terminate stops the navigator API too (runner.close)
     print(f"lab-nav-server: {args.listen}, the navigator API pid {runner.proc.pid}, robot "
-          f"{args.robot_socket or host.sockets['gate']}, camera {runner.camera.path}, runs in {args.data}", flush=True)
+          f"{runner.robot_socket}, camera {runner.camera.path}, runs in {args.data}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

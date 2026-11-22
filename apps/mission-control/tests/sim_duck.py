@@ -13,6 +13,7 @@ server), as the challenge judge is; the navigator API has no route to it (the la
 import argparse
 import json
 import math
+import os
 import shutil
 import socket
 import subprocess
@@ -25,7 +26,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import check, finish
+from common import check, finish, installation_file
 
 from labrunner.gate import Proxy
 import simhost
@@ -39,7 +40,7 @@ REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--only", help="comma separated: point, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
+ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 only = set(ap.parse_args().only.split(",")) if ap.parse_args().only else None
 
@@ -84,6 +85,15 @@ def fresh_sim():
     proxy.start()
 
 
+# the test's own installation (phase 5 step 1): the duck registered by its file, so the runner starts the duck's navigator with the
+# duck's own Python, and nothing of the duck is installed beside Mission Control; this machine's installation is not read
+# The duck runs on this machine's version store (seeded with its own profile as version 1), so the profile scenario saves a version
+# through Mission Control and the next goal's navigator and referee both run it
+from runfile.profilestore import Store  # noqa: E402
+STORE = tmp / "inst-state" / "profiles"
+Store(STORE).seed("duck", REPO / "robots" / "duck" / "profile.json")
+os.environ["ROBOTICS_LAB_INSTALLATION"] = str(installation_file(tmp / "installation.json", {"duck": {"profile": str(STORE / "duck")}},
+                                                                state=str(tmp / "inst-state")))
 clean = [True]
 fresh_sim()
 navlog = open(tmp / "nav-server.log", "w")
@@ -91,7 +101,7 @@ nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", "--listen
                              "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
 wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
-# a pointer to the duck's profile (phase 5 step 1): the addresses are this test's own, so this machine's installation file is not read
+# a pointer to the duck's profile (phase 5 step 1): the addresses are this test's own
 FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
         "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
                     "observatory": "http://127.0.0.1:8070"}}
@@ -154,6 +164,33 @@ try:
         rec = next((p for _, kind, p in mcapio.read(run_dir) if kind == "run"), None)
         check("the Observatory run carries the goal run (id and name) in its record", rec is not None and rec.get("goal_run", {}).get("id") == run["id"]
               and rec["goal_run"]["name"] == "ad-hoc point", rec)
+
+    def runner_json(run):
+        """lab-nav-server's record of a goal: the profile it judged by, and the one the navigator said it runs."""
+        p = tmp / "nav" / run["run_key"].rsplit("/", 1)[-1] / "runner.json"
+        wait_for(p.exists, 20)
+        return json.loads(p.read_text()) if p.exists() else {}
+
+    if wanted("profile"):
+        print("\n--- profile versions, live", flush=True)
+        v2 = json.loads((STORE / "duck" / "1.json").read_text())
+        v2["locomotion"]["why"] = "sim_duck: a version saved while Mission Control runs"     # a note: a new identity, no new behaviour
+        saved = call("POST", "/robots/duck-sim/profile", {"profile": v2}).get("saved") or {}
+        check("Mission Control saves a version while it runs: version 2, from the next goal", saved.get("version") == 2, saved)
+        for want_v in (2, 1):
+            if want_v == 1:
+                check("going back to version 1 through Mission Control", call("PUT", "/robots/duck-sim/profile/current", {"version": 1})
+                      .get("profile", {}).get("current") == 1)
+            # what is checked is what both sides read at goal.start; the goal itself may end refused ("no path on the map": after the
+            # point scenario alone the map has no route there, seen 2026-11-22), which is the navigator's to say, not this check's
+            run = start({"kind": "point", "params": {"x": 0.6, "y": 0.0}})
+            end = finished(run["id"], 120)
+            rj = runner_json(run)
+            judge, theirs = rj.get("judge_profile") or {}, rj.get("navigator_profile") or {}
+            check(f"must fail: the goal after version {want_v} is chosen: the navigator runs it and the referee judges by it, one checksum",
+                  end is not None and judge.get("version") == want_v and theirs.get("version") == want_v
+                  and judge.get("checksum") == theirs.get("checksum"), (end and (end["state"], end["reason"]), judge, theirs))
+        clean[0] = False
 
     def stands_still():
         a = body.pose()

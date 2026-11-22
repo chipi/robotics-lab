@@ -2,12 +2,26 @@
 on them. Nothing here touches a real robot or the simulator."""
 
 import copy
+import json
 import sys
+from pathlib import Path
 
 from mission_control.core import MissionControl, TICK_S
 from mission_control.robots import RobotConfig
 
 failures: list = []
+# the duck's registration (phase 5 step 1): Mission Control has no robot's package installed, so a test names the duck by its file
+DUCK_REGISTRATION = Path(__file__).resolve().parents[3] / "robots" / "duck" / "registration.json"
+
+
+def installation_file(path: Path, robots: dict | None = None, **top) -> Path:
+    """A test's own installation file at `path`: the duck registered by its file, each robot's other settings merged in, and the
+    top-level keys given (state, observatory, ...). This machine's installation is never read by a test."""
+    rs = {"duck": {"registration": str(DUCK_REGISTRATION)}}
+    for name, extra in (robots or {}).items():
+        rs.setdefault(name, {}).update(extra)
+    path.write_text(json.dumps({"installation": 1, **top, "robots": rs}))
+    return path
 
 
 def check(name, cond, detail=""):

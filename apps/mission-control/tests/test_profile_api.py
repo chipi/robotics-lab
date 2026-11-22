@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import FAKE_FILE, check, finish
+from common import FAKE_FILE, check, finish, installation_file
 
 from mission_control.api import serve
 from mission_control.core import MissionControl
@@ -33,8 +33,7 @@ inst = tmp / "installation.json"
 
 
 def write_installation(profile):
-    robots = {"duck": {"profile": str(profile)}} if profile else {}
-    inst.write_text(json.dumps({"installation": 1, "state": str(STATE), "robots": robots}))
+    installation_file(inst, {"duck": {"profile": str(profile)}} if profile else {}, state=str(STATE))
 
 
 write_installation(None)

@@ -276,16 +276,20 @@ def read_csv(path: Path) -> tuple:
     return kinds, rows
 
 
+
+class CsvImportError(ValueError):
+    """An nxt-web recording that cannot be imported, with the reason (a command turns it into its exit message)."""
+
 def import_csv(csv_path: Path, data: Path, scene: str = SCENE, say=print, tz: str | None = None, sprocket: float | None = None,
                track: float | None = None, started_at_ns: int | None = None, config_path: Path | None = None) -> Path:
     """One nxt-web recording (run-YYYYMMDD-HHMMSS.csv) into the data folder as the run `nxt/<scene>/<name>`; its path."""
     csv_path = Path(csv_path)
     if not csv_path.is_file():
-        raise SystemExit(f"no {csv_path}")
+        raise CsvImportError(f"no {csv_path}")
     try:
         key = keys.make_key(ROBOT, scene, csv_path.stem.lower())
     except ValueError as e:
-        raise SystemExit(f"cannot import {csv_path}: {e}") from None
+        raise CsvImportError(f"cannot import {csv_path}: {e}") from None
     out_dir = keys.run_dir(data, key)
     kinds, rows = read_csv(csv_path)
     old = read_old_mcap(csv_path.with_suffix(".mcap")) if csv_path.with_suffix(".mcap").exists() else {"state": [], "events": [], "config": None}
@@ -303,7 +307,7 @@ def import_csv(csv_path: Path, data: Path, scene: str = SCENE, say=print, tz: st
         cfg_source = cfg_path.name
     geometry = geometry_from(cfg, cfg_source, sprocket, track)
     if geometry is None and (sprocket is not None or track is not None):
-        raise SystemExit("both --sprocket-diameter and --track-width are needed, and above zero")
+        raise CsvImportError("both --sprocket-diameter and --track-width are needed, and above zero")
     logs = [e for p in ("events.jsonl", "events-fake.jsonl") for e in read_events_log(csv_path.parent / p)]
 
     named = time_in_name(csv_path.name)
@@ -334,7 +338,7 @@ def import_csv(csv_path: Path, data: Path, scene: str = SCENE, say=print, tz: st
     try:
         rec = Recorder(out_dir, run)
     except WriterBusy as e:
-        raise SystemExit(f"cannot import {csv_path}: {e}") from None
+        raise CsvImportError(f"cannot import {csv_path}: {e}") from None
     header(rec, geometry)
     odom = Odometry(geometry) if geometry else None
     pending = iter(events)

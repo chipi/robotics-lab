@@ -2,20 +2,24 @@
 blocks beside it, and the load-time checks. The shipped files (the fake, the simulated duck, the NXT) are loaded as they are.
 Run: cd apps/mission-control && uv run python tests/test_robotfile.py"""
 
+import atexit
 import copy
 import json
+import shutil
 import os
 import tempfile
 from pathlib import Path
 
-from common import FAKE_FILE, check, finish, robot_file
+from common import FAKE_FILE, check, finish, installation_file, robot_file
 
 from mission_control.robots import ConfigError, RobotConfig, load_robot_files
 from runfile import installation
 
 CONTROL = Path(__file__).resolve().parents[1]
-# the duck's file points at its profile: the robot's own here, whatever this machine's installation file names
-os.environ[installation.ENV] = str(Path(tempfile.gettempdir()) / "robotfile-test-no-installation.json")
+# the duck's file points at its profile: the robot's own here (registered by its file), whatever this machine's installation names
+INST_DIR = Path(tempfile.mkdtemp(prefix="robotfile-"))
+atexit.register(shutil.rmtree, INST_DIR, True)
+os.environ[installation.ENV] = str(installation_file(INST_DIR / "installation.json"))
 
 
 def refused(**over):

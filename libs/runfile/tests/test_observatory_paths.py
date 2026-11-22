@@ -25,7 +25,7 @@ check("no variable, no installation file: no data folder", default_data() is Non
 try:
     default_index()
     said = "an index"
-except SystemExit as e:
+except installation.NotNamed as e:
     said = str(e)
 check("must fail: no variable, no installation file: no index, and the error says where to name one",
       "OBSERVATORY_INDEX" in said and "none.json" in said, said)

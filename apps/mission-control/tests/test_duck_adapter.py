@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from common import check, finish
+from common import check, finish, installation_file
 
 from labrunner.gate import Proxy
 from mission_control.api import serve
@@ -166,8 +166,10 @@ class StubNav:
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-duck-"))
 atexit.register(shutil.rmtree, tmp, True)
-# no installation file: this machine's would point Mission Control at the real gate (each test names its own)
-os.environ[installation.ENV] = str(tmp / "no-installation.json")
+# the test's own installation, the duck registered by its file and nothing else: this machine's would point Mission Control at the
+# real gate, and the duck's package is not installed beside Mission Control
+BARE = installation_file(tmp / "bare-installation.json")
+os.environ[installation.ENV] = str(BARE)
 robotd = StubRobotd(tmp / "robotd.sock")
 proxy = Proxy(tmp / "gate.sock", tmp / "robotd.sock", takeover_names={"operator-laptop"}, log=tmp / "gate.jsonl", lease_s=10.0)
 proxy.start()
@@ -366,15 +368,14 @@ try:
     said = "accepted"
 except ConfigError as exc:
     said = str(exc)
-check("must fail: a gate named nowhere (no installation, no gate_socket) is an error saying where to name it",
-      "robots.duck.gate" in said and "no-installation.json" in said, said)
+check("must fail: a gate named nowhere (not in the installation, no gate_socket) is an error saying where to name it",
+      "robots.duck.gate" in said and "bare-installation.json" in said, said)
 
 store = Store(tmp / "inst-state" / "profiles")
 store.seed("duck", REPO_PROFILE)
-inst_file = tmp / "installation.json"
-inst_file.write_text(json.dumps({"installation": 1, "observatory": "http://obs.example:8070/", "state": str(tmp / "inst-state"),
-                                 "robots": {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
-                                                     "profile": str(tmp / "inst-state" / "profiles" / "duck")}}}))
+inst_file = installation_file(tmp / "installation.json", {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
+                                                                    "profile": str(tmp / "inst-state" / "profiles" / "duck")}},
+                              observatory="http://obs.example:8070/", state=str(tmp / "inst-state"))
 os.environ[installation.ENV] = str(inst_file)
 a = DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}))
 check("with an installation file: the gate, the navigator and the Observatory are its",
@@ -403,5 +404,5 @@ check("must fail: a navigator that runs another version than Mission Control rea
 note = a._goal_started({"run_key": "k", "profile": None})
 check("a store that breaks between goals is said, and the last version read stays", note is not None and "could not read" in note
       and a.profile.meta["version"] == 2, note)
-os.environ[installation.ENV] = str(tmp / "no-installation.json")
+os.environ[installation.ENV] = str(BARE)
 finish("test_duck_adapter")

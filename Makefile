@@ -65,7 +65,7 @@ nxt-sync: ## Create/refresh the NXT project's venv from its lock (uv)
 	@cd $(NXT_DIR) && uv sync --frozen && echo "nxt-sync PASS"
 
 .PHONY: control-sync
-control-sync: ## Create/refresh Mission Control's venv from its lock (uv; the gate comes from the duck package, a path source)
+control-sync: ## Create/refresh Mission Control's venv from its lock (uv; the gate and the run format are path sources, no robot's package)
 	@cd $(CONTROL_DIR) && uv sync --frozen && echo "control-sync PASS"
 
 .PHONY: duck-sync observatory-sync libs-sync test-libs
@@ -149,7 +149,7 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
 	@log=$$(mktemp); \
-	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath $(DUCK_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/worldmodel)/src:$(abspath libs/simhost)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
+	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/test_page.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/test_page.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/test_page.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log
 	@echo "test-control-page PASS"
 
@@ -275,7 +275,7 @@ sim-gate-scenarios: duck-sync ## NOT in CI: RFC-0017 step 3 on the real simulato
 	cd $(DUCK_DIR) && .venv/bin/python sim/probes/gate_scenarios.py
 
 .PHONY: sim-duck
-sim-duck: control-sync ## NOT in CI: Mission Control on the real simulator: the gate, lab-nav-server and the real navigator behind the API (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
+sim-duck: control-sync duck-sync ## NOT in CI: Mission Control on the real simulator: the gate, lab-nav-server and the real navigator behind the API, the duck found by its registration file and run by its own environment (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
 	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_duck.py $(ARGS)
 
 .PHONY: control-run

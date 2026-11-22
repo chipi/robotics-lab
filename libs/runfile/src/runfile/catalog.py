@@ -31,11 +31,18 @@ FOLLOW_EVERY_S = 0.25      # how often the follower looks at the live runs: the 
 FINAL = ("ended", "stopped", "broken")
 
 
+def data_from_env() -> Path | None:
+    """$OBSERVATORY_DATA, else None: the data folder as a navigator may know it (it never reads the installation file, the operator's
+    decision i; the runner hands it --data)."""
+    v = env.get("DATA", "").strip()
+    return Path(v) if v else None
+
+
 def default_data() -> Path | None:
     """The lab's data folder: $OBSERVATORY_DATA, else the installation file's `data` (phase 5 step 1), else None."""
-    v = env.get("DATA", "").strip()
-    if v:
-        return Path(v)
+    v = data_from_env()
+    if v is not None:
+        return v
     inst = installation.load(required=False)
     return inst.data if inst is not None else None
 
@@ -179,7 +186,7 @@ class Catalog:
     def __init__(self, data: Path | None = None, index: Path | None = None, cache_mb: float | None = None):
         data = Path(data) if data else default_data()
         if data is None:
-            raise SystemExit("no data folder: set OBSERVATORY_DATA or pass --data")
+            raise installation.NotNamed("no data folder: set OBSERVATORY_DATA, pass --data, or name `data` in the installation file")
         self.data = data
         for sub in ("runs", "scenes"):
             try:

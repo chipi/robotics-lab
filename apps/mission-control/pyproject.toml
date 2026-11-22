@@ -4,14 +4,22 @@ version = "0.1.0"
 description = "Mission Control (RFC-0014): one API for every robot, goals, sites and areas; every robot behind the gate of RFC-0017"
 requires-python = ">=3.10"
 dependencies = [
-    "duck-lab",
     "robotgate",
+    "runfile",
     "mcp>=2.3.0",
+]
+
+# No robot's package (phase 5 step 1, the operator's decision a): a robot is found by its registration file, named in the installation
+# file. The tests drive the real gate proxy and the simulator's host, so the runner and the host library are theirs only.
+[dependency-groups]
+dev = [
+    "labrunner",
+    "simhost",
 ]
 
 # The gate (RFC-0017) is a library (libs/gate), a path source like the run format, so there is one copy of the rules.
 [tool.uv.sources]
-duck-lab = { path = "../../robots/duck", editable = true }
+labrunner = { path = "../../libs/runner", editable = true }
 robotgate = { path = "../../libs/gate", editable = true }
 runfile = { path = "../../libs/runfile", editable = true }
 simhost = { path = "../../libs/simhost", editable = true }

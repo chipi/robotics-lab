@@ -55,6 +55,16 @@ def sim_dir(name: str | None = None) -> Path:
     return Path(r.SIM)
 
 
+def gate_socket(host, name: str | None = None) -> Path:
+    """The robot's gate socket, from one source (the second review's finding 5): the installation's `robots.<name>.gate` when it
+    names one, which is where Mission Control reads it, else the host file's. lab-gate listens there and lab-nav-server drives through
+    it, so the gate, the runner and Mission Control meet at one path; a stale second copy can no longer send a STOP elsewhere."""
+    from runfile import installation
+    inst = installation.load(required=False)
+    r = inst.robot(get(name).NAME) if inst is not None else None
+    return r.gate if r is not None and r.gate is not None else Path(host.sockets["gate"])
+
+
 def _resolve(name: str | None) -> tuple:
     """(the installation's source or None, the file) for a robot, resolved once in this process."""
     name = get(name).NAME

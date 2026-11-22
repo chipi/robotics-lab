@@ -231,35 +231,6 @@ wheels = [
 ]
 
 [[package]]
-name = "duck-lab"
-version = "0.1.0"
-source = { editable = "../../robots/duck" }
-dependencies = [
-    { name = "labrunner" },
-    { name = "mcap" },
-    { name = "robotgate" },
-    { name = "runfile" },
-    { name = "simhost" },
-    { name = "worldmodel" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "labrunner", editable = "../../libs/runner" },
-    { name = "mcap", specifier = ">=1.2" },
-    { name = "robotgate", editable = "../../libs/gate" },
-    { name = "runfile", editable = "../../libs/runfile" },
-    { name = "simhost", editable = "../../libs/simhost" },
-    { name = "worldmodel", editable = "../../libs/worldmodel" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "playwright", specifier = ">=1.65.2" },
-    { name = "rerun-sdk", specifier = ">=0.39.0" },
-]
-
-[[package]]
 name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -547,16 +518,28 @@ name = "mission-control"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "duck-lab" },
     { name = "mcp" },
     { name = "robotgate" },
+    { name = "runfile" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "labrunner" },
+    { name = "simhost" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "duck-lab", editable = "../../robots/duck" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "robotgate", editable = "../../libs/gate" },
+    { name = "runfile", editable = "../../libs/runfile" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "labrunner", editable = "../../libs/runner" },
+    { name = "simhost", editable = "../../libs/simhost" },
 ]
 
 [[package]]

@@ -251,3 +251,14 @@ review"). The build, adjusted:
 5. **A runner that works without the truth**, before step 6; the gate protocol's version with
    step 4's "who holds the robot".
 6. Step 6; step 7 (retention) when convenient, out of the sequence.
+
+**Where it stands (2026-11-22, after the second review).** Items 1 and 2 are done. Step 1 is built
+(phase 5 step 1, parts 1 to 10), and the second review was answered with the operator's
+decisions, each built: robots registered by a file the installation names (Mission Control and
+the runner have no robot's package installed); the checksum over the profile as stored; the
+referee judging by the version the navigator runs; whole-number state streams, refused by the
+gate otherwise; the navigator never reading the installation; one source for the gate's socket;
+the forget rule counting only sight lines mapd has mapped (K45). What each is and how it was
+proven is in [the design](../wip/PHASE5-STEP1-DESIGN.md); what is still open is in
+[the known issues](../wip/KNOWN-ISSUES.md) (K46: inventory goals ending trapped). Next is item 3:
+one navigator contract and the apartment out of the runner.

@@ -177,7 +177,7 @@ try:
 
     real_watch, navapi.GoalWatch = navapi.GoalWatch, Watch
     runner = navapi.NavRunner.__new__(navapi.NavRunner)
-    runner.goal, runner.goals, runner.route = None, 0, {"checks": 0, "max": None}
+    runner.goal, runner.goals, runner.route, runner.robot_name = None, 0, {"checks": 0, "max": None}, "rover"
     answer = {"checksum": sum1, "version": 1}
 
     def api(method, params=None):
@@ -211,6 +211,23 @@ try:
 finally:
     robots.get = real_get
     robots._resolved.clear()
+    os.environ.pop(installation.ENV, None)
+
+# the gate's socket has one source (the second review's finding 5): the installation's, where Mission Control reads it, else the host's
+robots.get = lambda name=None: fake
+try:
+    sim_host = types.SimpleNamespace(sockets={"gate": tmp / "host-gate.sock"})
+    os.environ[installation.ENV] = str(tmp / "installation-none.json")
+    check("no installation: the gate is the host file's", robots.gate_socket(sim_host) == tmp / "host-gate.sock")
+    (tmp / "installation-gate.json").write_text(json.dumps({"installation": 1, "robots": {"rover": {"gate": str(tmp / "inst-gate.sock")}}}))
+    os.environ[installation.ENV] = str(tmp / "installation-gate.json")
+    check("must fail: the installation names the gate: lab-gate and lab-nav-server use it, not the host file's (one path with "
+          "Mission Control's)", robots.gate_socket(sim_host) == tmp / "inst-gate.sock", robots.gate_socket(sim_host))
+    (tmp / "installation-nogate.json").write_text(json.dumps({"installation": 1, "robots": {"rover": {"navigator": "127.0.0.1:9"}}}))
+    os.environ[installation.ENV] = str(tmp / "installation-nogate.json")
+    check("the robot in the installation with no gate named: the host file's", robots.gate_socket(sim_host) == tmp / "host-gate.sock")
+finally:
+    robots.get = real_get
     os.environ.pop(installation.ENV, None)
 
 # the truth guard judges with the goal's profile: its footprint and fall height

@@ -374,7 +374,8 @@ class Proxy:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
-    ap.add_argument("--listen", type=Path, help="the gate's socket: what our clients connect to (default: the host file's gate)")
+    ap.add_argument("--listen", type=Path, help="the gate's socket: what our clients connect to (default: the installation's "
+                    "robots.<robot>.gate, where Mission Control reads it, else the host file's gate)")
     ap.add_argument("--upstream", type=Path, help="robotd's socket (default: the host file's robot)")
     ap.add_argument("--takeover-names", type=Path, help="file of client names that may take the robot from its holder, one per line")
     ap.add_argument("--log", type=Path, help="the gate's jsonl log (RFC-0017 §3.6)")
@@ -382,8 +383,9 @@ def main() -> None:
     args = ap.parse_args()
     if args.listen is None or args.upstream is None:
         import simhost
+        from labrunner import robots
         sim = simhost.load(args.host)
-        args.listen = args.listen or sim.sockets["gate"]
+        args.listen = args.listen or robots.gate_socket(sim)
         args.upstream = args.upstream or sim.sockets["robot"]
     proxy = Proxy(args.listen, args.upstream, takeover_names=load_names(args.takeover_names) if args.takeover_names else (),
                   log=args.log, lease_s=args.lease_s)

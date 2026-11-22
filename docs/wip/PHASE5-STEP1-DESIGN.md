@@ -235,4 +235,28 @@ migration, and smaller debts. It also listed decisions not written down. The ope
   `remote` and `lab-nav-server`) leaves out the host's and the installation's variables
   (`test_profile_source`); `scripts/check_boundaries.py` `FORBIDDEN_MODULES` refuses
   `runfile.installation` and `runfile.registry` (which reads it) in the duck's navigator
-  (`test_check_boundaries`). Both mutants are killed.
+  (`test_check_boundaries`). Both mutants are killed. *Found after:* the navigator's run log
+  (`nav/runlog.py`) still reached the installation through `runfile.catalog.default_data`, which
+  falls back to it; it now reads `$OBSERVATORY_DATA` only (`catalog.data_from_env`), and
+  `FORBIDDEN_MODULES` also refuses `catalog.default_data` and `index.default_index` there (the
+  check sees `from m import f`; a call through `m.f` after `import m` it does not see).
+
+## Part 10: what the operator's "fix it all" closed (2026-11-22)
+
+- **(f) The gate's socket has one source** (the second review's finding 5, not among the
+  decisions asked; its own fix taken). `labrunner.robots.gate_socket`: the installation's
+  `robots.<robot>.gate` when named, which is where Mission Control reads it, else the host file's.
+  `lab-gate` listens there and `lab-nav-server` drives through it (`test_profile_source`, one
+  mutant killed).
+- **Mission Control has no robot's package** (the operator's go, after decision a). `duck-lab` is
+  gone from its dependencies and its lock (no other package moved); the runner and the host
+  library are its tests' only (a `dev` group). Its tests name the duck by its registration file
+  (`tests/common.py` `installation_file`), and `sim_duck` runs the duck's navigator with the duck's
+  own Python. The image holds `libs/runfile` and `libs/gate` only (built and served the fake robot
+  on a test tag, then removed); a duck in the image needs an installation file and the duck's
+  registration and profile mounted.
+- **The libraries raise, the commands exit.** `runfile` had `SystemExit` in `index.default_index`,
+  `Catalog` and the NXT import; they raise `installation.NotNamed` and `nxt.CsvImportError`, and
+  the Observatory's command line turns them into its exit message. `lab-nav-server` reads the
+  robot's name once at start, so a goal's profile error is the caller's answer, never an exit out
+  of the request handler.

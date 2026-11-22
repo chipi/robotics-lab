@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from runfile import keys
-from runfile.catalog import default_data
+from runfile.catalog import data_from_env
 from runfile.adapters.duck import DuckLog, ROBOT
 from runfile.mcapio import Recorder, WriterBusy, new_run
 
@@ -122,7 +122,7 @@ def add_args(ap) -> None:
 
 def open_from_args(args, default_name: str, kind: str, out_dir: Path | None, evaluation: bool = False) -> RunLog | None:
     """The run log the command line asks for, or None (no data folder given); a run that exists is an exit, not an overwrite."""
-    data = args.miniview_data or default_data()
+    data = args.miniview_data or data_from_env()        # never the installation file's: the navigator does not read it (decision i)
     if data is None:
         print("no miniview data folder (--miniview-data or OBSERVATORY_DATA): only ticks.jsonl is written", file=sys.stderr)
         return None

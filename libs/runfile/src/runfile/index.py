@@ -23,7 +23,7 @@ from runfile import env, installation
 
 def default_index() -> Path:
     """The index this machine uses: $OBSERVATORY_INDEX, else the installation file's `index` (phase 5 step 1, K44). No
-    machine's path is built in: naming neither is an error saying where to name it."""
+    machine's path is built in: naming neither raises installation.NotNamed, saying where to name it."""
     v = (env.get("INDEX") or "").strip()
     if v:
         return Path(v)
@@ -31,7 +31,7 @@ def default_index() -> Path:
     if inst is not None and inst.index is not None:
         return inst.index
     where = inst.source if inst is not None else installation.where()
-    raise SystemExit(f"no index: set OBSERVATORY_INDEX, or name `index` in {where} (the installation file)")
+    raise installation.NotNamed(f"no index: set OBSERVATORY_INDEX, or name `index` in {where} (the installation file)")
 
 SCHEMA = """
 create table if not exists scenes (id text primary key, name text, kind text, json text);

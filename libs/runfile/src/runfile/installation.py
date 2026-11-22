@@ -33,6 +33,11 @@ class InstallationError(ValueError):
     """The installation file is missing or does not describe an installation."""
 
 
+class NotNamed(LookupError):
+    """A folder or file this machine must name (by a variable or in the installation file) and names nowhere; the message says where
+    to name it. A library raises it; a command turns it into its exit message."""
+
+
 def _path(v) -> Path:
     return Path(os.path.expanduser(str(v)))
 
