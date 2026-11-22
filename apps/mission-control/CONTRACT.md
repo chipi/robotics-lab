@@ -39,9 +39,19 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | `PUT /api/v1/robots/{id}/site` | `{site}` (an id, or null): a robot is at one site at a time; refused while a goal run holds it |
 | `GET /api/v1/robots/{id}/map` | the robot's map, `{kind: "occupancy_grid", resolution_m, origin, width, height, data, frame, version}` with data -1 unknown, 0 free, 100 occupied; `404 no_map` when its capabilities have none |
 | `GET /api/v1/robots/{id}/sighting` | the latest camera record (ADR-0019): `pose`, `hfov_deg`, `range_m`, `seen[]` with x ahead and y left of the robot; `404 no_recogniser` |
+| `GET /api/v1/robots/{id}/profile` | the robot's profile on this machine (phase 5 step 1, `profiles.py`): `running {path, checksum}` (the file a goal started now runs), `current`, `versions [{version, checksum, current}]`, `writable` and `why_not`, `profile` (the running file, whole); `404 no_profile` for a robot file that holds the robot itself |
+| `POST /api/v1/robots/{id}/profile` | `{profile}`, the whole profile: validated, saved as the next version of the store under the installation's `state` folder and made current (the store seeded with the robot's own file first when empty); `201 {saved {version, checksum, applies}}`. It runs from the next goal. `409 profile_not_writable` when the installation would not run it (no `state`, or `robots.<robot>.profile` is not the store's folder for the robot), saying what to set; nothing is written. `422 profile`: invalid, or the same as the current version |
+| `PUT /api/v1/robots/{id}/profile/current` | `{version}`: an existing version made current again (going back), from the next goal |
+| `GET /api/v1/robots/{id}/profile/export?version=` | one version (default the current) as `{export, robot, version, checksum, profile}`, to import on another machine |
+| `POST /api/v1/robots/{id}/profile/import` | `{export}`: the checksum checked against the profile (`422 profile` when it does not match, nothing written), saved as the next version and made current; one with a checksum already in the store is not saved twice |
+| `GET /api/v1/robots/{id}/profile/diff?a=&b=[&notes=1]` | `{changes [{path, a, b}]}`, leaf by leaf; `measured` and `why` only with `notes` |
 | `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; a command lasts the robot's deadman time, so a driver repeats it |
 | `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is true when the robot answered `robot.stop` |
 | `POST /api/v1/stop` | every robot at once, each reported, a silent one after 3 s: `{robots: [...], all_confirmed}` |
+
+Mission Control reads a pointer robot's factsheet, control, capabilities, guardrails and rates once,
+at start: a version saved since changes what the navigator runs and the poses' scale from the next
+goal, and what `GET /robots/{id}` shows only after Mission Control restarts.
 
 **`online`** is a measured fact: the last answer from the robot was within the robot file's
 `online_after_s`. It is never a flag the adapter sets. A robot that has not answered since start-up
@@ -327,22 +337,35 @@ between Mission Control and the simulator, both the runner's (`libs/runner`, RFC
   and the guardrails only the truth can check (`contact`, `fall`, `drop_clearance`, the robot inside
   a `no_go_area`) are the runner's.
 
-Adapter options: `gate_socket`, `navigator` (host:port), `mapd_socket`, `observatory` (the base of
-the Watch links), `calibration`. The state is built from robotd's `robot.subscribe` stream (robotd
-has no `robot.state` request), the map is mapd's grid in the site frame, and
-`GET /robots/{id}/sighting` is `404 no_sighting` (the camera runs with a goal, and its sightings
-are in the Observatory run).
+A `duck-sim` robot file is a pointer to the robot's profile (`robot`, `variant`; see Robot files).
+Adapter options, each optional: `gate_socket`, `map_socket` (mapd's), `navigator` (host:port),
+`observatory` (the base of the Watch links). An address the robot file names is used as it is; one
+it does not name is this machine's installation file's (`runfile.installation`:
+`robots.<robot>.gate`, `robots.<robot>.map`, `robots.<robot>.navigator`, `observatory`), and the
+navigator's default is `127.0.0.1:8061`. A gate or a map named in neither is an error at start
+saying where to name it. The adapter imports neither the duck's navigator nor the host library. The
+state is built from robotd's `robot.subscribe` stream through the gate (robotd has no `robot.state`
+request); the gate streams each subscriber at its own rate, so Mission Control's 5 Hz never slows
+the navigator's. The map is mapd's grid in the site frame, read by Mission Control itself on the
+map's socket at the robot's `map_hz` (read through the runner instead, sim_duck's inventory passed
+1 run in 8 against 5 in 5; the cause is not found, `docs/wip/PHASE5-STEP1-DESIGN.md`); the
+poses and the map are scaled by the profile's `localisation.odometry.scale`, from the version read
+again at every goal's start (a version saved since applies from that goal). When `goal.start` says
+the navigator runs another version (another checksum) than Mission Control read, the goal run gets
+a decision saying so, with both versions. `GET /robots/{id}/sighting` is `404 no_sighting` (the
+camera runs with a goal, and its sightings are in the Observatory run).
 
 The navigator API, as the server speaks it:
 
 | Method | Meaning |
 | --- | --- |
-| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key}` at once, or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
+| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
 | `goal.status {decisions_since, objects_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, objects, objects_v}`; `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel` | the navigator stops, ends the run, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
-| `state`, `objects`, `inventory`, `map` | what the navigator sees now, while a run is active |
+| `state`, `objects`, `inventory` | what the navigator sees now, while a run is active |
+| `map` | the robot's map (mapd's grid): the active run's, or, between runs, read by the navigator API from mapd |
 
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as
 `seed`); `seed.areas` are the operator's outlines `{id, name, type, outline}`. A goal run's
@@ -384,6 +407,7 @@ the field went.
 | Field | What |
 | --- | --- |
 | `id`, `label`, `kind` | ours. `id` is lower case, digits and dashes (no `manufacturer` or `serialNumber` until a VDA robot is added); `kind` keys `robots/<kind>/` |
+| `robot`, `variant` | a pointer (phase 5 step 1): the robot's registered name (`robotics_lab.robots`) and its profile's environment (default `real`). `kind`, `factsheet`, `control`, `capabilities`, `guardrails` and `rates` are then the profile's, from the version this machine runs (the installation's `robots.<robot>.profile`, else the robot's own file), and the file may not repeat them; `label` defaults to the profile's |
 | `adapter {type, call_timeout_s?, ...}` | ours: `fake`, `duck-sim`, `nxt-web`, and each one's options |
 | `factsheet.typeSpecification` | VDA: `seriesName`, `seriesDescription`, `mobileRobotKinematics` (`DIFFERENTIAL`, `OMNIDIRECTIONAL`, `THREE_WHEEL`, and **`LEGGED`, which is ours** and not in VDA), `localizationTypes` (VDA's list), `navigationTypes` (open) |
 | `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |

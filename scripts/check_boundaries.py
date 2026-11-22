@@ -64,11 +64,9 @@ TESTS_EXTRA = {
     "duck_lab": set(),
 }
 
-# for now, by importing module: Mission Control's duck adapter drives the navigator over its own client (nav.client,
-# nav.run.load_scale) and the host file; retired by phase 5 step 1 (RFC-0023, the architecture review of 2026-11-22)
-EXCEPTIONS = {
-    "mission_control.duck": {"duck_lab", "duck_nav", "simhost"},       # and the host file for its sockets (RFC-0021)
-}
+# by importing module, each with its retiring RFC; none now (the last, Mission Control's duck adapter importing the duck's
+# navigator and the host library, was retired by phase 5 step 1, RFC-0023)
+EXCEPTIONS: dict = {}
 
 # to be removed (each a knot cut by a later commit of the restructure)
 BASELINE = {}

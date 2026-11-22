@@ -1,35 +1,7 @@
 {
   "id": "duck-sim",
   "label": "Simulated duck",
-  "kind": "duck",
-  "adapter": {
-    "type": "duck-sim",
-    "navigator": "127.0.0.1:8061",
-    "observatory": "http://127.0.0.1:8070"
-  },
-  "factsheet": {
-    "typeSpecification": {
-      "seriesName": "Microduck",
-      "mobileRobotKinematics": "LEGGED",
-      "localizationTypes": ["NATURAL"],
-      "navigationTypes": ["FREELY_NAVIGATING"]
-    },
-    "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5},
-    "protocolFeatures": {"mobileRobotActions": []}
-  },
-  "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
-  "capabilities": {
-    "sensors": [],
-    "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed", "toilet", "bathtub", "desk"], "frame": "site"}],
-    "localisation": {"frame": "site", "how": "dock"},
-    "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
-    "navigator": {
-      "goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"],
-      "conditions": ["within_s"]
-    },
-    "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"],
-    "skills": [],
-    "description": "duck"
-  },
-  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}
+  "robot": "duck",
+  "variant": "sim",
+  "adapter": {"type": "duck-sim"}
 }

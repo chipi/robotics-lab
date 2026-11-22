@@ -40,6 +40,7 @@ NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--only", help="comma separated: point, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
+ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 only = set(ap.parse_args().only.split(",")) if ap.parse_args().only else None
 
 
@@ -58,7 +59,8 @@ def wait_for(cond, timeout, every=0.5):
 
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-sim-duck-"))
-atexit.register(shutil.rmtree, tmp, True)
+if not ap.parse_args().keep:
+    atexit.register(shutil.rmtree, tmp, True)
 print("working in", tmp, flush=True)
 data = tmp / "data"
 (data / "scenes" / "apartment").mkdir(parents=True)
@@ -89,21 +91,11 @@ nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", "--listen
                              "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
 wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
-FILE = {
-    "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
-    "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
-                "mapd_socket": str(HOST.sockets["map"]), "observatory": "http://127.0.0.1:8070"},
-    "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED"},
-                  "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}},
-    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
-    "capabilities": {
-        "sensors": [],
-        "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed"], "frame": "site"}],
-        "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
-        "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
-        "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"], "skills": [], "description": "the simulated duck"},
-    "rates": {"state_hz": 5.0, "map_hz": 1.0, "max_state_hz": 10.0},
-}
+# a pointer to the duck's profile (phase 5 step 1): the addresses are this test's own, so this machine's installation file is not read
+FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
+        "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
+                    "map_socket": str(HOST.sockets["map"]),
+                    "observatory": "http://127.0.0.1:8070"}}
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"
@@ -139,7 +131,7 @@ def start(goal, **extra):
 
 try:
     check("the duck is online through the gate", wait_for(lambda: robot()["online"], 30) is not None and robot()["status"]["pose"]["frame"] == "site", robot()["status"])
-    check("the map is mapd's, in the site frame", call("GET", "/robots/duck-sim/map")["map"]["kind"] == "occupancy_grid")
+    check("the map is mapd's, read by Mission Control itself, in the site frame", call("GET", "/robots/duck-sim/map")["map"]["kind"] == "occupancy_grid")
     call("POST", "/sites", {"name": "Home", "kind": "apartment"})
     call("PUT", "/robots/duck-sim/site", {"site": "home"})
 
@@ -188,7 +180,10 @@ try:
         print("\n--- cancel", flush=True)
         run = long_goal()
         t = time.monotonic()
-        end = call("POST", f"/goal-runs/{run['id']}/cancel")["run"]
+        reply = call("POST", f"/goal-runs/{run['id']}/cancel")
+        if "run" not in reply:
+            print("cancel answered", reply, "; the run was", run_of(run["id"]), flush=True)
+        end = reply["run"]
         check("cancel: the run is cancelled, the navigator stopped, the lease given back", end["state"] == "cancelled" and robot()["lock"]["holder"] is None
               and time.monotonic() - t < 12, (end["state"], end["reason"]))
         check("the robot stands (truth)", stands_still())
@@ -240,7 +235,10 @@ try:
         confirmed = [o for o in call("GET", "/sites/home/objects")["objects"] if o["confirmed"]]
         check("inventory: done, the confirmed objects listed by the operator's area, with the site's ids", end and end["state"] == "done" and listed
               and listed[0]["name"] == "Flat" and {o["id"] for o in listed[0]["objects"]} <= {o["id"] for o in confirmed}, end and (end["state"], end["reason"], end["result"]))
-        check("the Flat holds what is confirmed", len(listed[0]["objects"]) == len(confirmed) if listed else False, (listed, confirmed))
+        listed_ids = sorted(o["id"] for o in listed[0]["objects"]) if listed else []
+        missing = [(o["id"], o["kind"], round(o["x"], 2), round(o["y"], 2)) for o in confirmed if o["id"] not in listed_ids]
+        check("the Flat holds what is confirmed", len(listed_ids) == len(confirmed) if listed else False,
+              f"listed {len(listed_ids)}, confirmed {len(confirmed)}, not listed {missing}")
 
     if wanted("object"):
         print("\n--- go to an object", flush=True)

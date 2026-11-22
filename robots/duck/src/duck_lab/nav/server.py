@@ -438,6 +438,13 @@ class NavServer:
         finally:
             rpc.close()
 
+    def _map(self) -> dict:
+        rpc = Rpc(Path(self.sockets["map"]))         # its own connection: the goal's mapd connection is its navigator's alone
+        try:
+            return rpc.call("map.grid", {"res_m": 0.05})
+        finally:
+            rpc.close()
+
     def call(self, method: str, p: dict):
         if method == "ping":
             return {"ok": True, "goal_kinds": list(GOAL_KINDS)}
@@ -456,7 +463,9 @@ class NavServer:
             if run is not None and run.state not in TERMINAL:
                 run.cancel()
             return {"ok": True}
-        if method in ("state", "objects", "inventory", "map"):
+        if method == "map":
+            return self._map()                  # the robot's map, between goals too: its clients never open mapd themselves
+        if method in ("state", "objects", "inventory"):
             if run is None or run.nav is None or run.state in TERMINAL:
                 return {"error": "no goal is running"} if method != "objects" else {"objects": []}
             nav = run.nav
@@ -467,7 +476,6 @@ class NavServer:
             if method == "inventory":
                 with nav._sem_lock:
                     return nav.semantic.inventory(nav._map_raw)
-            return nav.mapd.call("map.grid", {"res_m": 0.05})
         raise KeyError(method)
 
     def start(self, spec: dict) -> dict:
@@ -489,7 +497,9 @@ class NavServer:
             except Exception as exc:                                # noqa: BLE001
                 return {"error": {"code": "start_failed", "message": f"{type(exc).__name__}: {exc}"}}
             self.run = run
-            return {"run_key": key}
+            meta = getattr(run.nav.profile, "meta", None) or {}
+            # the profile this goal runs, as its run records it: a client scaling the robot's poses checks it reads the same one
+            return {"run_key": key, "profile": {k: meta.get(k) for k in ("checksum", "version", "source")}}
 
 
 class Handler(socketserver.StreamRequestHandler):

@@ -14,7 +14,7 @@ from pathlib import Path
 from labrunner import remote, robots
 from labrunner.robots import ProfileSourceError, profile_source
 from runfile import installation
-from runfile.profilestore import Store
+from runfile.profilestore import Store, resolve
 
 failures = []
 
@@ -54,10 +54,12 @@ v2 = json.loads(own.read_text())
 v2["locomotion"]["cruise_mps"] = 0.25
 store.save("rover", v2)
 folder = tmp / "state" / "profiles" / "rover"
-check("the version store's folder named: its current version's file", profile_source("rover", inst({"rover": {"profile": str(folder)}}))
-      == folder / "2.json")
+check("the version store's folder named: the folder, handed on as it is (each run reads its current version then)",
+      profile_source("rover", inst({"rover": {"profile": str(folder)}})) == folder)
+check("the folder's current version, as a run reads it: version 2", resolve(folder) == folder / "2.json")
 store.use("rover", 1)
-check("going back in the store changes what runs", profile_source("rover", inst({"rover": {"profile": str(folder)}})) == folder / "1.json")
+check("going back in the store changes what the next run reads, with no runner restarted", resolve(folder) == folder / "1.json")
+check("a version's file named is read as it is", resolve(own) == own)
 
 
 def refused(i, why):

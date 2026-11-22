@@ -5,7 +5,9 @@ machine keeps its runs, its state and its services, and, per robot it runs, wher
     {"installation": 1,
      "data": "/work/robotics-lab/data", "index": "/work/robotics-lab/state/observatory/index.sqlite",
      "observatory": "http://127.0.0.1:8070", "state": "~/.local/state/robotics-lab",
-     "robots": {"duck": {"navigator": "127.0.0.1:8061", "profile": "~/.local/state/robotics-lab/profiles/duck/current.json"}}}
+     "robots": {"duck": {"navigator": "127.0.0.1:8061", "gate": "~/.cache/duck-sim/duck-a-gate.sock",
+                         "map": "~/.cache/duck-sim/duck-a-map.sock",
+                         "profile": "~/.local/state/robotics-lab/profiles/duck"}}}
 
 Robots are keyed by their registered name (the entry point `robotics_lab.robots`, labrunner.robots). Every key but `installation` is
 optional; a machine running no robot has `robots: {}`. Read from `--installation` where a command takes one, else
@@ -23,7 +25,7 @@ VERSION = 1
 ENV = "ROBOTICS_LAB_INSTALLATION"
 DEFAULT = Path("~/.config/robotics-lab/installation.json")
 KEYS = {"installation", "data", "index", "observatory", "state", "robots"}
-ROBOT_KEYS = {"navigator", "profile"}
+ROBOT_KEYS = {"navigator", "gate", "map", "profile"}
 
 
 class InstallationError(ValueError):
@@ -38,7 +40,9 @@ def _path(v) -> Path:
 class Robot:
     name: str
     navigator: str | None = None          # host:port of the robot's navigator API (Mission Control's address for it)
+    gate: Path | None = None              # the socket of the robot's gate (RFC-0017): Mission Control's way to the robot
     profile: Path | None = None           # the profile version this machine runs; None: the robot's own (repository) profile
+    map: Path | None = None               # the socket of the robot's map (mapd), read by Mission Control itself; None: via the navigator API
 
 
 @dataclass(frozen=True)
@@ -92,10 +96,17 @@ def parse(d, source: Path) -> Installation:
         nav = r.get("navigator")
         if nav is not None and not (isinstance(nav, str) and nav.rpartition(":")[2].isdigit()):
             raise bad(f"robots.{name}.navigator must be host:port, not {nav!r}")
+        gate = r.get("gate")
+        if gate is not None and not (isinstance(gate, str) and gate):
+            raise bad(f"robots.{name}.gate must be the path of the gate's socket")
         prof = r.get("profile")
         if prof is not None and not (isinstance(prof, str) and prof):
             raise bad(f"robots.{name}.profile must be a path")
-        robots[name] = Robot(name, nav, _path(prof) if prof else None)
+        mapd = r.get("map")
+        if mapd is not None and not (isinstance(mapd, str) and mapd):
+            raise bad(f"robots.{name}.map must be the path of the map's socket (mapd)")
+        robots[name] = Robot(name, nav, _path(gate) if gate else None, _path(prof) if prof else None,
+                             map=_path(mapd) if mapd else None)
     return Installation(source, _path(d["data"]) if "data" in d else None, _path(d["index"]) if "index" in d else None,
                         d.get("observatory"), _path(d["state"]) if "state" in d else None, robots)
 

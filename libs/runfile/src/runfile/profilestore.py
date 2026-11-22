@@ -113,8 +113,8 @@ class Store:
 
     def import_(self, robot: str, exported: dict) -> int:
         """An exported version saved here as the next version: its checksum checked against its profile first (a file changed on
-        the way is refused, nothing written). Returns the new version's number, or the existing one's when this store already has
-        a version with that checksum."""
+        the way is refused, nothing written), made current. Returns the new version's number, or the existing one's (made
+        current, nothing saved twice) when this store already has a version with that checksum."""
         if not isinstance(exported, dict) or exported.get("export") != EXPORT or not isinstance(exported.get("profile"), dict):
             raise StoreError(f"not a profile export (export {EXPORT}, with a profile)")
         try:
@@ -125,8 +125,22 @@ class Store:
             raise StoreError(f"the export's checksum {exported.get('checksum')} does not match its profile ({actual}): refused")
         for n in self.versions(robot):
             if checksum(self.read(robot, n)) == actual:
+                self.use(robot, n)
                 return n
         return self.save(robot, exported["profile"])
+
+
+def resolve(path: Path) -> Path:
+    """A profile path as a runner hands it on: a version's file as it is, or a robot's folder in a store: its current version's
+    file, read now (so a run that starts after a save runs the saved version)."""
+    path = Path(path)
+    if not path.is_dir():
+        return path
+    store = Store(path.parent)
+    n = store.current(path.name)
+    if n is None:
+        raise StoreError(f"{path}: no version yet (seed it from the robot's own profile)")
+    return store.path(path.name, n)
 
 
 def leaves(data, prefix: str = ""):

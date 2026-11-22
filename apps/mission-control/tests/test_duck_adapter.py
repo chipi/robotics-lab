@@ -1,11 +1,13 @@
-"""The simulated duck's adapter (RFC-0014 step 2) against stand-ins for the three processes behind it: a robotd, the real gate
-proxy in front of it (labrunner.gate), a mapd, and a navigator server that speaks the navigator API. No simulator:
+"""The simulated duck's adapter (RFC-0014 step 2) against stand-ins for the processes behind it: a robotd, the real gate
+proxy in front of it (labrunner.gate), and a navigator server that speaks the navigator API (its map included). No simulator:
 what is tested is Mission Control's side: the remote gate (lock, STOP, takeover are the gate's own), the state it builds from
 robotd's stream, the map, the navigator client (start, poll, decisions, objects, refusals, a server that goes away), the run key
-and the Watch link. The real navigator in the real simulator is sim_duck.py.
+and the Watch link; and (phase 5 step 1) the robot file as a pointer to the profile, the addresses from the installation file,
+the profile read again at each goal's start. The real navigator in the real simulator is sim_duck.py.
 Run: cd apps/mission-control && uv run python tests/test_duck_adapter.py"""
 
 import json
+import os
 import socket
 import socketserver
 import shutil
@@ -22,7 +24,10 @@ from common import check, finish
 from labrunner.gate import Proxy
 from mission_control.api import serve
 from mission_control.core import MissionControl
-from mission_control.robots import RobotConfig
+from mission_control.robots import ConfigError, RobotConfig
+from runfile import installation
+from runfile.profile import checksum
+from runfile.profilestore import Store
 
 
 def wait_for(cond, timeout=10.0, every=0.05):
@@ -101,7 +106,11 @@ class StubRobotd:
 
 
 class StubMapd:
-    def __init__(self, path: Path):
+    """mapd's map.grid, counted: the map Mission Control reads itself when the installation names the map's socket."""
+
+    def __init__(self, path: Path, grid: dict | None = None):
+        self.calls = 0
+        self.grid = grid or {"res_m": 0.05, "origin": [0.0, 0.0], "width": 2, "height": 1, "cells": "#."}
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(path))
         self.server.listen(4)
@@ -118,8 +127,8 @@ class StubMapd:
     def _serve(self, sock):
         for line in sock.makefile("r"):
             req = json.loads(line)
-            grid = {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"}
-            sock.sendall((json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": grid}) + "\n").encode())
+            self.calls += 1
+            sock.sendall((json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": self.grid}) + "\n").encode())
 
 
 class StubNav:
@@ -135,6 +144,7 @@ class StubNav:
         self.result = None
         self.reason = None
         self.key = "duck/apartment/mc1-20261118-120000"
+        self.profile = None                  # what goal.start says the goal runs (the navigator's calibration event)
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
         self.address = f"127.0.0.1:{self.server.server_address[1]}"
@@ -153,7 +163,7 @@ class StubNav:
                     if m == "goal.start":
                         stub.started.append(p)
                         result = {"error": {"code": "held", "message": "driven by script since 12:00", "holder": "script"}} \
-                            if stub.mode == "held" else {"run_key": stub.key}
+                            if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile}
                     elif m == "goal.status":
                         objs = stub.objects
                         stub.objects = None
@@ -178,27 +188,18 @@ class StubNav:
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-duck-"))
 atexit.register(shutil.rmtree, tmp, True)
+# no installation file: this machine's would point Mission Control at the real gate (each test names its own)
+os.environ[installation.ENV] = str(tmp / "no-installation.json")
 robotd = StubRobotd(tmp / "robotd.sock")
-mapd = StubMapd(tmp / "mapd.sock")
+mapd = StubMapd(tmp / "mapd.sock", {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"})
 proxy = Proxy(tmp / "gate.sock", tmp / "robotd.sock", takeover_names={"operator-laptop"}, log=tmp / "gate.jsonl", lease_s=10.0)
 proxy.start()
 nav = StubNav()
 
-FILE = {
-    "id": "duck-sim", "label": "Simulated duck", "kind": "duck",
-    "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": nav.address, "mapd_socket": str(tmp / "mapd.sock"),
-                "observatory": "http://127.0.0.1:8070"},
-    "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED"},
-                  "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}},
-    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
-    "capabilities": {
-        "sensors": [],
-        "recognisers": [{"name": "sim-camera", "kinds": ["fridge"], "frame": "site"}],
-        "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
-        "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
-        "guardrails": ["time_limit"], "skills": [], "description": "the simulated duck"},
-    "rates": {"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0},
-}
+FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
+        "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "map_socket": str(tmp / "mapd.sock"),
+                    "navigator": nav.address,
+                    "observatory": "http://127.0.0.1:8070"}}
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"
@@ -232,7 +233,13 @@ check("its state is in the page's shape: pose in the site frame, mode, flags, ba
       st["pose"]["frame"] == "site" and st["mode"] == "idle" and st["flags"]["fall"] is False and st["battery_pct"] == 63.0 and st["link"] == "duck-gate", st)
 check("the lock is the gate's own: free", robot()["lock"]["holder"] is None)
 m = call("GET", "/robots/duck-sim/map")["map"]
-check("the map is mapd's grid, in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
+check("the map is mapd's grid, read by Mission Control itself, in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
+n0, t0 = mapd.calls, time.monotonic()
+time.sleep(3.0)
+rate = (mapd.calls - n0) / (time.monotonic() - t0)
+check(f"the map is asked for at the robot's map_hz ({mc.robots['duck-sim'].cfg.rates['map_hz']:g} Hz), not every tick, while it does not "
+      f"change: {rate:.1f} requests/s",
+      rate <= 2.5 * mc.robots["duck-sim"].cfg.rates["map_hz"], rate)
 
 # the lock, over the gate's socket
 a = call("POST", "/robots/duck-sim/lock", {"client": "script"})["lock"]
@@ -328,29 +335,92 @@ srv.shutdown()
 srv.server_close()
 mc.close()
 
-# The robot's sockets come from the machine's host file (RFC-0021) when the robot file names none; named ones are kept.
-import os  # noqa: E402
-
+# Phase 5 step 1: the robot file is a pointer to the robot's profile; the addresses come from the installation file.
 from mission_control.duck import DuckAdapter  # noqa: E402
 
-host_file = tmp / "host.json"
-host_file.write_text(json.dumps({"host": 1, "kind": "pollen-duck-sim", "robot": "duck-b",
-                                 "pollen": {"microduck": "/p/m", "microduck_rl": "/p/rl"}, "state": str(tmp / "hoststate"),
-                                 "truth_port": 7801, "cargo_bin": "/c"}))
-was = os.environ.get("ROBOTICS_LAB_HOST")
-os.environ["ROBOTICS_LAB_HOST"] = str(host_file)
+REPO_PROFILE = Path(__file__).resolve().parents[3] / "robots" / "duck" / "profile.json"
+repo = json.loads(REPO_PROFILE.read_text())
+cfg = RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}})
+check("a pointer file's factsheet, capabilities and rates are the profile's (the robot's own file, no installation)",
+      cfg.kind == "duck" and cfg.factsheet == repo["factsheet"] and cfg.capabilities == repo["capabilities"]
+      and cfg.rates == repo["rates"] and cfg.label == repo["label"] and cfg.profile.meta["checksum"] == checksum(repo),
+      (cfg.kind, cfg.rates, cfg.profile.meta))
+
+
+def refused(raw, why):
+    try:
+        RobotConfig(raw)
+    except ConfigError as exc:
+        return why in str(exc), str(exc)
+    return False, "not refused"
+
+
+ok, why = refused({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}, "rates": {"state_hz": 9.0}},
+                  "come from the profile")
+check("must fail: a pointer file that repeats a block of the profile is refused (one copy of the robot)", ok, why)
+ok, why = refused({"id": "d", "robot": "goose", "adapter": {"type": "duck-sim"}}, "no robot 'goose' registered")
+check("a pointer to a robot not registered here is refused, naming the registered ones", ok, why)
+ok, why = refused({"id": "d", "robot": "duck", "variant": "moon", "adapter": {"type": "duck-sim"}}, "no variant 'moon'")
+check("a pointer to a variant the profile does not have is refused", ok, why)
 try:
-    a = DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim"}}))
-    check("a robot file with no sockets takes the host file's gate and map sockets",
-          str(a.gate_socket) == str(tmp / "hoststate" / "duck-b-gate.sock") and str(a.mapd_socket) == str(tmp / "hoststate" / "duck-b-map.sock"),
-          (a.gate_socket, a.mapd_socket))
-    b = DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock",
-                                                                         "mapd_socket": "/x/m.sock"}}))
-    check("... and one that names them keeps its own", str(b.gate_socket) == "/x/g.sock" and str(b.mapd_socket) == "/x/m.sock",
-          (b.gate_socket, b.mapd_socket))
-finally:
-    if was is None:
-        os.environ.pop("ROBOTICS_LAB_HOST", None)
-    else:
-        os.environ["ROBOTICS_LAB_HOST"] = was
+    DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock"}}))
+    said = "accepted"
+except ConfigError as exc:
+    said = str(exc)
+check("a duck-sim robot file that is not a pointer to the profile is refused", "points at its robot's profile" in said, said)
+try:
+    DuckAdapter(cfg)
+    said = "accepted"
+except ConfigError as exc:
+    said = str(exc)
+check("must fail: a gate named nowhere (no installation, no gate_socket) is an error saying where to name it",
+      "robots.duck.gate" in said and "no-installation.json" in said, said)
+try:
+    DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock"}}))
+    said = "accepted"
+except ConfigError as exc:
+    said = str(exc)
+check("must fail: a map named nowhere is an error saying where to name it (Mission Control reads the simulator's mapd itself)",
+      "robots.duck.map" in said and "map_socket" in said, said)
+
+store = Store(tmp / "inst-state" / "profiles")
+store.seed("duck", REPO_PROFILE)
+inst_file = tmp / "installation.json"
+inst_file.write_text(json.dumps({"installation": 1, "observatory": "http://obs.example:8070/", "state": str(tmp / "inst-state"),
+                                 "robots": {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
+                                                     "map": str(tmp / "inst-map.sock"),
+                                                     "profile": str(tmp / "inst-state" / "profiles" / "duck")}}}))
+os.environ[installation.ENV] = str(inst_file)
+a = DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}))
+check("with an installation file: the gate, the navigator and the Observatory are its",
+      str(a.gate_socket) == str(tmp / "inst-gate.sock") and a.nav_address == "127.0.0.1:9" and a.observatory == "http://obs.example:8070",
+      (a.gate_socket, a.nav_address, a.observatory))
+b = DuckAdapter(RobotConfig({"id": "d", "robot": "duck", "variant": "sim",
+                             "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock", "navigator": "127.0.0.1:7"}}))
+check("... and a robot file that names an address keeps its own", str(b.gate_socket) == "/x/g.sock" and b.nav_address == "127.0.0.1:7",
+      (b.gate_socket, b.nav_address))
+check("the profile is the installation's: the store's current version (1)", a.profile.meta["version"] == 1, a.profile.meta)
+stub_mapd = StubMapd(tmp / "inst-map.sock")
+m = a.map()
+check("with the map's socket named, Mission Control reads mapd itself: no load on the navigator API or its runner",
+      stub_mapd.calls == 1 and m["data"] == [100, 0] and str(a.map_socket) == str(tmp / "inst-map.sock"), (stub_mapd.calls, m["data"]))
+
+v2 = json.loads(REPO_PROFILE.read_text())
+old_scale = v2["variants"]["sim"]["localisation"]["odometry"]["scale"]
+odo = v2["variants"]["sim"]["localisation"]["odometry"]
+odo["scale"], odo["by_speed"]["0.3"] = 0.95, 0.951          # (the validator holds the scale to by_speed at cruise)
+store.save("duck", v2)
+check("a version saved after start is not read until a goal starts", a.scale == old_scale and a.profile.meta["version"] == 1, a.scale)
+note = a._goal_started({"run_key": "k", "profile": {"checksum": checksum(v2), "version": 2, "source": "given"}})
+check("at a goal's start the profile is read again: version 2's scale scales the poses from this run",
+      a.profile.meta["version"] == 2 and a.scale == v2["variants"]["sim"]["localisation"]["odometry"]["scale"] and note is None,
+      (a.profile.meta, a.scale, note))
+note = a._goal_started({"run_key": "k", "profile": {"checksum": checksum(repo), "version": 1, "source": "given"}})
+check("must fail: a navigator that runs another version than Mission Control reads is said, with both versions",
+      note is not None and "version 1" in note and "version 2" in note, note)
+(tmp / "inst-state" / "profiles" / "duck" / "current").write_text("9\n")
+note = a._goal_started({"run_key": "k", "profile": None})
+check("a store that breaks between goals is said, and the last version read stays", note is not None and "could not read" in note
+      and a.profile.meta["version"] == 2, note)
+os.environ[installation.ENV] = str(tmp / "no-installation.json")
 finish("test_duck_adapter")

@@ -13,6 +13,12 @@ and our own snake_case blocks beside it:
      "guardrails": [{"name": "max_speed", "mps": 0.4}],          # the robot's own, on every run (§3.4.8)
      "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
      "online_after_s": 2.0, "teams": ["pair"]}
+
+A robot with a profile (RFC-0020, phase 5 step 1) has a robot file that points at it instead: its registered name, the
+environment, the adapter; its kind, factsheet, control, capabilities, guardrails and rates are the profile's, from the version
+this machine runs (runfile.registry: the installation's, else the robot's own file), and the file may not repeat them:
+
+    {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}
 """
 
 import json
@@ -24,29 +30,70 @@ from collections import OrderedDict
 from pathlib import Path
 
 from robotgate import Gate, GateError, JsonlLog
+from runfile import registry
+from runfile.profile import FormatError, Profile, checksum, merge_variant, validate_profile
+from runfile.profilestore import StoreError
 
 from . import guardrails, robotfile
 from .errors import ApiError, conflict, invalid
 
-CAPABILITY_KEYS = {"sensors", "recognisers", "localisation", "map", "navigator", "guardrails", "skills", "description"}
 MOVED = {"lease_s": "control.lease_s", "takeover": "control.takeover"}   # fields of the first format, with where they went
-DEFAULT_RATES = {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}  # §3.2.2
 MAX_SESSIONS = 128
+FROM_PROFILE = ("kind", "factsheet", "control", "capabilities", "guardrails", "rates")   # a pointer file's blocks: the profile's
 
 
 class ConfigError(ValueError):
     pass
 
 
+def read_profile(robot: str, variant: str) -> Profile:
+    """The version of a robot's profile this machine runs now, in one environment; `meta` says which (checksum, version, path)."""
+    try:
+        path = registry.profile_file(robot)
+        raw = validate_profile(json.loads(path.read_text()))
+    except (LookupError, registry.ProfileSourceError, StoreError, FormatError, OSError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"robot {robot!r}: {exc}") from None
+    if variant not in raw.get("variants", {}):
+        raise ConfigError(f"robot {robot!r}: its profile has no variant {variant!r} (it has {sorted(raw.get('variants', {}))})")
+    profile = Profile(merge_variant(raw, variant), variant)
+    profile.meta = {"checksum": checksum(raw), "version": int(path.stem) if path.stem.isdigit() else None, "path": str(path)}
+    return profile
+
+
+def profile_of(raw: dict, variant: str, meta: dict) -> Profile:
+    """A profile not yet stored (one about to be saved), in one environment, as read_profile gives a stored one."""
+    if variant not in raw.get("variants", {}):
+        raise ConfigError(f"the profile has no variant {variant!r} (it has {sorted(raw.get('variants', {}))})")
+    profile = Profile(merge_variant(raw, variant), variant)
+    profile.meta = meta
+    return profile
+
+
 class RobotConfig:
-    def __init__(self, raw: dict):
+    def __init__(self, raw: dict, profile: Profile | None = None):
+        """`profile`: for a pointer file, this profile instead of the version this machine runs (a check before a save)."""
         if not isinstance(raw, dict):
             raise ConfigError("a robot file is a JSON object")
+        self.file = raw                     # the robot file as written: reload() builds the robot from it again
         extra = set(raw) - {"id", "label", "kind", "adapter", "factsheet", "control", "capabilities", "guardrails", "rates",
-                            "online_after_s", "teams"}
+                            "online_after_s", "teams", "robot", "variant"}
         if extra:
             hint = "".join(f"; {k} moved to {MOVED[k]}" for k in sorted(extra) if k in MOVED)
             raise ConfigError(f"unknown fields {sorted(extra)}{hint}")
+        self.robot, self.variant, self.profile = raw.get("robot"), raw.get("variant", "real"), None
+        if "variant" in raw and self.robot is None:
+            raise ConfigError(f"{raw.get('id')}: variant is the environment of the robot's profile: it needs robot")
+        if self.robot is not None:
+            if not isinstance(self.robot, str) or not isinstance(self.variant, str):
+                raise ConfigError(f"{raw.get('id')}: robot is a registered robot's name and variant an environment, both strings")
+            repeated = [k for k in FROM_PROFILE if k in raw]
+            if repeated:
+                raise ConfigError(f"{raw.get('id')}: {', '.join(repeated)} come from the profile of robot {self.robot!r}: "
+                                  f"remove them from the robot file (one copy of the robot)")
+            self.profile = profile if profile is not None else read_profile(self.robot, self.variant)
+            d = self.profile.data
+            raw = {**raw, "kind": d["kind"], "label": raw.get("label", d.get("label")),
+                   **{k: d[k] for k in FROM_PROFILE[1:] if d.get(k) is not None}}
         self.id = raw.get("id")
         if not isinstance(self.id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.id):
             raise ConfigError(f"id must be lower case letters, digits and dashes, got {self.id!r}")
@@ -61,8 +108,6 @@ class RobotConfig:
         if isinstance(caps, dict) and "drive" in caps:
             raise ConfigError(f"{self.id}: capabilities.drive moved: max_vx and max_vyaw are factsheet.physicalParameters.maximumSpeed "
                               "and maximumAngularSpeed, deadman_s is control.deadman_s")
-        if not isinstance(caps, dict) or set(caps) - CAPABILITY_KEYS:
-            raise ConfigError(f"{self.id}: capabilities keys are {sorted(CAPABILITY_KEYS)}")
         self.capabilities = caps
         try:
             self.factsheet = robotfile.parse_factsheet(raw.get("factsheet"))
@@ -74,20 +119,12 @@ class RobotConfig:
             self.guardrails = guardrails.normalise_list(raw.get("guardrails"))
         except ApiError as exc:
             raise ConfigError(f"{self.id}: {exc}") from None
-        try:
+        try:                                # the profile's own rules (runfile.profile): one set for the robot file and the profile
             robotfile.check_max_speed(self.guardrails, self.factsheet)
+            robotfile.check_capabilities(caps, self.guardrails)
+            rates = robotfile.check_rates(raw.get("rates"))
         except robotfile.FormatError as exc:
             raise ConfigError(f"{self.id}: {exc}") from None
-        can = set(caps.get("guardrails", []))
-        for g in self.guardrails:
-            if g["name"] not in can:
-                raise ConfigError(f"{self.id}: guardrail {g['name']} is not in capabilities.guardrails")
-        rates = {**DEFAULT_RATES, **(raw.get("rates") or {})}
-        for k in DEFAULT_RATES:
-            if isinstance(rates[k], bool) or not isinstance(rates[k], (int, float)) or rates[k] <= 0:
-                raise ConfigError(f"{self.id}: rates.{k} must be a number above 0")
-        if rates["state_hz"] > rates["max_state_hz"]:
-            raise ConfigError(f"{self.id}: state_hz {rates['state_hz']} is above the robot's limit {rates['max_state_hz']}")
         self.rates = rates
         self.lease_s = control["lease_s"]
         self.takeover = control["takeover"]
@@ -96,6 +133,12 @@ class RobotConfig:
         if not all(isinstance(t, str) and t for t in self.teams):
             raise ConfigError(f"{self.id}: teams is a list of team names")
         self.call_timeout_s = self.adapter.get("call_timeout_s")
+
+    def reload(self) -> None:
+        """A pointer file's robot read again from the version this machine runs now (after Mission Control saved or chose one):
+        the kind, factsheet, control, capabilities, guardrails and rates. A file that holds the robot itself does not change."""
+        if self.robot is not None:
+            self.__dict__.update(RobotConfig(self.file).__dict__)
 
 
 def load_robot_files(directory) -> list:
@@ -237,11 +280,12 @@ class RobotRuntime:
             except Exception:
                 pass
         if self.cfg.capabilities.get("map") and now >= self._next_map:
+            # paced whether or not it changed: a robot's map can be a call through its navigator API, beside its goals
+            self._next_map = now + 1.0 / self.cfg.rates["map_hz"]
             try:
                 version = self.adapter.map_version()
                 if version != self._map_version:
                     self._map_version = version
-                    self._next_map = now + 1.0 / self.cfg.rates["map_hz"]
                     self.bus.emit("map", robot=self.cfg.id, map=self.adapter.map())
             except Exception:
                 pass

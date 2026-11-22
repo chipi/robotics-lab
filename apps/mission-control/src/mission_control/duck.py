@@ -9,7 +9,11 @@
   moves the robot and writes the Observatory run; Mission Control only starts, watches and cancels.
 
 robotd has no `robot.state` request, only the `robot.subscribe` stream: the adapter keeps one subscription through the
-gate and answers `robot.state` from it, in the shape the page expects (pose in the site frame, mode, flags)."""
+gate and answers `robot.state` from it, in the shape the page expects (pose in the site frame, mode, flags).
+
+The adapter imports neither the duck's navigator nor the host library (phase 5 step 1): the map comes through the navigator
+API's `map`, the odometry scale from the robot's profile version (read again at every goal's start), the addresses from the
+installation file (runfile.installation), else the robot file's adapter block."""
 
 import json
 import socket
@@ -18,8 +22,7 @@ import time
 from pathlib import Path
 
 from robotgate import GateError
-from duck_lab.nav.client import StateStream
-from duck_lab.nav.run import load_scale
+from runfile import installation
 
 from .errors import ApiError
 
@@ -62,8 +65,8 @@ class _Wire:
                     event, box = self._pending[mid]
                     box.update(msg)
                     event.set()
-                elif mid is None and msg.get("method", "").startswith("gate.") and self.notify:
-                    self.notify(msg["method"][len("gate."):], msg.get("params") or {})
+                elif mid is None:
+                    self._note(msg.get("method", ""), msg.get("params") or {})
         except (OSError, ValueError):
             pass
         finally:
@@ -103,6 +106,10 @@ class _Wire:
             raise RuntimeError(f"{method}: {err}")
         return box.get("result", {})
 
+    def _note(self, method: str, params: dict) -> None:
+        if method.startswith("gate.") and self.notify:
+            self.notify(method[len("gate."):], params)
+
     def close(self) -> None:
         self.alive = False
         try:
@@ -110,6 +117,25 @@ class _Wire:
         except OSError:
             pass
         self.sock.close()
+
+
+class _Stream(_Wire):
+    """Mission Control's own robot.subscribe through the gate: the latest robot.state, `on_state` called for each."""
+
+    def __init__(self, path: Path, client: str, hz: int, on_state=None):
+        self.latest, self._on_state = None, on_state
+        super().__init__(path, client)
+        with self._lock:            # the subscription's answer is not waited for: the states that follow are the answer
+            self.sock.sendall((json.dumps({"jsonrpc": "2.0", "id": "subscribe", "method": "robot.subscribe",
+                                           "params": {"hz": hz}}) + "\n").encode())
+
+    def _note(self, method: str, params: dict) -> None:
+        if method == "robot.state":
+            self.latest = params
+            if self._on_state:
+                self._on_state(params)
+        else:
+            super()._note(method, params)
 
 
 class RemoteGate:
@@ -177,6 +203,7 @@ class DuckNavigatorClient:
         self._active = False
         self._status: dict = {"state": "idle"}
         self._dn, self._ov, self._fails, self._last = 0, -1, 0, -1e9
+        self.on_start = None        # called with goal.start's answer when a goal has started (the adapter reads its profile then)
 
     def bind(self, on_decision, on_objects) -> None:
         self._on_decision, self._on_objects = on_decision, on_objects
@@ -202,6 +229,10 @@ class DuckNavigatorClient:
             return {"run_key": None}
         self._active = True
         self._status = {"state": "running", "run_key": out["run_key"]}
+        if self.on_start:
+            note = self.on_start(out)
+            if note:
+                self._on_decision(note, rule="profile", values=out.get("profile") or {})
         return {"run_key": out["run_key"]}
 
     def goal_status(self) -> dict:
@@ -250,28 +281,44 @@ class DuckNavigatorClient:
 
 
 class DuckAdapter:
-    """Robot file: {"type": "duck-sim", "navigator": "127.0.0.1:8061", "observatory": "http://127.0.0.1:8070"}, and
-    `gate_socket`, `mapd_socket` when they are not this machine's host file's (RFC-0021: the host file says where the
-    robot's sockets are; a robot file that names none takes the host's gate and map sockets). `observatory` is where the
-    goal runs' Watch links point (the Observatory's /watch/<run key>)."""
+    """Robot file: {"robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}: a pointer to the robot's profile
+    (robots.py). Addresses, each the robot file's adapter block's when it names one (`gate_socket`, `map_socket`, `navigator`,
+    `observatory`: a file that names an address means it), else this machine's installation file's (`robots.<robot>.gate`,
+    `.map` and `.navigator`, `observatory`), else the navigator's default 127.0.0.1:8061. A gate or a map named nowhere is an
+    error saying where to name it: the simulator is on this machine, and Mission Control reads its map from mapd itself (read
+    through the runner instead, sim_duck's inventory passed 1 run in 8 against 5 in 5, 2026-11-22, cause not found).
+    `observatory` is where the goal runs' Watch links point (the Observatory's /watch/<run key>)."""
 
     def __init__(self, cfg, clock=time.monotonic):
+        from .robots import ConfigError
+        if cfg.profile is None:
+            raise ConfigError(f"{cfg.id}: a duck-sim robot file points at its robot's profile (\"robot\": \"duck\", \"variant\": \"sim\")")
         options = cfg.adapter
-        if "gate_socket" not in options or "mapd_socket" not in options:
-            import simhost
-            host = simhost.load(options.get("host"))
-            options = {"gate_socket": str(host.sockets["gate"]), "mapd_socket": str(host.sockets["map"]), **options}
-        self.gate_socket = _addr(options["gate_socket"])
-        self.nav_address = options.get("navigator", "127.0.0.1:8061")
-        self.mapd_socket = _addr(options["mapd_socket"])
-        self.observatory = (options.get("observatory") or "").rstrip("/") or None
-        self.clock = clock
-        self.scale = load_scale(options.get("calibration", "sim"))
+        try:
+            inst = installation.load(required=False)
+        except installation.InstallationError as exc:
+            raise ConfigError(f"{cfg.id}: {exc}") from None
+        mine = inst.robot(cfg.robot) if inst is not None else None
+        where = inst.source if inst is not None else installation.where()
+
+        def socket_of(option: str, key: str, what: str) -> Path:
+            value = options.get(option) or (getattr(mine, key) if mine is not None else None)
+            if not value:
+                raise ConfigError(f"{cfg.id}: where is the robot's {what}? name robots.{cfg.robot}.{key} in {where}, or {option} "
+                                  f"in the robot file's adapter block")
+            return _addr(str(value))
+
+        self.gate_socket = socket_of("gate_socket", "gate", "gate")
+        self.map_socket = socket_of("map_socket", "map", "map (mapd's socket)")
+        self.nav_address = options.get("navigator") or (mine.navigator if mine is not None else None) or "127.0.0.1:8061"
+        self.observatory = (options.get("observatory") or (inst.observatory if inst is not None else None) or "").rstrip("/") or None
+        self.cfg, self.clock = cfg, clock
+        self.profile = cfg.profile
+        self.scale = self._scale(self.profile)
         self._stream = None
         self._stream_at = 0.0
         self._health = (0.0, None)
         self._gate = None
-        self._map_cache = (0.0, None)
 
     def call(self, method: str, params: dict | None = None):
         raise NotImplementedError("the duck's calls go through its gate (make_gate)")
@@ -281,7 +328,31 @@ class DuckAdapter:
         return self._gate
 
     def make_navigator(self, gate, clock=time.monotonic) -> DuckNavigatorClient:
-        return DuckNavigatorClient(self.nav_address, clock)
+        nav = DuckNavigatorClient(self.nav_address, clock)
+        nav.on_start = self._goal_started
+        return nav
+
+    # --- the profile: the version this machine runs, read again when a goal starts ----------------------
+
+    @staticmethod
+    def _scale(profile) -> float:
+        return float(profile.localisation.odometry.scale)
+
+    def _goal_started(self, reply: dict) -> str | None:
+        """A goal has started: the profile read again (a version saved since applies from this run), and checked against the one
+        the navigator says it runs. A difference is said, as a decision on the goal run: the poses are scaled by Mission Control's."""
+        from .robots import ConfigError, read_profile
+        try:
+            self.profile = read_profile(self.cfg.robot, self.cfg.variant)
+        except ConfigError as exc:
+            return f"Mission Control could not read the robot's profile again ({exc}): poses scaled by version {self.profile.meta['version']}"
+        self.scale = self._scale(self.profile)
+        theirs = (reply.get("profile") or {}).get("checksum")
+        mine = self.profile.meta["checksum"]
+        if theirs and theirs != mine:
+            return (f"the navigator runs profile {theirs[:15]}… (version {reply['profile'].get('version')}), Mission Control reads "
+                    f"{mine[:15]}… (version {self.profile.meta['version']}): the poses on this page are scaled by Mission Control's")
+        return None
 
     def watch_url(self, run_key: str | None) -> str | None:
         return f"{self.observatory}/watch/{run_key}" if self.observatory and run_key else None
@@ -296,7 +367,7 @@ class DuckAdapter:
             if self._stream is not None:
                 self._stream.close()
                 self._stream = None
-            self._stream = StateStream(self.gate_socket, hz=5, on_state=self._on_state, client=GATE_NAME + "-state")
+            self._stream = _Stream(self.gate_socket, GATE_NAME + "-state", hz=5, on_state=self._on_state)
             deadline = time.monotonic() + 2.0
             while self._stream.latest is None and time.monotonic() < deadline:
                 time.sleep(0.02)
@@ -327,15 +398,21 @@ class DuckAdapter:
             self._health = (self.clock(), value)
         return value
 
-    # --- the map: mapd's grid, in the site frame ---------------------------------------------------------
+    # --- the map: mapd's grid, in the site frame ----------------------------------------------------------
+
+    def _grid(self) -> dict:
+        """mapd's grid, read by Mission Control itself on the map's socket."""
+        with socket.socket(socket.AF_UNIX) as sock:
+            sock.settimeout(CALL_TIMEOUT_S)
+            sock.connect(str(self.map_socket))
+            sock.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": "map.grid", "params": {"res_m": 0.05}}) + "\n").encode())
+            reply = json.loads(sock.makefile("r").readline())
+        if "error" in reply:
+            raise ConnectionError(f"mapd: {reply['error'].get('message', reply['error'])}")
+        return reply["result"]
 
     def map(self) -> dict:
-        from duck_lab.nav.client import Rpc
-        rpc = Rpc(self.mapd_socket)
-        try:
-            g = rpc.call("map.grid", {"res_m": 0.05})
-        finally:
-            rpc.close()
+        g = self._grid()
         cells = g.get("cells", "")
         res = g.get("res_m", 0.05) * self.scale
         origin = [v * self.scale for v in g.get("origin", [0.0, 0.0])]

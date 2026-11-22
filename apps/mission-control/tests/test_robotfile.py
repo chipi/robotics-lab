@@ -4,13 +4,18 @@ Run: cd apps/mission-control && uv run python tests/test_robotfile.py"""
 
 import copy
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from common import FAKE_FILE, check, finish, robot_file
 
 from mission_control.robots import ConfigError, RobotConfig, load_robot_files
+from runfile import installation
 
 CONTROL = Path(__file__).resolve().parents[1]
+# the duck's file points at its profile: the robot's own here, whatever this machine's installation file names
+os.environ[installation.ENV] = str(Path(tempfile.gettempdir()) / "robotfile-test-no-installation.json")
 
 
 def refused(**over):
@@ -30,6 +35,11 @@ for folder, rid, kinematics in (("robots.example", "fake-1", "DIFFERENTIAL"), ("
     check(f"{rid}: no field of the first format is left (drive, lease_s, takeover at the top)", "drive" not in cfg.capabilities)
 duck = load_robot_files(CONTROL / "robots.sim")[0]
 check("the duck: LEGGED, 0.3 m/s and 1.5 rad/s, from the factsheet", duck.factsheet["physicalParameters"] == {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5})
+shipped = json.loads((CONTROL / "robots.sim" / "duck-sim.json").read_text())
+profile = json.loads((CONTROL.parents[1] / "robots" / "duck" / "profile.json").read_text())
+check("the duck's file is a pointer (robot, variant, adapter type): its factsheet, control, capabilities and rates are the profile's",
+      set(shipped) == {"id", "label", "robot", "variant", "adapter"} and shipped["adapter"] == {"type": "duck-sim"}
+      and all(getattr(duck, k) == profile[k] for k in ("factsheet", "control", "capabilities", "rates")), shipped)
 nxt = load_robot_files(CONTROL / "robots.nxt")[0]
 check("the NXT: speeds are not measured, so the factsheet has none; its fire action says it cannot be undone",
       "physicalParameters" not in nxt.factsheet and nxt.factsheet["protocolFeatures"]["mobileRobotActions"][0]["irreversible"] is True)

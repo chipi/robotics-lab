@@ -26,7 +26,8 @@ def write(d, name="installation.json"):
 
 GOOD = {"installation": 1, "data": "~/lab/data", "index": "/srv/index.sqlite", "observatory": "http://127.0.0.1:8070",
         "state": "~/.local/state/robotics-lab",
-        "robots": {"duck": {"navigator": "127.0.0.1:8061", "profile": "~/.local/state/robotics-lab/profiles/duck/current.json"},
+        "robots": {"duck": {"navigator": "127.0.0.1:8061", "gate": "~/.cache/duck-sim/duck-a-gate.sock",
+                            "map": "~/.cache/duck-sim/duck-a-map.sock", "profile": "~/.local/state/robotics-lab/profiles/duck/current.json"},
                    "ev3": {}}}
 inst = I.load(write(GOOD))
 home = Path(os.path.expanduser("~"))
@@ -36,7 +37,10 @@ check("the Observatory's URL as written", inst.observatory == "http://127.0.0.1:
 duck = inst.robot("duck")
 check("a robot by its registered name: its navigator's address and its profile's path",
       duck.navigator == "127.0.0.1:8061" and duck.profile == home / ".local/state/robotics-lab/profiles/duck/current.json", duck)
-check("a robot with nothing set: no navigator, its own profile", inst.robot("ev3") == I.Robot("ev3"))
+check("its gate's and its map's sockets, with ~ expanded (Mission Control's ways to the robot)",
+      duck.gate == home / ".cache/duck-sim/duck-a-gate.sock" and duck.map == home / ".cache/duck-sim/duck-a-map.sock", duck)
+check("a robot with nothing set: no navigator, no gate, no map, its own profile",
+      inst.robot("ev3") == I.Robot("ev3") and inst.robot("ev3").gate is None and inst.robot("ev3").map is None)
 check("a robot this machine does not run: None", inst.robot("turtlebot3") is None)
 check("the source is the file read", inst.source == tmp / "installation.json")
 minimal = I.load(write({"installation": 1}, "minimal.json"))
@@ -73,6 +77,8 @@ CASES = [
     ("an unknown key in a robot", {**GOOD, "robots": {"duck": {"socket": "/x"}}}, "robots.duck: unknown keys ['socket']"),
     ("a navigator with no port", {**GOOD, "robots": {"duck": {"navigator": "localhost"}}}, "host:port"),
     ("an empty profile path", {**GOOD, "robots": {"duck": {"profile": ""}}}, "robots.duck.profile must be a path"),
+    ("an empty gate socket", {**GOOD, "robots": {"duck": {"gate": ""}}}, "robots.duck.gate must be the path of the gate's socket"),
+    ("a map socket that is not a path", {**GOOD, "robots": {"duck": {"map": 7}}}, "robots.duck.map must be the path of the map's socket"),
 ]
 for i, (name, d, why) in enumerate(CASES):
     p = write(d, f"bad{i}.json")

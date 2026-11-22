@@ -75,11 +75,14 @@ check("import into another machine's store: saved as its next version (1 there)"
       and other.read("rover") == v2 and other.current("rover") == 1)
 check("importing the same checksum again saves nothing: the version that has it", other.import_("rover", exp) == 1
       and other.versions("rover") == [1])
+other.save("rover", small_profile())
+check("importing a version the store already has makes it current again (an import is what runs next)",
+      other.current("rover") == 2 and other.import_("rover", exp) == 1 and other.current("rover") == 1 and other.versions("rover") == [1, 2])
 tampered = copy.deepcopy(exp)
 tampered["profile"]["locomotion"]["cruise_mps"] = 0.2
 ok, why = raises(lambda: other.import_("rover", tampered), "does not match its profile")
 check("must fail: an export whose checksum does not match its profile is refused", ok, why)
-check("and nothing was written", other.versions("rover") == [1])
+check("and nothing was written", other.versions("rover") == [1, 2])
 ok, why = raises(lambda: other.import_("rover", {"profile": v2}), "not a profile export")
 check("something that is not an export is refused", ok, why)
 

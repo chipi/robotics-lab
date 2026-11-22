@@ -105,4 +105,18 @@ for mutate, why, name in (
     ok, why_ = refused(p, why)
     check(f"refused: {name}", ok, why_)
 
+# the rules Mission Control's robot file had alone, now the profile's too (one set: a valid profile is a robot Mission Control runs)
+CAPS = {"guardrails": ["max_speed"], "description": "a rover"}
+for name, extra, why in (
+        ("a state rate above the robot's limit", {"rates": {"state_hz": 20.0, "max_state_hz": 10.0}}, "above the robot's limit"),
+        ("a rate that is not above 0", {"rates": {"map_hz": 0}}, "rates.map_hz must be a number above 0"),
+        ("a capability key that is not one", {"capabilities": {**CAPS, "teleport": True}}, "capabilities keys are"),
+        ("a guardrail of its own it cannot check", {"capabilities": {**CAPS, "guardrails": []},
+                                                    "guardrails": [{"name": "max_speed", "mps": 0.2}]}, "not in capabilities.guardrails")):
+    ok, why_ = refused({**copy.deepcopy(BASE), **extra}, why)
+    check(f"refused: {name}", ok, why_)
+check("rates and capabilities within the rules validate", validate_profile({**copy.deepcopy(BASE), "capabilities": CAPS,
+                                                                            "guardrails": [{"name": "max_speed", "mps": 0.2}],
+                                                                            "rates": {"state_hz": 5.0}}) is not None)
+
 check.done()

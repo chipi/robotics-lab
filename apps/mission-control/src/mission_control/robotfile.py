@@ -9,10 +9,11 @@ real VDA robot's factsheet can fill it by copying. Everything VDA has no field f
 `capabilities`, `rates`, `guardrails`, `adapter`). Two values are ours inside the factsheet and say so there: the kinematics
 `LEGGED` (VDA's enum is extensible, and has no legs) and an action's `irreversible`."""
 
-from runfile.profile import (ACTION_FIELDS, ACTION_SCOPES, BLOCKING_TYPES, CONTROL_FIELDS, DEFAULT_DEADMAN_S, DEFAULT_LEASE_S, KINEMATICS,
-                             LOCALIZATION_TYPES, PHYSICAL_FIELDS, TYPE_FIELDS, FormatError, ProfileError, check_max_speed, load_profile,
-                             parse_control, parse_factsheet, validate_profile)
+from runfile.profile import (ACTION_FIELDS, ACTION_SCOPES, BLOCKING_TYPES, CAPABILITY_KEYS, CONTROL_FIELDS, DEFAULT_DEADMAN_S,
+                             DEFAULT_LEASE_S, DEFAULT_RATES, KINEMATICS, LOCALIZATION_TYPES, PHYSICAL_FIELDS, TYPE_FIELDS, FormatError,
+                             ProfileError, check_capabilities, check_max_speed, check_rates, load_profile, parse_control, parse_factsheet,
+                             validate_profile)
 
-__all__ = ["ACTION_FIELDS", "ACTION_SCOPES", "BLOCKING_TYPES", "CONTROL_FIELDS", "DEFAULT_DEADMAN_S", "DEFAULT_LEASE_S", "KINEMATICS",
-           "LOCALIZATION_TYPES", "PHYSICAL_FIELDS", "TYPE_FIELDS", "FormatError", "ProfileError", "check_max_speed", "load_profile",
-           "parse_control", "parse_factsheet", "validate_profile"]
+__all__ = ["ACTION_FIELDS", "ACTION_SCOPES", "BLOCKING_TYPES", "CAPABILITY_KEYS", "CONTROL_FIELDS", "DEFAULT_DEADMAN_S", "DEFAULT_LEASE_S",
+           "DEFAULT_RATES", "KINEMATICS", "LOCALIZATION_TYPES", "PHYSICAL_FIELDS", "TYPE_FIELDS", "FormatError", "ProfileError",
+           "check_capabilities", "check_max_speed", "check_rates", "load_profile", "parse_control", "parse_factsheet", "validate_profile"]

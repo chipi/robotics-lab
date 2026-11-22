@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from . import profiles
 from .auth import unauthorized
 from .core import MissionControl
 from .errors import ApiError, invalid, not_found
@@ -147,6 +148,43 @@ def robot_sighting(c: Ctx):
     if not rt.cfg.capabilities.get("recognisers"):
         raise ApiError(404, "no_recogniser", f"{rt.cfg.id} has no recogniser")
     return {"ok": True, "sighting": rt.adapter.sighting()}
+
+
+# --- a robot's profile versions (phase 5 step 1: profiles.py) ------------------------------------------
+
+@route("GET", "/robots/{id}/profile")
+def profile_view(c: Ctx):
+    return {"ok": True, "profile": profiles.view(c.mc.robot(c.args["id"]))}
+
+
+@route("POST", "/robots/{id}/profile")
+def profile_save(c: Ctx):
+    return 201, {"ok": True, "saved": profiles.save(c.mc.robot(c.args["id"]), c.body.get("profile"))}
+
+
+@route("PUT", "/robots/{id}/profile/current")
+def profile_use(c: Ctx):
+    return {"ok": True, "profile": profiles.use(c.mc.robot(c.args["id"]), c.body.get("version"))}
+
+
+@route("GET", "/robots/{id}/profile/export")
+def profile_export(c: Ctx):
+    n = c.q("version")
+    return {"ok": True, "export": profiles.export(c.mc.robot(c.args["id"]), _int(n, "version") if n else None)}
+
+
+@route("POST", "/robots/{id}/profile/import")
+def profile_import(c: Ctx):
+    return {"ok": True, "imported": profiles.import_(c.mc.robot(c.args["id"]), c.body.get("export"))}
+
+
+@route("GET", "/robots/{id}/profile/diff")
+def profile_diff(c: Ctx):
+    a, b = c.q("a"), c.q("b")
+    if not a or not b:
+        raise invalid("diff needs ?a=<version>&b=<version>")
+    return {"ok": True, "diff": profiles.compare(c.mc.robot(c.args["id"]), _int(a, "version"), _int(b, "version"),
+                                                 c.q("notes") in ("1", "true"))}
 
 
 @route("PUT", "/robots/{id}/site")

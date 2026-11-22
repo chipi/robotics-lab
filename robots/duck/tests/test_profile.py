@@ -33,6 +33,20 @@ DUCK = Path(__file__).resolve().parents[1]
 RAW = json.loads((DUCK / "profile.json").read_text())
 SIM_JSON = json.loads((DUCK / "calibration" / "sim.json").read_text())
 ROBOT_FILE = json.loads((DUCK.parents[1] / "apps" / "mission-control" / "robots.sim" / "duck-sim.json").read_text())
+# what Mission Control's robot file held before it became a pointer to this profile (phase 5 step 1), verbatim
+WAS_ROBOT_FILE = {
+    "factsheet": {"typeSpecification": {"seriesName": "Microduck", "mobileRobotKinematics": "LEGGED", "localizationTypes": ["NATURAL"],
+                                        "navigationTypes": ["FREELY_NAVIGATING"]},
+                  "physicalParameters": {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5}, "protocolFeatures": {"mobileRobotActions": []}},
+    "control": {"deadman_s": 0.5, "lease_s": 20.0, "takeover": []},
+    "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
+    "capabilities": {"sensors": [], "recognisers": [{"name": "sim-camera", "kinds": ["fridge", "sofa", "bed", "toilet", "bathtub", "desk"],
+                                                     "frame": "site"}],
+                     "localisation": {"frame": "site", "how": "dock"}, "map": {"kind": "occupancy_grid", "resolution_m": 0.05},
+                     "navigator": {"goal_kinds": ["point", "go_to_object", "go_to_area", "explore", "inventory"], "conditions": ["within_s"]},
+                     "guardrails": ["contact", "fall", "drop_clearance", "stuck", "time_limit", "no_go_area", "max_speed"], "skills": [],
+                     "description": "duck"},
+}
 SIM = load_profile(DUCK / "profile.json", "sim")
 REAL = load_profile(DUCK / "profile.json", "real")
 
@@ -68,8 +82,8 @@ check("a dotted path reads too, and a missing one is the default", SIM.get("loco
 tof = SIM.sensors.tof8x8
 OLD = {
     "profile_version": 1,
-    "factsheet": ROBOT_FILE["factsheet"],
-    "control": ROBOT_FILE["control"],
+    "factsheet": WAS_ROBOT_FILE["factsheet"],
+    "control": WAS_ROBOT_FILE["control"],
     # each value is what the constant was, and where (deleted in step 2)
     "footprint": {"radius_m": 0.083,            # evaluate.FOOTPRINT_M
                   "height_m": 0.272,            # evaluate.DUCK_HEIGHT_M
@@ -123,7 +137,7 @@ OLD = {
                 "survey_steps": 4,                                # explore_run.SURVEY_STEPS
                 "survey_step_deg": 90},                           # explore_run.SURVEY_STEP_RAD = math.pi / 2
     "localisation": {
-        "grid_res_m": ROBOT_FILE["capabilities"]["map"]["resolution_m"],      # run.mapd_grid asks mapd for 0.05 (a literal there)
+        "grid_res_m": WAS_ROBOT_FILE["capabilities"]["map"]["resolution_m"],      # run.mapd_grid asks mapd for 0.05 (a literal there)
         "odometry": {"scale": SIM_JSON["odom_scale"], "at_speed_mps": SIM_JSON["at_speed_mps"], "by_speed": SIM_JSON["by_speed"],
                      "straight_rad_s": SIM_JSON["straight_rad_s"]},
         "fix": {"jump_m": 0.3, "jump_rad": 0.35,                                       # run.FIX_JUMP_M; the literal in frames.on_fix
@@ -158,8 +172,8 @@ OLD = {
                   "unexplained_clear_m": 0.30,
                   # the refusal burst and the once-per-place rule, out of nav/anomaly.py (the operator: configurable)
                   "refusal_burst_n": 3, "refusal_burst_moved_m": 0.10, "same_place_moved_m": 0.10, "same_place_gap_s": 5.0},
-    "rates": ROBOT_FILE["rates"],
-    "capabilities": ROBOT_FILE["capabilities"],
+    "rates": WAS_ROBOT_FILE["rates"],
+    "capabilities": WAS_ROBOT_FILE["capabilities"],
 }
 have, want = dict(numbers(SIM.data)), dict(numbers(OLD))
 check("every number of the profile has an expected old value, and the other way round", set(have) == set(want),
@@ -188,9 +202,12 @@ check("the navigator reads the same numbers: its calibration loaders return the 
 check("the sensor's mount in the simulator: radial ranges", tof.mount.range_kind == run.load_tof("sim")["range_kind"] == "radial")
 check("the simulated camera is calibration/sim.json's", {k: v for k, v in SIM.sensors.camera.data.items() if k not in ("measured", "why")}
       == {k: v for k, v in SIM_JSON["camera"].items() if k != "about"} and SIM.sensors.camera.why == SIM_JSON["camera"]["about"])
-check("the robot file's capabilities and factsheet are the profile's (its adapter is the machine's, not the robot's)",
-      SIM.capabilities.data == ROBOT_FILE["capabilities"]
-      and SIM.factsheet.data == ROBOT_FILE["factsheet"])
+check("the robot file's capabilities and factsheet were the profile's (its adapter is the machine's, not the robot's)",
+      SIM.capabilities.data == WAS_ROBOT_FILE["capabilities"]
+      and SIM.factsheet.data == WAS_ROBOT_FILE["factsheet"])
+check("and Mission Control's robot file now points at this profile, repeating none of it (one copy of the robot)",
+      ROBOT_FILE.get("robot") == "duck" and ROBOT_FILE.get("variant") == "sim"
+      and not {"kind", "factsheet", "control", "capabilities", "guardrails", "rates"} & set(ROBOT_FILE), ROBOT_FILE)
 
 # measured and why, kept verbatim from the calibration file
 check("odometry: measured and why are sim.json's own words",
@@ -309,6 +326,27 @@ check("... and `scale` is the table's value there (0.85 against 0.911 at 0.3 m/s
 
 check("Profile: an attribute that is not there is an AttributeError", not hasattr(SIM, "no_such_block"))
 check("Profile: a table of numbers stays a plain dict", SIM.localisation.odometry.by_speed == {"0.2": 0.849, "0.3": 0.911, "0.4": 0.930})
+
+# a store folder handed to the navigator (phase 5 step 1): each load reads the folder's current version then, with its number
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+from duck_lab.profile import load as load_duck  # noqa: E402
+from runfile.profilestore import Store  # noqa: E402
+
+tmp = Path(tempfile.mkdtemp(prefix="duck-profile-"))
+store = Store(tmp / "profiles")
+store.seed("duck", DUCK / "profile.json")
+v2 = copy.deepcopy(RAW)
+v2["locomotion"]["cruise_mps"] = 0.25
+store.save("duck", v2)
+first = load_duck("sim", tmp / "profiles" / "duck")
+store.use("duck", 1)
+second = load_duck("sim", tmp / "profiles" / "duck")
+check("a store folder: each load reads its current version (2, then 1 after going back), with the version's number and source",
+      (first.locomotion.cruise_mps, first.meta["version"], second.locomotion.cruise_mps, second.meta["version"], second.meta["source"])
+      == (0.25, 2, RAW["locomotion"]["cruise_mps"], 1, "given"), (first.meta, second.meta))
+shutil.rmtree(tmp, True)
 
 print("PROFILE", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

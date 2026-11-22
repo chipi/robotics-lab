@@ -132,6 +132,32 @@ def check_max_speed(guardrails: list, factsheet: dict) -> None:
             raise FormatError(f"the max_speed guardrail {g['mps']:g} m/s is above factsheet.physicalParameters.maximumSpeed {ability:g} m/s")
 
 
+CAPABILITY_KEYS = {"sensors", "recognisers", "localisation", "map", "navigator", "guardrails", "skills", "description"}
+DEFAULT_RATES = {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0}   # RFC-0014 §3.2.2
+
+
+def check_capabilities(caps, guardrails: list) -> None:
+    """What the robot can do (RFC-0014 §3.3.1): its keys, and every guardrail of its own among the guardrails it can check."""
+    if not isinstance(caps, dict) or set(caps) - CAPABILITY_KEYS:
+        raise FormatError(f"capabilities keys are {sorted(CAPABILITY_KEYS)}")
+    can = set(caps.get("guardrails", []))
+    for g in guardrails:
+        name = g.get("name") if isinstance(g, dict) else None
+        if name not in can:
+            raise FormatError(f"guardrail {name} is not in capabilities.guardrails")
+
+
+def check_rates(rates) -> dict:
+    """The rates a client reads the robot at, with the defaults: each above 0, the state rate within the robot's limit."""
+    merged = {**DEFAULT_RATES, **(rates or {})}
+    for k in DEFAULT_RATES:
+        if isinstance(merged[k], bool) or not isinstance(merged[k], (int, float)) or merged[k] <= 0:
+            raise FormatError(f"rates.{k} must be a number above 0")
+    if merged["state_hz"] > merged["max_state_hz"]:
+        raise FormatError(f"state_hz {merged['state_hz']} is above the robot's limit {merged['max_state_hz']}")
+    return merged
+
+
 # ---- the profile -------------------------------------------------------------------------------------------------------------
 
 PROFILE_VERSION = 1
@@ -363,6 +389,13 @@ def _check_numbers(p: dict, where: str) -> None:
         check_max_speed(p.get("guardrails") or [], fs)
     except FormatError as exc:
         raise FormatError(f"{where}.guardrails: {exc}") from None
+    try:
+        if "capabilities" in p:
+            check_capabilities(p["capabilities"], p.get("guardrails") or [])
+        if "rates" in p:
+            check_rates(p["rates"])
+    except FormatError as exc:
+        raise FormatError(f"{where}: {exc}") from None
 
 
 # Schema versions (phase 5, the architecture review of 2026-11-22): a profile saved under an older schema is read, never refused,

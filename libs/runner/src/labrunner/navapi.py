@@ -47,6 +47,7 @@ TERMINAL = ("reached", "done", "refused", "failed", "stopped_by_guardrail", "not
 STARTED_S = 60.0         # the navigator API answers within this, or the runner gives up
 WATCH_S = 0.2            # how often a goal's run is copied and its state asked
 ROUTE_EVERY = 40         # truth samples between two looks at the navigator's connections (2 s at 20 Hz)
+READS = ("map", "state", "objects", "inventory")   # what the navigator sees: answered on a connection of their own
 
 
 class GoalWatch:
@@ -182,10 +183,23 @@ class NavRunner:
             raise RuntimeError(f"the navigator API died (exit {self.proc.returncode}): see {self.out / 'navigator.log'}")
         return self.rpc.call(method, params)
 
+    def read(self, method: str, params: dict | None = None) -> dict:
+        """A read (the map, what the navigator sees) on a connection of its own: the navigator API serves each connection on its
+        own thread, so a slow read (mapd restarting) never holds a goal.start or a cancel queued behind it."""
+        if self.proc.poll() is not None:
+            raise RuntimeError(f"the navigator API died (exit {self.proc.returncode}): see {self.out / 'navigator.log'}")
+        rpc = Rpc(self.sock, timeout=30.0)
+        try:
+            return rpc.call(method, params)
+        finally:
+            rpc.close()
+
     def call(self, method: str, p: dict):
         if method == "runner.status":
             last = self.goal.summary() if self.goal else None
             return {"navigator_pid": self.proc.pid, "truth_connections": dict(self.route), "goals": self.goals, "last_goal": last}
+        if method in READS:
+            return self.read(method, p)
         if method != "goal.start":
             return self.api(method, p)
         if self.goal is not None:

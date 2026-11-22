@@ -105,3 +105,68 @@ The commit order and the tests are the review's (six commits, each green; must-f
 named profile that does not exist refuses to start a navigator; an import whose checksum does not
 match its profile is refused, nothing written). To check before commit 3: the run format's limit on
 one event's size (about 12 KB).
+
+## What was built (parts 1 to 5, 2026-11-22)
+
+1. **The profile's schema** (`runfile.profile`): `adapter` gone, `joints.names` and `subsystems`
+   added, `upgrade()` (a missing or newer `profile_version` is refused, an older one migrated),
+   `checksum()` (sha256 of the canonical JSON).
+2. **The installation file** (`runfile.installation`): `data`, `index`, `observatory`, `state`,
+   `robots.<name>.{navigator, gate, profile}`. `gate` was added in part 5: Mission Control's way to
+   the robot, which it had read from the host file.
+3. **The run carries the whole merged profile** in its calibration event, with `checksum`,
+   `version` and `source`. The replay rebuilds the robot from the run, not from today's file.
+4. **The version store** (`runfile.profilestore`) and the registry (`runfile.registry`, read by the
+   runner and Mission Control): a named profile that does not exist refuses the robot before any
+   navigator starts. In part 5 the runner began handing the navigator the store's *folder*. The
+   navigator reads that folder's current version at each goal (`profilestore.resolve`), so a version
+   saved while `lab-nav-server` runs applies from the next goal with no restart. Before part 5, the
+   runner resolved the version once, when it started. A long-lived navigator API then kept the old
+   version, which contradicted D10 ("from the next run").
+5. **Mission Control.**
+   - The duck's robot file is a pointer (`robot`, `variant`, the adapter type). Its kind, factsheet,
+     control, capabilities, guardrails and rates are the profile's, and the file may not repeat them.
+   - The adapter imports neither `duck_lab` nor `simhost` (the boundary check's last exception is
+     retired):
+     - the state stream is its own `robot.subscribe` through the gate;
+     - the map is the navigator API's `map`, which the navigator now answers between goals too;
+     - the scale comes from the profile, read again at each goal's start;
+     - the addresses come from the robot file, else the installation.
+   - `goal.start` answers with the profile's checksum and version. When it differs from the version
+     Mission Control read, the goal run gets a decision saying so.
+   - The profile endpoints: view, save, go back, export, import, diff. Mission Control is the store's
+     one writer. A save the installation would not run is refused.
+
+Not built or not covered yet:
+
+- **Mission Control's view of the robot** (factsheet, capabilities, guardrails, rates) is read once,
+  at start. A saved version changes what `GET /robots/{id}` shows only after a restart.
+- **A goal started by the runner's own commands** (`lab-go`, `lab-explore`) is not compared with
+  anything. Only Mission Control checks the checksum.
+- **The page has no profile editor.** The endpoints exist; the view is RFC-0023 step 2's.
+- **This machine has no `installation.json` yet.** Mission Control with `robots.sim` needs one
+  naming `robots.duck.gate`, or it refuses to start and says where to name it.
+- **The fake and the NXT robot files still hold the robot themselves.** Neither has a profile.
+- **The Observatory's `data` and `index`** still come from env vars (part 6, K44).
+- **The gate gave every subscriber the last subscriber's rate. Fixed.** robotd streams one
+  connection at its last subscribe's rate, and the gate passed every `robot.subscribe` straight
+  upstream. So Mission Control's 5 Hz subscription, when it came after the navigator's, left the
+  navigator at 4.7 to 5.1 states a second for whole goals, where its own stream is 10. That showed
+  up as goals refused with "no pose on the map yet" and slower walks: sim_duck's area-then-max_speed
+  failed 3 times out of 3, and HEAD (12728c6) passed it 3 times out of 3. The gate now asks robotd
+  for the fastest rate any subscriber wants and streams each subscriber at its own rate
+  (`labrunner.gate`, test_gate_proxy, mutation-checked). It passes on robotd's integer rate as
+  given: robotd refuses `hz: 5.0` ("expected u32"), which a first version of the fix sent.
+- **On the simulator, Mission Control reads mapd itself; the runner path is not understood.**
+  `duck-sim` requires the map's socket (`robots.<robot>.map`, or `map_socket`), as it requires
+  the gate's. With the map read through the runner, sim_duck's explore-then-inventory passed 1
+  run in 8, even after the gate fix. Seeded objects near where explore ended were marked gone
+  (8 looks expected in view, not seen; `worldmodel.semantic_map.forget`). The same sequence passed
+  5 runs in 5 with Mission Control reading mapd itself, with its map poll off, or on HEAD. A
+  runner answering a fixed grid, never reading mapd, failed 1 run in 2. The extra work measured is
+  2.3 KiB a grid, parsed in 0.03 ms. Mission Control's `goal.status` polls at 5 Hz go through the
+  runner either way. **The cause is not found.** A robot reached only through its navigator API
+  (a real robot's, no runner) would read its map there; that case is not tested.
+- **Mission Control's map poll is paced at the robot's `map_hz`.** Before, it asked for the map on
+  every 0.1 s tick while the map did not change: 7 requests a second measured, against a map_hz
+  of 1 (test_duck_adapter).
