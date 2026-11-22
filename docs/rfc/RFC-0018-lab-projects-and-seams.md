@@ -151,7 +151,9 @@ Four contracts hold it together. Nothing else may cross a project line.
   its own number and the ones before it, and refuses a newer one with a clear message.
 - The run format already has a number ("format 2", ADR-0007). Whether the file carries it in a
   way a reader can check is not checked here.
-- The gate protocol gets a number the day RFC-0017 is built, not before.
+- The gate protocol gets a number the day RFC-0017 is built, not before. (RFC-0017 is built; the
+  number is still to be given: phase 5, with the robot page's "who holds the robot", the
+  architecture review of 2026-11-22.)
 - A project names the contract versions it speaks in its README.
 
 ### 5.4 CI, docs, images
@@ -278,8 +280,9 @@ is a unit of its own that may import neither `labrunner` nor `simhost`, while th
 The table in force is `scripts/check_boundaries.py`'s.
 
 The one exception, by module: `mission_control.duck` (Mission Control's duck adapter) imports
-`duck_lab.nav.client` and `duck_lab.nav.run.load_scale`; RFC-0020's plugins retire it. A test
-or probe of a project may also use what the table lists as "tests".
+`duck_lab.nav.client` and `duck_lab.nav.run.load_scale`; RFC-0020's plugins did not retire it
+(still in force 2026-11-22; phase 5 step 1 does). A test or probe of a project may also use what
+the table lists as "tests".
 
 Where it differs from §5 to §8, and why:
 

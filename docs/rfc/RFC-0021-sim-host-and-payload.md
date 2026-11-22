@@ -76,7 +76,9 @@ and control to work with all of those combinations", and: "let's add support for
 the ROS standard, which I don't have but plan buying maybe".
 
 **The rule:** a host file's `kind` names the simulator, and everything that knows a simulator lives
-behind that kind. Nothing outside it names Pollen, MuJoCo, Gazebo or ROS. A kind provides four
+behind that kind. Nothing outside it should name Pollen, MuJoCo, Gazebo or ROS (the goal; today the
+one kind is one Pollen library, `libs/simhost`, and the scene writer is in the runner: a module per
+kind comes with the second kind, the architecture review of 2026-11-22). A kind provides four
 things:
 
 1. **Reset** to a named scene, with the robot at its start and an empty map.

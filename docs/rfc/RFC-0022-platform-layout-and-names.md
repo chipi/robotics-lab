@@ -48,7 +48,7 @@ The profile (`robots/duck/profile.json`), its plugins (`duck_walk`, `duck_head`,
 | `challenge/judge.py`, `challenges.py`, `sequence.py`, `floor.py`, `explore.py`, `nav/explore_score.py`, `nav/rooms.py`, `nav/guardrails.TruthGuard` | the judge, the course and the scores (their thresholds are the profile's `judge` section) | `libs/runner` |
 | `challenge/scene.py` (the MuJoCo scene writer) | a simulator kind's scene writer (RFC-0021 §3.1, 4) | `libs/simhost`, under the kind |
 | `camera_server.py` | the simulated camera a host serves | `libs/runner` (it needs the world model and the scene's layout, which `simhost`, standard library only, does not take) |
-| `payload.py`'s contract (the methods and their shapes) | the payload contract any navigator keeps | written down in `libs/runner` (the duck's server of it stays the duck's) |
+| `payload.py`'s contract (the methods and their shapes) | the payload contract any navigator keeps | written down in `libs/runner` (the duck's server of it stays the duck's); not done in §9's build: phase 5 writes it, as one contract with the navigator API's |
 | `gate_proxy.py` (`duck-gate`) | the gate in front of any robot that speaks RFC-0003 on a unix socket | `libs/gate` (`robotgate.proxy`) |
 | `record.py`, `replay.py`, `to_rerun.py`, `world.py`, `miniview.py` (`duck-pic`) | tools over runs | `apps/observatory` (or `libs/runfile` for the ones with no viewer) |
 | `site_cli.py` (`duck-site`) | the operator's sites, the world model's | `libs/worldmodel` |

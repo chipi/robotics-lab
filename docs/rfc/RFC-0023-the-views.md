@@ -227,3 +227,27 @@ run where it touches the simulator), committed and pushed at each:
 sends into the Victoria stack (the operator's production observability); asking the homelab session
 for the robotics-lab Grafana folder's token and the tailnet access for this workstation's sends;
 step 7's N.
+
+### 7.1 Adjusted after the architecture review (2026-11-22)
+
+The operator asked for a review of everything built before step 1
+([the review](../wip/ARCHITECTURE-REVIEW-2026-11-22.md)) and took the lead's recommendation ("let's
+adjust approach and follow your recommendation as next step, and then do another round of
+review"). The build, adjusted:
+
+1. **Step 1, wider:** the installation file and profile versions as reviewed
+   ([the design](../wip/PHASE5-STEP1-DESIGN.md)), and inside it: Mission Control's robot file a
+   pointer to the robot (its factsheet, capabilities, guardrails and rates from the profile
+   version); Mission Control's adapter no longer importing the duck's navigator or the host library
+   (the map through the navigator API, the scale per run, the addresses from the installation file);
+   a policy for profile schema versions (older ones read and migrated) with the blocks phase 5 needs
+   added now (the subsystems, the joint limits); the libraries' own tests (`libs/*/tests`,
+   `make test-libs`).
+2. **Then a second review round** of what step 1 built.
+3. **One navigator contract** (the payload's a subset of the navigator API's, one vocabulary of end
+   states, a version, written down in `libs/runner`) and **the apartment out of the runner**, before
+   step 3.
+4. Steps 2 and 3 side by side; then 4, 5.
+5. **A runner that works without the truth**, before step 6; the gate protocol's version with
+   step 4's "who holds the robot".
+6. Step 6; step 7 (retention) when convenient, out of the sequence.

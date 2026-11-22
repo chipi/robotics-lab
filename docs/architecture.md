@@ -35,9 +35,10 @@ truth's port in any run since (583 checks in the proof batch, 150 in an explorat
 Which package may import which is checked on every `make lint` (`scripts/check_boundaries.py`, the
 table in [RFC-0018 §10](rfc/RFC-0018-lab-projects-and-seams.md)): the navigator (`duck_lab.nav`, the
 payload, the plugins, the profile) may import neither the runner (`labrunner`) nor the host library;
-the runner imports no robot's package, it finds a robot by name (the entry-point group
-`robotics_lab.robots`, [RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)); and a test checks that
-importing the payload or the navigator API loads neither.
+the runner has no import of a robot's package, it finds a robot by name (the entry-point group
+`robotics_lab.robots`, [RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)), which loads the
+robot's small registration module when the runner starts (the check cannot see that, by design);
+and a test checks that importing the payload or the navigator API loads neither.
 
 ## The whole picture
 
@@ -143,10 +144,15 @@ the gate.
 
 ### The real robot (designed, not run: there is no real duck yet)
 
-A real robot has no truth and no runner. Its host file has `truth_port: null` and names the robot's
-forwarded sockets; Mission Control talks to the navigator API directly
-(`python -m duck_lab.nav.server --robot … --listen …`), and the guardrails that need the truth are
-the robot's own to report. The navigator is the same code with the profile's `real` variant.
+A real robot has no truth. The intended path: the robot's forwarded sockets named per machine,
+the runner working without the truth (no sampler, no truth guardrails, the official run copied
+without it), and the guardrails that need the truth the robot's own to report; the navigator is the
+same code with the profile's `real` variant. **Not buildable today:** the host file cannot be
+written for a machine without Pollen's simulator (`simhost/host.py` requires its checkouts), and
+the runner refuses a host with no truth port; Mission Control would have to talk to the navigator
+API directly, a path with no test (the
+[architecture review of 2026-11-22](wip/ARCHITECTURE-REVIEW-2026-11-22.md); phase 5 builds the
+runner without the truth and the installation file).
 
 ## The seams (where something else can be plugged in)
 
@@ -160,7 +166,7 @@ the robot's own to report. The navigator is the same code with the profile's `re
 | Mission Control's adapters (`fake`, `duck-sim`, `nxt-web`) | another robot in the control panel | [RFC-0014](rfc/RFC-0014-mission-control.md) |
 | The gate's protocol | another robot's lock | [RFC-0017](rfc/RFC-0017-robot-access.md) |
 | The run format | another recorder; the Observatory reads only the format | [ADR-0007](adr/ADR-0007-run-file-format-2.md) |
-| The camera socket (Detections relative to the robot) | a real camera's detector | RFC-0021 step 6 |
+| The camera socket (Detections relative to the robot) | a real camera's detector (designed: none exists yet, and the camera service needs the simulator's truth) | RFC-0021 step 6 |
 
 ## Not yet generic
 

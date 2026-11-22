@@ -659,7 +659,7 @@ deep view. The map is a drawing for commanding; it is not a second Observatory.
 
 ### 3.7 Robots in v1, and the navigator API
 
-| Robot | How | State today |
+| Robot | How | State on 2026-11-17 (historical: what is built now is RFC-0021 and the architecture page) |
 | --- | --- | --- |
 | **Fake robot** | An in-process adapter that moves a point, answers status, honours STOP and the deadman, can be told to drop offline, and carries a fake site with a few objects, so the objects layer, naming and the library are built with no simulator | New. Stream A owns the simulator until it hands over, so this is how Mission Control is built and tested without it |
 | **Simulated duck** | A thin adapter over the navigator API (below); its recogniser is the simulated camera | `Navigator.go_to(goal, timeout_s)` returns `{"status": "refused", "why": ...}` or its result (`duck/src/duck_lab/nav/run.py`); it is Python and CLI only (`duck-go`, `duck-explore`, with `--find` and `--inventory` on the `explore-apartment` branch), with **no API server** |
