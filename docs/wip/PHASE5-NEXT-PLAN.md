@@ -45,10 +45,10 @@ against `params {x, y}`), end states, and versions (`hello` has a version; the n
   `navapi.py`), Mission Control's adapter (`mission_control/duck.py`) and the courses' judge read
   it.
 
-**Decide first (the operator):** the end states' names (a proposal: reached, done, refused,
-not_found, timeout, stalled, stopped_by_guardrail, cancelled, interrupted, failed, each with one
-meaning written down; `aborted` folded into `stopped_by_guardrail` or `interrupted`); whether old
-runs' end states are mapped when read (the Observatory shows recorded runs).
+**Decided (the operator, 2026-11-22):** the end states are reached, done, refused, not_found,
+timeout, stalled, stopped_by_guardrail, cancelled, interrupted and failed, each with one meaning
+written down; `aborted` folds into `stopped_by_guardrail` or `interrupted`. Old runs keep their
+recorded end states, and the Observatory translates them to the new names when it shows them.
 
 **Proof.** A contract test, the same file run against the duck's payload and its navigator API;
 must-fail cases (an unknown end state, a major version the runner does not know, a payload answering
@@ -67,9 +67,9 @@ to 11, seed 1) whose verdicts match the last batch's.
 
 **The build.**
 
-- The scene's bounds, rooms and drops in the scene's own files (beside `scene.json` in the data
-  folder, or the robot's `sim/` folder: to choose with the operator), read by the runner for the
-  scene it runs.
+- The scene's bounds, rooms and drops in one scene description per scene, read by the runner for
+  the scene it runs, versioned in the repository at `scenes/<id>/scene.json`
+  ([decided below](#decision-where-a-scene-lives)).
 - The guard takes the layout's drops only; a layout with none has none.
 - The course modules read the robot and the scene when a command starts, not at import (no
   module-level `robots.get()`).
@@ -98,9 +98,34 @@ apartment run equal before and after (`explore_score.py` reads the rooms).
 
 ### 5. Step 6 (telemetry): needs the operator before it starts
 
-New dependencies (`opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`), test sends into
-the operator's Victoria stack, the robotics-lab Grafana folder's token and tailnet access from the
-homelab session. Step 7 (retention) when convenient, with its N decided by the operator.
+**Approved (the operator, 2026-11-22):** the new dependencies (`opentelemetry-sdk`,
+`opentelemetry-exporter-otlp-proto-http`), test sends into the operator's Victoria stack, and asking
+the homelab session for the robotics-lab Grafana folder's token and the tailnet access.
+
+Step 7 (retention) when convenient. **Decided:** N is configurable, `runs.archive_after_days` in the
+installation file, default 30 days; official runs are always kept.
+
+## Decision: where a scene lives
+
+For item 2; **decided (the operator accepted the recommendation, 2026-11-22).**
+
+- **What exists today.** The apartment's `scene.json` (bounds, boxes, the stairwell as a `drop`
+  hazard) is only in the data folder, `data/scenes/apartment/`, which is not in git; nothing in the
+  repository writes it. The runner holds a second copy in code (`geometry.py` `APARTMENT`,
+  `rooms.py` `ROOMS` and `STAIRS`, `guard.py` `STAIRS`). The simulator's files are in
+  `robots/duck/sim/` (`apartment_layout.json`, `apartment_objects.json`). `labrunner/challenge.py`
+  writes a challenge's `scene.json` into the data folder.
+- **The decision.** A scene belongs to the world, not to a robot or a machine, so its
+  description is versioned in the repository: `scenes/<id>/scene.json`, the existing shape (`id`,
+  `name`, `kind`, `frame`, `bounds`, `boxes`, `hazards`) plus `rooms`. The runner's judge, guard and
+  scores read it for the scene they run; it is copied into the data folder for the Observatory, as
+  today. The robot's `sim/` keeps only what one simulator needs (the MuJoCo layout, the objects, the
+  goals).
+- **Not chosen.** The data folder alone: not versioned, one machine's copy, and a run could not
+  say which scene description judged it. The robot's `sim/` folder: a second robot in the same
+  apartment would copy it, and a real robot has no `sim/`.
+- **What it adds.** A run records the scene's checksum beside `judge_profile`, so the referee's map
+  is as traceable as its limits.
 
 ## Working rules for the next session
 
@@ -110,7 +135,7 @@ homelab session. Step 7 (retention) when convenient, with its N decided by the o
 - Simulator jobs under `flock -w 7200 /tmp/claude-1000/-work-robotics-lab-main/sim.lock` with
   `TMPDIR=$HOME/.cache/robotics-lab-tests`; `make sim-duck` takes about 10 minutes and resets the
   simulator.
-- Kept test folders in `~/.cache/robotics-lab-tests` (`mc-sim-duck-*`, `k46-run-*.log`) are not
-  deleted without the operator's go.
+- Test folders kept in `~/.cache/robotics-lab-tests` (`mc-sim-duck-*`, `k46-run-*.log`) are not
+  deleted without the operator's go (the earlier ones were deleted with it, 2026-11-22).
 - Each item: a failing test first, the fix, a mutation check, the gates, the docs, a commit with its
   numbers.
