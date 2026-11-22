@@ -17,6 +17,7 @@ The factsheet and control parsers are Mission Control's (its robotfile.py re-exp
 them, and the run format's library is where the navigator, Mission Control and the Observatory can all read them."""
 
 import copy
+import hashlib
 import json
 import re
 from numbers import Real
@@ -196,7 +197,10 @@ SCHEMA = {
     "capabilities": "any",
     "guardrails": "any",
     "rates": {"state_hz": "pos", "map_hz": "pos", "max_state_hz": "pos"},
-    "adapter": {"type": "str", "gate_socket": "str", "navigator": "str", "mapd_socket": "str", "observatory": "str"},
+    # the robot's joints by name, in its own controller's order (limits come with phase 5's step 3)
+    "joints": {"names": "strs"},
+    # the robot's parts that run beside the navigator, each with how its state is checked (checked in _check_subsystems)
+    "subsystems": "any",
 }
 TOP = {"profile_version", "id", "label", "kind", "factsheet", "control", "plugins", "variants", *SCHEMA}
 REQUIRED = ("profile_version", "id", "label", "kind", "factsheet", "footprint", "locomotion", "plugins", "control")
@@ -361,6 +365,61 @@ def _check_numbers(p: dict, where: str) -> None:
         raise FormatError(f"{where}.guardrails: {exc}") from None
 
 
+# Schema versions (phase 5, the architecture review of 2026-11-22): a profile saved under an older schema is read, never refused,
+# by migrating it one version at a time; a newer one than this reader is refused. MIGRATIONS[n] turns a version-n profile into
+# version n+1 (a new copy). Adding an optional block needs no new version; renaming or removing a field does.
+MIGRATIONS: dict = {}
+SUBSYSTEM_CHECKS = ("socket", "none")      # socket: the named socket of this machine (the host or installation file) answers
+
+
+def upgrade(raw: dict) -> dict:
+    """The profile in this reader's schema version: older versions migrated (a new dict), a newer one refused."""
+    if not isinstance(raw, dict) or "profile_version" not in raw:
+        raise FormatError("profile: profile_version is required")
+    v = raw["profile_version"]
+    if not (isinstance(v, int) and not isinstance(v, bool) and v >= 1):
+        raise FormatError(f"profile.profile_version must be a whole number from 1, not {v!r}")
+    if v > PROFILE_VERSION:
+        raise FormatError(f"profile.profile_version is {v}; this reader knows version {PROFILE_VERSION} and older")
+    out = raw
+    while out["profile_version"] < PROFILE_VERSION:
+        n = out["profile_version"]
+        if n not in MIGRATIONS:
+            raise FormatError(f"profile.profile_version is {n}; no migration from it to {n + 1}")
+        out = MIGRATIONS[n](copy.deepcopy(out))
+        if out.get("profile_version") != n + 1:
+            raise FormatError(f"the migration from version {n} left profile_version {out.get('profile_version')!r}")
+    return out
+
+
+def _check_subsystems(subs, where: str) -> None:
+    if not isinstance(subs, list):
+        raise FormatError(f"{where} must be a list of the robot's parts")
+    names = set()
+    for i, s in enumerate(subs):
+        w = f"{where}[{i}]"
+        if not isinstance(s, dict):
+            raise FormatError(f"{w} must be an object")
+        extra = set(s) - {"name", "what", "check", "logs", "conflicts", *META}
+        if extra:
+            raise FormatError(f"{w}: unknown fields {sorted(extra)} (the fields are name, what, check, logs, conflicts)")
+        if not (isinstance(s.get("name"), str) and s["name"]):
+            raise FormatError(f"{w}.name must be a non-empty string")
+        if s["name"] in names:
+            raise FormatError(f"{w}.name {s['name']!r} is listed twice")
+        names.add(s["name"])
+        check = s.get("check")
+        if not (isinstance(check, dict) and check.get("kind") in SUBSYSTEM_CHECKS):
+            raise FormatError(f"{w}.check must be an object whose kind is one of {list(SUBSYSTEM_CHECKS)}")
+        if check["kind"] == "socket" and not (isinstance(check.get("socket"), str) and check["socket"]):
+            raise FormatError(f"{w}.check.socket must name one of the machine's sockets (robot, depth, map, gate, camera)")
+        for k in ("what", "logs"):
+            if k in s and not (isinstance(s[k], str) and s[k]):
+                raise FormatError(f"{w}.{k} must be a non-empty string")
+        if "conflicts" in s and not (isinstance(s["conflicts"], list) and all(isinstance(c, str) and c for c in s["conflicts"])):
+            raise FormatError(f"{w}.conflicts must be a list of other parts' names")
+
+
 def _check_one(p: dict, where: str) -> None:
     extra = set(p) - TOP
     if extra:
@@ -370,6 +429,8 @@ def _check_one(p: dict, where: str) -> None:
             raise FormatError(f"{where}: {k} is required")
     if p["profile_version"] != PROFILE_VERSION:
         raise FormatError(f"{where}.profile_version is {p['profile_version']!r}; this reader knows version {PROFILE_VERSION}")
+    if "subsystems" in p:
+        _check_subsystems(p["subsystems"], f"{where}.subsystems")
     for k in ("id", "label", "kind"):
         if not (isinstance(p[k], str) and p[k]):
             raise FormatError(f"{where}.{k} must be a non-empty string")
@@ -396,10 +457,11 @@ def _check_one(p: dict, where: str) -> None:
 
 
 def validate_profile(raw) -> dict:
-    """The profile, validated: the base, then every variant merged on it and validated again. Returns raw. ProfileError names the
-    path and what is wrong."""
+    """The profile, validated: the base, then every variant merged on it and validated again. Returns it in this reader's schema
+    version (raw itself when already there; a migrated copy when older). ProfileError names the path and what is wrong."""
     if not isinstance(raw, dict):
         raise FormatError("the profile must be an object")
+    raw = upgrade(raw)
     variants = raw.get("variants", {})
     if not isinstance(variants, dict) or set(variants) - set(ENVIRONMENTS):
         raise FormatError(f"variants: must be an object with {list(ENVIRONMENTS)} as its keys, not {variants!r}")
@@ -453,6 +515,18 @@ def numbers(data: dict, prefix: str = ""):
                     yield f"{path}[{i}]", x
         elif _is_number(v):
             yield path, v
+
+
+def canonical(raw: dict) -> str:
+    """The profile as one canonical JSON text (validated, in this reader's schema, keys sorted, no spaces): what the checksum hashes
+    and what an export carries."""
+    return json.dumps(validate_profile(raw), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def checksum(raw: dict) -> str:
+    """A profile's identity across machines (phase 5 step 1): sha256 of its canonical JSON. 0.30 and 0.3 are one number, so one
+    checksum; key order and spacing do not count; any changed value does."""
+    return "sha256:" + hashlib.sha256(canonical(raw).encode()).hexdigest()
 
 
 def load_profile(path, variant: str) -> Profile:

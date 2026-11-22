@@ -188,8 +188,8 @@ check("the navigator reads the same numbers: its calibration loaders return the 
 check("the sensor's mount in the simulator: radial ranges", tof.mount.range_kind == run.load_tof("sim")["range_kind"] == "radial")
 check("the simulated camera is calibration/sim.json's", {k: v for k, v in SIM.sensors.camera.data.items() if k not in ("measured", "why")}
       == {k: v for k, v in SIM_JSON["camera"].items() if k != "about"} and SIM.sensors.camera.why == SIM_JSON["camera"]["about"])
-check("the robot file's capabilities, adapter and guardrail names are the profile's",
-      SIM.capabilities.data == ROBOT_FILE["capabilities"] and SIM.adapter.data == ROBOT_FILE["adapter"]
+check("the robot file's capabilities and factsheet are the profile's (its adapter is the machine's, not the robot's)",
+      SIM.capabilities.data == ROBOT_FILE["capabilities"]
       and SIM.factsheet.data == ROBOT_FILE["factsheet"])
 
 # measured and why, kept verbatim from the calibration file
@@ -204,7 +204,8 @@ check("the depth sensor's mount: measured and why are sim.json's own words",
 check("real: the pivot is not sent a creep, the depth sensor is mapd's 3 deg axial, the odometry is taken as it is",
       REAL.locomotion.pivot.vx_mps == 0.0 and REAL.sensors.tof8x8.mount.pitch_offset_deg == 3.0
       and REAL.sensors.tof8x8.mount.range_kind == "axial" and REAL.localisation.odometry.scale == 1.0)
-check("real: no simulated camera and no simulator adapter", REAL.get("sensors.camera") is None and REAL.get("adapter") is None)
+check("real: no simulated camera; neither variant holds a machine's addresses (phase 5 step 1)",
+      REAL.get("sensors.camera") is None and REAL.get("adapter") is None and SIM.get("adapter") is None)
 check("sim: the creep, the 2.5 deg radial mount and the 0.91 scale",
       SIM.locomotion.pivot.vx_mps == -0.06 and tof.mount.pitch_offset_deg == 2.5 and SIM.localisation.odometry.scale == 0.91)
 check("what the variants do not change is the same in both",

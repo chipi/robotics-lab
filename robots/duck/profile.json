@@ -4,6 +4,16 @@
   "label": "Microduck",
   "kind": "duck",
   "body": {"description": "duck", "urdf": "robot.urdf"},
+  "joints": {
+    "names": ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw",
+              "head_roll", "mouth", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"],
+    "why": "robotd's JOINT_NAMES order (Pollen's duck-ipc-proto; the body server's is the same): the order of every per-joint list robotd reports (angles, targets, velocities, currents_ma)"
+  },
+  "subsystems": [
+    {"name": "robotd", "what": "the body: the motors, the IMU, the deadman, the walking policies", "check": {"kind": "socket", "socket": "robot"}},
+    {"name": "tof", "what": "the 8x8 depth sensor's stream", "check": {"kind": "socket", "socket": "depth"}},
+    {"name": "mapd", "what": "the map and the localisation", "check": {"kind": "socket", "socket": "map"}}
+  ],
   "factsheet": {
     "typeSpecification": {
       "seriesName": "Microduck",
@@ -202,11 +212,6 @@
   "plugins": {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1"},
   "variants": {
     "sim": {
-      "adapter": {
-        "type": "duck-sim",
-        "navigator": "127.0.0.1:8061",
-        "observatory": "http://127.0.0.1:8070"
-      },
       "localisation": {
         "odometry": {
           "scale": 0.91,

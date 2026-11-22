@@ -68,9 +68,23 @@ nxt-sync: ## Create/refresh the NXT project's venv from its lock (uv)
 control-sync: ## Create/refresh Mission Control's venv from its lock (uv; the gate comes from the duck package, a path source)
 	@cd $(CONTROL_DIR) && uv sync --frozen && echo "control-sync PASS"
 
-.PHONY: duck-sync observatory-sync
+.PHONY: duck-sync observatory-sync libs-sync test-libs
 duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its dev tools: the tests need rerun-sdk)
 	@cd $(DUCK_DIR) && uv sync --frozen && echo "duck-sync PASS"
+
+# The libraries' own tests (phase 5 step 1, the architecture review of 2026-11-22): each library in its own environment, no robot's
+# package installed, so a library is proven without the duck. Tests of the runner that need a registered robot stay in the duck's
+# until the apartment leaves the runner.
+LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
+              gate:tests/test_gate.py runner:tests/test_gate_proxy.py
+libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
+	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
+
+test-libs: libs-sync ## The libraries' own tests, each in its own environment (no robot installed)
+	@fail=0; for t in $(LIBS_TESTS); do d=$${t%%:*}; f=$${t#*:}; log=$$(mktemp); \
+	  if (cd libs/$$d && uv run --frozen python $$f) >$$log 2>&1; then echo "PASS libs/$$d/$$f"; \
+	  else echo "FAIL libs/$$d/$$f"; cat $$log; fail=1; fi; rm -f $$log; \
+	done; [ $$fail = 0 ] && echo "test-libs PASS" || { echo "test-libs FAIL"; exit 1; }
 
 observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, with Playwright)
 	@cd $(OBSERVATORY_DIR) && uv sync --frozen && echo "observatory-sync PASS"
@@ -104,11 +118,11 @@ endef
 
 DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recovery.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py \
-                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_gate.py tests/test_gate_proxy.py tests/test_guardrails.py tests/test_profile.py tests/test_plugins.py tests/test_anomaly.py tests/test_goals.py tests/test_probe_rows.py tests/test_pace.py tests/test_simhost.py tests/test_payload.py tests/test_camera_server.py
+                       tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_guardrails.py tests/test_profile.py tests/test_plugins.py tests/test_anomaly.py tests/test_goals.py tests/test_probe_rows.py tests/test_pace.py tests/test_payload.py tests/test_camera_server.py
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
-                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_truthcopy.py
+                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py
 
@@ -234,7 +248,7 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 # ---- Composite tiers ---------------------------------------------------------
 
 .PHONY: ci-fast
-ci-fast: lint test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
+ci-fast: lint test-libs test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
 	@echo "ci-fast PASS"
 
 .PHONY: ci
