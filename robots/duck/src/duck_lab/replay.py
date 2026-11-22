@@ -19,6 +19,7 @@ from pathlib import Path
 from runfile import keys
 from runfile.catalog import default_data
 from runfile.mcapio import FINAL, LIVE, Follower
+from runfile.profile import Profile
 
 from duck_lab.plugins.tof8x8 import Tof8x8
 from duck_lab.profile import load as load_profile
@@ -52,11 +53,16 @@ def calibration_of(records: list) -> dict:
 
 
 def profile_of(records: list):
-    """The robot's profile as the run had it: the environment its `calibration` event names, else the real duck's (a run from
-    before the event named it was recorded by a navigator that read its numbers from constants, which are the profile's)."""
+    """The robot's profile as the run had it: the whole profile its `calibration` event carries (phase 5 step 1), else the
+    repository's file in the environment the event names (a run from before the event carried the profile), else the real duck's
+    (a run from before the event named it was recorded by a navigator that read its numbers from constants, which are the
+    profile's)."""
     for _, k, p in records:
         if k == "event" and p.get("kind") == "calibration":
-            return load_profile(((p.get("raw") or {}).get("profile") or {}).get("variant"))
+            prof = (p.get("raw") or {}).get("profile") or {}
+            if isinstance(prof.get("data"), dict):
+                return Profile(prof["data"], prof.get("variant"))
+            return load_profile(prof.get("variant"))
     return load_profile(None)
 
 

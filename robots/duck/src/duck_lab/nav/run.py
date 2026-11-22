@@ -192,7 +192,8 @@ class Navigator:
     _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
 
     def __init__(self, sockets: dict, log: Path | None = None,
-                 calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None):
+                 calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None,
+                 profile_path=None):
         # `sockets`: the robot's ("robot", "depth", "map": paths), handed in by whoever starts the navigator, from the host
         # file (RFC-0021: host_links); the navigator knows no machine's paths, and never the simulator's truth: that is its
         # runner's (RFC-0021 step 6), which puts it into the official run.
@@ -213,7 +214,8 @@ class Navigator:
         # Odometry, mapd's poses and mapd's grid all come from robotd's odometry; one scale corrects
         # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
         # first stop, so scaling about it keeps the duck where it is.
-        self.configure(profile if profile is not None else load_profile(calibration))
+        # `profile_path`: the profile version its runner hands it (phase 5 step 1), else the robot's own file
+        self.configure(profile if profile is not None else load_profile(calibration, profile_path))
         self._t0 = time.monotonic()
         self.runlog = runlog
         self._sid = runlog.new_session() if runlog else None
@@ -269,10 +271,14 @@ class Navigator:
         self._closure_window = []   # the residuals the held loop closure's frame would give (Navigator._probe_closure)
         self._closing = threading.Event()
         self._start_watchdog()
-        # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it)
+        # the sensor's mounting as this run used it, so a replay applies the same (duck-replay reads it); and the whole profile it
+        # ran on (phase 5 step 1): the merged numbers, the file's checksum (its identity) and where it came from, so a run explains
+        # itself with no store and a replay uses what the run used, not today's file
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, odom_by_speed=self.localisation.by_speed,
                     pivot_vx_mps=self.locomotion.pivot_vx,
-                    profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data)})
+                    profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data),
+                             **{k: v for k, v in (getattr(self.profile, "meta", None) or {}).items() if k in ("checksum", "version", "source")},
+                             "data": self.profile.data})
 
     def configure(self, profile) -> None:
         """The robot's numbers, from its profile (RFC-0020): everything the navigator decides with that is the robot's and not its

@@ -155,7 +155,7 @@ class GoalRun:
         try:
             self.nav = Navigator(sockets=srv.sockets,
                                  log=out / "ticks.jsonl", runlog=self.runlog,
-                                 client=srv.client)
+                                 client=srv.client, calibration=srv.variant, profile_path=srv.profile)
         except BaseException:
             self.runlog.finish()
             raise
@@ -416,9 +416,11 @@ class GoalRun:
 
 
 class NavServer:
-    def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server"):
+    def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
+                 variant: str | None = "sim", profile: Path | None = None):
         # sockets: the navigator's ("robot": a gate's, "depth", "map", and "camera" when it has one), handed in by its runner
         self.sockets, self.data, self.out, self.scene, self.client = sockets, data, out, scene, client
+        self.variant, self.profile = variant, profile       # the profile version every goal's navigator runs (phase 5 step 1)
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
         self._lock = threading.Lock()
@@ -535,9 +537,12 @@ def main() -> None:
     ap.add_argument("--data", type=Path, required=True, help="where each goal run's own run is written (its runner copies it on)")
     ap.add_argument("--out", type=Path, default=Path("state/nav"), help="the navigator's own output folders, one per goal run")
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
+    ap.add_argument("--variant", default="sim", help="the robot profile's variant (sim, or real)")
+    ap.add_argument("--profile", type=Path, help="the profile version to run (its runner's choice, phase 5 step 1); default the robot's own")
     args = ap.parse_args()
     sockets = {"robot": args.robot, "depth": args.depth, "map": args.map, **({"camera": args.camera} if args.camera else {})}
-    nav = NavServer(sockets, args.data, args.out, args.scene, args.client)
+    nav = NavServer(sockets, args.data, args.out, args.scene, args.client, None if args.variant == "real" else args.variant,
+                    args.profile)
     if "/" in args.listen:
         Path(args.listen).unlink(missing_ok=True)
         srv = UnixServer(args.listen, nav)

@@ -287,6 +287,15 @@ with tempfile.TemporaryDirectory() as tmp:
         sim_applied = (sim_nav.range.pitch_offset_rad, sim_nav.range.range_kind) == (math.radians(2.5), "radial")
         real_nav = Navigator(stub, calibration=None)
         default_applied = (real_nav.range.pitch_offset_rad, real_nav.range.range_kind) == (math.radians(3.0), "axial")
+        # a stored version (phase 5 step 1): a copy of the profile with one number changed, as profiles/duck/7.json
+        from duck_lab.profile import PROFILE
+        store = Path(tempfile.mkdtemp(prefix="profiles-")) / "duck"
+        store.mkdir()
+        v7 = json.loads(PROFILE.read_text())
+        v7["locomotion"]["cruise_mps"] = 0.25
+        (store / "7.json").write_text(json.dumps(v7))
+        given_log = store / "ticks.jsonl"
+        given_nav = Navigator(stub, calibration="sim", profile_path=store / "7.json", log=given_log)
     finally:
         Tof8x8.open = real_open
         for k, v in real.items():
@@ -307,6 +316,30 @@ with tempfile.TemporaryDirectory() as tmp:
     sim_sensor = Tof8x8(replay.profile_of(cal_recs), mount=replay.calibration_of(cal_recs))
     replay.replay(recs)
     plain_sensor = Tof8x8(replay.profile_of(recs), mount=replay.calibration_of(recs))
+    # the whole profile in the run (phase 5 step 1)
+    meta = given_nav.profile.meta
+    check("a navigator handed a stored version runs its numbers and knows where they came from (source, version, checksum)",
+          given_nav.profile.locomotion.cruise_mps == 0.25 and meta["source"] == "given" and meta["version"] == 7
+          and meta["checksum"].startswith("sha256:") and meta["checksum"] != sim_nav.profile.meta["checksum"], meta)
+    check("the robot's own file: source repository, no stored version", sim_nav.profile.meta["source"] == "repository"
+          and sim_nav.profile.meta["version"] is None, sim_nav.profile.meta)
+    written = next(json.loads(line) for line in given_log.read_text().splitlines() if '"calibration"' in line)
+    wp = written.get("profile") or {}
+    check("the navigator itself writes it into its calibration event: the merged numbers, the checksum, the version, the source",
+          wp.get("data") == given_nav.profile.data and wp.get("checksum") == meta["checksum"] and wp.get("version") == 7
+          and wp.get("source") == "given", {k: wp.get(k) for k in ("checksum", "version", "source")})
+    full = RunLog(data, "apartment", "calib2", "exploration", None)
+    full_sid = full.new_session()
+    full.row(full_sid, {"t": 0.0, "event": "calibration", "tof": load_tof("sim"), "odom_scale": 0.91,
+                        "profile": {"id": "duck", "variant": "sim", "checksum": meta["checksum"], "version": 7, "source": "given",
+                                    "data": given_nav.profile.data}})
+    full.row(full_sid, {"t": 0.5, "pose": [0.0, 0.0, 0.0]})
+    full_recs = Follower(full.finish().parent, keep_raw=True).poll()
+    back = replay.profile_of(full_recs)
+    size = len(json.dumps(given_nav.profile.data))
+    check(f"the whole profile ({size} bytes) goes into the run and comes back whole", back.data == given_nav.profile.data, size)
+    check("the replay runs the run's own numbers (0.25 m/s), not today's file (0.3)", back.locomotion.cruise_mps == 0.25
+          and replay.profile_of(cal_recs).locomotion.cruise_mps == 0.3, back.locomotion.cruise_mps)
     check("the replay applies each run's own mounting, and puts the default back for a run without one",
           (sim_sensor.pitch_offset_rad, sim_sensor.range_kind) == (math.radians(2.5), "radial")
           and (plain_sensor.pitch_offset_rad, plain_sensor.range_kind) == (math.radians(3.0), "axial"))
