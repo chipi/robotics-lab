@@ -126,6 +126,7 @@ nav:
     - Overview: wip/README.md
     - Status and open decisions: wip/STATUS.md
     - The plan we execute on: wip/EXECUTION-PLAN.md
+    - "Phase 5, step 1: the installation file and profile versions": wip/PHASE5-STEP1-DESIGN.md
     - Known issues: wip/KNOWN-ISSUES.md
     - "The phantom obstacle by the dock: a real cube": wip/PHANTOM.md
     - "The simulated depth sensor's ranges": wip/RANGE.md
