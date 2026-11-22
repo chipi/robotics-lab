@@ -13,7 +13,9 @@ from pathlib import Path
 import legacy_rows
 
 from duck_lab.nav import explore
-from labrunner.explore_score import room_of
+from runfile import scenefile
+
+room_of = scenefile.load("apartment").room_of
 
 
 def main() -> None:

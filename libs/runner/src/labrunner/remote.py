@@ -19,7 +19,7 @@ from pathlib import Path
 
 from labrunner import robots
 from labrunner.rpc import Rpc
-from runfile import keys
+from runfile import keys, scenefile
 from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.profilestore import describe
 from runfile.truthcopy import TruthCopy
@@ -93,6 +93,13 @@ def truth_connections(pid: int, port: int) -> int | None:
                and line.rsplit("->", 1)[1].rsplit(":", 1)[-1] == str(port))
 
 
+def judge_scene(scene: str, path: Path | None = None) -> dict | None:
+    """The scene file a run is judged in, as the run records it (runfile.scenefile.describe): `path`, else the repository's
+    scenes/<scene>/scene.json; None when there is neither."""
+    path = Path(path) if path is not None else scenefile.REPOSITORY / scene / "scene.json"
+    return scenefile.describe(path) if path.exists() else None
+
+
 class _Loc:
     def __init__(self, remote: "Remote"):
         self.remote = remote
@@ -107,17 +114,19 @@ class Remote:
 
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
                  copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None,
-                 camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None):
+                 camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None,
+                 scene_file: Path | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
         `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
         `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
-        host's (a gate's), spoken to as `client`."""
+        host's (a gate's), spoken to as `client`; `scene_file`: the scene description the run is judged in (a challenge's, written
+        for it), else the repository's for `scene` when there is one (runfile.scenefile), recorded as judge_scene."""
         # the profile version this machine runs the robot on, resolved once before anything starts (a named one that does not exist
         # refuses the run here): the file the referee judges by (labrunner.geometry) is the file handed to the navigator, so both
         # read one version, and the official run records it as judge_profile; only the robot's own navigator takes --profile
         profile = robots.given_profile() if payload is None else None
-        run = {**(run or {}), "judge_profile": describe(robots.profile_file())}
+        run = {**(run or {}), "judge_profile": describe(robots.profile_file()), "judge_scene": judge_scene(scene, scene_file)}
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"

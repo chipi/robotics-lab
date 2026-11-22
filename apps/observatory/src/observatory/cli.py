@@ -5,7 +5,7 @@ OBSERVATORY_INDEX, else the installation file's `index`; no machine's path is bu
 index, the commands read it and write nothing.
 Every OBSERVATORY_* variable also reads as MINIVIEW_* (the names before the rename) when the new one is not set.
 
-    uv run observatory scene apartment --layout ../robots/duck/sim/apartment_layout.json
+    uv run observatory scene apartment                    # the repository's scenes/apartment/scene.json into the data folder
     uv run observatory import ../robots/duck/runs/explore12 ../robots/duck/runs/phase1-run18 --scene apartment
     uv run observatory import ../robots/duck/runs/explore13 --scene apartment --follow   # a run while it runs
     uv run observatory import --robot nxt ../apps/nxt-web/runs/run-20261114-145402.csv      # an nxt-web recording (ADR-0013)
@@ -37,12 +37,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from runfile import env, installation, keys, mcapio
+from runfile import env, installation, keys, mcapio, scenefile
 from observatory import query
 from runfile.catalog import Catalog, default_data
 from runfile.validate import BrokenRun
 from observatory.importer import import_duck
-from observatory.scenes import from_mujoco_layout
 
 
 def _cat(args, owner: bool = False) -> Catalog:
@@ -56,7 +55,13 @@ def _cat(args, owner: bool = False) -> Catalog:
 
 
 def cmd_scene(args) -> None:
-    scene = from_mujoco_layout(Path(args.layout), args.id, args.name)
+    """The scene's description, as it is versioned (runfile.scenefile), copied into the data folder: one copy of the world."""
+    try:
+        scene = (scenefile.read(Path(args.file)) if args.file else scenefile.load(args.id)).raw
+    except scenefile.SceneError as e:
+        raise SystemExit(f"observatory scene: {e}") from None
+    if scene["id"] != args.id:
+        raise SystemExit(f"observatory scene: {args.file} is the scene {scene['id']!r}, not {args.id!r}")
     p = _cat(args).put_scene(scene)
     print(f"scene {args.id}: {len(scene['boxes'])} boxes, {len(scene['hazards'])} hazards -> {p}")
 
@@ -399,10 +404,9 @@ def main() -> None:
     ap =argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=str(default_data() or "") or None, help="the lab's data folder (OBSERVATORY_DATA)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("scene", help="write a scene from a simulator layout")
+    p = sub.add_parser("scene", help="copy a scene's description (scenes/<id>/scene.json) into the data folder")
     p.add_argument("id")
-    p.add_argument("--layout", required=True)
-    p.add_argument("--name", default="The simulated apartment")
+    p.add_argument("--file", help="the scene file (default: the repository's scenes/<id>/scene.json)")
     p.set_defaults(fn=cmd_scene)
     p = sub.add_parser("import", help="a robot's log into the data folder as MCAP")
     p.add_argument("logs", nargs="+", help="the duck's run folders, or with --robot nxt nxt-web's run-*.csv files")

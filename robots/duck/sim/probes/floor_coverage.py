@@ -1,6 +1,6 @@
 """How much of the apartment's floor an exploring run's map knows, by the truth: the floor the duck could stand on (the layout's
 level-0 floors, cut where it could not be and to what connects to the dock: challenge/floor.py, the challenge stream's) read
-cell by cell against the run's final mapd grid (map_grid.json) and start.json, overall and per room (rooms.ROOMS). Free or occupied
+cell by cell against the run's final mapd grid (map_grid.json) and start.json, overall and per room (the scene's, runfile.scenefile). Free or occupied
 cells both count as known.
 
     .venv/bin/python sim/probes/floor_coverage.py runs/explore-b12-r1 runs/explore-b12-r2 ...
@@ -16,10 +16,10 @@ import legacy_rows
 
 from labrunner.floor import coverage_by, known_test, reachable_floor
 from labrunner.geometry import LAYOUT
-from labrunner.rooms import ROOMS
+from runfile import scenefile
 
 layout = json.loads(LAYOUT.read_text())
-regions = {name: (lambda p, b=b: b[0] <= p[0] <= b[1] and b[2] <= p[1] <= b[3]) for name, b in ROOMS.items()}
+regions = {r.name: r.holds for r in scenefile.load("apartment").rooms}
 runs = [Path(a) for a in sys.argv[1:]]
 start = legacy_rows.load(runs[0])[0]
 points = reachable_floor(layout, tuple(start["truth"][:2]))

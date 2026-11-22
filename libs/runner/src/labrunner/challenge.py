@@ -63,7 +63,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
     t0 = time.monotonic()
     try:
         sampler = Sampler(host).start()
-        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload)
+        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload, scene_file=sc)
 
         route = {"checks": 0, "max": None}       # the payload's connections to the truth's port, looked at every 2 s
 

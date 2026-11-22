@@ -1,5 +1,5 @@
 """The judge's geometry and numbers (RFC-0022, from the evaluation): the robot's footprint and thresholds (its profile's,
-variant sim), the apartment's layout, and the distances the judge, the scores and the truth guard measure with.
+variant sim), the simulator layout's files, and the distances the judge, the scores and the truth guard measure with.
 
 The robot is the one the runner runs (labrunner.robots): read once, when this module is imported. With one robot
 registered that is it; a second one needs its --robot read before the course's modules are imported (not built yet)."""
@@ -19,7 +19,6 @@ PROFILE = robots.profile("sim")
 DUCK_HEIGHT_M = PROFILE.footprint.height_m
 FOOTPRINT_M = PROFILE.footprint.radius_m       # the trunk centre closer than this to an obstacle's outline: a part can touch
 FALLEN_Z_M = PROFILE.judge.fall_z_m         # trunk height below this (standing: 0.116) is a fall; so is leaving the flat
-APARTMENT = (-4.0, 4.0, -3.0, 3.0)
 OVERHEAD_CLEAR_M = PROFILE.footprint.overhead_clear_m   # obstacles whose underside is higher than this pass over the duck's head
 GOAL_CLEARANCE_M = PROFILE.footprint.goal_clearance_m
 REACHED_M = PROFILE.judge.reached_m          # truth within this of the goal counts as reached

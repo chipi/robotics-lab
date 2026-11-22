@@ -1,6 +1,6 @@
 """lab-explore: the apartment's exploration, the robot's navigator as a payload behind this runner (RFC-0021 step 6,
 RFC-0022). The navigator gets the robot's sockets and the camera's; this process has the host file and the truth, serves
-the camera, keeps the staircase guard and writes the official run with the truth put in.
+the camera, keeps the drop guard (the scene's drops, runfile.scenefile) and writes the official run with the truth put in.
 
     uv run lab-explore --minutes 20 --out runs/explore13 --miniview-data /work/robotics-lab/data   # the run is the record
     uv run lab-explore --find fridge --site home --minutes 6 ...                                     # objects, a site
@@ -15,7 +15,8 @@ from pathlib import Path
 
 from labrunner import robots
 from labrunner.cli import add_args
-from labrunner.guard import GUARD_M, stairs_distance
+from labrunner.guard import GUARD_M, drop_distance
+from runfile import scenefile
 from runfile.catalog import default_data
 from worldmodel.objects import load_kinds
 
@@ -56,6 +57,10 @@ def main() -> None:
     data = args.miniview_data or default_data()
     if data is None:
         ap.error("the run is the record: give --miniview-data (or OBSERVATORY_DATA)")
+    try:
+        scene = scenefile.load(args.scene)
+    except scenefile.SceneError as e:
+        ap.error(f"the drop guard needs the scene's description: {e}")
     # the runner's, not the explorer's: the explorer also runs inside a payload, which has no host and no truth
     import shlex
     import simhost
@@ -83,7 +88,7 @@ def main() -> None:
         if not args.no_objects:
             camera = CameraServer(host, host.sockets["camera"]).start()
         sampler = Sampler(host).start()
-        nav = Remote(host, args.out, args.scene, name, Path(data), key, truth_log, run={"kind": "exploration"},
+        nav = Remote(host, args.out, args.scene, name, Path(data), key, truth_log, run={"kind": "exploration"}, scene_file=scene.path,
                      payload=shlex.split(args.payload) if args.payload else None, camera=camera.path if camera else None,
                      extra=extra)
         print(f"Observatory run {key} -> {keys.run_dir(Path(data), key)}", file=sys.stderr)
@@ -97,9 +102,10 @@ def main() -> None:
                     route["checks"] += 1
                     route["max"] = max(route["max"] or 0, n)
             # the test harness's kill switch (GUARD_M, above): the runner's, by the truth; the brain never reads it
-            if not guarded.is_set() and (stairs_distance(s.pose) < GUARD_M or s.z < 0.06):
+            d = drop_distance(scene, s.pose)
+            if not guarded.is_set() and (d < GUARD_M or s.z < 0.06):
                 guarded.set()
-                why = f"truth guard: {stairs_distance(s.pose):.2f} m from the staircase, trunk {s.z:.3f} m"
+                why = f"truth guard: {d:.2f} m from a drop, trunk {s.z:.3f} m"
                 nav.break_goal("truth_guard", why)
                 nav.record(event="truth_guard", why=why)
         sampler.on_sample = watch

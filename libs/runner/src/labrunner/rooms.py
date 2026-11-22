@@ -1,10 +1,9 @@
 """Phase 2's score (RFC-0002 §3.4): all six rooms visited; each room's area on the map within ±25 %.
 
-    uv run lab-rooms runs/explore1
+    uv run lab-rooms runs/explore1 [--scene apartment]
 
-Rooms are the apartment's rooms between their walls (sim/apartment_layout.json). Five match their floor
-boxes exactly; the corridor's floor boxes are a 40 cm carpet strip, so the corridor is taken between its
-walls (x -1.0..0.5), staircase opening excluded.
+Rooms are the scene's (runfile.scenefile: scenes/<id>/scene.json), each between its walls; a room's area leaves
+out the scene's drops inside it (the apartment's corridor: its staircase opening).
 
 - Visited: the simulator's truth was inside the room (with the trunk at least 15 cm in from its walls).
 - Area on the map: the map's segmentation (segment() below, from the duck's own map) — each segment
@@ -20,33 +19,10 @@ from collections import deque
 from pathlib import Path
 
 from labrunner.frames import compose, inverse
+from runfile import scenefile
 
-ROOMS = {   # x0, x1, y0, y1 (world), from the walls in apartment_layout.json
-    "kitchen": (-4.0, -1.0, 0.5, 3.0),
-    "living": (-4.0, -1.0, -3.0, 0.5),
-    "office": (0.5, 4.0, -1.0, 1.0),
-    "bedroom": (0.5, 4.0, 1.0, 3.0),
-    "bath": (0.5, 4.0, -3.0, -1.0),
-    "corridor": (-1.0, 0.5, -3.0, 3.0),
-}
-STAIRS = (-0.4, 0.0, -1.4, -0.7)
 INSET_M = 0.15
 DOOR_HALF_M = 0.42        # segments are cut where free space is narrower than a doorway (0.8 m)
-
-
-def room_of(p, inset=0.0):
-    for name, (x0, x1, y0, y1) in ROOMS.items():
-        if x0 + inset <= p[0] <= x1 - inset and y0 + inset <= p[1] <= y1 - inset:
-            return name
-    return None
-
-
-def room_area(name):
-    x0, x1, y0, y1 = ROOMS[name]
-    a = (x1 - x0) * (y1 - y0)
-    if name == "corridor":
-        a -= (STAIRS[1] - STAIRS[0]) * (STAIRS[3] - STAIRS[2])
-    return a
 
 
 def segment(grid: dict) -> list:
@@ -104,7 +80,7 @@ def segment(grid: dict) -> list:
     return segs
 
 
-def score(run: Path) -> dict:
+def score(run: Path, scene: scenefile.Scene) -> dict:
     start = json.loads((run / "start.json").read_text())
     world_from_map = compose(tuple(start["truth"]), inverse(tuple(start["map"])))
     scale = start["scale"]
@@ -112,7 +88,7 @@ def score(run: Path) -> dict:
     for line in open(run / "ticks.jsonl"):
         r = json.loads(line)
         if "truth" in r:
-            name = room_of(r["truth"], INSET_M)
+            name = scene.room_of(r["truth"], INSET_M)
             if name and name not in visited:
                 visited.add(name)
                 first_seen[name] = r["t"]
@@ -123,18 +99,18 @@ def score(run: Path) -> dict:
         votes = {}
         for cx, cy in seg:
             p = compose(world_from_map, (ox + (cx + 0.5) * res, oy + (cy + 0.5) * res, 0.0))
-            name = room_of(p)
+            name = scene.room_of(p)
             if name:
                 votes[name] = votes.get(name, 0) + 1
         if votes:
             name = max(votes, key=votes.get)
             areas[name] = areas.get(name, 0.0) + len(seg) * res * res
     rows = {}
-    for name in ROOMS:
+    for name in (r.name for r in scene.rooms):
         a = areas.get(name)
         rows[name] = {"visited": name in visited, "first_at_s": first_seen.get(name),
-                      "map_area_m2": round(a, 2) if a else None, "true_area_m2": round(room_area(name), 2),
-                      "within_25pct": a is not None and abs(a / room_area(name) - 1) <= 0.25}
+                      "map_area_m2": round(a, 2) if a else None, "true_area_m2": round(scene.room_area(name), 2),
+                      "within_25pct": a is not None and abs(a / scene.room_area(name) - 1) <= 0.25}
     met = all(r["visited"] and r["within_25pct"] for r in rows.values())
     return {"rooms": rows, "visited": len(visited), "areas_ok": sum(r["within_25pct"] for r in rows.values()),
             "bar": "MET" if met else "NOT MET"}
@@ -143,12 +119,14 @@ def score(run: Path) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", type=Path)
+    ap.add_argument("--scene", default="apartment", help="the run's scene (default apartment)")
     args = ap.parse_args()
-    out = score(args.run)
+    out = score(args.run, scenefile.load(args.scene))
     for name, r in out["rooms"].items():
         print(f"{name:9s} visited {'yes' if r['visited'] else 'no ':3s} (at {r['first_at_s']} s)  "
               f"map {r['map_area_m2']} m2 vs {r['true_area_m2']} m2  {'ok' if r['within_25pct'] else 'off'}")
-    print(f"PHASE2 rooms visited {out['visited']}/6, areas within 25 % {out['areas_ok']}/6 - bar {out['bar']}")
+    n = len(out["rooms"])
+    print(f"PHASE2 rooms visited {out['visited']}/{n}, areas within 25 % {out['areas_ok']}/{n} - bar {out['bar']}")
     sys.exit(0 if out["bar"] == "MET" else 1)
 
 

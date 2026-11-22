@@ -4,7 +4,7 @@ summary, and the blockers ranked by the exploring they cost.
     python -m labrunner.explore_score runs/explore-b1-r1 runs/explore-b1-r2 runs/explore-b1-r3 [--md]
 
 Per run, from its ticks.jsonl, start.json and map_grid.json (the simulator's truth is used for scoring only):
-- rooms visited (rooms.score: the truth inside a room) and each room's map area within 25 % (phase 2's bar);
+- rooms visited (rooms.score: the truth inside one of the scene's rooms, runfile.scenefile) and each room's map area within 25 % (phase 2's bar);
 - coverage: the share of each room's floor the map knows (free or occupied cells, truth frame);
 - how it ended (the last of trapped / no_frontier_left / stopped_by_guardrail / cancelled, else the time ran out) and when;
 - safety by truth: contacts (trunk centre nearer an obstacle's outline than evaluate.FOOTPRINT_M), falls (stopped_by_guardrail: the truth guard);
@@ -21,7 +21,8 @@ from pathlib import Path
 
 from labrunner.geometry import FOOTPRINT_M, LAYOUT, clearance, obstacles
 from labrunner.frames import compose, inverse
-from labrunner.rooms import ROOMS, room_of, score as rooms_score
+from labrunner.rooms import score as rooms_score
+from runfile import scenefile
 from runfile.navcontract import STOPS, stop_before
 
 ENDS = ("trapped", "no_frontier_left") + STOPS
@@ -31,7 +32,7 @@ def kind(status: str, why) -> str:
     return status + (": " + re.sub(r"\s*\(.*?\)|[-\d.]+\s*(m|s)\b", "", str(why)).strip(" :") if why else "")
 
 
-def coverage(run: Path) -> dict:
+def coverage(run: Path, scene: scenefile.Scene) -> dict:
     start = json.loads((run / "start.json").read_text())
     world_from_map = compose(tuple(start["truth"]), inverse(tuple(start["map"])))
     grid = json.loads((run / "map_grid.json").read_text())
@@ -42,12 +43,12 @@ def coverage(run: Path) -> dict:
         if c == "?":
             continue
         cx, cy = i % grid["width"], i // grid["width"]
-        name = room_of(compose(world_from_map, (ox + (cx + 0.5) * res, oy + (cy + 0.5) * res, 0.0)))
+        name = scene.room_of(compose(world_from_map, (ox + (cx + 0.5) * res, oy + (cy + 0.5) * res, 0.0)))
         if name:
             known[name] = known.get(name, 0) + 1
     out = {}
-    for name, (x0, x1, y0, y1) in ROOMS.items():
-        out[name] = round(min(1.0, known.get(name, 0) * res * res / ((x1 - x0) * (y1 - y0))), 2)
+    for r in scene.rooms:
+        out[r.name] = round(min(1.0, known.get(r.name, 0) * res * res / ((r.x1 - r.x0) * (r.y1 - r.y0))), 2)
     return out
 
 
@@ -56,7 +57,7 @@ MATCH_M = 0.6                           # a confirmed object this close to a rea
 ROOM_EDGE_M = 0.3                       # room naming is not scored this close to a room's walls (doorways)
 
 
-def semantic_score(run: Path, rows: list) -> dict:
+def semantic_score(run: Path, rows: list, scene: scenefile.Scene) -> dict:
     """The semantic map against the truth (RFC-0016): objects confirmed, matched to a real object of their kind (world
     frame, through the start's map-to-world), their position error; rooms named, the share of the time the name was
     the room the duck was in; a "found" goal judged by where the duck stood and faced."""
@@ -84,7 +85,7 @@ def semantic_score(run: Path, rows: list) -> dict:
         # recall, the "find all objects" goal's score: the scene's objects found, by the room they stand in
         by_room = {}
         for oid, kind, parts in cam.objects:
-            room = room_of(centre(parts)) or "?"
+            room = scene.room_of(centre(parts)) or "?"
             n, f = by_room.get(room, (0, 0))
             by_room[room] = (n + 1, f + (oid in found))
         out["objects"] = {"confirmed": len(conf), "matched": len(errs), "false": false,
@@ -105,17 +106,17 @@ def semantic_score(run: Path, rows: list) -> dict:
             area = r.get("type") or r.get("name")
             agrees += r.get("agrees") is True
             disagrees += r.get("agrees") is False
-        elif "event" not in r and r.get("truth") and room_of(r["truth"], inset=ROOM_EDGE_M):
+        elif "event" not in r and r.get("truth") and scene.room_of(r["truth"], inset=ROOM_EDGE_M):
             if said is None:
                 none += 1
             else:
                 named += 1
-                right += room_of(r["truth"]) == said
+                right += scene.room_of(r["truth"]) == said
             if area is None:
                 a_none += 1
             else:
                 a_ticks += 1
-                a_right += room_of(r["truth"]) == area
+                a_right += scene.room_of(r["truth"]) == area
     ticks = named + none
     out["rooms_named"] = {"events": events, "named_share": round(named / ticks, 2) if ticks else None,
                           "right": round(right / named, 2) if named else None}
@@ -158,9 +159,9 @@ def belief_score(run: Path, rows: list) -> dict:
             "refused": sum(1 for r in ev if r["event"] == "relocalise" and r["status"] == "refused")}
 
 
-def score_run(run: Path, obs: list) -> dict:
+def score_run(run: Path, obs: list, scene: scenefile.Scene) -> dict:
     rows = [json.loads(line) for line in open(run / "ticks.jsonl")]
-    rooms = rooms_score(run)
+    rooms = rooms_score(run, scene)
     end, end_t, last_t, prev_leg_t = "time", None, 0.0, 0.0
     legs, blockers, contacts, walked, prev = {}, [], 0, 0.0, None
     in_contact, after_reflex, reflex_kept, looks, glance_s, glance_t = False, False, 0, 0, 0.0, None
@@ -187,7 +188,7 @@ def score_run(run: Path, obs: list) -> dict:
         if ev == "leg":
             legs[r["status"]] = legs.get(r["status"], 0) + 1
             if r["status"] != "reached":
-                where = room_of(r["truth"]) if r.get("truth") else None
+                where = scene.room_of(r["truth"]) if r.get("truth") else None
                 blockers.append({"kind": kind(r["status"], r.get("why")), "room": where, "s": round(t - prev_leg_t, 1)})
             prev_leg_t = t
         if "truth" in r and "event" not in r:
@@ -199,20 +200,22 @@ def score_run(run: Path, obs: list) -> dict:
             contacts += near and not in_contact
             in_contact = near
     return {"run": run.name, "visited": rooms["visited"], "areas_ok": rooms["areas_ok"], "bar": rooms["bar"],
-            "rooms": [n for n, v in rooms["rooms"].items() if v["visited"]], "coverage": coverage(run),
+            "rooms": [n for n, v in rooms["rooms"].items() if v["visited"]], "coverage": coverage(run, scene),
             "end": end, "minutes": round((end_t or last_t) / 60, 1), "walked_m": round(walked, 1),
             "contacts": contacts, "falls": int(end == "stopped_by_guardrail"), "legs": legs, "reflex_kept": reflex_kept,
             "looks": looks, "look_min": round(glance_s / 60, 1),
-            "blockers": blockers, "semantic": semantic_score(run, rows), "belief": belief_score(run, rows)}
+            "blockers": blockers, "semantic": semantic_score(run, rows, scene), "belief": belief_score(run, rows)}
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("runs", type=Path, nargs="+")
     ap.add_argument("--md", action="store_true", help="also print the batch's row for EXPLORE-PROGRESS.md")
+    ap.add_argument("--scene", default="apartment", help="the runs' scene (default apartment)")
     args = ap.parse_args()
     obs = obstacles(json.loads(LAYOUT.read_text()))
-    out = [score_run(r, obs) for r in args.runs]
+    scene = scenefile.load(args.scene)
+    out = [score_run(r, obs, scene) for r in args.runs]
     for o in out:
         cov = " ".join(f"{n[:4]} {int(v * 100)}%" for n, v in o["coverage"].items())
         print(f"{o['run']}: rooms {o['visited']}/6 ({', '.join(o['rooms'])}), areas ok {o['areas_ok']}/6, "

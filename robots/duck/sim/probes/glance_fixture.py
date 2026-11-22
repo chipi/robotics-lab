@@ -3,7 +3,7 @@ points and their kinds, as glance_from_run replays them), where it stood, what i
 
     .venv/bin/python sim/probes/glance_fixture.py apartment/explore-b11-r2 0 > tests/fixtures/glance_b11_r2.json
 
-Written for the apartment's stairwell (explore_run.STAIRS: x -0.40..0, y -1.40..-0.70, the opening; its top edge is y -0.70).
+Written for the apartment's stairwell (the scene's drop `stairs`, scenes/apartment/scene.json: x -0.40..0, y -1.40..-0.70, the opening; its top edge is y -0.70).
 """
 
 import json
@@ -14,7 +14,9 @@ from runfile.mcapio import Follower
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import glance_from_run as g  # noqa: E402
-from labrunner.guard import STAIRS  # noqa: E402
+from runfile import scenefile  # noqa: E402
+
+STAIRS = next((d["x0"], d["x1"], d["y0"], d["y1"]) for d in scenefile.load("apartment").drops if d["name"] == "stairs")
 
 run, n = sys.argv[1], int(sys.argv[2])
 records = list(Follower(g.DATA / "runs" / "duck" / run, keep_raw=True).poll())

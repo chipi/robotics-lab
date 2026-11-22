@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from duck_lab.nav.frames import compose, inverse
-from labrunner.rooms import ROOMS
+from runfile import scenefile
 from worldmodel.objects import load_kinds
 from worldmodel.site import Site
 
@@ -85,7 +85,7 @@ def main() -> None:
         site = Site.load(args.sites, args.id, kinds)
         st = json.loads(args.start.read_text())
         map_from_world = compose(tuple(st["map"]), inverse(tuple(st["truth"])))
-        for room, (x0, x1, y0, y1) in ROOMS.items():
+        for room, x0, x1, y0, y1 in ((r.name, r.x0, r.x1, r.y0, r.y1) for r in scenefile.load("apartment").rooms):
             corners = [compose(map_from_world, (x, y, 0.0))[:2] for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
             try:
                 site.add_area(room, corners, room)

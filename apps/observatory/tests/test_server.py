@@ -12,8 +12,9 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
-from helpers import Checks, catalog, get, import_fixture, make_run, scene, serve, tick, wait_until
+from helpers import Checks, catalog, get, import_fixture, make_run, run_record, scene, serve, tick, wait_until
 from observatory import query, server
+from runfile import keys, mcapio, scenefile
 from runfile.catalog import FOLLOW_EVERY_S
 
 check = Checks("SERVER")
@@ -243,6 +244,21 @@ with tempfile.TemporaryDirectory() as tmp:
     late = Stream(base, "duck/room/live1", since=0)
     wait_until(late.closed.is_set, 10, what="a stream of a finished run to close")
     check("a finished run replays its records and closes", late.records()[0][1] == 1 and late.records()[-1][0] == "end")
+
+    # ---- the scene file a run was judged in (phase 5 item 2) ------------------------------------------------------------
+    room_file = data / "scenes" / "room" / "scene.json"
+    rec_ = mcapio.Recorder(keys.run_dir(data, "duck/room/judged1"), {**run_record("duck/room/judged1"),
+                                                                       "judge_scene": scenefile.describe(room_file)})
+    for r_ in HEAD + [tick(1.0, 0.0), (1.5, "end", {"verdict": "reached"})]:
+        rec_.add(*r_)
+    rec_.close()
+    wait_until(lambda: any(r["key"] == "duck/room/judged1" for r in api("/runs")[1]), what="the judged run to be listed")
+    j = api("/runs/duck/room/judged1")[1]
+    check("a run keeps the scene file it was judged in", j.get("judge_scene") == scenefile.describe(room_file), j.get("judge_scene"))
+    check("the scene file as it was: not changed", j.get("scene_changed") is False, j.get("scene_changed"))
+    cat.put_scene({**scene("room"), "hazards": [{"name": "pit", "kind": "drop", "x0": 0, "x1": 0.2, "y0": 0, "y1": 0.2, "depth": 0.3}]})
+    check("must fail: the scene file changed after the run: said", api("/runs/duck/room/judged1")[1].get("scene_changed") is True)
+    check("a run that recorded no scene: not known", api("/runs/duck/room/done1")[1].get("scene_changed") is None)
     httpd.shutdown()
 
 check.done()

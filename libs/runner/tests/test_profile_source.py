@@ -13,7 +13,7 @@ from pathlib import Path
 
 from labrunner import remote, robots
 from labrunner.robots import ProfileSourceError, profile_source
-from runfile import installation
+from runfile import installation, scenefile
 from runfile.profilestore import Store, resolve
 
 failures = []
@@ -159,8 +159,9 @@ try:
     check("must fail: the navigator's process does not inherit the installation file (the operator's decision i) nor the host "
           "file, while the runner has the installation's", installation.ENV in os.environ and installation.ENV not in env
           and "ROBOTICS_LAB_HOST" not in env and "PATH" in env, sorted(k for k in env if k.startswith("ROBOTICS")))
-    check("the official run records the referee's profile beside the runner's own fields",
-          seen.get("run") == {"kind": "go-to", "judge_profile": judged.meta}, seen.get("run"))
+    apartment = scenefile.describe(scenefile.REPOSITORY / "apartment" / "scene.json")
+    check("the official run records the referee's profile and the scene file it judges in beside the runner's own fields",
+          seen.get("run") == {"kind": "go-to", "judge_profile": judged.meta, "judge_scene": apartment}, seen.get("run"))
 
     # lab-nav-server runs many goals: it reads the profile again at each goal.start
     goals, calls = [], []

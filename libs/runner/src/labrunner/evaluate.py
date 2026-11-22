@@ -28,9 +28,9 @@ from pathlib import Path
 from labrunner import robots
 from labrunner.cli import add_args
 from labrunner.frames import compose, inverse
-from labrunner.geometry import (APARTMENT, FALLEN_Z_M, FOOTPRINT_M, GOAL_CLEARANCE_M, GOALS, LAYOUT, REACHED_M, clearance,
+from labrunner.geometry import (FALLEN_Z_M, FOOTPRINT_M, GOAL_CLEARANCE_M, GOALS, LAYOUT, REACHED_M, clearance,
                                 footprint_distance, obstacles)
-from runfile import keys
+from runfile import keys, scenefile
 from runfile.catalog import default_data
 
 
@@ -67,6 +67,7 @@ def main() -> None:
     import simhost
     robots.select(args.robot)
     host = simhost.load(args.host)
+    x0, x1, y0, y1 = scenefile.load(args.scene).bounds    # outside the scene's bounds is a fall
     layout = json.loads(LAYOUT.read_text())
     obs = obstacles(layout)
     if args.draw:
@@ -125,7 +126,7 @@ def main() -> None:
                 out = nav.go_to(goal_map, args.timeout)
             tr = [s.pose for s in samples]
             low = min((s.z for s in samples), default=1.0)
-            outside = any(not (APARTMENT[0] < p[0] < APARTMENT[1] and APARTMENT[2] < p[1] < APARTMENT[3])
+            outside = any(not (x0 < p[0] < x1 and y0 < p[1] < y1)
                           for p in tr)
             near = min((clearance(p, obs) for p in tr), default=(math.inf, None))
             end = sampler.latest.pose

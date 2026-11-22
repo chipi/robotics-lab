@@ -1,56 +1,53 @@
-"""The guardrails only the simulator's truth can check, and the staircase guard (RFC-0021 step 6, RFC-0022): the runner's.
+"""The guardrails only the simulator's truth can check, and the drop guard (RFC-0021 step 6, RFC-0022): the runner's.
 
 `TruthGuard` checks a goal run's contact, fall, drop clearance and the robot inside a no-go area against the truth (the
-trunk's pose and height) and the apartment's layout; the runner breaks the run through the navigator API's `goal.break`.
-The navigator's own guardrails (the speed cap, the no-go area in its planner, the clock, stuck) are its own
-(duck_lab.nav.guardrails.Guard). The staircase guard is the explorations' kill switch: the truth aborts a run when the
-trunk comes within GUARD_M of the staircase opening or drops, so a failing cliff check ends in an abort, not a fall."""
+trunk's pose and height), the simulator's layout (what the robot can walk into) and the scene's drops (runfile.scenefile: the
+scene's own, a scene with none has none); the runner breaks the run through the navigator API's `goal.break`. The navigator's own
+guardrails (the speed cap, the no-go area in its planner, the clock, stuck) are its own (duck_lab.nav.guardrails.Guard). The drop
+guard is the explorations' kill switch: the truth stops a run when the trunk comes within GUARD_M of a drop or drops, so a failing
+cliff check ends in a stop, not a fall."""
 
 import json
 import math
 from pathlib import Path
 
 from labrunner.geometry import FALLEN_Z_M, FOOTPRINT_M, LAYOUT, footprint_distance, obstacles
+from runfile.scenefile import Scene
 from worldmodel.site import inside
 
 TRUTH = ("contact", "fall", "drop_clearance", "no_go_area")         # by the truth (no_go_area: the robot inside it)
-STAIRS = (-0.40, 0.00, -1.40, -0.70)
 GUARD_M = 0.05
 
 
-def stairs_distance(p) -> float:
-    x0, x1, y0, y1 = STAIRS
-    return math.hypot(max(x0 - p[0], 0, p[0] - x1), max(y0 - p[1], 0, p[1] - y1))
+def drop_distance(scene: Scene, p) -> float:
+    """The trunk's distance to the scene's nearest drop's outline; infinite in a scene with none."""
+    return min((footprint_distance(p, g) for g in scene.drop_geoms()), default=math.inf)
 
 
-def load_layout(path: Path = LAYOUT) -> tuple:
-    """(obstacles, drops) of the apartment's layout, or ([], []) when there is none: no truth to check against."""
+def load_layout(scene: Scene, path: Path = LAYOUT) -> tuple:
+    """(obstacles of the simulator's layout, the scene's drops); no obstacles when there is no layout: no truth to check against."""
     try:
-        lay = json.loads(Path(path).read_text())
+        obs = obstacles(json.loads(Path(path).read_text()))
     except OSError:
-        return [], []
-    drops = [g for g in lay["geoms"] if g["name"].startswith("floor_") and g["pos"][2] + g["size"][2] < -1e-6]
-    if not drops:
-        # the apartment's one drop is the stairwell: an opening in the floor, with no floor geom below it (the explorer's truth
-        # guard uses the same rectangle)
-        x0, x1, y0, y1 = STAIRS
-        drops = [{"name": "stairwell", "type": "box", "pos": [(x0 + x1) / 2, (y0 + y1) / 2, 0.0],
-                  "size": [(x1 - x0) / 2, (y1 - y0) / 2, 0.0], "yaw": 0.0}]
-    return obstacles(lay), drops
+        obs = []
+    return obs, scene.drop_geoms()
 
 
 class TruthGuard:
     """The runner's side (RFC-0021 step 6): the guardrails only the simulator's truth can check, against the layout."""
 
-    def __init__(self, guardrails: list, layout: tuple | None = None, profile=None):
-        """`profile`: the robot's profile this goal is judged by (its footprint and fall height); None: labrunner.geometry's."""
+    def __init__(self, guardrails: list, layout: tuple | None = None, profile=None, scene: Scene | None = None):
+        """`layout`: (obstacles, drops), else the simulator's layout's and `scene`'s drops (load_layout); `profile`: the robot's
+        profile this goal is judged by (its footprint and fall height); None: labrunner.geometry's."""
         self.fallen_z = profile.judge.fall_z_m if profile is not None else FALLEN_Z_M
         self.footprint = profile.footprint.radius_m if profile is not None else FOOTPRINT_M
         self.by_name: dict = {}
         for g in guardrails:
             if g["name"] in TRUTH:
                 self.by_name.setdefault(g["name"], []).append(g)
-        self.obs, self.drops = layout if layout is not None else load_layout()
+        if layout is None and scene is None:
+            raise ValueError("a truth guard needs the scene (its drops) or a layout")
+        self.obs, self.drops = layout if layout is not None else load_layout(scene)
         self.checked = list(self.by_name)
 
     def check(self, pose: tuple, z: float) -> tuple | None:

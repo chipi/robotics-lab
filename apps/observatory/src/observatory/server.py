@@ -4,7 +4,8 @@
     GET /api/v1/scenes                                the scenes with their runs (index.json's shape)
     GET /api/v1/scenes/{id}                           a scene
     GET /api/v1/runs?robot=&scene=&status=            the runs, newest first (from the index)
-    GET /api/v1/runs/{robot}/{scene}/{run}            the run (run.json's shape, with status and seq)
+    GET /api/v1/runs/{robot}/{scene}/{run}            the run (run.json's shape, with status and seq, and scene_changed: the
+                                                      scene file differs from the one the run was judged in; null: not known)
         .../frames?from=&to=                          drawing data for a time window, with only the plans and maps its
                                                       ticks refer to, keyed by index
         .../signals?from=&to=                         a robot's named values over a time window, columnar (ADR-0013)
@@ -46,7 +47,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from runfile import env, keys
+from runfile import env, keys, scenefile
 from observatory import query, robots
 from runfile.catalog import Catalog
 
@@ -434,7 +435,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cat, f = self.catalog, ld.data.frames
         run, n, seq = self._snapshot(ld)
         if what == "":
-            return self._json(dict(run, status=cat.status(ld), seq=seq))
+            changed = scenefile.changed_since(run.get("judge_scene"), cat.data / "scenes" / run["scene"] / "scene.json")
+            return self._json(dict(run, status=cat.status(ld), seq=seq, scene_changed=changed))
         if what == "frames":
             t_from, t_to = number(q, "from"), number(q, "to")
             if t_from is not None and t_to is not None and t_from > t_to:

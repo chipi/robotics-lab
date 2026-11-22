@@ -211,18 +211,27 @@ are final until the file changes (size, mtime, inode). A restart opens only runs
 ### `GET /api/v1/scenes/{id}` — what is really there (world frame)
 
 ```json
-{"id": "apartment", "frame": "world", "bounds": [-4.0, 4.0, -3.0, 3.0],
+{"id": "apartment", "name": "The simulated apartment", "kind": "apartment", "frame": "world",
+ "bounds": [-4.0, 4.0, -3.0, 3.0],
+ "rooms": [{"name": "kitchen", "x0": -4.0, "x1": -1.0, "y0": 0.5, "y1": 3.0}],
  "boxes": [{"name": "off_cabinet", "cx": 0.85, "cy": 0.0, "z0": 0.0, "z1": 0.6,
             "hx": 0.18, "hy": 0.18, "yaw": 0.0}],
  "hazards": [{"name": "stairs", "kind": "drop", "x0": -0.4, "x1": 0.0, "y0": -1.4, "y1": -0.7,
-              "depth": 0.3}]}
+              "depth": 0.4}]}
 ```
 
 `boxes` are oriented boxes (centre, half sizes in x and y, bottom and top z, yaw). Cylinders are
 given
 as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, turned by an optional
 `yaw` (radians) about its centre: a challenge scene's drop is turned with the start's jitter
-(ADR-0015).
+(ADR-0015). `rooms` (the rooms' rectangles, in order: a point on a shared wall is the first's) is
+in a scene the repository describes; a challenge's scene has none.
+
+A scene the repository describes (the apartment) is versioned at `scenes/<id>/scene.json` and checked
+by `runfile.scenefile`; `observatory scene <id>` copies it into the data folder, so the Observatory,
+the runner's judge, guard and scores read one description. The apartment's boxes are made from the
+duck's simulator layout (`runfile.scenefile.boxes_from_layout`; the duck's `test_scene_layout`
+fails when the two part).
 
 ### `GET /api/v1/runs/{key}` — the run's summary
 
@@ -239,6 +248,9 @@ as boxes with equal half sizes. A hazard is the rectangle `x0..x1` × `y0..y1`, 
 
 - `samples` is the number of signals ticks (0 for a robot with none), `signals` the declared signals,
   `odometry` and `no_pose` as in the run record.
+- `judge_scene` (a runner's run): the scene file it was judged in, `{id, path, checksum}`
+  (`runfile.scenefile.describe`). `scene_changed`: `true` when the data folder's scene file is no
+  longer that one, `false` when it is, `null` when the run recorded none or there is no file.
 - `t0`, `t1`: the span of every record (poses, signals, plans, maps, events), not only the poses.
   While a run is live,
   `verdict` is `live`. `status` is `live`, `ended`, `stopped` or `broken`.
@@ -525,11 +537,12 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 
 `observatory scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
 <run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
-frame | film | import | repair <key> | compact <key> | index | serve`. `import --robot nxt <run>.csv
-[--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web
-recording (ADR-0013); `state` of a run with signals prints them, of a run with a semantic map its
-objects, current sighting and room; `objects` prints the same three alone (`--json`: the API's
-`semantic`). While a service holds the
+frame | film | import | repair <key> | compact <key> | index | serve | scene <id> [--file F]`
+(`scene`: the repository's `scenes/<id>/scene.json`, or F, copied into the data folder).
+`import --robot nxt <run>.csv [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M]
+[--config PATH]` imports an nxt-web recording (ADR-0013); `state` of a run with signals prints
+them, of a run with a semantic map its objects, current sighting and room; `objects` prints the
+same three alone (`--json`: the API's `semantic`). While a service holds the
 index the
 commands read it and write nothing (one index, ADR-0012); `compact` closes a finished run whose
 writer did

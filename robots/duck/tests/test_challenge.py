@@ -379,11 +379,12 @@ check("reachable floor: the layout-level function (floors in, points out) is the
 
 # not challenge-only (the apartment scoreboard's coverage later): the apartment's layout and its rooms through the same functions
 from labrunner.geometry import LAYOUT  # noqa: E402
-from labrunner.rooms import ROOMS, room_of  # noqa: E402
+from runfile import scenefile  # noqa: E402
 
 apartment = json.loads(LAYOUT.read_text())
 walk = floor.reachable_floor(apartment, (0.05, 0.0), step=0.1)
-rooms = {n: (lambda p, n=n: room_of(p) == n) for n in ROOMS}
+APARTMENT = scenefile.load("apartment")
+rooms = {r.name: (lambda p, n=r.name: APARTMENT.room_of(p) == n) for r in APARTMENT.rooms}
 heard = floor.coverage_by(walk, lambda p: p[0] > 0.0, rooms)           # a stand-in map: everything east of the dock
 check("the apartment's layout: a floor to stand on from the dock, no point inside the stairwell (the stairs' opening), and "
       "each room's share of a stand-in map told apart",

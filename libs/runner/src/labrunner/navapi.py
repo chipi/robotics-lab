@@ -39,7 +39,7 @@ from labrunner.camera import CameraServer
 from labrunner.remote import navigator_env, truth_connections
 from labrunner.rpc import Rpc
 from labrunner.guard import TruthGuard
-from runfile import keys, registry
+from runfile import keys, registry, scenefile
 from runfile.catalog import default_data
 from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.truthcopy import TruthCopy, TruthLog
@@ -64,8 +64,8 @@ class GoalWatch:
         self.dir.mkdir(parents=True, exist_ok=True)
         self.truth_log = TruthLog(self.dir / "truth.jsonl")
         self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key, self.truth_log.nearest,
-                              run={"judge_profile": self.judge})
-        self.guard = TruthGuard(guardrails, profile=judge)
+                              run={"judge_profile": self.judge, "judge_scene": runner.judge_scene})
+        self.guard = TruthGuard(guardrails, profile=judge, scene=runner.scene)
         self.broken = None
         self.state = None
         self._objects_v = -1          # the objects version last seen: asked again, the API leaves them out
@@ -138,7 +138,8 @@ class GoalWatch:
     def summary(self) -> dict:
         return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked,
                 "truth_samples": self.sampler.samples, "truth_error": self.sampler.error, "truth_copy": self.copy.stats(),
-                "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile}
+                "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile,
+                "judge_scene": self.runner.judge_scene}
 
 
 class NavRunner:
@@ -146,6 +147,8 @@ class NavRunner:
                  robot_socket: Path | None = None):
         self.robot_name = robots.get().NAME                     # read once, at start: robots.get() exits on a bad name, a server must not
         profile = robots.profile_source(self.robot_name)        # resolved first: a named version that does not exist refuses here
+        self.scene = scenefile.load(scene)                      # the scene's drops, for the truth guard: none, the server does not start
+        self.judge_scene = scenefile.describe(self.scene.path)
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null): Mission Control talks to the "
                              f"navigator API itself there (the robot's NAVIGATOR_API)")

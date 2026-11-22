@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from glance_from_run import DATA, glances, replay_glance  # noqa: E402
 
 AIMED_M = 0.5                                  # a glance counts when its target is this near a real drop
-STAIRS = (-0.40, 0.00, -1.40, -0.70)         # explore_run.STAIRS: x0, x1, y0, y1, the opening in the apartment (world frame)
+STAIRS = (-0.40, 0.00, -1.40, -0.70)         # the scene's drop `stairs` (scenes/apartment/scene.json): x0, x1, y0, y1, world frame
 
 
 def box_signed(p: tuple, cx: float, cy: float, hx: float, hy: float, yaw: float) -> float:

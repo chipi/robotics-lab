@@ -2,9 +2,11 @@
 
 **Status:** written 2026-11-22, at the end of phase 5 step 1 (parts 1 to 10, last commit `11cad9d`),
 for the next session to start from; updated the same day after item 1 (`0488ca3`, `642a82b`, both CI
-green). The order is [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
-[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Next: item 2,
-the apartment out of the runner.** Items 2 to 5 are not started.
+green), and on 2026-11-23 after item 2's first part. The order is
+[RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
+[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Next: item 2's
+second part, the course modules reading the robot when a command starts.** Items 3 to 5 are not
+started.
 
 ## Where things stand
 
@@ -117,6 +119,38 @@ file's before writing `scenes/apartment/scene.json`, and list every difference f
 they disagree.
 
 **Size:** one to two parts; it touches every course.
+
+**Decided (the operator, 2026-11-23):** the scene's boxes are the simulator layout's 61 (the free
+bodies too), with a test that fails when the two part; the stairwell is 0.4 m deep (the last
+tread's top); the Observatory reads the repository's scene file (its own copy in `scenes.py` goes).
+
+**Part 1 done 2026-11-23 (the scene file).** `scenes/apartment/scene.json`, read and checked by
+`runfile.scenefile` (bounds, rooms in order, drops, boxes; `describe`, `changed_since`,
+`boxes_from_layout`). The runner's rooms score, the explore score, the truth guard, `lab-explore`'s
+drop guard, `lab-eval`'s bounds and `lab-nav-server` read it for their `--scene`; the guard takes
+the scene's drops only (`STAIRS` and the added stairwell are gone from `rooms.py` and `guard.py`,
+`geometry.APARTMENT` too). A run records `judge_scene` {id, path, checksum} beside `judge_profile`
+(a challenge's: the scene file written for it); the Observatory keeps it and its run answer says
+`scene_changed`. `observatory scene <id>` copies the repository's file (`observatory/scenes.py`
+deleted). Proof: `test_scenefile` (23 checks, 9 must-fail), the duck's `test_scene_layout` (13: the
+boxes are the layout's, the stairwell the treads' outline and depth, the rooms between the walls,
+the guard stops at the stairs and adds no drop to a scene with none), `test_server` (4, the scene
+changed after a run said), `test_profile_source` (the run records the scene); 7 mutants killed;
+`make ci-fast` PASS; the explore score and `lab-rooms` of 8 recorded runs (b11 r1-r5, b13 r1-r3)
+byte for byte the same before and after; challenges 1-11, seed 1, the main checkout (`bff565c`) and
+this code alternating: the same verdict in 11 of 11 (9 pass; 6 and 7 fail on both, K40), and the
+11 new runs record `judge_scene` matching their scene file. Challenge 6 failed differently on the
+two sides, so it ran twice more on each: before refused, stalled, reached (1 of 3); after stalled,
+refused, refused (0 of 3); both sides show both failures, too few runs to tell 1 of 3 from 0 of 3.
+`make sim-duck` PASS 48 FAIL 0 (its `drop_clearance` stop names the scene's `stairs`). Not covered:
+`lab-explore`'s drop guard and `lab-eval`'s bounds run only in a live exploration or evaluation (not
+run); the stairwell copies in the duck's viewer and probes stay (K47). **Waiting for the operator
+after the push:** `observatory scene apartment` replaces the data folder's 57-box file.
+
+**Part 2, next:** no module-level `robots.get()` or `robots.profile()`: `geometry.py` (`ROBOT`,
+`LAYOUT`, `GOALS`, `PROFILE` and the numbers from it), `sim_camera.py` (`SIM_DIR`), `judge.py` and
+`floor.py` (margins from `PROFILE`), read when a command starts; their importers (the runner's
+modules, the duck's probes and tests) follow.
 
 ### 3. RFC-0023 steps 2 and 3, side by side
 
