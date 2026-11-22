@@ -192,7 +192,17 @@ migration, and smaller debts. It also listed decisions not written down. The ope
 - **(a) How a robot is registered: in the installation file.** A robot's registration is a file
   named by `robots.<name>.registration`, with the robot's name, its profile and its commands. No
   package is installed into Mission Control or the runner to add a robot. Entry points stay as a
-  fallback for packaged robots.
+  fallback for packaged robots. *Built:* `runfile.registry` reads `{registration, name, profile,
+  payload, navigator_api, sim}` (paths, and a command's program given as a relative path, from
+  the file's folder; `sim` optional, and a robot without it is refused by the runner's courses
+  by name). A file wins over an entry point of the same name; a missing or wrong file is refused
+  naming it, with no fallback. The duck's is `robots/duck/registration.json`, which names its
+  own environment's Python (`test_registration` in runfile's environment, where the duck is
+  not installed; `test_registration_file` in the duck's, against its entry point; one mutant
+  killed). Not done: Mission Control still lists `duck-lab` as a dependency, for its tests;
+  removing it is a dependency change left to the operator. This machine's installation file
+  does not name the duck's registration yet (the entry point serves); that is the operator's
+  file.
 - **(b) The checksum is taken over the profile as stored** (validated, not migrated), with `label`,
   `measured` and `why` included. Any change is a new identity. The schema version is recorded
   beside it, and a diff whose only changes are notes says so. *Built:* `runfile.profile.canonical`

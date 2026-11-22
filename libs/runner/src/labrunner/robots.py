@@ -1,9 +1,10 @@
-"""The robots this runner can run (RFC-0022): each robot's package registers one small module in the entry-point group
-`robotics_lab.robots`, which names its profile, its navigator's commands and its simulator files. The runner finds a robot
-by name and never imports its navigator. The registry itself is runfile.registry, which Mission Control reads too.
+"""The robots this runner can run (RFC-0022): each robot is registered by a registration file the installation names
+(`robots.<name>.registration`), else by its package's module in the entry-point group `robotics_lab.robots`; either names its
+profile, its navigator's commands and its simulator files. The runner finds a robot by name and never imports its navigator.
+The registry itself is runfile.registry, which Mission Control reads too.
 
     robots.select("duck")       # a command's --robot; with one robot registered it is the default
-    r = robots.get()            # r.NAME, r.PROFILE, r.PAYLOAD, r.NAVIGATOR_API, r.SIM
+    r = robots.get()            # r.NAME, r.PROFILE, r.PAYLOAD, r.NAVIGATOR_API, r.SIM (robots.sim_dir(): None refused)
     robots.profile("sim")       # its profile in an environment: the version this machine runs (profile_file), with .meta
 
 A robot's module: NAME (str), PROFILE (the profile's path), PAYLOAD and NAVIGATOR_API (commands, lists), SIM (the folder of
@@ -42,6 +43,16 @@ def get(name: str | None = None):
         return registry.module(name)
     except LookupError as e:
         raise SystemExit(str(e)) from None
+
+
+def sim_dir(name: str | None = None) -> Path:
+    """The robot's simulator files (the apartment's layout and objects, phase 1's goals); a robot registered with none cannot run
+    the runner's courses, which are in the simulator: said, naming the robot."""
+    r = get(name)
+    if r.SIM is None:
+        raise SystemExit(f"robot {r.NAME!r} has no simulator files (its registration names no sim): the runner's courses run in "
+                         f"the simulator")
+    return Path(r.SIM)
 
 
 def _resolve(name: str | None) -> tuple:

@@ -42,6 +42,9 @@ check("its gate's socket, with ~ expanded (Mission Control's way to the robot)",
 check("a robot with nothing set: no navigator, no gate, its own profile",
       inst.robot("ev3") == I.Robot("ev3") and inst.robot("ev3").gate is None)
 check("a robot this machine does not run: None", inst.robot("turtlebot3") is None)
+reg = I.load(write({"installation": 1, "robots": {"rover": {"registration": "~/robots/rover/registration.json"}}}, "reg.json"))
+check("a robot's registration file, with ~ expanded (the operator's decision a)",
+      reg.robot("rover").registration == home / "robots/rover/registration.json" and duck.registration is None, reg.robot("rover"))
 check("the source is the file read", inst.source == tmp / "installation.json")
 minimal = I.load(write({"installation": 1}, "minimal.json"))
 check("only the version is required: a machine running nothing", minimal.robots == {} and minimal.data is None and minimal.state is None)
@@ -80,6 +83,8 @@ CASES = [
     ("an empty gate socket", {**GOOD, "robots": {"duck": {"gate": ""}}}, "robots.duck.gate must be the path of the gate's socket"),
     ("a map socket (Mission Control reads the map through the navigator API)", {**GOOD, "robots": {"duck": {"map": "/m.sock"}}},
      "robots.duck: unknown keys ['map']"),
+    ("a registration that is not a path", {**GOOD, "robots": {"duck": {"registration": 7}}},
+     "robots.duck.registration must be the path of the robot's registration file"),
 ]
 for i, (name, d, why) in enumerate(CASES):
     p = write(d, f"bad{i}.json")

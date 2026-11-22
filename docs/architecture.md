@@ -35,9 +35,12 @@ truth's port in any run since (583 checks in the proof batch, 150 in an explorat
 Which package may import which is checked on every `make lint` (`scripts/check_boundaries.py`, the
 table in [RFC-0018 §10](rfc/RFC-0018-lab-projects-and-seams.md)): the navigator (`duck_lab.nav`, the
 payload, the plugins, the profile) may import neither the runner (`labrunner`) nor the host library;
-the runner has no import of a robot's package, it finds a robot by name (the entry-point group
-`robotics_lab.robots`, [RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)), which loads the
-robot's small registration module when the runner starts (the check cannot see that, by design);
+the runner has no import of a robot's package, it finds a robot by name: a registration file the
+installation names (`robots.<name>.registration`, a JSON file with the robot's name, profile and
+commands; phase 5 step 1), else the entry-point group `robotics_lab.robots`
+([RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)), which loads the robot's small registration
+module when the runner starts (the check cannot see that, by design). The navigator may not import
+`runfile.installation` or `runfile.registry`: it gets everything as arguments;
 and a test checks that importing the payload or the navigator API loads neither.
 
 ## The whole picture

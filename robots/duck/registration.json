@@ -1,0 +1,8 @@
+{
+  "registration": 1,
+  "name": "duck",
+  "profile": "profile.json",
+  "payload": [".venv/bin/python", "-m", "duck_lab.payload"],
+  "navigator_api": [".venv/bin/python", "-m", "duck_lab.nav.server"],
+  "sim": "sim"
+}

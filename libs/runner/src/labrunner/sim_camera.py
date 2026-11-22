@@ -19,7 +19,7 @@ from labrunner import robots
 from worldmodel.objects import part_from_geom
 from worldmodel.semantic_map import Detection, centre
 
-SIM_DIR = robots.get().SIM          # the robot's simulator files (labrunner.robots): the apartment's layout and objects
+SIM_DIR = robots.sim_dir()          # the robot's simulator files (labrunner.robots): the apartment's layout and objects
 DEFAULTS = {"hfov_deg": 60.0, "range_m": 3.0, "p_detect": 0.8, "range_noise": 0.05, "bearing_noise_deg": 2.0,
             "period_s": 0.5}
 

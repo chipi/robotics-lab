@@ -9,8 +9,8 @@ import math
 from labrunner import robots
 
 ROBOT = robots.get()
-LAYOUT = ROBOT.SIM / "apartment_layout.json"
-GOALS = ROBOT.SIM / "phase1_goals.json"
+LAYOUT = robots.sim_dir() / "apartment_layout.json"
+GOALS = robots.sim_dir() / "phase1_goals.json"
 # The duck as the simulator models it (robots/duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every
 # collision part within 8.3 cm of the trunk's centre in plan view. Pollen publishes ~25 cm tall,
 # 14 cm wide, under 800 g; the model's extra 2 cm is the head in the standing pose.

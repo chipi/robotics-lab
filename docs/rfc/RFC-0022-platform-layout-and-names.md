@@ -118,7 +118,11 @@ Reading the imports before moving anything changed four things in §3–§6:
   describes the robot, not code. A robot package registers itself in the group
   `robotics_lab.robots` (the duck: `duck = "duck_lab.robot"`, a small module that names its
   profile, its navigator's command and its simulator files); `labrunner.robots` finds it for
-  `--robot duck`. With one robot registered, it is the default.
+  `--robot duck`. With one robot registered, it is the default. *Since phase 5 step 1 (the
+  operator's decision, 2026-11-22):* a robot is registered first by a registration file the
+  installation names (`robots.<name>.registration`; the duck's is `robots/duck/registration.json`),
+  so nothing is installed into Mission Control or the runner to add a robot; the entry point stays
+  the fallback for a packaged robot, and a file wins over an entry point of the same name.
 - **The boundary is the navigator, not the whole duck package.** `duck_lab.nav`,
   `duck_lab.payload`, `duck_lab.plugins` and `duck_lab.profile` (the navigator) never import
   `labrunner` or `simhost`; the duck's operator tools may, as a runner does.
