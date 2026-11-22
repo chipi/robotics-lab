@@ -11,7 +11,10 @@ upstream and routes the reply back under the client's id, so two clients that bo
 message may be `hello {client}`: the name it is known by in the lease and the log (answered here, not sent upstream);
 without one it is `anonymous-N`. `robot.subscribe` is relayed: robotd streams `robot.state` to the one upstream
 connection and the proxy copies each notification to every client that subscribed, dropping the oldest when a client is
-slow (robotd's own rule: a gap, never backpressure). The rate is the last subscribe's: robotd decimates per connection.
+slow (robotd's own rule: a gap, never backpressure). robotd streams one connection at its last subscribe's rate, so the
+proxy subscribes upstream at the fastest rate any subscriber asked for (again when the fastest leaves) and gives each
+subscriber its own rate: a client that subscribes later and slower never slows another's stream (sim_duck 2026-11-22: the
+navigator got Mission Control's 5 Hz).
 
 The gate is the one door for OUR clients, not a security boundary (RFC-0017 §3.2): the simulator's socket is a plain file.
 It never resends a command and never holds the last one; a lease that ends stops the robot (Gate does that)."""
@@ -23,11 +26,13 @@ import queue
 import signal
 import socket
 import threading
+import time
 from pathlib import Path
 
 from robotgate import LEASE_SECONDS, Gate, GateError, JsonlLog, load_names
 
 TICK_S = 0.25
+RATE_SLACK = 0.25     # a state up to a quarter period early still counts as due: robotd's jitter never drops one
 OUT_QUEUE = 256            # lines waiting for one client; past it the oldest notification goes
 UPSTREAM_TIMEOUT_S = 5.0
 
@@ -119,6 +124,7 @@ class _Client:
         self.cid = None
         self.name = f"anonymous-{n}"
         self.subscribed = False
+        self.next_state = 0.0               # when its next robot.state is due (its own rate)
         self.out: queue.Queue = queue.Queue(OUT_QUEUE)
         self.closed = threading.Event()
 
@@ -204,10 +210,11 @@ class _Client:
             return
         self._ensure_open()
         try:
-            result = self.proxy.gate.handle(self.cid, method, params)
             if method == "robot.subscribe":
+                result = self.proxy.subscribe(self, params)
                 self.subscribed = True
-                self.proxy._subscribe(self)
+            else:
+                result = self.proxy.gate.handle(self.cid, method, params)
         except GateError as exc:
             self.send({"jsonrpc": "2.0", "id": rid, "error": exc.to_rpc()})
             return
@@ -233,6 +240,9 @@ class Proxy:
         self.gate = Gate(self.upstream.call, lease_s=lease_s, takeover_names=takeover_names, log=self.log)
         self._clients: list = []
         self._subscribers: list = []
+        self._rates: dict = {}              # subscriber -> the rate it asked for (None: robotd's own)
+        self._asked = None                  # the rate robotd was last asked for
+        self._sub_lock = threading.Lock()   # one subscribe change at a time: robotd's last subscribe is the fastest
         self._lock = threading.Lock()
         self._n = 0
         self._stop = threading.Event()
@@ -242,22 +252,64 @@ class Proxy:
         self._log(entry)
 
     def _on_notification(self, msg: dict) -> None:
+        now = time.monotonic()
         with self._lock:
-            targets = list(self._subscribers)
-        for c in targets:
+            targets = [(c, self._rates.get(c)) for c in self._subscribers]
+        for c, hz in targets:
+            if hz:
+                period = 1.0 / hz
+                if now < c.next_state - RATE_SLACK * period:
+                    continue                # not due yet: this subscriber's own rate, not the fastest's
+                # the next due time runs on by whole periods (30 Hz to 20 sends two in three), never far behind now
+                c.next_state = max(c.next_state + period, now - period)
             c.send(msg, droppable=True)
 
-    def _subscribe(self, client: _Client) -> None:
-        with self._lock:
-            if client not in self._subscribers:
-                self._subscribers.append(client)
+    @staticmethod
+    def _fastest(rates) -> float | None:
+        """The rate robotd is asked for: the fastest asked, or robotd's own (None) when a subscriber asked for none."""
+        rates = list(rates)
+        return None if not rates or any(r is None for r in rates) else max(rates)
+
+    def subscribe(self, client: _Client, params: dict):
+        """A client's robot.subscribe: robotd is asked for the fastest rate of all subscribers (through the gate, its rules),
+        the client streamed at its own. Serialised, so robotd's last subscribe is always the fastest."""
+        hz = params.get("hz")
+        # kept as the client gave it: robotd takes an integer rate and refuses 5.0 (invalid type ... expected u32)
+        rate = hz if isinstance(hz, (int, float)) and not isinstance(hz, bool) and hz > 0 else None
+        with self._sub_lock:
+            with self._lock:
+                others = [r for c, r in self._rates.items() if c is not client]
+            want = self._fastest(others + [rate])
+            upstream = {k: v for k, v in params.items() if k != "hz"}
+            if want is not None:
+                upstream["hz"] = want
+            result = self.gate.handle(client.cid, "robot.subscribe", upstream)
+            with self._lock:
+                self._rates[client] = rate
+                if client not in self._subscribers:
+                    self._subscribers.append(client)
+                self._asked = want
+        if isinstance(result, dict) and "hz" in result:
+            result = {**result, "hz": hz}       # the rate this client is streamed at
+        return result
 
     def _drop(self, client: _Client) -> None:
-        with self._lock:
-            if client in self._subscribers:
-                self._subscribers.remove(client)
-            if client in self._clients:
-                self._clients.remove(client)
+        with self._sub_lock:
+            with self._lock:
+                if client in self._subscribers:
+                    self._subscribers.remove(client)
+                if client in self._clients:
+                    self._clients.remove(client)
+                self._rates.pop(client, None)
+                want = self._fastest(self._rates.values())
+                slower = bool(self._rates) and want != self._asked
+            if slower:
+                try:                        # the fastest left: robotd slowed to the fastest left, so no stream is sent unread
+                    self.upstream.call("robot.subscribe", {"hz": want} if want is not None else {})
+                    with self._lock:
+                        self._asked = want
+                except (ConnectionError, TimeoutError, UpstreamError):
+                    pass
 
     def start(self) -> None:
         """Bind the listening socket and serve in threads. A socket file that something still answers on is not taken."""

@@ -62,6 +62,8 @@ class FakeRobotd:
             with send_lock:
                 sock.sendall((json.dumps(msg) + "\n").encode())
 
+        rate = {"hz": 33.0, "streaming": False}      # robotd's rule: one stream per connection, at the last subscribe's rate
+
         def stream():
             seq = 0
             while True:
@@ -70,7 +72,7 @@ class FakeRobotd:
                     send({"jsonrpc": "2.0", "method": "robot.state", "params": {"seq": seq}})
                 except OSError:
                     return
-                time.sleep(0.03)
+                time.sleep(1.0 / rate["hz"])
 
         for line in sock.makefile("r"):
             req = json.loads(line)
@@ -79,9 +81,16 @@ class FakeRobotd:
             m, p = req["method"], req.get("params") or {}
             if m == "robot.fail":
                 send({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -5, "message": "boom"}})
+            elif m == "robot.subscribe" and "hz" in p and (isinstance(p["hz"], bool) or not isinstance(p["hz"], int)):
+                # robotd's own refusal (read from it, 2026-11-22): hz is an integer, 5.0 is not
+                send({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32602,
+                                                                   "message": f"invalid type: floating point `{p['hz']}`, expected u32"}})
             elif m == "robot.subscribe":
+                rate["hz"] = float(p.get("hz") or 33.0)
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"policy": "fake", "hz": p.get("hz")}})
-                threading.Thread(target=stream, daemon=True).start()
+                if not rate["streaming"]:
+                    rate["streaming"] = True
+                    threading.Thread(target=stream, daemon=True).start()
             elif m in ("robot.move", "robot.stop", "robot.state", "robot.health"):
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"ok": True, "tag": p.get("tag")}})
             else:
@@ -197,9 +206,35 @@ with tempfile.TemporaryDirectory() as tmp:
                                                       and sum(1 for n in b.notes if n.get("method") == "robot.state") >= 3))
     check("a client that did not subscribe gets none", not any(n.get("method") == "robot.state" for n in anon.notes))
     check("robotd was asked to subscribe once per request, over its one connection", {n for n, m, _ in robotd.calls if m == "robot.subscribe"} == {1})
+
+    def states(c):
+        return sum(1 for n in c.notes if n.get("method") == "robot.state")
+
+    def rates(*clients, secs=2.0):
+        n0, t0 = [states(c) for c in clients], time.monotonic()
+        while time.monotonic() - t0 < secs:
+            a.call("gate.keepalive")        # the holder's lease (1.5 s here) outlives the measurement
+            time.sleep(0.4)
+        dt = time.monotonic() - t0
+        return [round((states(c) - n) / dt, 1) for c, n in zip(clients, n0)]
+
+    def upstream_hz():
+        return [p.get("hz") for _, m, p in robotd.calls if m == "robot.subscribe"][-1]
+
+    ra, rb = rates(a, b)
+    check("must fail: a later, slower subscriber does not slow an earlier one; each gets its own rate (20 and 10 Hz)",
+          15 <= ra <= 23 and 7 <= rb <= 12, (ra, rb))
+    check("robotd streams at the fastest subscriber's rate", upstream_hz() == 20, upstream_hz())
     b.close()
-    seen = sum(1 for n in a.notes if n.get("method") == "robot.state")
-    check("when a subscriber leaves the other's stream goes on", wait_for(lambda: sum(1 for n in a.notes if n.get("method") == "robot.state") > seen + 2))
+    seen = states(a)
+    check("when a subscriber leaves the other's stream goes on", wait_for(lambda: states(a) > seen + 2))
+    e = Client(tmp / "gate.sock", hello="fast-viewer")
+    e.call("robot.subscribe", {"hz": 30})
+    check("a faster subscriber raises robotd's rate", upstream_hz() == 30, upstream_hz())
+    ra, re_ = rates(a, e)
+    check("... and the earlier one still gets its own 20 Hz, not more", 15 <= ra <= 23 and 24 <= re_ <= 34, (ra, re_))
+    e.close()
+    check("when the fastest leaves, robotd goes back to the fastest left (20 Hz)", wait_for(lambda: upstream_hz() == 20), upstream_hz())
 
     # STOP latches, and the holder is told
     c = Client(tmp / "gate.sock", hello="bystander")
