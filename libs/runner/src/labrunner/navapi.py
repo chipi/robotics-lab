@@ -134,6 +134,7 @@ class GoalWatch:
 class NavRunner:
     def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
                  robot_socket: Path | None = None):
+        profile = robots.profile_source(robots.get().NAME)      # resolved first: a named version that does not exist refuses here
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null): Mission Control talks to the "
                              f"navigator API itself there (the robot's NAVIGATOR_API)")
@@ -149,7 +150,8 @@ class NavRunner:
         robot = robot_socket or host.sockets["gate"]
         cmd = list(robots.get().NAVIGATOR_API) + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
                "--map", str(host.sockets["map"]), "--camera", str(self.camera.path), "--listen", str(self.sock),
-               "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene]
+               "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene] + \
+            (["--profile", str(profile)] if profile else [])
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}     # nothing of the host but its sockets
         self.log = open(self.out / "navigator.log", "a")
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)

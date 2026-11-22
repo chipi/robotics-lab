@@ -103,6 +103,9 @@ class Remote:
         `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
         `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
         host's (a gate's), spoken to as `client`."""
+        # the profile version this machine runs the robot on, resolved before anything starts: a named one that does not exist
+        # refuses the run here (labrunner.robots.profile_source); only the robot's own navigator takes --profile
+        profile = robots.profile_source(robots.get().NAME) if payload is None else None
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
@@ -119,7 +122,7 @@ class Remote:
                "--robot", str(robot or host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
-            (["--client", client] if client else []) + list(extra or [])
+            (["--client", client] if client else []) + (["--profile", str(profile)] if profile else []) + list(extra or [])
         env = {k: v for k, v in os.environ.items() if k != "ROBOTICS_LAB_HOST"}    # nothing of the host but its sockets
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)

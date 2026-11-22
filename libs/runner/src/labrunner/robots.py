@@ -51,5 +51,39 @@ def profile(variant: str | None = "sim", name: str | None = None):
     return load_profile(get(name).PROFILE, variant or "real")
 
 
+class ProfileSourceError(ValueError):
+    """The installation names a profile for a robot that does not exist: the robot is refused, never run on another one."""
+
+
+def profile_source(name: str, inst=False):
+    """The profile file this machine runs the robot on (phase 5 step 1), for its navigator's --profile: the installation's
+    `robots.<name>.profile` (a version's file, or the version store's folder for the robot, meaning its current version), or
+    None when the installation names none (the navigator then runs the robot's own file, and records source: repository).
+
+    A named profile that does not exist raises ProfileSourceError: no silent fallback to the robot's own file, which would run
+    other numbers than the operator chose while the run says nothing wrong. `inst`: an Installation, None for none, or False to
+    read this machine's (runfile.installation, not required)."""
+    from runfile import installation
+    from runfile.profilestore import Store, StoreError
+    if inst is False:
+        inst = installation.load(required=False)
+    r = inst.robot(name) if inst is not None else None
+    if r is None or r.profile is None:
+        return None
+    p = r.profile
+    where = f"{inst.source}: robots.{name}.profile"
+    if p.is_dir():
+        try:
+            n = Store(p.parent).current(p.name)
+        except StoreError as e:
+            raise ProfileSourceError(f"{where} is the version store {p}, which cannot say its current version ({e}): refused") from None
+        if n is None:
+            raise ProfileSourceError(f"{where} is the version store {p}, which has no version yet: refused (seed it first)")
+        return p / f"{n}.json"
+    if not p.is_file():
+        raise ProfileSourceError(f"{where} is {p}, which does not exist: refused (no fallback to the robot's own profile)")
+    return p
+
+
 def add_robot_arg(ap) -> None:
     ap.add_argument("--robot", help="the robot to run, by its registered name (default: the only one registered)")
