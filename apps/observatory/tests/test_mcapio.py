@@ -169,7 +169,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # ---- segments at goal-ending events, never at clock jumps ---------------------------------------------------
     segs = [p for _, p in by_kind["segment"]]
-    goal_ends = [r for r in src_lines if r.get("event") in ("reached", "refused", "timeout", "stalled", "aborted") and r.get("goal") is not None]
+    goal_ends = [r for r in src_lines if r.get("event") in ("reached", "refused", "timeout", "stalled", "stopped_by_guardrail", "cancelled") and r.get("goal") is not None]
     check("a segment closes at each goal-ending event that has a goal, with that goal and outcome",
           len(segs) == len(goal_ends) + 1 and [s["outcome"] for s in segs[:-1]] == [e["event"] for e in goal_ends]
           and all(s["index"] == i for i, s in enumerate(segs)) and "outcome" not in segs[-1], segs)

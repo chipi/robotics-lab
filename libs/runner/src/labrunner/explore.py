@@ -2,7 +2,7 @@
 
 The robot's explorer runs as it is, as a payload's explore goal without objects, for the scene's time budget.
 Judged by truth: the judge's invariants over the run, how the run ended (explore_score's ENDS: `no_frontier_left` is the right
-end, `trapped` and `aborted` fail, `time` is the budget running out), and the share of each room's reachable floor
+end, `trapped` and a stop (`stopped_by_guardrail`, `cancelled`) fail, `time` is the budget running out), and the share of each room's reachable floor
 (floor.py) that mapd's grid knows, against COVERAGE_BAR; where there are two rooms, the duck's truth must have entered both.
 """
 
@@ -13,6 +13,7 @@ from labrunner import floor
 from labrunner.judge import Judge
 from labrunner.scene import Scene
 from labrunner.explore_score import belief_score
+from runfile.navcontract import STOPS
 
 # The bar, set from the ten seeds of challenge 22 (RFC-0008 §3): the nine runs that did not end trapped knew 87.8-96.6 % of the
 # room's reachable floor (median 92.1 %), the trapped one 65.4 %. 80 % sits 7.8 points under the lowest healthy run and 14.6
@@ -41,7 +42,8 @@ def verdict(scene: Scene, judge: Judge, trail: Trail, out: dict, out_dir: Path, 
     start = json.loads((out_dir / "start.json").read_text())
     cov = floor.coverage(scene, grid, start)
     failed = judge.broken_failures()
-    if out["end"] in ("trapped", "aborted") and not (out["end"] == "aborted" and judge.broken):
+    # a stop the judge's own broken invariant caused is said once, by the invariant
+    if out["end"] == "trapped" or (out["end"] in STOPS and not judge.broken):
         failed.append(f"ended {out['end']}" + (f": {out['why']}" if out.get("why") else ""))
     for name, share in cov["areas"].items():
         if share < COVERAGE_BAR:

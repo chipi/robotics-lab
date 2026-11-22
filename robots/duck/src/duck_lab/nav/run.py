@@ -257,7 +257,8 @@ class Navigator:
         self.range.open(Path(sockets["depth"]))
         self.drops = []      # where the cliff check found no floor, in map metres
         self.edges = []      # drop edges a glance measured (and the hole beyond them), in map metres: a smaller ring
-        self.abort = None    # set by a watchdog (a test's truth guard): stop now, with this reason
+        self.abort = None    # stop now, with this reason (stop_goal); every loop ends at its next tick
+        self.stop_end = None  # what the stop ends the goal as: stopped_by_guardrail or cancelled (the contract's ends)
         # a goal's guardrails (RFC-0014 §3.4.8), set by whoever runs the goal: a forward speed cap (m/s), the points of the
         # no-go areas (map metres: obstacles for the planner, so a path never enters), and a listener for every decision
         self.speed_cap = None
@@ -558,6 +559,17 @@ class Navigator:
                 self.anomaly("thread_failed", f"the {name} stream has been silent for {age:.1f} s", margin=age - limit,
                              values={"stream": name, "silent_s": round(age, 2), "limit_s": limit,
                                      "thread_alive": None if thread is None else thread.is_alive(), "margin_unit": "s"})
+
+    def stop_goal(self, end: str, reason: str) -> None:
+        """Stop the goal now, as `end` (stopped_by_guardrail or cancelled) with `reason`: every loop ends at its next tick,
+        its stop event named by `end`. A guardrail's stop is kept over a cancel asked before it; a cancel never replaces one."""
+        if end not in ("stopped_by_guardrail", "cancelled"):
+            raise ValueError(f"a goal is stopped as stopped_by_guardrail or cancelled, not {end!r}")
+        if self.abort is None or (end == "stopped_by_guardrail" and self.stop_end != end):
+            self.abort, self.stop_end = reason, end
+
+    def clear_stop(self) -> None:
+        self.abort = self.stop_end = None
 
     def lease_ended(self, exc: LeaseLost) -> None:
         """stop_latched or lease_lost, once: the gate refused a command because this client has no lease. `stopped_by <who>` is a STOP
@@ -971,8 +983,9 @@ class Navigator:
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
-                self.record(event="aborted", why=self.abort, decision=decision("aborted", self.abort))
-                return {"status": "aborted", "why": self.abort}
+                end = self.stop_end or "stopped_by_guardrail"     # a stop set as `abort` alone is a watchdog's: a guardrail
+                self.record(event=end, why=self.abort, decision=decision(end, self.abort))
+                return {"status": end, "why": self.abort}
             if len(self._moves) > moves_seen:
                 # the memory moved with the belief's frame: the goal, a place in the world, and the path to it move too
                 for d in self._moves[moves_seen:]:

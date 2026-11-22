@@ -9,9 +9,10 @@ applies them one by one, so a finished run and a live one are built the same way
 import threading
 
 from runfile import signals, validate
+from runfile.navcontract import STOPS, stop_before
 from runfile.validate import BrokenRun
 
-END_KINDS = ("trapped", "aborted", "no_frontier_left")
+END_KINDS = ("trapped", "no_frontier_left") + STOPS     # a stop was `aborted` before the navigator contract (verdict_before)
 
 
 class RunData:
@@ -140,7 +141,8 @@ class RunData:
         elif kind == "segment":
             r["segments"].append(dict(p))
         elif kind == "end":
-            r["status"], r["verdict"] = ("stopped" if p["verdict"] == "stopped" else "ended"), p["verdict"]
+            r["status"] = "stopped" if p["verdict"] == "stopped" else "ended"
+            r["verdict"] = p["verdict"] if p["verdict"] != "aborted" else verdict_before(r["events"])
         self.seq += 1
         self.log.append((self.seq, t, kind, p))
         self.mem += _cost(kind, p)
@@ -180,6 +182,13 @@ def build(records) -> RunData:
         d.feed(t, kind, p)
     d.finish_batch()
     return d
+
+
+def verdict_before(events: list) -> str:
+    """A run's verdict recorded as `aborted` (before the navigator contract), named now: as its last stop event (read already
+    by its reason, runfile.wire), else a guardrail's."""
+    last = next((e["kind"] for e in reversed(events) if e["kind"] in STOPS), None)
+    return last or stop_before(None)
 
 
 def verdict_of(events: list, evaluated: bool) -> str:

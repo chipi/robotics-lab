@@ -22,7 +22,8 @@ navigator is about to write runs itself (RFC-0008 step 1) and will copy whatever
   clock. Run time `t` only grows.
 - **Segments instead of stitching.** An evaluation's goals are `segment` records (index, goal,
   the source clock's origin). A new segment starts at the event that ended the last goal
-  (`reached`, `refused`, `timeout`, `stalled`, `aborted` with a `goal`), never at a clock jump.
+  (`reached`, `refused`, `timeout`, `stalled`, `stopped_by_guardrail` or `cancelled` with a
+  `goal`; a stop was `aborted` before the navigator contract, 2026-11-22), never at a clock jump.
   Each tick keeps its source time as `t_src`. A segment whose source clock restarted keeps that
   clock: its zero is placed 1 s after the previous record (the gap between goals is not in the
   log), so the time a new navigator spends before its first record stays in the run (phase 1:

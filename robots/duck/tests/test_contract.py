@@ -15,6 +15,7 @@ from pathlib import Path
 from duck_lab import payload as payload_mod
 from duck_lab.nav import server as server_mod
 from duck_lab.nav.client import LeaseLost
+from duck_lab.nav.run import Navigator as RealNavigator
 from runfile.navcontract import (API_METHODS, CONTRACT, ENDS, PAYLOAD_METHODS, ContractError, check_hello,
                                  check_state)
 
@@ -36,14 +37,14 @@ class FakeRunLog:
 
 
 class FakeNav:
-    """Navigator.go_to as `OUTCOME` says: a dict answered at once, "wait" (until a stop is asked: its `aborted`), or an
+    """Navigator.go_to as `OUTCOME` says: a dict answered at once, "wait" (until a stop is asked: its end), or an
     exception raised."""
 
     OUTCOME: object = None
     calls: list = []
 
     def __init__(self, *_, **__):
-        self.abort, self.scale, self.semantic, self.area = None, 1.0, None, None
+        self.abort, self.stop_end, self.scale, self.semantic, self.area = None, None, 1.0, None, None
         self.loc = types.SimpleNamespace(pose=lambda: (0.0, 0.0, 0.0))
         self.profile = types.SimpleNamespace(meta={"checksum": "sha256:x", "version": 1, "source": "robot"})
         self.records = []
@@ -57,8 +58,10 @@ class FakeNav:
             end = time.monotonic() + 5.0
             while not self.abort and time.monotonic() < end:
                 time.sleep(0.01)
-            return {"status": "aborted", "why": self.abort}
+            return {"status": self.stop_end, "why": self.abort}
         return dict(o)
+
+    stop_goal, clear_stop = RealNavigator.stop_goal, RealNavigator.clear_stop       # the navigator's own rule
 
     def record(self, **row):
         self.records.append(row)
@@ -175,6 +178,28 @@ for name, make in NAVIGATORS.items():
     unknown = make().call("goal.start", {"kind": "fly", "params": {}})
     check(f"{name}: a goal kind it does not take is answered unknown_kind", (unknown.get("error") or {}).get("code") == "unknown_kind",
           unknown)
+
+# --- the navigator's stop: named by what stopped it (its stop event is the contract's end, not `aborted`) ---------------
+n = FakeNav()
+n.stop_goal("cancelled", "the operator")
+n.stop_goal("stopped_by_guardrail", "guardrail contact: touched")
+check("a guardrail broken after a cancel names the stop", (n.stop_end, n.abort) == ("stopped_by_guardrail", "guardrail contact: touched"))
+n.stop_goal("cancelled", "the operator again")
+check("a cancel after a guardrail does not replace it", (n.stop_end, n.abort) == ("stopped_by_guardrail", "guardrail contact: touched"))
+n.clear_stop()
+check("the next goal starts with no stop", (n.stop_end, n.abort) == (None, None))
+try:
+    n.stop_goal("aborted", "x")
+    refused = False
+except ValueError:
+    refused = True
+check("a stop named outside the contract's two is refused", refused and n.abort is None)
+for name, make in NAVIGATORS.items():
+    nav = make()
+    st = run_goal(nav, "wait", lambda m: m.call("goal.cancel", {"reason": "the operator"}))
+    inner = nav.nav if name == "payload" else nav.run.nav
+    check(f"{name}: a cancel stops the navigator as cancelled, with its reason", (inner.stop_end, inner.abort)
+          == ("cancelled", "the operator"), (inner.stop_end, inner.abort))
 
 # --- what a reader refuses ---------------------------------------------------------------------------------------------
 for hello, why in (({"name": "x", "contract": "2.0"}, "another major version"), ({"name": "x"}, "no contract version")):

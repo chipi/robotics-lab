@@ -53,7 +53,7 @@ for i, (name, start, target) in enumerate(APPROACHES):
             d = edge_distance(truth.pose()[:2])
             closest[0] = min(closest[0], d)
             if d < GUARD_M:
-                nav.abort = f"truth guard: {d:.2f} m from the opening"
+                nav.stop_goal("stopped_by_guardrail", f"truth guard: {d:.2f} m from the opening")
             time.sleep(0.05)
 
     try:
@@ -66,7 +66,7 @@ for i, (name, start, target) in enumerate(APPROACHES):
             first = nav.go_to(compose(map_from_world, (*start, 0.0))[:2], 60.0)
         out = nav.go_to(compose(map_from_world, (*target, 0.0))[:2], 60.0)
         guarded = (nav.abort or "").startswith("truth guard")
-        nav.abort = nav.abort or "done"
+        nav.stop_goal("cancelled", "done")
         results.append({"approach": name, "start": first and first["status"], "result": out["status"],
                         "why": out.get("why"), "closest_m": round(closest[0], 3), "guard_tripped": guarded})
         print(json.dumps(results[-1]), flush=True)

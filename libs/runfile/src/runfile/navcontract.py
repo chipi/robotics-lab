@@ -8,6 +8,8 @@ ENDS = ("reached", "done", "refused", "not_found", "timeout", "stalled", "stoppe
         "failed")
 STATES = ("idle", "running") + ENDS
 SUCCESS = ("reached", "done")
+# the ends a stop asked from outside gives (goal.break, goal.cancel); a navigator's stop event is named by them
+STOPS = ("stopped_by_guardrail", "cancelled")
 
 GOAL_METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break")
 # what each kind of navigator answers besides the goal methods, and nothing else
@@ -31,6 +33,13 @@ def check_hello(hello: dict) -> dict:
     if major(theirs) != major(CONTRACT):
         raise ContractError(f"the navigator {hello.get('name')!r} speaks contract {theirs}; this side speaks {CONTRACT}")
     return hello
+
+
+def stop_before(why) -> str:
+    """What a stop a run recorded as `aborted` (before contract 1.0) is named now, by its recorded reason: a cancel's reason
+    says "cancelled ..." (Mission Control's, the runner's); every other was a guardrail's (the truth guard, an invariant, a
+    goal's guardrail: the 9 in the Observatory's index on 2026-11-22 are all of these)."""
+    return "cancelled" if str(why or "").strip().lower().startswith("cancel") else "stopped_by_guardrail"
 
 
 def check_state(state) -> str:

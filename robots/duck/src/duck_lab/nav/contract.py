@@ -23,17 +23,15 @@ def minutes(spec: dict, default: float = DEFAULT_MINUTES) -> float:
 
 
 def of_go_to(out: dict) -> tuple:
-    """(state, reason) of a point goal from Navigator.go_to's answer. Its `aborted` is a stop asked from outside (a cancel, a
-    guardrail): `settle` names it."""
+    """(state, reason) of a point goal from Navigator.go_to's answer; a stop asked from outside comes back as its end
+    (Navigator.stop_goal), which `settle` confirms."""
     status = out.get("status")
     if status == "reached":
         return "reached", None
-    if status in ("refused", "stalled"):
+    if status in ("refused", "stalled", "stopped_by_guardrail", "cancelled"):
         return status, out.get("why")
     if status == "timeout":
         return "timeout", f"the time limit of {out.get('time_s')} s was spent before it was reached"
-    if status == "aborted":
-        return "failed", out.get("why") or "stopped"
     return "failed", out.get("why") or str(status)
 
 

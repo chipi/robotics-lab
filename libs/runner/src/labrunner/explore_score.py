@@ -6,8 +6,8 @@ summary, and the blockers ranked by the exploring they cost.
 Per run, from its ticks.jsonl, start.json and map_grid.json (the simulator's truth is used for scoring only):
 - rooms visited (rooms.score: the truth inside a room) and each room's map area within 25 % (phase 2's bar);
 - coverage: the share of each room's floor the map knows (free or occupied cells, truth frame);
-- how it ended (the last of trapped / no_frontier_left / aborted, else the time ran out) and when;
-- safety by truth: contacts (trunk centre nearer an obstacle's outline than evaluate.FOOTPRINT_M), falls (aborted);
+- how it ended (the last of trapped / no_frontier_left / stopped_by_guardrail / cancelled, else the time ran out) and when;
+- safety by truth: contacts (trunk centre nearer an obstacle's outline than evaluate.FOOTPRINT_M), falls (stopped_by_guardrail: the truth guard);
 - legs by outcome, and every leg that did not reach its target as a blocker: its kind (status and reason, numbers
   removed), the room it happened in, and the seconds it took (from the previous leg's end).
 """
@@ -22,8 +22,9 @@ from pathlib import Path
 from labrunner.geometry import FOOTPRINT_M, LAYOUT, clearance, obstacles
 from labrunner.frames import compose, inverse
 from labrunner.rooms import ROOMS, room_of, score as rooms_score
+from runfile.navcontract import STOPS, stop_before
 
-ENDS = ("trapped", "no_frontier_left", "aborted")
+ENDS = ("trapped", "no_frontier_left") + STOPS
 
 
 def kind(status: str, why) -> str:
@@ -167,6 +168,8 @@ def score_run(run: Path, obs: list) -> dict:
         t = r.get("t", last_t)
         last_t = max(last_t, t)
         ev = r.get("event")
+        if ev == "aborted":             # a stop before the navigator contract: named by its reason now
+            ev = stop_before(r.get("why"))
         # a reflex stop the plan did not answer: the navigator walks the same way into the same obstacle again
         if ev == "reflex_stop":
             after_reflex = True
@@ -198,7 +201,7 @@ def score_run(run: Path, obs: list) -> dict:
     return {"run": run.name, "visited": rooms["visited"], "areas_ok": rooms["areas_ok"], "bar": rooms["bar"],
             "rooms": [n for n, v in rooms["rooms"].items() if v["visited"]], "coverage": coverage(run),
             "end": end, "minutes": round((end_t or last_t) / 60, 1), "walked_m": round(walked, 1),
-            "contacts": contacts, "falls": int(end == "aborted"), "legs": legs, "reflex_kept": reflex_kept,
+            "contacts": contacts, "falls": int(end == "stopped_by_guardrail"), "legs": legs, "reflex_kept": reflex_kept,
             "looks": looks, "look_min": round(glance_s / 60, 1),
             "blockers": blockers, "semantic": semantic_score(run, rows), "belief": belief_score(run, rows)}
 

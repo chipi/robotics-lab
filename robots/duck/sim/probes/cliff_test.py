@@ -42,7 +42,7 @@ def guard():
         d = edge_distance(truth.pose()[:2])
         closest[0] = min(closest[0], d)
         if d < GUARD_M:
-            nav.abort = f"truth guard: {d:.2f} m from the staircase opening"
+            nav.stop_goal("stopped_by_guardrail", f"truth guard: {d:.2f} m from the staircase opening")
         time.sleep(0.05)
 
 
@@ -53,7 +53,7 @@ try:
     threading.Thread(target=guard, daemon=True).start()
     goal = compose(map_from_world, (-0.2, -1.05, 0.0))[:2]
     out = nav.go_to(goal, 120.0)
-    nav.abort = nav.abort or "done"
+    nav.stop_goal("cancelled", "done")
     end = truth.pose()
     print(json.dumps({"result": out, "truth_end": [round(v, 3) for v in end],
                       "closest_to_opening_m": round(closest[0], 3),

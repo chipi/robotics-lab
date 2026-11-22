@@ -70,11 +70,20 @@ One goal at a time: a `goal.start` while one runs answers `{error: {code: "busy"
 `reached` and `done` are the successes. A side that reads `goal.status` takes a state the contract
 does not have as the navigator's failure, saying which (`runfile.navcontract.check_state`).
 
+A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
+verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
+`Navigator.stop_goal`).
+
 ## Before 1.0
 
 The payload answered `start`/`status`/`cancel` with `goal: [x, y]` and `time_s`, and its ends were
 `reached`, `refused`, `timeout`, `stalled`, `aborted` and `failed`; the navigator API answered `ping`
 with no version, and put a timeout and a stall under `failed`. The payload's `aborted` was only
 ever its runner's own stop (the truth guard, a broken invariant): `goal.break` now, ending
-`stopped_by_guardrail`. No reader keeps a goal's state from a run as a field; what a run shows
-of its end is the navigator's own last event.
+`stopped_by_guardrail`. The navigator's own stop event was `aborted` too, for any stop, and a run
+it ended had the verdict `aborted`. A run recorded then is read with its stop named now, by the
+stop's recorded reason (`runfile.navcontract.stop_before`): a reason that says "cancelled ..." is
+`cancelled`, every other `stopped_by_guardrail` (the 9 `aborted` events in the Observatory's index on
+2026-11-22: 6 falls by an invariant, 2 truth guards at the staircase, 1 contact guardrail). The
+reading is in `runfile.wire`, `runfile.store` and `runfile.adapters.duck` (and the duck's
+`world.py` and the explore score, which read navigator logs themselves); the file is not changed.

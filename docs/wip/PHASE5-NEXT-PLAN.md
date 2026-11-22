@@ -67,10 +67,15 @@ payload process) and Mission Control's `test_duck_adapter.py` with the must-fail
 killed (a guardrail end, a stall end, the state check, the runner's and Mission Control's hello
 check); `make ci-fast` PASS; challenges 1-11, seed 1, the code before (`8237c25`) and after,
 alternating: the same verdict in 11 of 11 (10 pass; challenge 7 refused "no room to turn" on both,
-K40); `make sim-duck` PASS 48 FAIL 0. **Still to do (decided 2026-11-22, a second commit):** the
-navigator's own stop event is named by what stopped it (`stopped_by_guardrail`, `cancelled`) instead
-of `aborted`, which the Observatory shows as a run's verdict; old runs' `aborted` shown by its
-recorded reason (the index's 9 are all guardrail stops: 6 falls, 2 truth guards, 1 contact).
+K40); `make sim-duck` PASS 48 FAIL 0. **And the stop's name (decided 2026-11-22, the second
+commit):** the navigator's own stop event, and a run's verdict, is `stopped_by_guardrail` or
+`cancelled` (`Navigator.stop_goal`) instead of `aborted`; an old run's `aborted` is read by its
+recorded reason (`runfile.navcontract.stop_before`: the index's 9 are all guardrail stops, 6 falls,
+2 truth guards, 1 contact). Proof: `test_stops_before.py` (a run file and a navigator log written
+the old way, read back), the stop rule in `test_contract.py`, 5 mutants killed; `make sim-duck
+--keep` PASS 48, its 34 runs: the time-limit and drop-clearance stops `stopped_by_guardrail`, the
+cancel `cancelled`, events and verdicts, no `aborted`. Not done: the Observatory's index keeps its 9
+old rows as `aborted` until it is rebuilt (the operator's: it serves the Observatory).
 
 ### 2. The apartment out of the runner
 

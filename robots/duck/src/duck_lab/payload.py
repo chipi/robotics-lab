@@ -92,7 +92,7 @@ class Payload:
                 return {"error": {"code": "no_camera", "message": "objects need a camera: this payload was started without --camera"}}
             if params.get("find") and params["find"] not in load_kinds():
                 return {"error": {"code": "bad_goal", "message": f"no kind {params['find']!r}"}}
-            self.nav.abort = None
+            self.nav.clear_stop()
             self.state, self.reason, self.result, self.broken, self.cancelled = "running", None, None, None, None
         threading.Thread(target=self._work, args=(kind, spec), name=f"goal-{kind}", daemon=True).start()
         return {"run_key": self.runlog.key}
@@ -105,7 +105,7 @@ class Payload:
     def _cancel(self, p: dict) -> dict:
         if self.state == "running":
             self.cancelled = str(p.get("reason") or "cancelled by the runner")
-            self.nav.abort = self.nav.abort or self.cancelled
+            self.nav.stop_goal("cancelled", self.cancelled)
         return {"ok": True}
 
     def _break(self, p: dict) -> dict:
@@ -116,7 +116,7 @@ class Payload:
             name, detail = str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner")
             self.broken = {"name": name, "detail": detail}
         self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
-        self.nav.abort = f"guardrail {name}: {detail}"
+        self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
         return {"ok": True}
 
     def _stop(self, _p: dict) -> dict:

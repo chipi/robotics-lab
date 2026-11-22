@@ -13,6 +13,7 @@ import struct
 from google.protobuf import json_format
 
 from runfile import schemas
+from runfile.navcontract import stop_before
 from runfile.signals import SignalSet
 
 KINDS = ("run", "epoch", "tick", "signals", "plan", "world", "event", "depth_frame", "objects", "sighting", "segment", "end")
@@ -429,6 +430,9 @@ class Assembler:
             if not o.get("notable", True) and o["kind"] not in ALWAYS_NOTABLE and not self.keep_raw:
                 return []
             d = {"kind": o["kind"], "text": o["text"]}
+            if o["kind"] == "aborted":                     # a stop before the navigator contract: named by its reason now
+                d["kind"] = stop_before((o.get("raw") or {}).get("why") or o["text"].removeprefix("aborted why "))
+                d["text"] = d["kind"] + o["text"].removeprefix("aborted")
             if o.get("decision") is not None:
                 d["decision"] = o["decision"]
             if o["kind"] == "room":

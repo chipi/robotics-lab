@@ -195,7 +195,7 @@ class GoalRun:
                 return
             self.broken = {"name": name, "detail": detail}
         self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
-        self.nav.abort = f"guardrail {name}: {detail}"
+        self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
 
     # --- what a poll sees ---------------------------------------------------------------------------
 
@@ -250,7 +250,7 @@ class GoalRun:
     def cancel(self, reason: str | None = None) -> None:
         self.cancelled = reason or "cancelled by Mission Control"
         if self.nav is not None:
-            self.nav.abort = self.nav.abort or self.cancelled
+            self.nav.stop_goal("cancelled", self.cancelled)
 
     def _work(self) -> None:
         try:

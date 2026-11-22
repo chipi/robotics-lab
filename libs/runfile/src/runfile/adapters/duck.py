@@ -10,11 +10,12 @@ end to end in run time and each has its epoch; exploration runs have one epoch f
 import json
 from pathlib import Path
 
+from runfile.navcontract import STOPS, stop_before
 from runfile.se2 import compose, inverse
-from runfile.store import build, verdict_of
+from runfile.store import END_KINDS, build, verdict_of
 
-ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
-NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", "aborted", "trapped", "tight_pivot",
+ENDS = ("reached", "refused", "timeout", "stalled") + STOPS
+NOTABLE = ("cliff_stop", "reflex_stop", "refused", "stalled", "timeout", *STOPS, "trapped", "tight_pivot",
            "cleared", "no_frontier_left", "no_survey_turn", "reached", "leg", "invariant", "glance", "found", "camera_failed", "anomaly")
 KIND_OF_RUN = (("phase1", "go-to evaluation"), ("explore", "exploration"), ("stairs", "stairs probe"))
 ROBOT = {"name": "duck", "radius": 0.083, "height": 0.272}
@@ -120,6 +121,8 @@ class DuckLog:
         if ev == "area_type":                               # the objects' guess, renamed from `room` (RFC-0016 rev. 3): read as the room event
             ev, r = "room", {**r, "room": r.get("type")}
             r.pop("type", None)
+        if ev == "aborted":                                 # a stop before the navigator contract: named by its reason now
+            ev = stop_before(r.get("why"))
         if ev:
             notable = ev in NOTABLE and not (ev == "leg" and r.get("status") == "reached")
             detail = " ".join(f"{k} {v}" for k, v in r.items() if k in ("why", "status", "drop_m", "room_m",
@@ -179,7 +182,7 @@ class DuckLog:
     def ended(self) -> bool:
         """The log says the run is over: an exploration's last word, or an evaluation's results."""
         return (self.run_dir / "results.json").exists() or bool(self.events and self.events[-1]["kind"] in
-                                                                  ("trapped", "aborted", "no_frontier_left"))
+                                                                  END_KINDS)
 
     def finish(self) -> list:
         """The records that close the run: the open segment (if it saw anything), then the verdict."""

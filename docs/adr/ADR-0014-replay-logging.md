@@ -59,7 +59,8 @@ failure could only be diagnosed by running the robot again.
 ### Decisions are events with structured values
 
 A rule that fires is an event (`cliff_stop`, `reflex_stop`, `refused`, `tight_pivot`,
-`replan_new_obstacle`, `stalled`, `aborted`, `trapped`, ...): the event gets an optional `decision`,
+`replan_new_obstacle`, `stalled`, `stopped_by_guardrail`, `trapped`, ...; a stop was `aborted`
+before the navigator contract, 2026-11-22): the event gets an optional `decision`,
 `{rule, reason, values}`, with the numbers the rule compared and its thresholds. The alternative, a
 `decision` kind beside the event, would put two records at the same instant for every stop, two
 markers in the timeline and two places to look; the event is already the unit the pages, the index and

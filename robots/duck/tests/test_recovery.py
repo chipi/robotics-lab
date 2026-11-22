@@ -97,7 +97,7 @@ ex = explorer()
 check("a target with no path (a free start) is not: it is the target's problem",
       not ex.recovered({"status": "refused", "why": "no path on the map", "start_lethal": False}) and ex.nav.recoveries == [])
 check("a stall, a timeout, an abort are not refusals at the pose",
-      not any(explorer().recovered({"status": s, "why": "no room to turn"}) for s in ("stalled", "timeout", "aborted", "reached")))
+      not any(explorer().recovered({"status": s, "why": "no room to turn"}) for s in ("stalled", "timeout", "stopped_by_guardrail", "cancelled", "reached")))
 ex = explorer()
 ex.recovered(no_room)
 ex.attempts = 0                                          # a leg was reached

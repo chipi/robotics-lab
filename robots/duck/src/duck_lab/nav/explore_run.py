@@ -15,7 +15,8 @@ from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import anomaly as anom, recovery
 from duck_lab.nav.run import Navigator, decision
 
-ENDS = ("trapped", "no_frontier_left", "aborted")      # the events that end an exploration before its time (its runner reads them)
+# the events that end an exploration before its time (its runner reads them): a stop is named by what stopped it
+ENDS = ("trapped", "no_frontier_left", "stopped_by_guardrail", "cancelled")
 GO_TIMEOUT_S = 60.0
 CLEAR_M = 0.5          # a boxed-in start forgets remembered obstacle points this close (as the planner's escape)
 MAX_REFUSALS = 6       # refusals in a row before the run stops as trapped
@@ -186,7 +187,7 @@ class Explorer:
         surveyed_here, cleared_here, refusals = True, False, 0
         while time.monotonic() < end:
             if self.nav.abort:
-                self.note(event="aborted", why=self.nav.abort)
+                self.note(event=self.nav.stop_end or "stopped_by_guardrail", why=self.nav.abort)
                 break
             grid = self.nav.mapd_grid()      # scaled, in the belief's frame: the frontiers are places the planner goes to
             moved_at = len(self.nav._moves)

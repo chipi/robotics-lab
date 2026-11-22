@@ -28,10 +28,11 @@ from pathlib import Path
 import rerun as rr
 
 from duck_lab.nav.frames import compose, inverse
+from runfile.navcontract import STOPS, stop_before
 
 LAYOUT = Path(__file__).resolve().parents[2] / "sim" / "apartment_layout.json"
 STAIRS = (-0.40, 0.00, -1.40, -0.70)
-ENDS = ("reached", "refused", "timeout", "stalled", "aborted")
+ENDS = ("reached", "refused", "timeout", "stalled") + STOPS
 DEPTH_COLOURS = {"f": (60, 200, 90), "o": (230, 50, 40), "v": (60, 120, 230), "b": (230, 0, 230)}   # floor, obstacle, overhead, below the floor
 
 
@@ -97,6 +98,8 @@ def convert(run: Path, out: Path) -> dict:
         last_t = r["t"]
         rr.set_time("run", duration=offset + r["t"])
         ev = r.get("event")
+        if ev == "aborted":                 # a stop before the navigator contract: named by its reason now
+            ev = stop_before(r.get("why"))
         counts[ev or "tick"] = counts.get(ev or "tick", 0) + 1
         if fresh and "pose" in r and "truth" in r and not ev:
             t_wm = compose(tuple(r["truth"]), inverse(tuple(r["pose"])))     # the map's start, by truth
@@ -113,7 +116,7 @@ def convert(run: Path, out: Path) -> dict:
             detail = {k: v for k, v in r.items() if k not in ("t", "truth", "truth_z", "pose", "path", "drops",
                                                              "blocked", "grid")}
             rr.log("events", rr.TextLog(f"{ev} {json.dumps(detail)}", level="WARN" if ev in (
-                "refused", "stalled", "timeout", "cliff_stop", "reflex_stop", "aborted", "trapped") else "INFO"))
+                "refused", "stalled", "timeout", "cliff_stop", "reflex_stop", *STOPS, "trapped") else "INFO"))
             if ev in ENDS and r.get("goal") is not None and start is None:
                 fresh = True        # duck-eval: the next goal starts from a reset simulator, a new map
         if "pose" in r and not ev:
