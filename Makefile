@@ -75,7 +75,7 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 # The libraries' own tests (phase 5 step 1, the architecture review of 2026-11-22): each library in its own environment, no robot's
 # package installed, so a library is proven without the duck. Tests of the runner that need a registered robot stay in the duck's
 # until the apartment leaves the runner.
-LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
+LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               gate:tests/test_gate.py runner:tests/test_gate_proxy.py
 libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
 	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
