@@ -3,18 +3,19 @@ name plus a validated schema; an unknown kind or field is refused (RFC-0004 §2.
 
 import math
 
+from runfile import navcontract
+
 from . import guardrails
 from .errors import invalid
 
 KINDS = ("point", "go_to_object", "go_to_area", "explore", "inventory")
 
-# §3.4.3: a run's states. The first two are live; the rest end it.
-STATES = ("queued", "running", "reached", "done", "refused", "failed", "stopped_by_guardrail",
-          "not_found", "cancelled", "interrupted")
+# §3.4.3: a run's states. The first two are live; the rest end it, by the navigator contract's names (libs/runner/CONTRACT.md).
 ACTIVE = ("queued", "running")
-TERMINAL = tuple(s for s in STATES if s not in ACTIVE)
+TERMINAL = navcontract.ENDS
+STATES = ACTIVE + TERMINAL
 # reach goals end `reached`; the ones with no target to reach end `done` (§3.4.3)
-SUCCESS = ("reached", "done")
+SUCCESS = navcontract.SUCCESS
 
 EXPECTS = ("reach", "refuse")
 FIELDS = {"name", "folder", "kind", "params", "done_when", "must_not", "expect", "budget", "scene"}

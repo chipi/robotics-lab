@@ -13,20 +13,21 @@ robot's lease from the gate at `goal.start` (the navigator is the process that s
 it back at the end of the run; STOP never goes through it. Every goal run is also an Observatory run, `duck/<scene>/mc<id>-...`,
 which names its goal run in the run record (`goal_run`, apps/observatory/CONTRACT.md), and `goal.start` answers with its key at once.
 
-Methods:
+It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Methods:
+  hello -> {name, version, contract, kinds, camera}
   goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?}
       -> {run_key}, or {error} when another client holds the robot (the gate's own refusal), or a goal is running here
   goal.status {decisions_since, objects_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
       decisions_n, objects: [...] | null, objects_v}
-  goal.cancel -> {ok}
+  goal.cancel {reason?} -> {ok}
   goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
   inventory -> RFC-0016's inventory                           map -> mapd's grid
 `seed.objects` are Mission Control's confirmed objects of the site (their ids are Mission Control's; they come back as `seed`
 beside the navigator's own ids), `seed.areas` the operator's outlines [{id, name, type, outline}].
 
-States of a run, as RFC-0014 §3.4.3: running, then reached, done, refused, failed, stopped_by_guardrail, not_found, cancelled,
-interrupted. The guardrails it checks are its own (the speed cap, the no-go area in the planner, the clock, stuck); the
+States of a run: the contract's (running, then reached, done, refused, not_found, timeout, stalled, stopped_by_guardrail,
+cancelled, interrupted, failed). The guardrails it checks are its own (the speed cap, the no-go area in the planner, the clock, stuck); the
 ones only the truth can tell are its runner's (guardrails.TruthGuard), which breaks the run with `goal.break`. The kinds that
 look for objects (go_to_object, inventory, explore) need the camera's socket."""
 
@@ -38,20 +39,20 @@ import threading
 import time
 from pathlib import Path
 
+from duck_lab.nav import contract
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.guardrails import Guard
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
+from runfile.navcontract import ENDS
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 from worldmodel.site import Area, inside
 
+NAME, VERSION = "duck-nav-server", "0.2.0"
 GOAL_KINDS = ("point", "go_to_object", "go_to_area", "explore", "inventory")
-TERMINAL = ("reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted")
-DEFAULT_MINUTES = 5.0
-DEFAULT_POINT_S = 60.0
 
 
 def interior_point(polygon: list) -> tuple:
@@ -132,7 +133,7 @@ class GoalRun:
         self.runlog = None
         self.run_key = None
         self.explorer = None
-        self.cancelled = threading.Event()
+        self.cancelled: str | None = None
         self.t0 = time.monotonic()
         self.target = None
         self.seed_ids: dict = {}
@@ -246,10 +247,10 @@ class GoalRun:
 
     # --- running --------------------------------------------------------------------------------------
 
-    def cancel(self) -> None:
-        self.cancelled.set()
+    def cancel(self, reason: str | None = None) -> None:
+        self.cancelled = reason or "cancelled by Mission Control"
         if self.nav is not None:
-            self.nav.abort = self.nav.abort or "cancelled by Mission Control"
+            self.nav.abort = self.nav.abort or self.cancelled
 
     def _work(self) -> None:
         try:
@@ -257,18 +258,10 @@ class GoalRun:
         except LeaseLost as exc:
             if self.nav is not None:
                 self.nav.lease_ended(exc)            # (said once: Navigator.move said it when its own command was the one refused)
-            if (exc.reason or "").startswith("taken_over_by"):
-                state, reason, result = "interrupted", f"the robot was {exc.reason.replace('_', ' ')}", None
-            elif (exc.reason or "").startswith("stopped_by"):
-                state, reason, result = "cancelled", exc.reason.replace("_", " "), None
-            else:
-                state, reason, result = "interrupted", f"the lease ended: {exc.reason or exc.code}", None
+            (state, reason), result = contract.of_lease(exc), None
         except Exception as exc:                                 # noqa: BLE001 - a goal's failure is its outcome
             state, reason, result = "failed", f"{type(exc).__name__}: {exc}", None
-        if self.broken and state not in ("cancelled", "interrupted"):
-            state, reason = "stopped_by_guardrail", self.broken["detail"]
-        elif self.cancelled.is_set() and state not in ("interrupted",):
-            state, reason = "cancelled", "cancelled by Mission Control"
+        state, reason = contract.settle(state, reason, self.broken, self.cancelled)
         self._finish(state, reason, result)
 
     def _finish(self, state: str, reason, result) -> None:
@@ -289,30 +282,19 @@ class GoalRun:
         self.result, self.reason = result, reason
         self.state = state                                         # last: a poll that sees a terminal state sees the rest
 
-    def _outcome(self, out: dict, kind_failed: str = "failed") -> tuple:
-        status = out.get("status")
-        if status == "reached":
-            return "reached", None, None
-        if status == "refused":
-            return "refused", out.get("why"), None
-        if status == "aborted":
-            return "failed", out.get("why"), None            # _work turns a cancel or a guardrail into its own state
-        if status == "timeout":
-            return "failed", f"the time limit of {out.get('time_s')} s was spent before it was done", None
-        return kind_failed, out.get("why") or str(status), None
+    def _outcome(self, out: dict) -> tuple:
+        return (*contract.of_go_to(out), None)              # _work turns a cancel or a guardrail into its own state
 
     def _within_s(self, default: float) -> float:
-        return float(self.done_when.get("within_s") or default)
+        return contract.within_s(self.spec, default)
 
     def _minutes(self) -> float:
-        budget = (self.spec.get("budget") or {}).get("minutes") or DEFAULT_MINUTES
-        within = self.done_when.get("within_s")
-        return min(float(budget), within / 60.0) if within else float(budget)
+        return contract.minutes(self.spec)
 
     def _do_point(self) -> tuple:
         x, y = float(self.params["x"]), float(self.params["y"])
         self.target = (x, y)
-        return self._outcome(self.nav.go_to((x, y), self._within_s(DEFAULT_POINT_S)))
+        return self._outcome(self.nav.go_to((x, y), self._within_s(contract.DEFAULT_POINT_S)))
 
     def _do_go_to_area(self) -> tuple:
         area = next((a for a in self.areas if a.aid == self.params["area"]), None)
@@ -445,28 +427,32 @@ class NavServer:
         finally:
             rpc.close()
 
+    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "map", "state", "objects", "inventory")
+
     def call(self, method: str, p: dict):
-        if method == "ping":
-            return {"ok": True, "goal_kinds": list(GOAL_KINDS)}
+        if method not in self.METHODS:
+            raise KeyError(method)
+        if method == "hello":
+            return contract.hello(NAME, VERSION, GOAL_KINDS, bool(self.sockets.get("camera")))
         if method == "goal.start":
             return self.start(p)
         run = self.run
         if method == "goal.status":
             if run is None:
-                return {"state": "idle"}
+                return {"state": "idle", "reason": None, "result": None, "broken": None}
             return run.snapshot(int(p.get("decisions_since", 0)), int(p.get("objects_since", -1)))
         if method == "goal.break":
-            if run is not None and run.state not in TERMINAL:
+            if run is not None and run.state not in ENDS:
                 run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"))
             return {"ok": True}
         if method == "goal.cancel":
-            if run is not None and run.state not in TERMINAL:
-                run.cancel()
+            if run is not None and run.state not in ENDS:
+                run.cancel(p.get("reason"))
             return {"ok": True}
         if method == "map":
             return self._map()                  # the robot's map, between goals too: its clients never open mapd themselves
         if method in ("state", "objects", "inventory"):
-            if run is None or run.nav is None or run.state in TERMINAL:
+            if run is None or run.nav is None or run.state in ENDS:
                 return {"error": "no goal is running"} if method != "objects" else {"objects": []}
             nav = run.nav
             if method == "state":
@@ -480,7 +466,7 @@ class NavServer:
 
     def start(self, spec: dict) -> dict:
         with self._lock:
-            if self.run is not None and self.run.state not in TERMINAL:
+            if self.run is not None and self.run.state not in ENDS:
                 return {"error": {"code": "busy", "message": "a goal is running here"}}
             if spec.get("kind") in ("go_to_object", "inventory") and not self.sockets.get("camera"):
                 return {"error": {"code": "no_camera", "message": f"a {spec['kind']} goal looks for objects: this navigator has no camera"}}

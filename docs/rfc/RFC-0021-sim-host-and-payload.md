@@ -203,7 +203,11 @@ Apple Silicon without an NVIDIA GPU is unknown and is the first thing step 3 fin
    `/proc`, so on macOS it records "not measured"); importing the payload loads no `simhost`. Not yet
    through the split: the phase 1 evaluation (`duck-eval`, step 4), `duck-explore` and Mission
    Control's nav server (the camera and guardrails above); challenge 21 through the payload ran
-   once and missed one goal by 1 cm (8 of 10), not repeated yet.
+   once and missed one goal by 1 cm (8 of 10), not repeated yet. *Since 2026-11-22* the payload
+   and Mission Control's navigator API keep one contract, version 1.0
+   ([`libs/runner/CONTRACT.md`](https://github.com/chipi/robotics-lab/blob/main/libs/runner/CONTRACT.md)):
+   the payload answers `goal.start`, `goal.status`, `goal.cancel` and `goal.break` with the API's
+   goal shape and ends, and keeps `localise` and `stop`.
 3. **The setup and check scripts** (§4), each platform proven on a clean machine: Linux in a fresh
    container standing in for a new machine; macOS on the operator's MacBook Pro (M4 Pro), the
    simulation environment first, since it is the open risk; phase 1's 20 goals run there and the

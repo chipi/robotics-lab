@@ -57,6 +57,21 @@ to 11, seed 1) whose verdicts match the last batch's.
 
 **Size:** one part-sized commit.
 
+**Done 2026-11-22 (the contract, 1.0).** `libs/runner/CONTRACT.md`, its names in
+`runfile.navcontract`; the payload (and `payloads/straight.py`) answers `goal.*` with the API's goal
+shape, the API answers `hello` (no `ping`), a timeout and a stall are their own ends, the runner's
+truth stops are `goal.break`; the runner, `lab-nav-server` and Mission Control refuse another major
+version and take a state outside the contract as the navigator's failure. Proof:
+`test_contract.py` 108 checks against both navigators; `test_remote_contract.py` (a stand-in
+payload process) and Mission Control's `test_duck_adapter.py` with the must-fail cases; 5 mutants
+killed (a guardrail end, a stall end, the state check, the runner's and Mission Control's hello
+check); `make ci-fast` PASS; challenges 1-11, seed 1, the code before (`8237c25`) and after,
+alternating: the same verdict in 11 of 11 (10 pass; challenge 7 refused "no room to turn" on both,
+K40); `make sim-duck` PASS 48 FAIL 0. **Still to do (decided 2026-11-22, a second commit):** the
+navigator's own stop event is named by what stopped it (`stopped_by_guardrail`, `cancelled`) instead
+of `aborted`, which the Observatory shows as a run's verdict; old runs' `aborted` shown by its
+recorded reason (the index's 9 are all guardrail stops: 6 falls, 2 truth guards, 1 contact).
+
 ### 2. The apartment out of the runner
 
 **The problem.** The runner library holds one scene: the apartment's bounds (`geometry.py`

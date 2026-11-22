@@ -5,7 +5,7 @@
 const API = "/api/v1";
 const $ = (id) => document.getElementById(id);
 const ARM_MS = 6000; // a delete needs a second press within this long
-const TERMINAL = ["reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted"];
+const TERMINAL = ["reached", "done", "refused", "not_found", "timeout", "stalled", "stopped_by_guardrail", "cancelled", "interrupted", "failed"];   // the navigator contract's ends (runfile.navcontract)
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);

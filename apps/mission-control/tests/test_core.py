@@ -152,7 +152,7 @@ r = start(mc, {"kind": "point", "params": {"x": 3.0, "y": 1.5}})
 check("a point inside the fridge is refused", "inside a fridge" in r["reason"], r["reason"])
 r = start(mc, {"kind": "point", "params": {"x": 3.9, "y": 2.9}, "done_when": {"within_s": 2}})
 r = finish_run(mc, clock, r["id"])
-check("failed: the time limit of the goal is spent before it is reached", r["state"] == "failed" and "time limit of 2 s" in r["reason"], r["reason"])
+check("timeout: the time limit of the goal is spent before it is reached", r["state"] == "timeout" and "time limit of 2 s" in r["reason"], r["reason"])
 check("and the robot is stopped and free", fake(mc).vx == 0.0 and mc.get_robot("fake-1")["lock"]["holder"] is None)
 
 # a guardrail broken: contact
@@ -176,8 +176,8 @@ r = finish_run(mc, clock, run["id"], 20)
 check("stuck (written 'stall' in the RFC's example) stops the run", r["state"] == "stopped_by_guardrail" and r["broken"]["name"] == "stuck", r["broken"])
 run = start(mc, {"kind": "point", "params": {"x": 2.0, "y": 0.0}, "done_when": {"within_s": 8}})
 r = finish_run(mc, clock, run["id"], 20)
-check("without 'stuck' in its guardrails the run goes on, says so once, and ends failed at its time limit",
-      r["state"] == "failed" and sum("stuck" in d["text"] for d in r["decisions"]) == 1, [d["text"] for d in r["decisions"]])
+check("without 'stuck' in its guardrails the run goes on, says so once, and ends timeout at its time limit",
+      r["state"] == "timeout" and sum("stuck" in d["text"] for d in r["decisions"]) == 1, [d["text"] for d in r["decisions"]])
 fake(mc).wheels_locked = False
 
 # the time limit as a guardrail (the site's, here)

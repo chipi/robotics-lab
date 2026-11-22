@@ -94,7 +94,7 @@ mc, clock = boot(slow("fake-1", 0.5), slow("fake-2", 0.05))
 g = group(mc, team="pair", goal={"kind": "point", "params": {"x": 2.0, "y": 0.0}, "done_when": {"within_s": 6}})
 done = settle(mc, clock, g["id"])
 check("each: one reaches and one runs out of time: the group failed, and says which robot and why",
-      done["state"] == "failed" and "fake-2: failed" in done["reason"] and done["result"]["fake-1"]["state"] == "reached", (done["state"], done["reason"]))
+      done["state"] == "failed" and "fake-2: timeout" in done["reason"] and done["result"]["fake-1"]["state"] == "reached", (done["state"], done["reason"]))
 check("the group did not call the robot that did reach it a failure: its own child is reached", mc.get_run(done["children"][0]["id"])["state"] == "reached")
 
 # --- any: the first to reach it ends it ----------------------------------------------------------------------------
@@ -110,7 +110,7 @@ check("each child's result is in the group's, the loser's too", set(done["result
 mc, clock = boot(slow("fake-1", 0.05), slow("fake-2", 0.05))
 g = group(mc, team="pair", share="any", goal={"kind": "point", "params": {"x": 3.0, "y": 0.0}, "done_when": {"within_s": 3}})
 done = settle(mc, clock, g["id"])
-check("any: when none reaches it the group fails like each", done["state"] == "failed" and done["as_expected"] is False, (done["state"], done["reason"]))
+check("any: when none reaches it the group ends as its robots did (both out of time: timeout)", done["state"] == "timeout" and done["as_expected"] is False, (done["state"], done["reason"]))
 
 # --- the leases ------------------------------------------------------------------------------------------------
 mc, clock = boot(slow("fake-1", 0.5), slow("fake-2", 0.5))

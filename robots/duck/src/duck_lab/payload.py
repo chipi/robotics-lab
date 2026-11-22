@@ -4,17 +4,12 @@ runner, which has the truth, judges it and writes the official run (runfile.trut
 
     duck-payload --robot R.sock --depth T.sock --map M.sock [--camera C.sock] --listen P.sock --out DIR --data DATA --scene S --name N
 
-The contract (newline JSON-RPC 2.0 on --listen; another navigator can implement the same):
-  hello                         -> {name, version, kinds, scale, camera}
-  localise                      -> {pose}: its pose in its own map once it has one (a fix, else a survey), or an error
-  start {kind, ...}             -> {ok}: point {goal: [x, y] in its map, time_s}; explore {minutes, and with a camera:
-                                   objects, find (a kind), site (an id in --sites), object_costs, relocalise}
-  status                        -> {state, why, pose, result}: running, then reached, refused, timeout, stalled, aborted or
-                                   failed (`result`: the explorer's for explore)
-  cancel {reason}               -> {ok}: the navigator stops, and its run says why
-  stop                          -> {ok}: its run is closed and the process ends
-One goal at a time; the navigator (its map and its memory) is kept from one start to the next. An explore with objects
-writes the semantic map and the inventory into --out, records the inventory in its run, and saves a site back."""
+It keeps the navigator contract (libs/runner/CONTRACT.md: newline JSON-RPC 2.0 on --listen), as a payload: hello, goal.start,
+goal.status, goal.cancel, goal.break, and its own localise and stop. Its goal kinds: point {params {x, y} in its map,
+conditions.done_when.within_s}; explore {budget.minutes, and with a camera params objects, find (a kind), site (an id in
+--sites), object_costs, relocalise}, whose `result` is the explorer's. One goal at a time; the navigator (its map and its
+memory) is kept from one goal to the next. An explore with objects writes the semantic map and the inventory into --out,
+records the inventory in its run, and saves a site back."""
 
 import argparse
 import json
@@ -26,19 +21,21 @@ import threading
 import time
 from pathlib import Path
 
+from duck_lab.nav import contract
 from duck_lab.nav.camera import CameraClient
+from duck_lab.nav.client import LeaseLost
 from duck_lab.nav.decision import decision
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.explore_run import ENDS
 from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import RunLog
 from duck_lab.robot import SITES
+from runfile.navcontract import ENDS as GOAL_ENDS
 from worldmodel.objects import load_kinds
 from worldmodel.site import Site
 
-NAME, VERSION = "duck-lab", "0.1.0"
+NAME, VERSION = "duck-lab", "0.2.0"
 KINDS = ("point", "explore")
-TERMINAL = ("reached", "refused", "timeout", "stalled", "aborted", "failed")
 
 
 class Payload:
@@ -63,60 +60,86 @@ class Payload:
         self.camera = CameraClient(camera) if camera else None
         self.objects_on = False
         self.site = None
-        self.state, self.why, self.result = "idle", None, None
+        self.state, self.reason, self.result, self.broken, self.cancelled = "idle", None, None, None, None
         self._lock = threading.Lock()
         self.stopped = threading.Event()
 
     def call(self, method: str, p: dict):
-        if method == "hello":
-            return {"name": NAME, "version": VERSION, "kinds": list(KINDS), "scale": self.nav.scale,
-                    "camera": self.camera is not None}
-        if method == "localise":
-            nav = self.nav
-            if nav.loc.pose() is None and not nav.fix():
-                nav.survey()
-            pose = nav.loc.pose()
-            if pose is None:
-                raise ValueError("no pose on the map after the survey")
-            return {"pose": list(pose)}
-        if method == "start":
-            with self._lock:
-                if self.state == "running":
-                    raise ValueError("a goal is running")
-                kind = p.get("kind")
-                if kind not in KINDS:
-                    raise ValueError(f"kind {kind!r}: this payload takes {list(KINDS)}")
-                if kind == "explore" and (p.get("objects") or p.get("find")) and self.camera is None:
-                    raise ValueError("objects need a camera: this payload was started without --camera")
-                if p.get("find") and p["find"] not in load_kinds():
-                    raise ValueError(f"no kind {p['find']!r}")
-                self.nav.abort = None
-                self.state, self.why, self.result = "running", None, None
-            threading.Thread(target=self._work, args=(kind, p), name=f"goal-{kind}", daemon=True).start()
-            return {"ok": True}
-        if method == "status":
-            pose = self.nav.loc.pose()
-            return {"state": self.state, "why": self.why, "result": self.result, "pose": list(pose) if pose else None}
-        if method == "cancel":
-            self.nav.abort = str(p.get("reason") or "cancelled by the runner")
-            return {"ok": True}
-        if method == "stop":
-            self.close()
-            return {"ok": True}
-        raise KeyError(f"no method {method!r}")
+        if method not in self.METHODS:
+            raise KeyError(f"no method {method!r}")
+        return getattr(self, self.METHODS[method])(p)
 
-    def _work(self, kind: str, p: dict) -> None:
+    def _hello(self, _p: dict) -> dict:
+        return contract.hello(NAME, VERSION, KINDS, self.camera is not None, scale=self.nav.scale)
+
+    def _localise(self, _p: dict) -> dict:
+        nav = self.nav
+        if nav.loc.pose() is None and not nav.fix():
+            nav.survey()
+        pose = nav.loc.pose()
+        if pose is None:
+            raise ValueError("no pose on the map after the survey")
+        return {"pose": list(pose)}
+
+    def _start(self, spec: dict) -> dict:
+        kind, params = spec.get("kind"), spec.get("params") or {}
+        with self._lock:
+            if self.state == "running":
+                return {"error": {"code": "busy", "message": "a goal is running"}}
+            if kind not in KINDS:
+                return {"error": {"code": "unknown_kind", "message": f"kind {kind!r}: this payload takes {list(KINDS)}"}}
+            if kind == "explore" and (params.get("objects") or params.get("find")) and self.camera is None:
+                return {"error": {"code": "no_camera", "message": "objects need a camera: this payload was started without --camera"}}
+            if params.get("find") and params["find"] not in load_kinds():
+                return {"error": {"code": "bad_goal", "message": f"no kind {params['find']!r}"}}
+            self.nav.abort = None
+            self.state, self.reason, self.result, self.broken, self.cancelled = "running", None, None, None, None
+        threading.Thread(target=self._work, args=(kind, spec), name=f"goal-{kind}", daemon=True).start()
+        return {"run_key": self.runlog.key}
+
+    def _status(self, _p: dict) -> dict:
+        pose = self.nav.loc.pose()
+        return {"state": self.state, "reason": self.reason, "result": self.result, "broken": self.broken,
+                "pose": list(pose) if pose else None}
+
+    def _cancel(self, p: dict) -> dict:
+        if self.state == "running":
+            self.cancelled = str(p.get("reason") or "cancelled by the runner")
+            self.nav.abort = self.nav.abort or self.cancelled
+        return {"ok": True}
+
+    def _break(self, p: dict) -> dict:
+        """A guardrail its runner checks by the truth broke (a truth guard, an invariant): the goal stops, saying which."""
+        with self._lock:
+            if self.state != "running" or self.broken is not None:
+                return {"ok": True}
+            name, detail = str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner")
+            self.broken = {"name": name, "detail": detail}
+        self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        self.nav.abort = f"guardrail {name}: {detail}"
+        return {"ok": True}
+
+    def _stop(self, _p: dict) -> dict:
+        self.close()
+        return {"ok": True}
+
+    METHODS = {"hello": "_hello", "goal.start": "_start", "goal.status": "_status", "goal.cancel": "_cancel",
+               "goal.break": "_break", "localise": "_localise", "stop": "_stop"}
+
+    def _work(self, kind: str, spec: dict) -> None:
+        params = spec.get("params") or {}
+        result = None
         try:
             if kind == "point":
-                out = self.nav.go_to(tuple(p["goal"][:2]), float(p["time_s"]))
-                state, why, result = out.get("status", "failed"), out.get("why"), out
+                out = self.nav.go_to((float(params["x"]), float(params["y"])), contract.within_s(spec))
+                (state, reason), result = contract.of_go_to(out), out
             else:
-                if p.get("objects") or p.get("find"):
-                    self._objects(p)
+                if params.get("objects") or params.get("find"):
+                    self._objects(params)
                 ex = Explorer(self.nav, self.out)
-                ex.find = p.get("find")
+                ex.find = params.get("find")
                 try:
-                    res = ex.run(float(p["minutes"]))
+                    res = ex.run(contract.minutes(spec))
                 finally:
                     kept = self._keep_objects()
                 ended = [e for e in ex.events if e.get("event") in ENDS]
@@ -124,12 +147,16 @@ class Payload:
                 result = {**res, "end": ended[-1]["event"] if ended else ("found" if reached else "time"),
                           "end_s": ended[-1]["t"] if ended else None,
                           "why": ended[-1].get("why") if ended else None, **kept}
-                state, why = "reached", None
+                state, reason = "done", None
+        except LeaseLost as exc:
+            self.nav.lease_ended(exc)
+            state, reason = contract.of_lease(exc)
         except Exception as e:      # noqa: BLE001 - a goal's failure is its outcome, said to the runner
-            state, why, result = "failed", f"{type(e).__name__}: {e}", None
+            state, reason = "failed", f"{type(e).__name__}: {e}"
+        state, reason = contract.settle(state, reason, self.broken, self.cancelled)
         with self._lock:
-            self.result, self.why = result, why
-            self.state = state if state in TERMINAL else "failed"     # last: a poll that sees it terminal sees the rest
+            self.result, self.reason = result, reason
+            self.state = state if state in GOAL_ENDS else "failed"     # last: a poll that sees it ended sees the rest
 
     def _objects(self, p: dict) -> None:
         """The camera and the semantic map on (once: the navigator is kept between starts), from a site's map when one

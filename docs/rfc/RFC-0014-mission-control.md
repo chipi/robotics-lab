@@ -683,9 +683,11 @@ and offers to Mission Control, over a process boundary, in the RFC-0003 JSON-RPC
 | `map`, `state`, `sighting` | the map layers, the robot's state, the latest sighting |
 
 It runs the navigator in its own thread; `robot.stop` never goes through it (§3.8). The method
-shapes are proposed; the first slice for the duck settles them and writes them in the contract. A
-goal kind the navigator does not list in `capabilities.navigator.goal_kinds` is refused at the
-adapter.
+shapes are proposed; the first slice for the duck settles them and writes them in the contract
+(built: the navigator contract, version 1.0,
+[`libs/runner/CONTRACT.md`](https://github.com/chipi/robotics-lab/blob/main/libs/runner/CONTRACT.md),
+with Mission Control's side in `apps/mission-control/CONTRACT.md`). A goal kind the navigator does
+not list in `capabilities.navigator.goal_kinds` is refused at the adapter.
 
 ### 3.8 Safety
 

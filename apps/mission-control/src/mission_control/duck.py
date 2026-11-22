@@ -24,6 +24,7 @@ from pathlib import Path
 
 from robotgate import GateError
 from runfile import installation
+from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 
 from .errors import ApiError
 
@@ -31,7 +32,6 @@ GATE_NAME = "mission-control"
 STATE_STALE_S = 2.0
 HEALTH_EVERY_S = 10.0
 CALL_TIMEOUT_S = 5.0
-TERMINAL = ("reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted")
 POLL_EVERY_S = 0.2
 FAILS_BEFORE_LOST = 15      # polls in a row that fail before the navigator is called gone (3 s)
 
@@ -237,7 +237,11 @@ class DuckNavigatorClient:
     def goal_start(self, spec: dict) -> dict:
         self._dn, self._ov, self._fails = 0, -1, 0
         try:
+            check_hello(self._rpc("hello"))     # asked at every goal: the server behind the address can be restarted between two
             out = self._rpc("goal.start", spec)
+        except ContractError as exc:
+            self._status = {"state": "refused", "reason": str(exc)}
+            return {"run_key": None}
         except (OSError, RuntimeError) as exc:
             self._status = {"state": "refused", "reason": f"the navigator server did not answer: {exc}"}
             return {"run_key": None}
@@ -294,7 +298,11 @@ class DuckNavigatorClient:
             self._ov = st["objects_v"]
             self._on_objects(st["objects"])
         self._status = {k: st.get(k) for k in ("state", "reason", "progress", "result", "broken", "run_key")}
-        if st["state"] in TERMINAL:
+        try:
+            check_state(st.get("state"))
+        except ContractError as exc:            # the navigator's failure, said: a run never waits on a state it cannot end
+            self._status.update(state="failed", reason=str(exc))
+        if self._status["state"] in ENDS:
             self._active = False
 
 

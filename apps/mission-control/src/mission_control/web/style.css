@@ -112,7 +112,7 @@ input.w { width: 100%; }
 .state { font-family: var(--mono); font-size: 12px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border-strong); }
 .state.running, .state.queued { color: var(--accent); }
 .state.reached, .state.done { color: var(--ok); }
-.state.refused, .state.failed, .state.stopped_by_guardrail, .state.not_found, .state.interrupted, .state.cancelled { color: var(--warn); }
+.state.refused, .state.failed, .state.stopped_by_guardrail, .state.not_found, .state.timeout, .state.stalled, .state.interrupted, .state.cancelled { color: var(--warn); }
 .decisions { max-height: 200px; overflow: auto; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; background: var(--bg-field); }
 .decisions div { padding: 1px 0; }
 pre.json { margin: 4px 0; padding: 6px; max-height: 160px; overflow: auto; background: var(--bg-field); border: 1px solid var(--border); border-radius: 4px; font: 12px/1.3 var(--mono); }

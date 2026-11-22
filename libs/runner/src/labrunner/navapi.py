@@ -41,10 +41,10 @@ from labrunner.rpc import Rpc
 from labrunner.guard import TruthGuard
 from runfile import keys, registry
 from runfile.catalog import default_data
+from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.truthcopy import TruthCopy, TruthLog
 from simhost.truth import Sampler
 
-TERMINAL = ("reached", "done", "refused", "failed", "stopped_by_guardrail", "not_found", "cancelled", "interrupted")
 STARTED_S = 60.0         # the navigator API answers within this, or the runner gives up
 WATCH_S = 0.2            # how often a goal's run is copied and its state asked
 ROUTE_EVERY = 40         # truth samples between two looks at the navigator's connections (2 s at 20 Hz)
@@ -103,10 +103,14 @@ class GoalWatch:
             try:
                 st = self.runner.api("goal.status", {"decisions_since": 10 ** 9, "objects_since": self._objects_v})
                 self._objects_v = st.get("objects_v", -1)
+                state = check_state(st.get("state"))
+            except ContractError as e:  # a state the contract does not have: the navigator's failure, said
+                print(f"lab-nav-server: {self.key}: {e}", flush=True)
+                state = "failed"
             except Exception:           # noqa: BLE001 - the navigator API gone: the run ends here with what was copied
-                st = {"state": "failed"}
-            if st.get("state") in TERMINAL or st.get("state") == "idle":
-                self.state = st.get("state")
+                state = "failed"
+            if state in ENDS or state == "idle":
+                self.state = state
                 self.finish()
 
     def pump(self) -> None:
@@ -166,6 +170,7 @@ class NavRunner:
         self.rpc = None
         try:
             self._connect()
+            self.hello = check_hello(self.api("hello"))    # another major version of the contract: refused before it serves
         except BaseException:
             self.close()
             raise

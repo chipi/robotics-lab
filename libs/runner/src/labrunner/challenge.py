@@ -79,7 +79,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
             if not broken:
                 return
             if broken["rule"] in STOPS:
-                nav.abort = f"invariant {broken['rule']}: {broken['why']}"
+                nav.break_goal(broken["rule"], broken["why"])
             nav.record(event="invariant", rule=broken["rule"], why=broken["why"])
         sampler.on_sample = watch
         truth = lambda: sampler.latest.pose  # noqa: E731 - at most a sample period old: the duck stands at each use

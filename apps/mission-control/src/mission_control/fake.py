@@ -365,7 +365,7 @@ class FakeNavigator:
             if r.spec["kind"] == "go_to_object" and r.found is None:
                 self._finish(r, "not_found", f"no {self._what(r)} found within {within:g} s", None)
             else:
-                self._finish(r, "failed", f"the time limit of {within:g} s was spent before it was done", None)
+                self._finish(r, "timeout", f"the time limit of {within:g} s was spent before it was reached", None)
             return
         moved = r.ref_pose is None or math.hypot(r.pose[0] - r.ref_pose[0], r.pose[1] - r.ref_pose[1]) > STUCK_EPS \
             or abs(_wrap(r.pose[2] - r.ref_pose[2])) > 0.05

@@ -152,15 +152,20 @@ robot's. The planner module imports no robot code: it cannot drive, stop or fire
 `{id, goal_id, goal (a copy), robot, site, target, state, reason, progress, result, broken,
 guardrails, conditions, run_key, watch, expect, as_expected, created_at, started_at, ended_at}`.
 
-States: `queued`, `running`, then one of `reached`, `done`, `refused`, `failed`,
-`stopped_by_guardrail`, `not_found`, `cancelled`, `interrupted`. `reason` says why for every end that
-is not `reached` or `done`.
+States: `queued`, `running`, then one of the navigator contract's ends
+([`libs/runner/CONTRACT.md`](https://github.com/chipi/robotics-lab/blob/main/libs/runner/CONTRACT.md)):
+`reached`, `done`, `refused`, `not_found`, `timeout`, `stalled`, `stopped_by_guardrail`,
+`cancelled`, `interrupted`, `failed`. `reason` says why for every end that is not `reached` or
+`done`.
 
 - `reached` and `done` are the successes: `done` is for `explore` and `inventory`, which have no
   target to reach and end `done` whether no frontier is left or the budget is spent.
 - `refused`: the run could not start (a capability the robot lacks, the robot is held, no path, an
   area that is not there). It is an ended run.
-- `failed`: the robot tried and a condition broke (the time limit of `done_when`).
+- `timeout`: the time limit of `done_when` was spent before the goal was reached. `stalled`: the
+  robot stopped getting closer.
+- `failed`: anything else the navigator could not do: an error, the robot trapped, an object found
+  but not got to, a navigator answering a state its contract does not have.
 - `stopped_by_guardrail`: a guardrail broke; `broken` is `{name, detail}`. Not the same as `failed`.
 - `not_found`: an object goal whose exploring ended without finding it.
 - `cancelled`: `cancel`, or a STOP (the latch). `interrupted`: a takeover, or the robot stopped answering.
@@ -357,13 +362,15 @@ the navigator runs another version (another checksum) than Mission Control read,
 a decision saying so, with both versions. `GET /robots/{id}/sighting` is `404 no_sighting` (the
 camera runs with a goal, and its sightings are in the Observatory run).
 
-The navigator API, as the server speaks it:
+The navigator API, as the server speaks it (the navigator contract, version 1.0, as a navigator
+API):
 
 | Method | Meaning |
 | --- | --- |
+| `hello` | `{name, version, contract, kinds, camera}`: asked before every goal; a navigator speaking another major version of the contract is refused, both versions said, and no goal starts |
 | `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
 | `goal.status {decisions_since, objects_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, objects, objects_v}`; `objects` is the navigator's whole map, only when it changed |
-| `goal.cancel` | the navigator stops, ends the run, gives the lease back |
+| `goal.cancel {reason?}` | the navigator stops, ends the run `cancelled`, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
 | `state`, `objects`, `inventory` | what the navigator sees now, while a run is active |

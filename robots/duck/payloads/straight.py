@@ -5,7 +5,8 @@ the run format (runfile) for its own run, which the runner copies with the truth
 
     python straight.py --robot R.sock --depth T.sock --map M.sock --listen P.sock --out DIR --data DATA --scene S --name N
 
-The contract it answers (as duck_lab.payload's): hello, localise, start {kind: point, goal, time_s}, status, cancel, stop."""
+It keeps the navigator contract as a payload (libs/runner/CONTRACT.md, as duck_lab.payload does): hello, goal.start {kind:
+point, params {x, y}, conditions.done_when.within_s}, goal.status, goal.cancel, goal.break, localise, stop."""
 
 import argparse
 import json
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from runfile import keys
 from runfile.mcapio import Recorder, new_run
+from runfile.navcontract import CONTRACT
 
 STOP_MM = 300            # nearer than this ahead (the sensor's central columns): stop, refused
 VALID = (5, 9)           # the depth sensor's statuses that are a measurement
@@ -67,9 +69,11 @@ class Straight:
         self.rec = Recorder(keys.run_dir(a.data, key), new_run(key, dict(ROBOT), a.scene, "challenge", time.time_ns(), "writer",
                                                                writer={"program": "straight", "version": "0.1.0"},
                                                                run_uuid=str(uuid.uuid4())))
+        self.key = key
         self.t0 = time.monotonic()
         self.lock = threading.Lock()
-        self.status, self.abort, self.stopped = {"state": "idle", "why": None, "result": None}, None, threading.Event()
+        self.status, self.stopped = {"state": "idle", "reason": None, "result": None, "broken": None}, threading.Event()
+        self.broken = self.cancelled = None
 
     def _now(self) -> float:
         return round(time.monotonic() - self.t0, 3)
@@ -108,8 +112,10 @@ class Straight:
     def go(self, goal, time_s: float) -> tuple:
         end = time.monotonic() + time_s
         while True:
-            if self.abort:
-                return "aborted", self.abort
+            if self.broken:
+                return "stopped_by_guardrail", self.broken["detail"]
+            if self.cancelled:
+                return "cancelled", self.cancelled
             p = self.pose()
             if p is None:
                 time.sleep(TICK_S)
@@ -139,33 +145,44 @@ class Straight:
             state, why = "failed", f"{type(e).__name__}: {e}"
         self.move(0.0, 0.0)
         self.event(state, f"{state} {why or ''}".strip(), goal=list(goal), why=why)
-        self.status = {"state": state, "why": why, "result": {"status": state, "why": why}}
+        self.status = {"state": state, "reason": why, "result": {"status": state, "why": why}, "broken": self.broken}
+
+    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "localise", "stop")
 
     def call(self, method: str, p: dict):
+        if method not in self.METHODS:
+            raise KeyError(f"no method {method!r}")
         if method == "hello":
-            return {"name": "straight", "version": "0.1.0", "kinds": ["point"], "scale": 1.0}
+            return {"name": "straight", "version": "0.2.0", "contract": CONTRACT, "kinds": ["point"], "camera": False,
+                    "scale": 1.0}
         if method == "localise":
             for _ in range(50):
                 if self.pose() is not None:
                     return {"pose": list(self.pose())}
                 time.sleep(0.1)
             raise ValueError("no odometry from the robot")
-        if method == "start":
+        if method == "goal.start":
+            if self.status["state"] == "running":
+                return {"error": {"code": "busy", "message": "a goal is running"}}
             if p.get("kind") != "point":
-                raise ValueError(f"kind {p.get('kind')!r}: this payload takes ['point']")
-            self.abort, self.status = None, {"state": "running", "why": None, "result": None}
-            threading.Thread(target=self.run_point, args=(tuple(p["goal"][:2]), float(p["time_s"])), daemon=True).start()
-            return {"ok": True}
-        if method == "status":
+                return {"error": {"code": "unknown_kind", "message": f"kind {p.get('kind')!r}: this payload takes ['point']"}}
+            q = p.get("params") or {}
+            within = float(((p.get("conditions") or {}).get("done_when") or {}).get("within_s") or 60.0)
+            self.broken = self.cancelled = None
+            self.status = {"state": "running", "reason": None, "result": None, "broken": None}
+            threading.Thread(target=self.run_point, args=((float(q["x"]), float(q["y"])), within), daemon=True).start()
+            return {"run_key": self.key}
+        if method == "goal.status":
             p_ = self.pose()
             return {**self.status, "pose": list(p_) if p_ else None}
-        if method == "cancel":
-            self.abort = str(p.get("reason") or "cancelled")
+        if method == "goal.cancel":
+            self.cancelled = str(p.get("reason") or "cancelled")
             return {"ok": True}
-        if method == "stop":
-            self.close()
+        if method == "goal.break":
+            self.broken = {"name": str(p.get("name") or "guardrail"), "detail": str(p.get("detail") or "broken, says the runner")}
             return {"ok": True}
-        raise KeyError(f"no method {method!r}")
+        self.close()                # stop
+        return {"ok": True}
 
     def close(self) -> None:
         if self.stopped.is_set():

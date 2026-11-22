@@ -119,6 +119,7 @@ class StubNav:
         self.reason = None
         self.key = "duck/apartment/mc1-20261118-120000"
         self.profile = None                  # what goal.start says the goal runs (the navigator's calibration event)
+        self.contract = "1.0"                # the navigator contract hello names
         self.map_calls = 0
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
@@ -135,7 +136,10 @@ class StubNav:
                         return
                     req = json.loads(line)
                     m, p = req["method"], req.get("params") or {}
-                    if m == "goal.start":
+                    if m == "hello":
+                        result = {"name": "stub-nav", "version": "0", "contract": stub.contract, "kinds": ["point", "go_to_object"],
+                                  "camera": True}
+                    elif m == "goal.start":
                         stub.started.append(p)
                         result = {"error": {"code": "held", "message": "driven by script since 12:00", "holder": "script"}} \
                             if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile}
@@ -311,6 +315,18 @@ nav.mode = "ok"
 r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
 cancelled = call("POST", f"/goal-runs/{r['id']}/cancel")["run"]
 check("cancel goes to the server and waits for it to end the run", nav.cancelled == 1 and cancelled["state"] == "cancelled", cancelled)
+# the navigator contract (libs/runner/CONTRACT.md): what Mission Control refuses of a navigator
+nav.state, nav.reason, nav.contract = "running", None, "2.0"
+n_started = len(nav.started)
+r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
+check("must fail: a navigator speaking another major version of the contract is refused before a goal starts, both versions said",
+      r["state"] == "refused" and "2.0" in r["reason"] and "1.0" in r["reason"] and len(nav.started) == n_started, r)
+nav.contract = "1.0"
+r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
+nav.state = "aborted"
+end = wait_for(lambda: run_of(r["id"])["state"] != "running" and run_of(r["id"]), 10)
+check("must fail: a state the contract does not have ends the run failed, saying which state", end and end["state"] == "failed"
+      and "'aborted'" in end["reason"], end and (end["state"], end["reason"]))
 nav.state, nav.reason = "running", None
 r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
 nav.mode = "silent"

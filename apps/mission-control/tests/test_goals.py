@@ -123,4 +123,17 @@ check("a condition the navigator cannot check is listed, not hidden",
       goals.not_checkable(caps(navigator={"goal_kinds": ["go_to_object"], "conditions": ["within_m", "within_s"]}),
                           goal("go_to_object", kind="fridge")) == ["facing_deg"])
 
+# a run's ends are the navigator contract's, here and on the page (its own copy: the page has them before any request)
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from runfile import navcontract  # noqa: E402
+
+page = (Path(goals.__file__).parent / "web" / "app.js").read_text()
+listed = re.search(r"^const TERMINAL = \[([^\]]*)\]", page, re.M)
+on_page = re.findall(r'"([a-z_]+)"', listed.group(1)) if listed else []
+check("a run's ends are the navigator contract's", goals.TERMINAL == navcontract.ENDS and goals.SUCCESS == navcontract.SUCCESS)
+check("the page's list of ends is the contract's", sorted(on_page) == sorted(navcontract.ENDS),
+      sorted(set(on_page) ^ set(navcontract.ENDS)))
+
 finish("test_goals")

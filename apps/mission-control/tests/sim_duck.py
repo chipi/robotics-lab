@@ -354,7 +354,7 @@ try:
         _, entered, end = watch_truth(run["id"], 300, [tuple(p) for p in block])
         moved = math.dist(body.pose()[:2], start_pose[:2])
         check("the straight way crosses the site's no-go area: the planner never paths through it (it goes round, or the goal is refused or "
-              "not reached in time) and the robot never enters it (truth), though it did walk", end["state"] in ("reached", "refused", "failed") and not entered and moved > 0.25,
+              "not reached in time) and the robot never enters it (truth), though it did walk", end["state"] in ("reached", "refused", "timeout", "stalled") and not entered and moved > 0.25,
               (end["state"], end["reason"], entered, moved))
         check("the guardrail did not stop the run: the planner kept the robot out, which is the point of putting it in the planner", end["broken"] is None, end["broken"])
         check("the run's guardrails say the no-go area is the site's", {"name": "no_go_area", "area": "block", "from": ["site"]} in end["guardrails"], end["guardrails"])

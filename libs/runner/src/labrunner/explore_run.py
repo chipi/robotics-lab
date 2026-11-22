@@ -100,7 +100,7 @@ def main() -> None:
             if not guarded.is_set() and (stairs_distance(s.pose) < GUARD_M or s.z < 0.06):
                 guarded.set()
                 why = f"truth guard: {stairs_distance(s.pose):.2f} m from the staircase, trunk {s.z:.3f} m"
-                nav.abort = why
+                nav.break_goal("truth_guard", why)
                 nav.record(event="truth_guard", why=why)
         sampler.on_sample = watch
         pose = nav.localise()

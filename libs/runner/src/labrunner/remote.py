@@ -20,6 +20,7 @@ from pathlib import Path
 from labrunner import robots
 from labrunner.rpc import Rpc
 from runfile import keys
+from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.profilestore import describe
 from runfile.truthcopy import TruthCopy
 
@@ -97,7 +98,7 @@ class _Loc:
         self.remote = remote
 
     def pose(self):
-        p = self.remote.call("status").get("pose")
+        p = self.remote.call("goal.status").get("pose")
         return tuple(p) if p else None
 
 
@@ -140,7 +141,7 @@ class Remote:
         self.rpc = None
         try:
             self._connect()
-            hello = self.call("hello")
+            hello = check_hello(self.call("hello"))     # another major version of the contract: refused, both said
         except Exception:
             self.close()
             raise
@@ -195,39 +196,42 @@ class Remote:
         except RuntimeError:
             return None
 
-    def _goal(self, params: dict) -> dict:
-        self.call("start", params)
+    def _goal(self, spec: dict) -> dict:
+        """A goal in the contract's shape, followed to its end: the last goal.status."""
+        started = self.call("goal.start", spec)
+        if "error" in started:
+            raise PayloadError(f"goal.start {spec['kind']}: {started['error'].get('message')} ({started['error'].get('code')})")
         while True:
-            st = self.call("status")
-            if st["state"] not in ("running", "idle"):
+            st = self.call("goal.status")
+            try:
+                state = check_state(st.get("state"))
+            except ContractError as e:
+                raise PayloadError(str(e)) from None
+            if state in ENDS:
                 return st
             time.sleep(POLL_S)
 
     def go_to(self, goal, timeout_s: float) -> dict:
-        """As Navigator.go_to: {status, why, ...}, the goal in the payload's map."""
-        st = self._goal({"kind": "point", "goal": [float(goal[0]), float(goal[1])], "time_s": float(timeout_s)})
+        """As Navigator.go_to: {status, why, ...} with the contract's end as `status`, the goal in the payload's map."""
+        st = self._goal({"kind": "point", "params": {"x": float(goal[0]), "y": float(goal[1])},
+                         "conditions": {"done_when": {"within_s": float(timeout_s)}}})
         out = dict(st.get("result") or {})
-        out["status"], out["why"] = st["state"], st.get("why")
+        out["status"], out["why"] = st["state"], st.get("reason")
         return out
 
     def explore(self, minutes: float, **opts) -> dict:
         """`opts`: the explore goal's options (objects, find, site, object_costs, relocalise: duck_lab.payload)."""
-        st = self._goal({"kind": "explore", "minutes": float(minutes), **opts})
-        if st["state"] == "failed":
-            raise PayloadError(f"explore failed in the payload: {st.get('why')}")
+        st = self._goal({"kind": "explore", "params": opts, "budget": {"minutes": float(minutes)}})
+        if st["state"] == "failed" or st.get("result") is None:
+            raise PayloadError(f"explore {st['state']} in the payload: {st.get('reason')}")
         return st["result"]
 
-    @property
-    def abort(self):
-        return None
-
-    @abort.setter
-    def abort(self, reason) -> None:
-        if reason:
-            try:
-                self.call("cancel", {"reason": reason})
-            except PayloadError:
-                pass
+    def break_goal(self, name: str, detail: str) -> None:
+        """A guardrail the runner checks by the truth broke (its truth guard, an invariant): the goal ends stopped_by_guardrail."""
+        try:
+            self.call("goal.break", {"name": name, "detail": detail})
+        except PayloadError:
+            pass
 
     def close(self, verdict: str | None = None, finish: bool = True):
         """The payload stopped (asked, then signalled); the robot stopped by the runner itself as well; the run copied whole.
