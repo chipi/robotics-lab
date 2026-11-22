@@ -127,6 +127,7 @@ nav:
     - Status and open decisions: wip/STATUS.md
     - The plan we execute on: wip/EXECUTION-PLAN.md
     - "Phase 5, step 1: the installation file and profile versions": wip/PHASE5-STEP1-DESIGN.md
+    - "Phase 5: the plan after step 1": wip/PHASE5-NEXT-PLAN.md
     - "Architecture review, 2026-11-22": wip/ARCHITECTURE-REVIEW-2026-11-22.md
     - Known issues: wip/KNOWN-ISSUES.md
     - "The phantom obstacle by the dock: a real cube": wip/PHANTOM.md
