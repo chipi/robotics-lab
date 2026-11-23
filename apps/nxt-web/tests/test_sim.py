@@ -252,6 +252,10 @@ try:
     status = http(base, "/api/status")[1]
     check("status: connected, a fake, link sim, the deadman running",
           status["connected"] and status["fake"] and status["link"] == "sim" and status["deadman"]["running"], status)
+    code, truth = http(base, "/api/sim/truth")
+    check("GET /api/sim/truth: the model's pose and the wall clock, open without the lock (simhost's truth reader)",
+          code == 200 and abs(truth["pose"][1] - 2.0) < 1e-6 and abs(truth["pose"][2] - math.pi / 2) < 1e-6
+          and abs(truth["wall_ns"] - time.time_ns()) < 5e9, truth)
     session = http(base, "/api/lock", {"action": "acquire", "client": "sim-test"})[1]["session"]
     deadline = time.monotonic() + 8.0
     flag = None
@@ -265,6 +269,14 @@ try:
     check("the ultrasonic in the live samples is the world's, not the sine", samples and samples[-1]["sensors"]["4"]["value"] is not None
           and samples[-1]["sensors"]["4"]["value"] <= 15, samples[-1]["sensors"] if samples else None)
     http(base, "/api/stop", {"session": session})
+    fake = subprocess.Popen([NXT_WEB, "--fake", "--port", str(port + 1), "--config", str(tmp / "config.json")],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+    try:
+        fake.stdout.readline()
+        check("outside --sim there is no truth: /api/sim/truth is a 404", http(f"http://127.0.0.1:{port + 1}", "/api/sim/truth")[0] == 404)
+    finally:
+        fake.terminate()
+        fake.wait(timeout=5)
 finally:
     proc.terminate()
     try:

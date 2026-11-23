@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import socket
 import tempfile
 from pathlib import Path
 
@@ -217,6 +218,173 @@ check("a body server that goes away stops the sampler with the error said (a jud
       gone.error is not None, gone.error)
 gone.stop()
 body.shutdown()
+
+# ---- the host kind nxt-kinematic-sim (RFC-0025 §3.4, NXT-D0): nxt-web --sim; no Pollen keys; a restart; a truth over HTTP -------
+import stat  # noqa: E402
+import urllib.error  # noqa: E402
+
+from simhost import nxt  # noqa: E402
+
+NXT = {"host": 1, "kind": "nxt-kinematic-sim", "robot": "nxt-1", "state": str(tmp / "nxt-state"),
+       "nxt_web": {"url": "http://127.0.0.1:8123", "project": str(tmp / "nxt-web")}, "scene": str(tmp / "scene.json"),
+       "start": [0.5, -1, 1.5], "params": None}
+nh = simhost.load(write(NXT, "nxt.json"))
+check("an nxt host file loads as an NxtHost, the kind kept", isinstance(nh, simhost.NxtHost) and nh.kind == "nxt-kinematic-sim"
+      and nh.start == (0.5, -1.0, 1.5) and nh.scene == tmp / "scene.json" and nh.params is None, nh)
+check("its truth port is nxt-web's, and it names one connection", nh.truth_port == 8123
+      and nh.connections() == {"nxt-web": "http://127.0.0.1:8123"})
+check("an nxt host reads back from its own json", simhost.parse(nh.as_json(), nh.source) == nh)
+check("an nxt host has no Pollen fields: a duck field is an AttributeError at once",
+      not any(hasattr(nh, a) for a in ("microduck", "sockets", "cargo_bin", "scenarios", "scene_dir")))
+check("the duck's host is the same class and fields as before", isinstance(h, simhost.Host) and h.kind == "pollen-duck-sim")
+check("the table has both kinds, each with the sensor kinds it simulates",
+      list(simhost.KINDS) == ["pollen-duck-sim", "nxt-kinematic-sim"] and simhost.KINDS["nxt-kinematic-sim"].simulates == ("range",)
+      and "tof8x8" in simhost.KINDS["pollen-duck-sim"].simulates)
+for why, d, says in [("a Pollen key on the nxt kind (a duck file copied over)", {**NXT, "pollen": {"microduck": "/a", "microduck_rl": "/b"}}, "unknown keys"),
+                     ("cargo_bin on the nxt kind", {**NXT, "cargo_bin": "~/.cargo/bin"}, "unknown keys"),
+                     ("sockets on the nxt kind", {**NXT, "sockets": {}}, "unknown keys"),
+                     ("a truth_port on the nxt kind (it is nxt-web's port)", {**NXT, "truth_port": 7801}, "unknown keys"),
+                     ("a url with no port", {**NXT, "nxt_web": {**NXT["nxt_web"], "url": "http://127.0.0.1"}}, "nxt_web.url"),
+                     ("a url that is not http", {**NXT, "nxt_web": {**NXT["nxt_web"], "url": "ftp://x:21"}}, "nxt_web.url"),
+                     ("nxt_web without its project", {**NXT, "nxt_web": {"url": "http://127.0.0.1:8123"}}, "nxt_web"),
+                     ("no scene", {k: v for k, v in NXT.items() if k != "scene"}, "scene"),
+                     ("a start of two numbers", {**NXT, "start": [0, 0]}, "start"),
+                     ("a start with a string in it", {**NXT, "start": [0, 0, "x"]}, "start"),
+                     ("a robot with a path in it", {**NXT, "robot": "a/b"}, "robot"),
+                     ("a duck key missing is not asked of the nxt kind, but a wrong version is", {**NXT, "host": 2}, "version 1")]:
+    msg = refused(d)
+    check(f"refused: {why}, the reason named with the file", says in msg and "bad.json" in msg, msg)
+
+
+
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
+
+
+def stand_in(pose, connected=True, truth=True):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path == "/api/status":
+                body, code = {"connected": connected}, 200
+            elif self.path == "/api/sim/truth" and truth:
+                body, code = {"wall_ns": time.time_ns(), "pose": list(pose)}, 200
+            else:
+                body, code = {"ok": False}, 404
+            data = json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+web = stand_in((1.0, 2.0, 0.5))
+live = simhost.parse({**NXT, "nxt_web": {**NXT["nxt_web"], "url": f"http://127.0.0.1:{web.server_address[1]}"}}, tmp / "live.json")
+wall, pose = nxt.read_truth(live)
+check("the truth reader gives (wall_ns, pose) from nxt-web's own port", abs(wall - time.time_ns()) < 5e9 and pose == (1.0, 2.0, 0.5), (wall, pose))
+got = []
+nsampler = Sampler(live, on_sample=got.append, hz=50).start()
+first = nsampler.latest
+time.sleep(0.2)
+nsampler.stop()
+check("a Sampler works on an nxt host: z is 0, the quaternion is the yaw alone, there is no sim_time and so no rtf",
+      first.pose == (1.0, 2.0, 0.5) and first.z == 0.0 and first.sim_time is None and nsampler.rtf() is None
+      and abs(first.quat[0] - math.cos(0.25)) < 1e-12 and abs(first.quat[3] - math.sin(0.25)) < 1e-12 and first.quat[1] == first.quat[2] == 0.0
+      and len(got) >= 3, first)
+web.shutdown()
+web.server_close()
+web = stand_in((0, 0, 0), truth=False)
+live404 = simhost.parse({**NXT, "nxt_web": {**NXT["nxt_web"], "url": f"http://127.0.0.1:{web.server_address[1]}"}}, tmp / "live.json")
+try:
+    nxt.read_truth(live404)
+    code = None
+except urllib.error.HTTPError as e:
+    code = e.code
+check("outside --sim the truth is a 404, never a made-up pose", code == 404, code)
+web.shutdown()
+web.server_close()
+
+# The reset: a stand-in nxt-web (a script of that name serving the two routes at --start) is started, answered, and found settled.
+proj = tmp / "nxt-web"
+(proj / ".venv" / "bin").mkdir(parents=True)
+exe = proj / ".venv" / "bin" / "nxt-web"
+exe.write_text(f"""#!{sys.executable}
+import json, math, sys, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+a = sys.argv
+port, start = int(a[a.index("--port") + 1]), [float(v) for v in a[a.index("--start") + 1:a.index("--start") + 4]]
+mode = open("{tmp}/mode").read().strip()
+if mode == "die":
+    sys.exit(3)
+pose = [start[0], start[1], math.radians(start[2]) + (0.5 if mode == "drift" else 0.0)]
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *x): pass
+    def do_GET(self):
+        body = {{"connected": True}} if self.path == "/api/status" else {{"wall_ns": time.time_ns(), "pose": pose}}
+        data = json.dumps(body).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+print(" ".join(a[1:]), flush=True)
+ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+""")
+exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+probe = socket.socket()
+probe.bind(("127.0.0.1", 0))
+free = probe.getsockname()[1]
+probe.close()
+rh = simhost.parse({**NXT, "nxt_web": {"url": f"http://127.0.0.1:{free}", "project": str(proj)}}, tmp / "reset.json")
+nxt.SETTLE_S = 3.0
+(tmp / "mode").write_text("ok")
+simhost.reset(rh)
+log = (rh.state / "nxt-web.log").read_text()
+check("reset starts nxt-web --sim with the host's scene, port and start pose (yaw in degrees), and returns settled at it",
+      f"--sim --world {tmp / 'scene.json'}" in log and f"--port {free}" in log and "--start 0.5 -1.0 85.9" in log
+      and nxt._at_start(rh) and (rh.state / "nxt-web.pid").exists(), log)
+first_pid = int((rh.state / "nxt-web.pid").read_text())
+simhost.reset(rh, str(tmp / "other.json"))
+second_pid = int((rh.state / "nxt-web.pid").read_text())
+check("a second reset stops the first process, starts another, and takes the scene given instead of the host's",
+      not nxt.command_of(first_pid) and second_pid != first_pid and f"--world {tmp / 'other.json'}" in (rh.state / "nxt-web.log").read_text())
+squatter = stand_in((0, 0, 0))
+squat = simhost.parse({**NXT, "state": str(tmp / "squat-state"), "nxt_web": {"url": f"http://127.0.0.1:{squatter.server_address[1]}", "project": str(proj)}}, tmp / "squat.json")
+try:
+    simhost.reset(squat)
+    msg = ""
+except RuntimeError as e:
+    msg = str(e)
+check("something already answering at the address that this reset did not start is an error, not a pass", "did not start" in msg, msg)
+squatter.shutdown()
+squatter.server_close()
+simhost.down(rh)
+check("down stops it and removes the pid file", not nxt.command_of(second_pid) and not (rh.state / "nxt-web.pid").exists())
+(tmp / "mode").write_text("drift")
+try:
+    simhost.reset(rh)
+    msg = ""
+except RuntimeError as e:
+    msg = str(e)
+check("a start pose the truth does not read is not settled: the reset raises after its timeout", "did not settle" in msg, msg)
+(tmp / "mode").write_text("die")
+try:
+    simhost.reset(rh)
+    msg = ""
+except RuntimeError as e:
+    msg = str(e)
+check("an nxt-web that exits on start is an error carrying its log", "exited (3)" in msg, msg)
+(proj / ".venv" / "bin" / "nxt-web").unlink()
+try:
+    simhost.reset(rh)
+    msg = ""
+except RuntimeError as e:
+    msg = str(e)
+check("no nxt-web installed in the project says which folder to `uv sync`", "uv sync" in msg and str(proj) in msg, msg)
+shown = io.StringIO()
+with contextlib.redirect_stdout(shown):
+    code = cli.main(["--host", str(write(NXT, "nxt.json")), "show"])
+check("simhost show prints an nxt host", code == 0 and '"nxt_web"' in shown.getvalue(), shown.getvalue()[:200])
 
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")

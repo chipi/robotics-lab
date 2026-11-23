@@ -71,7 +71,7 @@ class Sampler:
     def __init__(self, host: Host, on_sample=None, hz: float = HZ):
         if host.truth_port is None:
             raise ValueError(f"{host.source}: this host has no truth (truth_port is null)")
-        self.port, self.on_sample, self.period = host.truth_port, on_sample, 1.0 / hz
+        self.host, self.on_sample, self.period = host, on_sample, 1.0 / hz
         self.latest: Sample | None = None
         self.samples = 0
         self.error = None
@@ -81,7 +81,8 @@ class Sampler:
         self._t0 = None
 
     def start(self) -> "Sampler":
-        self._body = Body(self.port)
+        from simhost.kinds import KINDS     # kinds imports Body from here: read when a sampler starts, not at import
+        self._body = KINDS[self.host.kind].truth(self.host)     # the kind's reader: the duck's Body, the NXT's HTTP read
         self._t0 = time.monotonic()
         self.sample()                # one at once: `latest` is set when start returns
         self._thread = threading.Thread(target=self._loop, name="truth-sampler", daemon=True)

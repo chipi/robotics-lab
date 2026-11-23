@@ -280,7 +280,7 @@ def _is_link_error(exc: Exception) -> bool:
 def make_handler(controller: Controller):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
-            quiet = ("/api/drive", "/api/status", "/api/live")
+            quiet = ("/api/drive", "/api/status", "/api/live", "/api/sim/truth")
             if not self.path.startswith(quiet):
                 super().log_message(fmt, *args)
 
@@ -333,6 +333,15 @@ def make_handler(controller: Controller):
                     self._json(200, {"samples": c.recorder.since(int(since))})
                 else:
                     self._json(200, {"events": [e for e in list(c.events) if e["seq"] > int(since)]})
+            elif path == "/api/sim/truth":
+                # The simulator host's truth reader (simhost, RFC-0021 3.1): read-only, so open without the control lock.
+                # Only --sim has a truth; a fake or a real brick answers 404, never a made-up pose.
+                truth = getattr(c.robot, "truth", None)
+                if truth is None:
+                    self._json(404, {"ok": False, "error": "no truth: this server is not running --sim"})
+                else:
+                    wall_ns, pose = truth()
+                    self._json(200, {"wall_ns": wall_ns, "pose": list(pose)})
             elif path == "/api/lock":
                 self._json(200, c.lock.who())
             elif path == "/api/config":

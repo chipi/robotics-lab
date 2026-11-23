@@ -12,6 +12,7 @@ import json
 import sys
 
 from simhost import host as H
+from simhost import kinds as K
 from simhost import simulator as R
 
 
@@ -29,9 +30,9 @@ def main(argv=None) -> int:
     i.add_argument("--cargo-bin", default="~/.cargo/bin")
     i.add_argument("--force", action="store_true", help="replace an existing host file")
     r = sub.add_parser("reset", help="the duck at its dock with an empty map")
-    r.add_argument("scene", nargs="?", default=R.DEFAULT_SCENE)
+    r.add_argument("scene", nargs="?", help=f"the kind's own scene (the duck's default: {R.DEFAULT_SCENE}; the NXT's: a scene.json, default the host's)")
     d = sub.add_parser("down", help="the simulator and mapd stopped")
-    d.add_argument("scene", nargs="?", default=R.DEFAULT_SCENE)
+    d.add_argument("scene", nargs="?", help="as for reset")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "init":
@@ -52,10 +53,10 @@ def main(argv=None) -> int:
             print(f"# {host.source}")
             print(json.dumps(host.as_json(), indent=2))
         elif a.cmd == "reset":
-            R.reset(host, a.scene)
+            K.reset(host, *([a.scene] if a.scene else []))
             print("standing, mapd listening")
         elif a.cmd == "down":
-            R.down(host, a.scene)
+            K.down(host, *([a.scene] if a.scene else []))
             print("down")
         return 0
     except H.HostError as e:
