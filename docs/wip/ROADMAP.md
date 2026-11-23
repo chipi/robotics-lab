@@ -27,8 +27,10 @@ Order of work as of 2026-11-14. Each item points at where it is designed. Dates 
 
 ## The platform (RFC-0007)
 
-1. MCAP recording from mission control (`nxt-web` first) — done for `nxt-web` 2026-11-14: a
-   `.mcap` beside each run's CSV, topics `/nxt/state` and `/nxt/events`.
+1. MCAP recording from mission control (`nxt-web` first) — done for `nxt-web` 2026-11-14 as an
+   ad-hoc `.mcap` (topics `/nxt/state`, `/nxt/events`). Since [ADR-0013](../adr/ADR-0013-nxt-runs-in-format-2.md)
+   every recording is a format 2 run (`/nxt/signals`, a pose when the geometry is set, the command
+   log as events), and the ad-hoc MCAP is gone.
 2. Viewer spike: Rerun vs Lichtblick on one NXT run and one simulated duck run — done
    2026-11-14: Rerun first, Lichtblick kept usable ([ADR-0002](../adr/ADR-0002-viewers-rerun-and-lichtblick.md));
    `make viewers` starts both.

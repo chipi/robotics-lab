@@ -183,7 +183,7 @@ paths are the old layout. What exists now: [how the platform fits together](../a
 | --- | --- | --- |
 | Duck navigator | `go_to((x, y))`, exploring; Python and CLI only (`duck-go x y`, `duck-explore`); **no API server** | `duck/src/duck_lab/nav/run.py` (`Navigator`), `explore_run.py` |
 | Duck simulator | JSON-RPC over Unix sockets (robotd, mapd, tof), client classes | `duck/src/duck_lab/nav/client.py`; `~/.cache/duck-sim/` |
-| NXT web UI | HTTP JSON API: status, drive, stop, record, programs; records miniview runs | `nxt/src/nxt_lab/web.py`; :8000 |
+| NXT web UI | HTTP JSON API: status, drive, stop, record, programs; records miniview runs | `apps/nxt-web/src/nxt_lab/web.py`; :8000 |
 | miniview | Read-only API: runs, live stream (SSE), world/map streams, robot descriptions, `/watch` | `viewer/`; `viewer/CONTRACT.md`; :8070 |
 | Robot descriptions | duck, NXT shooterbot, EV3 Spike3r and Track3r, as links and joints | `robots/`, RFC-0011 |
 

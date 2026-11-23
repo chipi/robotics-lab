@@ -170,7 +170,7 @@ adapter a copy, not a translation. The rest is what the specs lack and Mission C
   `rmf_fleet_adapter/schemas`; a `test_Loop.cpp` exists. Not resolved.
 - `go_to_area`: whether VDA 3.0.0 has anything beyond geometric zones: not found.
 - The duck's and the NXT's size and speed values: not in the repo robot files or measured;
-  the NXT's geometry is uncalibrated (`nxt/src/nxt_lab/config.py`). The duck's 0.3 m/s and
+  the NXT's geometry is uncalibrated (`apps/nxt-web/src/nxt_lab/config.py`). The duck's 0.3 m/s and
   1.5 rad/s come from `control/robots.sim/duck-sim.json`.
 - `adapter.url` for the NXT is a placeholder; the NXT adapter is step 4 and not built.
 - Open-RMF's `rmf_ros2` version 2.15.0 is the tag list's newest; the Kilted or Jazzy release

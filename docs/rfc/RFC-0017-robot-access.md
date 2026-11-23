@@ -2,7 +2,7 @@
 
 **Status:** Accepted, revision 2 (2026-11-18). Built: §5 step 1 (the gate library,
 `duck/src/duck_lab/gate.py`, 6a39053) and step 4's `nxt-web` side (`/api/lock`,
-`nxt/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter is built, `control/src/mission_control/nxt.py`,
+`apps/nxt-web/src/nxt_lab/lock.py`, 7056d97; Mission Control's NXT adapter is built, `control/src/mission_control/nxt.py`,
 tested against `nxt-web --fake`; file upload and delete pass the lock too since 1ded610, config and
 connect stay open; nxt-web's own page takes the lock and a command with no session is now refused,
 "no lease, no motion", the hw_* script that drives over HTTP carries a session and was not run)
@@ -143,7 +143,7 @@ change that adds a field keeps the number; one that changes or removes meaning r
 | --- | --- | --- |
 | Duck (simulator) | A socket proxy in front of the simulator's `robotd` socket, with its own socket in `~/.cache/duck-sim/`; the navigator's robot socket path becomes a setting (`nav/run.py` hard-codes `duck-a.sock`) | A **test fixture**: the simulator's sockets are plain files, any process can open them |
 | Duck (real) | The same proxy, on the computer that runs the navigator (RFC-0014 §3.7), not on the duck | The **one door for our clients**: Mission Control, the nav server, agents, scripts. **Not a security boundary**: the duck has other doors that stay (Pollen's app and WebRTC, the HF relay, the gamepad, `autod`; `mapd` also connects to `robotd`'s socket). RFC-0002 §3.6 handles them: the navigator watches `robot.state`'s `move.source` and `autonomous`, and when another source drives, the gate emits `someone_else_drives` and stops and reports |
-| NXT | `nxt-web`'s `Controller` (`nxt/src/nxt_lab/web.py`), which gets the lock now (`/api/lock`) | The only process on the link. `nxt/README.md`: "Only one program at a time may talk to the brick. A second connection on the same `/dev/rfcomm0` (or USB) scrambles replies". Mission Control's NXT adapter drives through `nxt-web`'s `/api/drive` and so passes the same lock. This closes the open part of RFC-0014 §5 question 3 |
+| NXT | `nxt-web`'s `Controller` (`apps/nxt-web/src/nxt_lab/web.py`), which gets the lock now (`/api/lock`) | The only process on the link. `apps/nxt-web/README.md`: "Only one program at a time may talk to the brick. A second connection on the same `/dev/rfcomm0` (or USB) scrambles replies". Mission Control's NXT adapter drives through `nxt-web`'s `/api/drive` and so passes the same lock. This closes the open part of RFC-0014 §5 question 3 |
 | EV3 | The same shape: the process that owns its link | Not designed; waits for the EV3's own interface (RFC-0014 §3.7) |
 | Fake robot (RFC-0014 §3.7) | The same gate library in front of the fake | So tests run the real rules |
 
@@ -296,7 +296,7 @@ and its robot files (RFC-0014 §3.3.2); host networking is an extra, not a plan.
   fighting; Pollen's app or a gamepad can still move the duck. RFC-0002 §3.6 is the rule for that:
   watch `move.source`, stop and report.
 - **The NXT's 0.5 s deadman** rests on robotd-lite (RFC-0003 §2.3), **which has not yet been
-  checked on the real brick** in this RFC's work (hardware test `nxt/tests/hw_deadman.py`).
+  checked on the real brick** in this RFC's work (hardware test `apps/nxt-web/tests/hw_deadman.py`).
 - **Fire** is irreversible (RFC-0003 §2.3, RFC-0014 §3.8) and **"an MCP agent may not fire" is
   enforced by Mission Control**: the agent is Mission Control's client, and Mission Control does
   not pass `fire` to it. The gate does not do it; revision 1 wrongly said it did. An agent's
@@ -350,7 +350,7 @@ revision 1's research; the "our concept" column now reads against the smaller v1
 - **Bluetooth.** Pairing "is performed to establish keys which can then be used to encrypt a
   link"; bonding is storing them. The SIG page says nothing about who may connect once paired, so
   Bluetooth gives a pairing ceremony and not a lease. The NXT's exclusive link is the one in
-  `nxt/README.md` (a second connection scrambles replies), and the brick has its own on-brick
+  `apps/nxt-web/README.md` (a second connection scrambles replies), and the brick has its own on-brick
   pairing confirmation (from the coordinator's review; the brick's firmware not read by me).
   Lego's default passkey 1234 is from search results of LEGO's help pages.
 - **ISO 10218.** A manufacturer's manual describes "single point of control" as limiting the robot
@@ -418,7 +418,7 @@ computer (RFC-0014 step 8); the EV3.
 - 2026-11-18, revision 1: written after the operator widened question 3 of RFC-0014 (the quotes in
   §1). The operator approved its 12 open questions with the recommendations given.
 - 2026-11-18, revision 2: the advisor's review (checked against the code, e.g.
-  `duck/src/duck_lab/nav/run.py` and `nxt/README.md`) replaced six of the recommendations (lease
+  `duck/src/duck_lab/nav/run.py` and `apps/nxt-web/README.md`) replaced six of the recommendations (lease
   length, no `open_stop`, the pairing and keys timing, the duck's gate and how the NXT is
   protected, what the first build is, the discovery mechanism) and cut the rest of the machinery
   from v1. The operator: "Take the advisor version, all is good feedback." Status: Accepted.
@@ -456,10 +456,10 @@ computer (RFC-0014 step 8); the EV3.
   permissions files ([ROS 2 access controls](https://docs.ros.org/en/iron/Tutorials/Advanced/Security/Access-Controls.html),
   blocked when fetched).
 - **Not verified:** the text of ISO 10218-1/-2 and ISO 3691-4 (paywalled); whether the NXT or EV3
-  refuse a second Bluetooth controller beyond what `nxt/README.md` says of the serial link; the
-  on-brick pairing confirmation and Bluetooth-visibility behaviour on the real brick; robotd-lite's
-  0.5 s deadman on the real brick; whether `mapd` would break if `robotd`'s socket were private;
-  robot vacuum practice; whether MAVLink operator control is in the released spec.
+  refuse a second Bluetooth controller beyond what `apps/nxt-web/README.md` says of the
+  serial link; the on-brick pairing confirmation and Bluetooth-visibility behaviour on the real
+  brick; robotd-lite's 0.5 s deadman on the real brick; whether `mapd` would break if `robotd`'s
+  socket were private; robot vacuum practice; whether MAVLink operator control is in the released spec.
 
 ## 8. Open questions
 

@@ -18,8 +18,8 @@ Ground rule: the NXT has 64 KB of RAM, so it runs the fast, simple control loops
 
 ## NXT programs that run on their own
 
-Written in NXC under `nxt/programs/`, compiled with `nxt/scripts/nxc.sh`, uploaded and
-started from the web UI. Each writes a CSV log on the brick that the UI can plot.
+Written in NXC under `apps/nxt-web/programs/`, compiled with `apps/nxt-web/scripts/nxc.sh`,
+uploaded and started from the web UI. Each writes a CSV log on the brick that the UI can plot.
 
 | Idea | What it does | Status |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Two layers: the **JSON-RPC interface** (`robot.move`, `robot.state`, `robot.do` 
   cost of C++ firmware for every change.
 - **Either way, a deadman on the brick ("robotd-lite"):** stock firmware keeps a motor's last
   command, so a dropped link or a crashed server leaves motors running (it happened twice on
-  2026-11-14, see `nxt/README.md`). A small NXC program on the brick takes move commands through
+  2026-11-14, see `apps/nxt-web/README.md`). A small NXC program on the brick takes move commands through
   its message boxes and stops the motors when none arrive for 0.5 s, and stops on the ultrasonic
   locally. Planned next; to be tested on the brick.
 

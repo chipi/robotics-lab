@@ -91,7 +91,7 @@ deadman (two misses tolerated) uses about 40 % of the Bluetooth link; every 100 
 Firing is irreversible: `robot.do fire` is always `propose` in a mission
 ([RFC-0005](RFC-0005-missions.md)) and refused unless the shooter is enabled.
 
-**As built (2026-11-14):** `nxt/programs/robotd.nxc` and `nxt_lab/deadman.py`.
+**As built (2026-11-14):** `apps/nxt-web/programs/robotd.nxc` and `nxt_lab/deadman.py`.
 
 - Commands in mailbox 1, fixed width: `D` seq, left+100, right+100, forward flag (12 bytes);
   `S` stop; `Q` query, which answers but does not feed the deadman.
@@ -106,8 +106,8 @@ Firing is irreversible: `robot.do fire` is always `propose` in a mission
 - Stop is belt and braces: robotd's `S`, then the motors directly. Closing the service (SIGTERM)
   sends `S` first, or robotd would keep its last command until its own deadman.
 - The shooter (port A) is not robotd's: firing stays a direct command, allowed under robotd.
-- Checked against the simulated brick (`nxt/tests/test_deadman.py`, the smoke test); the real
-  brick check is `nxt/tests/hw_deadman.py` in `make test-hardware`. Not yet built: touch-sensor
+- Checked against the simulated brick (`apps/nxt-web/tests/test_deadman.py`, the smoke test); the real
+  brick check is `apps/nxt-web/tests/hw_deadman.py` in `make test-hardware`. Not yet built: touch-sensor
   bumpers, odometry in the state box.
 
 ### 2.4 Coexisting with the web UI's program interlock

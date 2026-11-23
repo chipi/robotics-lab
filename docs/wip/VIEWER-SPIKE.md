@@ -43,8 +43,8 @@ Not yet: a **real** NXT run (the brick is away today; the NXT file is from the s
 
 ## For the operator: how to look
 
-`make viewers` (on the workstation) converts every run in `nxt/runs/` and `duck/runs/` and starts
-both, printing the links; `make viewers-down` stops them. From the Mac: `ssh -N -L
+`make viewers` (on the workstation) converts every run in `apps/nxt-web/runs/` and `duck/runs/` and
+starts both, printing the links; `make viewers-down` stops them. From the Mac: `ssh -N -L
 8090:127.0.0.1:8090 -L 9090:127.0.0.1:9090 -L 9876:127.0.0.1:9876 marko@100.92.54.65`, then the
 printed links. In Rerun choose the timeline `recorded`; in Lichtblick's 3D panel the display frame
 `world`.

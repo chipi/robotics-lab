@@ -11,12 +11,12 @@ Last updated 2026-11-14. One page to review where things stand; details live in 
 
 | Area | State | Details |
 | --- | --- | --- |
-| NXT over USB | Works: info, motors, sensors, web UI, recording, programs on the brick | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
-| NXT over Bluetooth | Works: paired, `/dev/rfcomm0`, web UI drives over it | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
-| NXT ports | Checked on the robot: A shooter, B right, C left; colour 3, ultrasonic 4 | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
+| NXT over USB | Works: info, motors, sensors, web UI, recording, programs on the brick | [apps/nxt-web/README.md](https://github.com/chipi/robotics-lab/blob/main/apps/nxt-web/README.md) |
+| NXT over Bluetooth | Works: paired, `/dev/rfcomm0`, web UI drives over it | [apps/nxt-web/README.md](https://github.com/chipi/robotics-lab/blob/main/apps/nxt-web/README.md) |
+| NXT ports | Checked on the robot: A shooter, B right, C left; colour 3, ultrasonic 4 | [apps/nxt-web/README.md](https://github.com/chipi/robotics-lab/blob/main/apps/nxt-web/README.md) |
 | Programs on the brick | `first` ran and logged correctly; `chase` and `patrol` compiled, not yet run | [IDEAS.md](IDEAS.md) |
-| NXT web UI | Drive, live sensors and charts, recording, programs, setup, link choice and diagnostics, command log | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) |
-| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; the on-brick deadman **robotd-lite is built and passes against the simulated brick, not yet checked on the real one** (RFC-0003 §2.3) | [nxt/README.md](https://github.com/chipi/robotics-lab/blob/main/nxt/README.md) Known issues |
+| NXT web UI | Drive, live sensors and charts, recording, programs, setup, link choice and diagnostics, command log | [apps/nxt-web/README.md](https://github.com/chipi/robotics-lab/blob/main/apps/nxt-web/README.md) |
+| NXT safety | Motors stop on Ctrl-C / SIGTERM and 0.6 s after the last drive command; the on-brick deadman **robotd-lite is built and passes against the simulated brick, not yet checked on the real one** (RFC-0003 §2.3) | [apps/nxt-web/README.md](https://github.com/chipi/robotics-lab/blob/main/apps/nxt-web/README.md) Known issues |
 | Microduck simulator | Runs here: stands, walks at 0.3 m/s asked (0.13 m/s got); turning did not match upstream | [MICRODUCK.md](MICRODUCK.md) |
 | Microduck arena | Runs here: reference policy 9.392 s on the 2 m sprint | [MICRODUCK.md](MICRODUCK.md) |
 | DGX training | `robotics` GPU mode exists; first measured run done (no usable policy kept); full run planned | [MICRODUCK.md](MICRODUCK.md) |

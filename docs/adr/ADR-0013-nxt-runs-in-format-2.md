@@ -7,6 +7,12 @@
 [ADR-0006](ADR-0006-run-identity.md), [ADR-0007](ADR-0007-run-file-format-2.md),
 [ADR-0011](ADR-0011-loading-into-the-ui.md), [ADR-0012](ADR-0012-docker-read-only-data.md)
 
+> **Names today.** This record keeps the names of 2026-11-16. The NXT project `nxt/` is
+> `apps/nxt-web/`; the viewer `viewer/` and its package `miniview` are `apps/observatory/` and
+> the Observatory (the run format itself is `libs/runfile`); `MINIVIEW_DATA` is `OBSERVATORY_DATA`
+> (the old name is still read); `make viewer-up` is `make observatory-up`; `miniview import` is
+> `observatory import` (the old command name still works for one release).
+
 ## Context
 
 nxt-web records the LEGO NXT to a CSV (`run-YYYYMMDD-HHMMSS.csv`: time, motor powers, tacho counts,
@@ -119,7 +125,8 @@ truth and a map.
   (or when nxt-web is stopped: SIGTERM and Ctrl-C take the stop path). The receiver of ADR-0007
   ("Remote robots") is not needed: nxt-web runs on the workstation.
 - **Where it writes (decided here):** the lab data folder `MINIVIEW_DATA`, or `--miniview-data`,
-  else `miniview/` in nxt-web's own data folder (`NXT_LAB_DATA`, else the `nxt/` folder): a folder in
+  else `miniview/` in nxt-web's own data folder (`NXT_LAB_DATA`, else the `apps/nxt-web/` folder):
+  a folder in
   miniview's layout (`runs/nxt/unmapped/<run>/`), so it can be served as it is. `make nxt-web` passes
   `--miniview-data $(MINIVIEW_DATA)` (the workstation's `/work/robotics-lab/data` that
   `make viewer-up` serves), so a real recording is live in the running service; `make nxt-web-fake`
@@ -140,11 +147,11 @@ truth and a map.
   finished format 2 run. `mcap_log.py` (the old ad-hoc MCAP) is gone; `scripts/viewers.sh` gives
   Rerun (its protobuf decoder) and Lichtblick the finished format 2 runs of the data folder, and
   the duck's own `duck/runs/*.mcap` as before.
-- nxt depends on the viewer package (`miniview`) by a path source
-  (`[tool.uv.sources] miniview = { path = "../viewer", editable = true }`, the lock updated; protobuf
-  and foxglove-schemas-protobuf come with it). pip does not read that table, so the NXT image is
-  built from the repository root (`docker build -f nxt/Dockerfile .`) and installs `viewer/` before
-  `nxt/`.
+- nxt-web depends on the run format package (then `miniview`, today `runfile`) by a path source
+  (`[tool.uv.sources] runfile = { path = "../../libs/runfile", editable = true }`, the lock
+  updated; protobuf and foxglove-schemas-protobuf come with it). pip does not read that table, so
+  the NXT image is built from the repository root (`docker build -f apps/nxt-web/Dockerfile .`)
+  and installs `libs/runfile` before `apps/nxt-web/`.
 
 ## Calibration (the operator's to run; the robot on the floor)
 
@@ -174,7 +181,8 @@ button, read the tacho counts from the CSV (first and last rows) or from
   is generic (any robot with named values can use it) and self-describing in the file.
 - **Negative:** nxt-web now depends on the viewer package; the per-run descriptor means the signal
   set is fixed when a run starts (a sensor changed mid-run is a new run); a run of the old kind
-  (`nxt/runs/*.mcap`) is not read by miniview, only imported from its CSV; the image runs as root and
+  (`apps/nxt-web/runs/*.mcap`) is not read by miniview, only imported from its CSV; the image
+  runs as root and
   hands what it writes to `NXT_DATA_OWNER` when a run opens and when it closes (without it, root's).
 - **Neutral:** the pose is dead reckoning from the tracks and drifts; the run says how it was made.
 

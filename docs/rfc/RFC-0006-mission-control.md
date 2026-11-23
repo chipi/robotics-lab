@@ -92,8 +92,8 @@ uploaded to Foxglove's cloud by default, because a home robot films inside a hom
 - **Shape:** one Python service with a web page, MCP and Slack, a Docker image (as `nxt-web` has),
   drivers per robot, and an optional flotilla integration.
 - **Name:** not chosen.
-- **Where it lives:** in robotics-lab now (`nxt/` is its first driver); a separate repository when
-  the line in §2 has held for a while.
+- **Where it lives:** in robotics-lab now (`apps/nxt-web` is its first driver); a separate
+  repository when the line in §2 has held for a while.
 
 ## 5. Order
 

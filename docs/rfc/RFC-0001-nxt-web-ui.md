@@ -4,7 +4,8 @@
 operator's review. On acceptance it becomes an ADR; the open questions in §7 become follow-ups.
 **Builds on:** [IDEAS.md](../wip/IDEAS.md) (the NXT as the first robot project),
 [ECOSYSTEM.md](../wip/ECOSYSTEM.md) (one interface per robot).
-**Code:** [`nxt/`](https://github.com/chipi/robotics-lab/tree/main/nxt), served by `uv run nxt-web`.
+**Code:** [`apps/nxt-web/`](https://github.com/chipi/robotics-lab/tree/main/apps/nxt-web),
+served by `uv run nxt-web`.
 
 ## 1. Motivation
 
@@ -91,12 +92,12 @@ What it cannot cover:
 
 - **Live:** a sampler reads motors and sensors at the configured rate into a ring buffer the page
   polls.
-- **Recording:** each sample to `nxt/runs/run-<date>-<time>.csv` (not committed): time, motor
+- **Recording:** each sample to `apps/nxt-web/runs/run-<date>-<time>.csv` (not committed): time, motor
   powers, three tacho counts, one column per configured sensor, the running program.
 - **Command log:** every command with time and details — drive changes (one entry when a
   direction is held, not one per keepalive), stops, watchdog stops, fire, programs, uploads,
   setup changes, connects and lost links, failures marked — shown in the UI and appended to
-  `nxt/runs/events.jsonl` (`events-fake.jsonl` for the simulated brick).
+  `apps/nxt-web/runs/events.jsonl` (`events-fake.jsonl` for the simulated brick).
 
 ### 3.5 Links and diagnostics
 
@@ -109,10 +110,10 @@ What it cannot cover:
 
 ### 3.6 Programs on the brick
 
-NXC programs are compiled by Debian's `nbc` in Docker (`nxt/toolchain/`, `scripts/nxc.sh`) and
-uploaded from the Programs tab. `first` (drive and log) ran and logged correctly; `chase` and
-`patrol` (dog games) are compiled, not yet run. Programs run with no link at all; a link is only
-needed to upload and to read their logs.
+NXC programs are compiled by Debian's `nbc` in Docker (`apps/nxt-web/toolchain/`,
+`scripts/nxc.sh`) and uploaded from the Programs tab. `first` (drive and log) ran and logged
+correctly; `chase` and `patrol` (dog games) are compiled, not yet run. Programs run with no link
+at all; a link is only needed to upload and to read their logs.
 
 ## 4. How it was checked
 
@@ -181,7 +182,7 @@ the simulated brick); `hw_stop_on_connect.py` has not yet been run on the brick.
   Bluetooth paired and used; the operator asked for the link next to the battery, diagnostics, and
   a command log; incident 2. The operator asked for this RFC.
 - 2026-11-14 — The operator asked for flotilla-style make targets, a target to serve the UI, and
-  a Docker image "so we can deploy it anywhere": `make nxt-web` / `nxt-web-fake`, `nxt/Dockerfile`
+  a Docker image "so we can deploy it anywhere": `make nxt-web` / `nxt-web-fake`, `apps/nxt-web/Dockerfile`
   (`make nxt-image`, `nxt-image-run`; `NXT_LAB_DATA` points config and recordings at a volume),
   the smoke test as `make test-unit`, the image checked by `make test-integration`, and the
   hardware checks as `make test-hardware` (manual; it moves the tracks briefly).

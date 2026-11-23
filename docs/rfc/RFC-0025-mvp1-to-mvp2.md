@@ -238,7 +238,7 @@ In this RFC "step N" means a step of section 6. A step of another document is al
 | Run store | `libs/runfile` (MCAP, format 2) | One writer, tick protocol, index | Mostly |
 | Observatory | `apps/observatory` | Reads and replays runs | Mostly |
 | Shared web | `libs/web` (RFC-0024 steps 1, 2) | Tokens, three.js, the robot body | Yes |
-| The NXT | `apps/nxt-web`, `nxt/` | HTTP API and its own lock over the brick | No (HTTP) |
+| The NXT | `apps/nxt-web` | HTTP API and its own lock over the brick | No (HTTP) |
 
 ### 2.2 The contracts between them
 
