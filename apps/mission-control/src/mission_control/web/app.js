@@ -135,7 +135,7 @@ function renderRobots() {
   const box = $("robot-list");
   box.replaceChildren(...S.robots.map((r) => {
     const st = r.status || {}, p = st.pose;
-    return h("button", { class: "robot", type: "button", id: "robot-" + r.id, "data-online": String(r.online), "aria-pressed": String(r.id === S.robot),
+    return h("div", { class: "robotcard" }, h("button", { class: "robot", type: "button", id: "robot-" + r.id, "data-online": String(r.online), "aria-pressed": String(r.id === S.robot),
       onclick: guard(() => selectRobot(r.id)) },
       h("div", { class: "name" }, h("span", { class: "dot" + (r.online ? " on" : "") }), r.label, " ", h("span", { class: "faint mono" }, r.id)),
       h("div", { class: "kv" },
@@ -146,12 +146,67 @@ function renderRobots() {
         h("span", {}, "pose ", h("b", { class: "mono" }, p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : "-")),
         h("span", {}, "site ", h("b", {}, r.site || "none")),
         r.goal_run ? h("span", {}, "run ", h("b", {}, "#" + r.goal_run)) : null),
-      h("div", { class: "holder faint" }, holderText(r)));
+      h("div", { class: "holder faint" }, holderText(r))),
+      h("a", { class: "open", href: "#robot/" + r.id, "data-robot": r.id }, "Open the robot's page"));
   }));
   const r = robot();
   $("stop-robot").textContent = r ? "STOP " + r.id : "STOP";
   $("stop-robot").disabled = !r;
+  renderRobotPage();
 }
+
+// --- the robot's page (RFC-0023 D3): #robot/<id>; Overview and Parts are built from what GET /robots/{id} gives and the alarm feed ----
+const routeId = () => { const m = /^#robot\/([^/]+)$/.exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
+
+// Why the robot is not fit to go, one string per reason; none means fit. A minor alarm is not a reason, a major or critical one in the last minute is.
+function fitReasons(r) {
+  const out = [], l = r.lock || {}, now = Date.now() / 1000;
+  if (!r.online) out.push(r.last_seen_age_s != null ? `offline: it has not answered for ${r.last_seen_age_s} s` : "offline: it has not answered yet");
+  if (l.unreachable) out.push("its gate does not answer");
+  else if (l.holder) out.push(`held by ${l.holder}${r.goal_run != null ? `: goal run #${r.goal_run}` : ""}`);
+  for (const [k, v] of Object.entries((r.status || {}).flags || {})) if (v) out.push(`${k}: its status says so`);
+  const bad = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S && SEV.indexOf(x.a.severity) >= SEV.indexOf("major"));
+  if (bad.length) {
+    const w = bad.reduce((a, x) => (SEV.indexOf(x.a.severity) >= SEV.indexOf(a.a.severity) ? x : a));
+    out.push(`${w.a.severity} alarm ${w.a.anomaly}: ${w.a.summary || ""} (${ago(w.at)}${bad.length > 1 ? `, ${bad.length} in the last minute` : ""})`);
+  }
+  return out;
+}
+
+function renderRobotPage() {
+  const id = routeId();
+  $("robot-page").hidden = id == null;
+  document.querySelector("main.page").hidden = id != null;
+  if (id == null) { requestDraw(); return; }
+  const r = S.robots.find((x) => x.id === id);
+  if (r && S.robot !== id) { guard(() => selectRobot(id, true))(); return; }
+  setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
+  if (!r) { for (const k of ["overview-body", "parts-body", "holder", "settings-body"]) setKids($("rp-" + k)); return; }
+  const why = fitReasons(r), st = r.status || {}, pr = r.profile;
+  setKids($("rp-overview-body"),
+    h("div", { id: "fit", class: "fit " + (why.length ? "bad" : "ok"), "data-fit": String(!why.length) }, why.length ? "Not fit to go" : "Fit to go"),
+    why.length ? h("ul", { id: "fit-reasons", class: "fit-reasons" }, why.map((w) => h("li", {}, w))) : null,
+    h("div", { class: "kv" },
+      h("span", {}, "mode ", h("b", {}, st.mode || "-")),
+      h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
+      h("span", {}, "profile ", h("b", {}, pr ? `${pr.robot}, ${pr.variant}, ${pr.version != null ? "version " + pr.version : "the robot's own file"}` : "none"))));
+  setKids($("rp-holder"), holderText(r));
+  const parts = pr ? pr.subsystems : null;
+  setKids($("rp-parts-body"), h("h3", {}, "Subsystems"), !pr ? h("div", { class: "dim" }, "No profile: this robot's file holds the robot itself, so it lists no parts.")
+    : !parts.length ? h("div", { class: "dim" }, "The profile lists no parts.")
+    : h("ul", { class: "list" }, parts.map((s) => h("li", { class: "part", "data-part": s.name },
+      h("b", {}, s.name), " ", h("span", { class: "dim" }, s.what || ""), " ", h("span", { class: "state" }, "state not reported"),
+      h("div", { class: "kv" },
+        h("span", {}, "check ", h("b", {}, s.check.kind + (s.check.socket ? " " + s.check.socket : ""))),
+        s.logs ? h("span", {}, "logs ", h("b", {}, s.logs)) : null,
+        (s.conflicts || []).length ? h("span", {}, "conflicts with ", h("b", {}, s.conflicts.join(", "))) : null)))));
+  setKids($("rp-settings-body"), "Next: edit a copy, versions, diff, export and import. The API has them now: ",
+    pr ? h("a", { class: "watch", href: `${API}/robots/${r.id}/profile`, target: "_blank", rel: "noopener" }, "this robot's profile") : "this robot has no profile.");
+}
+
+$("rp-back").addEventListener("click", () => { location.hash = ""; });
+window.addEventListener("hashchange", renderRobotPage);
+setInterval(() => { if (routeId()) renderRobotPage(); }, 5000);
 
 // --- sites and areas -------------------------------------------------------------------------------------
 function renderSites() {
@@ -632,6 +687,7 @@ function onAnomaly(e) {
   if (S.alarms.length > ALARM_KEEP) { S.alarms.shift(); if (S.alarmSel != null) S.alarmSel = Math.max(0, S.alarmSel - 1); }
   renderAlarmBadge();
   renderAlarms();
+  renderRobotPage();
   if (detail && e.goal_run === detail.id) {
     const box = $("run-anomalies");
     if (box) box.append(anomalyLine(e.anomaly || {}));
@@ -701,7 +757,7 @@ async function loadAll() {
   renderAll();
 }
 
-window.__mc = { S, renderAreas, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
+window.__mc = { S, renderAreas, renderRobotPage,toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
 async function start() { renderGoalFields(); await loadAll(); connect(); S.ready = true; }
 $("token-set").addEventListener("click", guard(async () => {
   S.token = $("token").value.trim();
@@ -710,4 +766,5 @@ $("token-set").addEventListener("click", guard(async () => {
   if (S.es) S.es.close();
   await start();
 }));
+renderRobotPage();
 guard(start)();

@@ -56,6 +56,11 @@ def call(method, path, body=None):
 
 
 v = call("GET", "/robots/duck-1/profile")["profile"]
+rv = call("GET", "/robots/duck-1")["robot"]
+check("must fail: the robot view names the profile it runs and its parts (the robot page's Parts)", (rv.get("profile") or {}).get("robot") == "duck"
+      and rv["profile"]["variant"] == "sim" and rv["profile"]["checksum"] == v["running"]["checksum"] and rv["profile"]["version"] is None
+      and [s["name"] for s in rv["profile"]["subsystems"]] == [s["name"] for s in REPO["subsystems"]], rv.get("profile"))
+check("must fail: a robot file that holds the robot itself has no profile in its view", call("GET", "/robots/fake-1")["robot"].get("profile", 0) is None)
 check("the view: the robot's own file runs (no profile named), no versions yet, and why it cannot be written",
       v["running"]["path"] == str(REPO_PROFILE) and v["versions"] == [] and v["writable"] is False
       and "robots.duck.profile" in v["why_not"] and v["profile"] == REPO, {k: v[k] for k in ("running", "writable", "why_not")})

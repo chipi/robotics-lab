@@ -153,6 +153,30 @@ m2 = moved(base, (0.5, 0.0, 0.0))                 # the duck starts 0.5 m furthe
 check("a start 0.5 m ahead: everything comes 0.5 m closer", abs(m2.boxes[0].cx - 0.5) < 1e-6 and abs(m2.goal[0] - 1.5) < 1e-6)
 check("the jitter is kept with the scene", m2.jitter == (0.5, 0.0, 0.0))
 
+# a start pose and a goal named in a seed's world (as its run's ticks and truth show it): a probe of one moment of a run
+from labrunner.frames import compose, inverse  # noqa: E402
+seeded = build("22", 1)
+hole = seeded.drops()[0]
+want = (0.58, -0.11, 2.3)
+try:
+    probe = build("22", 1, start=want, goal=(-0.17, 0.68))
+except TypeError as e:
+    probe = None
+    print("build takes no start:", e)
+seen = compose(inverse(want), (hole.cx, hole.cy, 0.0))
+check("must fail: a start named in the seed's world puts the duck there: the seed's hole is where that pose sees it",
+      probe is not None and abs(probe.drops()[0].cx - seen[0]) < 1e-3 and abs(probe.drops()[0].cy - seen[1]) < 1e-3, probe and probe.drops()[0])
+goal_seen = compose(inverse(want), (-0.17, 0.68, 0.0))
+check("must fail: the goal named in the seed's world is the probe's one goal, in the new world, and the run goes to it (not explore)",
+      probe is not None and probe.mode == "go" and abs(probe.goal[0] - goal_seen[0]) < 1e-4 and abs(probe.goal[1] - goal_seen[1]) < 1e-4,
+      probe and (probe.mode, probe.goal))
+check("the probe keeps the seed's scene: the same pieces", probe is not None and len(probe.boxes) == len(seeded.boxes)
+      and len(probe.floors) == len(seeded.floors))
+check("without a start the seed's scene is unchanged", build("22", 1) == seeded)
+check("must fail: a probe has a scene id of its own (the Observatory keeps one scene.json per id), the same for the same probe",
+      probe is not None and probe.id.startswith("ch22-s1-probe-") and probe.id == build("22", 1, start=want, goal=(-0.17, 0.68)).id
+      and probe.id != build("22", 1, start=(0.5, 0.0, 0.0)).id, probe and probe.id)
+
 # ---- the three outputs ------------------------------------------------------------------------------------------------
 sc = build("9", 2)
 mv = miniview_scene(sc)

@@ -74,5 +74,7 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   everyone's](RFC-0022-platform-layout-and-names.md) (Accepted and built, 2026-11-21)
 - [RFC-0023 — The views: the operator's journeys, which surface does what, and where the telemetry
   goes](RFC-0023-the-views.md) (Accepted, 2026-11-21: A for all twelve decisions)
+- [RFC-0024 — One platform: should Mission Control and the Observatory stay two
+  apps?](RFC-0024-one-platform.md) (Proposed, 2026-11-23; for the operator's decision)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).

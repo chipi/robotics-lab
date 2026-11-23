@@ -35,7 +35,7 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | Call | Meaning |
 | --- | --- |
 | `GET /api/v1/robots` | `[{id, label, kind, online, lock, last_seen_age_s}]` |
-| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`), `guardrails` (the robot's own), `rates`, `site`, `goal_run` |
+| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`), `guardrails` (the robot's own), `rates`, `site`, `goal_run`, `profile` (`{robot, variant, version, checksum, subsystems}`: the profile this machine runs for the robot, `version` null for the robot's own file, `subsystems` the profile's parts, each `{name, what?, check, logs?, conflicts?}`; null for a robot file that holds the robot itself) |
 | `PUT /api/v1/robots/{id}/site` | `{site}` (an id, or null): a robot is at one site at a time; refused while a goal run holds it |
 | `GET /api/v1/robots/{id}/map` | the robot's map, `{kind: "occupancy_grid", resolution_m, origin, width, height, data, frame, version}` with data -1 unknown, 0 free, 100 occupied; `404 no_map` when its capabilities have none |
 | `GET /api/v1/robots/{id}/sighting` | the latest camera record (ADR-0019): `pose`, `hfov_deg`, `range_m`, `seen[]` with x ahead and y left of the robot; `404 no_recogniser` |
@@ -319,8 +319,13 @@ call of its own. It shows the robots (online, status, lock holder), the selected
 objects and areas layers, a point goal by tapping the map and the other goal kinds by form, the
 library, the goal runs with their progress and decisions, area drawing, renaming and deleting, site
 export and import, STOP for the selected robot and STOP ALL (always on screen), and a Watch link that
-is disabled while a run's `watch` is null. It uses the Observatory's colour tokens, in light and dark,
-and fits a 390 px phone. `window.__mc` is a hook for the page test.
+is disabled while a run's `watch` is null. A robot's card links to its page, `#robot/<id>`
+(RFC-0023 D3): six sections, of which Overview ("fit to go", or each reason it is not: offline, its
+gate silent, held, a status flag, a major or critical alarm in the last minute, from
+`GET /robots/{id}` and the alarm feed) and Parts (the profile's subsystems, and who holds the robot)
+work, and Modules, Settings (a link to the profile API), Calibration and Body say what comes next.
+It uses the Observatory's colour tokens, in light and dark, and fits a 390 px phone. `window.__mc`
+is a hook for the page test.
 
 ## The simulated duck and the navigator API
 

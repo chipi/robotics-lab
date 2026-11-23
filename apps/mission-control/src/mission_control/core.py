@@ -118,11 +118,21 @@ class MissionControl:
         return {"id": rt.cfg.id, "label": rt.cfg.label, "kind": rt.cfg.kind, "online": rt.online(),
                 "lock": rt.gate.who(), "last_seen_age_s": self._age(rt)}
 
+    @staticmethod
+    def _profile_brief(cfg) -> dict | None:
+        """The profile a robot runs, for its page: the registered robot, the environment, the version this machine runs and its
+        parts. None for a robot file that holds the robot itself."""
+        if cfg.profile is None:
+            return None
+        meta = cfg.profile.meta or {}
+        return {"robot": cfg.robot, "variant": cfg.variant, "version": meta.get("version"), "checksum": meta.get("checksum"),
+                "subsystems": cfg.profile.data.get("subsystems", [])}
+
     def robot_view(self, rt: RobotRuntime) -> dict:
         return {**self.robot_brief(rt), "factsheet": rt.cfg.factsheet, "control": rt.cfg.control,
                 "capabilities": rt.cfg.capabilities, "status": rt.status,
                 "guardrails": rt.cfg.guardrails, "rates": rt.cfg.rates, "site": self.sites.robot_site(rt.cfg.id),
-                "goal_run": rt.active.id if rt.active else None}
+                "goal_run": rt.active.id if rt.active else None, "profile": self._profile_brief(rt.cfg)}
 
     def list_robots(self) -> list:
         return [self.robot_brief(rt) for rt in self.robots.values()]

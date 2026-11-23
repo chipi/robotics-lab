@@ -42,11 +42,22 @@ from simhost.truth import Sample, Sampler
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
 
-def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, payload: list | None = None) -> dict:
+def floats(n: int):
+    """An argparse type: n comma-separated numbers."""
+    def parse(s: str) -> tuple:
+        v = tuple(float(x) for x in s.split(","))
+        if len(v) != n:
+            raise argparse.ArgumentTypeError(f"{n} numbers, comma separated: {s!r}")
+        return v
+    return parse
+
+
+def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, payload: list | None = None,
+        start: tuple | None = None, goal: tuple | None = None) -> dict:
     """One challenge run, the navigator as a payload process (RFC-0021 §3): it gets the robot's sockets and nothing else;
     the runner reads the truth (its own sampler), judges, and writes the official run with the truth put in (runner.Remote,
-    runfile.truthcopy)."""
-    scene = build(challenge, seed)
+    runfile.truthcopy). `start` and `goal`: a probe of one moment of a seed's run (challenges.build)."""
+    scene = build(challenge, seed, start=start, goal=goal)
     path = mjcf(scene, host.scenarios, host.scene_dir)
     sc = data / "scenes" / scene.id / "scene.json"
     sc.parent.mkdir(parents=True, exist_ok=True)
@@ -136,17 +147,22 @@ def main() -> None:
     ap.add_argument("--keep-up", action="store_true", help="leave the simulator running at the end")
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     ap.add_argument("--payload", help="the navigator to run, a command that keeps the payload contract (default: the robot's own)")
+    ap.add_argument("--start", type=floats(3), help="x,y,yaw: a probe starts the duck here, named in the seed's world as a run of it "
+                    "shows it (ticks, truth); every run then uses --seed itself")
+    ap.add_argument("--goal", type=floats(2), help="x,y in the seed's world: a probe goes to this one goal (mode go), whatever the challenge")
     robots.add_robot_arg(ap)
     args = ap.parse_args()
     robots.select(args.robot)
     if args.miniview_data is None:
         raise SystemExit("no miniview data folder (--miniview-data or OBSERVATORY_DATA): every challenge run is a miniview run")
     host = simhost.load(args.host)
+    probe = args.start is not None or args.goal is not None
     rows = []
     started = time.monotonic()
     try:
         for i in range(args.runs):
-            row = one(host, args.challenge, args.seed + i, args.miniview_data, args.out, shlex.split(args.payload) if args.payload else None)
+            row = one(host, args.challenge, args.seed + (0 if probe else i), args.miniview_data, args.out,
+                      shlex.split(args.payload) if args.payload else None, start=args.start, goal=args.goal)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23

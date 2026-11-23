@@ -134,6 +134,39 @@
   </section>
 </main>
 
+<main id="robot-page" class="rp" hidden aria-label="Robot">
+  <div class="rp-head">
+    <button id="rp-back" class="btn" type="button">&larr; Robots</button>
+    <h1 id="rp-title"></h1>
+  </div>
+  <section id="rp-overview" class="panel" aria-label="Overview">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></svg>Overview</h2>
+    <div id="rp-overview-body" aria-live="polite"></div>
+  </section>
+  <section id="rp-parts" class="panel" aria-label="Parts">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg>Parts</h2>
+    <h3>Who holds the robot</h3>
+    <div id="rp-holder" class="holder"></div>
+    <div id="rp-parts-body"></div>
+  </section>
+  <section id="rp-modules" class="panel" aria-label="Modules">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M17.5 14v7M14 17.5h7"/></svg>Modules</h2>
+    <div class="dim">Next: the plugins the robot runs, live.</div>
+  </section>
+  <section id="rp-settings" class="panel" aria-label="Settings">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</h2>
+    <div id="rp-settings-body" class="dim"></div>
+  </section>
+  <section id="rp-calibration" class="panel" aria-label="Calibration">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>Calibration</h2>
+    <div class="dim">Next: guided measurements, run by the runner.</div>
+  </section>
+  <section id="rp-body" class="panel" aria-label="Body">
+    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M7 11h10M9 21l3-6 3 6"/></svg>Body</h2>
+    <div class="dim">Next: the robot's own 3D model, each joint coloured by its worst state.</div>
+  </section>
+</main>
+
 <div id="toast" role="status" hidden></div>
 <nav class="stopbar" aria-label="Stop">
   <button id="stop-robot" class="stop" type="button">STOP</button>

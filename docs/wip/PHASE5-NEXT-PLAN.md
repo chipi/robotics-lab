@@ -328,6 +328,46 @@ RFC's §7.1 order was "steps 2 and 3 side by side; then 4, 5".
 The sweep's table, with its evidence, is in
 [the real duck's readiness](PHASE5-REAL-DUCK-READINESS.md).
 
+### The build package for 4a and 4b (the advisor's review, 2026-11-23)
+
+The operator asked for this before a flight: "create a good package ... that 4a and 4b
+implements", built unattended. Decisions are made by the recommended default and logged in
+[the pending decisions](PHASE5-DECISIONS-PENDING.md).
+
+**The review's findings:**
+
+- 4a's two steps are each too big for one unit.
+- The Calibration section in 4a and 4b's calibration item are the same work. 4a builds the frame
+  with one procedure the simulator can measure; 4b adds the real duck's procedures.
+- **Order matters for the drop guardrail.** Enforcing the robot-side drop guardrail before
+  challenge 22's blind spot is fixed would turn a known hole into a safety claim. So B1 precedes
+  B3. The blind spot: a frontier target on an unmapped rim, approached from the side.
+- Relocalisation and a real recogniser need the robot or a real camera. They go last.
+
+#### 4a units
+
+| Unit | What | Proof | Size | Builds here |
+| --- | --- | --- | --- | --- |
+| A1 | Robot page shell, Overview ("fit to go, and why not"), Parts (the subsystems, the holder line) | `test_page.py`, Chromium, phone and desktop | M | yes |
+| A2 | Modules (the plugins), Settings (versions, edit a copy, diff, export, import; the API exists) | page test: edit, save, diff | M | yes |
+| A3 | Calibration frame, plus one simulator procedure (odometry scale), through a navigator-API method (contract 1.3, the operator's choice) | runner unit test, page test, one simulator run | L | yes; the real duck's tape entry stubbed |
+| A4 | RFC-0024 steps 1 and 2 (accepted 2026-11-23): the shared `libs/web` (tokens, three.js, the body from `robotbody.js`), then the body in Mission Control, live, beside the watch page's | page tests in both apps | L | yes, after A1 |
+
+#### 4b units
+
+| Unit | What | Proof | Size | Builds here |
+| --- | --- | --- | --- | --- |
+| B1 | Challenge 22's blind spot: a target on an unmapped rim, approached from the side | the `lab-challenge --start/--goal` probe, then 10 runs; a unit test on a synthetic rim | M-L | yes |
+| B2 | Stopping on its own health (`motor_hot`, battery, unhealthy, a stale stream) | contract test with a stub health; `sim_duck --profile` | M | yes |
+| B3 | Robot-side guardrails enforced without truth (fall from tilt, contact from `bumped` and `carried`, drop from the cliff check) | contract test; `sim_duck --no-truth` | M | yes, after B1 and B2 |
+| B4 | The other-doors watch (`autonomous`, `move.source`, `someone_else_drives`) | gate tests with a fake state source | S-M | logic only; the simulator's robotd fills neither field |
+| B5 | Link tooling: the ssh forwards, checks, reconnect with back-off | dead-socket and reconnect tests; no ssh in tests | M | tooling only |
+| B6 | The real duck's adapter (`duck-real`); a real run refused unless the robot file allows it | adapter test; `sim_duck --no-truth` | M | code only; the safety review needs the operator |
+| B7 | A start pose without truth (`goal.start`'s `start_pose`, placed on the map) | contract and page tests | M | yes |
+| B8 | The simulator-first flag (rehearse in the simulator, then real) | API test; `sim_duck` | M | yes |
+| B9 | Measurement tooling: CPU cost, score sheet, radial or axial | scripts | S each | written here, run on the robot |
+| B10, B11 | Relocalisation from landmarks; a real recogniser | last: a stub recogniser at most | L | no |
+
 ### 5. Step 6 (telemetry): needs the operator before it starts
 
 **Approved (the operator, 2026-11-22):** the new dependencies (`opentelemetry-sdk`,

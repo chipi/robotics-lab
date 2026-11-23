@@ -3,10 +3,13 @@ the origin facing +x. The ranges are first guesses (ADR-0015), to tune when they
 that is not the challenge's drop is walled: the only drop is the one being tested.
 """
 
+import hashlib
+import json
 import math
 import random
 from dataclasses import replace
 
+from labrunner.frames import compose
 from labrunner.scene import TOF_RANGE_M, TRUNK_START, Box, Scene, moved, slab, wall
 
 START_JITTER = (0.05, math.radians(10))     # ±m, ±rad
@@ -477,9 +480,20 @@ CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_o
               "19": flight(True), "20": flight(False), "21": ten_goals, "22": one_room_with_a_drop, "23": two_rooms}
 
 
-def build(challenge: str, seed: int) -> Scene:
-    """The challenge's scene for this seed, as the duck meets it: drawn, then moved by the start's jitter."""
+def build(challenge: str, seed: int, start: tuple | None = None, goal: tuple | None = None) -> Scene:
+    """The challenge's scene for this seed, as the duck meets it: drawn, then moved by the start's jitter.
+
+    A probe of one moment of a run: `start` (x, y, yaw) and `goal` (x, y) are named in the seed's world, as that run's ticks and
+    truth show it; the duck starts at `start` and the run goes to `goal` alone (mode go), whatever the challenge's mode."""
     rng = random.Random(f"{challenge}-{seed}")
     scene = CHALLENGES[challenge](seed, rng)
     d, a = START_JITTER
-    return moved(scene, (rng.uniform(-d, d), rng.uniform(-d, d), rng.uniform(-a, a)))
+    jitter = (rng.uniform(-d, d), rng.uniform(-d, d), rng.uniform(-a, a))
+    if goal is not None:
+        scene = replace(scene, goal=tuple(round(v, 4) for v in compose(jitter, (goal[0], goal[1], 0.0))[:2]), mode="go", right="reach",
+                        goals=())
+    if start is not None or goal is not None:
+        # its own scene id: the Observatory keeps one scene.json per id, and the seed's runs keep theirs
+        named = json.dumps([start and [round(v, 4) for v in start], goal and [round(v, 4) for v in goal]])
+        scene = replace(scene, id=f"{scene.id}-probe-{hashlib.sha1(named.encode()).hexdigest()[:6]}", notes={**scene.notes, "probe": named})
+    return moved(scene, compose(jitter, tuple(start)) if start is not None else jitter)
