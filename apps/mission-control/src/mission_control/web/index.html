@@ -13,15 +13,24 @@
 </head>
 <body>
 <header class="top">
-  <span class="mark"><i></i>Mission Control</span>
-  <span id="conn" class="chip">connecting</span>
-  <button id="alarm" class="chip alarm" type="button" hidden aria-expanded="false" aria-controls="alarms">alarms</button>
+  <span class="mark"><i></i><span class="mark-t">Mission Control</span></span>
+  <span id="rp-crumbs" class="crumbs" hidden>
+    <button id="rp-back" class="crumb" type="button" aria-label="Back to the robots"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span class="crumb-t">Robots</span></button>
+    <span class="crumb-sep" aria-hidden="true">/</span>
+    <span class="picker"><span class="lbl">Robot</span><select id="rp-picker" aria-label="Choose a robot"></select></span>
+  </span>
   <span class="grow"></span>
   <span id="tokenbox" hidden class="row">
     <input id="token" type="password" placeholder="Access token" aria-label="Access token" autocomplete="off">
     <button id="token-set" class="btn sm" type="button">Use</button>
   </span>
-  <button id="theme" class="btn sm" type="button" aria-label="Switch between light and dark">Theme</button>
+  <span id="conn" class="chip">connecting</span>
+  <button id="alarm" class="chip alarm" type="button" hidden aria-expanded="false" aria-controls="alarms">alarms</button>
+  <button id="theme" class="btn icon" type="button" aria-label="Switch between light and dark"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  <div class="stops">
+    <button id="stop-all" class="stop all" type="button">STOP ALL</button>
+    <button id="stop-robot" class="stop" type="button">STOP</button>
+  </div>
 </header>
 
 <main class="page">
@@ -139,46 +148,67 @@
 </main>
 
 <main id="robot-page" class="rp" hidden aria-label="Robot">
-  <div class="rp-head">
-    <button id="rp-back" class="btn" type="button">&larr; Robots</button>
+  <div class="strip">
     <h1 id="rp-title"></h1>
+    <span id="fit" class="verdict" hidden></span>
+    <div id="rp-facts" class="facts"></div>
   </div>
-  <section id="rp-overview" class="panel" aria-label="Overview">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/></svg>Overview</h2>
-    <div id="rp-overview-body" aria-live="polite"></div>
-  </section>
-  <section id="rp-parts" class="panel" aria-label="Parts">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg>Parts</h2>
-    <h3>Who holds the robot</h3>
-    <div id="rp-holder" class="holder"></div>
-    <div id="rp-parts-body"></div>
-  </section>
-  <section id="rp-modules" class="panel" aria-label="Modules">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M17.5 14v7M14 17.5h7"/></svg>Modules</h2>
-    <div class="dim">Next: the plugins the robot runs, live.</div>
-  </section>
-  <section id="rp-settings" class="panel" aria-label="Settings">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Settings</h2>
-    <div id="rp-settings-body" class="dim"></div>
-  </section>
-  <section id="rp-calibration" class="panel" aria-label="Calibration">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>Calibration</h2>
-    <div class="dim">Next: guided measurements, run by the runner.</div>
-  </section>
-  <section id="rp-body" class="panel" aria-label="Body">
-    <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M7 11h10M9 21l3-6 3 6"/></svg>Body</h2>
-    <div id="rp-body-note" class="dim"></div>
-    <div id="rp-body-view" class="bodyview" hidden></div>
-    <ul id="rp-body-joints" class="list bodyjoints" aria-live="polite"></ul>
-    <div class="hint">Posed from the robot's joints, live. A joint turns the warn or the error colour for a minute after an alarm names it (joint_overload, joint_tracking, motor_hot); the list says which.</div>
-  </section>
+  <div class="tabs" role="tablist" aria-label="Robot sections">
+    <button id="tab-overview" class="tab" role="tab" type="button" data-tab="overview" aria-controls="rp-overview" aria-selected="true" tabindex="0">Overview</button>
+    <button id="tab-body" class="tab" role="tab" type="button" data-tab="body" aria-controls="rp-body" aria-selected="false" tabindex="-1">Body</button>
+    <button id="tab-modules" class="tab" role="tab" type="button" data-tab="modules" aria-controls="rp-modules" aria-selected="false" tabindex="-1">Modules</button>
+    <button id="tab-settings" class="tab" role="tab" type="button" data-tab="settings" aria-controls="rp-settings" aria-selected="false" tabindex="-1">Settings<span id="tab-settings-badge" class="badge n" hidden></span></button>
+    <button id="tab-calibration" class="tab" role="tab" type="button" data-tab="calibration" aria-controls="rp-calibration" aria-selected="false" tabindex="-1">Calibration</button>
+  </div>
+  <div class="content">
+    <section id="rp-overview" class="grid2" role="tabpanel" aria-labelledby="tab-overview">
+      <section class="card" aria-label="Why it is fit to go">
+        <button id="rp-fit-head" class="shead" type="button" data-collapse="fit" aria-expanded="true" aria-controls="rp-fit-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Why it is fit to go<span class="sp"></span><span id="rp-fit-sum" class="sum"></span></button>
+        <div id="rp-fit-body" class="cbody"></div>
+      </section>
+      <section class="card" aria-label="Alarms, last 60 s">
+        <button id="rp-alarms-head" class="shead" type="button" data-collapse="alarms" aria-expanded="true" aria-controls="rp-alarms-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Alarms, last 60 s<span class="sp"></span><span id="rp-alarms-sum" class="sum"></span></button>
+        <div id="rp-alarms-body" class="cbody"></div>
+      </section>
+      <section id="rp-parts" class="card" aria-label="Parts">
+        <button id="rp-parts-head" class="shead" type="button" data-collapse="parts" aria-expanded="true" aria-controls="rp-parts-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Parts<span class="sp"></span><span id="rp-parts-sum" class="sum"></span></button>
+        <div id="rp-parts-body"></div>
+      </section>
+      <section id="rp-body-card" class="card" aria-label="Body">
+        <button id="rp-body-head" class="shead" type="button" data-goto-tab="body"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Body<span class="sp"></span><span class="sum">open the Body tab</span></button>
+        <div id="rp-body-sum" class="cbody"></div>
+      </section>
+    </section>
+    <section id="rp-body" role="tabpanel" aria-labelledby="tab-body" hidden>
+      <div class="bodygrid">
+        <div class="bodycol">
+          <div id="rp-body-note" class="dim"></div>
+          <div id="rp-body-view" class="bodyview" hidden></div>
+          <ul id="rp-body-joints" class="list bodyjoints" aria-live="polite"></ul>
+          <div class="hint">Posed from the robot's joints, live. A joint turns the warn or the error colour for a minute after an alarm names it (joint_overload, joint_tracking, motor_hot); the list says which.</div>
+        </div>
+        <section class="card" aria-label="Joints">
+          <div class="shead static">Joints<span class="sp"></span><span id="rp-joints-sum" class="sum"></span></div>
+          <div id="rp-joints-body" class="twrap"></div>
+        </section>
+      </div>
+    </section>
+    <section id="rp-modules" role="tabpanel" aria-labelledby="tab-modules" hidden>
+      <div id="rp-modules-body"></div>
+    </section>
+    <section id="rp-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <div id="rp-settings-body"></div>
+    </section>
+    <section id="rp-calibration" role="tabpanel" aria-labelledby="tab-calibration" hidden>
+      <div id="rp-calibration-body"></div>
+      <p class="hint">Next (A3): guided procedures, run by the runner, will write a new settings version with its measured line filled in. They appear here.</p>
+    </section>
+  </div>
 </main>
+<div id="drawer-root"></div>
 
 <div id="toast" role="status" hidden></div>
-<nav class="stopbar" aria-label="Stop">
-  <button id="stop-robot" class="stop" type="button">STOP</button>
-  <button id="stop-all" class="stop all" type="button">STOP ALL</button>
-</nav>
+<script src="/web/settings.js"></script>
 <script src="/web/app.js"></script>
 </body>
 </html>

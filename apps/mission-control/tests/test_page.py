@@ -96,11 +96,11 @@ with sync_playwright() as p:
     check("the event stream is live", page.locator("#conn").inner_text() == "live")
     check("no sideways scrolling at 390 px", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
 
-    def stop_visible():
-        return page.evaluate("""() => ['stop-robot', 'stop-all'].every((id) => {
+    def stop_visible(min_h=44):
+        return page.evaluate("""(minH) => ['stop-robot', 'stop-all'].every((id) => {
             const r = document.getElementById(id).getBoundingClientRect();
-            return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth && r.height >= 44;
-        })""")
+            return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth && r.height >= minH;
+        })""", min_h)
     check("STOP and STOP ALL are on screen, at least 44 px high", stop_visible())
     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
     check("and still after scrolling to the end", stop_visible())
@@ -357,7 +357,7 @@ with sync_playwright() as p:
     boxes = page.evaluate("""() => Object.fromEntries(['robots', 'mapcard', 'runs'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, [r.left, r.right]]; }))""")
     check("at 1500 px three columns: robots left, the map in the middle, runs right", boxes["robots"][1] <= boxes["mapcard"][0] + 1 and boxes["mapcard"][1] <= boxes["runs"][0] + 1, boxes)
     check("no sideways scrolling at 1500 px", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
-    check("STOP is still on screen", stop_visible())
+    check("STOP is still on screen (in the top bar from 700 px: 40 px for a pointer)", stop_visible(40))
 
     check("no script error and no console error in the whole session", errors == [], errors)
 

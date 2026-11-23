@@ -15,6 +15,44 @@ reversible) or parked (not built). It says why and what to ask. The plan is
 
 ## Parked
 
+### P3. The Observatory and Mission Control deployed together (done)
+
+**Done (2026-11-23), the operator: "we should deploy now together observatory and mission
+control as one platform".** From main at `36670fb`: `make observatory-down` (project
+`observatory`), then `make stack-up` (project `robotics-lab`, EXIT=0, both containers healthy).
+
+- `/api/v1/health`: the Observatory `{"ok":true,"runs":1629}`, Mission Control
+  `{"ok": true, "service": "mission-control", "robots": 1}`.
+- Both serve `/lib/` (200). In Chromium, Mission Control's overview and robot page and the
+  Observatory's 3D page load with no console error and no failed request.
+- What it is not yet: two origins (:8070, :8060), and Mission Control sees only the fake robot
+  (`robots.example`). The duck needs the gate's and the navigator's Unix sockets, the
+  installation file, the robot folder (description, meshes) and the profile store mounted at
+  the paths the installation names. One origin is RFC-0024 step 3. The operator: "note these as
+  4c" ([the plan](PHASE5-NEXT-PLAN.md), 4c: C1 to C3).
+
+### P2. Redeploy the Observatory (shared state) (done)
+
+**Done (2026-11-23).** The operator: "you can do P2 when you think is best". After A4's CI was green,
+`make observatory-up` ran from main at `aea6d23` and the container came up healthy (EXIT=0).
+
+- Health: `{"ok":true,"runs":1629}`.
+- `/lib/tokens.css`, `/lib/vendor/three.module.js` and `/lib/body/body.js` return 200. The old
+  `/web/three/vendor/...` path is 404, as moved.
+- In Chromium, the 3D page and `/watch/duck/apartment/find2` both reach ready and draw (2
+  canvases each). The 3D page logs two 404s: the browser's own `/favicon.ico` (no page declares
+  an icon). That predates A4.
+
+The situation before the redeploy:
+
+After A4 (`aea6d23`), the running Observatory container still serves its old image. In it,
+three.js sits under `web/three/vendor`, and the watch page's body is not coloured by alarms. The
+main checkout moved three.js to `libs/web`. The image builds and serves `/lib/`:
+`make test-observatory-image` PASS on the `observatory:ci` tag. Redeploying (`make observatory-up`)
+needs the operator's go.
+
+- **Ask:** "Redeploy the Observatory from main?"
+
 ### P1. One platform for Mission Control and the Observatory? (decided)
 
 **Decided (the operator, 2026-11-23): "I agree on B, reached in C's order, as next step here".**
@@ -110,3 +148,55 @@ fully independent things".
 - **Mission Control's token:** the meshes are fetched with the token header when one is set.
 - **Docker:** both Dockerfiles copy `libs/web`, both dockerignores allow it. Not built (no Docker
   here).
+
+### A2, Modules and Settings (2026-11-23)
+
+- **Modules:** the profile's four plugins (`name@version`), each with the block it answers for
+  (`locomotion`, `sensors`, `localisation`, `looking`) and that block's first eight numbers as the
+  running variant has them. No source reports a plugin's state to Mission Control, so each says
+  "live state not reported"; no feed was invented. Undo: `paintModules` in `web/settings.js`.
+- **No new endpoint:** a version's profile is read through `export?version=`; the versions, save,
+  go back, diff and import are the existing ones. The page's code is `web/settings.js`, loaded
+  before `app.js`.
+- **What can be edited:** the numbers (and `null`s) of any block except the robot's identity
+  (`factsheet`, `control`, `capabilities`, `plugins`, `subsystems`), in the base layer or in one
+  variant layer, with the `measured` and `why` of the dict the number sits in (a variant's number
+  needs them; the server says so at the field). Lists and tables are edited in the file. Emptying
+  a variant field removes its override; the base field cannot be emptied except a `null` one.
+  Undo: `stForm` and `stSave`.
+- **"From the next goal":** shown on the version this page made current (save, make current,
+  import) until the page is reloaded; the server does not say which version a running goal started
+  with, so the mark does not survive a reload. Ask: should `GET profile` carry the version the
+  last goal ran?
+- **A store the installation names but that is empty:** `GET profile` answers 409 (the existing
+  behaviour), so the page shows the load error; seed the store first (as the CLI does). Not
+  changed here.
+- **Settings spans both columns** on a desktop; the form is a grid of the block's dicts.
+
+### A1 and A2 rebuilt to the approved design (2026-11-23)
+
+The operator called the first Settings "stacks of fields" and approved a mock-up (tabs, collapsible
+cards, Settings as a block list with a compact read view, an edit drawer and a History drawer):
+"mockup is good". The page was rebuilt to it on the same API calls. Defaults taken:
+
+- **Route:** `#robot/<id>[/<tab>]`; reload and back keep the tab.
+- **STOP:** in the top bar on a desktop (40 px), pinned to the bottom on a phone (56 px).
+- **Overview's Body card:** a text summary ("all N joints ok", or the ones that are not), not a
+  second 3D view: three.js loads only on the Body tab, never on the phone's first screen.
+- **The edit drawer** opens on the running variant; measured and why are editable on every layer,
+  base included.
+- **History:** compares on change (no Compare button); a stale answer cannot overwrite a newer one.
+  The per-version Export is gone; Export exports the version shown.
+- **Edit, Save and Import** are disabled when the store is not writable.
+- **Contrast:** primary buttons are the accent darkened to 78 % (white text 5.2:1 dark, 6.9:1
+  light); tags and units use `--text-dim`, not `--text-faint` (about 3:1).
+- **Not covered:** no screen reader or axe run; Chromium only; no `inert` behind a drawer (a Tab
+  trap only); the Modules row highlights overrides only among its first 12 values.
+
+## Findings to watch
+
+- **`test_replay_pages.py` failed once, cause unknown (2026-11-23).** It failed in a
+  `make lint test-observatory test-observatory-pages` run while B1's simulator jobs and A2's page
+  tests ran on the same machine. The failing check was not kept (the output was filtered away). It
+  passed run alone and in a full rerun of `make test-observatory-pages` (EXIT=0). If it fails again,
+  keep the whole log.

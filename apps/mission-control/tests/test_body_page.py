@@ -156,6 +156,11 @@ with sync_playwright() as p:
         wait("window.__mc && window.__mc.ready")
         check("must fail: the overview loads no three.js (the phone page stays light)", not any("/lib/vendor/" in u for u in requests), [u for u in requests if "/lib/" in u])
         page.goto(BASE + "/#robot/duck-1")
+        wait("!document.getElementById('robot-page').hidden && document.querySelectorAll('#rp-joints-body tr[data-joint]').length === 2")
+        page.wait_for_timeout(500)
+        check("must fail: the robot page's Overview loads no three.js either: its Body card reads the joints from the shared rule only", not any("/lib/vendor/" in u or "bodyview" in u for u in requests)
+              and "All 2 joints ok" in page.locator("#rp-body-sum").inner_text() and page.locator("#rp-body canvas").count() == 0, page.locator("#rp-body-sum").inner_text())
+        page.goto(BASE + "/#robot/duck-1/body")
         wait("!document.getElementById('robot-page').hidden && !!window.__mc.body", 20000)
         wait("window.__mc.body?.state()?.drawn === 3", 20000)
         check("must fail: the body mounts in the Body section: a canvas inside it, three parts drawn", page.locator("#rp-body canvas").count() == 1
@@ -226,12 +231,12 @@ with sync_playwright() as p:
 
         # a robot with no description says so and loads nothing more
         page.set_viewport_size({"width": 390, "height": 800})
-        page.evaluate("location.hash = '#robot/fake-1'")
+        page.evaluate("location.hash = '#robot/fake-1/body'")
         wait("document.getElementById('rp-title').textContent.includes('Fake robot')")
         wait("document.getElementById('rp-body').textContent.toLowerCase().includes('no 3d model')")
         check("must fail: a robot with no description: the Body section says there is no model, and has no canvas", page.locator("#rp-body canvas").count() == 0
               and "no 3d model" in page.locator("#rp-body").inner_text().lower(), page.locator("#rp-body").inner_text())
-        page.evaluate("location.hash = '#robot/duck-1'")
+        page.evaluate("location.hash = '#robot/duck-1/body'")
         wait("window.__mc.body?.state()?.drawn === 3")
         check("and back on the duck the body is drawn again, once", page.locator("#rp-body canvas").count() == 1)
         check("no script error and no console error in the whole session", errors == [], errors)

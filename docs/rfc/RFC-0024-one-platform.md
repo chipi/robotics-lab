@@ -293,6 +293,25 @@ read only.
 
 ## 7. Questions for the operator
 
+**Answered (the operator, 2026-11-23):**
+
+1. B, reached in C's order.
+2. The shared library comes first.
+3. **The Observatory proxies Mission Control's API.** It was not among the options below; it was
+   proposed when the questions were asked. The Observatory serves the shared shell and forwards
+   Mission Control's API and event stream with the standard library. Mission Control's process,
+   which holds the lock and STOP, never fronts the run reader, and its own page still works
+   directly on :8060. To settle at step 3: the container's route to the host's :8060.
+4. **A token for actions only.** Reading runs and watching stay open on the LAN and tailnet.
+   Moving the robot, changing it, the lock and profile saves need Mission Control's token. STOP is
+   always allowed.
+5. **Yes, a rule from now.** Mission Control reads runs only through the Observatory's API, never
+   the files.
+6. **The watch page on a phone, the workbench not.** At phone width: Mission Control in full, plus
+   the Observatory's watch page. The full workbench says "open on a larger screen".
+
+The questions, as they were asked:
+
 1. **Which option?** The recommendation is B, in C's order. If you prefer A, say whether you
    accept the lock and the run reader sharing a process (§4, A, risks).
 2. **Is a shared library the right first step even if you later choose A?** It is in all three.

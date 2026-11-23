@@ -21,7 +21,7 @@ function h(tag, attrs, ...kids) {
 
 const S = {
   robots: [], robot: null, sites: [], site: null, objects: [], areas: [], map: null, goals: [], runs: [], run: null,
-  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null, token: null,
+  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null, token: null, open: {},
 };
 
 async function api(method, path, body) {
@@ -36,6 +36,34 @@ async function api(method, path, body) {
 }
 
 function setKids(el, ...kids) { el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false)); }
+
+const ICONS = {
+  check: "M5 12.5l4.5 4.5L19 7.5", x: "M6 6l12 12|M18 6L6 18", dot: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z", chev: "M9 6l6 6-6 6",
+  lock: "M7 11h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z|M8 11V7a4 4 0 0 1 8 0v4",
+  pencil: "M4 20h4L19 9l-4-4L4 16v4z", history: "M3 12a9 9 0 1 0 3-6.7L3 8|M3 3v5h5M12 7v5l3 2", close: "M6 6l12 12|M18 6L6 18",
+};
+function icon(name, cls) {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "ico " + (cls || ""));
+  for (const d of ICONS[name].split("|")) { const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", d); s.append(p); }
+  return s;
+}
+
+// Rebuild what is inside `box`, and give the focus back to the control that had it (the one with the same data-fk): the page repaints on every
+// event, and a keyboard user must not lose their place to it.
+function keepFocus(box, build) {
+  const a = document.activeElement, key = a && box.contains(a) ? a.dataset.fk : null;
+  build();
+  if (key) { const again = [...box.querySelectorAll("[data-fk]")].find((e) => e.dataset.fk === key); if (again) again.focus(); }
+}
+
+// A collapsible section built by script: a head button (aria-expanded, aria-controls) and its body. What the user opened or closed is in S.open,
+// so a repaint keeps it. The static sections of index.html are opened and closed in place by the same click handler.
+function fold(key, dflt, headKids, body, cls) {
+  const open = S.open[key] ?? dflt, id = "fold-" + key.replace(/[^\w-]/g, "-");
+  body.id = id; body.hidden = !open;
+  return [h("button", { class: "shead " + (cls || ""), type: "button", "data-collapse": key, "data-fk": "fold:" + key, "aria-expanded": String(open), "aria-controls": id }, icon("chev", "chev"), headKids), body];
+}
 
 let toastTimer = null;
 function toast(msg, err) {
@@ -155,100 +183,222 @@ function renderRobots() {
   renderRobotPage();
 }
 
-// --- the robot's page (RFC-0023 D3): #robot/<id>; Overview and Parts are built from what GET /robots/{id} gives and the alarm feed ----
-const routeId = () => { const m = /^#robot\/([^/]+)$/.exec(location.hash); return m ? decodeURIComponent(m[1]) : null; };
+// --- the robot's page (RFC-0023 D3): #robot/<id>[/<tab>]; Overview and Parts are built from what GET /robots/{id} gives and the alarm feed ----
+const TABS = ["overview", "body", "modules", "settings", "calibration"];
+function route() {
+  const m = /^#robot\/([^/]+)(?:\/([a-z]+))?$/.exec(location.hash);
+  return m ? { id: decodeURIComponent(m[1]), tab: TABS.includes(m[2]) ? m[2] : "overview" } : null;
+}
+const routeId = () => (route() || {}).id ?? null;
+const routeTab = () => (route() || {}).tab ?? null;
+const hashOf = (id, tab) => "#robot/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : "");
+const goTab = (tab) => { if (routeId() != null) location.hash = hashOf(routeId(), tab); };
 
-// Why the robot is not fit to go, one string per reason; none means fit. A minor alarm is not a reason, a major or critical one in the last minute is.
-function fitReasons(r) {
-  const out = [], l = r.lock || {}, now = Date.now() / 1000;
-  if (!r.online) out.push(r.last_seen_age_s != null ? `offline: it has not answered for ${r.last_seen_age_s} s` : "offline: it has not answered yet");
-  if (l.unreachable) out.push("its gate does not answer");
-  else if (l.holder) out.push(`held by ${l.holder}${r.goal_run != null ? `: goal run #${r.goal_run}` : ""}`);
-  for (const [k, v] of Object.entries((r.status || {}).flags || {})) if (v) out.push(`${k}: its status says so`);
+// Each way the robot can be not fit to go, as one check; ok is true, false, or null when it cannot be told (the gate does not answer).
+// A minor alarm is not a reason, a major or critical one in the last minute is.
+function fitChecks(r) {
+  const l = r.lock || {}, now = Date.now() / 1000;
+  const flags = Object.entries((r.status || {}).flags || {}).filter(([, v]) => v).map(([k]) => `${k}: its status says so`);
   const bad = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S && SEV.indexOf(x.a.severity) >= SEV.indexOf("major"));
+  let alarm = null;
   if (bad.length) {
     const w = bad.reduce((a, x) => (SEV.indexOf(x.a.severity) >= SEV.indexOf(a.a.severity) ? x : a));
-    out.push(`${w.a.severity} alarm ${w.a.anomaly}: ${w.a.summary || ""} (${ago(w.at)}${bad.length > 1 ? `, ${bad.length} in the last minute` : ""})`);
+    alarm = `${w.a.severity} alarm ${w.a.anomaly}: ${w.a.summary || ""} (${ago(w.at)}${bad.length > 1 ? `, ${bad.length} in the last minute` : ""})`;
   }
-  return out;
+  return [
+    { id: "online", ok: !!r.online, what: "Online",
+      val: r.online ? "answering" : r.last_seen_age_s != null ? `offline: it has not answered for ${r.last_seen_age_s} s` : "offline: it has not answered yet" },
+    { id: "gate", ok: !l.unreachable, what: "Its gate answers", val: l.unreachable ? "its gate does not answer" : "answers" },
+    { id: "free", ok: l.unreachable ? null : !l.holder, what: "Nobody holds it",
+      val: l.unreachable ? "not known" : l.holder ? `held by ${l.holder}${r.goal_run != null ? `: goal run #${r.goal_run}` : ""}` : "free" },
+    { id: "flags", ok: !flags.length, what: "No status flag set", val: flags.length ? flags.join("; ") : "none" },
+    { id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none" },
+  ];
+}
+const fitReasons = (r) => fitChecks(r).filter((c) => c.ok === false).map((c) => c.val);
+
+function applyTab(tab) {
+  for (const b of document.querySelectorAll(".tabs .tab")) {
+    const on = b.dataset.tab === tab;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+    $("rp-" + b.dataset.tab).hidden = !on;
+  }
+  if (tab !== "settings") stCloseDrawers();
+}
+
+function paintPicker() {
+  const sel = $("rp-picker"), sig = S.robots.map((x) => x.id + "\n" + x.label).join("\n");
+  if (sel.dataset.sig !== sig) { sel.dataset.sig = sig; setKids(sel, S.robots.map((x) => h("option", { value: x.id }, `${x.label} (${x.id})`))); }
+  sel.value = routeId();
 }
 
 function renderRobotPage() {
-  const id = routeId();
-  $("robot-page").hidden = id == null;
-  document.querySelector("main.page").hidden = id != null;
-  if (id == null) { closeBody(); requestDraw(); return; }
+  const rt = route(), id = rt && rt.id;
+  $("robot-page").hidden = !rt;
+  document.querySelector("main.page").hidden = !!rt;
+  $("rp-crumbs").hidden = !rt;
+  document.body.classList.toggle("on-robot", !!rt);
+  if (!rt) { closeBody(); stCloseDrawers(); requestDraw(); return; }
   const r = S.robots.find((x) => x.id === id);
   if (r && S.robot !== id) { guard(() => selectRobot(id, true))(); return; }
+  applyTab(rt.tab);
+  paintPicker();
+  const fit = $("fit");
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
-  if (!r) { for (const k of ["overview-body", "parts-body", "holder", "settings-body"]) setKids($("rp-" + k)); closeBody(); return; }
-  const why = fitReasons(r), st = r.status || {}, pr = r.profile;
-  setKids($("rp-overview-body"),
-    h("div", { id: "fit", class: "fit " + (why.length ? "bad" : "ok"), "data-fit": String(!why.length) }, why.length ? "Not fit to go" : "Fit to go"),
-    why.length ? h("ul", { id: "fit-reasons", class: "fit-reasons" }, why.map((w) => h("li", {}, w))) : null,
-    h("div", { class: "kv" },
-      h("span", {}, "mode ", h("b", {}, st.mode || "-")),
-      h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
-      h("span", {}, "profile ", h("b", {}, pr ? `${pr.robot}, ${pr.variant}, ${pr.version != null ? "version " + pr.version : "the robot's own file"}` : "none"))));
-  setKids($("rp-holder"), holderText(r));
+  if (!r) {
+    fit.hidden = true; fit.removeAttribute("data-fit");
+    for (const k of ["facts", "fit-body", "fit-sum", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
+    stForget();
+    closeBody();
+    return;
+  }
+  const checks = fitChecks(r), why = fitReasons(r), st = r.status || {}, pr = r.profile, now = Date.now() / 1000;
+  fit.hidden = false; fit.dataset.fit = String(!why.length); fit.className = "verdict " + (why.length ? "bad" : "ok");
+  setKids(fit, h("span", { class: "pip" }), why.length ? "Not fit" : "Fit to go");
+  const held = holderText(r);
+  setKids($("rp-facts"),
+    h("span", {}, "mode ", h("b", {}, st.mode || "-")),
+    h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
+    h("span", {}, "held by ", h("b", { id: "rp-holder" }, held === "free" ? "nobody" : held)),
+    pr ? h("span", {}, "runs ", h("b", {}, pr.variant), " variant") : null,
+    h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")));
+  const badge = $("tab-settings-badge");
+  badge.hidden = !(pr && pr.version != null);
+  badge.textContent = pr && pr.version != null ? "v" + pr.version : "";
+
+  const passed = checks.filter((c) => c.ok === true).length;
+  setKids($("rp-fit-sum"), `${passed} of ${checks.length}`);
+  $("rp-fit-sum").className = "sum " + (why.length ? "bad" : "ok");
+  setKids($("rp-fit-body"), h("ul", { id: "fit-checks", class: "checks" },
+    checks.map((c) => h("li", { "data-check": c.id, "data-ok": String(c.ok) },
+      icon(c.ok === true ? "check" : c.ok === false ? "x" : "dot", c.ok === true ? "ok" : c.ok === false ? "bad" : "na"),
+      h("span", { class: "sr" }, c.ok === true ? "passes: " : c.ok === false ? "fails: " : "not known: "),
+      h("span", { class: "what" }, c.what), h("span", { class: "val" }, c.val))),
+    h("li", { class: "na" }, icon("dot", "na"), h("span", { class: "what" }, "Battery is not a reason yet"), h("span", { class: "val" }, "its threshold comes with B2"))));
+
+  const recent = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S).reverse();
+  setKids($("rp-alarms-sum"), recent.length ? plural(recent.length, "alarm") : "none");
+  setKids($("rp-alarms-body"), recent.length
+    ? h("ul", { class: "alarmrows" }, recent.map((x) => h("li", {}, h("span", { class: "sev sev-" + x.a.severity }, x.a.severity),
+      h("span", { class: "what" }, `${x.a.anomaly}: ${x.a.summary || ""}`), h("span", { class: "faint" }, ago(x.at)))))
+    : h("div", { class: "empty" }, "No alarms in the last minute. A major or critical one makes the robot unfit for 60 s."));
+
   const parts = pr ? pr.subsystems : null;
-  setKids($("rp-parts-body"), h("h3", {}, "Subsystems"), !pr ? h("div", { class: "dim" }, "No profile: this robot's file holds the robot itself, so it lists no parts.")
-    : !parts.length ? h("div", { class: "dim" }, "The profile lists no parts.")
-    : h("ul", { class: "list" }, parts.map((s) => h("li", { class: "part", "data-part": s.name },
-      h("b", {}, s.name), " ", h("span", { class: "dim" }, s.what || ""), " ", h("span", { class: "state" }, "state not reported"),
-      h("div", { class: "kv" },
-        h("span", {}, "check ", h("b", {}, s.check.kind + (s.check.socket ? " " + s.check.socket : ""))),
-        s.logs ? h("span", {}, "logs ", h("b", {}, s.logs)) : null,
-        (s.conflicts || []).length ? h("span", {}, "conflicts with ", h("b", {}, s.conflicts.join(", "))) : null)))));
-  setKids($("rp-settings-body"), "Next: edit a copy, versions, diff, export and import. The API has them now: ",
-    pr ? h("a", { class: "watch", href: `${API}/robots/${r.id}/profile`, target: "_blank", rel: "noopener" }, "this robot's profile") : "this robot has no profile.");
+  setKids($("rp-parts-sum"), parts ? plural(parts.length, "subsystem") : "");
+  setKids($("rp-parts-body"), !pr ? h("div", { class: "empty" }, "No profile: this robot's file holds the robot itself, so it lists no parts.")
+    : !parts.length ? h("div", { class: "empty" }, "The profile lists no parts.")
+    : h("div", { class: "twrap" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Part", "Does", "Check", "State"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, parts.map((s) => h("tr", { "data-part": s.name },
+        h("td", { class: "k" }, s.name), h("td", {}, s.what || ""),
+        h("td", { class: "v inh" }, s.check.kind + (s.check.socket ? " " + s.check.socket : ""),
+          s.logs ? h("div", {}, "logs " + s.logs) : null, (s.conflicts || []).length ? h("div", {}, "conflicts with " + s.conflicts.join(", ")) : null),
+        h("td", {}, h("span", { class: "tag" }, "not reported"))))))));
+  paintProfile(r);
   paintBody(r);
 }
 
-// The body (RFC-0024 step 2): libs/web's component in bodyview.js, loaded only when a robot with a description is opened. Posed from the
-// robot's live joint angles, each joint coloured by the worst alarm in the last minute that names it.
-const descs = {};          // robot id -> its description, or null when it has none
+// The body (RFC-0024 step 2): libs/web's component in bodyview.js, loaded only when the Body tab of a robot with a description is open.
+// Posed from the robot's live joint angles, each joint coloured by the worst alarm in the last minute that names it. The joint table and the
+// Overview's Body card read the same states and need no three.js: only /lib/body/body.js, which holds the rule.
+const descs = {}, descErr = {}, descBusy = {}, bodyErr = {};      // robot id -> its description (null when it has none), why it could not be read
 let bodyMod = null, bodyFor = null;        // the module once loaded; the robot whose body is mounted or being mounted
+let jointMod = null, jointErr = null, jointBusy = false;
+
+async function loadDesc(id) {
+  if (descBusy[id]) return;
+  descBusy[id] = true;
+  try { descs[id] = (await api("GET", `/robots/${id}/description`)).description; } catch (e) { descs[id] = null; descErr[id] = e.message; }
+  if (routeId() === id) renderRobotPage();
+}
+
+function loadJointLib() {
+  if (jointBusy) return;
+  jointBusy = true;
+  import("/lib/body/body.js").then((m) => { jointMod = m; renderRobotPage(); }).catch((e) => { jointErr = `The joint states could not be loaded: ${e.message}`; renderRobotPage(); });
+}
 
 async function openBody(id) {
   closeBody();
   bodyFor = id;
-  const note = $("rp-body-note"), box = $("rp-body-view");
   try {
-    if (!(id in descs)) descs[id] = (await api("GET", `/robots/${id}/description`)).description;
-    if (bodyFor !== id) return;
-    const d = descs[id];
-    const drawable = d && d.links.some((l) => l.visuals.some((v) => !d.meshes_missing.includes(v.mesh)));
-    box.hidden = !drawable;
-    setKids(note, !d ? "No 3D model: this robot's file holds the robot itself, so it has no description."
-      : !drawable ? `The description's ${plural(d.meshes_missing.length, "mesh")} ${d.meshes_missing.length === 1 ? "is" : "are"} not built on this machine (make robots): nothing to draw.` : null);
-    if (!drawable) return;
     bodyMod ||= await import("/web/bodyview.js");
-    await bodyMod.mount(box, id, d, API + "/", S.token ? { headers: { Authorization: "Bearer " + S.token } } : undefined);
+    if (bodyFor !== id) return;
+    await bodyMod.mount($("rp-body-view"), id, descs[id], API + "/", S.token ? { headers: { Authorization: "Bearer " + S.token } } : undefined);
     const r = S.robots.find((x) => x.id === id);
     if (bodyFor === id && r) paintBody(r);
   } catch (e) {
-    setKids(note, `The body could not be loaded: ${e.message}`);
+    bodyErr[id] = e.message;
+    if (bodyFor === id) { const r = S.robots.find((x) => x.id === id); if (r) paintBody(r); }
   }
 }
 
 function paintBody(r) {
-  if (bodyFor !== r.id) { openBody(r.id); return; }
-  if (!bodyMod || !descs[r.id]) return;
+  if (!jointMod) { loadJointLib(); setKids($("rp-joints-body"), h("div", { class: "empty" }, jointErr || "Loading")); return; }
+  if (!(r.id in descs)) { loadDesc(r.id); return; }
+  const d = descs[r.id], now = Date.now() / 1000, live = (r.status || {}).joints || {};
   const alarms = S.alarms.filter((x) => x.robot === r.id).map((x) => ({ t: x.at, a: x.a }));
-  const bad = bodyMod.update((r.status || {}).joints, alarms, Date.now() / 1000, ALARM_WINDOW_S);
-  setKids($("rp-body-joints"), Object.entries(bad).map(([j, s]) => h("li", { class: s.state === "error" ? "sev-major" : "sev-minor" }, `${j}: ${s.state}, ${s.anomaly}`)));
+  const states = jointMod.jointStates(alarms, now, ALARM_WINDOW_S), bad = Object.entries(states);
+  const names = [...new Set([...(d ? d.joints.filter((j) => j.type !== "fixed").map((j) => j.name) : []), ...Object.keys(live), ...Object.keys(states)])];
+  const drawable = !!d && d.links.some((l) => l.visuals.some((v) => !d.meshes_missing.includes(v.mesh)));
+  const note = descErr[r.id] ? `The body could not be loaded: ${descErr[r.id]}` : bodyErr[r.id] ? `The body could not be loaded: ${bodyErr[r.id]}`
+    : !d ? "No 3D model: this robot's file holds the robot itself, so it has no description."
+    : !drawable ? `The description's ${plural(d.meshes_missing.length, "mesh")} ${d.meshes_missing.length === 1 ? "is" : "are"} not built on this machine (make robots): nothing to draw.` : null;
+  setKids($("rp-body-note"), note);
+  $("rp-body-view").hidden = !drawable;
+  const lines = bad.map(([j, s]) => h("li", { class: s.state === "error" ? "sev-major" : "sev-minor" }, `${j}: ${s.state}, ${s.anomaly}`));
+  setKids($("rp-body-joints"), lines);
+  setKids($("rp-joints-sum"), names.length ? `${names.length}${bad.length ? `, ${bad.length} not ok` : ""}` : "");
+  setKids($("rp-joints-body"), names.length
+    ? h("table", { class: "t" }, h("thead", {}, h("tr", {}, ["Joint", "Angle", "State"].map((x) => h("th", {}, x)))),
+      h("tbody", {}, names.map((j) => { const s = states[j], a = live[j];
+        return h("tr", { "data-joint": j, "data-state": s ? s.state : "ok" }, h("td", { class: "k" }, j),
+          h("td", { class: "v inh" }, typeof a === "number" ? a.toFixed(2) + " rad" : "-"),
+          h("td", { class: s ? (s.state === "error" ? "bad" : "warn") : "ok" }, s ? `${s.state}, ${s.anomaly}` : "ok")); })))
+    : h("div", { class: "empty" }, "This robot reports no joints."));
+  setKids($("rp-body-sum"), note ? h("div", { class: "dim" }, note)
+    : !names.length ? h("div", { class: "dim" }, "This robot reports no joints.")
+    : [h("div", { class: bad.length ? "" : "ok" }, bad.length ? `${bad.length} of ${plural(names.length, "joint")} not ok:` : `All ${plural(names.length, "joint")} ok.`),
+      bad.length ? h("ul", { class: "list bodyjoints" }, lines.map((li) => li.cloneNode(true))) : null,
+      h("div", { class: "dim" }, "A joint turns the warn or the error colour for a minute after an alarm names it, and is listed by name.")]);
+  if (routeTab() !== "body" || !drawable) { if (bodyFor) closeBody(); return; }
+  if (bodyFor !== r.id) { openBody(r.id); return; }
+  if (bodyMod) bodyMod.update(live, alarms, now, ALARM_WINDOW_S);
 }
 
 function closeBody() {
   if (bodyMod) bodyMod.unmount();
   bodyFor = null;
-  setKids($("rp-body-joints"));
 }
 
 $("rp-back").addEventListener("click", () => { location.hash = ""; });
+$("rp-picker").addEventListener("change", (ev) => { location.hash = hashOf(ev.target.value, routeTab()); });
 window.addEventListener("hashchange", renderRobotPage);
 setInterval(() => { if (routeId()) renderRobotPage(); }, 5000);
+
+for (const b of document.querySelectorAll(".tabs .tab")) b.addEventListener("click", () => goTab(b.dataset.tab));
+$("robot-page").querySelector(".tabs").addEventListener("keydown", (ev) => {
+  const i = TABS.indexOf(document.activeElement && document.activeElement.dataset.tab);
+  const to = { ArrowRight: (i + 1) % TABS.length, ArrowLeft: (i + TABS.length - 1) % TABS.length, Home: 0, End: TABS.length - 1 }[ev.key];
+  if (i < 0 || to === undefined) return;
+  ev.preventDefault();
+  $("tab-" + TABS[to]).focus();
+  goTab(TABS[to]);
+});
+
+function setOpen(head, open) {
+  head.setAttribute("aria-expanded", String(open));
+  const body = $(head.getAttribute("aria-controls"));
+  if (body) body.hidden = !open;
+  S.open[head.dataset.collapse] = open;
+}
+document.addEventListener("click", (ev) => {
+  const head = ev.target.closest("button[data-collapse]");
+  if (head) { setOpen(head, head.getAttribute("aria-expanded") !== "true"); return; }
+  const go = ev.target.closest("[data-goto-tab]");
+  if (go) goTab(go.dataset.gotoTab);
+});
 
 // --- sites and areas -------------------------------------------------------------------------------------
 function renderSites() {
@@ -716,6 +866,12 @@ function renderAlarmInspector() {
 }
 
 $("alarm").addEventListener("click", () => {
+  if (routeId() != null) {          // the robot page has no alarm panel: its Overview has the card
+    goTab("overview");
+    setOpen($("rp-alarms-head"), true);
+    $("rp-alarms-head").focus();
+    return;
+  }
   const p = $("alarms");
   p.hidden = !p.hidden;
   $("alarm").setAttribute("aria-expanded", String(!p.hidden));

@@ -351,7 +351,9 @@ implements", built unattended. Decisions are made by the recommended default and
 | A1 | Robot page shell, Overview ("fit to go, and why not"), Parts (the subsystems, the holder line) | `test_page.py`, Chromium, phone and desktop | M | yes |
 | A2 | Modules (the plugins), Settings (versions, edit a copy, diff, export, import; the API exists) | page test: edit, save, diff | M | yes |
 | A3 | Calibration frame, plus one simulator procedure (odometry scale), through a navigator-API method (contract 1.3, the operator's choice) | runner unit test, page test, one simulator run | L | yes; the real duck's tape entry stubbed |
-| A4 | RFC-0024 steps 1 and 2 (accepted 2026-11-23): the shared `libs/web` (tokens, three.js, the body from `robotbody.js`), then the body in Mission Control, live, beside the watch page's | page tests in both apps | L | yes, after A1 |
+| A4 | RFC-0024 steps 1 and 2 (accepted 2026-11-23): the shared `libs/web` (tokens, three.js, the body from `robotbody.js`), then the body in Mission Control, live, beside the watch page's | page tests in both apps | L | done, `aea6d23` |
+| A5 | The body with the duck's real meshes in Chromium: every link drawn, a joint coloured by an alarm. A page test that skips when the meshes are not built | screenshots, phone and desktop | S | yes, after A2 (operator, 2026-11-23) |
+| A6 | The robot view carries the last minute's alarms (the worst per joint, the worst overall), so the body's colours and Overview's fit verdict are right when the page opens | page test: opened after an alarm, the joint is already coloured and the robot unfit | S | yes, after A5, before B2 (operator, 2026-11-23) |
 
 #### 4b units
 
@@ -367,6 +369,23 @@ implements", built unattended. Decisions are made by the recommended default and
 | B8 | The simulator-first flag (rehearse in the simulator, then real) | API test; `sim_duck` | M | yes |
 | B9 | Measurement tooling: CPU cost, score sheet, radial or axial | scripts | S each | written here, run on the robot |
 | B10, B11 | Relocalisation from landmarks; a real recogniser | last: a stub recogniser at most | L | no |
+
+### 4c. One platform, deployed (after 4a and 4b, before telemetry)
+
+**The operator, 2026-11-23:** "note these as 4c". The two apps were first deployed together on
+2026-11-23 (`make stack-up` from main at `36670fb`; the proof is P3 in
+[the pending decisions](PHASE5-DECISIONS-PENDING.md)). They run side by side, not yet as one
+platform.
+
+| Unit | What | Proof | Size |
+| --- | --- | --- | --- |
+| C1 | One origin (RFC-0024 step 3): the Observatory proxies Mission Control's API; the token is needed for actions only (Q3, Q4); Mission Control reads runs only through the Observatory's API (Q5) | API tests through the proxy; both apps' pages from one address in Chromium | M-L |
+| C2 | Mission Control's container drives the sim duck. It mounts the gate's and the navigator's sockets, the installation file, the robot's folder (description, meshes) and the profile store, at the paths the installation names, under the same UID | `make stack-up`, then a goal run from the deployed page against `sim_duck` | M |
+| C3 | The deploy scripts: deploy from a named commit, not whatever the main checkout holds; one target that replaces the solo Observatory project; a smoke after it (health, `/lib/`, the pages in Chromium) | the smoke's output after a deploy | S-M |
+
+The robot page's look follows the mock-up the operator approved on 2026-11-23 ("mockup is
+good"): tabs, collapsible sections, Settings as a block list with a compact read view, a
+side-drawer edit and a History drawer. A1 and A2 are rebuilt to it inside 4a.
 
 ### 5. Step 6 (telemetry): needs the operator before it starts
 

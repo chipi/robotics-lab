@@ -1,6 +1,7 @@
 """Mission Control's robot page (RFC-0023 D3, phase 5 item 4a unit A1) in headless Chromium, as test_page.py does it: the real server,
 the page driven by what a person does and checked against the API. A pointer robot to the duck's profile behind the fake adapter
-(its Parts come from the profile) beside the fake robot that holds itself (no profile). Phone width, desktop, dark and light.
+(its Parts come from the profile) beside the fake robot that holds itself (no profile). Five tabs in the address, collapsible cards, the fit checklist,
+Calibration. Phone width, desktop, dark and light.
 
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
 
@@ -37,7 +38,7 @@ BASE = f"http://127.0.0.1:{srv.server_address[1]}"
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 mc.start()
 duck = mc.robots["duck-1"].adapter.robot
-SECTIONS = ["overview", "parts", "modules", "settings", "calibration", "body"]
+TABS = ["Overview", "Body", "Modules", "Settings", "Calibration"]
 
 
 def send(method, path, body):
@@ -72,8 +73,8 @@ with sync_playwright() as p:
     no_scroll = lambda: page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
     def fit():
-        wait(page, "!!document.querySelector('#fit[data-fit]')")
-        return page.locator("#fit").get_attribute("data-fit"), page.locator("#fit-reasons li").all_inner_texts()
+        wait(page, "!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#fit-checks')")
+        return page.locator("#fit").get_attribute("data-fit"), page.locator("#fit-checks li[data-ok=false]").all_inner_texts()
 
     def fit_is(want, timeout=8000):
         wait(page, "([w]) => document.querySelector('#fit')?.dataset.fit === w", timeout, [want])
@@ -86,22 +87,80 @@ with sync_playwright() as p:
         wait(page, "!document.getElementById('robot-page').hidden")
         check("must fail: it opens the robot's page and hides the overview's panels", page.locator("#robot-page").is_visible()
               and page.locator("main.page").is_hidden() and page.url.endswith("#robot/duck-1"))
-        check("must fail: the six sections, in order, each with an icon in its header",
-              page.eval_on_selector_all("#robot-page > section", "(els) => els.map((e) => e.id)") == ["rp-" + s for s in SECTIONS]
-              and page.eval_on_selector_all("#robot-page > section > h2", "(hs) => hs.map((h) => !!h.querySelector('svg'))") == [True] * 6
-              and [t.strip().lower() for t in page.eval_on_selector_all("#robot-page > section > h2", "(hs) => hs.map((h) => h.textContent)")] == SECTIONS)
+        check("must fail: five tabs, in order, in a tablist; Overview is the selected one and its panel the only one shown",
+              page.locator("[role=tablist]").count() == 1
+              and [t.split("\n")[0].strip() for t in page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.textContent)")] == TABS
+              and page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.getAttribute('aria-selected'))") == ["true", "false", "false", "false", "false"]
+              and page.eval_on_selector_all("[role=tabpanel]", "(els) => els.map((e) => e.hidden)") == [False, True, True, True, True])
+        check("each tab is a real button that names its panel", page.eval_on_selector_all("[role=tab]", "(els) => els.every((e) => e.tagName === 'BUTTON' && document.getElementById(e.getAttribute('aria-controls'))?.getAttribute('aria-labelledby') === e.id)"))
         check("must fail: the page names the robot and goes back", "Microduck" in page.locator("#rp-title").inner_text() and page.locator("#rp-back").count() == 1)
-        check("the placeholders say next, and Settings links to what exists (the profile in the API)",
-              all("next" in page.locator(f"#rp-{s}").inner_text().lower() for s in ("modules", "calibration"))
-              and "/api/v1/robots/duck-1/profile" in page.locator("#rp-settings a").get_attribute("href"))
         check("STOP is still the robot's: it names the robot whose page is open", page.locator("#stop-robot").inner_text() == "STOP duck-1")
+        check("must fail: on a phone STOP and STOP ALL are pinned at the bottom, 56 px tall, and STOP is first", page.evaluate("""() => {
+            const a = document.getElementById('stop-robot').getBoundingClientRect(), b = document.getElementById('stop-all').getBoundingClientRect();
+            return a.height === 56 && b.height === 56 && a.bottom <= window.innerHeight && b.bottom <= window.innerHeight && a.left < b.left && a.top > window.innerHeight - 100; }"""))
+        check("touch targets are at least 44 px on the phone: the tabs, the section heads, the back button, the picker", page.evaluate(
+            "() => ['.tab', '#rp-fit-head', '#rp-back', '#rp-picker', '#theme'].every((s) => [...document.querySelectorAll(s)].every((e) => e.getBoundingClientRect().height >= 44 || !e.offsetParent))"))
         check("no sideways scrolling on the robot page at 390 px", no_scroll())
+
+    # --- tabs: the selected one is in the address, so reload and back keep it ------------------------------------------
+    with soft("tabs"):
+        page.click("#tab-settings")
+        wait(page, "!document.getElementById('rp-settings').hidden")
+        check("must fail: a tab click selects it, shows its panel only and writes it in the address", page.url.endswith("#robot/duck-1/settings")
+              and page.locator("#tab-settings").get_attribute("aria-selected") == "true" and page.locator("#tab-overview").get_attribute("aria-selected") == "false"
+              and page.locator("#rp-overview").is_hidden() and page.locator("#rp-settings").is_visible(), page.url)
+        check("only the selected tab is in the tab order", page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.tabIndex)") == [-1, -1, -1, 0, -1])
+        page.reload()
+        wait(page, "window.__mc && window.__mc.ready && !document.getElementById('rp-settings').hidden")
+        check("must fail: a reload keeps the tab", page.locator("#tab-settings").get_attribute("aria-selected") == "true" and page.url.endswith("#robot/duck-1/settings"))
+        page.go_back()
+        wait(page, "!document.getElementById('rp-overview').hidden")
+        check("must fail: back goes to the tab before", page.locator("#tab-overview").get_attribute("aria-selected") == "true" and page.locator("#rp-settings").is_hidden(), page.url)
+        page.focus("#tab-overview")
+        page.keyboard.press("ArrowRight")
+        wait(page, "!document.getElementById('rp-body').hidden")
+        check("must fail: the arrow keys move between the tabs, and the focus goes with the selection", page.locator("#tab-body").get_attribute("aria-selected") == "true"
+              and page.evaluate("document.activeElement.id") == "tab-body" and page.url.endswith("#robot/duck-1/body"), page.url)
+        page.keyboard.press("End")
+        wait(page, "!document.getElementById('rp-calibration').hidden")
+        check("End goes to the last tab, Home to the first", page.locator("#tab-calibration").get_attribute("aria-selected") == "true")
+        page.keyboard.press("Home")
+        wait(page, "!document.getElementById('rp-overview').hidden")
+        page.evaluate("location.hash = '#robot/duck-1/nonsense'")
+        check("an address with a tab that does not exist shows Overview", page.locator("#tab-overview").get_attribute("aria-selected") == "true")
+        page.evaluate("location.hash = '#robot/duck-1'")
+
+    # --- a card opens and closes ------------------------------------------------------------------------------------------
+    with soft("collapsible cards"):
+        head = page.locator("#rp-fit-head")
+        check("a card's head is a button that says it is open, and names what it controls", head.get_attribute("aria-expanded") == "true"
+              and head.get_attribute("aria-controls") == "rp-fit-body" and page.locator("#rp-fit-body").is_visible())
+        head.click()
+        check("must fail: one press closes it: aria-expanded false and its body hidden", head.get_attribute("aria-expanded") == "false" and page.locator("#rp-fit-body").is_hidden())
+        page.keyboard.press("Enter")
+        check("must fail: it works from the keyboard, and opens again", head.get_attribute("aria-expanded") == "true" and page.locator("#rp-fit-body").is_visible())
+        head.click()
+        page.evaluate("() => window.__mc.renderRobotPage()")
+        check("a repaint of the page does not reopen what was closed, nor take the focus", head.get_attribute("aria-expanded") == "false" and page.evaluate("document.activeElement.id") == "rp-fit-head")
+        head.click()
+
+    # --- Calibration -------------------------------------------------------------------------------------------------------------
+    with soft("Calibration"):
+        page.click("#tab-calibration")
+        wait(page, "document.querySelectorAll('#cal-table tr[data-path]').length > 0")
+        rows = page.eval_on_selector_all("#cal-table tr[data-path]", "(els) => els.map((e) => [e.dataset.path, e.dataset.layer])")
+        check("must fail: Calibration lists what the profile says was measured: the dict, the layer, when, by whom", ["joints.limits", "sim"] in rows and ["sensors.tof8x8.mount", "sim"] in rows, rows)
+        row = page.locator("#cal-table tr[data-path='joints.limits'][data-layer=sim]").inner_text()
+        check("... with the date and the script from the measured line", "2026-" in row and ".py" in row, row)
+        check("Calibration says A3's procedures come next", "next" in page.locator("#rp-calibration").inner_text().lower())
+        check("no sideways scrolling on Calibration at 390 px", no_scroll())
+        page.click("#tab-overview")
 
     # --- Overview: fit to go, and why not -------------------------------------------------------------------------
     with soft("Overview"):
         f, reasons = fit()
         check("must fail: online and free: fit to go, with no reason against", f == "true" and reasons == [] and "fit to go" in page.locator("#fit").inner_text().lower(), (f, reasons))
-        check("and the profile and variant it runs are on the page", "duck" in page.locator("#rp-overview").inner_text() and "sim" in page.locator("#rp-overview").inner_text())
+        check("and the variant it runs and the settings version are on the page, in the strip", "sim" in page.locator("#rp-facts").inner_text() and "settings" in page.locator("#rp-facts").inner_text() and page.locator("#fit").is_visible())
 
         duck.set_offline(True)
         fit_is("false")
@@ -114,11 +173,11 @@ with sync_playwright() as p:
         fit_is("false")
         f, reasons = fit()
         check("must fail: held by someone else: the reason names who", any("operator-a" in r and "held" in r for r in reasons), reasons)
-        check("must fail: Parts shows the holder line: who, since, the lease, what is left", all(s in page.locator("#rp-holder").inner_text() for s in
+        check("must fail: the strip shows the holder line: who, since, the lease, what is left", all(s in page.locator("#rp-holder").inner_text() for s in
               ("operator-a", "since", f"lease {a['lease_id']}", "expires in")), page.locator("#rp-holder").inner_text())
         send("DELETE", "/robots/duck-1/lock", {"session": a["session"]})
         fit_is("true")
-        check("released: fit again and the holder line says free", page.locator("#rp-holder").inner_text() == "free", page.locator("#rp-holder").inner_text())
+        check("released: fit again and the holder line says nobody", page.locator("#rp-holder").inner_text() == "nobody", page.locator("#rp-holder").inner_text())
 
         duck.inject("fall", True)
         fit_is("false")
@@ -138,13 +197,18 @@ with sync_playwright() as p:
         fit_is("false")
         f, reasons = fit()
         check("must fail: a critical alarm in the last minute: the reason names it", any("critical" in r and "joint_overload" in r for r in reasons), reasons)
+        al = page.locator("#rp-alarms-body").inner_text().lower()
+        check("must fail: the Alarms card lists the last minute's alarms of this robot by their word, and counts them", "critical" in al and "minor" in al and "joint_overload" in al
+              and page.locator("#rp-alarms-sum").inner_text() == "2 alarms", (al, page.locator("#rp-alarms-sum").inner_text()))
+        check("must fail: a failed check says so in words, not only in colour, and the summary counts the passes", "fails" in page.locator("#fit-checks li[data-check=alarms]").inner_text()
+              and page.locator("#rp-fit-sum").inner_text() == "4 of 5" and "not fit" in page.locator("#fit").inner_text().lower())
         page.evaluate("() => { for (const x of window.__mc.S.alarms) x.at -= 61; window.__mc.renderRobotPage(); }")
         fit_is("true")
         check("must fail: an alarm older than a minute is no longer a reason", fit() == ("true", []))
         duck.set_offline(True)
         anomaly("major", "motor_hot")
         wait(page, "window.__mc.S.alarms.length === 3")
-        wait(page, "document.querySelectorAll('#fit-reasons li').length === 2")
+        wait(page, "document.querySelectorAll('#fit-checks li[data-ok=false]').length === 2")
         f, reasons = fit()
         check("must fail: every reason is listed, not only the first: offline and the alarm", len(reasons) == 2 and any("offline" in r for r in reasons)
               and any("motor_hot" in r for r in reasons), reasons)
@@ -198,11 +262,21 @@ with sync_playwright() as p:
         page.set_viewport_size({"width": 1500, "height": 900})
         page.emulate_media(color_scheme="dark")
         check("desktop: no sideways scrolling, and Overview and Parts sit side by side", no_scroll() and page.evaluate(
-            "() => { const a = document.getElementById('rp-overview').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return a.right <= b.left + 1; }"))
+            "() => { const a = document.getElementById('rp-fit-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return a.right <= b.left + 1; }"))
         page.screenshot(path=str(SHOTS / "mc-robot-page-desktop-dark.png"), full_page=True)
+        check("desktop: STOP ALL (outlined) and STOP duck-1 (solid) are in the top bar, always visible, with the picker and the live chip", page.evaluate(
+            "() => { const t = document.querySelector('header.top').getBoundingClientRect(), ids = ['stop-all', 'stop-robot', 'rp-picker', 'conn']; return ids.every((i) => { const r = document.getElementById(i).getBoundingClientRect(); return r.top >= t.top - 1 && r.bottom <= t.bottom + 1; }); }")
+              and page.locator("#stop-robot").inner_text() == "STOP duck-1")
+        page.set_viewport_size({"width": 1440, "height": 960})
+        page.screenshot(path=str(SHOTS / "rp-overview-desktop-dark.png"))
+        page.emulate_media(color_scheme="light")
+        page.screenshot(path=str(SHOTS / "rp-overview-desktop-light.png"))
+        page.emulate_media(color_scheme="dark")
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.screenshot(path=str(SHOTS / "rp-overview-phone-dark.png"))
         page.set_viewport_size({"width": 390, "height": 800})
         check("and at 390 px again, the sections are one column", page.evaluate(
-            "() => { const a = document.getElementById('rp-overview').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return b.top >= a.bottom - 1; }"))
+            "() => { const a = document.getElementById('rp-fit-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return b.top >= a.bottom - 1; }"))
 
     check("no script error and no console error in the whole session", errors == [], errors)
     browser.close()

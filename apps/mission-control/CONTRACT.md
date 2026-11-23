@@ -325,11 +325,19 @@ is disabled while a run's `watch` is null. A robot's card links to its page, `#r
 (RFC-0023 D3): six sections, of which Overview ("fit to go", or each reason it is not: offline, its
 gate silent, held, a status flag, a major or critical alarm in the last minute, from
 `GET /robots/{id}` and the alarm feed) and Parts (the profile's subsystems, and who holds the robot)
-work, Body (RFC-0024 step 2) draws the robot's own 3D model from `GET /robots/{id}/description` and
+work, Modules lists the profile's four plugins (`plugins`, each with the block it answers for and that
+block's numbers as the running variant has them; no source reports a plugin's own state to Mission
+Control, so each says "live state not reported"), Settings is the profile API as a page (no endpoint
+of its own: the versions, a version's profile through `export?version=`, a save, going back, the
+diff, export as a download and import of a file): a version block by block with the base beside the
+`sim` and `real` variants (the numbers the running variant overrides marked), a form that edits a copy
+of the shown version in one layer (the base or a variant) with each number's unit and its dict's
+`measured` and `why`, a refusal shown at the field it names, a save marked "from the next goal",
+Body (RFC-0024 step 2) draws the robot's own 3D model from `GET /robots/{id}/description` and
 its meshes, posed from the state's `joints`, each joint coloured by the worst alarm in the last minute
 that names it (`joint_overload`, `joint_tracking`, `motor_hot`: its `values.joint`; major and critical
-the error colour, minor the warn colour; the joints not ok are listed in words), and Modules,
-Settings (a link to the profile API) and Calibration say what comes next. three.js is loaded only when
+the error colour, minor the warn colour; the joints not ok are listed in words), and Calibration
+says what comes next. three.js is loaded only when
 a robot with a description is opened. The shared web library, `libs/web` (the design tokens, the
 vendored three.js, the body component), is served at `/lib/`: `/lib/tokens.css` (the colour tokens,
 light and dark, one file with the Observatory), `/lib/vendor/` and `/lib/body/`. The page fits a
