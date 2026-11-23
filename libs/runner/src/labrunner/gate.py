@@ -250,6 +250,17 @@ class Proxy:
         self._n = 0
         self._stop = threading.Event()
         self._server = None
+        self._threads: list = []
+
+    def threads(self) -> list:
+        with self._lock:
+            return list(self._threads)
+
+    def _spawn(self, target, name: str) -> None:
+        t = threading.Thread(target=target, name=name, daemon=True)
+        with self._lock:
+            self._threads.append(t)
+        t.start()
 
     def log(self, entry: dict) -> None:
         self._log(entry)
@@ -351,9 +362,9 @@ class Proxy:
         os.chmod(self.listen, 0o660)
         self._server.listen(16)
         self._server.settimeout(0.5)
-        threading.Thread(target=self._accept, name="gate-accept", daemon=True).start()
-        threading.Thread(target=self._tick, name="gate-tick", daemon=True).start()
-        threading.Thread(target=self._watch_states, name="gate-watch", daemon=True).start()
+        self._spawn(self._accept, "gate-accept")
+        self._spawn(self._tick, "gate-tick")
+        self._spawn(self._watch_states, "gate-watch")
 
     def _accept(self) -> None:
         while not self._stop.is_set():
@@ -367,7 +378,7 @@ class Proxy:
             c = _Client(self, sock, self._n)
             with self._lock:
                 self._clients.append(c)
-            threading.Thread(target=c.run, name=f"gate-c{self._n}", daemon=True).start()
+            self._spawn(c.run, f"gate-c{self._n}")
 
     def _tick(self) -> None:
         while not self._stop.wait(TICK_S):
@@ -389,6 +400,10 @@ class Proxy:
             self._server.close()
         self.listen.unlink(missing_ok=True)
         self.upstream.close()
+        # a client thread still logging its disconnect would write the log after stop() returned (CI, 9c915b4)
+        for t in self.threads():
+            if t is not threading.current_thread():
+                t.join(timeout=2.0)
 
 
 def main() -> None:

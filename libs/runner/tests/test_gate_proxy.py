@@ -385,6 +385,8 @@ with tempfile.TemporaryDirectory() as tmp:
           wait_for(lambda: any(n.get("method") == "gate.lease_lost" and n["params"]["reason"] == "someone_else_drives" for n in drv.notes))
           and wait_for(lambda: any(n.get("method") == "gate.someone_else_drives" for n in watcher.notes)), drv.notes[-3:])
     p3.stop()
+    check("a stopped gate's threads have ended, so nothing writes its log afterwards",
+          not [t.name for t in p3.threads() if t.is_alive()], [t.name for t in p3.threads() if t.is_alive()])
     robotd3.close()
 
 print()
