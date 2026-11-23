@@ -42,7 +42,10 @@ NAV_PORT = 18061
 ap = argparse.ArgumentParser()
 ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
-only = set(ap.parse_args().only.split(",")) if ap.parse_args().only else None
+ap.add_argument("--profile", type=Path, help="seed the version store with this profile instead of the duck's own: a test profile whose body "
+                "limits fire on a walk proves the alarm feed live (the point scenario then checks it)")
+ARGS = ap.parse_args()
+only = set(ARGS.only.split(",")) if ARGS.only else None
 
 
 def wanted(name):
@@ -91,7 +94,7 @@ def fresh_sim():
 # through Mission Control and the next goal's navigator and referee both run it
 from runfile.profilestore import Store  # noqa: E402
 STORE = tmp / "inst-state" / "profiles"
-Store(STORE).seed("duck", REPO / "robots" / "duck" / "profile.json")
+Store(STORE).seed("duck", ARGS.profile or REPO / "robots" / "duck" / "profile.json")
 os.environ["ROBOTICS_LAB_INSTALLATION"] = str(installation_file(tmp / "installation.json", {"duck": {"profile": str(STORE / "duck")}},
                                                                 state=str(tmp / "inst-state")))
 clean = [True]
@@ -156,6 +159,12 @@ try:
         check("the real navigator reaches the point (truth within 0.5 m)", end and end["state"] == "reached" and math.dist(body.pose()[:2], (1.5, 0.5)) < 0.5,
               end and (end["state"], end["reason"], body.pose()))
         check("its decisions are relayed, with rules", end and len(end["decisions"]) > 0 and all(d.get("rule") for d in end["decisions"]), end and end["decisions"][:3])
+        if ARGS.profile:
+            kinds = sorted({a["anomaly"] for a in (end or {}).get("anomalies", [])})
+            live = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly" and e.get("goal_run") == run["id"]]
+            check("must fail: the navigator's anomalies (the test profile's body limits) are kept with the run and were on the event stream live, "
+                  "each with the Observatory's page at its moment", kinds and len(live) == len(end["anomalies"])
+                  and all(e["watch"].startswith("http://127.0.0.1:8070/watch/" + run["run_key"] + "#t=") for e in live), (kinds, len(live)))
         check("the lease is given back", wait_for(lambda: robot()["lock"]["holder"] is None, 10) is not None, robot()["lock"])
         key = run["run_key"]
         run_dir = data / "runs" / key

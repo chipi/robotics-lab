@@ -123,6 +123,10 @@ the simulator (seed 1, this navigator as `--payload`): challenges 1-11, 21 and 2
 run with its `body_watch` event and no anomaly of any kind; challenges 1-11 the same verdicts as
 item 2's batch (6 and 7 refused there too). Challenge 21 failed once by a hair (goal 9 said reached
 0.25 m from it); then 21 and 6 three times a side, alternating with main's navigator: 21 before 2
-of 3 (one stalled on goal 9), after 3 of 3; 6 before 0 of 3, after 2 of 3 (K40). **Not covered:** no
-run raised a body anomaly live, so the raise is proven by the unit tests only; the real duck's
-limits have not met a real run.
+of 3 (one stalled on goal 9), after 3 of 3; 6 before 0 of 3, after 2 of 3 (K40). Raised live
+(2026-11-23): Mission Control's `tests/sim_duck.py --only point --profile <a test profile>`, the
+simulator's limits lowered to fire on a walk (current 15 mA, tracking 0.2 rad), kept
+`joint_overload` and `joint_tracking` with the goal run. **Not covered:** the real duck's limits
+have not met a real run (no robot), and their hold times are proposed, not measured on hardware.
+A registration's profile reaches the navigator only when the installation names
+`robots.<name>.profile`; otherwise the navigator reads its own default profile.

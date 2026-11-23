@@ -38,6 +38,9 @@ SEEN = {"kind": "fridge", "x": 1.0, "y": 0.4, "radius": 0.4, "z0": 0.0, "z1": 1.
 SEMANTIC_ROWS = [{"event": "semantic", "t": 3.9, "changes": [["new", "cabinet_1"], ["confirmed", "fridge_1"]], "objects": [CABINET, FRIDGE]},
                  {"event": "sighting", "t": 3.9, "pose": [0.2, 0.0, 0.0], "hfov_deg": 60, "range_m": 3.0, "seen": [SEEN]},
                  {"event": "room", "t": 3.9, "room": "kitchen", "votes": {"kitchen": 0.4, "office": 0.1}}]
+ANOMALY_ROW = {"event": "anomaly", "t": 3.9, "anomaly": "joint_overload", "source": "robot", "module": "body", "severity": "major", "detector": "current_held",
+               "version": 1, "summary": "right_knee 400 mA for 1.0 s", "values": {"current_ma": 400, "margin_unit": "mA"}, "margin": 280,
+               "where": {"frame": "map", "belief": [0.29, 0.0]}, "evidence": {}, "related": [], "duration_s": 1.0}
 
 
 def write_rows(log: Path, rows: list) -> None:
@@ -156,6 +159,20 @@ with tempfile.TemporaryDirectory() as tmp:
         check("the room event went through the live path as an event with its room and votes",
               [(e["room"], e["votes"]) for e in get(base, f"/api/v1/runs/{KEY}")[1]["events"] if e["kind"] == "room"] == [("kitchen", {"kitchen": 0.4, "office": 0.1})])
 
+        # an anomaly arriving on the live stream (RFC-0019): the run had none when the pages opened it; the alarms lane and the layer gain it
+        check("before the anomaly the alarms lane is hidden on both pages",
+              all(q.evaluate("document.getElementById('alane').hidden && !document.querySelector('#alane .mk.al')") for q in pages.values()))
+        write_rows(log, [ANOMALY_ROW])
+        for lib, q in pages.items():
+            q.wait_for_function("document.querySelectorAll('#alane .mk.al').length === 1", timeout=15000)
+            q.wait_for_function("(window.miniview.internals.adapter.anomalies() || { pins: [] }).pins.length === 1", timeout=15000)
+            a = q.evaluate("window.miniview.internals.adapter.anomalies()")
+            check(f"{lib}: the anomaly that arrived live is one mark on the shown alarms lane and one pin at the belief, at its time",
+                  q.evaluate("!document.getElementById('alane').hidden && !document.getElementById('alabel').hidden") and a["visible"]
+                  and abs(a["pins"][0]["t"] - 3.9) < 0.01 and all(abs(u - v) < 1e-6 for u, v in zip(a["pins"][0]["belief"][:2], ANOMALY_ROW["where"]["belief"])), a)
+        check("the service keeps its record with the event",
+              [e["anomaly"]["anomaly"] for e in get(base, f"/api/v1/runs/{KEY}")[1]["events"] if e["kind"] == "anomaly"] == ["joint_overload"])
+
         # a change of time, by script, turns Follow live off; the run goes on growing, the playhead stays
         for lib, q in pages.items():
             q.evaluate("window.miniview.setTime(2.0)")
@@ -186,8 +203,8 @@ with tempfile.TemporaryDirectory() as tmp:
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
         wp.wait_for_function("document.getElementById('runinfo').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
-        check("the watch page shows the run end: the room event, the event and the verdict in the decisions, status ended",
-              wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["room", "trapped", "verdict"],
+        check("the watch page shows the run end: the room event, the anomaly, the event and the verdict in the decisions, status ended",
+              wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["room", "anomaly", "trapped", "verdict"],
               wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)"))
         for lib, q in pages.items():
             q.wait_for_function("window.miniview.internals.M.pres.t1 === window.miniview.internals.M.run.t1", timeout=20000)

@@ -183,8 +183,10 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      the navigator API) the navigator records a `guardrail_broken` anomaly, source `harness`,
      severity critical, naming the guardrail; its own guardrails (a time limit spent) are none. The
      Observatory reads `harness` beside `robot`. Proof: `tests/test_contract.py` on both navigators,
-     5 of 5 mutants killed, `make ci-fast` PASS; not covered: no live break on the simulator (no
-     challenge breaks the truth guard on purpose).
+     5 of 5 mutants killed, `make ci-fast` PASS. Live (2026-11-23): challenge 1 seed 1 under a test
+     installation whose profile puts `judge.fall_z_m` at 0.5 m (above the trunk) raised one
+     `guardrail_broken`, critical, source `harness` ("fall: trunk 0.116 m above its floor, below
+     0.5 m"). Not covered: no real challenge breaks the truth guard on purpose.
   3. **The live feed: done (2026-11-23).** The navigator contract is 1.1: the navigator API's
      `goal.status` takes `anomalies_since` and answers `anomalies` (numbered, with `t`); a 1.0
      navigator answers none. Mission Control relays each once, keeps it with the goal run (store
@@ -193,8 +195,11 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      minute's count and the worst), the list and an inspector (what, where, since when, by how
      much; STOP, the run, the Observatory at that moment). Proof: the contract, body and adapter
      tests and the page in Chromium at phone width, 5 of 5 mutants killed, `make ci-fast` PASS.
-     Not covered: no live run through Mission Control with this navigator (`make sim-duck` runs the
-     registered one). (Corrected in part 4: the Observatory's pages already seek to `#t=`.)
+     Live (2026-11-23): `tests/sim_duck.py --only point --profile <a test profile>` on the real
+     simulator: the goal run kept `joint_overload` and `joint_tracking`, and the event stream carried
+     9 `anomaly` events, each with its `#t=` link (`PASS sim_duck`). `--profile` seeds Mission
+     Control's profile store with a test profile; `make sim-duck` runs without it. (Corrected in
+     part 4: the Observatory's pages already seek to `#t=`.)
   4. **The Observatory's marks** (the operator, 2026-11-23: (a) now, (b) later).
      **(a) The tagged ones: done (2026-11-23).** A run's `anomaly` events keep the navigator's record
      (`runfile.store.anomaly_of`; `wire` keeps an anomaly event's `raw`); an `anomalies` stream;
@@ -203,9 +208,10 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      by the epoch in force, the truth's ring joined to it). `#t=` opening at a moment was already
      there; it is tested now. Proof: `libs/runfile/tests/test_store_anomaly.py`,
      `apps/observatory/tests/test_anomaly_pages.py` (three, deck, the watch page; 390 px; light),
-     7 of 7 mutants killed, `make ci-fast` and `make test-observatory-pages` PASS. Not covered: a
-     live run's pins (rebuilt on a live anomaly, untested); runs indexed before this lack the
-     `anomalies` stream until the index is rebuilt (the operator's go).
+     7 of 7 mutants killed, `make ci-fast` and `make test-observatory-pages` PASS. A live run's
+     pins: `apps/observatory/tests/test_live_page.py` writes an anomaly into a growing run while
+     both pages follow it; the lane's mark and the pin appear (`LIVE PAGE PASS`). The index was
+     rebuilt and the Observatory redeployed (2026-11-23, the operator's go; 219 scenes, 1629 runs).
      **(b) The analysis's found anomalies** on the same track: needs RFC-0019's derived index
      (later).
 
