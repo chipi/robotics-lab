@@ -2,6 +2,5 @@
   "id": "duck-sim",
   "label": "Simulated duck",
   "robot": "duck",
-  "variant": "sim",
   "adapter": {"type": "duck-sim"}
 }

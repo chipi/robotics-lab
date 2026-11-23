@@ -8,6 +8,7 @@ import atexit
 import tempfile
 from pathlib import Path
 
+import robotgate
 from robotgate import Gate, GateError, JsonlLog, load_names
 
 failures = []
@@ -225,7 +226,7 @@ for _ in range(3):
     gate.handle(a, "gate.release")
 check("the lease id grows with every lease", ids == [1, 2, 3], ids)
 check("an unknown gate method is refused", refusal(gate, a, "gate.nope").code == "unknown_method")
-check("the error shape carries the gate's code", GateError("held", "x", holder="y").to_rpc()["data"] == {"gate": "held", "holder": "y"})
+check("the error shape carries the gate's code", GateError("held", "x", holder="y").to_rpc()["data"] == {"gate": "held", "protocol": 1, "holder": "y"})
 
 # --- the log ---------------------------------------------------------------------------------
 gate, clock, robot, log = make()
@@ -245,6 +246,45 @@ stop = next(e for e in log if e["event"] == "stop")
 check("a STOP is logged with the connection's name", stop["client"] == "script", stop)
 taken = next(e for e in log if e["event"] == "taken_over")
 check("a takeover is logged: who, from whom", taken["by"] == "operator-laptop" and taken["client"] == "mission-control", taken)
+
+# --- the protocol's version (RFC-0018 §5.3): `protocol` in gate.who and in every gate reply, and how a client reads it ----------
+gate, clock, robot, log = make()
+a, b = gate.open("mission-control"), gate.open("operator-laptop")
+replies = {"gate.who (free)": gate.handle(a, "gate.who"), "gate.acquire": gate.handle(a, "gate.acquire"),
+           "gate.who (held)": gate.handle(b, "gate.who"), "gate.keepalive": gate.handle(a, "gate.keepalive"),
+           "gate.takeover": gate.handle(b, "gate.takeover"), "gate.release": gate.handle(b, "gate.release")}
+check("must fail: the gate has a protocol number, 1", getattr(robotgate, "PROTOCOL", None) == 1)
+check("must fail: every gate.* reply carries protocol: 1", all(r.get("protocol") == 1 for r in replies.values()),
+      {k: r.get("protocol") for k, r in replies.items()})
+check("must fail: Gate.who() carries it too (Mission Control reads it in process)", gate.who().get("protocol") == 1)
+err = refusal(gate, a, "gate.keepalive")
+check("must fail: a refusal carries it in its data", err is not None and err.to_rpc()["data"].get("protocol") == 1, err and err.to_rpc())
+check("a robot's own reply is the robot's, passed on as it is", gate.handle(a, "robot.state") == {"ok": True})
+
+
+def reading(reply):
+    try:
+        return robotgate.check_protocol(reply)
+    except Exception as exc:       # noqa: BLE001 - the check's answer
+        return exc
+
+
+check_protocol = getattr(robotgate, "check_protocol", None)
+if check_protocol is None:
+    check("must fail: a client reads a gate's protocol (robotgate.check_protocol)", False)
+else:
+    import contextlib
+    import io
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        got = [reading({"protocol": 1}), reading({"holder": None}), reading({"holder": None}), reading({"protocol": 0})]
+    check("a reply of this protocol is read as it says, a missing number as 0", got == [1, 0, 0, 0], got)
+    check("a missing number is accepted with one warning only, naming the protocol", err.getvalue().count("protocol") >= 1
+          and err.getvalue().count("\n") == 1, err.getvalue())
+    newer = reading({"protocol": 2})
+    check("must fail: a newer protocol is refused, both numbers said", isinstance(newer, robotgate.ProtocolError)
+          and "2" in str(newer) and "1" in str(newer), newer)
+    check("a protocol that is no number is refused", isinstance(reading({"protocol": "one"}), robotgate.ProtocolError))
 
 tmp = Path(tempfile.mkdtemp())
 atexit.register(shutil.rmtree, tmp, True)

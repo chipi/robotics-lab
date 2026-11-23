@@ -131,6 +131,12 @@ deadman has to see silence when the holder goes silent. The gate adds a few meth
 `gate.acquire`, `gate.release`, `gate.who`, `gate.takeover`. Reading (state, map, the stream) and
 STOP pass without a lease.
 
+**The protocol's number** (RFC-0018 §5.3, phase 5): `protocol: 1` is in `gate.who`, in every other
+`gate.*` reply, in a refusal's `data` and in the answer to `hello`; the robot's own replies are
+the robot's and carry none. A client reads it at its `hello` (`robotgate.check_protocol`): a
+missing number is 0, accepted with one warning; a newer number is refused, both numbers said. A
+change that adds a field keeps the number; one that changes or removes meaning raises it.
+
 ### 3.2 Where the gate lives, per robot
 
 | Robot | The gate | What it is, and is not |

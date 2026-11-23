@@ -100,6 +100,13 @@ def judge_scene(scene: str, path: Path | None = None) -> dict | None:
     return scenefile.describe(path) if path.exists() else None
 
 
+def judge_truth(host, unenforced=()) -> dict:
+    """What a run records about the truth it was judged by, beside judge_profile and judge_scene: whether the host had any (its
+    truth_port), why not, and the truth guardrails the goal asked for that no one checked."""
+    has = host.truth_port is not None
+    return {"available": has, "reason": None if has else f"truth_port is null in {host.source}", "unenforced": list(unenforced)}
+
+
 class _Loc:
     def __init__(self, remote: "Remote"):
         self.remote = remote
@@ -126,7 +133,8 @@ class Remote:
         # refuses the run here): the file the referee judges by (labrunner.geometry) is the file handed to the navigator, so both
         # read one version, and the official run records it as judge_profile; only the robot's own navigator takes --profile
         profile = robots.given_profile() if payload is None else None
-        run = {**(run or {}), "judge_profile": describe(robots.profile_file()), "judge_scene": judge_scene(scene, scene_file)}
+        run = {**(run or {}), "judge_profile": describe(robots.profile_file()), "judge_scene": judge_scene(scene, scene_file),
+               "judge_truth": judge_truth(host)}
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"

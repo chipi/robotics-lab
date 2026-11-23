@@ -77,7 +77,7 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 # need a robot (its simulator files, its profile) stay in the duck's.
 LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               runfile:tests/test_profilestore.py runfile:tests/test_observatory_paths.py gate:tests/test_gate.py runner:tests/test_gate_proxy.py \
-              runner:tests/test_profile_source.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py
+              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py
 libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
 	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
 

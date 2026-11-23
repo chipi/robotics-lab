@@ -6,6 +6,8 @@ import socket
 import threading
 from pathlib import Path
 
+from robotgate import ProtocolError, check_protocol
+
 GATE_LEASE_CODES = ("lease_ended", "held", "no_lease")
 
 
@@ -31,7 +33,11 @@ class Rpc:
         self._id = 0
         self._lock = threading.Lock()
         if client:
-            self.call("hello", {"client": client})
+            try:
+                check_protocol(self.call("hello", {"client": client}))
+            except ProtocolError:
+                self.close()
+                raise
 
     def call(self, method: str, params: dict | None = None) -> dict:
         with self._lock:

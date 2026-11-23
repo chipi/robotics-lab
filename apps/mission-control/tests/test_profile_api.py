@@ -33,7 +33,7 @@ inst = tmp / "installation.json"
 
 
 def write_installation(profile):
-    installation_file(inst, {"duck": {"profile": str(profile)}} if profile else {}, state=str(STATE))
+    installation_file(inst, {"duck": {"variant": "sim", **({"profile": str(profile)} if profile else {})}}, state=str(STATE))
 
 
 write_installation(None)

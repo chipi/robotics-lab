@@ -115,10 +115,11 @@ def module(name: str, inst=False):
     return found[0].load()
 
 
-def profile_source(name: str, inst=False) -> Path | None:
+def profile_source(name: str, inst=False) -> Path:
     """The profile this machine runs the robot on: the installation's `robots.<name>.profile` (a version's file, or the version
-    store's folder for the robot: its current version, read again at the start of every run), or None when the installation names
-    none (the robot's own file then, recorded as source: repository).
+    store's folder for the robot: its current version, read again at the start of every run), or when the installation names none
+    the robot's own (its registration's `profile`). Always a path, so a runner always hands its navigator `--profile`: the navigator
+    reads the file its referee reads, never a default of its own that may part from it. LookupError when the robot is not registered.
 
     A named profile that does not exist, or a store that cannot say its current version, raises ProfileSourceError: no silent
     fallback to the robot's own file, which would run other numbers than the operator chose while the run says nothing wrong.
@@ -127,7 +128,7 @@ def profile_source(name: str, inst=False) -> Path | None:
     inst = _inst(inst)
     r = inst.robot(name) if inst is not None else None
     if r is None or r.profile is None:
-        return None
+        return Path(module(name, inst).PROFILE)
     p = r.profile
     where = f"{inst.source}: robots.{name}.profile"
     if p.is_dir():
@@ -143,9 +144,17 @@ def profile_source(name: str, inst=False) -> Path | None:
     return p
 
 
+def variant(name: str, default: str, inst=False) -> str:
+    """The profile variant this machine runs the robot in, from the one place it is named: the installation's
+    `robots.<name>.variant`, else `default` (the reader knows its own: the runner, whether its host has a truth; Mission
+    Control, its adapter)."""
+    inst = _inst(inst)
+    r = inst.robot(name) if inst is not None else None
+    return r.variant if r is not None and r.variant is not None else default
+
+
 def profile_file(name: str, inst=False) -> Path:
     """The one profile file the robot runs now: the installation's (a store folder's current version), else the robot's own."""
     from runfile.profilestore import resolve
     inst = _inst(inst)
-    src = profile_source(name, inst)
-    return resolve(src) if src is not None else Path(module(name, inst).PROFILE)
+    return resolve(profile_source(name, inst))

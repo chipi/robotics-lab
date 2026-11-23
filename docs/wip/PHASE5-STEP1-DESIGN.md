@@ -87,7 +87,9 @@ What changes, and why:
    `current` under the installation's `state` folder; Mission Control writes, the runner reads. No
    silent fallback: a robot whose installation entry names a profile that does not exist is refused
    (the design's "else the repository's file" would run version 1 while the run claimed otherwise).
-   With no entry at all, the repository's file, recorded as `source: repository`.
+   With no entry at all, the robot's own file (its registration's `profile`), which the runner now
+   hands its navigator as `--profile` too, so the run records `source: given` and the navigator and
+   the referee read one file (phase 5, "Before step 6", part 4).
 3. **The run carries the whole merged profile** (about 12 KB), with `version`, `checksum` and
    `source`: the replay and the Observatory's "the robot as it was" read the run, not today's file.
 4. **The checksum is the identity across machines; the version number is a local label.** Import

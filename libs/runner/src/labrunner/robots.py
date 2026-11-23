@@ -65,6 +65,12 @@ def gate_socket(host, name: str | None = None) -> Path:
     return r.gate if r is not None and r.gate is not None else Path(host.sockets["gate"])
 
 
+def variant(host, name: str | None = None) -> str:
+    """The profile variant this machine runs the robot in, for its navigator and its referee alike: the installation's
+    `robots.<name>.variant`, else `sim` on a host with a truth and `real`, the base profile, on one with none."""
+    return registry.variant(get(name).NAME, "sim" if host.truth_port is not None else "real")
+
+
 def _resolve(name: str | None) -> tuple:
     """(the installation's source or None, the file) for a robot, resolved once in this process."""
     name = get(name).NAME
@@ -80,11 +86,10 @@ def profile_file(name: str | None = None) -> Path:
     return _resolve(name)[1]
 
 
-def given_profile(name: str | None = None) -> Path | None:
-    """The file to hand the robot's navigator as --profile: profile_file when the installation names one, None for the robot's own
-    (the navigator then records source: repository)."""
-    src, path = _resolve(name)
-    return path if src is not None else None
+def given_profile(name: str | None = None) -> Path:
+    """The file to hand the robot's navigator as --profile: profile_file, the installation's or the registration's, so the navigator
+    never reads a default of its own that may part from the referee's."""
+    return _resolve(name)[1]
 
 
 def read_profile(path, variant: str | None = "sim"):

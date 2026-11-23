@@ -210,7 +210,7 @@ check("the robot file's capabilities and factsheet were the profile's (its adapt
       SIM.capabilities.data == WAS_ROBOT_FILE["capabilities"]
       and SIM.factsheet.data == WAS_ROBOT_FILE["factsheet"])
 check("and Mission Control's robot file now points at this profile, repeating none of it (one copy of the robot)",
-      ROBOT_FILE.get("robot") == "duck" and ROBOT_FILE.get("variant") == "sim"
+      ROBOT_FILE.get("robot") == "duck" and "variant" not in ROBOT_FILE
       and not {"kind", "factsheet", "control", "capabilities", "guardrails", "rates"} & set(ROBOT_FILE), ROBOT_FILE)
 
 # measured and why, kept verbatim from the calibration file

@@ -15,7 +15,7 @@ import time
 import urllib.error
 import urllib.request
 
-from robotgate import GateError
+from robotgate import PROTOCOL, GateError
 
 from .errors import ApiError
 
@@ -131,7 +131,7 @@ class NxtGate:
         try:
             who = self.link.via(lambda m, p: self._http("GET", "/api/lock"), "gate.who", {})
         except OSError as exc:
-            return {"holder": None, "lease_id": None, "unreachable": str(exc)}
+            return {"protocol": PROTOCOL, "holder": None, "lease_id": None, "unreachable": str(exc)}
         for conn in list(self._conns.values()):
             if conn.session is not None and (who.get("holder") is None or who.get("lease_id") != conn.lease_id):
                 session, conn.session = conn.session, None
@@ -144,7 +144,7 @@ class NxtGate:
                     reason = "lost"
                 if conn.notify:
                     conn.notify("lease_lost", {"reason": reason})
-        return who
+        return {"protocol": PROTOCOL, **who}
 
 
 class NxtAdapter:

@@ -45,9 +45,25 @@ profile = {"profile_version": 1, "id": "rover", "label": "Rover", "kind": "rover
 own = tmp / "own.json"
 own.write_text(json.dumps(profile))
 
-check("no installation file: the robot's own profile (no --profile)", profile_source("rover", None) is None)
-check("the robot not in the installation: its own profile", profile_source("rover", inst({})) is None)
-check("in it with no profile named: its own profile", profile_source("rover", inst({"rover": {"navigator": "127.0.0.1:8061"}})) is None)
+reg = tmp / "registration.json"
+reg.write_text(json.dumps({"registration": 1, "name": "rover", "profile": "own.json", "payload": ["rover-payload"],
+                           "navigator_api": ["rover-nav"]}))
+
+
+def source(i):
+    try:
+        return profile_source("rover", i)
+    except LookupError as e:
+        return e
+
+
+check("must fail: no installation file and no robot registered: no robot, no profile (said, not None)", isinstance(source(None), LookupError), source(None))
+check("must fail: the installation names no profile for a registered robot: the registration's own, which is handed on "
+      "as --profile", source(inst({"rover": {"registration": str(reg)}})) == own, source(inst({"rover": {"registration": str(reg)}})))
+named = tmp / "named.json"
+named.write_text(own.read_text())
+check("the installation names a profile and a registration: the named profile wins",
+      source(inst({"rover": {"registration": str(reg), "profile": str(named)}})) == named)
 check("a version's file named: that file", profile_source("rover", inst({"rover": {"profile": str(own)}})) == own)
 
 store = Store(tmp / "state" / "profiles")
@@ -161,7 +177,8 @@ try:
           and "ROBOTICS_LAB_HOST" not in env and "PATH" in env, sorted(k for k in env if k.startswith("ROBOTICS")))
     apartment = scenefile.describe(scenefile.REPOSITORY / "apartment" / "scene.json")
     check("the official run records the referee's profile and the scene file it judges in beside the runner's own fields",
-          seen.get("run") == {"kind": "go-to", "judge_profile": judged.meta, "judge_scene": apartment}, seen.get("run"))
+          seen.get("run") == {"kind": "go-to", "judge_profile": judged.meta, "judge_scene": apartment,
+                                       "judge_truth": {"available": True, "reason": None, "unenforced": []}}, seen.get("run"))
 
     # lab-nav-server runs many goals: it reads the profile again at each goal.start
     goals, calls = [], []
@@ -179,6 +196,7 @@ try:
     real_watch, navapi.GoalWatch = navapi.GoalWatch, Watch
     runner = navapi.NavRunner.__new__(navapi.NavRunner)
     runner.goal, runner.goals, runner.route, runner.robot_name = None, 0, {"checks": 0, "max": None}, "rover"
+    runner.variant, runner.has_truth = "sim", True
     answer = {"checksum": sum1, "version": 1}
 
     def api(method, params=None):
@@ -213,6 +231,43 @@ finally:
     robots.get = real_get
     robots._resolved.clear()
     os.environ.pop(installation.ENV, None)
+
+check("judge_truth of a host with no truth says so, naming the host file, with the unenforced listed",
+      remote.judge_truth(types.SimpleNamespace(truth_port=None, source=Path("host.json")), ["fall"])
+      == {"available": False, "reason": "truth_port is null in host.json", "unenforced": ["fall"]}
+      and remote.judge_truth(host) == {"available": True, "reason": None, "unenforced": []})
+
+# a registration with a profile and an installation without one: the navigator is handed the registration's profile, the referee reads it
+reg_inst = tmp / "installation-registered.json"
+reg_inst.write_text(json.dumps({"installation": 1, "robots": {"rover": {"registration": str(reg)}}}))
+os.environ[installation.ENV] = str(reg_inst)
+robots.get = lambda name=None: fake
+robots._resolved.clear()
+seen = {}
+
+
+def popen_reg(cmd, **kw):
+    seen["cmd"] = cmd
+    raise Started()
+
+
+real_popen, remote.subprocess.Popen, real_copy, remote.TruthCopy = remote.subprocess.Popen, popen_reg, remote.TruthCopy, copy
+(tmp / "run3").mkdir()
+tempfile.tempdir = str(tmp)
+try:
+    try:
+        remote.Remote(host, tmp / "run3", "apartment", "r3", tmp / "data", "rover/apartment/r3", truth_log=types.SimpleNamespace(nearest=None))
+    except Started:
+        pass
+finally:
+    remote.subprocess.Popen, remote.TruthCopy = real_popen, real_copy
+    tempfile.tempdir = None
+    robots.get = real_get
+    robots._resolved.clear()
+    os.environ.pop(installation.ENV, None)
+cmd = seen.get("cmd") or []
+check("must fail: a course's navigator is handed the registration's profile when the installation names none",
+      "--profile" in cmd and cmd[cmd.index("--profile") + 1] == str(own), cmd)
 
 # the gate's socket has one source (the second review's finding 5): the installation's, where Mission Control reads it, else the host's
 robots.get = lambda name=None: fake

@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.1.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.2.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -8,7 +8,8 @@ the same checks against both.
 
 Newline-framed JSON-RPC 2.0, one request per line, on a unix socket (or TCP on loopback for the
 navigator API). The navigator never reads the simulator's truth or this machine's installation file:
-it is given the robot's sockets, a folder for its own run, and its profile version.
+it is given the robot's sockets (the camera's only when its runner has a truth), a folder for its
+own run, its profile version (`--profile`, always) and its profile variant (`--variant`).
 
 ## Methods
 
@@ -74,6 +75,14 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.2
+
+`goal.start` takes `not_enforced`, a list of guardrail names its runner could not check (a runner on
+a host with no truth cannot check `contact`, `fall`, `drop_clearance` or `no_go_area`). The navigator
+records one anomaly of the harness for each, `guardrail_unenforced` (severity `minor`, the name in
+`values.guardrail`), at the goal's start. A 1.1 navigator ignores the field and raises none; a runner
+speaking 1.2 to a 1.1 navigator works as before, without the alarm.
 
 ## 1.1
 

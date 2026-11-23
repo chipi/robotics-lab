@@ -222,6 +222,112 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
   Control always goes through it.
 - **The gate protocol's version**, with step 4's "who holds the robot" on the robot page.
 
+**Decided (the operator, 2026-11-23):**
+
+- **The truth signal** is the host file's `truth_port: null`, as it already is for the sampler
+  and the camera. There is no second flag.
+- **The variant** comes from the installation: `robots.<name>.variant`. The default is `sim` when
+  the host has truth and the base (real) profile when it has none. The judge and the navigator are
+  given the same variant: `navapi.py`'s hard-coded `"sim"` goes, and `--variant` is passed.
+- **The truth guardrails** (`contact`, `fall`, `drop_clearance`, `no_go_area`) on a truth-less
+  host: the goal runs; the run records them as `not_enforced`; one harness `warning` anomaly per
+  guardrail is raised at goal start.
+- **Who holds the robot:** the gate protocol's version (`protocol: 1` in every gate reply; a
+  missing number is read as 0 and accepted), plus a minimal holder line from `gate.who` on
+  Mission Control's robot view. The rest of the robot page stays for RFC-0023 step 4.
+- **The profile finding is fixed here.** Today the runner passes `--profile` only when the
+  installation names one, so the navigator reads its own default while the judge reads the
+  registration's. Fix: `profile_source` falls back to the registration's profile. Fix
+  `remote.py` the same way. A failing test comes first.
+
+**Done (2026-11-23), all seven parts.** The navigator contract is now 1.2: `goal.start` takes
+`not_enforced`, and the navigator raises `guardrail_unenforced` (harness, minor). There is one
+variant source, the installation's; a Mission Control robot file naming a different one is
+refused. The gate protocol is 1: `protocol` is in every gate reply, a missing number is read as 0
+with a warning, and a newer one is refused. Mission Control's robot card has the holder line.
+
+Proof:
+
+- `make ci-fast` PASS; `make test-control-page` PASS; 29 of 29 mutants killed.
+- Live on the simulator, `tests/sim_duck.py --only point,profile,drop`: `PASS sim_duck`.
+- `tests/sim_duck.py --no-truth` (the runner given the host file with `truth_port: null`):
+  `PASS sim_duck`. A goal asking `drop_clearance 3.0`, `contact` and `fall` ran and was reached.
+  Three `guardrail_unenforced` alarms arrived live. `judge_truth` reads "not available" in the
+  runner's record and the Observatory's. No camera was served, and none of the 187 ticks was
+  paired.
+
+Not covered:
+
+- No real robot.
+- With no variant named, the runner's default follows the host's truth while Mission Control's
+  follows the adapter type. The installation must name the variant when the two would differ.
+
+**Parts, in order:**
+
+1. `lab-nav-server` starts without truth. On a truth-less host there is no camera server and no
+   `--camera`, no sampler, no `TruthLog`, no `TruthGuard` and no `truth_connections`. The official
+   copy is made unpaired.
+2. The unenforced guardrails, recorded and warned.
+3. The run record's `judge_truth`.
+4. The profile fallback.
+5. The variant.
+6. The gate protocol's version.
+7. The holder line.
+
+This replaces the earlier rule in `navapi.py` that "Mission Control talks to the navigator API
+itself" on a truth-less host: Mission Control always goes through `lab-nav-server`.
+
+**After item 4 and before 4a (the operator, 2026-11-23): a review by the advisor (Fable 5.1).**
+It covers where phase 5 stands, and whether items 4a and 4b are planned well: their scope, order,
+gaps and risks. Its findings go to the operator before 4a starts.
+
+### 4a. RFC-0023 steps 4 and 5, before telemetry
+
+**The operator, 2026-11-23:** these are built before telemetry. This plan had left them out; the
+RFC's §7.1 order was "steps 2 and 3 side by side; then 4, 5".
+
+- **Step 4: Mission Control's robot page.** Its sections: Overview, Parts (including who holds
+  the robot), Modules, Settings, Calibration, and Body.
+- **Step 5: the realistic body.** The duck's own meshes, coloured by each joint's worst state. It
+  appears on the watch page and live in Mission Control.
+
+### 4b. Ready for the real duck (the first goal), before telemetry
+
+**The operator, 2026-11-23:** the first goal is to work with the real duck when it arrives.
+**Initial scope (the operator, 2026-11-23):**
+
+1. **The real duck's adapter, deadman and safety review** (RFC-0014 step 8).
+2. **The real duck's gate** (RFC-0017 §3.8). It runs on the computer that runs the navigator,
+   not on the duck (RFC-0017:139). It includes the watch for the duck's other doors:
+   `move.source` and `autonomous`, and `someone_else_drives`. (Corrected 2026-11-23: an earlier
+   version said "on the duck's own computer", which the RFC does not say.)
+3. **Relocalisation at a real site from landmarks** (RFC-0014 step 10, the relocalisation half).
+   Without the simulator's truth, the duck's position comes only from what it sees.
+4. **A real camera recogniser** in the robot's capabilities (RFC-0014 step 11). Without it, every
+   object goal is refused as `no_camera`.
+5. **Calibration probes as step guides** run by the runner (RFC-0023 step 4's Calibration
+   section). These measure the real duck's limits, whose hold times are only proposed today.
+
+**Added after the sweep (the operator, 2026-11-23, all seven):**
+
+1. **Robot-side guardrails**, which replace the truth-only ones. A fall comes from the IMU's tilt;
+   contact from mapd's `bumped` and `carried`; a drop from the cliff checks. They are enforced,
+   not just recorded.
+2. **Stopping on its own health.** The navigator stops the duck on `motor_hot`, low battery, an
+   unhealthy verdict, or a stale state or depth stream.
+3. **Link tooling.** It opens and checks the ssh-forwarded sockets and reconnects with back-off. A
+   test covers a dead tunnel.
+4. **A start pose in a real room**, set and checked without truth.
+5. **A simulator-first flag:** a goal is rehearsed in the simulator before the real duck runs it
+    (RFC-0014 step 5).
+6. **mapd's CPU cost on the board and a score sheet comparing simulator and real** (RFC-0002).
+    These need the robot; the tooling comes first.
+7. **The depth sensor's model** (K34): radial or axial. It is measured on the robot first
+    (REAL-DUCK.md §2); the tooling comes first.
+
+The sweep's table, with its evidence, is in
+[the real duck's readiness](PHASE5-REAL-DUCK-READINESS.md).
+
 ### 5. Step 6 (telemetry): needs the operator before it starts
 
 **Approved (the operator, 2026-11-22):** the new dependencies (`opentelemetry-sdk`,
@@ -230,6 +336,25 @@ the homelab session for the robotics-lab Grafana folder's token and the tailnet 
 
 Step 7 (retention) when convenient. **Decided:** N is configurable, `runs.archive_after_days` in the
 installation file, default 30 days; official runs are always kept.
+
+### 6. Next integration goal: a second robot and a second simulator
+
+**The operator, 2026-11-23:** after the planned work (steps 6 and 7), the next robot is a
+TurtleBot3 Burger (ROS 2), with Gazebo Sim as a second simulator engine beside MuJoCo, and the
+two must be fully compatible with what is here. Until then, every change is weighed against it.
+
+The exercise comes first: a **stub** TurtleBot3 (a registration, a profile, a payload and
+navigator that speak the contracts) and a **stub** Gazebo engine (a host serving the same
+sockets: depth, map, camera, truth). Neither does real work. The stubs prove that the seams hold:
+the registration, the profile schema, the navigator contract, the gate, the host file, the
+Observatory's data, and Mission Control.
+
+Known couplings to the duck and MuJoCo that the exercise must face:
+
+- `geometry.layout_path` and `SimCamera` read the duck's MuJoCo layout.
+- `robots.sim_dir()`.
+- The profile's `joints` block (a wheeled robot has two wheels, not legs).
+- `ROBOT_KINDS` in the Observatory.
 
 ## Decision: where a scene lives
 

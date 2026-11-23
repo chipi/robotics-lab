@@ -44,8 +44,14 @@ ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, t
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 ap.add_argument("--profile", type=Path, help="seed the version store with this profile instead of the duck's own: a test profile whose body "
                 "limits fire on a walk proves the alarm feed live (the point scenario then checks it)")
+ap.add_argument("--no-truth", action="store_true", help="the runner is given this host's file with truth_port null, as a real robot's: "
+                "only the notruth scenario runs (phase 5 item 4); this test still reads the simulator's truth itself, to judge")
 ARGS = ap.parse_args()
 only = set(ARGS.only.split(",")) if ARGS.only else None
+if ARGS.no_truth:
+    only = {"notruth"}
+elif only is not None and "notruth" in only:
+    raise SystemExit("the notruth scenario runs with --no-truth")
 
 
 def wanted(name):
@@ -95,12 +101,20 @@ def fresh_sim():
 from runfile.profilestore import Store  # noqa: E402
 STORE = tmp / "inst-state" / "profiles"
 Store(STORE).seed("duck", ARGS.profile or REPO / "robots" / "duck" / "profile.json")
-os.environ["ROBOTICS_LAB_INSTALLATION"] = str(installation_file(tmp / "installation.json", {"duck": {"profile": str(STORE / "duck")}},
+# --no-truth: the duck is still the simulated one, so the installation names its variant (sim): the runner's default without a truth
+# is real, Mission Control's for the duck-sim adapter is sim, and only the installation makes them one
+os.environ["ROBOTICS_LAB_INSTALLATION"] = str(installation_file(tmp / "installation.json", {"duck": {"profile": str(STORE / "duck"),
+                                                                **({"variant": "sim"} if ARGS.no_truth else {})}},
                                                                 state=str(tmp / "inst-state")))
+HOST_ARGS = []
+if ARGS.no_truth:
+    raw_host = json.loads(Path(HOST.source).read_text())
+    (tmp / "host-notruth.json").write_text(json.dumps({**raw_host, "truth_port": None}))
+    HOST_ARGS = ["--host", str(tmp / "host-notruth.json")]
 clean = [True]
 fresh_sim()
 navlog = open(tmp / "nav-server.log", "w")
-nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
+nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", *HOST_ARGS, "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
                              "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
 wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
@@ -395,6 +409,30 @@ try:
         check("with 0.1 m, no contact, no fall, no stuck the same robot reaches its point: the guardrails do not stop a good run",
               end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
 
+    if wanted("notruth"):
+        print("\n--- no truth (phase 5 item 4): the runner as on a real robot", flush=True)
+        asked = [{"name": "drop_clearance", "m": 3.0}, "contact", "fall"]
+        run = start({"kind": "point", "params": {"x": 0.5, "y": 0.0}, "must_not": asked})
+        end = finished(run["id"], 180)
+        check("must fail: with a truth, drop_clearance 3.0 breaks at once by the dock (the drop scenario); without one the goal runs, "
+              "nothing is broken", end and end["state"] != "stopped_by_guardrail" and end["broken"] is None,
+              end and (end["state"], end["reason"], end["broken"]))
+        unenf = [a for a in (end or {}).get("anomalies", []) if a.get("anomaly") == "guardrail_unenforced"]
+        live = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly" and e.get("goal_run") == run["id"]]
+        check("must fail: one guardrail_unenforced alarm per truth guardrail asked, from the harness, kept with the run and live on "
+              "the event stream", sorted((a.get("values") or {}).get("guardrail") for a in unenf) == ["contact", "drop_clearance", "fall"]
+              and all(a.get("source") == "harness" for a in unenf) and len(live) >= 3, (unenf, len(live)))
+        rj = runner_json(run)
+        check("must fail: lab-nav-server's record: not enforced, in the order asked, no truth sampled, judge_truth not available",
+              rj.get("not_enforced") == ["drop_clearance", "contact", "fall"] and rj.get("truth_samples") == 0
+              and (rj.get("judge_truth") or {}).get("available") is False, {k: rj.get(k) for k in ("not_enforced", "truth_samples", "judge_truth")})
+        from runfile import mcapio
+        rec = next((p for _, kind, p in mcapio.read(data / "runs" / run["run_key"]) if kind == "run"), None) if end else None
+        check("the Observatory run's record says the truth it was judged by: none, and what was not enforced",
+              rec is not None and (rec.get("judge_truth") or {}).get("unenforced") == ["drop_clearance", "contact", "fall"],
+              rec and rec.get("judge_truth"))
+        check("the runner served no camera", "camera none" in (tmp / "nav-server.log").read_text())
+
     # --- the split (RFC-0021 step 6): the navigator behind its runner, with no route to the truth ---------------------
     print("\n--- the split", flush=True)
     time.sleep(1.0)                  # the runner's watch finishes the last goal's copy within a poll
@@ -407,11 +445,15 @@ try:
     last = st["last_goal"] or {}
     route = {"checks": st["truth_connections"]["checks"] + last.get("truth_connections", {}).get("checks", 0),
              "max": max(v for v in (st["truth_connections"]["max"], last.get("truth_connections", {}).get("max"), 0) if v is not None)}
-    check("the navigator API's process held no connection to the truth's port, looked at while each goal ran",
-          route["checks"] > 0 and route["max"] == 0, (st["goals"], route))
     copy = last.get("truth_copy") or {}
-    check("the last goal's official run is the runner's copy with the truth put in: every tick paired",
-          copy.get("ticks", 0) > 0 and copy.get("paired") == copy.get("ticks"), copy)
+    if ARGS.no_truth:
+        check("without a truth the runner looked for no route to it, and the official run pairs no tick",
+              route["checks"] == 0 and copy.get("ticks", 0) > 0 and copy.get("paired") == 0, (route, copy))
+    else:
+        check("the navigator API's process held no connection to the truth's port, looked at while each goal ran",
+              route["checks"] > 0 and route["max"] == 0, (st["goals"], route))
+        check("the last goal's official run is the runner's copy with the truth put in: every tick paired",
+              copy.get("ticks", 0) > 0 and copy.get("paired") == copy.get("ticks"), copy)
     key = last.get("key")
     check("that run is in the Observatory's data folder under the key goal.start answered with",
           bool(key) and (data / "runs" / key).is_dir(), key)

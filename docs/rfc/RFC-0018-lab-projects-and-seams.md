@@ -151,9 +151,9 @@ Four contracts hold it together. Nothing else may cross a project line.
   its own number and the ones before it, and refuses a newer one with a clear message.
 - The run format already has a number ("format 2", ADR-0007). Whether the file carries it in a
   way a reader can check is not checked here.
-- The gate protocol gets a number the day RFC-0017 is built, not before. (RFC-0017 is built; the
-  number is still to be given: phase 5, with the robot page's "who holds the robot", the
-  architecture review of 2026-11-22.)
+- The gate protocol has a number, `protocol: 1` (phase 5, 2026-11-23): in `gate.who`, in every
+  other `gate.*` reply, in a refusal's data and in `hello`'s answer (RFC-0017 §3.1). A client
+  reads it at its `hello`: missing is 0, accepted with one warning; newer is refused.
 - A project names the contract versions it speaks in its README.
 
 ### 5.4 CI, docs, images

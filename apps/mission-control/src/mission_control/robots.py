@@ -14,12 +14,14 @@ and our own snake_case blocks beside it:
      "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
      "online_after_s": 2.0, "teams": ["pair"]}
 
-A robot with a profile (RFC-0020, phase 5 step 1) has a robot file that points at it instead: its registered name, the
-environment, the adapter; its kind, factsheet, control, capabilities, guardrails and rates are the profile's, from the version
+A robot with a profile (RFC-0020, phase 5 step 1) has a robot file that points at it instead: its registered name and the
+adapter; its kind, factsheet, control, capabilities, guardrails and rates are the profile's, from the version
 this machine runs (runfile.registry: the installation's, else the robot's own file), and the file may not repeat them:
 
-    {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}
-"""
+    {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "adapter": {"type": "duck-sim"}}
+
+The environment (the profile's variant, sim or real) is not the file's: it is the installation's `robots.<robot>.variant`, else sim for
+the duck-sim adapter and real for any other. A file that still names one is refused when it differs."""
 
 import json
 import re
@@ -80,12 +82,21 @@ class RobotConfig:
         if extra:
             hint = "".join(f"; {k} moved to {MOVED[k]}" for k in sorted(extra) if k in MOVED)
             raise ConfigError(f"unknown fields {sorted(extra)}{hint}")
-        self.robot, self.variant, self.profile = raw.get("robot"), raw.get("variant", "real"), None
+        self.robot, self.variant, self.profile = raw.get("robot"), "real", None
         if "variant" in raw and self.robot is None:
             raise ConfigError(f"{raw.get('id')}: variant is the environment of the robot's profile: it needs robot")
         if self.robot is not None:
-            if not isinstance(self.robot, str) or not isinstance(self.variant, str):
+            named = raw.get("variant")
+            if not isinstance(self.robot, str) or not (named is None or isinstance(named, str)):
                 raise ConfigError(f"{raw.get('id')}: robot is a registered robot's name and variant an environment, both strings")
+            # one source: the installation's, else the adapter's default (the duck-sim adapter runs on a host with a truth). Mission
+            # Control does not read the host file, so it cannot ask the host as the runner does
+            adapter = raw.get("adapter")
+            self.variant = registry.variant(self.robot, "sim" if isinstance(adapter, dict) and adapter.get("type") == "duck-sim" else "real")
+            if named is not None and named != self.variant:
+                raise ConfigError(f"{raw.get('id')}: the robot file names variant {named!r}, but this machine runs robot {self.robot!r} "
+                                  f"in {self.variant!r} (the installation's robots.{self.robot}.variant, else the adapter's default): "
+                                  f"name it there, and remove it from the robot file")
             repeated = [k for k in FROM_PROFILE if k in raw]
             if repeated:
                 raise ConfigError(f"{raw.get('id')}: {', '.join(repeated)} come from the profile of robot {self.robot!r}: "

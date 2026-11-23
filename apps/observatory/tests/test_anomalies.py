@@ -285,7 +285,7 @@ harness = {**robot_event("guardrail_broken", "critical", duration=0.0, margin=No
 h = [a for a in A.analyse(make(still(10, [1.0, 1.0, 0.0]), events=[(2.0, "anomaly", harness)]), None)["anomalies"] if a["anomaly"] == "guardrail_broken"]
 check("must fail: the harness's (the runner's truth guard, recorded by the navigator) is read too, keeping its source",
       [(a["source"], a["severity"], a["module"]) for a in h] == [("harness", "critical", "runner")], h)
-check("the robot's kinds are the RFC's vocabulary, each named once", len(set(A.ROBOT_KINDS)) == len(A.ROBOT_KINDS) == 19 and "fix_jump_held" in A.ROBOT_KINDS)
+check("the robot's kinds are the RFC's vocabulary, each named once", len(set(A.ROBOT_KINDS)) == len(A.ROBOT_KINDS) == 20 and "guardrail_unenforced" in A.ROBOT_KINDS)
 
 
 # ---- fixtures: slices of real recordings -----------------------------------------------------------------------------

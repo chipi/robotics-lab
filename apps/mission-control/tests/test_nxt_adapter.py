@@ -98,6 +98,9 @@ try:
           and "pose" not in robot()["status"], robot()["status"])
     check("the robot file says what it is: no navigator, no map, drive only", "physicalParameters" not in r["factsheet"] and r["factsheet"]["typeSpecification"]["mobileRobotKinematics"] == "DIFFERENTIAL" and "navigator" not in r["capabilities"])
 
+    check("must fail: the lock says the gate protocol it speaks, as the duck's gate does (nxt-web's own lock has none)",
+          robot()["lock"].get("protocol") == 1, robot()["lock"])
+
     # the lock is nxt-web's
     st, b = call("POST", "/robots/nxt-1/lock", {"client": "page"})
     sess = b["lock"]["session"]

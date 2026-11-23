@@ -22,7 +22,7 @@ import threading
 import time
 from pathlib import Path
 
-from robotgate import GateError
+from robotgate import GateError, ProtocolError, check_protocol
 from runfile import installation
 from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 
@@ -63,7 +63,12 @@ class _Wire:
         self._id = 0
         self.alive = True
         threading.Thread(target=self._read, daemon=True).start()
-        self.call("hello", {"client": client})
+        try:
+            check_protocol(self.call("hello", {"client": client}))
+        except ProtocolError:
+            self.alive = False
+            self.sock.close()
+            raise
 
     def _read(self) -> None:
         try:
@@ -313,7 +318,7 @@ class DuckNavigatorClient:
 
 
 class DuckAdapter:
-    """Robot file: {"robot": "duck", "variant": "sim", "adapter": {"type": "duck-sim"}}: a pointer to the robot's profile
+    """Robot file: {"robot": "duck", "adapter": {"type": "duck-sim"}}: a pointer to the robot's profile
     (robots.py). Addresses, each the robot file's adapter block's when it names one (`gate_socket`, `navigator`,
     `observatory`: a file that names an address means it), else this machine's installation file's (`robots.<robot>.gate` and
     `.navigator`, `observatory`), else the navigator's default 127.0.0.1:8061; a gate named nowhere is an error saying where to
@@ -323,7 +328,7 @@ class DuckAdapter:
     def __init__(self, cfg, clock=time.monotonic):
         from .robots import ConfigError
         if cfg.profile is None:
-            raise ConfigError(f"{cfg.id}: a duck-sim robot file points at its robot's profile (\"robot\": \"duck\", \"variant\": \"sim\")")
+            raise ConfigError(f"{cfg.id}: a duck-sim robot file points at its robot's profile (\"robot\": \"duck\")")
         options = cfg.adapter
         try:
             inst = installation.load(required=False)

@@ -41,8 +41,8 @@ duck = load_robot_files(CONTROL / "robots.sim")[0]
 check("the duck: LEGGED, 0.3 m/s and 1.5 rad/s, from the factsheet", duck.factsheet["physicalParameters"] == {"maximumSpeed": 0.3, "maximumAngularSpeed": 1.5})
 shipped = json.loads((CONTROL / "robots.sim" / "duck-sim.json").read_text())
 profile = json.loads((CONTROL.parents[1] / "robots" / "duck" / "profile.json").read_text())
-check("the duck's file is a pointer (robot, variant, adapter type): its factsheet, control, capabilities and rates are the profile's",
-      set(shipped) == {"id", "label", "robot", "variant", "adapter"} and shipped["adapter"] == {"type": "duck-sim"}
+check("the duck's file is a pointer (robot, adapter type; the variant is the installation's): its factsheet, control, capabilities and rates are the profile's",
+      set(shipped) == {"id", "label", "robot", "adapter"} and shipped["adapter"] == {"type": "duck-sim"}
       and all(getattr(duck, k) == profile[k] for k in ("factsheet", "control", "capabilities", "rates")), shipped)
 nxt = load_robot_files(CONTROL / "robots.nxt")[0]
 check("the NXT: speeds are not measured, so the factsheet has none; its fire action says it cannot be undone",

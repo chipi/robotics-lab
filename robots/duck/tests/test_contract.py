@@ -203,6 +203,34 @@ run_goal(api_nav, "wait", lambda m: m.run._break("time_limit", "60 s spent"))
 check("must fail: the navigator's own guardrail (a time limit spent) is no anomaly",
       not [r for r in api_nav.run.nav.records if r.get("event") == "anomaly"], api_nav.run.nav.records)
 
+# --- the guardrails its runner could not check (contract 1.2): goal.start's `not_enforced`, one harness anomaly per name ------------
+check("must fail: this is contract 1.2", CONTRACT == "1.2", CONTRACT)
+for name, make in NAVIGATORS.items():
+    nav = make()
+    FakeNav.OUTCOME, FakeNav.calls = "wait", []
+    nav.call("goal.start", {**GOAL, "not_enforced": ["contact", "fall"]})
+    time.sleep(0.05)
+    inner = nav.nav if name == "payload" else nav.run.nav
+    an = [r for r in inner.records if r.get("event") == "anomaly"]
+    check(f"must fail: {name}: goal.start's not_enforced is one minor guardrail_unenforced anomaly per name, source harness",
+          [(a["anomaly"], a["source"], a["severity"], a["values"].get("guardrail")) for a in an]
+          == [("guardrail_unenforced", "harness", "minor", "contact"), ("guardrail_unenforced", "harness", "minor", "fall")], an)
+    check(f"{name}: and the summary names the guardrail", all(g in a["summary"] for a, g in zip(an, ("contact", "fall"))), an)
+    nav.call("goal.cancel", {})
+    time.sleep(0.1)
+    quiet = make()
+    run_goal(quiet, "wait", lambda m: m.call("goal.cancel", {}))
+    inner = quiet.nav if name == "payload" else quiet.run.nav
+    check(f"{name}: a goal with no not_enforced raises none", not [r for r in inner.records if r.get("event") == "anomaly"])
+live = api()
+FakeNav.OUTCOME = "wait"
+live.call("goal.start", {**GOAL, "not_enforced": ["no_go_area"]})
+time.sleep(0.05)
+st = live.call("goal.status", {})
+check("must fail: the navigator API serves the unenforced alarm live, numbered, through goal.status",
+      [(a["anomaly"], a["n"], a["source"]) for a in st["anomalies"]] == [("guardrail_unenforced", 1, "harness")], st.get("anomalies"))
+live.call("goal.cancel", {})
+
 # --- the navigator's stop: named by what stopped it (its stop event is the contract's end, not `aborted`) ---------------
 n = FakeNav()
 n.stop_goal("cancelled", "the operator")
@@ -224,6 +252,40 @@ for name, make in NAVIGATORS.items():
     inner = nav.nav if name == "payload" else nav.run.nav
     check(f"{name}: a cancel stops the navigator as cancelled, with its reason", (inner.stop_end, inner.abort)
           == ("cancelled", "the operator"), (inner.stop_end, inner.abort))
+
+# --- the navigator's gate client reads the gate's protocol (RFC-0018 §5.3) ------------------------------------------------------
+import json  # noqa: E402
+import socket  # noqa: E402
+import threading  # noqa: E402
+
+from duck_lab.nav.client import Rpc  # noqa: E402
+from robotgate import ProtocolError  # noqa: E402
+
+
+def gate_says(hello_result, n=[0]):
+    n[0] += 1
+    path = tmp / f"fake-gate-{n[0]}.sock"
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(str(path))
+    srv.listen(1)
+
+    def serve():
+        conn, _ = srv.accept()
+        for line in conn.makefile("r"):
+            conn.sendall((json.dumps({"jsonrpc": "2.0", "id": json.loads(line)["id"], "result": hello_result}) + "\n").encode())
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        Rpc(path, client="duck-nav-server").close()
+        return None
+    except ProtocolError as exc:
+        return exc
+    finally:
+        srv.close()
+
+
+check("the navigator's gate client connects to a gate of this protocol, and to one that names none",
+      gate_says({"gate": True, "protocol": 1}) is None and gate_says({"gate": True}) is None)
+check("must fail: and refuses a gate that speaks a newer protocol", isinstance(gate_says({"gate": True, "protocol": 2}), ProtocolError))
 
 # --- what a reader refuses ---------------------------------------------------------------------------------------------
 for hello, why in (({"name": "x", "contract": "2.0"}, "another major version"), ({"name": "x"}, "no contract version")):

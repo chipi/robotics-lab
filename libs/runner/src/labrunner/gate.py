@@ -29,7 +29,7 @@ import threading
 import time
 from pathlib import Path
 
-from robotgate import LEASE_SECONDS, Gate, GateError, JsonlLog, load_names
+from robotgate import LEASE_SECONDS, PROTOCOL, Gate, GateError, JsonlLog, load_names
 
 TICK_S = 0.25
 RATE_SLACK = 0.25     # a state up to a quarter period early still counts as due: robotd's jitter never drops one
@@ -206,7 +206,7 @@ class _Client:
                 self._ensure_open(name.strip())
             else:
                 self._ensure_open()
-            self.send({"jsonrpc": "2.0", "id": rid, "result": {"gate": True, "client": self.name}})
+            self.send({"jsonrpc": "2.0", "id": rid, "result": {"gate": True, "client": self.name, "protocol": PROTOCOL}})
             return
         self._ensure_open()
         try:

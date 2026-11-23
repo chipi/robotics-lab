@@ -10,7 +10,12 @@ import threading
 import time
 from pathlib import Path
 
+import contextlib
+import io
+
 from labrunner.gate import Proxy
+from labrunner.rpc import Rpc
+from robotgate import ProtocolError
 
 failures = []
 
@@ -192,6 +197,10 @@ with tempfile.TemporaryDirectory() as tmp:
     check("its move never reaches the robot", r["error"]["data"]["gate"] == "held" and robotd.methods().count("robot.move") == n_moves)
     check("an anonymous client is named by the proxy and is refused too", anon.call("robot.move", MOVE)["error"]["data"]["gate"] == "held")
     check("reading is open to every client", b.call("robot.state", {"tag": "x"})["result"]["tag"] == "x" and b.call("gate.who")["result"]["holder"] == "navigator")
+    check("must fail: hello, gate.who and gate.acquire's refusal say the gate protocol, 1 (RFC-0018 §5.3)",
+          a.call("hello", {"client": "x"})["result"].get("protocol") == 1 and b.call("gate.who")["result"].get("protocol") == 1
+          and r["error"]["data"].get("protocol") == 1, (a.replies, r))
+    check("a robot's own reply carries none: robotd's, as it sent it", "protocol" not in b.call("robot.state", {"tag": "x"})["result"])
     check("an upstream error is relayed as robotd sent it", a.call("robot.fail")["error"] == {"code": -5, "message": "boom"})
     check("an unknown method is robotd's error, not the proxy's", a.call("robot.dance")["error"]["code"] == -32601)
     a.sock.sendall(b"{not json\n")
@@ -302,6 +311,44 @@ with tempfile.TemporaryDirectory() as tmp:
 
     for cl in (c, d, e, o, anon):
         cl.close()
+
+    # a client's first message reads the protocol: this one's gate, a gate with no number, a gate from the future
+    def fake_gate(path, hello_result):
+        srv = socket.socket(socket.AF_UNIX)
+        srv.bind(str(path))
+        srv.listen(2)
+
+        def serve():
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                except OSError:
+                    return
+                for line in conn.makefile("r"):
+                    conn.sendall((json.dumps({"jsonrpc": "2.0", "id": json.loads(line)["id"], "result": hello_result}) + "\n").encode())
+        threading.Thread(target=serve, daemon=True).start()
+        return srv
+
+    def connect(path):
+        try:
+            Rpc(path, client="runner").close()
+            return None
+        except ProtocolError as exc:
+            return exc
+
+    check("a client of a gate that speaks this protocol connects", connect(tmp / "gate.sock") is None)
+    old_gate = fake_gate(tmp / "old.sock", {"gate": True, "client": "runner"})
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        first, second = connect(tmp / "old.sock"), connect(tmp / "old.sock")
+    check("must fail: a gate that names no protocol is read as 0 and accepted, with one warning for the process",
+          first is None and second is None and err.getvalue().count("gate protocol") == 1, err.getvalue())
+    new_gate = fake_gate(tmp / "new.sock", {"gate": True, "client": "runner", "protocol": 2})
+    refused = connect(tmp / "new.sock")
+    check("must fail: a gate that speaks a newer protocol is refused, both numbers said", refused is not None and "2" in str(refused)
+          and "1" in str(refused), refused)
+    old_gate.close()
+    new_gate.close()
     proxy.stop()
     check("stopping the gate removes its socket", not (tmp / "gate.sock").exists())
 

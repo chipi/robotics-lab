@@ -45,6 +45,13 @@ check("a robot this machine does not run: None", inst.robot("turtlebot3") is Non
 reg = I.load(write({"installation": 1, "robots": {"rover": {"registration": "~/robots/rover/registration.json"}}}, "reg.json"))
 check("a robot's registration file, with ~ expanded (the operator's decision a)",
       reg.robot("rover").registration == home / "robots/rover/registration.json" and duck.registration is None, reg.robot("rover"))
+try:
+    var = I.load(write({"installation": 1, "robots": {"rover": {"variant": "real"}, "duck": {}}}, "variant.json"))
+    got = (var.robot("rover").variant, var.robot("duck").variant)
+except I.InstallationError as e:
+    got = str(e)
+check("must fail: a robot's profile variant, as written; none when not named (the runner's default depends on its host)",
+      got == ("real", None), got)
 check("the source is the file read", inst.source == tmp / "installation.json")
 minimal = I.load(write({"installation": 1}, "minimal.json"))
 check("only the version is required: a machine running nothing", minimal.robots == {} and minimal.data is None and minimal.state is None)
@@ -83,6 +90,7 @@ CASES = [
     ("an empty gate socket", {**GOOD, "robots": {"duck": {"gate": ""}}}, "robots.duck.gate must be the path of the gate's socket"),
     ("a map socket (Mission Control reads the map through the navigator API)", {**GOOD, "robots": {"duck": {"map": "/m.sock"}}},
      "robots.duck: unknown keys ['map']"),
+    ("an empty variant", {**GOOD, "robots": {"duck": {"variant": ""}}}, "robots.duck.variant must be the name of a profile variant"),
     ("a registration that is not a path", {**GOOD, "robots": {"duck": {"registration": 7}}},
      "robots.duck.registration must be the path of the robot's registration file"),
 ]

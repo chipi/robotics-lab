@@ -65,8 +65,8 @@ logged and on the event stream.
 The exclusive control lock of RFC-0014 §3.3.3 and RFC-0017 is the gate of `robotgate` in front
 of every robot. HTTP has no connection to tie a lease to, so a lease is tied to a **session**: a
 random id that `acquire` returns and the holder sends with each drive, as nxt-web's `/api/lock`
-does. The robot's `lock` field is the gate's `who`: `{holder, since, lease_id, expires_in_s}`, or
-`{holder: null, lease_id}`. Mission Control keeps no second copy.
+does. The robot's `lock` field is the gate's `who`: `{protocol, holder, since, lease_id,
+expires_in_s}`, or `{protocol, holder: null, lease_id}`. Mission Control keeps no second copy.
 
 | Call | Meaning |
 | --- | --- |
@@ -341,7 +341,13 @@ between Mission Control and the simulator, both the runner's (`libs/runner`, RFC
   `lab-nav-server`) at `goal.start` and gives it back at the end. Each goal run's Observatory run,
   `duck/<scene>/mc<id>-<time>`, is the runner's copy of the navigator's run with the truth put in,
   and the guardrails only the truth can check (`contact`, `fall`, `drop_clearance`, the robot inside
-  a `no_go_area`) are the runner's.
+  a `no_go_area`) are the runner's. On a host file with `truth_port: null` (a real robot) it has no
+  truth: no sampler, no camera server and no `--camera`, no truth guardrails, the official run copied
+  with no tick paired; a goal that asks for a truth guardrail still runs, and the run records it
+  as `not_enforced` (runner.json) and in `judge_truth {available, reason, unenforced}` beside
+  `judge_profile` and `judge_scene`. The navigator is always handed `--profile` (the installation's
+  `robots.<name>.profile`, else the registration's) and `--variant` (the installation's
+  `robots.<name>.variant`, else `sim` with a truth and `real` without); the referee reads the same.
 
 A `duck-sim` robot file is a pointer to the robot's profile (`robot`, `variant`; see Robot files).
 Adapter options, each optional: `gate_socket`, `navigator` (host:port), `observatory` (the base of
@@ -369,7 +375,7 @@ API):
 | Method | Meaning |
 | --- | --- |
 | `hello` | `{name, version, contract, kinds, camera}`: asked before every goal; a navigator speaking another major version of the contract is refused, both versions said, and no goal starts |
-| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
+| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, not_enforced?}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera); `not_enforced` (contract 1.2) is the runner's: the guardrails it cannot check, each a `guardrail_unenforced` anomaly |
 | `goal.status {decisions_since, objects_since, anomalies_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, anomalies, anomalies_n, objects, objects_v}`; `anomalies` the run's since `anomalies_since` (RFC-0019's record, contract 1.1); `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel {reason?}` | the navigator stops, ends the run `cancelled`, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
@@ -417,7 +423,7 @@ the field went.
 | Field | What |
 | --- | --- |
 | `id`, `label`, `kind` | ours. `id` is lower case, digits and dashes (no `manufacturer` or `serialNumber` until a VDA robot is added); `kind` keys `robots/<kind>/` |
-| `robot`, `variant` | a pointer (phase 5 step 1): the robot's registered name (`robotics_lab.robots`) and its profile's environment (default `real`). `kind`, `factsheet`, `control`, `capabilities`, `guardrails` and `rates` are then the profile's, from the version this machine runs (the installation's `robots.<robot>.profile`, else the robot's own file), and the file may not repeat them; `label` defaults to the profile's |
+| `robot`, `variant` | a pointer (phase 5 step 1): the robot's registered name (`robotics_lab.robots`). The profile's environment is not the file's: it is the installation's `robots.<robot>.variant`, else `sim` for the `duck-sim` adapter (it runs on a host with a truth; Mission Control does not read the host file) and `real` for any other adapter. A file that names a `variant` other than that is refused, saying which; one that names the same is accepted. `kind`, `factsheet`, `control`, `capabilities`, `guardrails` and `rates` are then the profile's, from the version this machine runs (the installation's `robots.<robot>.profile`, else the robot's own file), and the file may not repeat them; `label` defaults to the profile's |
 | `adapter {type, call_timeout_s?, ...}` | ours: `fake`, `duck-sim`, `nxt-web`, and each one's options |
 | `factsheet.typeSpecification` | VDA: `seriesName`, `seriesDescription`, `mobileRobotKinematics` (`DIFFERENTIAL`, `OMNIDIRECTIONAL`, `THREE_WHEEL`, and **`LEGGED`, which is ours** and not in VDA), `localizationTypes` (VDA's list), `navigationTypes` (open) |
 | `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |

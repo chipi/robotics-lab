@@ -15,7 +15,8 @@ which names its goal run in the run record (`goal_run`, apps/observatory/CONTRAC
 
 It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Methods:
   hello -> {name, version, contract, kinds, camera}
-  goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?}
+  goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?,
+      not_enforced?}  (not_enforced since contract 1.2: guardrails its runner cannot check, one harness anomaly each)
       -> {run_key}, or {error} when another client holds the robot (the gate's own refusal), or a goal is running here
   goal.status {decisions_since, objects_since, anomalies_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
       decisions_n, anomalies: [...], anomalies_n, objects: [...] | null, objects_v}  (anomalies since contract 1.1)
@@ -165,6 +166,8 @@ class GoalRun:
         self.nav.on_anomaly = self._on_anomaly
         self.out = out
         self._prepare()
+        for name in self.spec.get("not_enforced") or []:
+            self.nav.anomaly("guardrail_unenforced", f"the runner cannot check {name}: it has no truth", values={"guardrail": str(name)})
         self.state = "running"
         threading.Thread(target=self._work, name=f"goal-{label}", daemon=True).start()
         return self.run_key

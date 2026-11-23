@@ -7,7 +7,9 @@ call passes through unchanged to the navigator API (the robot's registered NAVIG
 duck), which this starts as its own process with only the robot's sockets and the camera's. What the navigator does not
 get stays here:
 
-- **The truth:** the host's body server, sampled while a goal runs (simhost.truth).
+- **The truth:** the host's body server, sampled while a goal runs (simhost.truth). A host file with `truth_port: null` has none:
+  there is no sampler, no camera server, no truth guardrails and no `truth_connections` check, and the official copy is made with
+  no tick paired (a real robot's way through the runner).
 - **The camera:** served on the host file's camera socket (labrunner.camera), from the truth.
 - **The truth guardrails** (`contact`, `fall`, `drop_clearance`, the robot inside a `no_go_area`): checked against the
   truth (labrunner.guard.TruthGuard); a broken one stops the run through the API's `goal.break`, and the run ends
@@ -36,14 +38,23 @@ from pathlib import Path
 import simhost
 from labrunner import robots
 from labrunner.camera import CameraServer
-from labrunner.remote import navigator_env, truth_connections
+from labrunner.remote import judge_truth, navigator_env, truth_connections
 from labrunner.rpc import Rpc
-from labrunner.guard import TruthGuard
+from labrunner.guard import TRUTH, TruthGuard
 from runfile import keys, registry, scenefile
 from runfile.catalog import default_data
 from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.truthcopy import TruthCopy, TruthLog
 from simhost.truth import Sampler
+
+def no_truth(wall_ns, max_gap_ns):
+    return None
+
+
+def unchecked(has_truth: bool, guardrails: list) -> list:
+    """The truth guardrails a goal asked for that no one checks (a host with no truth), each once, in the order asked."""
+    return [] if has_truth else list(dict.fromkeys(g["name"] for g in guardrails if g["name"] in TRUTH))
+
 
 STARTED_S = 60.0         # the navigator API answers within this, or the runner gives up
 WATCH_S = 0.2            # how often a goal's run is copied and its state asked
@@ -62,20 +73,26 @@ class GoalWatch:
         _, _, name = keys.split_key(key)
         self.dir = runner.out / name
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.truth_log = TruthLog(self.dir / "truth.jsonl")
-        self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key, self.truth_log.nearest,
-                              run={"judge_profile": self.judge, "judge_scene": runner.judge_scene})
-        self.guard = TruthGuard(guardrails, profile=judge, scene=runner.scene)
+        # asked for and checked by no one: the goal runs, and says so (here, and in the run's judge_truth)
+        self.not_enforced = unchecked(runner.has_truth, guardrails)
+        self.judge_truth = judge_truth(runner.host, self.not_enforced)
+        self.truth_log = TruthLog(self.dir / "truth.jsonl") if runner.has_truth else None
+        self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key,
+                              self.truth_log.nearest if self.truth_log else no_truth,
+                              run={"judge_profile": self.judge, "judge_scene": runner.judge_scene,
+                                   "judge_truth": self.judge_truth})
+        self.guard = TruthGuard(guardrails, profile=judge, scene=runner.scene) if runner.has_truth else None
         self.broken = None
         self.state = None
         self._objects_v = -1          # the objects version last seen: asked again, the API leaves them out
         self.route = {"checks": 0, "max": None}
         self._lock = threading.Lock()          # the copy: the pump and the finish
         self._done = threading.Event()
-        self.sampler = Sampler(runner.host, on_sample=self._sample)
+        self.sampler = Sampler(runner.host, on_sample=self._sample) if runner.has_truth else None
 
     def start(self) -> "GoalWatch":
-        self.sampler.start()
+        if self.sampler:
+            self.sampler.start()
         threading.Thread(target=self._watch, name=f"goal-watch-{self.key}", daemon=True).start()
         return self
 
@@ -124,22 +141,24 @@ class GoalWatch:
         if self._done.is_set():
             return
         self._done.set()
-        self.sampler.stop()
+        if self.sampler:
+            self.sampler.stop()
         with self._lock:
             try:
                 self.copy.finish()
             except (FileNotFoundError, ValueError) as e:
                 print(f"lab-nav-server: the run {self.key} could not be copied: {e}", flush=True)
-        self.truth_log.close()
+        if self.truth_log:
+            self.truth_log.close()
         summary = self.summary()
         (self.dir / "runner.json").write_text(json.dumps(summary, indent=1))
         print(f"lab-nav-server: {self.key} {self.state}: {json.dumps(summary)}", flush=True)
 
     def summary(self) -> dict:
-        return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked,
-                "truth_samples": self.sampler.samples, "truth_error": self.sampler.error, "truth_copy": self.copy.stats(),
+        return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked if self.guard else [], "not_enforced": self.not_enforced,
+                "truth_samples": self.sampler.samples if self.sampler else 0, "truth_error": self.sampler.error if self.sampler else None, "truth_copy": self.copy.stats(),
                 "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile,
-                "judge_scene": self.runner.judge_scene}
+                "judge_scene": self.runner.judge_scene, "judge_truth": self.judge_truth}
 
 
 class NavRunner:
@@ -149,9 +168,8 @@ class NavRunner:
         profile = robots.profile_source(self.robot_name)        # resolved first: a named version that does not exist refuses here
         self.scene = scenefile.load(scene)                      # the scene's drops, for the truth guard: none, the server does not start
         self.judge_scene = scenefile.describe(self.scene.path)
-        if host.truth_port is None:
-            raise ValueError(f"{host.source}: this host has no truth (truth_port is null): Mission Control talks to the "
-                             f"navigator API itself there (the robot's NAVIGATOR_API)")
+        self.has_truth = host.truth_port is not None            # the host file's one signal: none, no sampler, no camera, no truth guardrails
+        self.variant = robots.variant(host, self.robot_name)    # the navigator's and the referee's: one
         self.host, self.data, self.out = host, Path(data), Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.payload_data = self.out / "payload-data"           # the navigator's own runs: not the Observatory's data folder
@@ -160,12 +178,14 @@ class NavRunner:
         self.goal: GoalWatch | None = None
         self.goals = 0
         self.route = {"checks": 0, "max": None}
-        self.camera = CameraServer(host, host.sockets["camera"]).start()
+        self.camera = CameraServer(host, host.sockets["camera"]).start() if self.has_truth else None
         robot = self.robot_socket = robot_socket or robots.gate_socket(host)     # the installation's gate, where Mission Control's is
         cmd = list(robots.get().NAVIGATOR_API) + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
-               "--map", str(host.sockets["map"]), "--camera", str(self.camera.path), "--listen", str(self.sock),
-               "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene] + \
-            (["--profile", str(profile)] if profile else [])
+               "--map", str(host.sockets["map"]), "--listen", str(self.sock),
+               "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene,
+               "--variant", self.variant] + \
+            (["--camera", str(self.camera.path)] if self.camera else []) + \
+            ["--profile", str(profile)]
         env = navigator_env()                                   # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.out / "navigator.log", "a")
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -221,8 +241,10 @@ class NavRunner:
             self._merge(self.goal.route)
         # the referee reads the profile again at each goal, from the one source the navigator reads it from (the installation's
         # version, or the robot's own): a version chosen since applies to both from this goal (the operator's decision e)
-        judge = robots.read_profile(registry.profile_file(self.robot_name), "sim")   # errors are the caller's answer, never an exit
-        reply = self.api("goal.start", p)
+        judge = robots.read_profile(registry.profile_file(self.robot_name), self.variant)   # errors are the caller's answer, never an exit
+        asked = unchecked(self.has_truth, (p.get("conditions") or {}).get("guardrails") or [])
+        # told to the navigator (contract 1.2), which raises one anomaly each; a 1.1 navigator ignores the field and raises none
+        reply = self.api("goal.start", {**p, "not_enforced": asked} if asked else p)
         if isinstance(reply, dict) and reply.get("run_key"):
             guardrails = (p.get("conditions") or {}).get("guardrails") or []
             theirs = reply.get("profile")
@@ -264,7 +286,8 @@ class NavRunner:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
                 self.proc.wait(5)
-        self.camera.stop()
+        if self.camera:
+            self.camera.stop()
         self.log.close()
         self.sock.unlink(missing_ok=True)
         try:
@@ -319,7 +342,7 @@ def main() -> None:
     srv = Server((listen or "127.0.0.1", int(port)), runner)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # a terminate stops the navigator API too (runner.close)
     print(f"lab-nav-server: {args.listen}, the navigator API pid {runner.proc.pid}, robot "
-          f"{runner.robot_socket}, camera {runner.camera.path}, runs in {args.data}", flush=True)
+          f"{runner.robot_socket}, camera {runner.camera.path if runner.camera else 'none (no truth)'}, runs in {args.data}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

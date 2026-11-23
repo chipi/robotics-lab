@@ -3,13 +3,19 @@ socket proxy, the fake robot) opens a connection per client, hands each JSON-RPC
 and calls `tick` on a timer. Stdlib only.
 
 The lease belongs to the connection that acquired it. It ends on release, expiry (silence), a STOP,
-a takeover or the connection closing; every end stops the robot first (RFC-0017 §3.4)."""
+a takeover or the connection closing; every end stops the robot first (RFC-0017 §3.4).
+
+The gate protocol has a number (RFC-0018 §5.3), `PROTOCOL`: it is `protocol` in `gate.who`, in every other `gate.*` reply, in a
+refusal's data and in a transport's answer to `hello`. A robot's own replies (`robot.*`) are the robot's and carry none. A client
+reads it with `check_protocol`: a missing number is 0 (a gate before the number), accepted with one warning; a newer one is refused."""
 
 import json
+import sys
 import threading
 import time
 from pathlib import Path
 
+PROTOCOL = 1
 LEASE_SECONDS = 20.0  # RFC-0017 §3.3: 10 to 30 s, not the deadman's 0.5 s
 
 # Reading and the deadman-free methods pass without a lease. Anything else, an unknown method
@@ -28,7 +34,29 @@ class GateError(Exception):
         self.data = data
 
     def to_rpc(self) -> dict:
-        return {"code": -32000, "message": str(self), "data": {"gate": self.code, **self.data}}
+        return {"code": -32000, "message": str(self), "data": {"gate": self.code, "protocol": PROTOCOL, **self.data}}
+
+
+class ProtocolError(RuntimeError):
+    """A gate speaks a protocol this side does not."""
+
+
+_warned = False
+
+
+def check_protocol(reply, peer: str = "the gate") -> int:
+    """The protocol a gate's reply says (`protocol`), for a client to read at its first one (hello). Missing: 0, accepted, said once
+    per process on stderr. Newer than PROTOCOL, or not a whole number: ProtocolError naming both."""
+    global _warned
+    n = reply.get("protocol") if isinstance(reply, dict) else None
+    if n is None:
+        if not _warned:
+            _warned = True
+            print(f"warning: {peer} names no gate protocol (read as 0); this side speaks {PROTOCOL}", file=sys.stderr)
+        return 0
+    if not isinstance(n, int) or isinstance(n, bool) or n > PROTOCOL:
+        raise ProtocolError(f"{peer} speaks gate protocol {n!r}; this side speaks {PROTOCOL}: update this side")
+    return n
 
 
 class JsonlLog:
@@ -132,6 +160,9 @@ class Gate:
             return self._robot(method, params)
 
     def _gate_call(self, conn: _Conn, method: str, params: dict):
+        return {"protocol": PROTOCOL, **self._gate_reply(conn, method)}
+
+    def _gate_reply(self, conn: _Conn, method: str) -> dict:
         if method == "gate.who":
             return self.who()
         if method == "gate.acquire":
@@ -151,8 +182,8 @@ class Gate:
             self.tick()
             holder = self._holder
             if holder is None:
-                return {"holder": None, "lease_id": self._lease_id}
-            return {"holder": holder.client, "since": self._since_wall, "lease_id": self._lease_id,
+                return {"protocol": PROTOCOL, "holder": None, "lease_id": self._lease_id}
+            return {"protocol": PROTOCOL, "holder": holder.client, "since": self._since_wall, "lease_id": self._lease_id,
                     "expires_in_s": round(max(0.0, self.lease_s - (self._clock() - self._renewed)), 3)}
 
     # --- the rules ---------------------------------------------------------------------------

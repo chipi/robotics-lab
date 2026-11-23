@@ -65,6 +65,8 @@ const robot = () => S.robots.find((r) => r.id === S.robot) || null;
 async function loadRobots() {
   const list = (await api("GET", "/robots")).robots;
   S.robots = await Promise.all(list.map(async (r) => (await api("GET", "/robots/" + r.id)).robot));
+  const now = Date.now();
+  for (const r of S.robots) r.lock_at = now;
   if (!robot() && S.robots.length) await selectRobot(S.robots[0].id, true);
   renderRobots();
 }
@@ -73,6 +75,7 @@ async function refreshRobot(id) {
   const i = S.robots.findIndex((r) => r.id === id);
   if (i < 0) return loadRobots();
   S.robots[i] = (await api("GET", "/robots/" + id)).robot;
+  S.robots[i].lock_at = Date.now();
   renderRobots();
   if (id === S.robot && S.robots[i].site !== S.site) await loadSite();
 }
@@ -118,6 +121,16 @@ async function loadRunDetail(id) {
 // --- robots ----------------------------------------------------------------------------------------------
 function lockText(r) { return r.lock && r.lock.holder ? r.lock.holder : "free"; }
 
+// who holds the robot, from the gate's who: the holder, since when, the lease, and what is left of it (counted from when it was read)
+function holderText(r) {
+  const l = r.lock || {};
+  if (l.unreachable) return "gate unreachable";
+  if (!l.holder) return "free";
+  const since = l.since ? new Date(l.since * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+  const left = l.expires_in_s != null ? Math.max(0, Math.round(l.expires_in_s - (Date.now() - (r.lock_at || Date.now())) / 1000)) : null;
+  return [l.holder, since && "since " + since, "lease " + l.lease_id, left != null && `expires in ${left} s`].filter(Boolean).join(" · ");
+}
+
 function renderRobots() {
   const box = $("robot-list");
   box.replaceChildren(...S.robots.map((r) => {
@@ -132,7 +145,8 @@ function renderRobots() {
         h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
         h("span", {}, "pose ", h("b", { class: "mono" }, p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : "-")),
         h("span", {}, "site ", h("b", {}, r.site || "none")),
-        r.goal_run ? h("span", {}, "run ", h("b", {}, "#" + r.goal_run)) : null));
+        r.goal_run ? h("span", {}, "run ", h("b", {}, "#" + r.goal_run)) : null),
+      h("div", { class: "holder faint" }, holderText(r)));
   }));
   const r = robot();
   $("stop-robot").textContent = r ? "STOP " + r.id : "STOP";

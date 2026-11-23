@@ -94,6 +94,8 @@ class Payload:
                 return {"error": {"code": "bad_goal", "message": f"no kind {params['find']!r}"}}
             self.nav.clear_stop()
             self.state, self.reason, self.result, self.broken, self.cancelled = "running", None, None, None, None
+        for name in spec.get("not_enforced") or []:
+            self.nav.anomaly("guardrail_unenforced", f"the runner cannot check {name}: it has no truth", values={"guardrail": str(name)})
         threading.Thread(target=self._work, args=(kind, spec), name=f"goal-{kind}", daemon=True).start()
         return {"run_key": self.runlog.key}
 

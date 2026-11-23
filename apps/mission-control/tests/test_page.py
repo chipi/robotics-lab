@@ -132,6 +132,32 @@ with sync_playwright() as p:
     check("Watch is there and disabled while run_key is null: nothing to open", page.locator("#watch").get_attribute("aria-disabled") == "true"
           and page.locator("#watch").get_attribute("href") == "#")
     check("the robot card follows: free again, the robot's pose moved", page.locator("#robot-fake-1 .lock").inner_text() == "free")
+    # --- who holds the robot: one line on the robot's card, from the gate's who -----------------------------
+    def send(method, path, body):
+        req = urllib.request.Request(BASE + "/api/v1" + path, data=json.dumps(body).encode(), method=method,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+
+    def holder_line():
+        loc = page.locator("#robot-fake-1 .holder")
+        return loc.inner_text() if loc.count() else None
+
+    check("must fail: nobody holds the robot: its card says so on a line of its own (phone width)", holder_line() == "free", holder_line())
+    a = send("POST", "/robots/fake-1/lock", {"client": "operator-a"})["lock"]
+    wait(page, "document.querySelector('#robot-fake-1 .holder')?.textContent.includes('operator-a')")
+    line = holder_line()
+    check("must fail: held: the holder, since when, the lease and how long it has left", line is not None and "operator-a" in line
+          and "since" in line and f"lease {a['lease_id']}" in line and "expires in" in line, line)
+    check("the card is not wider than the phone, with the line on it", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    send("DELETE", "/robots/fake-1/lock", {"session": a["session"]})
+    b = send("POST", "/robots/fake-1/lock", {"client": "operator-b"})["lock"]
+    wait(page, "document.querySelector('#robot-fake-1 .holder')?.textContent.includes('operator-b')")
+    check("must fail: the holder changes, the line follows: operator-b, no longer operator-a", "operator-a" not in holder_line()
+          and f"lease {b['lease_id']}" in holder_line(), holder_line())
+    send("DELETE", "/robots/fake-1/lock", {"session": b["session"]})
+    wait(page, "document.querySelector('#robot-fake-1 .holder')?.textContent === 'free'")
+    check("released: the line says free again", holder_line() == "free", holder_line())
     check("an empty field of a run is not written as 'null' (a bug a screenshot found)", "null" not in page.locator("#run-detail").inner_text())
     page.click("#watch", force=True)
     check("clicking the disabled Watch goes nowhere", page.url == BASE + "/")

@@ -387,8 +387,34 @@ ok, why = refused({"id": "d", "robot": "duck", "variant": "sim", "adapter": {"ty
 check("must fail: a pointer file that repeats a block of the profile is refused (one copy of the robot)", ok, why)
 ok, why = refused({"id": "d", "robot": "goose", "adapter": {"type": "duck-sim"}}, "no robot 'goose' registered")
 check("a pointer to a robot not registered here is refused, naming the registered ones", ok, why)
-ok, why = refused({"id": "d", "robot": "duck", "variant": "moon", "adapter": {"type": "duck-sim"}}, "no variant 'moon'")
-check("a pointer to a variant the profile does not have is refused", ok, why)
+
+# the variant has one source: the installation's robots.<robot>.variant, else the adapter's default (duck-sim runs on a host with a
+# truth: sim; any other: real); a robot file that names one is checked against it, never obeyed
+def variant_of(installed, adapter, named=None):
+    f = installation_file(tmp / f"variant-{installed}.json", {"duck": {"variant": installed}} if installed else {})
+    os.environ[installation.ENV] = str(f)
+    try:
+        raw = {"id": "d", "robot": "duck", "adapter": {"type": adapter}, **({"variant": named} if named else {})}
+        return RobotConfig(raw).variant
+    except ConfigError as exc:
+        return str(exc)
+    finally:
+        os.environ[installation.ENV] = str(BARE)
+
+
+check("must fail: no variant named anywhere: sim for the duck-sim adapter", variant_of(None, "duck-sim") == "sim", variant_of(None, "duck-sim"))
+check("no variant named anywhere: real for any other adapter", variant_of(None, "fake") == "real", variant_of(None, "fake"))
+check("must fail: the installation's robots.duck.variant is the robot's, whatever the adapter", variant_of("sim", "fake") == "sim"
+      and variant_of("real", "duck-sim") == "real", (variant_of("sim", "fake"), variant_of("real", "duck-sim")))
+check("a robot file naming the installation's variant is accepted", variant_of("real", "duck-sim", "real") == "real"
+      and variant_of(None, "duck-sim", "sim") == "sim")
+mismatch = variant_of("sim", "duck-sim", "real")
+check("must fail: a robot file naming another variant than the installation's is refused, saying why",
+      "names variant 'real'" in mismatch and "robots.duck.variant" in mismatch and "sim" in mismatch, mismatch)
+mismatch = variant_of(None, "duck-sim", "real")
+check("must fail: and than the adapter's default when the installation names none", "names variant 'real'" in mismatch, mismatch)
+check("an installation naming a variant the profile does not have is refused", "no variant 'moon'" in variant_of("moon", "duck-sim"),
+      variant_of("moon", "duck-sim"))
 try:
     DuckAdapter(RobotConfig({"id": "d", "kind": "duck", "adapter": {"type": "duck-sim", "gate_socket": "/x/g.sock"}}))
     said = "accepted"
@@ -405,6 +431,36 @@ check("must fail: a gate named nowhere (not in the installation, no gate_socket)
 
 store = Store(tmp / "inst-state" / "profiles")
 store.seed("duck", REPO_PROFILE)
+# the gate's protocol (RFC-0018 §5.3): this side's gate is read, a gate from the future is refused
+from mission_control.duck import _Wire  # noqa: E402
+from robotgate import ProtocolError  # noqa: E402
+
+
+def wire_to(hello_result):
+    path = tmp / f"fake-gate-{len(list(tmp.glob('fake-gate-*')))}.sock"
+    srv = socket.socket(socket.AF_UNIX)
+    srv.bind(str(path))
+    srv.listen(1)
+
+    def serve():
+        conn, _ = srv.accept()
+        for line in conn.makefile("r"):
+            conn.sendall((json.dumps({"jsonrpc": "2.0", "id": json.loads(line)["id"], "result": hello_result}) + "\n").encode())
+    threading.Thread(target=serve, daemon=True).start()
+    try:
+        _Wire(path, "mission-control").sock.close()
+        return None
+    except ProtocolError as exc:
+        return exc
+    finally:
+        srv.close()
+
+
+check("a gate of this protocol is connected to", wire_to({"gate": True, "client": "mission-control", "protocol": 1}) is None)
+check("must fail: a gate that speaks a newer protocol is refused, both numbers said",
+      "2" in str(wire_to({"gate": True, "client": "mission-control", "protocol": 2})) and "1" in str(wire_to({"protocol": 2})))
+check("a gate that names none (before the number) is accepted", wire_to({"gate": True, "client": "mission-control"}) is None)
+
 inst_file = installation_file(tmp / "installation.json", {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
                                                                     "profile": str(tmp / "inst-state" / "profiles" / "duck")}},
                               observatory="http://obs.example:8070/", state=str(tmp / "inst-state"))
