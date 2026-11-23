@@ -70,7 +70,8 @@ class StubRobotd:
 
     def _state(self):
         return {"odom": {"position": [self.x, 0.0, 0.117], "yaw": self.yaw}, "move": {"applied": [self.vx, 0.0, self.vyaw]},
-                "safety": {"fallen": False, "picked_up": False, "limp": False}, "policy": "walk"}
+                "safety": {"fallen": False, "picked_up": False, "limp": False}, "policy": "walk",
+                "joints": [round(0.01 * k, 2) for k in range(15)]}
 
     def _serve(self, sock):
         send_lock = threading.Lock()
@@ -217,6 +218,9 @@ check("the duck has a pose in its state (the bound is long: the machine is loade
 st = robot()["status"]
 check("its state is in the page's shape: pose in the site frame, mode, flags, battery from robot.health",
       st["pose"]["frame"] == "site" and st["mode"] == "idle" and st["flags"]["fall"] is False and st["battery_pct"] == 63.0 and st["link"] == "duck-gate", st)
+joint_names = json.loads((Path(__file__).resolve().parents[3] / "robots" / "duck" / "profile.json").read_text())["joints"]["names"]
+check("must fail: its joint angles are in its state by the profile's joint names, in robotd's order (the body page poses from them)",
+      st.get("joints") == {n: round(0.01 * k, 2) for k, n in enumerate(joint_names)} and len(st["joints"]) == 15, st.get("joints"))
 check("the lock is the gate's own: free", robot()["lock"]["holder"] is None)
 m = call("GET", "/robots/duck-sim/map")["map"]
 check("the map is the navigator API's (mapd's grid), in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)

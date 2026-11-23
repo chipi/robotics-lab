@@ -6,6 +6,7 @@
 !apps/mission-control/src
 !libs/runfile/pyproject.toml
 !libs/runfile/src
+!libs/web
 !libs/gate/pyproject.toml
 !libs/gate/src
 **/__pycache__/

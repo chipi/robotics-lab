@@ -1,8 +1,9 @@
-# The build context is the repository root (the image installs libs/runfile beside the viewer): only what the Dockerfile
+# The build context is the repository root (the image installs libs/runfile beside the viewer and carries libs/web): only what the Dockerfile
 # copies goes in. Nothing of the lab's data (robots/duck/runs, ...) is ever sent to the daemon.
 *
 !libs/runfile/pyproject.toml
 !libs/runfile/src
+!libs/web
 !apps/observatory/pyproject.toml
 !apps/observatory/uv.lock
 !apps/observatory/src

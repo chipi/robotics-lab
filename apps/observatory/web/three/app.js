@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { createShell } from '../shell/shell.js';
 import { Views } from './views.js';
 import { buildScene, buildRun, setPalette } from './build.js';
-import { createBody } from '../shell/robotbody.js';
+import { createBody, jointStates, tokenColors } from '/lib/body/body.js';
 import { axes as sensorAxes } from '../shell/eye.js';
 
 // One three.js layer bit per drawable stream: a camera shows a stream only when its layer is on,
@@ -100,6 +100,7 @@ function placeBody() {
     body.place([P[i * 3], P[i * 3 + 1], S.robot()?.stand_z ?? 0], [q.w, q.x, q.y, q.z]);
   }
   body.pose(S.joints());
+  body.health(jointStates(S.anomalies(), M.t), tokenColors());       // each joint by the worst anomaly naming it at or before the playhead
 }
 
 // ---- the placed cameras (RFC-0013): the eye at the sensor's pose at the playhead, the chase camera behind the robot -------------------
@@ -243,6 +244,7 @@ const adapter = {
   // the Robot layer as drawn: shown, where its root is, how many parts (for this repository's tests)
   body: () => (body ? { visible: body.root.visible, pos: body.root.position.toArray().map((v) => +v.toFixed(5)),
     quat: [body.root.quaternion.w, body.root.quaternion.x, body.root.quaternion.y, body.root.quaternion.z].map((v) => +v.toFixed(5)), drawn: body.drawn(),
+    joints: body.healthOf(),
     joint_upper_quat: body.links.upper ? [body.links.upper.quaternion.w, body.links.upper.quaternion.y].map((v) => +v.toFixed(5)) : null,
     // per marker: [fill shown, outline shown]
     cylinders: Object.fromEntries([['truth', RW?.obj['truth.pose']], ['belief', R()?.obj['belief.pose']]].map(([k, m]) => [k, m ? [m.children[0].visible, m.children[1].visible] : null])) } : null),

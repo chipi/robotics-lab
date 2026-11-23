@@ -5,6 +5,7 @@
 #   docker build -f apps/observatory/Dockerfile -t observatory:local .      # from the repository root: it installs libs/runfile too
 #
 # The run format is a path source in apps/observatory/pyproject.toml, so the folders sit side by side as they do in the repository.
+# libs/web (the design tokens, three.js, the robot body) is copied to /app/libs/web: the server finds it from its own place (observatory/server.py LIB).
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /bin/uv
 
@@ -13,6 +14,7 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv \
 WORKDIR /app
 COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
 COPY libs/runfile/src ./libs/runfile/src
+COPY libs/web ./libs/web
 COPY apps/observatory/pyproject.toml apps/observatory/uv.lock ./apps/observatory/
 WORKDIR /app/apps/observatory
 RUN uv sync --frozen --no-dev --no-install-project

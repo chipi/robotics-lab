@@ -62,6 +62,7 @@ class FakeRobot:
         self.offline = False
         self.hang = None  # a threading.Event: calls wait for it, to model a robot that stops answering
         self.flags = {"contact": False, "fall": False, "near_drop": False}
+        self.joints = None  # {name: radians}: what the fake reports as its joint angles (a test sets them); None reports none
         self.wheels_locked = False  # the robot is told to move and does not: the navigator must notice
         self.explored: set = set()
         self.seen: set = set()
@@ -107,6 +108,7 @@ class FakeRobot:
             "battery_pct": self._battery(),
             "link": "fake",
             "flags": dict(self.flags),
+            **({"joints": dict(self.joints)} if self.joints is not None else {}),
         }
 
     def _advance(self) -> None:

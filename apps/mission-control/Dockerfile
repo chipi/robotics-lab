@@ -10,7 +10,7 @@
 #
 # The versions are apps/mission-control/uv.lock's, installed with `uv sync --frozen --no-dev`. The gate (RFC-0017, libs/gate) and the run
 # format (libs/runfile) are path sources in apps/mission-control/pyproject.toml, so the folders sit side by side as they do in the
-# repository, and are installed editable from there. No robot's package is in the image (phase 5 step 1): a robot file that points at a
+# repository, and are installed editable from there. libs/web (the design tokens, three.js, the robot body) sits beside them, where api.py finds it. No robot's package is in the image (phase 5 step 1): a robot file that points at a
 # robot's profile (`"robot": "duck"`) needs an installation file mounted (ROBOTICS_LAB_INSTALLATION) whose robots.<name>.registration
 # names the robot's registration file, mounted with the profile beside it; the fake robot (robots.example) needs none.
 
@@ -21,6 +21,7 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PAT
 WORKDIR /app
 COPY libs/runfile/pyproject.toml ./libs/runfile/pyproject.toml
 COPY libs/runfile/src ./libs/runfile/src
+COPY libs/web ./libs/web
 COPY libs/gate/pyproject.toml ./libs/gate/pyproject.toml
 COPY libs/gate/src ./libs/gate/src
 COPY apps/mission-control/pyproject.toml apps/mission-control/uv.lock ./apps/mission-control/

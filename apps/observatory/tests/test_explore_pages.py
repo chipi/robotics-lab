@@ -2,7 +2,7 @@
 sections World, Body, Senses, Mind, Other values, closed until opened (the one holding the selected stream opens), the choice
 remembered; the joints by chain with their technical names and their angle at the playhead, a switch to hide the angles;
 Explore with a robot's body drawn from its description, posed as recorded (following the playhead) or by hand, parts picked
-in the list or in the body, their details, isolate, hide, show all; and the pages' forward kinematics (shell/robot.js) where
+in the list or in the body, their details, isolate, hide, show all; and the pages' forward kinematics (libs/web/body/robot.js) where
 MuJoCo puts every link of the duck (robots/duck/fk_fixture.json). A throwaway two-link arm with generated meshes: no duck
 meshes needed. Screenshots to /tmp/claude-1000/explore-pages/ (EXPLORE_SHOTS=0 turns them off).
 Run: cd apps/observatory && uv run python tests/test_explore_pages.py"""
@@ -537,7 +537,7 @@ with sync_playwright() as p:
 
             # the pages' forward kinematics are observatory.kinematics' and MuJoCo's: every link of the duck, for every fixture case
             worst = page.evaluate("""async ([desc, cases]) => {
-              const { linkPoses } = await import('/web/shell/robot.js');
+              const { linkPoses } = await import('/lib/body/robot.js');
               let wp = 0, wq = 0;
               for (const c of cases) {
                 const ours = linkPoses(desc, c.joints);

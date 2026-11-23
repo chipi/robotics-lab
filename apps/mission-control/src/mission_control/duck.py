@@ -423,6 +423,9 @@ class DuckAdapter:
                "link": "duck-gate", "policy": s.get("policy"),
                "flags": {"fall": bool(safety.get("fallen")), "picked_up": bool(safety.get("picked_up")), "limp": bool(safety.get("limp"))}}
         out["battery_pct"] = self._battery()
+        names, angles = list(self.profile.joints.names), s.get("joints") or []
+        if len(angles) == len(names):                       # robotd's JOINT_NAMES order, the profile's `joints.names`; none reported: no key
+            out["joints"] = {n: round(a, 4) for n, a in zip(names, angles)}
         return out
 
     def _battery(self):

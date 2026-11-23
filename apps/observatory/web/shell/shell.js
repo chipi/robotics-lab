@@ -23,7 +23,7 @@
 import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
-import { chainsOf } from './robot.js';
+import { chainsOf } from '/lib/body/robot.js';
 import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 
@@ -1415,6 +1415,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     // the Robot layer (RFC-0011): the run's robot's description (null when it has none) and its joints' values at the playhead
     robot: () => M.robot,
     joints: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
+    // the run's anomalies (RFC-0019) as { t, a }: the record's fields under a, so the body can colour the joints they name
+    anomalies: () => (M.run ? M.run.events.flatMap((e) => (e.anomaly ? [{ t: e.t, a: e.anomaly }] : [])) : []),
     api: API,
     pick: (sel) => select(sel),
     viewChanged: () => { updateGizmo(); updateScale(); },

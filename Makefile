@@ -68,7 +68,7 @@ nxt-sync: ## Create/refresh the NXT project's venv from its lock (uv)
 control-sync: ## Create/refresh Mission Control's venv from its lock (uv; the gate and the run format are path sources, no robot's package)
 	@cd $(CONTROL_DIR) && uv sync --frozen && echo "control-sync PASS"
 
-.PHONY: duck-sync observatory-sync libs-sync test-libs
+.PHONY: duck-sync observatory-sync libs-sync test-libs test-web
 duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its dev tools: the tests need rerun-sdk)
 	@cd $(DUCK_DIR) && uv sync --frozen && echo "duck-sync PASS"
 
@@ -86,6 +86,11 @@ test-libs: libs-sync ## The libraries' own tests, each in its own environment (n
 	  if (cd libs/$$d && uv run --frozen python $$f) >$$log 2>&1; then echo "PASS libs/$$d/$$f"; \
 	  else echo "FAIL libs/$$d/$$f"; cat $$log; fail=1; fi; rm -f $$log; \
 	done; [ $$fail = 0 ] && echo "test-libs PASS" || { echo "test-libs FAIL"; exit 1; }
+
+test-web: ## The shared web library (libs/web, RFC-0024): one token file no app declares again, one three.js (standard library only; its pages' tests are the two apps')
+	@$(PYTHON) libs/web/tests/test_tokens.py >/tmp/robotics-lab-test_web.log 2>&1 && echo "PASS libs/web/tests/test_tokens.py" \
+	  || { cat /tmp/robotics-lab-test_web.log; echo "test-web FAIL"; exit 1; }
+	@echo "test-web PASS"
 
 observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, with Playwright)
 	@cd $(OBSERVATORY_DIR) && uv sync --frozen && echo "observatory-sync PASS"
@@ -125,7 +130,7 @@ OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/te
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
                        tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
-                       tests/test_semantic_pages.py tests/test_anomaly_pages.py
+                       tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
 
 CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_robotfile.py tests/test_profile_api.py
 
@@ -148,7 +153,7 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
-	@for t in test_page test_robot_page; do log=$$(mktemp); \
+	@for t in test_page test_robot_page test_body_page; do log=$$(mktemp); \
 	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/$$t.py"; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/$$t.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log; done
 	@echo "test-control-page PASS"
@@ -232,6 +237,9 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/runs/duck/apartment/explore9 | grep -q '"ticks":116' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/three/ | grep -qi '<html' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/shell/shell.js >/dev/null \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/tokens.css | grep -q -- '--warn' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/vendor/three.module.js >/dev/null \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/body/body.js >/dev/null \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/fonts/fonts.css | grep -q 'woff2' \
 	    && docker exec $$cid test -f /index/index.sqlite \
 	    && mounts=$$(docker inspect -f '{{range .Mounts}}{{.Destination}}={{.RW}} {{end}}' $$cid) \
@@ -249,7 +257,7 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 # ---- Composite tiers ---------------------------------------------------------
 
 .PHONY: ci-fast
-ci-fast: lint test-libs test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
+ci-fast: lint test-libs test-web test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
 	@echo "ci-fast PASS"
 
 .PHONY: ci

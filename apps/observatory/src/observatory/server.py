@@ -20,6 +20,7 @@
     GET /api/v1/robots/{robot}                        its description: links, visuals (mesh URLs), joints from the root out
         .../meshes/{file}.stl                         a mesh of the description
     GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
+    GET /lib/...                                      the shared web library (libs/web): the design tokens, three.js, the robot body
     GET /watch/{robot}/{scene}/{run|latest}           the watch page (RFC-0013): one run, the robot's eye, live while written
     GET /api/v1/render                                the render service's engines (OBSERVATORY_RENDER), or {"available": false, "why"}
     POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
@@ -53,6 +54,7 @@ from runfile.catalog import Catalog
 
 log = logging.getLogger("observatory")
 WEB = Path(__file__).resolve().parents[2] / "web"
+LIB = Path(__file__).resolve().parents[4] / "libs" / "web"       # the web library both apps serve (RFC-0024): tokens, three.js, the body
 HEARTBEAT_S = 15.0
 REQUEST_TIMEOUT_S = 30.0
 STREAM_TIMEOUT_S = 60.0     # a live stream whose client stops reading is dropped after this long (a write that blocks)
@@ -60,7 +62,7 @@ GZIP_OVER = 1024
 PER_TICK = ("t", "belief", "truth", "truth_3d", "tilt", "cmd", "depth", "plan_at", "world_at")
 ONE_DAY = "public, max-age=86400"
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
-# the pages load only from their own origin (the libraries are vendored, the fonts served, no CDN); inline scripts and
+# the pages load only from their own origin (the libraries are vendored in libs/web and served at /lib/, the fonts served, no CDN); inline scripts and
 # styles are the import map and the shell's own, eval is what deck.gl's shaders need
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; "
        "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; "
@@ -266,6 +268,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(302, b"", "text/plain", {"Location": "/web/three/"})
         elif parts[0] == "web":
             self._static(parts[1:])
+        elif parts[0] == "lib":
+            self._static(parts[1:], LIB)
         elif parts[0] == "watch":
             self._watch(parts[1:])
         elif parts[:2] == ["api", "v1"]:
@@ -307,9 +311,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise HttpError(404, f"no run {key!r}")
         self._file(WEB / "three" / "watch.html", "text/html", "no-cache", {"Content-Security-Policy": CSP})
 
-    def _static(self, rest: list) -> None:
-        p = (WEB / "/".join(rest)).resolve()
-        if p != WEB and WEB not in p.parents:               # before anything that says what is there
+    def _static(self, rest: list, root: Path = WEB) -> None:
+        p = (root / "/".join(rest)).resolve()
+        if p != root and root not in p.parents:             # before anything that says what is there
             raise HttpError(404, "not found")
         if p.is_dir():
             if not self.path.split("?")[0].endswith("/"):
@@ -317,7 +321,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             p = p / "index.html"
         if not p.is_file():
             raise HttpError(404, "not found")
-        cache = ONE_DAY if ("vendor" in p.relative_to(WEB).parts or p.relative_to(WEB).parts[0] == "fonts") else "no-cache"
+        cache = ONE_DAY if ("vendor" in p.relative_to(root).parts or p.relative_to(root).parts[0] == "fonts") else "no-cache"
         ctype = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
         if p.suffix == ".js":
             ctype = "text/javascript"

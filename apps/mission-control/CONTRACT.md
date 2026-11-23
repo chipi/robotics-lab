@@ -35,8 +35,10 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | Call | Meaning |
 | --- | --- |
 | `GET /api/v1/robots` | `[{id, label, kind, online, lock, last_seen_age_s}]` |
-| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`), `guardrails` (the robot's own), `rates`, `site`, `goal_run`, `profile` (`{robot, variant, version, checksum, subsystems}`: the profile this machine runs for the robot, `version` null for the robot's own file, `subsystems` the profile's parts, each `{name, what?, check, logs?, conflicts?}`; null for a robot file that holds the robot itself) |
+| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports its joint angles: absent when it reports none), `guardrails` (the robot's own), `rates`, `site`, `goal_run`, `profile` (`{robot, variant, version, checksum, subsystems}`: the profile this machine runs for the robot, `version` null for the robot's own file, `subsystems` the profile's parts, each `{name, what?, check, logs?, conflicts?}`; null for a robot file that holds the robot itself) |
 | `PUT /api/v1/robots/{id}/site` | `{site}` (an id, or null): a robot is at one site at a time; refused while a goal run holds it |
+| `GET /api/v1/robots/{id}/description` | `{description}`: the robot's body for the page (RFC-0024), as the Observatory's `/api/v1/robots/{robot}` gives it (`name`, `root`, `links` with their visuals, `joints` from the root out, `meshes_missing`); each visual's `url` is a path under the API. `description` is null for a robot whose file holds the robot itself (no registered robot) or whose registration has no `robot.urdf` |
+| `GET /api/v1/robots/{id}/meshes/{file}` | a mesh of that description, binary STL (`model/stl`); `{file}` is one URL-encoded path inside the robot's folder; `404 not_found` for anything else |
 | `GET /api/v1/robots/{id}/map` | the robot's map, `{kind: "occupancy_grid", resolution_m, origin, width, height, data, frame, version}` with data -1 unknown, 0 free, 100 occupied; `404 no_map` when its capabilities have none |
 | `GET /api/v1/robots/{id}/sighting` | the latest camera record (ADR-0019): `pose`, `hfov_deg`, `range_m`, `seen[]` with x ahead and y left of the robot; `404 no_recogniser` |
 | `GET /api/v1/robots/{id}/profile` | the robot's profile on this machine (phase 5 step 1, `profiles.py`): `running {path, checksum}` (the file a goal started now runs), `current`, `versions [{version, checksum, current}]`, `writable` and `why_not`, `profile` (the running file, whole); `404 no_profile` for a robot file that holds the robot itself |
@@ -244,7 +246,7 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 
 | Kind | When |
 | --- | --- |
-| `state` | each robot's status at its `rates.state_hz` (default 2) |
+| `state` | each robot's status at its `rates.state_hz` (default 2): `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports them (the duck: robotd's angles under the profile's `joints.names`) |
 | `map` | when a robot's map changes, at most `rates.map_hz` (default 1) |
 | `robot-online`, `robot-offline` | a change, with the error |
 | `lock` | the gate's log: `event` is `acquired`, `refused`, `released`, `expired`, `taken_over`, `lease_ended`, `stop`, `stop_failed` |
@@ -323,9 +325,15 @@ is disabled while a run's `watch` is null. A robot's card links to its page, `#r
 (RFC-0023 D3): six sections, of which Overview ("fit to go", or each reason it is not: offline, its
 gate silent, held, a status flag, a major or critical alarm in the last minute, from
 `GET /robots/{id}` and the alarm feed) and Parts (the profile's subsystems, and who holds the robot)
-work, and Modules, Settings (a link to the profile API), Calibration and Body say what comes next.
-It uses the Observatory's colour tokens, in light and dark, and fits a 390 px phone. `window.__mc`
-is a hook for the page test.
+work, Body (RFC-0024 step 2) draws the robot's own 3D model from `GET /robots/{id}/description` and
+its meshes, posed from the state's `joints`, each joint coloured by the worst alarm in the last minute
+that names it (`joint_overload`, `joint_tracking`, `motor_hot`: its `values.joint`; major and critical
+the error colour, minor the warn colour; the joints not ok are listed in words), and Modules,
+Settings (a link to the profile API) and Calibration say what comes next. three.js is loaded only when
+a robot with a description is opened. The shared web library, `libs/web` (the design tokens, the
+vendored three.js, the body component), is served at `/lib/`: `/lib/tokens.css` (the colour tokens,
+light and dark, one file with the Observatory), `/lib/vendor/` and `/lib/body/`. The page fits a
+390 px phone. `window.__mc` is a hook for the page test.
 
 ## The simulated duck and the navigator API
 

@@ -176,9 +176,9 @@ with tempfile.TemporaryDirectory() as tmp:
     except urllib.error.HTTPError as e:
         code304 = e.code
     check("static files carry an ETag and answer a matching If-None-Match with 304", bool(etag) and code304 == 304, (etag, code304))
-    vendor = next((WEB for WEB in [server.WEB / "three" / "vendor"] if WEB.exists()))
+    vendor = server.LIB / "vendor"
     lib = next(p for p in vendor.iterdir() if p.is_file())
-    vh = urllib.request.urlopen(f"{base}/web/three/vendor/{lib.name}").headers
+    vh = urllib.request.urlopen(f"{base}/lib/vendor/{lib.name}").headers
     check("vendored libraries are cached for a day; the pages revalidate", "max-age=86400" in vh["Cache-Control"]
           and st.headers["Cache-Control"] == "no-cache", (vh["Cache-Control"], st.headers["Cache-Control"]))
     h = http.client.HTTPConnection(base.split("//")[1])

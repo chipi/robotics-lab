@@ -8,9 +8,9 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import profiles
+from . import description, profiles
 from .auth import unauthorized
 from .core import MissionControl
 from .errors import ApiError, invalid, not_found
@@ -19,8 +19,9 @@ API = "/api/v1"
 # What needs no token even when tokens are required: the health check, and STOP, which is open to everybody (RFC-0017 §3.4).
 OPEN_ROUTES = ("health", "stop", "stop_all")
 WEB = Path(__file__).resolve().parent / "web"
+LIB = Path(__file__).resolve().parents[4] / "libs" / "web"       # the web library both apps serve (RFC-0024): tokens, three.js, the robot body
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-                 ".svg": "image/svg+xml"}
+                 ".svg": "image/svg+xml", ".woff2": "font/woff2"}
 MAX_BODY = 1_000_000
 KEEPALIVE_S = 15.0
 SSE_BATCH = 200
@@ -148,6 +149,31 @@ def robot_sighting(c: Ctx):
     if not rt.cfg.capabilities.get("recognisers"):
         raise ApiError(404, "no_recogniser", f"{rt.cfg.id} has no recogniser")
     return {"ok": True, "sighting": rt.adapter.sighting()}
+
+
+# --- a robot's body (RFC-0024 step 2): its description and meshes, as the Observatory serves them ------------------------
+
+def _registered_name(c: Ctx) -> tuple:
+    """(the robot's id, the name of the registered robot its file points at, or None when its file holds the robot itself)."""
+    rt = c.mc.robot(c.args["id"])
+    return rt.cfg.id, rt.cfg.robot
+
+
+@route("GET", "/robots/{id}/description")
+def robot_description(c: Ctx):
+    """`description` is null for a robot that has none (its file holds the robot itself, or its registration has no robot.urdf): no
+    description is an answer, not a missing page."""
+    rid, name = _registered_name(c)
+    return {"ok": True, "description": description.describe(name, rid) if name else None}
+
+
+@route("GET", "/robots/{id}/meshes/{file}")
+def robot_mesh(c: Ctx):
+    _, name = _registered_name(c)
+    p = description.mesh_file(name, unquote(c.args["file"])) if name else None
+    if p is None:
+        raise not_found("mesh", c.args["file"])
+    return ("file", p, "model/stl")
 
 
 # --- a robot's profile versions (phase 5 step 1: profiles.py) ------------------------------------------
@@ -476,11 +502,30 @@ class Handler(BaseHTTPRequestHandler):
         name = "index.html" if path == "/" else path[len("/web/"):]
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", name) or not (WEB / name).is_file():
             raise ApiError(404, "no_route", f"no such file {path}")
-        data = (WEB / name).read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", CONTENT_TYPES.get(Path(name).suffix, "application/octet-stream"))
+        self._file(WEB / name, CONTENT_TYPES.get(Path(name).suffix, "application/octet-stream"))
+
+    def _lib(self, path: str) -> None:
+        """The shared web library (libs/web) under /lib/: a file in it, never a path outside it; the vendored three.js is cached for a day."""
+        rel = unquote(path[len("/lib/"):])
+        p = (LIB / rel).resolve()
+        if not rel or LIB.resolve() not in p.parents or not p.is_file():
+            raise ApiError(404, "no_route", f"no such file {path}")
+        self._file(p, CONTENT_TYPES.get(p.suffix, "application/octet-stream"), "public, max-age=86400" if "vendor" in p.relative_to(LIB.resolve()).parts else "no-cache")
+
+    def _file(self, p: Path, ctype: str, cache: str = "no-cache") -> None:
+        """A file with an ETag (304 when the client has it)."""
+        st = p.stat()
+        etag = f'"{st.st_size:x}-{st.st_mtime_ns:x}"'
+        self.send_response(304 if self.headers.get("If-None-Match") == etag else 200)
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", cache)
+        if self.headers.get("If-None-Match") == etag:
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        data = p.read_bytes()
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(data)
 
@@ -510,6 +555,9 @@ class Handler(BaseHTTPRequestHandler):
             if method == "GET" and (url.path == "/" or url.path.startswith("/web/")):
                 self._static(url.path)
                 return
+            if method == "GET" and url.path.startswith("/lib/"):
+                self._lib(url.path)
+                return
             for r in ROUTES:
                 m = r.regex.match(url.path.rstrip("/") or "/")
                 if m and r.method == method:
@@ -529,6 +577,9 @@ class Handler(BaseHTTPRequestHandler):
             result = r.fn(ctx)
             if isinstance(result, tuple) and result and result[0] == "stream":
                 serve_events(self, result[1])
+                return
+            if isinstance(result, tuple) and result and result[0] == "file":
+                self._file(result[1], result[2])
                 return
             status, payload = result if isinstance(result, tuple) else (200, result)
             self._send(status, payload)

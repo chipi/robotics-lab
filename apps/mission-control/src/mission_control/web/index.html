@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mission Control</title>
 <link rel="icon" href="data:,">
+<link rel="stylesheet" href="/lib/tokens.css">
 <link rel="stylesheet" href="/web/style.css">
+<script type="importmap">
+{"imports": {"three": "/lib/vendor/three.module.js", "three/addons/": "/lib/vendor/"}}
+</script>
 </head>
 <body>
 <header class="top">
@@ -163,7 +167,10 @@
   </section>
   <section id="rp-body" class="panel" aria-label="Body">
     <h2><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M7 11h10M9 21l3-6 3 6"/></svg>Body</h2>
-    <div class="dim">Next: the robot's own 3D model, each joint coloured by its worst state.</div>
+    <div id="rp-body-note" class="dim"></div>
+    <div id="rp-body-view" class="bodyview" hidden></div>
+    <ul id="rp-body-joints" class="list bodyjoints" aria-live="polite"></ul>
+    <div class="hint">Posed from the robot's joints, live. A joint turns the warn or the error colour for a minute after an alarm names it (joint_overload, joint_tracking, motor_hot); the list says which.</div>
   </section>
 </main>
 

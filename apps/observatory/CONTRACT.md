@@ -308,6 +308,11 @@ fails when the two part).
 
 ## The pages (ADR-0011)
 
+The pages share a web library with Mission Control, `libs/web` (RFC-0024), served at `/lib/` like `/web/`:
+the design tokens (`/lib/tokens.css`, loaded before `shell.css`), the vendored three.js (`/lib/vendor/`,
+cached for a day; the pages' import maps point at it) and the robot body component (`/lib/body/`). The
+CSP is unchanged: it is the same origin.
+
 The two pages are one workbench (`web/shell/`: top bar, outliner, properties, inspector, timeline,
 themes) with a
 renderer adapter each (`web/three/app.js`, `web/deck/app.js`). The view area is the element
@@ -371,7 +376,10 @@ exploreSnapshot() -> the body as a PNG data URL
 - **The Robot layer** (RFC-0011 §3.2, the three.js page): the run's robot's body in the views
   (`body.model`, its eye in the Body section): in the world frame of a run with `truth_3d`, the
   root link (the trunk) at the truth's whole pose; otherwise at the belief's x, y and yaw in the
-  frame looked at, tilted by `tilt`, at the registry's `stand_z`. The joints at the playhead.
+  frame looked at, tilted by `tilt`, at the registry's `stand_z`. The joints at the playhead, each
+  joint's link in the colour of its worst state (RFC-0024 step 2): the worst anomaly naming it
+  (`joint_overload`, `joint_tracking`, `motor_hot`: `values.joint`) at or before the playhead, major
+  and critical the error colour, minor the warn colour; a joint none names keeps its own colour.
 - **The robot's eye, what it decided and the watch page** (RFC-0013, prototype; the three.js page
   only, `createShell(adapter, {eye: true, watch})`).
   - **Views `eye`, `chase`, `watch`** (`setView`, `#view=` of the URL hash; the layout switch has Eye

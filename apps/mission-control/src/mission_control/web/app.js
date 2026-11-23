@@ -177,11 +177,11 @@ function renderRobotPage() {
   const id = routeId();
   $("robot-page").hidden = id == null;
   document.querySelector("main.page").hidden = id != null;
-  if (id == null) { requestDraw(); return; }
+  if (id == null) { closeBody(); requestDraw(); return; }
   const r = S.robots.find((x) => x.id === id);
   if (r && S.robot !== id) { guard(() => selectRobot(id, true))(); return; }
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
-  if (!r) { for (const k of ["overview-body", "parts-body", "holder", "settings-body"]) setKids($("rp-" + k)); return; }
+  if (!r) { for (const k of ["overview-body", "parts-body", "holder", "settings-body"]) setKids($("rp-" + k)); closeBody(); return; }
   const why = fitReasons(r), st = r.status || {}, pr = r.profile;
   setKids($("rp-overview-body"),
     h("div", { id: "fit", class: "fit " + (why.length ? "bad" : "ok"), "data-fit": String(!why.length) }, why.length ? "Not fit to go" : "Fit to go"),
@@ -202,6 +202,48 @@ function renderRobotPage() {
         (s.conflicts || []).length ? h("span", {}, "conflicts with ", h("b", {}, s.conflicts.join(", "))) : null)))));
   setKids($("rp-settings-body"), "Next: edit a copy, versions, diff, export and import. The API has them now: ",
     pr ? h("a", { class: "watch", href: `${API}/robots/${r.id}/profile`, target: "_blank", rel: "noopener" }, "this robot's profile") : "this robot has no profile.");
+  paintBody(r);
+}
+
+// The body (RFC-0024 step 2): libs/web's component in bodyview.js, loaded only when a robot with a description is opened. Posed from the
+// robot's live joint angles, each joint coloured by the worst alarm in the last minute that names it.
+const descs = {};          // robot id -> its description, or null when it has none
+let bodyMod = null, bodyFor = null;        // the module once loaded; the robot whose body is mounted or being mounted
+
+async function openBody(id) {
+  closeBody();
+  bodyFor = id;
+  const note = $("rp-body-note"), box = $("rp-body-view");
+  try {
+    if (!(id in descs)) descs[id] = (await api("GET", `/robots/${id}/description`)).description;
+    if (bodyFor !== id) return;
+    const d = descs[id];
+    const drawable = d && d.links.some((l) => l.visuals.some((v) => !d.meshes_missing.includes(v.mesh)));
+    box.hidden = !drawable;
+    setKids(note, !d ? "No 3D model: this robot's file holds the robot itself, so it has no description."
+      : !drawable ? `The description's ${plural(d.meshes_missing.length, "mesh")} ${d.meshes_missing.length === 1 ? "is" : "are"} not built on this machine (make robots): nothing to draw.` : null);
+    if (!drawable) return;
+    bodyMod ||= await import("/web/bodyview.js");
+    await bodyMod.mount(box, id, d, API + "/", S.token ? { headers: { Authorization: "Bearer " + S.token } } : undefined);
+    const r = S.robots.find((x) => x.id === id);
+    if (bodyFor === id && r) paintBody(r);
+  } catch (e) {
+    setKids(note, `The body could not be loaded: ${e.message}`);
+  }
+}
+
+function paintBody(r) {
+  if (bodyFor !== r.id) { openBody(r.id); return; }
+  if (!bodyMod || !descs[r.id]) return;
+  const alarms = S.alarms.filter((x) => x.robot === r.id).map((x) => ({ t: x.at, a: x.a }));
+  const bad = bodyMod.update((r.status || {}).joints, alarms, Date.now() / 1000, ALARM_WINDOW_S);
+  setKids($("rp-body-joints"), Object.entries(bad).map(([j, s]) => h("li", { class: s.state === "error" ? "sev-major" : "sev-minor" }, `${j}: ${s.state}, ${s.anomaly}`)));
+}
+
+function closeBody() {
+  if (bodyMod) bodyMod.unmount();
+  bodyFor = null;
+  setKids($("rp-body-joints"));
 }
 
 $("rp-back").addEventListener("click", () => { location.hash = ""; });
@@ -706,7 +748,11 @@ function onEvent(e) {
   const r = S.robots.find((x) => x.id === e.robot);
   switch (e.kind) {
     case "state":
-      if (r) { r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags }; later("robots-render", async () => renderRobots(), 150); requestDraw(); }
+      if (r) {
+        r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags, joints: e.joints };
+        later("robots-render", async () => renderRobots(), 150); requestDraw();
+        if (routeId() === r.id) paintBody(r);
+      }
       break;
     case "map":
       if (e.robot === S.robot) { S.map = e.map; requestDraw(); }
@@ -757,7 +803,7 @@ async function loadAll() {
   renderAll();
 }
 
-window.__mc = { S, renderAreas, renderRobotPage,toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
+window.__mc = { S, renderAreas, renderRobotPage, get body() { return bodyMod; }, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
 async function start() { renderGoalFields(); await loadAll(); connect(); S.ready = true; }
 $("token-set").addEventListener("click", guard(async () => {
   S.token = $("token").value.trim();

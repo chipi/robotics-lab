@@ -1,10 +1,10 @@
 // Explore (UXS-001, RFC-0011 §3.3): the right panel's detail view for looking closely at one thing. Its first kind is the
-// robot's body: the description's meshes placed by its forward kinematics (robot.js), posed as recorded at the playhead or
+// robot's body: the description's meshes placed by its forward kinematics (libs/web/body/robot.js), posed as recorded at the playhead or
 // by hand, parts picked in the body or in the list of parts, with their details; isolate, hide, focus. three.js is loaded
 // when Explore first opens (the 2D page does not otherwise need it). Its other two kinds are the depth frame at the playhead
 // (exploredepth.js) and the world grid at the playhead (exploremap.js), both read from `data()`, the shell's account of the run now.
-import { chainsOf, linkPoses } from './robot.js';
-import { createBody } from './robotbody.js';
+import { chainsOf, linkPoses } from '/lib/body/robot.js';
+import { createBody } from '/lib/body/body.js';
 import { createDepthView } from './exploredepth.js';
 import { createMapView } from './exploremap.js';
 

@@ -92,7 +92,7 @@ with sync_playwright() as p:
               and [t.strip().lower() for t in page.eval_on_selector_all("#robot-page > section > h2", "(hs) => hs.map((h) => h.textContent)")] == SECTIONS)
         check("must fail: the page names the robot and goes back", "Microduck" in page.locator("#rp-title").inner_text() and page.locator("#rp-back").count() == 1)
         check("the placeholders say next, and Settings links to what exists (the profile in the API)",
-              all("next" in page.locator(f"#rp-{s}").inner_text().lower() for s in ("modules", "calibration", "body"))
+              all("next" in page.locator(f"#rp-{s}").inner_text().lower() for s in ("modules", "calibration"))
               and "/api/v1/robots/duck-1/profile" in page.locator("#rp-settings a").get_attribute("href"))
         check("STOP is still the robot's: it names the robot whose page is open", page.locator("#stop-robot").inner_text() == "STOP duck-1")
         check("no sideways scrolling on the robot page at 390 px", no_scroll())

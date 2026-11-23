@@ -1,0 +1,60 @@
+/* The design tokens, one file for Mission Control and the Observatory (RFC-0024 step 1): the colours, light and dark, and the two fonts.
+   Dark is the default; the light values apply with data-theme="light" (set by each page from the system or its switch) and, in a page that
+   sets no data-theme, when the system is light. The third block is the second block again (a stylesheet cannot share one
+   between a selector and a media query): libs/web/tests/test_tokens.py fails when they differ, or when an app declares a token itself.
+   A page's own sizes (the Observatory's --left, --right, --row) stay in its own stylesheet. */
+:root {
+  color-scheme: dark;
+  --bg-app: #1b1c1f; --bg-viewport: #202125; --bg-panel: #2a2b2f; --bg-header: #323338;
+  --bg-field: #1f2023; --bg-hover: #34363b; --bg-selected: #2f4a72; --border: #3b3d43;
+  --text: #d8dadf; --text-dim: #9a9da6; --text-faint: #6d7079;
+  --accent: #4a8bf0; --accent-soft: rgba(74, 139, 240, .18); --on-accent: #cfe0ff; --accent-ring: rgba(74, 139, 240, .55);
+  --warn: #e0a030; --error: #e05a4f; --ok: #3cc85a;
+  --bg-shead: #2e2f34; --bg-shead-hover: #33353a; --bg-press: #3a3c42; --border-strong: #4a4d55; --border-hover: #4f525a;
+  --hair: #ffffff12; --hair-2: #ffffff08; --hair-3: #ffffff22; --hair-4: #ffffff55; --hair-5: #ffffff1c;
+  --veil: rgba(27, 28, 31, .78); --veil-2: rgba(27, 28, 31, .75); --shadow: #0009; --scrim: #000a;
+  --tip-bg: #101114; --range-bar: #4a4d55; --range-knob: #8a8d96; --check-border: #575a62;
+  --c-belief: #4f8cff; --c-truth: #34c065; --c-plan: #e6b400; --c-obst: #ff9600; --c-drop: #ee44ee;
+  --c-floor: #3cc85a; --c-ob: #f0503f; --c-over: #4a86ee; --c-box: #8a8a96; --c-occ: #8a8a90; --c-free: #2f4a39;
+  --c-x: #ef5350; --c-y: #66bb6a; --c-z: #5b8def; --c-gap: #ff8c1a;
+  --draw-grid: #33353b; --draw-label: #8d90a0; --draw-rel: #d8dadf; --draw-sel: #ffffff;
+  --box-fill: #8a8a9629; --gap-hatch: #ffffff0f;
+  --ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-app: #e4e6ea; --bg-viewport: #f6f7f9; --bg-panel: #f0f1f4; --bg-header: #e1e3e8;
+  --bg-field: #ffffff; --bg-hover: #e6e8ed; --bg-selected: #cfe0fb; --border: #c9ccd3;
+  --text: #1d1f24; --text-dim: #5a5e68; --text-faint: #8d919b;
+  --accent: #2f6fe0; --accent-soft: rgba(47, 111, 224, .14); --on-accent: #1b4fb0; --accent-ring: rgba(47, 111, 224, .5);
+  --warn: #b06a00; --error: #c0392b; --ok: #1f8f3c;
+  --bg-shead: #e8eaef; --bg-shead-hover: #dfe2e8; --bg-press: #d6d9e0; --border-strong: #b3b7c0; --border-hover: #aab0ba;
+  --hair: #00000014; --hair-2: #0000000a; --hair-3: #00000026; --hair-4: #00000055; --hair-5: #0000001c;
+  --veil: rgba(240, 241, 244, .86); --veil-2: rgba(240, 241, 244, .84); --shadow: #00000033; --scrim: #0000006a;
+  --tip-bg: #ffffff; --range-bar: #c3c7cf; --range-knob: #8d919b; --check-border: #a5a9b3;
+  --c-belief: #4682ff; --c-truth: #28b45a; --c-plan: #e6b400; --c-obst: #ff9600; --c-drop: #e600e6;
+  --c-floor: #3cc85a; --c-ob: #e63228; --c-over: #3c78e6; --c-box: #8a8a96; --c-occ: #505050; --c-free: #cdeccd;
+  --c-x: #e03030; --c-y: #30b030; --c-z: #3060e0;
+  --draw-grid: #dadae0; --draw-label: #555a66; --draw-rel: #222222; --draw-sel: #000000;
+  --box-fill: #6e708028; --gap-hatch: #00000012;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg-app: #e4e6ea; --bg-viewport: #f6f7f9; --bg-panel: #f0f1f4; --bg-header: #e1e3e8;
+    --bg-field: #ffffff; --bg-hover: #e6e8ed; --bg-selected: #cfe0fb; --border: #c9ccd3;
+    --text: #1d1f24; --text-dim: #5a5e68; --text-faint: #8d919b;
+    --accent: #2f6fe0; --accent-soft: rgba(47, 111, 224, .14); --on-accent: #1b4fb0; --accent-ring: rgba(47, 111, 224, .5);
+    --warn: #b06a00; --error: #c0392b; --ok: #1f8f3c;
+    --bg-shead: #e8eaef; --bg-shead-hover: #dfe2e8; --bg-press: #d6d9e0; --border-strong: #b3b7c0; --border-hover: #aab0ba;
+    --hair: #00000014; --hair-2: #0000000a; --hair-3: #00000026; --hair-4: #00000055; --hair-5: #0000001c;
+    --veil: rgba(240, 241, 244, .86); --veil-2: rgba(240, 241, 244, .84); --shadow: #00000033; --scrim: #0000006a;
+    --tip-bg: #ffffff; --range-bar: #c3c7cf; --range-knob: #8d919b; --check-border: #a5a9b3;
+    --c-belief: #4682ff; --c-truth: #28b45a; --c-plan: #e6b400; --c-obst: #ff9600; --c-drop: #e600e6;
+    --c-floor: #3cc85a; --c-ob: #e63228; --c-over: #3c78e6; --c-box: #8a8a96; --c-occ: #505050; --c-free: #cdeccd;
+    --c-x: #e03030; --c-y: #30b030; --c-z: #3060e0;
+    --draw-grid: #dadae0; --draw-label: #555a66; --draw-rel: #222222; --draw-sel: #000000;
+    --box-fill: #6e708028; --gap-hatch: #00000012;
+  }
+}
