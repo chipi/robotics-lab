@@ -93,6 +93,7 @@ const robot = () => S.robots.find((r) => r.id === S.robot) || null;
 async function loadRobots() {
   const list = (await api("GET", "/robots")).robots;
   S.robots = await Promise.all(list.map(async (r) => (await api("GET", "/robots/" + r.id)).robot));
+  S.robots.forEach(seedAlarms);
   const now = Date.now();
   for (const r of S.robots) r.lock_at = now;
   if (!robot() && S.robots.length) await selectRobot(S.robots[0].id, true);
@@ -103,6 +104,7 @@ async function refreshRobot(id) {
   const i = S.robots.findIndex((r) => r.id === id);
   if (i < 0) return loadRobots();
   S.robots[i] = (await api("GET", "/robots/" + id)).robot;
+  seedAlarms(S.robots[i]);
   S.robots[i].lock_at = Date.now();
   renderRobots();
   if (id === S.robot && S.robots[i].site !== S.site) await loadSite();
@@ -804,10 +806,35 @@ function logLine(e) {
 
 // --- alarms (RFC-0023 D5, RFC-0019 section 4.2): every anomaly a navigator raises, live; the badge counts the last minute's ---------
 const SEV = ["info", "minor", "major", "critical"];
-const ALARM_WINDOW_S = 60;
+let ALARM_WINDOW_S = 60;
 const ALARM_KEEP = 200;
 S.alarms = [];      // oldest first: {robot, goal_run, watch, at (wall s), a (RFC-0019's record)}
 S.alarmSel = null;
+
+const alarmKey = (x) => [x.robot, x.goal_run, x.a.n, x.a.t, x.a.anomaly, x.a.severity].join("|");
+
+// What the server kept of the last minute (the robot's `alarms`: the worst overall and the worst per joint) joins the feed once: the window
+// is the server's, and an alarm the feed already has, or brings later, is not counted twice (the same robot, run, number and record, not the same time).
+function seedAlarms(r) {
+  const al = r.alarms;
+  if (!al) return;
+  if (al.window_s) ALARM_WINDOW_S = al.window_s;
+  const have = new Set(S.alarms.map(alarmKey));
+  let added = false;
+  for (const e of [al.worst, ...Object.values(al.joints || {})]) {
+    if (!e) continue;
+    const x = { robot: r.id, goal_run: e.goal_run, watch: e.watch, at: e.at, a: e.anomaly };
+    if (have.has(alarmKey(x))) continue;
+    have.add(alarmKey(x));
+    S.alarms.push(x);
+    added = true;
+  }
+  if (!added) return;
+  S.alarms.sort((a, b) => a.at - b.at);
+  S.alarmSel = null;
+  renderAlarmBadge();
+  renderAlarms();
+}
 
 function worstOf(list) { return list.reduce((w, x) => (SEV.indexOf(x.a.severity) > SEV.indexOf(w) ? x.a.severity : w), "info"); }
 function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
@@ -881,7 +908,9 @@ $("alarm").addEventListener("click", () => {
 setInterval(() => { if (S.alarms.length) { renderAlarmBadge(); renderAlarms(); } }, 5000);
 
 function onAnomaly(e) {
-  S.alarms.push({ robot: e.robot, goal_run: e.goal_run, watch: e.watch, at: e.t, a: e.anomaly || {} });
+  const x = { robot: e.robot, goal_run: e.goal_run, watch: e.watch, at: e.t, a: e.anomaly || {} };
+  if (S.alarms.some((y) => alarmKey(y) === alarmKey(x))) return;
+  S.alarms.push(x);
   if (S.alarms.length > ALARM_KEEP) { S.alarms.shift(); if (S.alarmSel != null) S.alarmSel = Math.max(0, S.alarmSel - 1); }
   renderAlarmBadge();
   renderAlarms();
@@ -959,7 +988,7 @@ async function loadAll() {
   renderAll();
 }
 
-window.__mc = { S, renderAreas, renderRobotPage, get body() { return bodyMod; }, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
+window.__mc = { S, renderAreas, renderRobotPage, loadRobots, get body() { return bodyMod; }, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
 async function start() { renderGoalFields(); await loadAll(); connect(); S.ready = true; }
 $("token-set").addEventListener("click", guard(async () => {
   S.token = $("token").value.trim();

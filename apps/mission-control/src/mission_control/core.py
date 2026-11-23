@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import goals, guardrails, planner
 from .errors import ApiError, conflict, invalid, not_found
+from .alarms import RecentAlarms
 from .auth import Tokens
 from .events import EventBus
 from .robots import RobotRuntime, make_adapter
@@ -48,6 +49,8 @@ class MissionControl:
         self.state_dir = Path(state_dir) if state_dir else None
         self.store = Store(self.state_dir / "mission-control.sqlite" if self.state_dir else None)
         self.bus = EventBus(wall)
+        self.alarms = RecentAlarms(wall)
+        self.bus.listen(self.alarms.on_event)
         self.sites = Sites(self.store, wall)
         self.tokens = Tokens(self.store, wall)
         self.robots: dict = {}
@@ -132,7 +135,8 @@ class MissionControl:
         return {**self.robot_brief(rt), "factsheet": rt.cfg.factsheet, "control": rt.cfg.control,
                 "capabilities": rt.cfg.capabilities, "status": rt.status,
                 "guardrails": rt.cfg.guardrails, "rates": rt.cfg.rates, "site": self.sites.robot_site(rt.cfg.id),
-                "goal_run": rt.active.id if rt.active else None, "profile": self._profile_brief(rt.cfg)}
+                "goal_run": rt.active.id if rt.active else None, "profile": self._profile_brief(rt.cfg),
+                "alarms": self.alarms.view(rt.cfg.id)}
 
     def list_robots(self) -> list:
         return [self.robot_brief(rt) for rt in self.robots.values()]

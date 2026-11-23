@@ -369,7 +369,7 @@ implements", built unattended. Decisions are made by the recommended default and
 | A3 | Calibration frame, plus one simulator procedure (odometry scale), through a navigator-API method (contract 1.3, the operator's choice) | runner unit test, page test, one simulator run | L | yes; the real duck's tape entry stubbed |
 | A4 | RFC-0024 steps 1 and 2 (accepted 2026-11-23): the shared `libs/web` (tokens, three.js, the body from `robotbody.js`), then the body in Mission Control, live, beside the watch page's | page tests in both apps | L | done, `aea6d23` |
 | A5 | The body with the duck's real meshes in Chromium: every link drawn, a joint coloured by an alarm. A page test that skips when the meshes are not built | screenshots, phone and desktop | S | done (2026-11-23): 15 of 15 links, 70 of 70 visuals, a hip red on `joint_overload` |
-| A6 | The robot view carries the last minute's alarms (the worst per joint, the worst overall), so the body's colours and Overview's fit verdict are right when the page opens | page test: opened after an alarm, the joint is already coloured and the robot unfit | S | yes, after A5, before B2 (operator, 2026-11-23) |
+| A6 | The robot view carries the last minute's alarms (the worst per joint, the worst overall), so the body's colours and Overview's fit verdict are right when the page opens | page test: opened after an alarm, the joint is already coloured and the robot unfit | S | done (2026-11-23): `GET /robots/{id}` carries the minute's worst alarms |
 
 #### 4b units
 

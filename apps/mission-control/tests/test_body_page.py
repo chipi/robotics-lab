@@ -27,7 +27,7 @@ from common import DUCK_REGISTRATION, FAKE_FILE, check, finish, installation_fil
 
 from observatory import kinematics
 from observatory.shots import launch
-from mission_control import description
+from mission_control import alarms as alarms_mod, description
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
@@ -239,6 +239,30 @@ with sync_playwright() as p:
         page.evaluate("location.hash = '#robot/duck-1/body'")
         wait("window.__mc.body?.state()?.drawn === 3")
         check("and back on the duck the body is drawn again, once", page.locator("#rp-body canvas").count() == 1)
+
+        # a page opened after the alarm: the server's last minute (shortened to 3 s here) seeds it, so the joint is coloured at once
+        alarms_mod.WINDOW_S = 3
+        page.wait_for_timeout(3500)
+        mc.bus.emit("anomaly", robot="duck-1", goal_run=1, watch=None, anomaly={"n": 7, "t": 1.0, "anomaly": "joint_overload", "source": "robot", "module": "body",
+                    "severity": "major", "detector": "d", "summary": "overload before the page opened", "values": {"joint": "left_hip_pitch"}})
+        late = ctx.new_page()
+        late.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+        late.goto(BASE + "/#robot/duck-1/body")
+        late.wait_for_function("window.__mc && window.__mc.ready && window.__mc.body?.state()?.drawn === 3", timeout=20000)
+        lj = lambda: late.evaluate("window.__mc.body.state().joints") or {}
+        late.wait_for_function("window.__mc.body.state().joints?.left_hip_pitch?.state === 'error'", timeout=8000)
+        check("must fail: opened after a major joint_overload: the joint's row says error, and the mesh has the error colour, with no live event since the page opened",
+              late.locator("#rp-joints-body tr[data-joint=left_hip_pitch]").get_attribute("data-state") == "error"
+              and lj()["left_hip_pitch"] == {"state": "error", "color": err} and lj()["left_knee"]["state"] == "ok", lj())
+        check("and the page's window is the server's (3 s), and the alarm is counted once (the worst overall and the worst of its joint are one)",
+              late.evaluate("window.__mc.S.alarms.length") == 1, late.evaluate("window.__mc.S.alarms.length"))
+        late.evaluate("window.__mc.loadRobots()")
+        late.wait_for_timeout(500)
+        check("a reload of the robot's view does not count it twice", late.evaluate("window.__mc.S.alarms.length") == 1)
+        late.wait_for_function("window.__mc.body.state().joints?.left_hip_pitch?.state === 'ok'", timeout=12000)
+        check("must fail: after the window the joint is ok again and its own colour is back", lj()["left_hip_pitch"]["color"] == own["left_hip_pitch"], lj())
+        late.close()
+        alarms_mod.WINDOW_S = 60
         check("no script error and no console error in the whole session", errors == [], errors)
     finally:
         browser.close()

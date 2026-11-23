@@ -15,11 +15,16 @@ class EventBus:
         self._events: list = []
         self._seq = 0
         self._cond = threading.Condition()
+        self._listeners: list = []
 
     @property
     def seq(self) -> int:
         with self._cond:
             return self._seq
+
+    def listen(self, fn) -> None:
+        """Call `fn(event)` for every event emitted from now on, on the emitting thread."""
+        self._listeners.append(fn)
 
     def emit(self, kind: str, robot: str | None = None, **data) -> dict:
         with self._cond:
@@ -29,7 +34,9 @@ class EventBus:
             if len(self._events) > self._size:
                 del self._events[: len(self._events) - self._size]
             self._cond.notify_all()
-            return event
+        for fn in self._listeners:
+            fn(event)
+        return event
 
     def since(self, seq: int, limit: int = 1000) -> tuple:
         """(events after `seq`, gap). `gap` is true when the ring no longer holds everything after it."""

@@ -20,6 +20,7 @@ from playwright.sync_api import sync_playwright
 from common import FAKE_FILE, check, finish, installation_file
 
 from observatory.shots import launch
+from mission_control import alarms as alarms_mod
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
@@ -215,6 +216,27 @@ with sync_playwright() as p:
         duck.set_offline(False)
         page.evaluate("() => { for (const x of window.__mc.S.alarms) x.at -= 61; window.__mc.renderRobotPage(); }")
         fit_is("true")
+
+    # --- a page opened after the alarm: the server's last minute (shortened to 3 s here) is in the verdict at once ----------------
+    with soft("Overview, opened after an alarm"):
+        alarms_mod.WINDOW_S = 3
+        page.wait_for_timeout(3500)
+        mc.bus.emit("anomaly", robot="duck-1", goal_run=1, watch=None, anomaly={"n": 9, "t": 1.0, "anomaly": "joint_overload", "source": "robot", "module": "body",
+                    "severity": "major", "detector": "d", "summary": "overload before the page opened", "values": {"joint": "left_knee"}})
+        late = ctx.new_page()
+        late.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+        late.goto(BASE + "/#robot/duck-1")
+        wait(late, "!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#fit-checks')")
+        wait(late, "document.querySelector('#fit')?.dataset.fit === 'false'")
+        reasons = late.locator("#fit-checks li[data-ok=false]").all_inner_texts()
+        check("must fail: opened after a major alarm: Overview says Not fit, with the alarm as the reason", "not fit" in late.locator("#fit").inner_text().lower()
+              and len(reasons) == 1 and "major" in reasons[0] and "joint_overload" in reasons[0] and "overload before the page opened" in reasons[0], reasons)
+        check("and the Alarms card lists it, and the joint is named under the Body card", "joint_overload" in late.locator("#rp-alarms-body").inner_text()
+              and any("left_knee" in t and "error" in t for t in late.locator("#rp-body-joints li").all_inner_texts()), late.locator("#rp-alarms-body").inner_text())
+        wait(late, "document.querySelector('#fit')?.dataset.fit === 'true'", 12000)
+        check("must fail: after the window it is fit again", late.locator("#fit-checks li[data-ok=false]").count() == 0 and late.locator("#rp-alarms-sum").inner_text() == "none")
+        late.close()
+        # the window stays 3 s: restored to 60 it would take the alarm back into the later tests
 
     # --- Parts: the profile's subsystems -----------------------------------------------------------------------------
     with soft("Parts"):

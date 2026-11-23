@@ -193,6 +193,19 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
 - **Not covered:** no screen reader or axe run; Chromium only; no `inert` behind a drawer (a Tab
   trap only); the Modules row highlights overrides only among its first 12 values.
 
+### A6, the robot view carries the last minute's alarms (2026-11-23)
+
+- **Where:** `GET /robots/{id}` gains `alarms {window_s, worst, joints}` (additive): the worst
+  alarm of the last 60 s and the worst per joint, each with its time. The window is one constant,
+  `alarms.WINDOW_S`; the page takes it from the server.
+- **Seeded:** a page that opens seeds only the worst overall and the worst per joint, not every
+  alarm of the minute: the fit verdict and the joints are right at once, but the "N in the last
+  minute" count shows only those for alarms from before the page opened.
+- **Kept from the event bus**, so an alarm with no goal run running counts too. In memory only:
+  Mission Control's restart forgets the minute. No cap, only age, so the worst is never dropped.
+- **Not covered:** a browser clock that differs from the server's; the real duck's meshes test
+  (the colour proof is on the stand-in body).
+
 ## Findings to watch
 
 - **`test_replay_pages.py` failed once, cause unknown (2026-11-23).** It failed in a

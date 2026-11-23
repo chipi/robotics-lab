@@ -68,6 +68,35 @@ check("GET /robots: id, label, kind, online, lock, last-seen age", st == 200 and
 st, b = call("GET", "/robots/fake-1")
 check("GET /robots/{id}: capabilities and status with the frame named", b["robot"]["capabilities"]["navigator"]["goal_kinds"]
       and b["robot"]["status"]["pose"]["frame"] == "site" and b["robot"]["rates"]["state_hz"] == 2.0)
+check("a robot that raised no alarm carries an empty `alarms` with the window", b["robot"]["alarms"] == {"window_s": 60, "worst": None, "joints": {}}, b["robot"]["alarms"])
+
+
+def alarm(robot, sev, name, joint=None, n=1):
+    a = {"n": n, "t": 1.0, "anomaly": name, "source": "robot", "module": "body", "severity": sev, "detector": "d", "summary": name}
+    if joint:
+        a["values"] = {"joint": joint}
+    return mc.bus.emit("anomaly", robot=robot, goal_run=1, watch=None, anomaly=a)
+
+
+e1 = alarm("fake-1", "minor", "joint_tracking", "hip", 1)
+ticks(1.0)
+e2 = alarm("fake-1", "major", "joint_overload", "hip", 2)
+e3 = alarm("fake-1", "critical", "pose_jump", None, 3)
+e4 = alarm("fake-1", "minor", "motor_hot", "knee", 4)
+alarm("blind", "major", "joint_overload", "hip", 5)
+al = call("GET", "/robots/fake-1")[1]["robot"]["alarms"]
+check("the robot's view lists the alarms of the last minute: the worst overall with its time", al["worst"]["anomaly"]["n"] == 3 and al["worst"]["at"] == e3["t"]
+      and al["worst"]["goal_run"] == 1 and "watch" in al["worst"], al["worst"])
+check("and the worst per joint (a major beats an earlier minor; one that names no joint is in none), another robot's alarm not among them",
+      sorted(al["joints"]) == ["hip", "knee"] and al["joints"]["hip"]["anomaly"]["n"] == 2 and al["joints"]["hip"]["at"] == e2["t"]
+      and al["joints"]["knee"]["anomaly"]["severity"] == "minor", al["joints"])
+check("the same through GET /robots, which carries no alarms (the brief)", "alarms" not in call("GET", "/robots")[1]["robots"][0])
+ticks(59.5)
+al = call("GET", "/robots/fake-1")[1]["robot"]["alarms"]
+check("an alarm older than the window is dropped: the minor one from 60.5 s ago is gone, the others stay", e1["t"] < clock() - 60 < e2["t"] and al["joints"]["hip"]["anomaly"]["n"] == 2
+      and al["worst"]["anomaly"]["n"] == 3, (al, clock()))
+ticks(1.0)
+check("and when all are older, the view is empty again", call("GET", "/robots/fake-1")[1]["robot"]["alarms"] == {"window_s": 60, "worst": None, "joints": {}})
 st, b = call("GET", "/robots/fake-1/map")
 check("GET /robots/{id}/map: a robot that has one", st == 200 and b["map"]["kind"] == "occupancy_grid" and b["map"]["frame"] == "site")
 st, b = call("GET", "/robots/blind/map")
