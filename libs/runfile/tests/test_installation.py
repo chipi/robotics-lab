@@ -52,6 +52,11 @@ except I.InstallationError as e:
     got = str(e)
 check("must fail: a robot's profile variant, as written; none when not named (the runner's default depends on its host)",
       got == ("real", None), got)
+pl = I.load(write({"installation": 1, "robots": {"nxt-shooterbot": {"placement": "workstation", "connections": {"nxt-web": "http://127.0.0.1:8000"}},
+                                                  "duck": {}}}, "placement.json"))
+check("a robot's placement and its connections' addresses, as written; none when not named",
+      pl.robot("nxt-shooterbot").placement == "workstation" and pl.robot("nxt-shooterbot").connections == {"nxt-web": "http://127.0.0.1:8000"}
+      and pl.robot("duck").placement is None and pl.robot("duck").connections == {}, pl.robot("nxt-shooterbot"))
 check("the source is the file read", inst.source == tmp / "installation.json")
 minimal = I.load(write({"installation": 1}, "minimal.json"))
 check("only the version is required: a machine running nothing", minimal.robots == {} and minimal.data is None and minimal.state is None)
@@ -90,6 +95,10 @@ CASES = [
     ("an empty gate socket", {**GOOD, "robots": {"duck": {"gate": ""}}}, "robots.duck.gate must be the path of the gate's socket"),
     ("a map socket (Mission Control reads the map through the navigator API)", {**GOOD, "robots": {"duck": {"map": "/m.sock"}}},
      "robots.duck: unknown keys ['map']"),
+    ("a placement that is not a name", {**GOOD, "robots": {"duck": {"placement": 3}}}, "robots.duck.placement must be a name"),
+    ("connections that are not an object", {**GOOD, "robots": {"duck": {"connections": "http://x"}}}, "robots.duck.connections must be an object"),
+    ("a connection that is not an http(s) URL", {**GOOD, "robots": {"duck": {"connections": {"nxt-web": "127.0.0.1:8000"}}}},
+     "robots.duck.connections.nxt-web must be an http(s) URL"),
     ("an empty variant", {**GOOD, "robots": {"duck": {"variant": ""}}}, "robots.duck.variant must be the name of a profile variant"),
     ("a registration that is not a path", {**GOOD, "robots": {"duck": {"registration": 7}}},
      "robots.duck.registration must be the path of the robot's registration file"),

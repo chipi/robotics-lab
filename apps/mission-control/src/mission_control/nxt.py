@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 
 from robotgate import PROTOCOL, GateError
+from runfile import installation
 
 from .errors import ApiError
 
@@ -150,23 +151,39 @@ class NxtGate:
 class NxtAdapter:
     """Robot file: {"type": "nxt-web", "url": "http://127.0.0.1:8000", "full_speed_mps": 0.3, "full_turn_rps": 1.5}. `full_speed_mps` and
     `full_turn_rps` say what a full track command is: a forward speed of full_speed_mps is both tracks at 100, a turn of full_turn_rps is
-    the tracks 50 apart each way. They are the factsheet's maximumSpeed and maximumAngularSpeed when the file has those; the NXT's
-    speeds are not measured, so its file sets these two itself, as assumed values, and leaves the factsheet's limits out."""
+    the tracks 50 apart each way. For a robot file that points at the registered NXT they are the profile's locomotion.cruise_mps and
+    yaw_max_rad_s, and the address is the installation's `connections.nxt-web`; a file that holds the robot itself, or an adapter block
+    that names them, keeps its own. Else the factsheet's maximumSpeed and maximumAngularSpeed when the file has those; the NXT's
+    speeds are not measured, so they are assumed values, and the factsheet's limits are left out."""
 
     def __init__(self, cfg, clock=time.monotonic):
         from .robots import ConfigError
 
         options = cfg.adapter
         limits = cfg.factsheet.get("physicalParameters", {})
-        self.url = (options.get("url") or "http://127.0.0.1:8000").rstrip("/")
-        self.max_vx = options.get("full_speed_mps") or limits.get("maximumSpeed")
-        self.max_vyaw = options.get("full_turn_rps") or limits.get("maximumAngularSpeed")
+        locomotion = cfg.profile.data.get("locomotion", {}) if cfg.profile is not None else {}
+        self.url = (options.get("url") or self._connection(cfg, ConfigError) or "http://127.0.0.1:8000").rstrip("/")
+        self.max_vx = options.get("full_speed_mps") or locomotion.get("cruise_mps") or limits.get("maximumSpeed")
+        self.max_vyaw = options.get("full_turn_rps") or locomotion.get("yaw_max_rad_s") or limits.get("maximumAngularSpeed")
         if not self.max_vx or not self.max_vyaw:
-            raise ConfigError(f"{cfg.id}: the nxt-web adapter needs full_speed_mps and full_turn_rps (or the factsheet's maximumSpeed and "
-                              "maximumAngularSpeed) to turn a speed into a track command")
+            raise ConfigError(f"{cfg.id}: the nxt-web adapter needs full_speed_mps and full_turn_rps (or the profile's locomotion.cruise_mps and "
+                              "yaw_max_rad_s, or the factsheet's maximumSpeed and maximumAngularSpeed) to turn a speed into a track command")
         self.max_vx, self.max_vyaw = float(self.max_vx), float(self.max_vyaw)
         self.clock = clock
         self._gate = None
+
+    @staticmethod
+    def _connection(cfg, error) -> str | None:
+        """nxt-web's address from this machine's installation (`robots.<robot>.connections.nxt-web`), for a robot file that points at a
+        registered robot; None when it names none."""
+        if cfg.robot is None:
+            return None
+        try:
+            inst = installation.load(required=False)
+        except installation.InstallationError as exc:
+            raise error(f"{cfg.id}: {exc}") from None
+        r = inst.robot(cfg.robot) if inst is not None else None
+        return r.connections.get("nxt-web") if r is not None else None
 
     def call(self, method: str, params: dict | None = None):
         raise NotImplementedError("the NXT's calls go through its gate (make_gate)")

@@ -33,7 +33,23 @@ Cleared items are struck from the list when settled.
 | B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
+## For the real duck's link (B5, `lab-link`, recipe in [REAL-DUCK-LINK.md](REAL-DUCK-LINK.md))
+
+- Confirm the duck's ssh address, key and sshd; `microduck@duck` comes from RFC-0002.
+- `lab-gate` does not reconnect: after a dropped link it exits and is restarted once `lab-link`
+  says `up`. A hook that restarts it is not built (a scope decision).
+- The link polls `robot.health` every 2 s on its own connection; if the real robotd refuses a
+  second connection beside the gate's, the check says DEAD on a working link.
+- A dropped link does not stop the robot; robotd's own 0.5 s deadman is the backstop, not
+  verified on the real duck.
+
 ## Findings to know about
+
+- **An installation that registers both robots** makes `labrunner.robots.get()` ask for
+  `--robot`; and `lab-go --robot nxt-shooterbot` would fail on the NXT's missing navigator API
+  (`navapi.py:209`, `remote.py:150`) instead of refusing clearly. A small fix, due with D7.
+- **The robot page shows the NXT "Not fit"** while online and idle (D4's page check); D5 looks at
+  it.
 
 - **B3's fall and contact are proven only by stubs:** the sim duck neither tilts past 45 degrees
   nor reports `bumped` or `carried` on demand. Only drop clearance has a simulator proof. A false

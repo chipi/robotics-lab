@@ -84,6 +84,29 @@ except RegistrationError as e:
     said = str(e)
 check("must fail: a registration file that does not exist is refused (no fallback to an entry point)", "no registration file" in said, said)
 
+# a robot with no navigator and no payload (the NXT, phase 5 unit D4): both commands are optional; it names where it can run
+bare = {"registration": 1, "name": "rover", "profile": "profile.json", "placements": ["workstation"]}
+b = registry.module("rover", inst({"rover": {"registration": str(reg(bare, "bare.json"))}}))
+check("a robot with no payload and no navigator_api reads as None for both, and its placements as a list",
+      b.PAYLOAD is None and b.NAVIGATOR_API is None and b.SIM is None and b.PLACEMENTS == ["workstation"], b)
+check("a robot that names no placements: an empty list", registry.module("rover", i).PLACEMENTS == [])
+for name, d, why in (
+        ("placements that is not a list", {**bare, "placements": "workstation"}, "'placements' must be a list"),
+        ("an empty placement name", {**bare, "placements": [""]}, "'placements' must be a list"),
+        ("a payload that is not a command, with no navigator_api", {**bare, "payload": []}, "'payload' must be a command")):
+    try:
+        registry.module("rover", inst({"rover": {"registration": str(reg(d, "bad.json"))}}))
+        said = "accepted"
+    except RegistrationError as e:
+        said = str(e)
+    check(f"must fail: a registration with {name} is refused, naming the file", why in said and "bad.json" in said, said)
+
+nxt = REPO / "robots/nxt-shooterbot/registration.json"
+n = registry.module("nxt-shooterbot", inst({"nxt-shooterbot": {"registration": str(nxt)}}))
+check("the NXT's own registration file registers the NXT: its profile, no navigator or payload, the workstation as its placement",
+      n.PROFILE == REPO / "robots/nxt-shooterbot/profile.json" and n.NAVIGATOR_API is None and n.PAYLOAD is None
+      and n.PLACEMENTS == ["workstation"], n)
+
 duck = REPO / "robots/duck/registration.json"
 i = inst({"duck": {"registration": str(duck)}})
 d = registry.module("duck", i)

@@ -9,6 +9,10 @@ machine keeps its runs, its state and its services, and, per robot it runs, wher
                          "profile": "~/.local/state/robotics-lab/profiles/duck",
                          "registration": "/work/robotics-lab/main/robots/duck/registration.json", "variant": "sim"}}}
 
+A robot whose software runs beside a connector over its own link (the NXT behind nxt-web) also names `placement` (where this machine
+runs it: one of its registration's `placements`) and `connections`, the address of each connector ("nxt-web": a URL), so Mission
+Control never assumes a localhost; a sensor in the robot's profile names the connection it comes from.
+
 Robots are keyed by their registered name: a `registration` file named here (runfile.registry; the operator's decision a), else
 the entry point `robotics_lab.robots` of a package installed beside the reader. Every key but `installation` is
 optional; a machine running no robot has `robots: {}`. Read from `--installation` where a command takes one, else
@@ -26,7 +30,7 @@ VERSION = 1
 ENV = "ROBOTICS_LAB_INSTALLATION"
 DEFAULT = Path("~/.config/robotics-lab/installation.json")
 KEYS = {"installation", "data", "index", "observatory", "state", "robots"}
-ROBOT_KEYS = {"navigator", "gate", "profile", "registration", "variant"}
+ROBOT_KEYS = {"navigator", "gate", "profile", "registration", "variant", "placement", "connections"}
 
 
 class InstallationError(ValueError):
@@ -50,6 +54,8 @@ class Robot:
     profile: Path | None = None           # the profile version this machine runs; None: the robot's own (repository) profile
     registration: Path | None = None      # the robot's registration file (runfile.registry); None: its package's entry point
     variant: str | None = None            # the profile variant this machine runs it in (sim, real); None: sim with a truth, else real
+    placement: str | None = None          # where this machine runs the robot's software (one of its registration's placements)
+    connections: dict = field(default_factory=dict)   # connection name -> URL of the robot's connector here (nxt-web); sensors name theirs
 
 
 @dataclass(frozen=True)
@@ -115,8 +121,17 @@ def parse(d, source: Path) -> Installation:
         variant = r.get("variant")
         if variant is not None and not (isinstance(variant, str) and variant):
             raise bad(f"robots.{name}.variant must be the name of a profile variant, like sim or real")
+        placement = r.get("placement")
+        if placement is not None and not (isinstance(placement, str) and placement):
+            raise bad(f"robots.{name}.placement must be a name, like workstation")
+        conns = r.get("connections", {})
+        if not isinstance(conns, dict):
+            raise bad(f"robots.{name}.connections must be an object of connection name: URL")
+        for cname, url in conns.items():
+            if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+                raise bad(f"robots.{name}.connections.{cname} must be an http(s) URL, not {url!r}")
         robots[name] = Robot(name, nav, _path(gate) if gate else None, _path(prof) if prof else None,
-                             _path(reg) if reg else None, variant)
+                             _path(reg) if reg else None, variant, placement, dict(conns))
     return Installation(source, _path(d["data"]) if "data" in d else None, _path(d["index"]) if "index" in d else None,
                         d.get("observatory"), _path(d["state"]) if "state" in d else None, robots)
 

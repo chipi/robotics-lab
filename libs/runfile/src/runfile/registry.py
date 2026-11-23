@@ -12,7 +12,9 @@ A registration file:
      "navigator_api": [".venv/bin/python", "-m", "duck_lab.nav.server"],
      "sim": "sim"}
 
-Paths (the profile, sim, and a command's program when it is a relative path with a `/`) are relative to the file's folder."""
+Paths (the profile, sim, and a command's program when it is a relative path with a `/`) are relative to the file's folder.
+`payload` and `navigator_api` are optional: a robot with no navigator (the NXT) leaves both out and reads as None. `placements` is where
+the robot's software can run (RFC-0025 §3.8: "workstation" now; the Pi module adds more); omitted, it reads as an empty list."""
 
 from __future__ import annotations
 
@@ -23,7 +25,7 @@ from pathlib import Path
 
 GROUP = "robotics_lab.robots"
 REGISTRATION = 1
-REG_KEYS = {"registration", "name", "profile", "payload", "navigator_api", "sim"}
+REG_KEYS = {"registration", "name", "profile", "payload", "navigator_api", "sim", "placements"}
 
 
 class ProfileSourceError(ValueError):
@@ -85,6 +87,9 @@ def load_registration(path: Path, name: str):
     commands = {}
     for k in ("payload", "navigator_api"):
         c = d.get(k)
+        if k not in d:
+            commands[k] = None
+            continue
         if not (isinstance(c, list) and c and all(isinstance(x, str) and x for x in c)):
             raise bad(f"'{k}' must be a command: a list of non-empty strings")
         prog = c[0]
@@ -92,8 +97,11 @@ def load_registration(path: Path, name: str):
     sim = d.get("sim")
     if sim is not None and not (isinstance(sim, str) and sim):
         raise bad("'sim' must be the path of the robot's simulator files")
-    return types.SimpleNamespace(NAME=name, PROFILE=profile, PAYLOAD=commands["payload"],
-                                 NAVIGATOR_API=commands["navigator_api"], SIM=rel(sim) if sim else None, REGISTRATION=path)
+    placements = d.get("placements", [])
+    if not (isinstance(placements, list) and all(isinstance(x, str) and x for x in placements)):
+        raise bad("'placements' must be a list of non-empty names, like workstation")
+    return types.SimpleNamespace(NAME=name, PROFILE=profile, PAYLOAD=commands["payload"], NAVIGATOR_API=commands["navigator_api"],
+                                 SIM=rel(sim) if sim else None, PLACEMENTS=placements, REGISTRATION=path)
 
 
 def names(inst=False) -> list:

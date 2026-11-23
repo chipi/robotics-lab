@@ -1,0 +1,60 @@
+{
+  "profile_version": 1,
+  "id": "nxt-shooterbot",
+  "label": "NXT Shooterbot",
+  "kind": "nxt-shooterbot",
+  "body": {"description": "nxt-shooterbot", "urdf": "robot.urdf"},
+  "factsheet": {
+    "typeSpecification": {"seriesName": "LEGO NXT 2.0 (8547)", "mobileRobotKinematics": "DIFFERENTIAL"},
+    "protocolFeatures": {"mobileRobotActions": [
+      {"actionType": "fire", "actionScopes": ["INSTANT"], "blockingTypes": ["HARD"], "pauseAllowed": false, "cancelAllowed": false, "irreversible": true}
+    ]}
+  },
+  "control": {"deadman_s": 0.6, "lease_s": 20.0, "takeover": []},
+  "footprint": {
+    "shape": "circle",
+    "radius_m": 0.10,
+    "height_m": 0.12,
+    "measured": "not measured: the footprint the run format draws for the NXT (libs/runfile adapters/nxt.py FOOTPRINT), nominal",
+    "why": "a stand-in: the NXT has no navigator, so nothing plans with it; the block is here because today's profile schema requires one (NXT-D0.md section 3)"
+  },
+  "locomotion": {
+    "cruise_mps": 0.3,
+    "yaw_max_rad_s": 1.5,
+    "measured": "assumed, not measured (K16): a full track command is taken to be 0.3 m/s forward and 1.5 rad/s turning; D1 measures them at the brick",
+    "why": "what Mission Control turns a speed into a track command by (the nxt-web adapter's full_speed_mps and full_turn_rps, which a robot file may still set and which win): cruise_mps is both tracks at 100, yaw_max_rad_s the tracks 50 apart each way. A stand-in block: the NXT has no navigator to plan with it"
+  },
+  "capabilities": {
+    "sensors": [
+      {"id": "ultrasonic", "kind": "range", "port": "4", "source": "nxt-web", "range_m": 2.55},
+      {"id": "colour", "kind": "colour", "port": "3", "source": "nxt-web"}
+    ],
+    "recognisers": [],
+    "guardrails": [],
+    "skills": [],
+    "description": "LEGO NXT 2.0 on tracks, behind nxt-web; no pose, no map, no navigator: status, drive and STOP only. Its speeds are not measured: locomotion.cruise_mps and yaw_max_rad_s are assumed values for a full track command"
+  },
+  "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
+  "plugins": {"locomotion": "nxt-tracks@1"},
+  "subsystems": [
+    {"name": "nxt-web", "what": "the connector: the only process on the brick's link; its lock, STOP and deadman are the robot's", "check": {"kind": "none"}},
+    {"name": "robotd-lite", "what": "the program on the brick: the motors, the sensors, the stop when commands stop and the stop at 15 cm", "check": {"kind": "none"}}
+  ],
+  "variants": {
+    "sim": {
+      "subsystems": [
+        {"name": "nxt-web", "what": "the connector, run with --sim: the kinematic world, its ultrasonic and its stop at 15 cm stand in for the brick", "check": {"kind": "none"}}
+      ],
+      "capabilities": {
+        "sensors": [
+          {"id": "ultrasonic", "kind": "range", "port": "4", "source": "nxt-web", "range_m": 2.55}
+        ],
+        "recognisers": [],
+        "guardrails": [],
+        "skills": [],
+        "description": "LEGO NXT 2.0 on tracks, behind nxt-web --sim (a kinematic world read from scene.json); the ultrasonic is simulated, the colour sensor is not (the scene has no floor colour). No pose, no map, no navigator: status, drive and STOP only"
+      }
+    },
+    "real": {}
+  }
+}

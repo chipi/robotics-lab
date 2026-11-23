@@ -1,0 +1,6 @@
+{
+  "id": "nxt-1",
+  "label": "NXT Shooterbot",
+  "robot": "nxt-shooterbot",
+  "adapter": {"type": "nxt-web", "call_timeout_s": 5.0}
+}

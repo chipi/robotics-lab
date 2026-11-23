@@ -1,0 +1,6 @@
+{
+  "registration": 1,
+  "name": "nxt-shooterbot",
+  "profile": "profile.json",
+  "placements": ["workstation"]
+}
