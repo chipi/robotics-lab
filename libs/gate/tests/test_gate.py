@@ -299,6 +299,96 @@ names.write_text("# the operator's own\noperator-laptop\n\n  operator-phone  # t
 check("the takeover list: one name per line, comments and blanks skipped", load_names(names) == {"operator-laptop", "operator-phone"}, load_names(names))
 check("a missing list is empty", load_names(tmp / "none.txt") == frozenset())
 
+# --- the other-doors watch (RFC-0017 §3.8, RFC-0002 §3.6): a fake state source feeds observe_state -----------------------------
+def watched(**kw):
+    robot, clock, log = Robot(), Clock(), []
+    g = Gate(robot, clock=clock, log=log.append, **kw)
+    got = []
+    cid = g.open("mission-control", lambda m, p: got.append((m, p)))
+    g.open("viewer", lambda m, p: got.append(("viewer:" + m, p)))
+    return g, robot, clock, log, got, cid
+
+
+def feed(g, state):
+    try:
+        g.observe_state(state)
+        return None
+    except Exception as exc:
+        return exc
+
+
+def drive_state(source="gate-proxy", **move):
+    return {"autonomous": False, "move": {"source": source, "applied": {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}, **move}}
+
+
+def raised(log):
+    return [e for e in log if e["event"] == "someone_else_drives"]
+
+
+OURS = dict(own_sources={"gate-proxy"})
+MOVING = {"vx": 0.3, "vy": 0.0, "vyaw": 0.0}
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+n = len(robot.calls)
+err = feed(g, drive_state(applied={"vx": 0.2, "vy": 0.0, "vyaw": 0.0}))
+check("the holder driving (our source, motion, lease held) raises nothing",
+      err is None and g.who()["holder"] == "mission-control" and not raised(log) and len(robot.calls) == n, (err, log))
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+err = feed(g, {"autonomous": True, "move": {"source": "gate-proxy"}})
+check("autonomous set: someone_else_drives is logged with the sign, the robot is stopped, the lease ended",
+      err is None and len(raised(log)) == 1 and raised(log)[0]["signal"] == "autonomous" and robot.stopped()
+      and g.who()["holder"] is None, (err, log))
+check("the holder gets lease_lost naming someone_else_drives; every connection gets the someone_else_drives event",
+      ("lease_lost", {"lease_id": 1, "reason": "someone_else_drives"}) in got
+      and any(m == "someone_else_drives" for m, p in got) and any(m == "viewer:someone_else_drives" for m, p in got), got)
+n = len(robot.calls)
+feed(g, {"autonomous": True})
+check("the same episode raises once, not at every frame", len(raised(log)) == 1 and len(robot.calls) == n, log)
+feed(g, {"autonomous": False})
+feed(g, {"autonomous": True})
+check("a clean frame re-arms: the next episode raises again", len(raised(log)) == 2, log)
+r = refusal(g, cid, "robot.move", {"vx": 0.1})
+check("the ended holder is told why when it calls", getattr(r, "data", {}).get("reason") == "someone_else_drives", r)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+feed(g, drive_state(source="pollen-app"))
+check("a move.source that is not ours raises, stops, ends the lease",
+      len(raised(log)) == 1 and raised(log)[0].get("signal") == "move.source" and raised(log)[0].get("source") == "pollen-app"
+      and robot.stopped() and g.who()["holder"] is None, log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+feed(g, drive_state(applied=MOVING))
+check("motion while no lease is held raises and stops the robot",
+      len(raised(log)) == 1 and raised(log)[0].get("signal") == "motion_without_lease" and robot.stopped(), log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+g.handle(cid, "gate.release")
+feed(g, drive_state(applied=MOVING))
+check("the robot still coasting just after the gate's own stop is not someone else", not raised(log), log)
+clock.t += 5
+feed(g, drive_state(applied=MOVING))
+check("the same motion seconds after the stop is", len(raised(log)) == 1, log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+n = len(robot.calls)
+errs = [feed(g, {}), feed(g, {"pose": [0, 0, 0]}), feed(g, {}), feed(g, "not a state")]
+nw = [e for e in log if e["event"] == "not_watched"]
+check("fields robotd does not fill raise nothing and are reported once as not watched",
+      errs == [None] * 4 and len(nw) == 1 and set(nw[0]["fields"]) == {"autonomous", "move.source", "move.applied"}
+      and g.who()["holder"] == "mission-control" and len(robot.calls) == n and not raised(log), (errs, log))
+
+g, robot, clock, log, got, cid = watched()
+g.handle(cid, "gate.acquire")
+feed(g, drive_state(source="anyone"))
+check("without a named own source, move.source is not judged and is reported as not watched",
+      g.who()["holder"] == "mission-control" and any(e["event"] == "not_watched" and "move.source" in e["fields"] for e in log), log)
+
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")
 raise SystemExit(1 if failures else 0)

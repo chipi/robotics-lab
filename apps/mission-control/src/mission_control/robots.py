@@ -246,8 +246,10 @@ class Session:
 
 
 class RobotRuntime:
+    OWN_SOURCE = "mission-control"
+
     def __init__(self, cfg: RobotConfig, adapter, *, clock, wall, bus, log_dir=None):
-        self.cfg, self.adapter, self.clock, self.bus = cfg, adapter, clock, bus
+        self.cfg, self.adapter, self.clock, self.bus, self.wall = cfg, adapter, clock, bus, wall
         self.link = Link(adapter.call, clock, cfg.call_timeout_s)
         sink = JsonlLog(Path(log_dir) / f"gate-{cfg.id}.jsonl", wall) if log_dir else None
         self._sink = sink
@@ -255,12 +257,13 @@ class RobotRuntime:
             # a gate in its own process (duck-gate, RFC-0017 §3.2): its lease, takeover list and log are its own
             self.gate = adapter.make_gate(self.link)
         else:
-            self.gate = Gate(self.link, clock=clock, wall=wall, lease_s=cfg.lease_s, takeover_names=cfg.takeover, log=self._log)
+            self.gate = Gate(self.link, clock=clock, wall=wall, lease_s=cfg.lease_s, takeover_names=cfg.takeover, log=self._log,
+                             own_sources=(self.OWN_SOURCE,))
         self._holder = None
         self.navigator = adapter.make_navigator(self.gate, clock) if cfg.capabilities.get("navigator") else None
         self.mutex = threading.RLock()
         self.sessions: OrderedDict = OrderedDict()
-        self._conn = self.gate.open("mission-control")  # Mission Control's own connection: reads and polls
+        self._conn = self.gate.open(self.OWN_SOURCE, self._notified)  # Mission Control's own connection: reads and polls
         self.status = None
         self.status_at = None
         self._next_poll = 0.0
@@ -268,6 +271,15 @@ class RobotRuntime:
         self._map_version = None
         self._was_online = None
         self.active = None  # the goal run on this robot now (a core.ActiveRun)
+
+    def _notified(self, method: str, params: dict) -> None:
+        """The gate says something else drives (RFC-0017 §3.8): an alarm on the bus, as the robot's own alarms are, so the page lists it."""
+        if method == "someone_else_drives":
+            signal = params.get("signal")
+            self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly={
+                "anomaly": "someone_else_drives", "severity": "critical", "source": "gate", "t": self.wall(),
+                "summary": f"something other than the lease holder drives the robot ({signal}); the robot was stopped and the lease ended",
+                "values": {k: v for k, v in params.items()}})
 
     def _log(self, entry: dict) -> None:
         if self._sink:
@@ -288,6 +300,8 @@ class RobotRuntime:
                 self.status = self.gate.handle(self._conn, "robot.state")
                 self.status_at = now
                 self.bus.emit("state", robot=self.cfg.id, **self.status)
+                if not getattr(self.gate, "remote", False):     # a remote gate (duck-gate) watches its own stream
+                    self.gate.observe_state(self.status)
             except Exception:
                 pass
         if self.cfg.capabilities.get("map") and now >= self._next_map:

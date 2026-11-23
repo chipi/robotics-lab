@@ -43,6 +43,7 @@ class FakeRobotd:
         self.path = path
         self.calls: list = []
         self.conns: list = []
+        self.extra: dict = {}               # merged into every streamed state
         self._lock = threading.Lock()
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(path))
@@ -74,7 +75,7 @@ class FakeRobotd:
             while True:
                 seq += 1
                 try:
-                    send({"jsonrpc": "2.0", "method": "robot.state", "params": {"seq": seq}})
+                    send({"jsonrpc": "2.0", "method": "robot.state", "params": {"seq": seq, **self.extra}})
                 except OSError:
                     return
                 time.sleep(1.0 / rate["hz"])
@@ -360,6 +361,31 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a stale socket file is taken over", Client(tmp / "stale.sock").call("robot.state", {"tag": "t"})["result"]["tag"] == "t")
     p2.stop()
     robotd2.close()
+
+    # the other doors (RFC-0017 §3.8): a state frame that shows autonomous reaches the gate through the proxy
+    robotd3 = FakeRobotd(tmp / "robotd3.sock")
+    p3log = tmp / "gate3.jsonl"
+    p3 = Proxy(tmp / "gate3.sock", tmp / "robotd3.sock", log=p3log, own_sources={"gate-proxy"})
+    p3.start()
+    drv, watcher = Client(tmp / "gate3.sock", hello="navigator"), Client(tmp / "gate3.sock", hello="viewer")
+    drv.call("gate.acquire")
+    drv.call("robot.move", MOVE)
+    watcher.call("robot.subscribe", {"hz": 20})
+    time.sleep(0.5)
+    p3_events = lambda: [json.loads(x)["event"] for x in p3log.read_text().splitlines()] if p3log.exists() else []
+    check("normal frames (nothing filled) leave the holder driving, and the watch says once it does not watch",
+          drv.call("gate.who")["result"]["holder"] == "navigator" and p3_events().count("not_watched") == 1
+          and "someone_else_drives" not in p3_events(), p3_events())
+    robotd3.extra = {"autonomous": True}
+    check("a state frame with autonomous true ends the lease and is logged",
+          wait_for(lambda: drv.call("gate.who")["result"]["holder"] is None) and "someone_else_drives" in p3_events(), p3_events())
+    check("... the robot was stopped upstream, then a zero move", ("robot.stop" in robotd3.methods())
+          and [c for c in robotd3.calls if c[1] == "robot.move"][-1][2] == ZERO, robotd3.calls[-4:])
+    check("... the holder got lease_lost and every client the someone_else_drives event",
+          wait_for(lambda: any(n.get("method") == "gate.lease_lost" and n["params"]["reason"] == "someone_else_drives" for n in drv.notes))
+          and wait_for(lambda: any(n.get("method") == "gate.someone_else_drives" for n in watcher.notes)), drv.notes[-3:])
+    p3.stop()
+    robotd3.close()
 
 print()
 print("GATE PROXY", "FAIL " + ", ".join(failures) if failures else "PASS")

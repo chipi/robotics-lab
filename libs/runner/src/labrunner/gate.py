@@ -34,6 +34,7 @@ from robotgate import LEASE_SECONDS, PROTOCOL, Gate, GateError, JsonlLog, load_n
 TICK_S = 0.25
 RATE_SLACK = 0.25     # a state up to a quarter period early still counts as due: robotd's jitter never drops one
 OUT_QUEUE = 256            # lines waiting for one client; past it the oldest notification goes
+WATCH_QUEUE = 64            # robot.state frames waiting for the other-doors watch (RFC-0017 §3.8); past it a frame is skipped
 UPSTREAM_TIMEOUT_S = 5.0
 
 
@@ -233,11 +234,13 @@ class _Client:
 
 class Proxy:
     def __init__(self, listen: Path, upstream: Path, *, takeover_names=(), log: Path | None = None,
-                 lease_s: float = LEASE_SECONDS, upstream_timeout_s: float = UPSTREAM_TIMEOUT_S):
+                 lease_s: float = LEASE_SECONDS, upstream_timeout_s: float = UPSTREAM_TIMEOUT_S, own_sources=()):
         self.listen, self.upstream_path = Path(listen), Path(upstream)
         self._log = JsonlLog(log) if log else (lambda entry: None)
         self.upstream = Upstream(self.upstream_path, self._on_notification, upstream_timeout_s)
-        self.gate = Gate(self.upstream.call, lease_s=lease_s, takeover_names=takeover_names, log=self.log)
+        self.gate = Gate(self.upstream.call, lease_s=lease_s, takeover_names=takeover_names, log=self.log, own_sources=own_sources)
+        # the gate's stop calls robotd and waits for the answer the upstream reader delivers: the watch runs on its own thread
+        self._watch: queue.Queue = queue.Queue(WATCH_QUEUE)
         self._clients: list = []
         self._subscribers: list = []
         self._rates: dict = {}              # subscriber -> the rate it asked for (None: robotd's own)
@@ -251,7 +254,23 @@ class Proxy:
     def log(self, entry: dict) -> None:
         self._log(entry)
 
+    def _watch_states(self) -> None:
+        while not self._stop.is_set():
+            try:
+                state = self._watch.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self.gate.observe_state(state)
+            except Exception as exc:                                   # noqa: BLE001 - the watch must not end with one bad frame
+                self.log({"event": "watch_failed", "error": f"{type(exc).__name__}: {exc}"})
+
     def _on_notification(self, msg: dict) -> None:
+        if msg.get("method") == "robot.state":
+            try:
+                self._watch.put_nowait(msg.get("params"))
+            except queue.Full:
+                pass                        # a gap, as everywhere on the stream: the next frame says the same
         now = time.monotonic()
         with self._lock:
             targets = [(c, self._rates.get(c)) for c in self._subscribers]
@@ -334,6 +353,7 @@ class Proxy:
         self._server.settimeout(0.5)
         threading.Thread(target=self._accept, name="gate-accept", daemon=True).start()
         threading.Thread(target=self._tick, name="gate-tick", daemon=True).start()
+        threading.Thread(target=self._watch_states, name="gate-watch", daemon=True).start()
 
     def _accept(self) -> None:
         while not self._stop.is_set():
@@ -380,6 +400,8 @@ def main() -> None:
     ap.add_argument("--takeover-names", type=Path, help="file of client names that may take the robot from its holder, one per line")
     ap.add_argument("--log", type=Path, help="the gate's jsonl log (RFC-0017 §3.6)")
     ap.add_argument("--lease-s", type=float, default=LEASE_SECONDS, help="the lease: 10 to 30 s (RFC-0017 §3.3)")
+    ap.add_argument("--own-source", action="append", default=[], help="the name robotd shows as move.source for this gate's own connection "
+                    "(repeat for several); none given: move.source is not judged and the watch says so once")
     args = ap.parse_args()
     if args.listen is None or args.upstream is None:
         import simhost
@@ -388,7 +410,7 @@ def main() -> None:
         args.listen = args.listen or robots.gate_socket(sim)
         args.upstream = args.upstream or sim.sockets["robot"]
     proxy = Proxy(args.listen, args.upstream, takeover_names=load_names(args.takeover_names) if args.takeover_names else (),
-                  log=args.log, lease_s=args.lease_s)
+                  log=args.log, lease_s=args.lease_s, own_sources=args.own_source)
     proxy.start()
     print(f"lab-gate: {args.listen} -> {args.upstream}", flush=True)
     done = threading.Event()

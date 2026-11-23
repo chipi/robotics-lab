@@ -99,6 +99,16 @@ check("release frees it", mc.get_robot("fake-1")["lock"]["holder"] is None)
 lock_events = [e["event"] for e in kinds(mc, "lock")]
 check("the gate's log is on the event stream: acquired, refused, stop, taken_over, released",
       all(x in lock_events for x in ("acquired", "refused", "stop", "taken_over", "released")), lock_events)
+check("the fake's own state raises no someone_else_drives, and the gate says once what it does not watch",
+      "someone_else_drives" not in [e.get("event") for e in kinds(mc, "lock")]
+      and [e["fields"] for e in kinds(mc, "lock") if e.get("event") == "not_watched"].count(["autonomous", "move.source", "move.applied"]) <= 1)
+s4 = mc.robot("fake-1").acquire("agent-x")
+mc.robots["fake-1"].gate.observe_state({"autonomous": True})
+al = [e for e in kinds(mc, "anomaly") if e["anomaly"]["anomaly"] == "someone_else_drives"]
+check("something else driving (autonomous) is an alarm on the stream, critical, in the robot's view; the lease ended",
+      len(al) == 1 and al[0]["anomaly"]["severity"] == "critical" and al[0]["robot"] == "fake-1"
+      and mc.get_robot("fake-1")["alarms"]["worst"]["anomaly"]["anomaly"] == "someone_else_drives"
+      and mc.get_robot("fake-1")["lock"]["holder"] is None, al)
 
 # --- a point goal ------------------------------------------------------------------------------------
 mc, clock = boot(robot_file(guardrails=[{"name": "max_speed", "mps": 0.4}]))

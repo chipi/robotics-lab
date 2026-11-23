@@ -23,6 +23,8 @@ LEASE_SECONDS = 20.0  # RFC-0017 §3.3: 10 to 30 s, not the deadman's 0.5 s
 OPEN_METHODS = frozenset({"robot.state", "robot.subscribe", "robot.health", "tof.frame"})
 STOP_METHOD = "robot.stop"
 ZERO_MOVE = {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}
+MOTION_GRACE_S = 1.0  # the robot still coasting after the gate's own stop is not someone else
+MOTION_EPS = 1e-3
 
 
 class GateError(Exception):
@@ -100,8 +102,12 @@ class Gate:
     and must not call back into the gate."""
 
     def __init__(self, robot, *, clock=time.monotonic, wall=time.time, lease_s: float = LEASE_SECONDS,
-                 takeover_names=(), log=None):
+                 takeover_names=(), log=None, own_sources=()):
         self._robot = robot
+        self.own_sources = frozenset(own_sources)
+        self._stopped_at = None
+        self._other_drives = False
+        self._unwatched: set[str] = set()
         self._clock = clock
         self._wall = wall
         self.lease_s = lease_s
@@ -257,11 +263,59 @@ class Gate:
         if notify:
             conn.notify("lease_lost", {"lease_id": self._lease_id, "reason": reason})
 
+    # --- the other doors (RFC-0017 §3.8, RFC-0002 §3.6) --------------------------------------------
+
+    def observe_state(self, state) -> None:
+        """One `robot.state` from the robot's stream. Signs that something other than the holder drives: `autonomous` set (the
+        duck's own autod), `move.source` not one of `own_sources` (the name robotd shows for our upstream connection), motion in
+        `move.applied` with no lease held. Inferred, not read from a real robotd: the field names `move.source` and `move.applied`
+        beyond RFC-0002's `autonomous` and `move.source`. A field the robot does not fill is reported once as not watched and
+        raises nothing. A sign stops the robot and ends the lease; it raises once per episode, until a frame shows none."""
+        if not isinstance(state, dict):
+            return
+        with self._lock:
+            move = state.get("move") if isinstance(state.get("move"), dict) else {}
+            autonomous, source, applied = state.get("autonomous"), move.get("source"), move.get("applied")
+            moving = isinstance(applied, dict) and any(isinstance(v, (int, float)) and abs(v) > MOTION_EPS for v in applied.values())
+            missing = [name for name, ok in (("autonomous", isinstance(autonomous, bool)),
+                                             ("move.source", isinstance(source, str) and bool(self.own_sources)),
+                                             ("move.applied", isinstance(applied, dict))) if not ok]
+            new = [m for m in missing if m not in self._unwatched]
+            if new:
+                self._unwatched.update(new)
+                self._log({"event": "not_watched", "fields": new})
+            sign = None
+            if autonomous is True:
+                sign = {"signal": "autonomous"}
+            elif isinstance(source, str) and self.own_sources and source not in self.own_sources:
+                sign = {"signal": "move.source", "source": source}
+            elif moving and self._holder is None and not (
+                    self._stopped_at is not None and self._clock() - self._stopped_at <= MOTION_GRACE_S):
+                sign = {"signal": "motion_without_lease"}
+            if sign is None:
+                self._other_drives = False
+            elif not self._other_drives:
+                self._other_drives = True
+                self._someone_else_drives(sign)
+
+    def _someone_else_drives(self, sign: dict) -> None:
+        """Stop and report. The default where RFC-0017 only says "stop and report": the lease ends too, so nobody drives against
+        a door the gate cannot close."""
+        self._log({"event": "someone_else_drives", "lease_id": self._lease_id, **sign})
+        holder = self._holder
+        if holder is not None:
+            self._end("someone_else_drives", holder, f"someone else drives ({sign['signal']})", event="lease_ended")
+        else:
+            self._gate_stop()
+        for conn in list(self._conns.values()):
+            conn.notify("someone_else_drives", sign)
+
     def _gate_stop(self):
         """robot.stop, then an explicit zero move: robotd keeps its last request after the deadman
         fired and mapd would never see a stop (RFC-0017 §3.4). A failing robot must not keep the
         lease alive, so each call is tried and a failure is logged."""
         result = None
+        self._stopped_at = self._clock()
         for method, params in ((STOP_METHOD, {}), ("robot.move", ZERO_MOVE)):
             try:
                 reply = self._robot(method, params)

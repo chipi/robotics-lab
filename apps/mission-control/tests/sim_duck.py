@@ -463,6 +463,9 @@ finally:
     srv.server_close()
     mc.close()
     proxy.stop()
+    watch_lines = [x for x in (tmp / "gate.jsonl").read_text().splitlines() if '"not_watched"' in x or '"someone_else_drives"' in x]
+    print("the other-doors watch (the gate's log):\n" + "\n".join(watch_lines), flush=True)
+    check("the other-doors watch fired nothing on a normal run (RFC-0017 §3.8)", not any('"someone_else_drives"' in x for x in watch_lines), watch_lines)
     nav_proc.terminate()
     try:
         nav_proc.wait(timeout=15)
