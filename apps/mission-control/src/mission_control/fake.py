@@ -265,6 +265,8 @@ class FakeNavigator:
     def __init__(self, robot: FakeRobot, gate: Gate, clock=time.monotonic):
         self.robot, self.gate, self.clock = robot, gate, clock
         self.run: _Run | None = None
+        self.cal: dict | None = None                    # the calibration of contract 1.3; `calibrates` is the robot file's `calibration` option
+        self.calibrates: dict = {}
         self._cid = None
         self._on_decision = lambda text, **data: None
         self._on_objects = lambda objs: None
@@ -281,6 +283,9 @@ class FakeNavigator:
             raise RuntimeError("a goal is running")
         r = _Run(spec, self.clock())
         self.run = r
+        if self.cal is not None and self.cal["state"] == "running":
+            r.state, r.reason = "refused", "a calibration is running here"
+            return {"run_key": None}
         try:
             self._plan_start(r)
         except _Refused as exc:
@@ -308,6 +313,48 @@ class FakeNavigator:
         r = self.run
         if r is not None and r.state == "running":
             self._finish(r, "cancelled", "cancelled by Mission Control", None)
+
+    # --- calibration (contract 1.3): odometry_scale as arithmetic, over the clock; no motion --------------------------------------
+
+    def calibration_list(self) -> list:
+        return [{"id": "odometry_scale", "params": {"speed_mps": 0.3, "seconds": 8.0, "max_speed_mps": 0.3}}]
+
+    def calibration_start(self, procedure: str, params: dict) -> dict:
+        c = self.cal
+        if (self.run is not None and self.run.state == "running") or (c is not None and c["state"] == "running"):
+            return {"error": {"code": "busy", "message": "a goal or a calibration is running here"}}
+        if procedure != "odometry_scale":
+            return {"error": {"code": "unknown_procedure", "message": f"no procedure {procedure!r} (it has ['odometry_scale'])"}}
+        p = {"speed_mps": float(params.get("speed_mps", 0.3)), "seconds": float(params.get("seconds", 8.0))}
+        if not 0 < p["speed_mps"] <= 0.3 or not 2.0 <= p["seconds"] <= 30.0:
+            return {"error": {"code": "bad_params", "message": "speed_mps must be above 0 and at most 0.3, seconds between 2 and 30"}}
+        holder = self.gate.who().get("holder")
+        if holder not in (None, self.CLIENT):
+            return {"error": {"code": "held", "message": f"driven by {holder}", "holder": holder}}
+        self.cal = {"state": "running", "procedure": procedure, "params": p, "t0": self.clock(), "wall": time.time_ns()}
+        return {"ok": True, "procedure": procedure, "params": p}
+
+    def calibration_status(self) -> dict:
+        c = self.cal
+        if c is None:
+            return {"state": "idle", "procedure": None, "step": None, "reason": None, "params": None, "measured": None, "marks": []}
+        secs = c["params"]["seconds"]
+        if c["state"] == "running" and self.clock() - c["t0"] >= secs:
+            c["state"] = "done"
+        out = {"state": c["state"], "procedure": c["procedure"], "step": "walk" if c["state"] == "running" else None,
+               "reason": c.get("reason"), "params": c["params"], "measured": None, "marks": []}
+        if c["state"] == "done":
+            walked = c["params"]["speed_mps"] * secs
+            out["measured"] = {"odom_m": round(walked * self.calibrates.get("odom_factor", 1.1), 4), **c["params"]}
+            out["marks"] = [{"name": "start", "wall_ns": c["wall"], "odom": [0.0, 0.0]},
+                            {"name": "end", "wall_ns": c["wall"] + int(secs * 1e9), "odom": [out["measured"]["odom_m"], 0.0]}]
+            out["reference"] = {"by": "truth", "distance_m": round(walked, 4), "from": [0.0, 0.0], "to": [walked, 0.0]} if self.calibrates.get("truth", True) else None
+        return out
+
+    def calibration_cancel(self) -> None:
+        c = self.cal
+        if c is not None and c["state"] == "running":
+            c["state"], c["reason"] = "cancelled", "cancelled by Mission Control"
 
     def step(self) -> None:
         r = self.run
@@ -666,14 +713,16 @@ class FakeAdapter:
     control block's deadman_s."""
 
     def __init__(self, cfg, clock=time.monotonic):
-        options = cfg.adapter
+        options = self.options = cfg.adapter
         limits = cfg.factsheet.get("physicalParameters", {})
         self.robot = FakeRobot(options.get("world"), clock=clock, max_vx=limits.get("maximumSpeed", 0.5),
                                max_vyaw=limits.get("maximumAngularSpeed", 1.5), deadman_s=cfg.control["deadman_s"])
         self.call = self.robot
 
     def make_navigator(self, gate: Gate, clock=time.monotonic) -> FakeNavigator:
-        return FakeNavigator(self.robot, gate, clock)
+        nav = FakeNavigator(self.robot, gate, clock)
+        nav.calibrates = self.options.get("calibration") or {}      # {"truth": false}: no runner truth, the operator's tape; {"odom_factor": 1.1}
+        return nav
 
     def map(self) -> dict:
         return self.robot.map()

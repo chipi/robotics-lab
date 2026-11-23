@@ -176,7 +176,9 @@ already does, never a schematic like the mock-up's.
 - **D11. Calibration.** A: each measurement a guided procedure in Mission Control, run by the
   runner (in the simulator the truth measures; on the real robot the operator enters a tape
   measure's reading), the result beside the current value, kept or not as a new version. B: the
-  probes stay scripts, Mission Control shows their last results.
+  probes stay scripts, Mission Control shows their last results. (Built as A in unit A3, with the
+  motion in the navigator API, not the runner: the navigator drives, the runner adds the truth's
+  reference, Mission Control keeps the meaning; navigator contract 1.3, `libs/runner/CONTRACT.md`.)
 - **D12. The explorer while the robot works.** A: the Observatory's watch page gains the robot's
   small 3D model beside the map (posed by the recorded joints, coloured by health), a subsystems
   strip, and the alarm badge on its timeline; "animation of what it is doing" is the replay of the

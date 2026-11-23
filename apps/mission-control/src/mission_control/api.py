@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import description, profiles
+from . import calibration, description, profiles
 from .auth import unauthorized
 from .core import MissionControl
 from .errors import ApiError, invalid, not_found
@@ -211,6 +211,38 @@ def profile_diff(c: Ctx):
         raise invalid("diff needs ?a=<version>&b=<version>")
     return {"ok": True, "diff": profiles.compare(c.mc.robot(c.args["id"]), _int(a, "version"), _int(b, "version"),
                                                  c.q("notes") in ("1", "true"))}
+
+
+# --- a robot's calibration (phase 5 item 4a unit A3: calibration.py, the navigator contract 1.3) --------------------------------
+
+@route("GET", "/robots/{id}/calibration")
+def calibration_view(c: Ctx):
+    return {"ok": True, "calibration": calibration.view(c.mc.robot(c.args["id"]))}
+
+
+@route("POST", "/robots/{id}/calibration")
+def calibration_start(c: Ctx):
+    return 201, {"ok": True, "run": calibration.start(c.mc.robot(c.args["id"]), c.body)}
+
+
+@route("POST", "/robots/{id}/calibration/cancel")
+def calibration_cancel(c: Ctx):
+    return {"ok": True, "run": calibration.cancel(c.mc.robot(c.args["id"]))}
+
+
+@route("POST", "/robots/{id}/calibration/reference")
+def calibration_reference(c: Ctx):
+    return {"ok": True, "run": calibration.reference(c.mc.robot(c.args["id"]), c.body)}
+
+
+@route("POST", "/robots/{id}/calibration/keep")
+def calibration_keep(c: Ctx):
+    return 201, {"ok": True, "run": calibration.keep(c.mc.robot(c.args["id"]), c.body)}
+
+
+@route("DELETE", "/robots/{id}/calibration")
+def calibration_discard(c: Ctx):
+    return {"ok": True, **calibration.discard(c.mc.robot(c.args["id"]))}
 
 
 @route("PUT", "/robots/{id}/site")

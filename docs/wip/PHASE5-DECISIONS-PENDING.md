@@ -232,6 +232,49 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   Mission Control's fit verdict); the health poll's 10 s, so a servo can be hot for up to 10 s
   before the stop.
 
+### A3, calibration (2026-11-23)
+
+- **Three parties, one part each.** The navigator API drives the motion and reports what the robot's
+  own sensors said (contract 1.3: `calibration.list`, `.start`, `.status`, `.cancel`); its runner
+  adds the reference by the host's truth; Mission Control holds the meaning (the step guide, the
+  setting a procedure sets, how a measurement and a reference become its value). The navigator is
+  never given the truth. Another robot adds a procedure in all three places.
+- **`odometry_scale`:** stand 1.5 s, walk straight at `speed_mps` for `seconds`, stand 1.5 s, the
+  odometry read at the two stands. Default speed is the profile's `at_speed_mps` (0.3), else
+  `cruise_mps`, at most the factsheet's `maximumSpeed`; default 8 s, allowed 2 to 30. The value is
+  reference over the odometry's distance, to 3 decimals; a value outside 0.5 to 1.5 is not kept
+  (the robot was probably blocked, or the tape misread). No bound is the operator's: they are
+  constants in `calibration.py`.
+- **What keeping writes,** in the variant the robot runs (`variants.<variant>.localisation.odometry`):
+  the table's `by_speed` entry at the speed walked, and `scale` when that is `at_speed_mps` (the
+  profile's rule ties them within 1 %); with no table (the real variant today), `scale` alone. Its
+  `measured` line says when, by which procedure and run, the walk, both distances and the value,
+  and keeps the line it replaced after "Before this:" (so it grows by one line a calibration; the
+  version history has the rest). Its `why` is the variant's own, else a generic one. The version
+  is the next one, current, and applies from the next goal like any save.
+- **State:** one run per robot, in memory, read from the navigator when the page asks (it polls
+  every second while a run runs). Mission Control's restart forgets an unkept measurement.
+- **The tape (the real duck's path):** a runner on a host with no truth sends `reference: null`;
+  the page then asks for the distance the operator measured with a tape. Built and proven only
+  with the simulator's truth read by the test as the tape, not on the real duck.
+- **The page:** Calibration has a card per procedure and the measured lines under it. A card
+  opens the same side drawer as Settings (a drawer carries its tab, so one does not stay open on
+  another tab): the guide, the parameters, the run, the measurement beside the value now, what
+  keeping changes, Keep. The Parts, Modules and Settings tabs are unchanged.
+- **In the simulator:** 0.911 by the truth and 0.902 by a tape (the profile has 0.91). Two things
+  seen, not investigated: a straight walk of 5 s at a commanded 0.3 m/s covered 0.66 m by the
+  truth, about 0.13 m/s, so the by_speed row "0.3" is the commanded speed, not the one walked;
+  and from the dock a blind walk runs into the office cabinet 0.7 m ahead (the first run did:
+  0.54 m of 2.4), so the proof places the duck in the corridor first, by a point goal.
+  `POST /robots/{id}/drive` with `vx` 0 and `vyaw` 0.5 to 0.8 did not turn the standing duck in
+  40 s (the truth's heading did not change), so the proof does not turn it that way.
+- **Not covered:** a calibration is blind (no wall, cliff or contact check, and the truth guard
+  does not run): the operator clears the floor, and the real duck's walk needs the safety review
+  (4b's B6); a second procedure; the pivot and depth-pitch procedures of RFC-0023 J2; a
+  calibration while the robot is held by another client (refused live is not proven: the stand-in
+  gate's refusal is); a cancel and a STOP, proven in the navigator's unit test (a stand-in gate)
+  and the API test (the fake), not live in the simulator.
+
 ## Findings to watch
 
 - **`test_replay_pages.py` failed once, cause unknown (2026-11-23).** It failed in a

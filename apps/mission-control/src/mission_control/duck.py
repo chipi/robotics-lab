@@ -24,7 +24,7 @@ from pathlib import Path
 
 from robotgate import GateError, ProtocolError, check_protocol
 from runfile import installation
-from runfile.navcontract import ContractError, ENDS, check_hello, check_state
+from runfile.navcontract import ContractError, ENDS, check_calibration_state, check_hello, check_state, speaks
 
 from .errors import ApiError
 
@@ -273,6 +273,25 @@ class DuckNavigatorClient:
         except (OSError, RuntimeError):
             return
         self.settle(10.0)
+
+    # --- calibration (contract 1.3): the navigator drives, its runner adds the truth's reference, Mission Control keeps the meaning ---
+
+    def calibration_list(self) -> list:
+        """The procedures the navigator drives: none from one that speaks less than 1.3, which has no such methods."""
+        if not speaks(check_hello(self._rpc("hello")), "1.3"):
+            return []
+        return self._rpc("calibration.list")["procedures"]
+
+    def calibration_start(self, procedure: str, params: dict) -> dict:
+        return self._rpc("calibration.start", {"procedure": procedure, "params": params})
+
+    def calibration_status(self) -> dict:
+        st = self._rpc("calibration.status")
+        check_calibration_state(st.get("state"))
+        return st
+
+    def calibration_cancel(self) -> None:
+        self._rpc("calibration.cancel")
 
     def settle(self, seconds: float) -> None:
         """Poll until the run has ended or `seconds` are up: a STOP or a cancel is seen by the navigator at its next tick."""

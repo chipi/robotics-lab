@@ -153,7 +153,9 @@ with sync_playwright() as p:
         check("must fail: Calibration lists what the profile says was measured: the dict, the layer, when, by whom", ["joints.limits", "sim"] in rows and ["sensors.tof8x8.mount", "sim"] in rows, rows)
         row = page.locator("#cal-table tr[data-path='joints.limits'][data-layer=sim]").inner_text()
         check("... with the date and the script from the measured line", "2026-" in row and ".py" in row, row)
-        check("Calibration says A3's procedures come next", "next" in page.locator("#rp-calibration").inner_text().lower())
+        wait(page, "!!document.querySelector('[data-procedure=odometry_scale]')")
+        check("Calibration offers odometry_scale above the measured lines (test_calibration_page.py is the procedure's own)",
+              page.locator("[data-procedure=odometry_scale]").count() == 1 and page.locator("#cal-open-odometry_scale").is_enabled())
         check("no sideways scrolling on Calibration at 390 px", no_scroll())
         page.click("#tab-overview")
 
@@ -231,6 +233,7 @@ with sync_playwright() as p:
         reasons = late.locator("#fit-checks li[data-ok=false]").all_inner_texts()
         check("must fail: opened after a major alarm: Overview says Not fit, with the alarm as the reason", "not fit" in late.locator("#fit").inner_text().lower()
               and len(reasons) == 1 and "major" in reasons[0] and "joint_overload" in reasons[0] and "overload before the page opened" in reasons[0], reasons)
+        wait(late, "[...document.querySelectorAll('#rp-body-joints li')].some((e) => e.textContent.includes('left_knee'))")     # the joint list waits for body.js and the description: two requests after the verdict
         check("and the Alarms card lists it, and the joint is named under the Body card", "joint_overload" in late.locator("#rp-alarms-body").inner_text()
               and any("left_knee" in t and "error" in t for t in late.locator("#rp-body-joints li").all_inner_texts()), late.locator("#rp-alarms-body").inner_text())
         wait(late, "document.querySelector('#fit')?.dataset.fit === 'true'", 12000)

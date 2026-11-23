@@ -226,7 +226,8 @@ function applyTab(tab) {
     b.tabIndex = on ? 0 : -1;
     $("rp-" + b.dataset.tab).hidden = !on;
   }
-  if (tab !== "settings") stCloseDrawers();
+  const open = stOpenDrawer();
+  if (open && open.dataset.tab !== tab) stCloseDrawers();
 }
 
 function paintPicker() {

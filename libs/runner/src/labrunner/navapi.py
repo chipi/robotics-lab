@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import signal
 import socketserver
@@ -43,7 +44,7 @@ from labrunner.rpc import Rpc
 from labrunner.guard import TRUTH, TruthGuard
 from runfile import keys, registry, scenefile
 from runfile.catalog import default_data
-from runfile.navcontract import ContractError, ENDS, check_hello, check_state
+from runfile.navcontract import CALIBRATION_ENDS, ContractError, ENDS, check_hello, check_state
 from runfile.truthcopy import TruthCopy, TruthLog
 from simhost.truth import Sampler
 
@@ -161,6 +162,30 @@ class GoalWatch:
                 "judge_scene": self.runner.judge_scene, "judge_truth": self.judge_truth}
 
 
+class CalibrationWatch:
+    """The truth over one calibration (contract 1.3): sampled from the call that starts it, read at the marks the navigator names when
+    it is done. The reference a procedure is judged by: how far the robot went between its first mark and its last, by the host's truth."""
+
+    def __init__(self, host):
+        self.log = TruthLog()
+        self.sampler = Sampler(host, on_sample=lambda s: self.log.add(s.wall_ns, s.pose, s.z, s.quat)).start()
+        self.reference, self.stopped = None, False     # the reference kept once worked out: a second poll of the same end answers the same
+
+    def reference_of(self, marks: list) -> dict | None:
+        if self.reference is None:
+            a, b = (self.log.nearest(marks[0]["wall_ns"]), self.log.nearest(marks[-1]["wall_ns"])) if len(marks) >= 2 else (None, None)
+            if a is None or b is None:
+                return None
+            self.reference = {"by": "truth", "distance_m": round(math.dist(a["pose"][:2], b["pose"][:2]), 4), "from": a["pose"][:2],
+                              "to": b["pose"][:2]}
+        return self.reference
+
+    def stop(self) -> None:
+        if not self.stopped:
+            self.stopped = True
+            self.sampler.stop()
+
+
 class NavRunner:
     def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
                  robot_socket: Path | None = None):
@@ -176,6 +201,7 @@ class NavRunner:
         self.dir = Path(tempfile.mkdtemp(prefix="nr-"))         # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "api.sock"
         self.goal: GoalWatch | None = None
+        self.calibration: CalibrationWatch | None = None
         self.goals = 0
         self.route = {"checks": 0, "max": None}
         self.camera = CameraServer(host, host.sockets["camera"]).start() if self.has_truth else None
@@ -234,6 +260,8 @@ class NavRunner:
             return {"navigator_pid": self.proc.pid, "truth_connections": dict(self.route), "goals": self.goals, "last_goal": last}
         if method in READS:
             return self.read(method, p)
+        if method.startswith("calibration."):
+            return self._calibrate(method, p)
         if method != "goal.start":
             return self.api(method, p)
         if self.goal is not None:
@@ -259,12 +287,32 @@ class NavRunner:
                                    f"start it again")
         return reply
 
+    def _calibrate(self, method: str, p: dict) -> dict:
+        """The navigator's calibration methods, with the truth put in (contract 1.3): `calibration.status` of a procedure that is done
+        adds `reference`, the distance the host's truth says the robot went between its marks, or null when this host has no truth (a real
+        robot's: the operator's tape is the reference then). The navigator never sees it."""
+        reply = self.api(method, p)
+        if method == "calibration.start" and isinstance(reply, dict) and reply.get("ok"):
+            self._calibration_stop()
+            if self.has_truth:
+                self.calibration = CalibrationWatch(self.host)
+        elif method == "calibration.status" and isinstance(reply, dict) and reply.get("state") in CALIBRATION_ENDS:
+            if reply["state"] == "done":
+                reply = {**reply, "reference": self.calibration.reference_of(reply.get("marks") or []) if self.calibration else None}
+            self._calibration_stop()
+        return reply
+
+    def _calibration_stop(self) -> None:
+        if self.calibration is not None:
+            self.calibration.stop()
+
     def _merge(self, route: dict) -> None:
         self.route["checks"] += route["checks"]
         if route["max"] is not None:
             self.route["max"] = max(self.route["max"] or 0, route["max"])
 
     def close(self) -> None:
+        self._calibration_stop()
         if self.goal is not None and not self.goal._done.is_set():
             # a goal still running: cancelled, so the navigator stops the robot and gives the lease back before it ends
             try:

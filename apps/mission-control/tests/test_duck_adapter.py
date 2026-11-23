@@ -124,6 +124,7 @@ class StubNav:
         self.profile = None                  # what goal.start says the goal runs (the navigator's calibration event)
         self.contract = "1.0"                # the navigator contract hello names
         self.map_calls = 0
+        self.cal_calls, self.cal_answer = [], {}     # contract 1.3's calibration.* calls received, and what each is answered with
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
         self.address = f"127.0.0.1:{self.server.server_address[1]}"
@@ -161,6 +162,9 @@ class StubNav:
                         stub.cancelled += 1
                         stub.state, stub.reason = "cancelled", "cancelled by Mission Control"
                         result = {"ok": True}
+                    elif m.startswith("calibration."):
+                        stub.cal_calls.append((m, p))
+                        result = stub.cal_answer.get(m, {"ok": True})
                     else:
                         result = {}
                     self.wfile.write((json.dumps({"jsonrpc": "2.0", "id": req["id"], "result": result}) + "\n").encode())
@@ -464,6 +468,33 @@ check("a gate of this protocol is connected to", wire_to({"gate": True, "client"
 check("must fail: a gate that speaks a newer protocol is refused, both numbers said",
       "2" in str(wire_to({"gate": True, "client": "mission-control", "protocol": 2})) and "1" in str(wire_to({"protocol": 2})))
 check("a gate that names none (before the number) is accepted", wire_to({"gate": True, "client": "mission-control"}) is None)
+
+# calibration (contract 1.3): asked of a navigator only when its hello says it speaks 1.3
+from mission_control.duck import DuckNavigatorClient  # noqa: E402
+from runfile.navcontract import ContractError  # noqa: E402
+
+cnav = StubNav()      # (the one above is stopped)
+cal = DuckNavigatorClient(cnav.address)
+cnav.contract, cnav.cal_calls = "1.2", []
+check("a navigator that speaks 1.2 lists no procedures, and is not asked for any", cal.calibration_list() == [] and cnav.cal_calls == [], cnav.cal_calls)
+cnav.contract = "1.3"
+cnav.cal_answer = {"calibration.list": {"procedures": [{"id": "odometry_scale", "params": {"speed_mps": 0.3}}]},
+                   "calibration.start": {"ok": True, "procedure": "odometry_scale", "params": {"speed_mps": 0.3, "seconds": 8.0}},
+                   "calibration.status": {"state": "running", "step": "walk"}}
+check("one that speaks 1.3 lists them", cal.calibration_list() == [{"id": "odometry_scale", "params": {"speed_mps": 0.3}}])
+check("a start, a status and a cancel are the contract's methods with the procedure and its parameters",
+      cal.calibration_start("odometry_scale", {"seconds": 8}) == cnav.cal_answer["calibration.start"] and cal.calibration_status()["state"] == "running"
+      and cal.calibration_cancel() is None
+      and [m for m, _ in cnav.cal_calls][1:] == ["calibration.start", "calibration.status", "calibration.cancel"]
+      and cnav.cal_calls[1][1] == {"procedure": "odometry_scale", "params": {"seconds": 8}}, cnav.cal_calls)
+cnav.cal_answer["calibration.status"] = {"state": "walking"}
+try:
+    cal.calibration_status()
+    outside = False
+except ContractError:
+    outside = True
+check("a calibration state outside the contract is refused, as a goal's is", outside)
+cnav.stop()
 
 inst_file = installation_file(tmp / "installation.json", {"duck": {"navigator": "127.0.0.1:9", "gate": str(tmp / "inst-gate.sock"),
                                                                     "profile": str(tmp / "inst-state" / "profiles" / "duck")}},

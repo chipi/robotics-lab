@@ -17,7 +17,7 @@ from duck_lab.nav import body as body_mod
 from duck_lab.nav import server as server_mod
 from duck_lab.nav.client import LeaseLost
 from duck_lab.nav.run import Navigator as RealNavigator
-from runfile.navcontract import (API_METHODS, CONTRACT, ENDS, PAYLOAD_METHODS, ContractError, check_hello,
+from runfile.navcontract import (API_METHODS, CALIBRATION_METHODS, CONTRACT, ENDS, PAYLOAD_METHODS, ContractError, check_hello,
                                  check_state)
 
 failures = []
@@ -210,7 +210,10 @@ check("must fail: the navigator's own guardrail (a time limit spent) is no anoma
       not [r for r in api_nav.run.nav.records if r.get("event") == "anomaly"], api_nav.run.nav.records)
 
 # --- the guardrails its runner could not check (contract 1.2): goal.start's `not_enforced`, one harness anomaly per name ------------
-check("must fail: this is contract 1.2", CONTRACT == "1.2", CONTRACT)
+check("this is contract 1.2 or later (not_enforced)", tuple(map(int, CONTRACT.split("."))) >= (1, 2), CONTRACT)
+check("contract 1.3: the navigator API answers the calibration methods, the payload does not (the procedures' own test is test_calibration.py)",
+      tuple(map(int, CONTRACT.split("."))) >= (1, 3) and set(CALIBRATION_METHODS) <= set(server_mod.NavServer.METHODS)
+      and not set(CALIBRATION_METHODS) & set(payload_mod.Payload.METHODS), CONTRACT)
 for name, make in NAVIGATORS.items():
     nav = make()
     FakeNav.OUTCOME, FakeNav.calls = "wait", []

@@ -24,6 +24,8 @@ It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Me
   goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
   inventory -> RFC-0016's inventory                           map -> mapd's grid
+  calibration.list -> {procedures: [{id, params}]}            calibration.start {procedure, params?} -> {ok, procedure, params} | {error}
+  calibration.status -> {state, procedure, step, reason, params, measured, marks}      calibration.cancel -> {ok}   (contract 1.3; duck_lab.nav.calibration)
 `seed.objects` are Mission Control's confirmed objects of the site (their ids are Mission Control's; they come back as `seed`
 beside the navigator's own ids), `seed.areas` the operator's outlines [{id, name, type, outline}].
 
@@ -40,14 +42,15 @@ import threading
 import time
 from pathlib import Path
 
-from duck_lab.nav import contract
+from duck_lab.nav import calibration, contract
+from duck_lab.nav.calibration import Calibration
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.guardrails import Guard
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
-from runfile.navcontract import ENDS
+from runfile.navcontract import CALIBRATION_METHODS, ENDS
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 from worldmodel.site import Area, inside
@@ -428,6 +431,7 @@ class NavServer:
         self.variant, self.profile = variant, profile       # the profile version every goal's navigator runs (phase 5 step 1)
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
+        self.calibration: Calibration | None = None
         self._lock = threading.Lock()
 
     def _gate_holder(self) -> str | None:
@@ -450,13 +454,15 @@ class NavServer:
         finally:
             rpc.close()
 
-    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "map", "state", "objects", "inventory")
+    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "map", "state", "objects", "inventory") + CALIBRATION_METHODS
 
     def call(self, method: str, p: dict):
         if method not in self.METHODS:
             raise KeyError(method)
         if method == "hello":
             return contract.hello(NAME, VERSION, GOAL_KINDS, bool(self.sockets.get("camera")))
+        if method.startswith("calibration."):
+            return self.calibrate(method, p)
         if method == "goal.start":
             return self.start(p)
         run = self.run
@@ -491,6 +497,8 @@ class NavServer:
         with self._lock:
             if self.run is not None and self.run.state not in ENDS:
                 return {"error": {"code": "busy", "message": "a goal is running here"}}
+            if self.calibration is not None and self.calibration.state == "running":
+                return {"error": {"code": "busy", "message": "a calibration is running here"}}
             if spec.get("kind") in ("go_to_object", "inventory") and not self.sockets.get("camera"):
                 return {"error": {"code": "no_camera", "message": f"a {spec['kind']} goal looks for objects: this navigator has no camera"}}
             if spec.get("kind") not in GOAL_KINDS:
@@ -509,6 +517,41 @@ class NavServer:
             meta = getattr(run.nav.profile, "meta", None) or {}
             # the profile this goal runs, as its run records it: a client scaling the robot's poses checks it reads the same one
             return {"run_key": key, "profile": {k: meta.get(k) for k in ("checksum", "version", "source")}}
+
+    def calibrate(self, method: str, p: dict) -> dict:
+        """calibration.list / start / status / cancel (contract 1.3): one procedure at a time, never with a goal."""
+        cal = self.calibration
+        if method == "calibration.list":
+            return {"procedures": calibration.procedures(self)}
+        if method == "calibration.status":
+            return cal.snapshot() if cal is not None else {"state": "idle", "procedure": None, "step": None, "reason": None, "params": None,
+                                                           "measured": None, "marks": []}
+        if method == "calibration.cancel":
+            if cal is not None and cal.state == "running":
+                cal.cancel()
+            return {"ok": True}
+        with self._lock:
+            if (self.run is not None and self.run.state not in ENDS) or (cal is not None and cal.state == "running"):
+                return {"error": {"code": "busy", "message": "a goal or a calibration is running here"}}
+            procedure = p.get("procedure")
+            try:
+                params = calibration.check_params(self, procedure, p.get("params") or {})
+            except KeyError:
+                return {"error": {"code": "unknown_procedure", "message": f"no procedure {procedure!r} (it has {[x['id'] for x in calibration.procedures(self)]})"}}
+            except ValueError as exc:
+                return {"error": {"code": "bad_params", "message": str(exc)}}
+            holder = self._gate_holder()
+            if holder not in (None, self.client, self.client + "-probe"):
+                return {"error": {"code": "held", "message": f"driven by {holder}", "holder": holder}}
+            run = Calibration(self, procedure, params)
+            try:
+                run.start()
+            except LeaseLost as exc:
+                return {"error": {"code": exc.code, "message": str(exc), "holder": exc.holder}}
+            except Exception as exc:                                # noqa: BLE001
+                return {"error": {"code": "start_failed", "message": f"{type(exc).__name__}: {exc}"}}
+            self.calibration = run
+            return {"ok": True, "procedure": procedure, "params": params}
 
 
 class Handler(socketserver.StreamRequestHandler):

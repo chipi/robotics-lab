@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.2.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.3.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -33,7 +33,9 @@ error):
   `state`, `objects`, `inventory` (RFC-0016). `goal.start` takes `seed`, `goal_run` and `scene`,
   and answers `profile {checksum, version, source}`; `goal.status` adds `progress`, `decisions`,
   `anomalies` (1.1) and
-  `objects` (`apps/mission-control/CONTRACT.md`). Its runner adds `runner.status`.
+  `objects` (`apps/mission-control/CONTRACT.md`). Its runner adds `runner.status`. It answers
+  `calibration.list`, `calibration.start`, `calibration.status` and `calibration.cancel` (1.3,
+  below); the payload does not.
 
 A side that reads `hello` refuses a navigator whose `contract` has another major version than its
 own, saying both (`runfile.navcontract.check_hello`); a minor version adds and never changes.
@@ -75,6 +77,48 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.3
+
+The navigator API answers four methods for **calibration**: a short scripted motion that measures
+one number of the robot (phase 5 item 4a unit A3, RFC-0023 D11). Mission Control starts it, the
+operator keeps or discards what it measured. The navigator drives and reports what the robot's own
+sensors said; it never sees the truth, so the **reference** (what the floor says) is its runner's
+(the host's truth) or an operator's tape. One calibration at a time, and never with a goal: either
+answers `{error: {code: "busy"}}` to the other.
+
+| Method | Answer |
+| --- | --- |
+| `calibration.list` | `{procedures: [{id, params}]}`: what it drives, each with its parameters' defaults (the profile version it runs: `odometry_scale` takes `speed_mps`, `seconds`; `max_speed_mps` says the most) |
+| `calibration.start {procedure, params?}` | `{ok, procedure, params}` (the parameters it runs with) at once, or `{error: {code, message, holder?}}`: `busy`, `held` (another client holds the robot: the gate's refusal, nothing began), `unknown_procedure`, `bad_params`, `start_failed` |
+| `calibration.status` | `{state, procedure, step, reason, params, measured, marks}`, and from a runner `reference` |
+| `calibration.cancel` | `{ok}`: the robot stands, the run ends `cancelled` |
+
+`state` is `idle` (before the first), `running`, then one end: `done`, `refused`, `cancelled`,
+`interrupted` or `failed`, with the goal's meanings (`runfile.navcontract.CALIBRATION_STATES`). It
+holds the robot's lease from the start to its end, and a takeover or a STOP ends it as it ends a
+goal (`interrupted`, `cancelled`). `step` names where a running one is. A finished run's answer is
+kept until the next start.
+
+`odometry_scale` (the one procedure so far) stands still, walks straight at `speed_mps` for
+`seconds` (2 to 30; no wall, cliff or guardrail is checked: it walks blind), and stands still. Its
+`measured` is `{odom_m, speed_mps, seconds}`: how far robotd's own odometry, unscaled, says the
+robot went. `marks` are its two instants, `[{name: "start" | "end", wall_ns, odom}]`: the host's
+wall clock, the one a runner pairs its truth by.
+
+**The reference** is added by the runner when a procedure is `done`: `reference` is `{by: "truth",
+distance_m, from, to}`, the truth's distance between the marks (it samples the truth from the
+start), or `null` when its host has no truth (a real robot's). With `null` the operator measures
+with a tape and gives the distance to Mission Control. A navigator reached without a runner sends
+no `reference`, which is read as `null`.
+
+**What the numbers mean** is Mission Control's, not the navigator's (`mission_control.calibration`):
+the procedure's step guide, the setting it sets, and how a measurement and a reference become its
+value (`odometry_scale`: reference over `odom_m`, kept as `localisation.odometry.scale`, and the
+`by_speed` entry at the speed walked, in the variant the robot runs).
+
+A navigator of 1.2 or below answers none of this: a client asks only a navigator whose `hello`
+names 1.3 or later (`runfile.navcontract.speaks`), and lists no procedures for the others.
 
 ## 1.2
 

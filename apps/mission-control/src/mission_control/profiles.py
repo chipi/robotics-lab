@@ -10,10 +10,11 @@ run (the installation names another file, or none) is refused saying what to cha
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from runfile import installation, registry
 from runfile.profile import FormatError, checksum, validate_profile
-from runfile.profilestore import Store, StoreError, diff
+from runfile.profilestore import Store, StoreError, diff, version_of
 
 from .errors import ApiError, conflict, invalid
 from .robots import ConfigError, RobotConfig, profile_of
@@ -99,6 +100,17 @@ def view(rt) -> dict:
                     for n in store.versions(robot)]
     return {"robot": robot, "variant": rt.cfg.variant, "running": {"path": str(running), "checksum": checksum(raw)},
             "current": current, "versions": versions, "writable": why is None, "why_not": why, "profile": raw}
+
+
+def start_from(rt) -> tuple:
+    """(the profile a change starts from, whole, and its version or None): what a goal would run now; with the installation's store still
+    empty, the robot's own file, which the first save seeds it with."""
+    robot = _robot(rt)
+    try:
+        path = registry.profile_file(robot)
+    except (StoreError, registry.ProfileSourceError):        # the store folder not made yet, or made and empty: a save seeds it
+        path = Path(registry.module(robot).PROFILE)
+    return json.loads(path.read_text()), version_of(path)
 
 
 def save(rt, raw) -> dict:

@@ -271,6 +271,7 @@ class RobotRuntime:
         self._map_version = None
         self._was_online = None
         self.active = None  # the goal run on this robot now (a core.ActiveRun)
+        self.calibration, self.calibration_n = None, 0      # the latest calibration run (calibration.py) and how many there have been
 
     def _notified(self, method: str, params: dict) -> None:
         """The gate says something else drives (RFC-0017 §3.8): an alarm on the bus, as the robot's own alarms are, so the page lists it."""

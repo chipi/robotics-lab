@@ -40,7 +40,7 @@ REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop")
+ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop, calibrate")
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 ap.add_argument("--profile", type=Path, help="seed the version store with this profile instead of the duck's own: a test profile whose body "
                 "limits fire on a walk proves the alarm feed live (the point scenario then checks it)")
@@ -66,6 +66,13 @@ def wait_for(cond, timeout, every=0.5):
             return v
         time.sleep(every)
     return None
+
+
+def runner_call(method):
+    """One call of lab-nav-server's own socket (the runner's methods)."""
+    with socket.create_connection(("127.0.0.1", NAV_PORT), timeout=10) as s:
+        s.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": method}) + "\n").encode())
+        return json.loads(s.makefile().readline())["result"]
 
 
 tmp = Path(tempfile.mkdtemp(prefix="mc-sim-duck-"))
@@ -396,6 +403,72 @@ try:
               end and [d["text"] for d in end["decisions"]][-3:])
         check("the robot stands (truth) and the lease is back", stands_still() and robot()["lock"]["holder"] is None)
 
+    def face_corridor():
+        """A point goal up the corridor, to (0, 1.0): the duck ends standing there facing north, 1.9 m from the wall. From the dock a blind walk
+        runs into the office cabinet 0.7 m ahead (the first run of this proof did, 2026-11-23: 0.54 m of 2.4 asked), so the robot is placed first,
+        by the navigator and judged by the truth. Nothing the calibration walks is checked: it is blind."""
+        run = start({"kind": "point", "params": {"x": 0.0, "y": 1.0}})
+        end = finished(run["id"], 120)
+        wait_for(lambda: robot()["lock"]["holder"] is None, 15)
+        x, y, yaw = body.pose()
+        err = (math.pi / 2 - yaw + math.pi) % (2 * math.pi) - math.pi
+        check("the duck stands in the corridor facing north, about 1.9 m from the wall (truth: y 0.6 to 1.4, x within 0.4 m, heading within 35 degrees of +y)",
+              end is not None and 0.6 < y < 1.4 and abs(x) < 0.4 and abs(err) < math.radians(35), (end and (end["state"], end["reason"]), x, y, yaw))
+        wait_for(stands_still, 20, 0.2)
+
+    def calibrate_proof(tape):
+        """odometry_scale on the real navigator in the simulator (phase 5 item 4a unit A3, contract 1.3): the walk, the reference (the runner's
+        truth, or, with `tape`, this test's own reading of the truth entered as the operator's tape), the value against the profile's 0.91,
+        and keeping it: a version the next goal's navigator and referee both run."""
+        need_clean()
+        face_corridor()
+        before = body.pose()
+        view = call("GET", "/robots/duck-sim/calibration")["calibration"]
+        check("the navigator behind the runner drives odometry_scale (contract 1.3) with the profile's speed (0.3 m/s) and Mission Control offers it",
+              [x["id"] for x in view["procedures"]] == ["odometry_scale"] and view["procedures"][0]["available"] and view["procedures"][0]["params"]["speed_mps"] == 0.3
+              and view["procedures"][0]["current"] == 0.91, view["procedures"])
+        r = call("POST", "/robots/duck-sim/calibration", {"procedure": "odometry_scale", "params": {"seconds": 5}})
+        check("the start is accepted", r.get("run", {}).get("phase") == "running", r)
+        check("the navigator holds the lease while the robot walks", wait_for(lambda: robot()["lock"]["holder"] == "lab-nav-server", 20) is not None, robot()["lock"])
+        from labrunner.remote import truth_connections
+        nav_pid = runner_call("runner.status")["navigator_pid"]
+        seen = truth_connections(nav_pid, HOST.truth_port) if not ARGS.no_truth else 0
+        goal = start({"kind": "point", "params": {"x": 0.0, "y": 2.0}})
+        check("a goal asked meanwhile is refused (busy), the walk goes on", goal["state"] == "refused" and "calibration" in (goal.get("reason") or ""), (goal["state"], goal.get("reason")))
+        run = wait_for(lambda: (lambda v: v if v["phase"] != "running" else None)(call("GET", "/robots/duck-sim/calibration")["calibration"]["run"]), 90, 1.0)
+        after = body.pose()
+        walked = math.dist(before[:2], after[:2])
+        print(f"   truth: walked {walked:.3f} m (test's reading); run: {json.dumps({k: run.get(k) for k in ('phase', 'measured', 'reference', 'value')}) if run else None}", flush=True)
+        check("the navigator's process held no connection to the truth's port while it walked", seen == 0, seen)
+        if tape:
+            check("without a runner truth the run waits for the tape: no reference, no value", run and run["phase"] == "needs_tape" and run["reference"] is None, run and run["phase"])
+            run = call("POST", "/robots/duck-sim/calibration/reference", {"distance_m": round(walked, 3)})["run"]
+        check("the robot walked (truth, over 0.4 m) and the odometry read it (over 0.4 m)", walked > 0.4 and run and run["measured"] and run["measured"]["odom_m"] > 0.4, (walked, run and run["measured"]))
+        check("measured: the reference is " + ("the operator's tape (this test's truth reading)" if tape else "the runner's truth, within 8 cm of this test's own reading"),
+              run and run["phase"] == "measured" and run["reference"]["by"] == ("operator" if tape else "truth") and abs(run["reference"]["distance_m"] - walked) < 0.08,
+              run and run["reference"])
+        check("the value is the simulator's own odometry error, around the profile's 0.91 (within 6 %), plausible", run and 0.85 < run["value"] < 0.97 and run["plausible"],
+              run and (run["value"], run["current"]))
+        check("the lease is back and the robot stands", wait_for(lambda: robot()["lock"]["holder"] is None, 10) is not None and stands_still())
+        kept = call("POST", "/robots/duck-sim/calibration/keep", {})
+        v = (kept.get("run") or {}).get("kept") or {}
+        saved = json.loads((STORE / "duck" / "2.json").read_text()) if (STORE / "duck" / "2.json").exists() else {}
+        odo = ((saved.get("variants") or {}).get("sim") or {}).get("localisation", {}).get("odometry", {})
+        check("kept as version 2: scale and the table's 0.3 entry are the measured value, and the measured line says how",
+              v.get("version") == 2 and run and odo.get("scale") == run["value"] and odo.get("by_speed", {}).get("0.3") == run["value"]
+              and "calibration procedure odometry_scale" in odo.get("measured", ""), (kept.get("error"), odo.get("scale")))
+        g = start({"kind": "point", "params": {"x": 0.0, "y": 2.0}})
+        call("POST", f"/goal-runs/{g['id']}/cancel")
+        rj = runner_json(g)
+        judge, theirs = rj.get("judge_profile") or {}, rj.get("navigator_profile") or {}
+        check("the next goal runs version 2: the navigator and the referee read it, one checksum (the profile the calibration wrote is valid to both)",
+              judge.get("version") == 2 and theirs.get("version") == 2 and judge.get("checksum") == theirs.get("checksum"), (judge, theirs))
+        clean[0] = False
+
+    if wanted("calibrate"):
+        print("\n--- calibration: odometry_scale, referenced by the runner's truth", flush=True)
+        calibrate_proof(tape=False)
+
     if wanted("drop"):
         print("\n--- drop_clearance", flush=True)
         need_clean()
@@ -410,6 +483,11 @@ try:
               end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
 
     if ARGS.no_truth:
+        print("\n--- no truth: calibration with the operator's tape (phase 5 item 4a unit A3)", flush=True)
+        calibrate_proof(tape=True)
+        clean[0] = False
+        need_clean()
+        wait_for(lambda: robot()["online"], 60)
         print("\n--- no truth (phase 5 item 4): the runner as on a real robot", flush=True)
         asked = [{"name": "drop_clearance", "m": 3.0}, "contact", "fall"]
         run = start({"kind": "point", "params": {"x": 0.5, "y": 0.0}, "must_not": asked})

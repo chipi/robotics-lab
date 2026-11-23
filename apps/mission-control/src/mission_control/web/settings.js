@@ -98,12 +98,87 @@ function paintModules(r) {
     h("div", { class: "hint" }, `Configured, as the ${variant} variant runs them. Mission Control is not told what a plugin does while a goal runs.`)));
 }
 
-// --- Calibration: what the profile says was measured, from its measured lines ------------------------------------------------------------------------------
-function paintCalibration(r) {
-  const box = $("rp-calibration-body");
-  if (!r.profile) return setKids(box, h("div", { class: "empty" }, "No profile: this robot's file holds the robot itself, so nothing is measured here."));
-  if (!ST.view || ST.robot !== r.id) return setKids(box, h("div", { class: "empty" }, "Loading"));
-  const p = ST.view.profile, rows = [];
+// --- Calibration (RFC-0023 D11, unit A3): guided procedures through the calibration API, then what the profile says was measured ------------------------------
+// A card per procedure; its side drawer holds the step guide, the parameters, the run and what keeping it changes. The page polls while a run runs.
+const CAL = { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null };
+const CAL_PHASE = { running: "running", needs_tape: "waiting for the tape", measured: "measured", refused: "refused", cancelled: "cancelled", interrupted: "interrupted", failed: "failed" };
+const CAL_STEP = { settle: "standing still", walk: "walking", stop: "stopping" };
+const CAL_WHO = { operator: "you", robot: "robot", runner: "runner" };
+
+async function calLoad() {
+  const id = CAL.robot;
+  if (!id) return;
+  CAL.loading = true;
+  try { CAL.data = (await api("GET", `/robots/${id}/calibration`)).calibration; CAL.error = null; }
+  catch (e) { if (CAL.robot !== id) return; CAL.data = null; CAL.error = e.message; }
+  finally { CAL.loading = false; }
+  if (CAL.robot !== id) return;
+  paintCalibration(S.robots.find((x) => x.id === id));
+  if ($("cal-drawer") && !$("cal-drawer").hidden) calPaint();
+  calSchedule();
+}
+
+function calSchedule() {          // one poll pending at most: the page repaints on every event, and each repaint must not push the poll back
+  if (CAL.data?.run?.phase === "running" && routeTab() === "calibration" && routeId() === CAL.robot) {
+    if (!CAL.timer) CAL.timer = setTimeout(() => { CAL.timer = null; calLoad(); }, 1000);
+  } else { clearTimeout(CAL.timer); CAL.timer = null; }
+}
+
+function calForget() { clearTimeout(CAL.timer); Object.assign(CAL, { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null }); }
+
+function calSay(msg, err) {
+  const el = $("cal-status");
+  if (el) { el.textContent = msg; el.className = "sterr" + (err ? "" : " ok"); }
+  toast(msg, err);
+}
+
+async function calDo(method, path, body, said) {
+  try {
+    await api(method, `/robots/${CAL.robot}/calibration${path}`, body);
+    if (said) calSay(said);
+    await calLoad();
+  } catch (e) { calSay(e.message, true); await calLoad(); }
+}
+
+async function calStart() {
+  const p = CAL.data.procedures.find((x) => x.id === CAL.proc);
+  await calDo("POST", "", { procedure: p.id, params: { speed_mps: Number(CAL.params.speed_mps), seconds: Number(CAL.params.seconds) } }, "The robot is starting. Stand clear.");
+}
+
+async function calKeep() {
+  await calDo("POST", "/keep", {}, null);
+  const run = CAL.data?.run;
+  if (run?.kept) {
+    calSay(`Kept as version ${run.kept.version}: it applies ${run.kept.applies}.`);
+    await refreshRobot(CAL.robot);
+    await stLoad(CAL.robot);
+  }
+}
+
+const calFmt = (v) => (v == null ? "none" : typeof v === "number" ? String(v) : stShow(v));
+
+function calStatus(run) {
+  if (!run) return "no run yet";
+  if (run.phase === "kept") return `kept as version ${run.kept.version}`;
+  const text = CAL_PHASE[run.phase] || run.phase;
+  return run.value != null ? `${text}: ${run.value}` : run.reason ? `${text}: ${run.reason}` : text;
+}
+
+function calCard(p, run) {
+  const mine = run && run.procedure === p.id ? run : null;
+  return h("section", { class: "card", "data-procedure": p.id },
+    h("div", { class: "shead static" }, p.title, h("span", { class: "sp" }), h("span", { class: "chip", "data-cal-current": "" }, `now ${calFmt(p.current)}`),
+      h("button", { id: "cal-open-" + p.id, class: "btn primary", type: "button", disabled: !p.available, title: p.available ? null : p.why_not,
+        onclick: () => { CAL.proc = p.id; CAL.params = mine && mine.params ? { ...mine.params } : { speed_mps: p.params.speed_mps, seconds: p.params.seconds }; stOpen("cal-drawer"); } },
+      mine && mine.phase === "running" ? "Open the run" : "Calibrate")),
+    h("div", { class: "cbody" },
+      h("p", { class: "dim", style: "margin:0 0 8px" }, p.what),
+      h("div", { class: "kvline" }, h("span", { class: "mono dim" }, p.sets), h("span", { class: "sp" }), h("span", { class: "tag", "data-cal-status": "" }, calStatus(mine))),
+      p.available ? null : h("div", { class: "hint" }, p.why_not)));
+}
+
+function calMeasured(p, r) {
+  const rows = [];
   for (const [layer, src] of [["base", p], ...Object.entries(p.variants || {})]) {
     for (const b of Object.keys(src)) {
       if (layer === "base" && b === "variants") continue;
@@ -111,15 +186,81 @@ function paintCalibration(r) {
     }
   }
   const when = (t) => (/^(\d{4}-\d{2}-\d{2})/.exec(t) || [])[1] || (/^not measured/i.test(t) ? "not measured" : "no date");
-  setKids(box, h("section", { class: "card" },
+  const by = (t) => (/^[^,]*, Mission Control's calibration procedure (\w+)/.exec(t) || [])[1] || (/[\w./-]+\.py/.exec(t) || [])[0] || "-";
+  return h("section", { class: "card" },
     h("div", { class: "shead static" }, "What is measured, and where it came from"),
     rows.length ? h("div", { class: "twrap" }, h("table", { class: "t", id: "cal-table" },
       h("thead", {}, h("tr", {}, ["Values", "Layer", "Measured", "By", "What it says"].map((x) => h("th", {}, x)))),
       h("tbody", {}, rows.map((x) => h("tr", { "data-path": x.path, "data-layer": x.layer },
         h("td", { class: "k" }, x.path), h("td", { class: "v" }, x.layer),
         h("td", { class: when(x.text) === "not measured" || when(x.text) === "no date" ? "na" : "v" }, when(x.text)),
-        h("td", { class: "v inh" }, (/[\w./-]+\.py/.exec(x.text) || ["-"])[0]), h("td", { class: "says" }, x.text))))))
-      : h("div", { class: "empty" }, "No measured line in this profile.")));
+        h("td", { class: "v inh" }, by(x.text)), h("td", { class: "says" }, x.text))))))
+      : h("div", { class: "empty" }, "No measured line in this profile."));
+}
+
+function paintCalibration(r) {
+  const box = $("rp-calibration-body");
+  if (!r.profile) return setKids(box, h("div", { class: "empty" }, "No profile: this robot's file holds the robot itself, so nothing is measured here."));
+  if (!ST.view || ST.robot !== r.id) return setKids(box, h("div", { class: "empty" }, "Loading"));
+  if (CAL.robot !== r.id) { calForget(); CAL.robot = r.id; }
+  if (routeTab() === "calibration" && !CAL.data && !CAL.error && !CAL.loading) calLoad();     // asked for only when the tab is looked at
+  const sig = JSON.stringify([CAL.data, CAL.error, ST.view.running.checksum, r.id]);
+  if (CAL.sig === sig && box.firstChild) return calSchedule();
+  CAL.sig = sig;
+  const d = CAL.data;
+  keepFocus(box, () => setKids(box,
+    h("div", { class: "modlist" },
+      d ? d.procedures.map((p) => calCard(p, d.run))
+        : h("section", { class: "card" }, h("div", { class: "shead static" }, "Procedures"), h("div", { class: "empty", id: "cal-none" }, CAL.error ? `No procedures: ${CAL.error}` : "Loading")),
+      calMeasured(ST.view.profile, r))));
+  calSchedule();
+}
+
+// The drawer: the guide, the parameters, what the run measured, and the buttons the run's phase allows.
+const calDrawer = () => stDrawer("cal-drawer", "cal-title", "Calibrate",
+  [h("div", { id: "cal-body", class: "calbody" }), h("div", { id: "cal-status", class: "sterr", role: "alert" })],
+  h("div", { id: "cal-foot", class: "dfoot" }), "calibration");
+
+function calPaint() {
+  const d = CAL.data, p = d && d.procedures.find((x) => x.id === CAL.proc);
+  if (!p) return;
+  const run = d.run && d.run.procedure === p.id ? d.run : null, phase = run ? run.phase : null, live = phase === "running";
+  setKids($("cal-title"), p.title);
+  const steps = (run ? run.steps : p.steps.map((s) => ({ ...s, status: "todo" })));
+  const field = (key, label, unit, attrs) => h("div", { class: "frow" }, h("label", { for: "cal-" + key }, label),
+    h("input", { id: "cal-" + key, type: "number", step: "any", inputmode: "decimal", "data-fk": "cal:" + key, value: CAL.params[key] ?? "", disabled: live, ...attrs,
+      oninput: (ev) => { CAL.params[key] = ev.target.value; } }), h("span", { class: "unit" }, unit));
+  const res = run && run.measured ? h("table", { class: "t", id: "cal-result" }, h("tbody", {},
+    h("tr", {}, h("td", { class: "k" }, "Odometry read"), h("td", { class: "v" }, `${run.measured.odom_m} m`), h("td", { class: "says" }, "the robot's own, between its two marks")),
+    h("tr", {}, h("td", { class: "k" }, "Reference"), h("td", { class: "v", id: "cal-ref" }, run.reference ? `${run.reference.distance_m} m` : "not known yet"),
+      h("td", { class: "says" }, run.reference ? (run.reference.by === "truth" ? "the simulator's truth, read by the runner" : "the operator's tape") : "needs your tape reading")),
+    h("tr", {}, h("td", { class: "k" }, "Measured"), h("td", { class: "v", id: "cal-value" }, run.value == null ? "none" : String(run.value)), h("td", { class: "says" }, "reference over odometry")),
+    h("tr", {}, h("td", { class: "k" }, "Now"), h("td", { class: "v", id: "cal-now" }, calFmt(run.current)), h("td", { class: "says" }, p.sets)))) : null;
+  const tape = run && (phase === "needs_tape" || (phase === "measured" && run.reference && run.reference.by === "operator")) ? h("div", { class: "frow", id: "cal-tape-row" },
+    h("label", { for: "cal-tape" }, "tape, m"), h("input", { id: "cal-tape", type: "number", step: "any", min: "0", inputmode: "decimal", "data-fk": "cal:tape", value: CAL.tape,
+      oninput: (ev) => { CAL.tape = ev.target.value; } }),
+    h("button", { id: "cal-tape-use", class: "btn", type: "button", "data-fk": "cal:tape-use", onclick: () => calDo("POST", "/reference", { distance_m: Number(CAL.tape) }, "Tape distance taken.") }, "Use")) : null;
+  const writes = run && run.writes.length ? h("div", { class: "diff", id: "cal-writes" }, run.writes.map((w) => h("div", { class: "strow2", "data-path": w.path },
+    h("span", { class: "p mono" }, w.path), h("span", { class: "inh" }, stShow(w.from)), h("span", { class: "inh" }, "to"), h("span", { class: "ovr" }, stShow(w.to))))) : null;
+  keepFocus($("cal-body"), () => setKids($("cal-body"),
+    h("p", { class: "hint", style: "margin:0" }, p.what),
+    h("ol", { id: "cal-steps", class: "checks" }, steps.map((s) => h("li", { "data-step": s.id, "data-status": s.status },
+      icon(s.status === "done" ? "check" : "dot", s.status === "done" ? "ok" : s.status === "now" ? "now" : "na"),
+      h("span", { class: "sr" }, s.status === "done" ? "done: " : s.status === "now" ? "now: " : "to do: "),
+      h("span", { class: "what" }, s.text), h("span", { class: "val" }, CAL_WHO[s.who] || s.who)))),
+    live ? h("div", { class: "hint", id: "cal-live", "aria-live": "polite" }, `The robot is ${CAL_STEP[run.step] || "starting"}.`) : null,
+    run && !live && run.reason ? h("div", { class: "sterr", id: "cal-reason" }, `${CAL_PHASE[phase] || phase}: ${run.reason}`) : null,
+    h("div", { class: "stform" }, field("seconds", "seconds", "s", { min: 2, max: 30 }), field("speed_mps", "speed", "m/s", { min: 0.05, max: p.params ? p.params.max_speed_mps : null })),
+    res, tape,
+    run && run.plausible === false ? h("div", { class: "sterr", id: "cal-implausible" }, `${run.value} is outside ${run.bounds[0]} to ${run.bounds[1]}: the robot was probably blocked or the tape misread. Run it again.`) : null,
+    writes ? [h("div", { class: "dim" }, phase === "kept" ? `Kept as version ${run.kept.version}. It changed:` : "Keeping it changes:"), writes] : null));
+  const n = d.writable ? stNext() : null;
+  setKids($("cal-foot"),
+    h("span", { id: "cal-note", class: "note" }, phase === "measured" ? (d.writable ? `Kept as version ${n}. It applies from the next goal, never during one.` : `Cannot be kept here: ${d.why_not}`) : ""),
+    live ? h("button", { id: "cal-cancel", class: "btn", type: "button", "data-fk": "cal:cancel", onclick: () => calDo("POST", "/cancel", {}, "Cancel asked: the robot stops.") }, "Cancel the run") : null,
+    run && !live && phase !== "kept" ? h("button", { id: "cal-discard", class: "btn", type: "button", "data-fk": "cal:discard", onclick: () => calDo("DELETE", "", undefined, "The run is discarded.") }, "Discard") : null,
+    live ? null : h("button", { id: "cal-start", class: "btn" + (phase === "measured" ? "" : " primary"), type: "button", "data-fk": "cal:start", disabled: !p.available, onclick: calStart }, run ? "Run again" : "Start"),
+    phase === "measured" ? h("button", { id: "cal-keep", class: "btn primary", type: "button", "data-fk": "cal:keep", disabled: !(run.plausible && d.writable), onclick: calKeep }, `Keep as version ${n ?? "?"}`) : null);
 }
 
 // --- Settings -----------------------------------------------------------------------------------------------------------------------------------------
@@ -141,6 +282,7 @@ function paintProfile(r) {
 
 function stForget() {
   ST.robot = null; ST.view = null; ST.dirty = false;
+  calForget();
   setKids($("drawer-root"));
   document.body.classList.remove("modal");
 }
@@ -160,11 +302,11 @@ function stBuild() {
     h("div", { class: "hint" }, h("span", { id: "st-shown" }), " ", h("span", { id: "st-summary" })),
     h("div", { id: "st-status", class: "hint", "aria-live": "polite" }),
     h("div", { class: "settings" }, h("nav", { id: "st-blocks", class: "blist", "aria-label": "Blocks" }), h("div", { id: "st-pane", class: "stpane" })));
-  setKids($("drawer-root"), stEditDrawer(), stHistoryDrawer());
+  setKids($("drawer-root"), stEditDrawer(), stHistoryDrawer(), calDrawer());
 }
 
-function stDrawer(id, titleId, title, body, foot) {
-  return h("div", { id, class: "scrim", hidden: true, onclick: (ev) => { if (ev.target === ev.currentTarget) stClose(); } },
+function stDrawer(id, titleId, title, body, foot, tab = "settings") {
+  return h("div", { id, class: "scrim", "data-tab": tab, hidden: true, onclick: (ev) => { if (ev.target === ev.currentTarget) stClose(); } },
     h("aside", { class: "drawer", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId },
       h("div", { class: "dhead" }, h("h3", { id: titleId }, title), h("button", { class: "btn icon ghost", type: "button", "aria-label": "Close", onclick: stClose }, icon("close"))),
       h("div", { class: "dbody" }, body), foot));
@@ -196,6 +338,7 @@ function stOpen(id) {
   if (!el) return;
   ST.opener = (document.activeElement && document.activeElement.id) || ST.opener;
   if (id === "st-edit") stForm();
+  else if (id === "cal-drawer") { setKids($("cal-status")); calPaint(); }
   else {
     const n = ST.view.versions.map((x) => x.version);
     stVersions();
@@ -240,6 +383,7 @@ async function stLoad(id) {
     if (!have.includes(ST.shown)) ST.shown = view.current;
     await stShownProfile();
     stRender();
+    if (CAL.robot === id && CAL.data) calLoad();       // a saved version changes the value a procedure shows as now
   })();
   ST.loading = run;
   try { await run; } catch (e) { stSay(`The profile could not be loaded: ${e.message}`, true); } finally { if (ST.loading === run) ST.loading = null; }

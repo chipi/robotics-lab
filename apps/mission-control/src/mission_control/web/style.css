@@ -158,7 +158,7 @@ button.shead:hover { color: var(--text); background: var(--bg-shead-hover); }
 .shead .chev { transition: transform .12s; }
 .shead[aria-expanded="true"] .chev { transform: rotate(90deg); }
 .shead .sp, .sp { flex: 1; }
-.shead .sum { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.shead .sum, .shead .chip { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .shead .sum.ok { color: var(--ok); } .shead .sum.bad { color: var(--error); }
 .shead.mhead { min-height: 48px; text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); }
 .shead.mhead .dim { font-weight: 400; }
@@ -212,6 +212,13 @@ table.t { width: 100%; border-collapse: collapse; }
 .kvgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 24px; padding: 12px 14px; }
 .kvgrid > div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--hair); padding: 4px 0; min-width: 0; }
 .kvgrid .mono { overflow-wrap: anywhere; }
+
+/* Calibration: a card per procedure, its drawer holds the guide and the run */
+.kvline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.calbody { display: flex; flex-direction: column; gap: 12px; }
+.checks .now { color: var(--accent); }
+#cal-value { font-size: 18px; font-weight: 600; }
+.sterr.ok { color: var(--ok); }
 
 /* Settings: the toolbar, the block list beside the block's groups, two drawers */
 .toolbar { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 8px; }

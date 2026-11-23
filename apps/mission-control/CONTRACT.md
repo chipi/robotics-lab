@@ -47,6 +47,12 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | `GET /api/v1/robots/{id}/profile/export?version=` | one version (default the current) as `{export, robot, version, checksum, profile_version, profile}`, to import on another machine; the checksum is over the profile as stored (validated, not migrated), its notes included, `profile_version` the schema version it was taken in |
 | `POST /api/v1/robots/{id}/profile/import` | `{export}`: the checksum checked against the profile (`422 profile` when it does not match, nothing written), saved as the next version and made current; one with a checksum already in the store is not saved twice |
 | `GET /api/v1/robots/{id}/profile/diff?a=&b=[&notes=1]` | `{changes [{path, a, b}], notes_changed, only_notes}`, leaf by leaf; `measured` and `why` only with `notes`; `notes_changed` counts the notes that differ, and `only_notes` is true when nothing but notes does (two checksums, no value changed) |
+| `GET /api/v1/robots/{id}/calibration` | the robot's calibration (phase 5 item 4a unit A3, `calibration.py`, navigator contract 1.3): `{robot, variant, procedures, run, writable, why_not}`. A procedure is `{id, title, what, sets, current, bounds, steps [{id, who, text}], available, why_not, params}`: `sets` the profile path a kept value goes to, `current` its value now (the running variant's), `available` whether the robot's navigator drives it (a navigator below 1.3 drives none), `params` the navigator's defaults. `run` is the latest run or null, read from the navigator when asked; `404 no_profile` for a robot file that holds the robot itself, `404 no_calibration` for a robot whose navigator does not calibrate, `503 navigator_unreachable` |
+| `POST /api/v1/robots/{id}/calibration` | `{procedure, params?}`: starts a run, `201 {run}`; the navigator holds the robot while it walks and STOP ends it. `409`: `calibration_running`, `robot_busy` (a goal run holds it), `busy`, `held` (+ `holder`); `422 bad_params`; `404 not_found` for a procedure Mission Control does not have |
+| `POST /api/v1/robots/{id}/calibration/cancel` | the robot stands and the run ends `cancelled`: `{run}` |
+| `POST /api/v1/robots/{id}/calibration/reference` | `{distance_m}`: the operator's tape, for a run the runner had no truth for (`409 reference_by_truth` when it had; `409 not_done`); `{run}` |
+| `POST /api/v1/robots/{id}/calibration/keep` | the measured value as the next profile version, `201 {run}` with `kept {version, applies, writes}`. `409`: `no_value` (nothing measured, or no reference yet), `implausible` (outside the procedure's `bounds`: nothing written), `already_kept`, `profile_not_writable` (as the profile save) |
+| `DELETE /api/v1/robots/{id}/calibration` | forgets the run (`409 calibration_running` while it runs): `{discarded}` |
 | `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; a command lasts the robot's deadman time, so a driver repeats it |
 | `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is true when the robot answered `robot.stop` |
 | `POST /api/v1/stop` | every robot at once, each reported, a silent one after 3 s: `{robots: [...], all_confirmed}` |
@@ -337,7 +343,11 @@ Body (RFC-0024 step 2) draws the robot's own 3D model from `GET /robots/{id}/des
 its meshes, posed from the state's `joints`, each joint coloured by the worst alarm in the last minute
 that names it (`joint_overload`, `joint_tracking`, `motor_hot`: its `values.joint`; major and critical
 the error colour, minor the warn colour; the joints not ok are listed in words), and Calibration
-says what comes next. three.js is loaded only when
+(unit A3: the calibration API above) has a card per procedure with its value now and what it sets,
+the profile's measured lines under them, and the same side drawer as Settings for a run: the step
+guide, the parameters, the run polled while it walks (Cancel), what it measured beside the value now,
+the operator's tape where the runner had no truth, what keeping it changes, and Keep as the next
+settings version. three.js is loaded only when
 a robot with a description is opened. The shared web library, `libs/web` (the design tokens, the
 vendored three.js, the body component), is served at `/lib/`: `/lib/tokens.css` (the colour tokens,
 light and dark, one file with the Observatory), `/lib/vendor/` and `/lib/body/`. The page fits a
@@ -403,6 +413,7 @@ API):
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
 | `state`, `objects`, `inventory` | what the navigator sees now, while a run is active |
 | `map` | the robot's map (mapd's grid): the active run's, or, between runs, read by the navigator API from mapd |
+| `calibration.list`, `calibration.start {procedure, params?}`, `calibration.status`, `calibration.cancel` | contract 1.3: a procedure the navigator drives, its measurement, and (from the runner) the reference by the truth; Mission Control's calibration routes above are its client (`libs/runner/CONTRACT.md`, 1.3) |
 
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as
 `seed`); `seed.areas` are the operator's outlines `{id, name, type, outline}`. A goal run's
