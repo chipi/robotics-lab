@@ -79,7 +79,9 @@ with tempfile.TemporaryDirectory() as tmp:
     def open_page(b, url, width=1600, height=1000, scheme="dark"):
         page = b.new_context(viewport={"width": width, "height": height}, color_scheme=scheme).new_page()
         page.logs = []
-        page.on("console", lambda m: page.logs.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") and "404" not in m.text else None)
+        # a deck.gl pick reads pixels back; CI's software GL says so as a "GL Driver Message" performance note (2ccbaa1, job 137639994521)
+        page.on("console", lambda m: page.logs.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") and "404" not in m.text
+                and "GL Driver Message" not in m.text else None)
         page.on("pageerror", lambda e: page.logs.append(f"pageerror: {e}"))
         page.goto(url)
         page.wait_for_function("window.miniview !== undefined", timeout=30000)
