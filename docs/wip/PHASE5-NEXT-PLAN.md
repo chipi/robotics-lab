@@ -5,8 +5,9 @@ for the next session to start from; updated the same day after item 1 (`0488ca3`
 green), and on 2026-11-23 after item 2's first part. The order is
 [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
 [architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Item 2 is done**
-(both parts). **Next: item 3**, RFC-0023 steps 2 and 3; its first check (what the simulator's
-bridge carries per joint) is read-only.
+(both parts). **Next: item 3**, RFC-0023 steps 2 and 3. Its first check is done (read-only,
+[what the body data is today](PHASE5-ITEM3-BODY-DATA.md)): three choices there wait for the
+operator before step 2 is built.
 
 ## Where things stand
 
