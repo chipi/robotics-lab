@@ -178,6 +178,8 @@ OLD = {
                           "loop_min_hz": 45.0, "loop_slow_s": 2.0}},
     # new in phase 5 B2 (no constant before it): what the navigator stops the goal on, beyond hot_c and the streams' stale limits
     "health": {"battery_min_pct": 15.0, "battery_low_s": 10.0},
+    # new in phase 5 B3 (no constant before it): the tilt that is a fall without the truth, and how long it is held
+    "robot_guards": {"fall_tilt_deg": 45.0, "fall_s": 0.5},
     "rates": WAS_ROBOT_FILE["rates"],
     "capabilities": WAS_ROBOT_FILE["capabilities"],
 }

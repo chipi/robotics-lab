@@ -413,7 +413,7 @@ implements", built unattended. Decisions are made by the recommended default and
 | --- | --- | --- | --- | --- |
 | B1 | Challenge 22's blind spot: a target on an unmapped rim, approached from the side | the `lab-challenge --start/--goal` probe, then 10 runs; a unit test on a synthetic rim | M-L | partly done (2026-11-23): the hazard set fixed; the rim share recorded, not enforced; the path-grazing case open ([CH22-RIM.md](CH22-RIM.md)) |
 | B2 | Stopping on its own health (`motor_hot`, battery, unhealthy, a stale stream) | contract test with a stub health; `sim_duck --profile` | M | done (2026-11-23): `stopped_by_guardrail` naming motor_hot, battery_low, robot_unhealthy or stale_stream |
-| B3 | Robot-side guardrails enforced without truth (fall from tilt, contact from `bumped` and `carried`, drop from the cliff check) | contract test; `sim_duck --no-truth` | M | yes, after B1 and B2 |
+| B3 | Robot-side guardrails enforced without truth (fall from tilt, contact from `bumped` and `carried`, drop from the cliff check) | contract test; `sim_duck --no-truth` | M | done (2026-11-23): contract 1.4; with `not_enforced` the navigator API checks `fall` (tilt 45 deg for 0.5 s, or mapd `fell`), `contact` (mapd newly `bumped` or `carried`) and `drop_clearance` (seen drops and edges), ending `stopped_by_guardrail`; the simulator proves only the drop (an exploration stopped 0.64 m from the rim at 1 m asked); a rim not yet seen is not covered |
 | B4 | The other-doors watch (`autonomous`, `move.source`, `someone_else_drives`) | gate tests with a fake state source | S-M | done (2026-11-23): `Gate.observe_state` in the gate, the proxy (`--own-source`) and Mission Control's in-process gate; a sign stops the robot, ends the lease, and raises a critical `someone_else_drives` alarm. The simulator's robotd fills none of the three fields, so `sim_duck` proves only that nothing false-fires (`not_watched` logged once per proxy). Open: robotd's real `move.source` name for the proxy, and the "holder sent zero, robot moves" case |
 | B5 | Link tooling: the ssh forwards, checks, reconnect with back-off | dead-socket and reconnect tests; no ssh in tests | M | tooling only |
 | B6 | The real duck's adapter (`duck-real`); a real run refused unless the robot file allows it | adapter test; `sim_duck --no-truth` | M | code only; the safety review needs the operator |
@@ -454,7 +454,7 @@ Bluetooth (D10); a Pi-based sensor module on the robot follows in MVP 2, and D0 
 | D0 | Design note: the second host kind, the NXT sim's sensors, the profile route. **Done 2026-11-23** ([NXT-D0.md](NXT-D0.md), defaults for the operator's review) | S | no |
 | D1 | Hardware check at the brick: `hw_*` scripts, K15, K16 measured, the 15 cm stop | S | yes |
 | D2 | A world for nxt-web: kinematic pose, collisions, ultrasonic cone cast. **Done 2026-11-23** (`nxt-web --sim --world`, `apps/nxt-web/tests/test_sim.py`; D1's checklist: [NXT-D1-CHECKLIST.md](NXT-D1-CHECKLIST.md)) | M | no |
-| D3 | Host kind `nxt-kinematic-sim` in `simhost`: dispatch, reset, truth | M | no |
+| D3 | Host kind `nxt-kinematic-sim` in `simhost`: dispatch, reset, truth. **Done 2026-11-23** (`simhost.KINDS`, `NxtHost`, `libs/simhost/src/simhost/nxt.py`, nxt-web's `GET /api/sim/truth`; `libs/simhost/tests/test_simhost.py`) | M | no |
 | D4 | The NXT registered like the duck: profile, variants `sim`/`real`, description | M | no |
 | D5 | Mission Control shows its sensors, stops and alarms | M | no |
 | D6 | A drive session from Mission Control records a format 2 run | M | no |

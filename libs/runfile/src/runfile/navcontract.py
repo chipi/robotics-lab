@@ -1,9 +1,10 @@
 """The navigator contract's names (libs/runner/CONTRACT.md): its version, its methods, a goal's states. The duck's payload and
 its navigator API answer by them; the runner and Mission Control check what a navigator answers against them."""
 
-CONTRACT = "1.3"     # 1.1 (2026-11-23): the navigator API's goal.status adds `anomalies` (phase 5 item 3 step 3);
+CONTRACT = "1.4"     # 1.1 (2026-11-23): the navigator API's goal.status adds `anomalies` (phase 5 item 3 step 3);
 #                      1.2 (2026-11-23): goal.start takes `not_enforced`, the guardrails its runner could not check;
-#                      1.3 (2026-11-23): the navigator API's calibration.* methods (phase 5 item 4a unit A3)
+#                      1.3 (2026-11-23): the navigator API's calibration.* methods (phase 5 item 4a unit A3);
+#                      1.4 (2026-11-23): a not_enforced contact, fall or drop_clearance is checked by the navigator API's robot (B3)
 
 # A goal's states: `idle` before the first goal, `running`, then one end. Each end's meaning is in CONTRACT.md.
 ENDS = ("reached", "done", "refused", "not_found", "timeout", "stalled", "stopped_by_guardrail", "cancelled", "interrupted",

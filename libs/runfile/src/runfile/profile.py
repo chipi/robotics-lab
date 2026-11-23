@@ -230,6 +230,8 @@ SCHEMA = {
                                           "hot_c": "pos", "loop_min_hz": "pos", "loop_slow_s": "pos"}},
     # what the navigator stops a goal on beyond the body's limits (phase 5 B2): a battery under a percent for a time
     "health": {"battery_min_pct": "pos", "battery_low_s": "pos"},
+    # the robot-side replacement for the truth guardrails (phase 5 B3): the trunk's tilt that is a fall, and how long it is held
+    "robot_guards": {"fall_tilt_deg": "pos", "fall_s": "pos"},
     # the robot's parts that run beside the navigator, each with how its state is checked (checked in _check_subsystems)
     "subsystems": "any",
 }

@@ -47,10 +47,16 @@ class FakeNav:
     def __init__(self, *_, **__):
         self.abort, self.stop_end, self.scale, self.semantic, self.area = None, None, 1.0, None, None
         self.loc = types.SimpleNamespace(pose=lambda: (0.0, 0.0, 0.0))
-        self.profile = types.SimpleNamespace(meta={"checksum": "sha256:x", "version": 1, "source": "robot"})
+        self.profile = types.SimpleNamespace(meta={"checksum": "sha256:x", "version": 1, "source": "robot"},
+                                             get=lambda path, default=None: {"robot_guards": {"fall_tilt_deg": 45.0, "fall_s": 0.3}}.get(path, default))
         self.records = []
+        self.drops, self.edges, self.tilt_now = [], [], None       # what the robot-side guardrails read (phase 5 B3): the cliff check's drops, the IMU's tilt
+        self.localisation = types.SimpleNamespace(seen=None, pose=lambda: (0.0, 0.0, 0.0))
         watch = getattr(body_mod, "StopWatch", None)
         self._stops = watch({"hot_c": 60.0}, {"battery_min_pct": 15.0, "battery_low_s": 0.0}) if watch else None
+
+    def _tilt(self):
+        return self.tilt_now
 
     def go_to(self, goal, time_s):
         FakeNav.calls.append((tuple(goal), time_s))
@@ -101,10 +107,10 @@ NAVIGATORS = {"payload": payload, "navigator API": api}
 GOAL = {"kind": "point", "params": {"x": 1.5, "y": -0.5}, "conditions": {"done_when": {"within_s": 7}}}
 
 
-def run_goal(nav, outcome, then=None) -> dict:
-    """The goal started, `then` called while it runs (a cancel, a break), polled to its end; its last goal.status."""
+def run_goal(nav, outcome, then=None, extra=None) -> dict:
+    """The goal started (with `extra` over GOAL's keys), `then` called while it runs (a cancel, a break), polled to its end; its last goal.status."""
     FakeNav.OUTCOME, FakeNav.calls = outcome, []
-    started = nav.call("goal.start", dict(GOAL))
+    started = nav.call("goal.start", {**GOAL, **(extra or {})})
     if then:
         time.sleep(0.05)
         then(nav)
@@ -296,6 +302,59 @@ for name, make in NAVIGATORS.items():
     st = run_goal(both, "wait", lambda m: (poke(name, lambda n: n._stop_on_health(HEALTHY))(m), time.sleep(0.1), m.call("goal.cancel", {"reason": "done"})))
     check(f"{name}: a healthy stub does not stop the goal (it runs until the cancel)", st["state"] == "cancelled" and st.get("broken") is None,
           (st["state"], st.get("broken")))
+
+# --- the robot's own guardrails without a truth (phase 5 B3, contract 1.4): the navigator API checks what its runner could not -------
+RAILS = [{"name": "fall"}, {"name": "contact"}, {"name": "drop_clearance", "m": 0.8}]
+BLIND = {"conditions": {**GOAL["conditions"], "guardrails": RAILS}, "not_enforced": ["fall", "contact", "drop_clearance", "no_go_area"]}
+SEEN = {"conditions": {**GOAL["conditions"], "guardrails": RAILS}}                    # a runner with the truth: nothing not enforced
+
+
+def tilt_over(n):
+    n.tilt_now = [60.0, 0.0]
+
+
+def bumped(n):
+    n.localisation.seen = {"lost": None}
+    time.sleep(0.2)
+    n.localisation.seen = {"lost": "bumped"}
+
+
+def carried(n):
+    n.localisation.seen = {"lost": None}
+    time.sleep(0.2)
+    n.localisation.seen = {"lost": "carried"}
+
+
+def drop_near(n):
+    n.drops = [(0.3, 0.0)]
+
+
+check("this is contract 1.4 or later (the robot's own guardrails)", tuple(map(int, CONTRACT.split("."))) >= (1, 4), CONTRACT)
+for what, poke_fn, want in (("a trunk tilted 60 deg for 0.3 s", tilt_over, "fall"), ("mapd newly lost as bumped", bumped, "contact"),
+                            ("mapd newly lost as carried", carried, "contact"), ("a drop seen 0.3 m off with 0.8 m asked", drop_near, "drop_clearance")):
+    st = run_goal(api(), "wait", poke("navigator API", poke_fn), BLIND)
+    check(f"must fail: navigator API, no truth: {what} ends the goal stopped_by_guardrail, `broken` naming {want}",
+          st["state"] == "stopped_by_guardrail" and (st.get("broken") or {}).get("name") == want and st["reason"], (st["state"], st.get("broken"), st["reason"]))
+    st = run_goal(api(), "wait", lambda m, f=poke_fn: (poke("navigator API", f)(m), time.sleep(0.8), m.call("goal.cancel", {"reason": "done"})), SEEN)
+    check(f"must fail: navigator API, with a truth (nothing not enforced): {what} is not the robot's to stop: the goal runs to the cancel",
+          st["state"] == "cancelled" and st.get("broken") is None, (st["state"], st.get("broken")))
+live = api()
+run_goal(live, "wait", lambda m: m.call("goal.cancel", {}), BLIND)
+inner = live.run.nav
+an = [(a["anomaly"], a["values"].get("guardrail")) for a in inner.records if a.get("event") == "anomaly"]
+check("must fail: the names the robot checks raise no guardrail_unenforced; the one it cannot (no_go_area) still does", an == [("guardrail_unenforced", "no_go_area")], an)
+sided = [r for r in inner.records if r.get("event") == "guardrails_robot_side"]
+check("must fail: one guardrails_robot_side event names them, in the truth guard's order", len(sided) == 1 and sided[0]["names"] == ["fall", "contact", "drop_clearance"], sided)
+check("goal.status's progress says which the robot checks", live.call("goal.status", {})["progress"].get("guardrails_robot_side") == ["fall", "contact", "drop_clearance"])
+quiet = api()
+run_goal(quiet, "wait", lambda m: m.call("goal.cancel", {}), SEEN)
+check("with a truth: no robot-side event, none listed", not [r for r in quiet.run.nav.records if r.get("event") == "guardrails_robot_side"]
+      and quiet.call("goal.status", {})["progress"].get("guardrails_robot_side") == [])
+broken = api()
+run_goal(broken, "wait", poke("navigator API", tilt_over), BLIND)
+check("must fail: a robot-side break is a guardrail event of the run saying side robot",
+      any(r.get("event") == "guardrail" and r["name"] == "fall" and r["decision"]["values"].get("side") == "robot" for r in broken.run.nav.records),
+      broken.run.nav.records[-2:])
 
 # --- the navigator's gate client reads the gate's protocol (RFC-0018 §5.3) ------------------------------------------------------
 import json  # noqa: E402

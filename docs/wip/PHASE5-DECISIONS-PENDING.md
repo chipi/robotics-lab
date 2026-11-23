@@ -282,3 +282,28 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   tests ran on the same machine. The failing check was not kept (the output was filtered away). It
   passed run alone and in a full rerun of `make test-observatory-pages` (EXIT=0). If it fails again,
   keep the whole log.
+
+### B3, robot-side guardrails without the truth (2026-11-23)
+
+- **Armed only where the runner has no truth:** the navigator API checks a name only when it is in
+  `goal.start`'s `not_enforced` (and asked). With a truth the runner's check stands alone, so no
+  simulator run with a truth changes. Ask: also arm them with a truth, as a second opinion?
+- **Contract 1.4**, not 1.3: for these three names the `guardrail_unenforced` anomaly is no longer
+  raised (the robot enforces them), so a reader of 1.2 would see a different record. No method
+  changed. `no_go_area` is still raised as unenforced.
+- **The payload does not check them** (it has no guardrail list); it still raises the anomaly.
+- **No new anomaly kind:** a robot-side break ends the goal `stopped_by_guardrail`, with a
+  `guardrail` event saying `side: robot`, like B2's stops. It does not reach the alarm feed as a
+  critical `guardrail_broken` (that kind is the runner's truth guard). Ask: a `robot_guard` kind?
+- **Fall:** the larger of pitch and roll at or over `robot_guards.fall_tilt_deg` (45) for
+  `fall_s` (0.5), or mapd lost as `fell`. Both numbers proposed, not measured: no recorded run holds
+  the tilt a walking duck keeps. Measure on the robot (the block's `measured` says how).
+- **Contact:** mapd's `lost` becoming `bumped` or `carried` *after* the goal began. The first
+  account is the baseline, so a duck lifted onto the floor and started is not a contact. `carried`
+  is a contact by the plan's word, though it is a lift.
+- **Drop clearance:** the belief's distance to the cliff stops' points and the glances' edges
+  (`nav.drops`, `nav.edges`); the suspected cells are guesses and not counted. A drop never seen is
+  not covered, which includes challenge 22's side-on approach to an unseen rim
+  ([CH22-RIM.md](CH22-RIM.md)): B3 does not claim it.
+- **Not proven in the simulator:** fall and contact. The simulator's duck neither tilts past 45 deg
+  nor reports `bumped` or `carried` on demand; the contract test drives them with a stub.

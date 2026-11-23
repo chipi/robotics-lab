@@ -6,7 +6,7 @@ Run: cd robots/duck && uv run python tests/test_guardrails.py"""
 import threading
 import time
 
-from duck_lab.nav.guardrails import Guard, keepout_points
+from duck_lab.nav.guardrails import Guard, RobotSide, keepout_points
 from labrunner.guard import TruthGuard
 
 failures = []
@@ -86,6 +86,79 @@ t = TruthGuard([{"name": "contact"}, {"name": "fall"}, {"name": "time_limit", "s
                layout=LAYOUT)
 check("the runner lists as checked only the truth ones", t.checked == ["contact", "fall"], t.checked)
 check("a fall is said before a contact", t.check(at(1.75, 0.0), 0.03)[0] == "fall")
+
+# --- the robot-side replacements for the truth guardrails (phase 5 B3): no truth, the robot's own sensors ---------------------------
+CFG = {"fall_tilt_deg": 45.0, "fall_s": 0.5}
+ALL = [{"name": "fall"}, {"name": "contact"}, {"name": "drop_clearance", "m": 0.8}]
+ASKED = ["fall", "contact", "drop_clearance"]
+WALKING = [3.0, -2.0]
+rs = RobotSide(ALL, ASKED, CFG)
+check("only what is asked and not enforced by the runner is checked here, in the truth guard's order",
+      rs.names == ["fall", "contact", "drop_clearance"] and RobotSide(ALL, ["contact"], CFG).names == ["contact"]
+      and RobotSide([{"name": "fall"}], ASKED, CFG).names == ["fall"] and RobotSide(ALL, [], CFG).names == [], rs.names)
+check("must fail: a walking tilt, no mapd trouble and no drop near is no break", rs.check(0.0, WALKING, {"lost": None}, None) is None)
+rs = RobotSide(ALL, ASKED, CFG)
+check("must fail: the trunk past the tilt is not a fall until it has held fall_s", rs.check(0.0, [50.0, 0.0], {"lost": None}, None) is None
+      and rs.check(0.4, [50.0, 0.0], {"lost": None}, None) is None)
+f = rs.check(0.6, [50.0, 0.0], {"lost": None}, None)
+check("must fail: held 0.5 s past 45 deg is a fall, naming the angle", f and f[0] == "fall" and "50" in f[1], f)
+rs = RobotSide(ALL, ASKED, CFG)
+rs.check(0.0, [50.0, 0.0], None, None)
+rs.check(0.3, [5.0, 0.0], None, None)
+check("must fail: a tilt that came back under the angle starts the hold again", rs.check(0.6, [50.0, 0.0], None, None) is None)
+check("must fail: roll counts as well as pitch, either sign", RobotSide(ALL, ASKED, CFG).check(0.0, [0.0, -80.0], None, None) is None
+      and (lambda r: (r.check(0.0, [0.0, -80.0], None, None), r.check(0.6, [0.0, -80.0], None, None))[1])(RobotSide(ALL, ASKED, CFG))[0] == "fall")
+check("a tilt the robot does not report is not checked", RobotSide(ALL, ASKED, CFG).check(9.0, None, None, None) is None)
+rs = RobotSide(ALL, ASKED, CFG)
+rs.check(0.0, WALKING, {"lost": None}, None)
+b = rs.check(1.0, WALKING, {"lost": "bumped"}, None)
+check("must fail: mapd newly lost as bumped is a contact", b and b[0] == "contact" and "bumped" in b[1], b)
+rs = RobotSide(ALL, ASKED, CFG)
+rs.check(0.0, WALKING, {"lost": None}, None)
+c = rs.check(1.0, WALKING, {"lost": "carried"}, None)
+check("must fail: mapd newly lost as carried is a contact, said as a lift", c and c[0] == "contact" and "lifted" in c[1], c)
+rs = RobotSide(ALL, ASKED, CFG)
+rs.check(0.0, WALKING, {"lost": None}, None)
+fe = rs.check(1.0, WALKING, {"lost": "fell"}, None)
+check("must fail: mapd newly lost as fell is a fall", fe and fe[0] == "fall", fe)
+rs = RobotSide(ALL, ASKED, CFG)
+check("must fail: a duck already carried when the goal began is the baseline, not a contact of the goal's",
+      rs.check(0.0, WALKING, {"lost": "carried"}, None) is None and rs.check(1.0, WALKING, {"lost": "carried"}, None) is None)
+check("must fail: lost for another reason (boot, sat, contradiction) is no guardrail",
+      all(RobotSide(ALL, ASKED, CFG).check(1.0, WALKING, {"lost": r}, None) is None for r in ("boot", "sat", "contradiction")) is True
+      and (lambda r: (r.check(0.0, WALKING, {"lost": None}, None), r.check(1.0, WALKING, {"lost": "sat"}, None))[1])(RobotSide(ALL, ASKED, CFG)) is None)
+check("mapd not asked yet (no account) is not a change", (lambda r: (r.check(0.0, WALKING, None, None), r.check(1.0, WALKING, {"lost": None}, None))[1])(RobotSide(ALL, ASKED, CFG)) is None)
+check("must fail: a drop the cliff check has seen 1.0 m off is clear for 0.8 m", RobotSide(ALL, ASKED, CFG).check(0.0, WALKING, {"lost": None}, 1.0) is None)
+d = RobotSide(ALL, ASKED, CFG).check(0.0, WALKING, {"lost": None}, 0.5)
+check("must fail: 0.5 m from a seen drop is nearer than 0.8 m", d and d[0] == "drop_clearance" and "0.50" in d[1], d)
+check("a drop not seen yet is not a break", RobotSide(ALL, ASKED, CFG).check(0.0, WALKING, {"lost": None}, None) is None)
+check("a guardrail not asked is not checked: contact only, a fall's tilt and a near drop pass",
+      (lambda r: (r.check(0.0, [80.0, 0.0], None, 0.1), r.check(9.0, [80.0, 0.0], None, 0.1))[1])(RobotSide([{"name": "contact"}], ASKED, CFG)) is None)
+check("one a runner with the truth checks is not checked here: the same list, nothing not enforced",
+      RobotSide(ALL, [], CFG).check(9.0, [80.0, 0.0], {"lost": "bumped"}, 0.1) is None)
+
+
+class RobotNav(Nav):
+    """The navigator as the guard reads it: tilt, mapd's account, the belief's pose and the drops its cliff check has seen."""
+
+    def __init__(self, drops=(), pose=(0.0, 0.0, 0.0), mapd=None, tilt=None, edges=()):
+        super().__init__()
+        self.drops, self.edges, self._tilt_now = list(drops), list(edges), tilt
+        self.localisation = type("L", (), {"seen": mapd, "pose": lambda s: pose})()
+
+    def _tilt(self):
+        return self._tilt_now
+
+
+g = Guard(RobotNav(drops=[(0.3, 0.0), (2.0, 2.0)], mapd={"lost": None}), ALL, lambda *_: None, t0=100.0, robot=RobotSide(ALL, ASKED, CFG))
+dd = g.check(now=101.0)
+check("must fail: the guard hands the robot side the belief's distance to the nearest seen drop (0.3 m, under 0.8 m)", dd and dd[0] == "drop_clearance", dd)
+de = Guard(RobotNav(edges=[(0.0, 0.5)], mapd={"lost": None}), ALL, lambda *_: None, t0=100.0, robot=RobotSide(ALL, ASKED, CFG)).check(now=101.0)
+check("must fail: the edges a glance measured count as seen drops too (0.5 m off, under 0.8 m)", de and de[0] == "drop_clearance", de)
+check("the guard with no robot side checks the clock only: the same nav, the same drop, no break",
+      Guard(RobotNav(drops=[(0.3, 0.0)], mapd={"lost": None}), ALL, lambda *_: None, t0=100.0).check(now=101.0) is None)
+g = Guard(RobotNav(mapd={"lost": None}), [{"name": "time_limit", "seconds": 30.0}, *ALL], lambda *_: None, t0=100.0, robot=RobotSide(ALL, ASKED, CFG))
+check("the clock is said before the robot's checks", g.check(now=131.0)[0] == "time_limit")
 
 # --- the navigator's watchdog thread --------------------------------------------------------------------------
 broke, seen = threading.Event(), []

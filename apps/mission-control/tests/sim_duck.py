@@ -492,14 +492,15 @@ try:
         asked = [{"name": "drop_clearance", "m": 3.0}, "contact", "fall"]
         run = start({"kind": "point", "params": {"x": 0.5, "y": 0.0}, "must_not": asked})
         end = finished(run["id"], 180)
-        check("must fail: with a truth, drop_clearance 3.0 breaks at once by the dock (the drop scenario); without one the goal runs, "
-              "nothing is broken", end and end["state"] != "stopped_by_guardrail" and end["broken"] is None,
-              end and (end["state"], end["reason"], end["broken"]))
+        broken = (end or {}).get("broken")
+        check("must fail: with a truth, drop_clearance 3.0 breaks at once by the dock (the drop scenario); without one only the robot's own "
+              "cliff check can break it, so the goal is not broken before the robot has seen a drop (phase 5 B3)",
+              end and (end["state"] != "stopped_by_guardrail" or (broken or {}).get("name") == "drop_clearance"),
+              end and (end["state"], end["reason"], broken))
         unenf = [a for a in (end or {}).get("anomalies", []) if a.get("anomaly") == "guardrail_unenforced"]
-        live = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly" and e.get("goal_run") == run["id"]]
-        check("must fail: one guardrail_unenforced alarm per truth guardrail asked, from the harness, kept with the run and live on "
-              "the event stream", sorted((a.get("values") or {}).get("guardrail") for a in unenf) == ["contact", "drop_clearance", "fall"]
-              and all(a.get("source") == "harness" for a in unenf) and len(live) >= 3, (unenf, len(live)))
+        check("must fail: the three the robot checks by its own sensors (B3) raise no guardrail_unenforced: the goal says which it checks instead",
+              unenf == [] and any("own sensors check" in d["text"] and "fall" in d["text"] for d in (end or {}).get("decisions", [])),
+              (unenf, [d["text"] for d in (end or {}).get("decisions", [])][:3]))
         rj = runner_json(run)
         check("must fail: lab-nav-server's record: not enforced, in the order asked, no truth sampled, judge_truth not available",
               rj.get("not_enforced") == ["drop_clearance", "contact", "fall"] and rj.get("truth_samples") == 0
@@ -510,6 +511,20 @@ try:
               rec is not None and (rec.get("judge_truth") or {}).get("unenforced") == ["drop_clearance", "contact", "fall"],
               rec and rec.get("judge_truth"))
         check("the runner served no camera", "camera none" in (tmp / "nav-server.log").read_text())
+        # the robot's own drop guardrail (B3), no truth: an exploration glances at the stairwell from the dock, so a clearance of 1.0 m is
+        # broken by the rim it has seen (0.2 to 0.5 m off); judged here by the truth: the trunk stays out of the stairwell (y over -0.7)
+        clean[0] = False
+        need_clean()
+        wait_for(lambda: robot()["online"], 60)
+        run = start({"kind": "explore", "params": {"site": True}, "budget": {"minutes": 5}, "must_not": [{"name": "drop_clearance", "m": 1.0}, "contact", "fall"]})
+        end = finished(run["id"], 180)
+        broken = (end or {}).get("broken") or {}
+        check("must fail: no truth, an exploration with drop_clearance 1.0: the robot's own sensor breaks it, stopped_by_guardrail "
+              "naming drop_clearance (the old runner ran on, nothing broken)", end and end["state"] == "stopped_by_guardrail" and broken.get("name") == "drop_clearance",
+              end and (end["state"], end["reason"], broken))
+        print("   broken:", broken, flush=True)
+        check("the break says it was what the robot's sensor saw, and the robot stands outside the stairwell (truth)",
+              "its sensor saw" in broken.get("detail", "") and body.pose()[1] > -0.7 and stands_still(), (broken, body.pose()))
 
     # --- the split (RFC-0021 step 6): the navigator behind its runner, with no route to the truth ---------------------
     print("\n--- the split", flush=True)

@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.3.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.4.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -77,6 +77,29 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.4
+
+A runner with no truth (a real robot's) lists `contact`, `fall` and `drop_clearance` in
+`not_enforced`; from 1.4 the **navigator API** checks them by the robot's own sensors (phase 5
+item 4b unit B3, `duck_lab.nav.guardrails.RobotSide`), and a break ends the goal
+`stopped_by_guardrail` with `broken` naming the guardrail, as a truth break does:
+
+- `fall`: the IMU's tilt (the larger of pitch and roll) at or over the profile's
+  `robot_guards.fall_tilt_deg` for `fall_s`, or mapd lost as `fell`. It cannot see a fall under the
+  angle, or an IMU that went quiet (the stale-stream stop is the backstop).
+- `contact`: mapd newly lost as `bumped` or `carried` after the goal began (the first account is
+  the baseline). It cannot see a touch mapd did not feel.
+- `drop_clearance {m}`: the belief's distance to the drops the forward sensor has seen (cliff
+  stops' points, a glance's edges), under `m`. It cannot see a drop it has not seen: an unmapped
+  rim approached from the side ([CH22-RIM.md](../../docs/wip/CH22-RIM.md)) is not covered.
+
+For these names it records no `guardrail_unenforced` anomaly. It records one
+`guardrails_robot_side` event naming them, its `goal.status` `progress` carries
+`guardrails_robot_side`, and a break's `guardrail` event says `side: robot`. Every other name in
+`not_enforced` (`no_go_area`) is raised as before. They are weaker than the truth and not armed
+where the runner has it. A navigator of 1.3 or below still raises the anomaly for all; the payload
+(the courses' navigator) does not check them.
 
 ## 1.3
 

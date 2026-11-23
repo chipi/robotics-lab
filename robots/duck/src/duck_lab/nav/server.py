@@ -16,7 +16,8 @@ which names its goal run in the run record (`goal_run`, apps/observatory/CONTRAC
 It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Methods:
   hello -> {name, version, contract, kinds, camera}
   goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?,
-      not_enforced?}  (not_enforced since contract 1.2: guardrails its runner cannot check, one harness anomaly each)
+      not_enforced?}  (not_enforced since contract 1.2: guardrails its runner cannot check, one harness anomaly each, except from 1.4
+      the contact, fall and drop_clearance this navigator checks by the robot's own sensors: guardrails.RobotSide)
       -> {run_key}, or {error} when another client holds the robot (the gate's own refusal), or a goal is running here
   goal.status {decisions_since, objects_since, anomalies_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
       decisions_n, anomalies: [...], anomalies_n, objects: [...] | null, objects_v}  (anomalies since contract 1.1)
@@ -46,7 +47,7 @@ from duck_lab.nav import calibration, contract
 from duck_lab.nav.calibration import Calibration
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
-from duck_lab.nav.guardrails import Guard
+from duck_lab.nav.guardrails import Guard, RobotSide
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
@@ -128,6 +129,7 @@ class GoalRun:
         self.params = spec.get("params") or {}
         self.done_when = (spec.get("conditions") or {}).get("done_when") or {}
         self.guardrails = (spec.get("conditions") or {}).get("guardrails") or []
+        self.robot_side: list = []       # the truth guardrails its runner could not check and this navigator checks by the robot (_arm_guardrails)
         self.goal_run = spec.get("goal_run") or {}
         self.state, self.reason, self.result, self.broken = "starting", None, None, None
         self.progress: dict = {}
@@ -171,7 +173,8 @@ class GoalRun:
         self.out = out
         self._prepare()
         for name in self.spec.get("not_enforced") or []:
-            self.nav.anomaly("guardrail_unenforced", f"the runner cannot check {name}: it has no truth", values={"guardrail": str(name)})
+            if name not in self.robot_side:
+                self.nav.anomaly("guardrail_unenforced", f"the runner cannot check {name}: it has no truth", values={"guardrail": str(name)})
         self.state = "running"
         threading.Thread(target=self._work, name=f"goal-{label}", daemon=True).start()
         return self.run_key
@@ -194,7 +197,15 @@ class GoalRun:
 
     def _arm_guardrails(self) -> None:
         """The merged guardrails of the goal run (Mission Control's list: robot, site and goal level, strictest wins)."""
-        self.guard = Guard(self.nav, self.guardrails, self._break, self.t0)
+        cfg = self.nav.profile.get("robot_guards")
+        robot = RobotSide(self.guardrails, self.spec.get("not_enforced") or [], cfg) if cfg else None
+        robot = robot if robot and robot.names else None
+        self.robot_side = robot.names if robot else []
+        if self.robot_side:
+            self.nav.record(event="guardrails_robot_side", names=self.robot_side,
+                            decision=decision("guardrail", "the runner has no truth: the robot's own sensors check " + ", ".join(self.robot_side),
+                                              guardrails=self.robot_side))
+        self.guard = Guard(self.nav, self.guardrails, self._break, self.t0, robot)
         self.guard.arm()
 
     def _break(self, name: str, detail: str, by_runner: bool = False) -> None:
@@ -205,7 +216,8 @@ class GoalRun:
             if self.broken is not None:
                 return
             self.broken = {"name": name, "detail": detail}
-        self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name,
+                                                                        **({"side": "robot"} if name in self.robot_side else {})))
         if by_runner:
             self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
@@ -262,7 +274,7 @@ class GoalRun:
             return {}
         pose = nav.loc.pose()
         p = {"elapsed_s": round(time.monotonic() - self.t0, 1), "area": nav.area,
-             "guardrails_ok": [g["name"] for g in self.guardrails if not self.broken]}
+             "guardrails_ok": [g["name"] for g in self.guardrails if not self.broken], "guardrails_robot_side": self.robot_side}
         if pose is not None:
             p["pose"] = {"x": round(pose[0], 3), "y": round(pose[1], 3), "yaw": round(pose[2], 3), "frame": "site"}
             if self.target is not None:
