@@ -392,7 +392,9 @@ goal   { id, name, folder, kind: "go_to_object",
   flagged on a real run (its `conditions.rehearsal`); Mission Control does not forbid it unless the
   goal says `sim_first`, since the operator is in the room (RFC-0002 §3.5). A `sim_first` goal runs
   on the real robot only after a passing simulator run of the same goal (phase 5 item 4b unit B8;
-  [the contract](../../apps/mission-control/CONTRACT.md), Goals).
+  [the contract][mc-contract], Goals).
+
+[mc-contract]: https://github.com/chipi/robotics-lab/blob/main/apps/mission-control/CONTRACT.md
 
 #### 3.4.3 Goal runs: states, outcomes, results
 
