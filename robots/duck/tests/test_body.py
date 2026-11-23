@@ -92,6 +92,7 @@ class FakeRpc:
 
 closing = threading.Event()
 fake = types.SimpleNamespace(robot_sock="/nowhere", client="lab-go", _sid=1, _t0=0.0, _closing=closing, _body=None,
+                             _stop_on_health=lambda h: None,
                              runlog=types.SimpleNamespace(signals=lambda sid, t, v: sigs.append(v)),
                              record=lambda **row: rows.append(row))
 fake._closing.wait = lambda s: len(asked) >= len(answers)      # one ask per tick, closed after the last answer
@@ -162,6 +163,41 @@ check("healthy again, then sick: said again", hw.health(50.0, health) == [] and 
 check("every body anomaly is a kind the record knows", all(anom.record(a["kind"], a["summary"], a.get("severity"), margin=a.get("margin"),
                                                                        values=a.get("values")) for a in got + trk + slow + hot + v1))
 
+# stopping on its own health (phase 5 B2): body.StopWatch at the profile's hot_c and health block, from each health answer
+def attempt(fn):
+    try:
+        return fn()
+    except Exception as e:      # noqa: BLE001 - a missing piece is a failed check, not a crash
+        return f"{type(e).__name__}: {e}"
+
+
+def stops(**over):
+    return body.StopWatch({"hot_c": 60.0}, {"battery_min_pct": 15.0, "battery_low_s": 10.0, **over})
+
+
+low = {**health, "battery": {"volts": 6.7, "percent": 10.0}}
+check("must fail: a healthy stub with a cool servo and half a battery is not a stop", attempt(lambda: stops().health(0.0, health)) is None)
+hot_stop = attempt(lambda: stops().health(0.0, {**health, "motors": {"hottest": "right_knee", "max_c": 60.0, "mean_c": 40.0}}))
+check("must fail: the hottest servo at hot_c is a stop, named motor_hot, with the servo and the temperature",
+      isinstance(hot_stop, tuple) and hot_stop[0] == "motor_hot" and "right_knee" in hot_stop[1] and "60" in hot_stop[1], hot_stop)
+check("must fail: just under hot_c is not a stop",
+      attempt(lambda: stops().health(0.0, {**health, "motors": {"hottest": "right_knee", "max_c": 59.9}})) is None)
+sw = attempt(stops)
+first, second = attempt(lambda: sw.health(0.0, low)), attempt(lambda: sw.health(10.0, low))
+check("must fail: a battery under the threshold is a stop, named battery_low, once it has held for battery_low_s (two polls), not at the first",
+      first is None and isinstance(second, tuple) and second[0] == "battery_low" and "10" in second[1], (first, second))
+sw2 = attempt(stops)
+attempt(lambda: sw2.health(0.0, low))
+attempt(lambda: sw2.health(5.0, health))
+check("must fail: a battery that came back over the threshold starts the hold again", attempt(lambda: sw2.health(10.0, low)) is None)
+check("must fail: a battery the robot does not report is not checked (absent, never zero)",
+      attempt(lambda: stops(battery_low_s=0.0).health(0.0, {k: v for k, v in health.items() if k != "battery"})) is None)
+unhealthy = attempt(lambda: stops().health(0.0, sick))
+check("must fail: robotd not healthy is a stop, named robot_unhealthy, with its reason",
+      isinstance(unhealthy, tuple) and unhealthy[0] == "robot_unhealthy" and "bus: servo 3 missing" in unhealthy[1], unhealthy)
+check("must fail: degraded but healthy is not a stop (it is a minor anomaly)",
+      attempt(lambda: stops().health(0.0, {**health, "degraded": True, "reason": "battery low"})) is None)
+
 # the profile: the real duck's limits in the base (Pollen's numbers, tracking not measured), the simulator's in variants.sim
 from pathlib import Path  # noqa: E402
 
@@ -196,6 +232,18 @@ finally:
     navrun.Rpc = real_rpc
 check("must fail: the health thread raises robot_unhealthy beside its robot_health event", raised == ["robot_unhealthy"]
       and [r.get("healthy") for r in rows] == [False], (raised, rows))
+handed = []
+answers = [sick]
+asked.clear()
+rows.clear()
+fake._stop_on_health = handed.append
+fake._closing.wait = lambda s: len(asked) >= len(answers)
+real_rpc, navrun.Rpc = navrun.Rpc, FakeRpc
+try:
+    navrun.Navigator._health(fake)
+finally:
+    navrun.Rpc = real_rpc
+check("must fail: the health thread hands each answer to the stop check, after the anomalies", handed == [sick], handed)
 
 # the navigator API serves them live (contract 1.1): the navigator's own record hands each anomaly row, once written, to on_anomaly
 heard, written = [], []

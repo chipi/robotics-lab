@@ -20,6 +20,12 @@
       "why": "the body's anomalies (phase 5 item 3 step 3, RFC-0023 §7 step 3: 'the joints (load, tracking error, a trip; limits in the profile)'). joint_overload: a joint's current at or over current_ma (90 % of the servo's own limit, where position control caps it) for current_s; joint_tracking: its commanded angle less its angle over tracking_rad for tracking_s (null: not checked on the real duck until a recorded run measures it with sim/probes/body_limits.py; the run's body_watch event says so); motor_hot: the hottest servo at or over hot_c (Pollen's hot, 10 C short of the shutdown); loop_slow: the state stream's loop rate under loop_min_hz (10 % short of 50 Hz) for loop_slow_s. The hold times are proposed, not measured: long enough that one tick does not raise it."
     }
   },
+  "health": {
+    "battery_min_pct": 15.0,
+    "battery_low_s": 10.0,
+    "measured": "Not measured: a proposal (phase 5 B2, 2026-11-23) for the real duck's number to measure. robotd's battery percent is inferred from its 6.6 to 8.2 V span (PHASE5-ITEM3-BODY-DATA.md), so 15 % is about 6.8 V, a little over the empty end; the simulator's battery is a constant (7.4 V, about 50 %) and never reaches it. To measure on the robot: the percent and the volts under a walking load until the servos brown out, and how far the voltage sags in a step (the hold below is sized by that sag).",
+    "why": "what the navigator stops a goal on beyond the body's own limits (nav/body.py StopWatch). battery_min_pct: a goal is stopped (stopped_by_guardrail, named battery_low) when robotd's battery percent is under it for battery_low_s, so a walking sag does not stop a robot with charge in it; 10 s is two of the navigator's health polls (HEALTH_S), so one low reading never stops it. A servo at or over joints.limits.hot_c, robotd's verdict not healthy, and a state or depth stream silent past anomalies.state_stale_s or depth_stale_s (3 s: more than twice the longest gap of a running run, 1.4 s; at 0.3 m/s that is under a metre walked blind) stop it too, by the numbers those blocks already hold. A value robotd does not report is not checked."
+  },
   "subsystems": [
     {"name": "robotd", "what": "the body: the motors, the IMU, the deadman, the walking policies", "check": {"kind": "socket", "socket": "robot"}},
     {"name": "tof", "what": "the 8x8 depth sensor's stream", "check": {"kind": "socket", "socket": "depth"}},

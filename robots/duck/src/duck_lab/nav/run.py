@@ -193,6 +193,9 @@ class Navigator:
     anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
     _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
     _body = None             # the body's anomalies at the profile's joints.limits (body.BodyWatch, configure)
+    _stops = None            # what stops a goal on robotd's health, at the profile's joints.limits and health block (body.StopWatch, configure)
+    stop_end = None
+    on_self_stop = None      # told (name, detail) when the navigator stops the goal on its own health, before the stop: the goal's `broken`
 
     def __init__(self, sockets: dict, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None,
@@ -328,6 +331,8 @@ class Navigator:
             self._beat = {"state": anom.Staleness(an["state_stale_s"], now), "depth": anom.Staleness(an["depth_stale_s"], now)}
         limits = profile.get("joints.limits")
         self._body = body.BodyWatch(limits, JOINTS) if limits else None
+        stops = profile.get("health")
+        self._stops = body.StopWatch(limits, stops) if limits and stops else None
 
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
@@ -578,12 +583,13 @@ class Navigator:
                 self.anomaly("thread_failed", f"the {name} stream has been silent for {age:.1f} s", margin=age - limit,
                              values={"stream": name, "silent_s": round(age, 2), "limit_s": limit,
                                      "thread_alive": None if thread is None else thread.is_alive(), "margin_unit": "s"})
+                self.health_stop("stale_stream", f"the {name} stream has been silent for {age:.1f} s, past {limit:g} s")
 
     def _start_health(self) -> None:
         """A run asks robotd's health every HEALTH_S on a connection of its own (the control loop's is not shared across threads),
         kept as signals; robotd's verdict (healthy, degraded, reason) as a `robot_health` event when it changes, the first answer
         included. Only while a run is written."""
-        if not self.runlog or HEALTH_S <= 0:
+        if not (self.runlog or self._stops) or HEALTH_S <= 0:
             return
         self._health_thread = threading.Thread(target=self._health, daemon=True)
         self._health_thread.start()
@@ -595,7 +601,8 @@ class Navigator:
             try:
                 rpc = rpc or Rpc(self.robot_sock, client=f"{self.client}-health" if self.client else None)
                 h = rpc.call("robot.health")
-                self.runlog.signals(self._sid, time.monotonic() - self._t0, body.health_values(h))
+                if self.runlog:
+                    self.runlog.signals(self._sid, time.monotonic() - self._t0, body.health_values(h))
                 verdict = body.health_verdict(h)
                 if verdict != last:
                     self.record(event="robot_health", **verdict)
@@ -603,6 +610,7 @@ class Navigator:
                 if self._body:
                     for a in self._body.health(time.monotonic(), h):
                         self.anomaly(**a)
+                self._stop_on_health(h)
             except Exception as e:  # noqa: BLE001 - the health is information: a failed ask is said once, the run goes on
                 if rpc is not None:
                     rpc.close()
@@ -614,6 +622,28 @@ class Navigator:
                 break
         if rpc is not None:
             rpc.close()
+
+    def _stop_on_health(self, h: dict) -> None:
+        """The goal stops when robotd's health answer holds a cause (body.StopWatch): a servo at hot_c, a low battery, a verdict
+        not healthy. The health thread's; the stale streams are the watchdog's."""
+        found = self._stops.health(time.monotonic(), h) if self._stops else None
+        if found:
+            self.health_stop(*found)
+
+    def health_stop(self, name: str, detail: str) -> None:
+        """The navigator stops the goal on the robot's own health, as a guardrail does (RFC-0014 §3.4.8): `on_self_stop` is told
+        first, so the goal's `broken` is set before its loop ends; the run keeps a `guardrail` event naming the cause (the cause's
+        own anomaly, motor_hot, robot_unhealthy or thread_failed, is raised where it is seen); the goal ends stopped_by_guardrail.
+        Said once: a goal already stopped by a guardrail keeps its cause."""
+        if self.stop_end == "stopped_by_guardrail":
+            return
+        if self.on_self_stop is not None:
+            try:
+                self.on_self_stop(name, detail)
+            except Exception as e:  # noqa: BLE001 - a listener must not keep the robot walking
+                print(f"health stop {name} not told: {type(e).__name__}: {e}", file=sys.stderr)
+        self.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        self.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
 
     def stop_goal(self, end: str, reason: str) -> None:
         """Stop the goal now, as `end` (stopped_by_guardrail or cancelled) with `reason`: every loop ends at its next tick,

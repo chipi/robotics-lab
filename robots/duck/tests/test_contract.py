@@ -13,6 +13,7 @@ import types
 from pathlib import Path
 
 from duck_lab import payload as payload_mod
+from duck_lab.nav import body as body_mod
 from duck_lab.nav import server as server_mod
 from duck_lab.nav.client import LeaseLost
 from duck_lab.nav.run import Navigator as RealNavigator
@@ -48,6 +49,8 @@ class FakeNav:
         self.loc = types.SimpleNamespace(pose=lambda: (0.0, 0.0, 0.0))
         self.profile = types.SimpleNamespace(meta={"checksum": "sha256:x", "version": 1, "source": "robot"})
         self.records = []
+        watch = getattr(body_mod, "StopWatch", None)
+        self._stops = watch({"hot_c": 60.0}, {"battery_min_pct": 15.0, "battery_low_s": 0.0}) if watch else None
 
     def go_to(self, goal, time_s):
         FakeNav.calls.append((tuple(goal), time_s))
@@ -63,6 +66,9 @@ class FakeNav:
 
     stop_goal, clear_stop = RealNavigator.stop_goal, RealNavigator.clear_stop       # the navigator's own rule
     anomaly = RealNavigator.anomaly
+    on_self_stop = None
+    health_stop = getattr(RealNavigator, "health_stop", None)
+    _stop_on_health = getattr(RealNavigator, "_stop_on_health", None)
 
     def record(self, **row):
         self.records.append(row)
@@ -252,6 +258,41 @@ for name, make in NAVIGATORS.items():
     inner = nav.nav if name == "payload" else nav.run.nav
     check(f"{name}: a cancel stops the navigator as cancelled, with its reason", (inner.stop_end, inner.abort)
           == ("cancelled", "the operator"), (inner.stop_end, inner.abort))
+
+# --- the navigator stops on its own health (phase 5 B2): the goal ends stopped_by_guardrail, `broken` names the cause -----------------
+HEALTHY = {"healthy": True, "degraded": False, "reason": None, "battery": {"volts": 7.4, "percent": 50.0},
+           "motors": {"hottest": "left_knee", "max_c": 32.0, "mean_c": 31.5}}
+CAUSES = (("motor_hot", {**HEALTHY, "motors": {"hottest": "left_knee", "max_c": 64.0, "mean_c": 50.0}}),
+          ("battery_low", {**HEALTHY, "battery": {"volts": 6.6, "percent": 5.0}}),
+          ("robot_unhealthy", {**HEALTHY, "healthy": False, "reason": "bus: servo 3 missing"}))
+
+
+def inner_of(name, nav):
+    return nav.nav if name == "payload" else nav.run.nav
+
+
+def poke(name, fn):
+    def then(m):
+        try:
+            fn(inner_of(name, m))
+        except Exception as e:      # noqa: BLE001 - a missing piece is a failed check, not a crash
+            print(f"  ({type(e).__name__}: {e})")
+    return then
+
+
+for name, make in NAVIGATORS.items():
+    for cause, stub in CAUSES:
+        st = run_goal(make(), "wait", poke(name, lambda n, h=stub: n._stop_on_health(h)))
+        check(f"must fail: {name}: a stub health with {cause} ends the goal stopped_by_guardrail, `broken` naming it",
+              st["state"] == "stopped_by_guardrail" and (st.get("broken") or {}).get("name") == cause and st["reason"], (st["state"], st.get("broken"), st["reason"]))
+    st = run_goal(make(), "wait", poke(name, lambda n: n.health_stop("stale_stream", "the depth stream has been silent for 3.2 s")))
+    check(f"must fail: {name}: a stale stream ends the goal stopped_by_guardrail, `broken` naming stale_stream",
+          st["state"] == "stopped_by_guardrail" and (st.get("broken") or {}).get("name") == "stale_stream"
+          and "silent for 3.2 s" in (st["reason"] or ""), (st["state"], st.get("broken"), st["reason"]))
+    both = make()
+    st = run_goal(both, "wait", lambda m: (poke(name, lambda n: n._stop_on_health(HEALTHY))(m), time.sleep(0.1), m.call("goal.cancel", {"reason": "done"})))
+    check(f"{name}: a healthy stub does not stop the goal (it runs until the cancel)", st["state"] == "cancelled" and st.get("broken") is None,
+          (st["state"], st.get("broken")))
 
 # --- the navigator's gate client reads the gate's protocol (RFC-0018 §5.3) ------------------------------------------------------
 import json  # noqa: E402

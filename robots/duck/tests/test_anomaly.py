@@ -464,6 +464,10 @@ nav._check_head({"joints": [0.0] * 14})
 nav._check_head({})
 check("head_off_walk: a state with another number of joints, or none: nothing, and no error", anomalies(nav) == [])
 
+def ended(nav):
+    return getattr(nav, "stop_end", None)
+
+
 # ---- the streams' watchdog --------------------------------------------------------------------------------------------------------
 nav = navigator()
 nav._beat = {"state": anom.Staleness(0.15, time.monotonic()), "depth": anom.Staleness(0.15, time.monotonic())}
@@ -482,7 +486,75 @@ check("thread_failed: the depth stream silent past its limit is said, once, majo
       len(r) == 1 and r[0]["values"]["stream"] == "depth" and r[0]["severity"] == "major" and r[0]["values"]["thread_alive"] is False
       and r[0]["values"]["silent_s"] >= 0.15 and r[0]["margin"] > 0 and not t.is_alive(), (r, t.is_alive()))
 check("... and the stream that kept talking was not said", all(x["values"]["stream"] != "state" for x in r))
+check("must fail: the same silence stops the goal as stopped_by_guardrail, naming stale_stream and the stream",
+      ended(nav) == "stopped_by_guardrail" and (nav.abort or "").startswith("guardrail stale_stream") and "depth" in (nav.abort or ""),
+      (ended(nav), nav.abort))
 run.WATCHDOG_S = 0.5
+quiet = navigator()
+quiet._beat = {"state": anom.Staleness(0.15, time.monotonic()), "depth": anom.Staleness(0.15, time.monotonic())}
+run.WATCHDOG_S = 0.03
+quiet._start_watchdog()
+for _ in range(20):
+    quiet._beat["state"].seen(time.monotonic())
+    quiet._beat["depth"].seen(time.monotonic())
+    time.sleep(0.02)
+quiet._closing.set()
+quiet._watchdog_thread.join(1.0)
+run.WATCHDOG_S = 0.5
+check("both streams talking is not a stop", quiet.abort is None and ended(quiet) is None, (ended(quiet), quiet.abort))
+
+# ---- stopping on its own health (phase 5 B2): the navigator ends the goal as stopped_by_guardrail, naming the cause ------------------------
+from duck_lab.nav import body  # noqa: E402
+
+HEALTHY = {"healthy": True, "degraded": False, "reason": None, "battery": {"volts": 7.4, "percent": 50.0},
+           "motors": {"hottest": "left_knee", "max_c": 32.0, "mean_c": 31.5}}
+
+
+def stub_health(nav, h):
+    try:
+        nav._stop_on_health(h)
+    except Exception as e:      # noqa: BLE001 - a missing piece is a failed check, not a crash
+        return f"{type(e).__name__}: {e}"
+
+
+def stop_rows(nav):
+    return [(r["name"], r["decision"]["rule"]) for r in rows(nav) if r.get("event") == "guardrail"]
+
+
+for profile, label in ((SIM, "simulator"), (REAL, "real duck")):
+    h = profile.get("health")
+    check(f"must fail: the {label}'s profile carries the health block: a battery threshold, its hold, how it was chosen and why",
+          isinstance(h, dict) and h.get("battery_min_pct") and h.get("battery_low_s") and h.get("measured") and h.get("why"), h)
+
+nav = navigator()
+told = []
+nav.on_self_stop = lambda name, detail: told.append(name)
+err = stub_health(nav, HEALTHY)
+check("must fail: a healthy stub is not a stop", err is None and nav.abort is None and not stop_rows(nav) and not told, (err, nav.abort))
+err = stub_health(nav, {**HEALTHY, "motors": {"hottest": "right_hip_pitch", "max_c": 61.0, "mean_c": 45.0}})
+check("must fail: a hot servo stops the goal as stopped_by_guardrail, with a guardrail event and the listener told",
+      ended(nav) == "stopped_by_guardrail" and (nav.abort or "").startswith("guardrail motor_hot") and stop_rows(nav) == [("motor_hot", "guardrail")]
+      and told == ["motor_hot"], (err, ended(nav), nav.abort, stop_rows(nav), told))
+stub_health(nav, {**HEALTHY, "healthy": False, "reason": "bus: servo 3 missing"})
+check("must fail: a second cause after a stop is not another stop", stop_rows(nav) == [("motor_hot", "guardrail")] and told == ["motor_hot"],
+      stop_rows(nav))
+
+nav = navigator()
+nav._stops = body.StopWatch(REAL.get("joints.limits"), {"battery_min_pct": 15.0, "battery_low_s": 0.0})
+err = stub_health(nav, {**HEALTHY, "battery": {"volts": 6.7, "percent": 9.0}})
+check("must fail: a low battery stops the goal, named battery_low",
+      ended(nav) == "stopped_by_guardrail" and stop_rows(nav) == [("battery_low", "guardrail")], (err, ended(nav), nav.abort))
+
+nav = navigator()
+err = stub_health(nav, {**HEALTHY, "healthy": False, "degraded": True, "reason": "imu stale"})
+check("must fail: an unhealthy verdict stops the goal, named robot_unhealthy, saying why",
+      ended(nav) == "stopped_by_guardrail" and "imu stale" in (nav.abort or "") and stop_rows(nav) == [("robot_unhealthy", "guardrail")],
+      (err, ended(nav), nav.abort))
+
+nav = navigator()
+nav._stops = None
+check("a navigator without a stop watch (a profile without the numbers) stops nothing",
+      stub_health(nav, {**HEALTHY, "healthy": False}) is None and nav.abort is None)
 
 # ---- the camera and the relocaliser, through enable_objects -------------------------------------------------------------------------
 from worldmodel.objects import load_kinds  # noqa: E402

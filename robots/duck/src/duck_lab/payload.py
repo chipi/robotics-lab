@@ -63,6 +63,7 @@ class Payload:
         self.state, self.reason, self.result, self.broken, self.cancelled = "idle", None, None, None, None
         self._lock = threading.Lock()
         self.stopped = threading.Event()
+        self.nav.on_self_stop = self._noted
 
     def call(self, method: str, p: dict):
         if method not in self.METHODS:
@@ -121,6 +122,13 @@ class Payload:
         self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
         return {"ok": True}
+
+    def _noted(self, name: str, detail: str) -> None:
+        """The navigator stopped the goal on the robot's own health (motor_hot, battery_low, robot_unhealthy, stale_stream): `broken`
+        names it, as for a guardrail broken from outside. Nothing is noted between goals."""
+        with self._lock:
+            if self.state == "running" and self.broken is None:
+                self.broken = {"name": name, "detail": detail}
 
     def _stop(self, _p: dict) -> dict:
         self.close()

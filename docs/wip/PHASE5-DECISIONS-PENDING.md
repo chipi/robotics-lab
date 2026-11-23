@@ -206,6 +206,32 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
 - **Not covered:** a browser clock that differs from the server's; the real duck's meshes test
   (the colour proof is on the stand-in body).
 
+### B2, stopping on its own health (2026-11-23)
+
+- **The end:** the contract's `stopped_by_guardrail`, no version change. `broken` is `{name, detail}`
+  with the name `motor_hot`, `battery_low`, `robot_unhealthy` or `stale_stream` (the names are open:
+  `goal.break` already carries any name). The run keeps a `guardrail` event with the decision
+  `guardrail`; the cause's anomaly (`motor_hot`, `robot_unhealthy`, `thread_failed`) is raised where
+  it is seen, as before. No new anomaly kind, so the Observatory's list is unchanged.
+- **Thresholds:** `joints.limits.hot_c` (60 C) and the anomalies block's `state_stale_s` and
+  `depth_stale_s` (3 s each) are reused, not duplicated. New: the profile's `health` block,
+  `battery_min_pct` 15 and `battery_low_s` 10, in the base only (sim and real inherit it).
+- **The battery default (the real duck's number to measure):** 15 % held for 10 s, two of the
+  navigator's 10 s health polls, so one low reading or a servo's sag never stops it. The percent is
+  robotd's, inferred from a 6.6 to 8.2 V span, so 15 % is about 6.8 V. Measure on the robot: percent
+  and volts under a walking load, the sag in a step, where the servos brown out. Undo: the block's
+  numbers, or remove the block (no stop watch, nothing stops on health).
+- **An unhealthy verdict stops at the first poll** (not degraded: that stays a minor anomaly). A
+  stale stream stops at the same moment `thread_failed` is said.
+- **In the simulator:** the battery (about 50 %) and temperature (32 C) are constants, so a test
+  profile (`--profile`) with `hot_c` 20 stops the point goal as motor_hot, and one with
+  `battery_min_pct` 99 as battery_low. Unhealthy and a stale stream cannot be raised there.
+- **Not covered:** a robotd that does not answer health (said once, not a stop: the 0.5 s deadman
+  covers it); a stop between goals on the payload (the next goal clears it, the next poll stops it
+  again, up to 10 s later); a bad state at the start of a goal (no preflight: B6's adapter or
+  Mission Control's fit verdict); the health poll's 10 s, so a servo can be hot for up to 10 s
+  before the stop.
+
 ## Findings to watch
 
 - **`test_replay_pages.py` failed once, cause unknown (2026-11-23).** It failed in a

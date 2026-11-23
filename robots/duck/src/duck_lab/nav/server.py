@@ -164,6 +164,7 @@ class GoalRun:
             raise
         self.nav.on_decision = self._on_decision
         self.nav.on_anomaly = self._on_anomaly
+        self.nav.on_self_stop = self._noted
         self.out = out
         self._prepare()
         for name in self.spec.get("not_enforced") or []:
@@ -205,6 +206,13 @@ class GoalRun:
         if by_runner:
             self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
+
+    def _noted(self, name: str, detail: str) -> None:
+        """The navigator stopped the goal on the robot's own health (motor_hot, battery_low, robot_unhealthy, stale_stream): `broken`
+        names it, as for a guardrail broken from outside; the navigator has recorded the event and does the stop."""
+        with self._lock:
+            if self.broken is None:
+                self.broken = {"name": name, "detail": detail}
 
     # --- what a poll sees ---------------------------------------------------------------------------
 

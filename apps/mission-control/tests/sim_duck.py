@@ -409,7 +409,7 @@ try:
         check("with 0.1 m, no contact, no fall, no stuck the same robot reaches its point: the guardrails do not stop a good run",
               end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
 
-    if wanted("notruth"):
+    if ARGS.no_truth:
         print("\n--- no truth (phase 5 item 4): the runner as on a real robot", flush=True)
         asked = [{"name": "drop_clearance", "m": 3.0}, "contact", "fall"]
         run = start({"kind": "point", "params": {"x": 0.5, "y": 0.0}, "must_not": asked})

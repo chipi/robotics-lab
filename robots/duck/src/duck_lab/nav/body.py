@@ -179,3 +179,34 @@ class BodyWatch:
                         "values": {"healthy": v["healthy"], "degraded": v["degraded"], "reason": v["reason"]}})
         self._verdict = verdict
         return out
+
+
+class StopWatch:
+    """What stops a goal on the robot's own health (phase 5 B2): `health(t, h)` from each robot.health answer gives (name, detail) of
+    the first cause, else None. motor_hot: the hottest servo at or over the profile's joints.limits.hot_c. battery_low: the battery
+    percent under health.battery_min_pct for health.battery_low_s (the hold restarts when it comes back over). robot_unhealthy:
+    robotd's verdict is not healthy (degraded alone is a minor anomaly, not a stop). A value robotd did not report is not checked.
+    The stale streams are the navigator's watchdog's. Unlike BodyWatch, a cause is answered at every poll while it holds: the
+    navigator decides what a second answer means."""
+
+    def __init__(self, limits: dict, health: dict):
+        self.hot_c = limits["hot_c"]
+        self.min_pct, self.low_s = health["battery_min_pct"], health["battery_low_s"]
+        self._low_since = None
+
+    def health(self, t: float, h: dict) -> tuple | None:
+        m = h.get("motors") or {}
+        if _num(m.get("max_c")) and m["max_c"] >= self.hot_c:
+            return "motor_hot", f"the hottest servo, {m.get('hottest') or '?'}, is at {m['max_c']:.0f} C, at or over {self.hot_c:g} C"
+        pct = (h.get("battery") or {}).get("percent")
+        if _num(pct) and pct < self.min_pct:
+            if self._low_since is None:
+                self._low_since = t
+            if t - self._low_since >= self.low_s:
+                return "battery_low", f"the battery is at {pct:.0f} %, under {self.min_pct:g} % for {t - self._low_since:.0f} s"
+        else:
+            self._low_since = None
+        if not h.get("healthy"):
+            reason = h.get("reason")
+            return "robot_unhealthy", "robotd says it is not healthy" + (f": {reason}" if reason else "")
+        return None

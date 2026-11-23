@@ -228,6 +228,8 @@ SCHEMA = {
     # step 3): a joint's current and its tracking error held past a limit, the hottest servo, the control loop's rate
     "joints": {"names": "strs", "limits": {"current_ma": "pos", "current_s": "pos", "tracking_rad": "opt_pos", "tracking_s": "pos",
                                           "hot_c": "pos", "loop_min_hz": "pos", "loop_slow_s": "pos"}},
+    # what the navigator stops a goal on beyond the body's limits (phase 5 B2): a battery under a percent for a time
+    "health": {"battery_min_pct": "pos", "battery_low_s": "pos"},
     # the robot's parts that run beside the navigator, each with how its state is checked (checked in _check_subsystems)
     "subsystems": "any",
 }
