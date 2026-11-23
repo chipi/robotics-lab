@@ -390,6 +390,8 @@ function renderRunDetail() {
     r.guardrails.length ? h("div", { class: "faint", style: "font-size:12px" }, "must not: " + r.guardrails.map((g) => g.name + (g.mps ? " " + g.mps : "") + (g.seconds ? " " + g.seconds : "")).join(", ")) : null,
     r.broken ? h("div", { class: "dim" }, "Broken: " + r.broken.detail) : null,
     r.result ? h("pre", { class: "json" }, JSON.stringify(r.result, null, 1)) : null,
+    (r.anomalies || []).length ? h("div", { class: "run-anomalies", id: "run-anomalies" }, h("h3", {}, "Alarms"), r.anomalies.map(anomalyLine))
+      : h("div", { class: "run-anomalies", id: "run-anomalies" }),
     h("div", { class: "decisions", id: "decisions" }, r.decisions.map((d) => h("div", {}, d.text))),
     h("div", { class: "row", style: "margin-top:6px" },
       live ? h("button", { class: "btn danger", type: "button", id: "run-cancel", onclick: guard(async () => { await api("POST", `/goal-runs/${r.id}/cancel`); await loadRuns(); }) }, "Cancel run") : null),
@@ -535,8 +537,95 @@ new ResizeObserver(requestDraw).observe($("map"));
 // --- the event stream ------------------------------------------------------------------------------------
 function logLine(e) {
   const log = $("event-log");
-  log.prepend(h("div", {}, `${e.seq} ${e.kind}${e.robot ? " " + e.robot : ""}${e.text ? " " + e.text : e.state ? " " + e.state : e.event ? " " + e.event : ""}`));
+  log.prepend(h("div", {}, `${e.seq} ${e.kind}${e.robot ? " " + e.robot : ""}${e.text ? " " + e.text : e.state ? " " + e.state : e.event ? " " + e.event : e.anomaly ? " " + e.anomaly.anomaly : ""}`));
   while (log.childNodes.length > 60) log.lastChild.remove();
+}
+
+// --- alarms (RFC-0023 D5, RFC-0019 section 4.2): every anomaly a navigator raises, live; the badge counts the last minute's ---------
+const SEV = ["info", "minor", "major", "critical"];
+const ALARM_WINDOW_S = 60;
+const ALARM_KEEP = 200;
+S.alarms = [];      // oldest first: {robot, goal_run, watch, at (wall s), a (RFC-0019's record)}
+S.alarmSel = null;
+
+function worstOf(list) { return list.reduce((w, x) => (SEV.indexOf(x.a.severity) > SEV.indexOf(w) ? x.a.severity : w), "info"); }
+function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
+
+function renderAlarmBadge() {
+  const b = $("alarm");
+  const now = Date.now() / 1000;
+  const recent = S.alarms.filter((x) => now - x.at <= ALARM_WINDOW_S);
+  b.hidden = !S.alarms.length;
+  b.className = "chip alarm sev-" + (recent.length ? worstOf(recent) : "none");
+  b.textContent = recent.length ? `${plural(recent.length, "alarm")}, ${worstOf(recent)}` : `${plural(S.alarms.length, "alarm")} earlier`;
+  b.title = "Anomalies in the last minute, and the worst of them; click for the list";
+}
+
+function ago(at) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - at));
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : new Date(at * 1000).toLocaleTimeString();
+}
+
+function renderAlarms() {
+  if ($("alarms").hidden) return;
+  setKids($("alarm-list"), S.alarms.length ? S.alarms.map((x, i) => ({ x, i })).reverse().map(({ x, i }) =>
+    h("button", { type: "button", "aria-pressed": S.alarmSel === i ? "true" : "false", onclick: () => { S.alarmSel = i; renderAlarms(); } },
+      h("span", { class: "sev sev-" + x.a.severity }, x.a.severity),
+      h("span", { class: "what" }, `${x.robot}: ${x.a.anomaly}, ${x.a.summary || ""}`),
+      h("span", { class: "faint" }, ago(x.at)))) : h("div", { class: "dim" }, "No alarm since this page opened."));
+  renderAlarmInspector();
+}
+
+function renderAlarmInspector() {
+  const x = S.alarms[S.alarmSel];
+  if (!x) { setKids($("alarm-insp")); return; }
+  const a = x.a;
+  const where = a.where || {};
+  const row = (k, v) => (v == null || v === "" ? null : [h("dt", {}, k), h("dd", {}, String(v))]);
+  const values = Object.entries(a.values || {}).filter(([k]) => k !== "margin_unit")
+    .map(([k, v]) => `${k} ${typeof v === "object" ? JSON.stringify(v) : v}`);
+  setKids($("alarm-insp"),
+    h("h3", {}, `${a.anomaly} `, h("span", { class: "sev-" + a.severity }, a.severity)),
+    h("div", {}, a.summary || ""),
+    h("dl", {},
+      row("robot", x.robot), row("goal run", x.goal_run != null ? "#" + x.goal_run : null),
+      row("since", `${new Date(x.at * 1000).toLocaleTimeString()}${a.t != null ? `, ${a.t} s into the run` : ""}${a.duration_s ? `, for ${a.duration_s} s` : ""}`),
+      row("from", `${a.source || "robot"}: ${a.module || "?"} (${a.detector || "?"})`),
+      row("margin", a.margin != null ? `${a.margin} ${(a.values || {}).margin_unit || "m"} past its limit` : null),
+      row("where (belief)", where.belief ? where.belief.join(", ") + " m, " + (where.frame || "map") : null),
+      row("where (truth)", a.truth ? a.truth.slice(0, 2).map((v) => Number(v).toFixed(2)).join(", ") + " m, the simulator's" : null),
+      row("values", values.join("; "))),
+    h("div", { class: "row" },
+      h("button", { class: "btn danger", type: "button", id: "alarm-stop", onclick: guard(async () => {
+        const j = await api("POST", `/robots/${x.robot}/stop`, { client: "page" });
+        toast(j.stop.confirmed ? `${x.robot} stopped.` : `${x.robot}: STOP sent, but the robot did not answer, so it cannot be confirmed.`, !j.stop.confirmed);
+      }) }, `STOP ${x.robot}`),
+      x.goal_run != null ? h("button", { class: "btn", type: "button", onclick: guard(() => loadRunDetail(x.goal_run)) }, "Show the run") : null,
+      x.watch ? h("a", { class: "btn", href: x.watch, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null));
+}
+
+$("alarm").addEventListener("click", () => {
+  const p = $("alarms");
+  p.hidden = !p.hidden;
+  $("alarm").setAttribute("aria-expanded", String(!p.hidden));
+  if (!p.hidden && S.alarmSel == null && S.alarms.length) S.alarmSel = S.alarms.length - 1;
+  renderAlarms();
+});
+setInterval(() => { if (S.alarms.length) { renderAlarmBadge(); renderAlarms(); } }, 5000);
+
+function onAnomaly(e) {
+  S.alarms.push({ robot: e.robot, goal_run: e.goal_run, watch: e.watch, at: e.t, a: e.anomaly || {} });
+  if (S.alarms.length > ALARM_KEEP) { S.alarms.shift(); if (S.alarmSel != null) S.alarmSel = Math.max(0, S.alarmSel - 1); }
+  renderAlarmBadge();
+  renderAlarms();
+  if (detail && e.goal_run === detail.id) {
+    const box = $("run-anomalies");
+    if (box) box.append(anomalyLine(e.anomaly || {}));
+  }
+}
+
+function anomalyLine(a) {
+  return h("div", {}, h("span", { class: "sev-" + a.severity }, a.severity), ` ${a.anomaly}: ${a.summary || ""}`);
 }
 
 let debounce = {};
@@ -564,6 +653,9 @@ function onEvent(e) {
         if (d) { d.append(h("div", {}, e.text)); d.scrollTop = d.scrollHeight; }
       }
       break;
+    case "anomaly":
+      onAnomaly(e);
+      break;
     case "objects": case "object-named":
       if (e.site === S.site) later("site", loadSite, 200);
       break;
@@ -581,7 +673,7 @@ function connect() {
     S.lastConn = "live";
   };
   es.onerror = () => { conn.textContent = "reconnecting"; conn.className = "chip bad"; S.lastConn = "lost"; };
-  for (const k of ["state", "map", "robot-online", "robot-offline", "lock", "stop", "stop-all", "goal-run", "decision", "objects", "object-named"]) {
+  for (const k of ["state", "map", "robot-online", "robot-offline", "lock", "stop", "stop-all", "goal-run", "decision", "anomaly", "objects", "object-named"]) {
     es.addEventListener(k, (ev) => onEvent(JSON.parse(ev.data)));
   }
 }

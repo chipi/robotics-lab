@@ -1,5 +1,5 @@
 """Mission Control's SQLite store (RFC-0014 §3.4.6, requirement O20): sites, areas, objects, goals, goal
-runs and their decisions. One connection shared by the threads, serialised by a lock."""
+runs, their decisions and their anomalies. One connection shared by the threads, serialised by a lock."""
 
 import json
 import sqlite3
@@ -7,7 +7,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # version -> what takes a store of that version to the next.
 MIGRATIONS = {
@@ -18,6 +18,9 @@ MIGRATIONS = {
     2: "ALTER TABLE goal_runs ADD COLUMN client TEXT;"
        " CREATE TABLE tokens (id INTEGER PRIMARY KEY AUTOINCREMENT, client TEXT NOT NULL, hash TEXT NOT NULL UNIQUE,"
        " created_at REAL NOT NULL, revoked_at REAL);",
+    # to 4: a goal run's anomalies, as its navigator raised them (RFC-0019's record; phase 5 item 3 step 3)
+    3: "CREATE TABLE anomalies (run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,"
+       " data TEXT NOT NULL, PRIMARY KEY (run_id, n));",
 }
 
 SCHEMA = """
@@ -51,6 +54,9 @@ CREATE TABLE tokens (
 CREATE TABLE decisions (
   run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,
   text TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (run_id, n));
+CREATE TABLE anomalies (
+  run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,
+  data TEXT NOT NULL, PRIMARY KEY (run_id, n));
 """
 
 

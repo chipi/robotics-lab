@@ -26,6 +26,7 @@ from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import ConfigError, RobotConfig
 from runfile import installation
+from runfile.navcontract import CONTRACT
 from runfile.profile import checksum
 from runfile.profilestore import Store
 
@@ -114,6 +115,7 @@ class StubNav:
         self.mode = "ok"                     # ok, held, silent
         self.state = "running"
         self.decisions: list = []
+        self.anomalies: list = []            # contract 1.1: the run's anomalies, served since a number
         self.objects: list | None = None     # delivered once, with the next status
         self.result = None
         self.reason = None
@@ -152,6 +154,7 @@ class StubNav:
                         result = {"state": stub.state, "reason": stub.reason, "progress": {"elapsed_s": 1.0, "pose": {"x": 1, "y": 0, "yaw": 0}},
                                   "result": stub.result, "broken": None, "run_key": stub.key,
                                   "decisions": stub.decisions[p.get("decisions_since", 0):], "decisions_n": len(stub.decisions),
+                                  "anomalies": stub.anomalies[p.get("anomalies_since", 0):], "anomalies_n": len(stub.anomalies),
                                   "objects": objs, "objects_v": 7 if objs else -1}
                     elif m == "goal.cancel":
                         stub.cancelled += 1
@@ -281,6 +284,19 @@ check("the navigator's decisions are relayed with their reasons, once each",
       wait_for(lambda: len([d for d in run_of(run["id"])["decisions"] if d["text"] in ("planned a path of 1.2 m", "slowed for an obstacle")]) == 2))
 d1 = next(d for d in run_of(run["id"])["decisions"] if d["text"].startswith("planned"))
 check("with the rule and its values", d1["rule"] == "plan" and d1["values"] == {"length_m": 1.2}, d1)
+A1 = {"n": 1, "t": 3.5, "anomaly": "joint_overload", "source": "robot", "module": "body", "severity": "major", "detector": "joint_current",
+      "summary": "left_knee at 130 mA, at or over 120 mA for 1.0 s", "values": {"joint": "left_knee"}, "margin": 10, "where": {"frame": "map"}}
+nav.anomalies = [A1]
+check("must fail: the navigator's anomalies are kept with the goal run (contract 1.1)",
+      wait_for(lambda: [a["anomaly"] for a in run_of(run["id"]).get("anomalies", [])] == ["joint_overload"]), run_of(run["id"]).get("anomalies"))
+nav.anomalies = [A1, {**A1, "n": 2, "t": 5.0, "anomaly": "robot_unhealthy", "severity": "minor", "summary": "robotd says it is degraded"}]
+check("must fail: each is relayed once, the next one after it", wait_for(lambda: [a["anomaly"] for a in run_of(run["id"])["anomalies"]]
+                                                                         == ["joint_overload", "robot_unhealthy"]), run_of(run["id"])["anomalies"])
+bus_an = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly"]
+check("must fail: on the event stream, with the robot, the goal run and the Observatory's page at its moment",
+      [(e["robot"], e["goal_run"], e["anomaly"]["anomaly"], e["watch"]) for e in bus_an]
+      == [("duck-sim", run["id"], "joint_overload", f"http://127.0.0.1:8070/watch/{nav.key}#t=3.5"),
+          ("duck-sim", run["id"], "robot_unhealthy", f"http://127.0.0.1:8070/watch/{nav.key}#t=5.0")], bus_an)
 check("progress comes from the server", wait_for(lambda: (run_of(run["id"])["progress"] or {}).get("elapsed_s") == 1.0))
 nav.state = "reached"
 end = wait_for(lambda: run_of(run["id"])["state"] == "reached" and run_of(run["id"]))
@@ -320,7 +336,7 @@ nav.state, nav.reason, nav.contract = "running", None, "2.0"
 n_started = len(nav.started)
 r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
 check("must fail: a navigator speaking another major version of the contract is refused before a goal starts, both versions said",
-      r["state"] == "refused" and "2.0" in r["reason"] and "1.0" in r["reason"] and len(nav.started) == n_started, r)
+      r["state"] == "refused" and "2.0" in r["reason"] and CONTRACT in r["reason"] and len(nav.started) == n_started, r)
 nav.contract = "1.0"
 r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
 nav.state = "aborted"

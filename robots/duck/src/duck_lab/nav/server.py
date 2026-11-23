@@ -17,8 +17,8 @@ It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Me
   hello -> {name, version, contract, kinds, camera}
   goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?}
       -> {run_key}, or {error} when another client holds the robot (the gate's own refusal), or a goal is running here
-  goal.status {decisions_since, objects_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
-      decisions_n, objects: [...] | null, objects_v}
+  goal.status {decisions_since, objects_since, anomalies_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
+      decisions_n, anomalies: [...], anomalies_n, objects: [...] | null, objects_v}  (anomalies since contract 1.1)
   goal.cancel {reason?} -> {ok}
   goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
@@ -128,6 +128,7 @@ class GoalRun:
         self.state, self.reason, self.result, self.broken = "starting", None, None, None
         self.progress: dict = {}
         self.decisions: list = []
+        self.anomalies: list = []        # the run's anomalies as written (RFC-0019 §2.1's record, with `t` and `n`), served live
         self.objects_v = 0
         self.nav = None
         self.runlog = None
@@ -161,6 +162,7 @@ class GoalRun:
             self.runlog.finish()
             raise
         self.nav.on_decision = self._on_decision
+        self.nav.on_anomaly = self._on_anomaly
         self.out = out
         self._prepare()
         self.state = "running"
@@ -211,6 +213,10 @@ class GoalRun:
         if d.get("rule") == "stuck" and any(g["name"] == "stuck" for g in self.guardrails):
             self._break("stuck", d.get("reason", "walking without getting anywhere"))
 
+    def _on_anomaly(self, row: dict) -> None:
+        with self._lock:
+            self.anomalies.append({**{k: v for k, v in row.items() if k != "event"}, "n": len(self.anomalies) + 1})
+
     def _objects(self) -> list:
         nav = self.nav
         if nav is None or nav.semantic is None:
@@ -224,14 +230,16 @@ class GoalRun:
                 out.append(s)
         return out
 
-    def snapshot(self, decisions_since: int = 0, objects_since: int = -1) -> dict:
+    def snapshot(self, decisions_since: int = 0, objects_since: int = -1, anomalies_since: int = 0) -> dict:
         objs = self._objects()
         version = hash(json.dumps([(o["id"], o["n"], o["confirmed"], round(o["x"], 1), round(o["y"], 1)) for o in objs])) & 0xFFFFFFF
         with self._lock:
             decisions = self.decisions[decisions_since:]
             n = len(self.decisions)
+            anomalies, an = self.anomalies[anomalies_since:], len(self.anomalies)
         return {"state": self.state, "reason": self.reason, "progress": self._progress(), "result": self.result, "broken": self.broken,
                 "run_key": self.run_key, "decisions": decisions, "decisions_n": n,
+                "anomalies": anomalies, "anomalies_n": an,
                 "objects": objs if version != objects_since else None, "objects_v": version}
 
     def _progress(self) -> dict:
@@ -444,7 +452,7 @@ class NavServer:
         if method == "goal.status":
             if run is None:
                 return {"state": "idle", "reason": None, "result": None, "broken": None}
-            return run.snapshot(int(p.get("decisions_since", 0)), int(p.get("objects_since", -1)))
+            return run.snapshot(int(p.get("decisions_since", 0)), int(p.get("objects_since", -1)), int(p.get("anomalies_since", 0)))
         if method == "goal.break":
             if run is not None and run.state not in ENDS:
                 run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"), by_runner=True)

@@ -185,9 +185,18 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      Observatory reads `harness` beside `robot`. Proof: `tests/test_contract.py` on both navigators,
      5 of 5 mutants killed, `make ci-fast` PASS; not covered: no live break on the simulator (no
      challenge breaks the truth guard on purpose).
-  3. **The live feed:** `goal.status` hands out anomalies as it does decisions; Mission Control's
-     bus, a header badge and an inspector (what, where, since when; stop, open in the Observatory).
-  4. **The Observatory's marks:** the anomaly track on the timeline and the pins on the map.
+  3. **The live feed: done (2026-11-23).** The navigator contract is 1.1: the navigator API's
+     `goal.status` takes `anomalies_since` and answers `anomalies` (numbered, with `t`); a 1.0
+     navigator answers none. Mission Control relays each once, keeps it with the goal run (store
+     version 4, an `anomalies` table; `GET /goal-runs/{id}` has them), puts it on the event stream
+     (`anomaly`, with the Observatory's page at `#t=`), and the page shows a header badge (the last
+     minute's count and the worst), the list and an inspector (what, where, since when, by how
+     much; STOP, the run, the Observatory at that moment). Proof: the contract, body and adapter
+     tests and the page in Chromium at phone width, 5 of 5 mutants killed, `make ci-fast` PASS.
+     Not covered: no live run through Mission Control with this navigator (`make sim-duck` runs the
+     registered one); the Observatory does not yet seek to `#t=` (part 4).
+  4. **The Observatory's marks:** the anomaly track on the timeline and the pins on the map, and
+     the watch page opening at `#t=` (next).
 
 ### 4. Before step 6
 

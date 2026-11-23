@@ -66,6 +66,8 @@ class FakeNav:
 
     def record(self, **row):
         self.records.append(row)
+        if row.get("event") == "anomaly" and getattr(self, "on_anomaly", None):      # as the navigator's own record does
+            self.on_anomaly({**row, "t": 1.0})
 
     def lease_ended(self, exc):
         self.records.append({"event": "lease_ended", "why": exc.reason})
@@ -189,6 +191,13 @@ for name, make in NAVIGATORS.items():
     check(f"must fail: {name}: goal.break is a critical guardrail_broken anomaly with source harness, naming the guardrail",
           [(a["anomaly"], a["source"], a["severity"], a["values"].get("guardrail")) for a in an]
           == [("guardrail_broken", "harness", "critical", "contact")], an)
+api_nav = api()
+live = api()
+run_goal(live, "wait", lambda m: m.call("goal.break", {"name": "contact", "detail": "touched the box"}))
+first, later = live.call("goal.status", {}), live.call("goal.status", {"anomalies_since": 1})
+check("must fail: the navigator API's goal.status serves the run's anomalies live, numbered, since a number (contract 1.1)",
+      [(a["anomaly"], a["n"], a["source"]) for a in first["anomalies"]] == [("guardrail_broken", 1, "harness")]
+      and first["anomalies_n"] == 1 and later["anomalies"] == [] and later["anomalies_n"] == 1, (first.get("anomalies"), later.get("anomalies")))
 api_nav = api()
 run_goal(api_nav, "wait", lambda m: m.run._break("time_limit", "60 s spent"))
 check("must fail: the navigator's own guardrail (a time limit spent) is no anomaly",

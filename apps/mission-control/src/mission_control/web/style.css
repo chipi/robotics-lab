@@ -133,3 +133,19 @@ a.watch[aria-disabled="true"] { color: var(--text-faint); pointer-events: none; 
   background: var(--error); color: #fff; }
 .stop.all { flex: 1.4; }
 .stop:hover:not(:disabled) { filter: brightness(1.1); }
+
+/* alarms (RFC-0023 D5): the header's badge, the list and the inspector; colour by severity, never colour alone (the word is there) */
+.chip.alarm { cursor: pointer; font-weight: 600; }
+.chip.alarm[hidden] { display: none; }    /* .chip's display would otherwise show a badge with nothing to say */
+.sev-critical, .sev-major { color: var(--error); } .sev-minor { color: var(--warn); } .sev-info, .sev-none { color: var(--text-dim); }
+.chip.alarm.sev-critical, .chip.alarm.sev-major { border-color: var(--error); }
+.alarms { grid-column: 1 / -1; }
+.alarm-list { display: grid; gap: 2px; max-height: 220px; overflow-y: auto; }
+.alarm-list button { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; padding: 6px 8px; min-height: 32px;
+  background: var(--bg-field); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font: inherit; cursor: pointer; }
+.alarm-list button[aria-pressed="true"] { border-color: var(--accent); }
+.alarm-list .sev { font-size: 11px; font-weight: 600; text-transform: uppercase; min-width: 58px; }
+.alarm-list .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.alarm-insp dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 10px; margin: 6px 0; font-size: 12px; }
+.alarm-insp dt { color: var(--text-dim); } .alarm-insp dd { margin: 0; overflow-wrap: anywhere; }
+.run-anomalies div { font-size: 12px; }

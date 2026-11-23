@@ -183,6 +183,7 @@ class Navigator:
     speed_cap = None         # a goal's guardrails (RFC-0014 §3.4.8): see __init__; class defaults for a navigator built without it
     keepout = ()
     on_decision = None
+    on_anomaly = None        # told every anomaly row once it is written (the navigator API serves them live, phase 5 item 3 step 3)
     frames_on = True         # (class defaults: a test builds a navigator without __init__)
     fault_grid = False
     on_move = None
@@ -265,7 +266,7 @@ class Navigator:
         # no-go areas (map metres: obstacles for the planner, so a path never enters), and a listener for every decision
         self.speed_cap = None
         self.keepout = []
-        self.on_decision = None
+        self.on_decision = self.on_anomaly = None
         # objects (RFC-0016): off unless a camera is given (enable_objects); the challenge course runs without
         self.semantic = None
         self.room = None         # the area type the objects suggest (a guess; was "room")
@@ -1011,6 +1012,11 @@ class Navigator:
                 self._log.flush()
             if self.runlog:
                 self.runlog.row(self._sid, row)
+            if self.on_anomaly is not None and row.get("event") == "anomaly":
+                try:
+                    self.on_anomaly(row)
+                except Exception:       # noqa: BLE001 - a listener must not stop the navigation
+                    pass
             if self.watch and "truth" in row and "event" not in row:
                 said = self.watch(row)
                 if said:

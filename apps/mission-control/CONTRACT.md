@@ -105,7 +105,7 @@ a 422.
 | `POST /goal-runs` | `{goal, robots, target?, site?}`: a goal that is not in the library; saves none |
 | `POST /goal-runs/{id}/save` | `{name, folder?}`: the run's goal goes in the library and the run links to it |
 | `GET /goal-runs?robot=&state=&goal=&parent=` | runs, newest first; the children of a group are listed on their own only with `robot` or `parent` |
-| `GET /goal-runs/{id}` | one run, with its `decisions`; a group with its `children` |
+| `GET /goal-runs/{id}` | one run, with its `decisions` and `anomalies`; a group with its `children` |
 | `POST /goal-runs/{id}/cancel` | the navigator stops, the robot is stopped; a group's children are all cancelled |
 | `POST /plan` | `{text, robot?, site?}`: words in, goals out, nothing run (below) |
 
@@ -251,6 +251,7 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 | `stop`, `stop-all` | every STOP, with the client's name |
 | `goal-run` | a state change or progress, with `goal_run` |
 | `decision` | the navigator's decisions with their reasons, with `goal_run` |
+| `anomaly` | an anomaly the navigator raised (`anomaly`: RFC-0019's record, its `t` the run's clock), with `goal_run` and `watch` (the Observatory's page for the run at `#t=`) |
 | `objects` | objects merged into a site (`changes`) |
 | `object-named` | an operator's label |
 
@@ -369,7 +370,7 @@ API):
 | --- | --- |
 | `hello` | `{name, version, contract, kinds, camera}`: asked before every goal; a navigator speaking another major version of the contract is refused, both versions said, and no goal starts |
 | `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera) |
-| `goal.status {decisions_since, objects_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, objects, objects_v}`; `objects` is the navigator's whole map, only when it changed |
+| `goal.status {decisions_since, objects_since, anomalies_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, anomalies, anomalies_n, objects, objects_v}`; `anomalies` the run's since `anomalies_since` (RFC-0019's record, contract 1.1); `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel {reason?}` | the navigator stops, ends the run `cancelled`, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |

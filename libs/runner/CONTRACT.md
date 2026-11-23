@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.0.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.1.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -30,7 +30,8 @@ error):
   is closed, the process ends). `goal.status` adds `pose`.
 - **The navigator API** (one navigator per goal run): `map` (mapd's grid), and while a goal runs
   `state`, `objects`, `inventory` (RFC-0016). `goal.start` takes `seed`, `goal_run` and `scene`,
-  and answers `profile {checksum, version, source}`; `goal.status` adds `progress`, `decisions` and
+  and answers `profile {checksum, version, source}`; `goal.status` adds `progress`, `decisions`,
+  `anomalies` (1.1) and
   `objects` (`apps/mission-control/CONTRACT.md`). Its runner adds `runner.status`.
 
 A side that reads `hello` refuses a navigator whose `contract` has another major version than its
@@ -73,6 +74,12 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.1
+
+The navigator API's `goal.status` takes `anomalies_since` and adds `anomalies` (the run's anomalies
+since then, each RFC-0019's record with its `t` and its number `n`) and `anomalies_n`. A reader of
+1.0 ignores them; a 1.0 navigator answers none, which a reader takes as none raised.
 
 ## Before 1.0
 

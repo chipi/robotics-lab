@@ -15,7 +15,7 @@ from pathlib import Path
 
 from labrunner import remote, robots
 from runfile import installation
-from runfile.navcontract import ContractError
+from runfile.navcontract import CONTRACT, ContractError
 
 failures = []
 
@@ -106,7 +106,7 @@ try:
 except ContractError as e:
     said = str(e)
 check("must fail: a payload speaking another major version of the contract is refused, both versions said", "2.0" in said
-      and "1.0" in said, said)
+      and CONTRACT in said, said)
 
 nav = payload("1.0", "stopped_by_guardrail", 2)
 nav.break_goal("contact", "touched the box")

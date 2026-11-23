@@ -222,6 +222,8 @@ class DuckNavigatorClient:
         self._status: dict = {"state": "idle"}
         self._dn, self._ov, self._fails, self._last = 0, -1, 0, -1e9
         self.on_start = None        # called with goal.start's answer when a goal has started (the adapter reads its profile then)
+        self.on_anomaly = None      # called with each anomaly the navigator raises (contract 1.1's goal.status `anomalies`)
+        self._an = 0
 
     def bind(self, on_decision, on_objects) -> None:
         self._on_decision, self._on_objects = on_decision, on_objects
@@ -235,7 +237,7 @@ class DuckNavigatorClient:
         return reply["result"]
 
     def goal_start(self, spec: dict) -> dict:
-        self._dn, self._ov, self._fails = 0, -1, 0
+        self._dn, self._ov, self._fails, self._an = 0, -1, 0, 0
         try:
             check_hello(self._rpc("hello"))     # asked at every goal: the server behind the address can be restarted between two
             out = self._rpc("goal.start", spec)
@@ -283,7 +285,7 @@ class DuckNavigatorClient:
 
     def _poll(self) -> None:
         try:
-            st = self._rpc("goal.status", {"decisions_since": self._dn, "objects_since": self._ov})
+            st = self._rpc("goal.status", {"decisions_since": self._dn, "objects_since": self._ov, "anomalies_since": self._an})
             self._fails = 0
         except (OSError, RuntimeError, ValueError) as exc:
             self._fails += 1
@@ -294,6 +296,10 @@ class DuckNavigatorClient:
         for d in st.get("decisions", []):
             self._on_decision(d["text"], rule=d.get("rule"), values=d.get("values") or {}, n=d["n"])
         self._dn = st.get("decisions_n", self._dn)
+        for a in st.get("anomalies") or []:     # a 1.0 navigator answers none: none raised
+            if self.on_anomaly:
+                self.on_anomaly(a)
+        self._an = st.get("anomalies_n", self._an)
         if st.get("objects") is not None:
             self._ov = st["objects_v"]
             self._on_objects(st["objects"])

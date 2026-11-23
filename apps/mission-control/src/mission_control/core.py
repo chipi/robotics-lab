@@ -57,6 +57,8 @@ class MissionControl:
             if rt.navigator is not None:
                 rt.navigator.bind(lambda text, rt=rt, **data: self._decision(rt, text, data),
                                   lambda objs, rt=rt: self._objects(rt, objs))
+                if hasattr(rt.navigator, "on_anomaly"):
+                    rt.navigator.on_anomaly = lambda a, rt=rt: self._anomaly(rt, a)
             self.robots[cfg.id] = rt
         self._threads: list = []
         self._stopping = threading.Event()
@@ -520,6 +522,20 @@ class MissionControl:
                            (act.id, act.decisions, self.wall(), text, dumps(data)))
         self.bus.emit("decision", robot=rt.cfg.id, goal_run=act.id, text=text, **data)
 
+    def _anomaly(self, rt: RobotRuntime, a: dict) -> None:
+        """One anomaly the navigator raised (RFC-0019's record, contract 1.1): kept with the goal run, and on the bus with the
+        Observatory's page for the run at its moment (`#t=`, the run's own clock)."""
+        act = rt.active
+        if act is None:
+            return
+        n = int(a.get("n") or 0)
+        self.store.execute("INSERT OR IGNORE INTO anomalies (run_id, n, at, data) VALUES (?,?,?,?)", (act.id, n, self.wall(), dumps(a)))
+        row = self.store.one("SELECT robot, run_key FROM goal_runs WHERE id = ?", (act.id,))
+        watch = self._watch(row) if row else None
+        if watch and a.get("t") is not None:
+            watch = f"{watch}#t={a['t']}"
+        self.bus.emit("anomaly", robot=rt.cfg.id, goal_run=act.id, anomaly=a, watch=watch)
+
     def _objects(self, rt: RobotRuntime, objs: list) -> None:
         act = rt.active
         if act is None or act.site_id is None:
@@ -560,6 +576,8 @@ class MissionControl:
         if with_decisions:
             view["decisions"] = [{"n": d["n"], "at": d["at"], "text": d["text"], **loads(d["data"])}
                                  for d in self.store.all("SELECT * FROM decisions WHERE run_id = ? ORDER BY n", (row["id"],))]
+            view["anomalies"] = [{"n": d["n"], "at": d["at"], **loads(d["data"])}
+                                 for d in self.store.all("SELECT * FROM anomalies WHERE run_id = ? ORDER BY n", (row["id"],))]
         return view
 
     def get_run(self, run_id: int) -> dict:

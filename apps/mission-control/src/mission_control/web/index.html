@@ -11,6 +11,7 @@
 <header class="top">
   <span class="mark"><i></i>Mission Control</span>
   <span id="conn" class="chip">connecting</span>
+  <button id="alarm" class="chip alarm" type="button" hidden aria-expanded="false" aria-controls="alarms">alarms</button>
   <span class="grow"></span>
   <span id="tokenbox" hidden class="row">
     <input id="token" type="password" placeholder="Access token" aria-label="Access token" autocomplete="off">
@@ -20,6 +21,12 @@
 </header>
 
 <main class="page">
+  <section id="alarms" class="panel alarms" hidden aria-label="Alarms">
+    <h2>Alarms</h2>
+    <div id="alarm-list" class="alarm-list"></div>
+    <div id="alarm-insp" class="alarm-insp" aria-live="polite"></div>
+  </section>
+
   <section id="robots" class="panel" aria-label="Robots">
     <h2>Robots</h2>
     <div id="robot-list"></div>

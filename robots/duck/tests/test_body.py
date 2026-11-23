@@ -197,5 +197,14 @@ finally:
 check("must fail: the health thread raises robot_unhealthy beside its robot_health event", raised == ["robot_unhealthy"]
       and [r.get("healthy") for r in rows] == [False], (raised, rows))
 
+# the navigator API serves them live (contract 1.1): the navigator's own record hands each anomaly row, once written, to on_anomaly
+heard, written = [], []
+rec_nav = types.SimpleNamespace(on_decision=None, on_anomaly=heard.append, _log=None, _sid=1, _t0=0.0, watch=None,
+                                runlog=types.SimpleNamespace(row=lambda sid, row: written.append(row)))
+navrun.Navigator._record(rec_nav, **anom.record("joint_overload", "left_knee over", values={"joint": "left_knee"}))
+navrun.Navigator._record(rec_nav, event="leg", n=1)
+check("must fail: an anomaly row is handed to on_anomaly after it is written, with its t; no other row is",
+      [h["anomaly"] for h in heard] == ["joint_overload"] and "t" in heard[0] and len(written) == 2, heard)
+
 print("BODY", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

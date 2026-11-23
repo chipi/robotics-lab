@@ -300,6 +300,29 @@ with sync_playwright() as p:
     check("no sideways scrolling in light either", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
     page.screenshot(path=str(Path(tempfile.gettempdir()) / "mc-page-phone-light.png"), full_page=True)
 
+    # --- an alarm (RFC-0023 D5): an anomaly on the stream is a badge in the header; a click shows what, where, since when, and acts -
+    check("no alarm badge before any anomaly", page.locator("#alarm").is_hidden())
+    mc.bus.emit("anomaly", robot="fake-1", goal_run=seen_run[0], watch="http://127.0.0.1:8070/watch/fake/s/r#t=3.5",
+                anomaly={"n": 1, "t": 3.5, "anomaly": "joint_overload", "source": "robot", "module": "body", "severity": "major",
+                         "detector": "joint_current", "summary": "left_knee at 130 mA, at or over 120 mA for 1.0 s", "margin": 10,
+                         "values": {"joint": "left_knee", "ma": 130, "margin_unit": "mA"}, "where": {"frame": "map", "belief": [1.2, 0.4]}})
+    wait(page, "!document.getElementById('alarm').hidden")
+    check("must fail: the badge counts the last minute's alarms and names the worst",
+          page.locator("#alarm").inner_text() == "1 alarm, major", page.locator("#alarm").inner_text())
+    page.click("#alarm")
+    wait(page, "!document.getElementById('alarms').hidden && document.querySelector('#alarm-insp h3')")
+    insp = page.locator("#alarm-insp").inner_text()
+    check("must fail: the inspector says what, where, since when and by how much", "joint_overload" in insp and "left_knee at 130 mA" in insp
+          and "3.5 s into the run" in insp and "10 mA past its limit" in insp and "1.2, 0.4" in insp, insp)
+    check("must fail: it opens the Observatory at the alarm's moment",
+          page.locator("#alarm-insp a", has_text="Observatory").get_attribute("href") == "http://127.0.0.1:8070/watch/fake/s/r#t=3.5")
+    page.click("#alarm-stop")
+    wait(page, "document.getElementById('toast').textContent.includes('fake-1')")
+    check("must fail: its STOP stops the robot it is about", "fake-1" in page.locator("#toast").inner_text(), page.locator("#toast").inner_text())
+    check("no sideways scrolling with the alarms open", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+    page.screenshot(path=str(Path(tempfile.gettempdir()) / "mc-page-alarm-phone.png"), full_page=True)
+    page.click("#alarm")
+
     # --- desktop width -------------------------------------------------------------------------------
     page.set_viewport_size({"width": 1500, "height": 900})
     page.emulate_media(color_scheme="dark")
