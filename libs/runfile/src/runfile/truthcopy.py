@@ -5,7 +5,7 @@ follows it (mcapio.Follower, live or finished) and copies every record into a ru
 truth sample nearest it in wall-clock time (the row's `wall_ns`, kept in the tick's raw), and writing the map <- world
 epoch the payload's writer could not (adapters/duck.py writes it from the first tick with a truth; so does this).
 
-    log = TruthLog()                     # filled by the runner's sampler: log.add(wall_ns, [x, y, yaw], z, quat)
+    log = TruthLog()                     # filled by the runner's sampler: log.add(wall_ns, [x, y, yaw], z, quat, sim_time)
     copy = TruthCopy(payload_run_dir, official_run_dir, key, log.nearest)
     while running: copy.pump()           # live: the Observatory follows the official run, truth about a poll late
     copy.add(copy.last_t, "event", {...})  # the runner's own records (the verdict)
@@ -33,11 +33,13 @@ class TruthLog:
         self.ns, self.samples = [], []
         self._fh = open(path, "a") if path else None      # every sample also as a line of JSON: the audit trail, the offline input
 
-    def add(self, wall_ns: int, pose, z: float | None = None, quat=None) -> None:
+    def add(self, wall_ns: int, pose, z: float | None = None, quat=None, sim_time: float | None = None) -> None:
         if self.ns and wall_ns < self.ns[-1]:
             raise ValueError(f"truth sample at {wall_ns} before the last one at {self.ns[-1]}")
         s = {"wall_ns": int(wall_ns), "pose": [round(v, 4) for v in pose[:3]],
              "z": None if z is None else round(z, 4), "quat": None if quat is None else [round(v, 6) for v in quat]}
+        if sim_time is not None:        # the simulator's own time beside the wall clock's (ADR-0020 decision 3)
+            s["sim_time"] = round(sim_time, 4)
         self.ns.append(s["wall_ns"])
         self.samples.append(s)
         if self._fh:
@@ -50,7 +52,7 @@ class TruthLog:
         for line in Path(path).read_text().splitlines():
             if line.strip():
                 s = json.loads(line)
-                log.add(s["wall_ns"], s["pose"], s.get("z"), s.get("quat"))
+                log.add(s["wall_ns"], s["pose"], s.get("z"), s.get("quat"), s.get("sim_time"))
         return log
 
     def nearest(self, wall_ns: int, max_gap_ns: int = MAX_GAP_NS) -> dict | None:

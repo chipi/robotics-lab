@@ -15,6 +15,10 @@ get stays here:
   truth (labrunner.guard.TruthGuard); a broken one stops the run through the API's `goal.break`, and the run ends
   `stopped_by_guardrail` as one the navigator broke itself. Judged by the profile version read at each `goal.start`,
   the one the navigator reads; a navigator answering another one has its goal cancelled.
+- **The clock:** the simulator's time beside the wall clock's, in each truth sample (`truth.jsonl`) and as `clock {sim_s, wall_s,
+  rtf}` in the run's `runner.json`. A real-time factor under `--rtf-low` (default simhost.truth.RTF_LOW) after a few seconds is the
+  anomaly `rtf_low`, told to the navigator with `goal.anomaly` (contract 1.6), and the run has no verdict (Mission Control reads the
+  anomaly). A host with no simulated time (the NXT's) has no clock and no check.
 - **The official recording:** each goal run's run is the navigator's (written to `--out`/payload-data) copied into the
   Observatory's data folder with the truth put in (runfile.truthcopy), under the key `goal.start` answered with.
 
@@ -44,9 +48,9 @@ from labrunner.rpc import Rpc
 from labrunner.guard import TRUTH, TruthGuard
 from runfile import keys, registry, scenefile
 from runfile.catalog import default_data
-from runfile.navcontract import CALIBRATION_ENDS, ContractError, ENDS, check_hello, check_state
+from runfile.navcontract import CALIBRATION_ENDS, ContractError, ENDS, check_hello, check_state, speaks
 from runfile.truthcopy import TruthCopy, TruthLog
-from simhost.truth import Sampler
+from simhost.truth import RTF_LOW, Sampler
 
 def no_truth(wall_ns, max_gap_ns):
     return None
@@ -85,6 +89,7 @@ class GoalWatch:
         self.guard = TruthGuard(guardrails, profile=judge, scene=runner.scene) if runner.has_truth else None
         self.broken = None
         self.state = None
+        self.rtf_low = None           # the clock when its factor first read below the threshold: the run has no verdict
         self._objects_v = -1          # the objects version last seen: asked again, the API leaves them out
         self.route = {"checks": 0, "max": None}
         self._lock = threading.Lock()          # the copy: the pump and the finish
@@ -98,7 +103,7 @@ class GoalWatch:
         return self
 
     def _sample(self, s) -> None:
-        self.truth_log.add(s.wall_ns, s.pose, s.z, s.quat)
+        self.truth_log.add(s.wall_ns, s.pose, s.z, s.quat, s.sim_time)
         if self.sampler.samples % ROUTE_EVERY == 1:
             n = truth_connections(self.runner.proc.pid, self.runner.host.truth_port)
             if n is not None:
@@ -118,6 +123,7 @@ class GoalWatch:
     def _watch(self) -> None:
         while not self._done.wait(WATCH_S):
             self.pump()
+            self.check_clock()
             try:
                 st = self.runner.api("goal.status", {"decisions_since": 10 ** 9, "objects_since": self._objects_v})
                 self._objects_v = st.get("objects_v", -1)
@@ -131,6 +137,23 @@ class GoalWatch:
                 self.state = state
                 self.finish()
 
+    def check_clock(self) -> None:
+        """The real-time factor against the threshold: the first time it is under, the navigator is told (once, kept in its run)."""
+        if self.sampler is None or self.rtf_low is not None or self._done.is_set():
+            return
+        low = self.sampler.rtf_low(self.runner.rtf_low)
+        if low is None:
+            return
+        self.rtf_low = low
+        if not speaks(self.runner.hello, "1.6"):
+            return          # a 1.5 navigator cannot record it: runner.json still says so
+        try:
+            self.runner.api("goal.anomaly", {"kind": "rtf_low", "values": {**low, "below": self.runner.rtf_low},
+                            "summary": f"the simulator ran at {low['rtf']:.2f} of real time ({low['sim_s']:.1f} s of simulated time in "
+                                       f"{low['wall_s']:.1f} s), under {self.runner.rtf_low}: the run has no verdict"})
+        except Exception as e:      # noqa: BLE001 - said, and the run goes on; runner.json carries it
+            print(f"lab-nav-server: goal.anomaly rtf_low failed: {type(e).__name__}: {e}", flush=True)
+
     def pump(self) -> None:
         with self._lock:
             try:
@@ -141,6 +164,7 @@ class GoalWatch:
     def finish(self) -> None:
         if self._done.is_set():
             return
+        self.check_clock()
         self._done.set()
         if self.sampler:
             self.sampler.stop()
@@ -157,6 +181,8 @@ class GoalWatch:
 
     def summary(self) -> dict:
         return {"key": self.key, "state": self.state, "broken": self.broken, "truth_checked": self.guard.checked if self.guard else [], "not_enforced": self.not_enforced,
+                "clock": self.sampler.clock() if self.sampler else None,
+                "no_verdict": f"rtf_low: {self.rtf_low['rtf']} under {self.runner.rtf_low}" if self.rtf_low else None,
                 "truth_samples": self.sampler.samples if self.sampler else 0, "truth_error": self.sampler.error if self.sampler else None, "truth_copy": self.copy.stats(),
                 "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile,
                 "judge_scene": self.runner.judge_scene, "judge_truth": self.judge_truth}
@@ -188,8 +214,10 @@ class CalibrationWatch:
 
 class NavRunner:
     def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
-                 robot_socket: Path | None = None):
+                 robot_socket: Path | None = None, rtf_low: float = RTF_LOW):
+        self.rtf_low = rtf_low                                  # the real-time factor under which a run has no verdict (--rtf-low)
         self.robot_name = robots.get().NAME                     # read once, at start: robots.get() exits on a bad name, a server must not
+        api_cmd = robots.navigator_command("NAVIGATOR_API")     # a robot with no navigator (the NXT) is refused here, before anything starts
         profile = robots.profile_source(self.robot_name)        # resolved first: a named version that does not exist refuses here
         self.scene = scenefile.load(scene)                      # the scene's drops, for the truth guard: none, the server does not start
         self.judge_scene = scenefile.describe(self.scene.path)
@@ -206,7 +234,7 @@ class NavRunner:
         self.route = {"checks": 0, "max": None}
         self.camera = CameraServer(host, host.sockets["camera"]).start() if self.has_truth else None
         robot = self.robot_socket = robot_socket or robots.gate_socket(host)     # the installation's gate, where Mission Control's is
-        cmd = list(robots.get().NAVIGATOR_API) + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
+        cmd = api_cmd + ["--robot", str(robot), "--depth", str(host.sockets["depth"]),
                "--map", str(host.sockets["map"]), "--listen", str(self.sock),
                "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene,
                "--variant", self.variant] + \
@@ -260,6 +288,8 @@ class NavRunner:
             return {"navigator_pid": self.proc.pid, "truth_connections": dict(self.route), "goals": self.goals, "last_goal": last}
         if method in READS:
             return self.read(method, p)
+        if method == "goal.status" and self.goal is not None:
+            self.goal.check_clock()         # before the answer: a client that reads the run's end has read its rtf_low too
         if method.startswith("calibration."):
             return self._calibrate(method, p)
         if method != "goal.start":
@@ -374,6 +404,8 @@ def main() -> None:
     ap.add_argument("--host", help="the host file (RFC-0021; default $ROBOTICS_LAB_HOST, else ~/.config/robotics-lab/host.json)")
     ap.add_argument("--robot-socket", type=Path, help="the robot's socket: a gate's (default: the installation's robots.<robot>.gate, where Mission Control reads it, "
                     "else the host file's gate socket)")
+    ap.add_argument("--rtf-low", type=float, default=RTF_LOW, help="the real-time factor under which a run has no verdict (the anomaly rtf_low); "
+                    "a test raises it to prove the check on a simulator that is not slow")
     ap.add_argument("--client", default="lab-nav-server", help="the name the navigator takes the lease under")
     ap.add_argument("--data", type=Path, default=default_data(),
                     help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
@@ -385,7 +417,7 @@ def main() -> None:
     if args.data is None:
         sys.exit("lab-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
     host = simhost.load(args.host)
-    runner = NavRunner(host, args.data, args.out, args.scene, args.client, args.robot_socket)
+    runner = NavRunner(host, args.data, args.out, args.scene, args.client, args.robot_socket, args.rtf_low)
     listen, _, port = args.listen.rpartition(":")
     srv = Server((listen or "127.0.0.1", int(port)), runner)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # a terminate stops the navigator API too (runner.close)

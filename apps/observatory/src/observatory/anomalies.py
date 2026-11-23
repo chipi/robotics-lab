@@ -634,11 +634,11 @@ DETECTORS = {d.id: d for d in (
 
 # The kinds the navigator tags (the format's vocabulary, RFC-0019 section 3.1; no robot code is imported): `--detector` takes them too.
 # guardrail_broken is recorded by the navigator for the harness (the runner's truth guard, `goal.break`): source "harness"; so is
-# guardrail_unenforced (a guardrail the runner had no truth to check, `goal.start`'s `not_enforced`).
+# guardrail_unenforced (a guardrail the runner had no truth to check, `goal.start`'s `not_enforced`), and rtf_low (the simulator ran under real time, `goal.anomaly`).
 TAGGED_SOURCES = ("robot", "harness")
 ROBOT_KINDS = ("fix_jump_held", "mapd_lost", "reloc_refused", "stuck", "frames_parted", "refusal_burst", "room_disagrees", "head_off_walk",
                "refused_unexplained", "camera_failed", "thread_failed", "stop_latched", "lease_lost", "joint_overload", "joint_tracking",
-               "motor_hot", "loop_slow", "robot_unhealthy", "guardrail_broken", "guardrail_unenforced")
+               "motor_hot", "loop_slow", "robot_unhealthy", "guardrail_broken", "guardrail_unenforced", "rtf_low")
 
 
 def robot_records(run: Run) -> list:

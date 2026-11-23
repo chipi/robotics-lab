@@ -40,18 +40,26 @@ REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--only", help="comma separated: point, placed, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop, calibrate")
+ap.add_argument("--only", help="comma separated: point, placed, profile, simfirst, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop, calibrate")
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 ap.add_argument("--profile", type=Path, help="seed the version store with this profile instead of the duck's own: a test profile whose body "
                 "limits fire on a walk proves the alarm feed live (the point scenario then checks it)")
 ap.add_argument("--no-truth", action="store_true", help="the runner is given this host's file with truth_port null, as a real robot's: "
                 "only the notruth scenario runs (phase 5 item 4); this test still reads the simulator's truth itself, to judge")
+ap.add_argument("--rtf-low", type=float, help="the runner is given this real-time factor as its `rtf_low` threshold (above 1, so the real simulator, which runs at 1.0, "
+                "reads as too slow): only the rtflow scenario runs (phase 5 item 4b unit B8)")
 ARGS = ap.parse_args()
 only = set(ARGS.only.split(",")) if ARGS.only else None
+if ARGS.no_truth and ARGS.rtf_low is not None:
+    raise SystemExit("--no-truth and --rtf-low are two modes: one at a time")
 if ARGS.no_truth:
     only = {"notruth"}
 elif only is not None and "notruth" in only:
     raise SystemExit("the notruth scenario runs with --no-truth")
+if ARGS.rtf_low is not None:
+    only = {"rtflow"}
+elif only is not None and "rtflow" in only:
+    raise SystemExit("the rtflow scenario runs with --rtf-low")
 
 
 def wanted(name):
@@ -122,14 +130,18 @@ clean = [True]
 fresh_sim()
 navlog = open(tmp / "nav-server.log", "w")
 nav_proc = subprocess.Popen([sys.executable, "-m", "labrunner.navapi", *HOST_ARGS, "--listen", f"127.0.0.1:{NAV_PORT}", "--robot-socket", str(tmp / "gate.sock"),
-                             "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment"], stdout=navlog, stderr=subprocess.STDOUT)
+                             "--data", str(data), "--out", str(tmp / "nav"), "--scene", "apartment",
+                             *(["--rtf-low", str(ARGS.rtf_low)] if ARGS.rtf_low is not None else [])], stdout=navlog, stderr=subprocess.STDOUT)
 wait_for(lambda: "lab-nav-server" in (tmp / "nav-server.log").read_text(), 30, 0.2)
 
 # a pointer to the duck's profile (phase 5 step 1): the addresses are this test's own
 FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant": "sim",
         "adapter": {"type": "duck-sim", "gate_socket": str(tmp / "gate.sock"), "navigator": f"127.0.0.1:{NAV_PORT}",
                     "observatory": "http://127.0.0.1:8070"}}
-mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
+# the simfirst scenario's stand-in for the real duck (no adapter for it exists yet, B6): the duck's profile behind the fake adapter, whose variant is
+# real (the installation names none), so a run on it is a real run; the simulated duck above is its simulator twin
+STANDIN = {"id": "duck-standin", "robot": "duck", "adapter": {"type": "fake"}}
+mc = MissionControl([RobotConfig(FILE), *([RobotConfig(STANDIN)] if wanted("simfirst") and not ARGS.no_truth else [])], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"
 threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -241,6 +253,75 @@ try:
         t0 = body.pose()
         wait_for(lambda: math.dist(body.pose()[:2], t0[:2]) > 0.2, 120)       # the survey turns first; it walks after
         return run
+
+    def truth_clock(run):
+        """The run's truth.jsonl as the runner wrote it: the simulator's time beside the wall clock's, and the factor worked out from them here,
+        not by the runner's own sampler."""
+        rows = [json.loads(x) for x in (tmp / "nav" / run["run_key"].rsplit("/", 1)[-1] / "truth.jsonl").read_text().splitlines() if x.strip()]
+        timed = [r for r in rows if r.get("sim_time") is not None]
+        sim, wall = timed[-1]["sim_time"] - timed[0]["sim_time"], (timed[-1]["wall_ns"] - timed[0]["wall_ns"]) / 1e9
+        return {"rows": len(rows), "timed": len(timed), "sim_s": round(sim, 2), "wall_s": round(wall, 2), "rtf": round(sim / wall, 3),
+                "ordered": all(a["sim_time"] <= b["sim_time"] for a, b in zip(timed, timed[1:]))}
+
+    if wanted("simfirst"):
+        print("\n--- the simulator-first flag, and the run's clock (phase 5 item 4b unit B8)", flush=True)
+        need_clean()
+        call("PUT", "/robots/duck-standin/site", {"site": "home"})       # a rehearsal counts for the site it was run in: the real robot stands in the same one
+        # a point of its own: an earlier ad-hoc run of the same content (the point scenario's) would rehearse it, which is the flag working, not what this scenario proves
+        gid = call("POST", "/goals", {"kind": "point", "params": {"x": 1.3, "y": 0.4}, "name": "sim-first point", "sim_first": True})["goal"]["id"]
+        refused = call("POST", f"/goals/{gid}/runs", {"robots": ["duck-standin"], "target": "real"})["run"]
+        check("must fail: the real stand-in is refused the flagged goal before any rehearsal, and the robot is not given the goal",
+              refused["state"] == "refused" and "simulator-first" in refused["reason"] and "duck-sim" in refused["reason"]
+              and refused["conditions"]["rehearsal"]["state"] == "not_rehearsed", refused)
+        run = call("POST", f"/goals/{gid}/runs", {"robots": ["duck-sim"], "target": "sim"})["run"]
+        rehearsal = finished(run["id"], 180)
+        check("the flagged goal runs in the simulator (the real navigator, the real simulator), and ends as expected",
+              rehearsal and rehearsal["state"] == "reached" and rehearsal["as_expected"] is True and rehearsal["no_verdict"] is None,
+              rehearsal and (rehearsal["state"], rehearsal["reason"], rehearsal["as_expected"]))
+        rj = runner_json(run)
+        clock = rj.get("clock") or {}
+        check("must fail: the run records the simulator's time beside the wall clock's, and the factor reads about 1 (the runner's sampler): "
+              "nothing below 0.95, no verdict withheld", clock.get("wall_s", 0) > 5 and 0.95 <= clock.get("rtf", 0) <= 1.1 and rj.get("no_verdict") is None, rj.get("clock"))
+        tc = truth_clock(run)
+        check("must fail: truth.jsonl holds the simulator's time in each sample, in order, and the factor worked out from it here agrees (0.95 to 1.1)",
+              tc["timed"] == tc["rows"] > 100 and tc["ordered"] and 0.95 <= tc["rtf"] <= 1.1 and abs(tc["rtf"] - clock["rtf"]) < 0.05, (tc, clock))
+        print("   clock:", clock, "truth.jsonl:", tc, flush=True)
+        check("no rtf_low anomaly was raised on a run at about real time", not [a for a in rehearsal.get("anomalies", []) if a["anomaly"] == "rtf_low"],
+              [a["anomaly"] for a in rehearsal.get("anomalies", [])])
+        real = call("POST", f"/goals/{gid}/runs", {"robots": ["duck-standin"], "target": "real"})["run"]
+        real = finished(real["id"], 120) if real["state"] in ("queued", "running") else real
+        check("must fail: after the rehearsal the real stand-in is allowed the goal, and its run records the simulator run that rehearsed it",
+              real["state"] != "refused" and real["conditions"]["rehearsal"]["run"] == run["id"] and real["conditions"]["rehearsal"]["state"] == "rehearsed"
+              and real["conditions"]["rehearsal"]["robot"] == "duck-sim", real["conditions"])
+        call("PUT", f"/goals/{gid}", {"kind": "point", "params": {"x": 1.4, "y": 0.4}, "name": "sim-first point", "sim_first": True})
+        edited = call("POST", f"/goals/{gid}/runs", {"robots": ["duck-standin"], "target": "real"})["run"]
+        check("must fail: the goal edited after its rehearsal (the point moved 0.1 m) is refused again", edited["state"] == "refused"
+              and edited["conditions"]["rehearsal"]["run"] is None, edited["conditions"])
+        sim_target = call("POST", f"/goals/{gid}/runs", {"robots": ["duck-sim"], "target": "real"})["run"]
+        check("the simulated duck cannot rehearse itself: its own run on target real is refused", sim_target["state"] == "refused", sim_target["reason"])
+
+    if ARGS.rtf_low is not None:
+        print(f"\n--- the runner's rtf_low threshold set to {ARGS.rtf_low}: the simulator at 1.0 reads as too slow (phase 5 item 4b unit B8)", flush=True)
+        need_clean()
+        run = start({"kind": "point", "params": {"x": 1.5, "y": 0.5}})
+        end = finished(run["id"], 180)
+        rtf = [a for a in (end or {}).get("anomalies", []) if a["anomaly"] == "rtf_low"]
+        check("must fail: the run raised one rtf_low anomaly of the harness, with the clock and the threshold, kept with the goal run",
+              len(rtf) == 1 and rtf[0]["source"] == "harness" and rtf[0]["values"]["below"] == ARGS.rtf_low and 0.9 <= rtf[0]["values"]["rtf"] <= 1.1
+              and rtf[0]["values"]["wall_s"] >= 5, rtf)
+        check("must fail: the run has no verdict: the navigator's state is kept, as_expected is null, and no_verdict says rtf_low",
+              end and end["state"] in ("reached", "refused", "timeout", "stalled", "failed") and end["as_expected"] is None
+              and (end["no_verdict"] or "").startswith("rtf_low: the simulator ran at"), end and (end["state"], end["as_expected"], end["no_verdict"]))
+        rj = runner_json(run)
+        check("must fail: lab-nav-server's record carries the clock and the reason: no_verdict rtf_low", (rj.get("no_verdict") or "").startswith("rtf_low:")
+              and (rj.get("clock") or {}).get("rtf") is not None, {k: rj.get(k) for k in ("clock", "no_verdict")})
+        from runfile import mcapio
+        events = [p for _, kind, p in mcapio.read(data / "runs" / run["run_key"]) if kind == "event" and (p.get("raw") or {}).get("anomaly") == "rtf_low"]
+        check("the Observatory's run holds the anomaly as an event of the run (source harness, severity minor): the timeline shows it",
+              len(events) == 1 and events[0]["raw"]["source"] == "harness" and events[0]["raw"]["severity"] == "minor", events)
+        tc = truth_clock(run)
+        print("   truth.jsonl:", tc, flush=True)
+        check("the clock is in truth.jsonl as in a run at the real threshold: sim_time in order, the factor about 1", tc["ordered"] and 0.9 <= tc["rtf"] <= 1.1, tc)
 
     if wanted("cancel"):
         print("\n--- cancel", flush=True)
@@ -406,10 +487,13 @@ try:
     def face_corridor():
         """A point goal up the corridor, to (0, 1.0): the duck ends standing there facing north, 1.9 m from the wall. From the dock a blind walk
         runs into the office cabinet 0.7 m ahead (the first run of this proof did, 2026-11-23: 0.54 m of 2.4 asked), so the robot is placed first,
-        by the navigator and judged by the truth. Nothing the calibration walks is checked: it is blind."""
-        run = start({"kind": "point", "params": {"x": 0.0, "y": 1.0}})
-        end = finished(run["id"], 120)
-        wait_for(lambda: robot()["lock"]["holder"] is None, 15)
+        by the navigator and judged by the truth. Nothing the calibration walks is checked: it is blind.
+        A point goal does not choose the heading it ends with: the walk up from the dock twice ended facing 126 degrees (2026-11-23).
+        So a second, short goal straight north makes the last leg northward."""
+        for y_goal in (0.7, 1.1):
+            run = start({"kind": "point", "params": {"x": 0.0, "y": y_goal}})
+            end = finished(run["id"], 120)
+            wait_for(lambda: robot()["lock"]["holder"] is None, 15)
         x, y, yaw = body.pose()
         err = (math.pi / 2 - yaw + math.pi) % (2 * math.pi) - math.pi
         check("the duck stands in the corridor facing north, about 1.9 m from the wall (truth: y 0.6 to 1.4, x within 0.4 m, heading within 35 degrees of +y)",
@@ -452,17 +536,19 @@ try:
         check("the lease is back and the robot stands", wait_for(lambda: robot()["lock"]["holder"] is None, 10) is not None and stands_still())
         kept = call("POST", "/robots/duck-sim/calibration/keep", {})
         v = (kept.get("run") or {}).get("kept") or {}
-        saved = json.loads((STORE / "duck" / "2.json").read_text()) if (STORE / "duck" / "2.json").exists() else {}
+        # the next version, not 2: the profile scenario, when it ran first, already saved one
+        kept_path = STORE / "duck" / f"{v.get('version')}.json"
+        saved = json.loads(kept_path.read_text()) if v.get("version") and kept_path.exists() else {}
         odo = ((saved.get("variants") or {}).get("sim") or {}).get("localisation", {}).get("odometry", {})
-        check("kept as version 2: scale and the table's 0.3 entry are the measured value, and the measured line says how",
-              v.get("version") == 2 and run and odo.get("scale") == run["value"] and odo.get("by_speed", {}).get("0.3") == run["value"]
+        check("kept as the next version: scale and the table's 0.3 entry are the measured value, and the measured line says how",
+              isinstance(v.get("version"), int) and v["version"] >= 2 and run and odo.get("scale") == run["value"] and odo.get("by_speed", {}).get("0.3") == run["value"]
               and "calibration procedure odometry_scale" in odo.get("measured", ""), (kept.get("error"), odo.get("scale")))
         g = start({"kind": "point", "params": {"x": 0.0, "y": 2.0}})
         call("POST", f"/goal-runs/{g['id']}/cancel")
         rj = runner_json(g)
         judge, theirs = rj.get("judge_profile") or {}, rj.get("navigator_profile") or {}
-        check("the next goal runs version 2: the navigator and the referee read it, one checksum (the profile the calibration wrote is valid to both)",
-              judge.get("version") == 2 and theirs.get("version") == 2 and judge.get("checksum") == theirs.get("checksum"), (judge, theirs))
+        check("the next goal runs the kept version: the navigator and the referee read it, one checksum (the profile the calibration wrote is valid to both)",
+              judge.get("version") == v.get("version") and theirs.get("version") == v.get("version") and judge.get("checksum") == theirs.get("checksum"), (judge, theirs))
         clean[0] = False
 
     if wanted("calibrate"):

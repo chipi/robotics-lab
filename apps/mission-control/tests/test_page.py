@@ -293,6 +293,16 @@ with sync_playwright() as p:
     page.locator("#goal-list [data-action=run]").click()
     wait_state(page, ["reached", "failed", "timeout"], 30000)
     check("Run on a library goal: a run linked to it", get("/goal-runs")["runs"][0]["goal_id"] == get("/goals")["goals"][0]["id"])
+    # --- the simulator-first flag (phase 5 item 4b unit B8): a box on the goal form, saved with the goal ---------------------
+    check("the form's Simulator first box is off, and a goal saved with it off has no flag",
+          not page.is_checked("#g-simfirst") and "sim_first" not in get("/goals")["goals"][0], get("/goals")["goals"][0])
+    page.check("#g-simfirst")
+    page.fill("#g-name", "to the desk, rehearsed")
+    page.click("#g-save")
+    wait(page, "document.querySelectorAll('#goal-list li').length === 2")
+    flagged = [g for g in get("/goals")["goals"] if g["name"] == "to the desk, rehearsed"]
+    check("ticked, the goal is saved with sim_first true", len(flagged) == 1 and flagged[0].get("sim_first") is True, flagged)
+    page.uncheck("#g-simfirst")
     page.select_option("#g-kind", "point")
     tap(page, 2.5, -2.0)
     page.click("#g-run")
@@ -300,8 +310,8 @@ with sync_playwright() as p:
     page.fill("#save-name", "to the plant")
     page.fill("#save-folder", "tests/course")
     page.click("#run-save")
-    wait(page, "document.querySelectorAll('#goal-list li').length === 2")
-    check("Save to library from an ad-hoc run: the run's goal is saved", {g["name"] for g in get("/goals")["goals"]} == {"to the desk", "to the plant"})
+    wait(page, "document.querySelectorAll('#goal-list li').length === 3")
+    check("Save to library from an ad-hoc run: the run's goal is saved", {g["name"] for g in get("/goals")["goals"]} == {"to the desk", "to the desk, rehearsed", "to the plant"})
 
     # --- renaming and deleting an area ---------------------------------------------------------------
     page.fill("#area-list input", "Galley")

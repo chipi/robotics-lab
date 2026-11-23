@@ -392,6 +392,32 @@ server_mod.Navigator = FakeNav
 check("must fail: a localisation that cannot be placed is answered start_failed, naming it, and no goal is left running",
       err.get("code") == "start_failed" and "other localisation" in err.get("message", "") and unplaceable.run is None, err)
 
+# --- a harness anomaly its runner tells (phase 5 B8, contract 1.6): rtf_low is the navigator's record, once, and the goal goes on -------------
+check("this is contract 1.6 or later (goal.anomaly)", tuple(map(int, CONTRACT.split("."))) >= (1, 6)
+      and "goal.anomaly" in server_mod.NavServer.METHODS and "goal.anomaly" not in payload_mod.Payload.METHODS, CONTRACT)
+RTF = {"kind": "rtf_low", "summary": "the simulator ran at 0.72 of real time", "values": {"rtf": 0.72, "sim_s": 7.2, "wall_s": 10.0}}
+
+
+def tell_twice(m):
+    m.call("goal.anomaly", RTF)
+    m.call("goal.anomaly", RTF)
+
+
+told = api()
+st = run_goal(told, "wait", lambda m: (tell_twice(m), time.sleep(0.1), m.call("goal.cancel", {})))
+an = [r for r in told.run.nav.records if r.get("event") == "anomaly" and r["anomaly"] == "rtf_low"]
+check("navigator API: goal.anomaly rtf_low is recorded once however often it is told: source harness, severity minor (the robot is not unfit), its values kept",
+      len(an) == 1 and an[0]["source"] == "harness" and an[0]["severity"] == "minor" and an[0]["values"]["rtf"] == 0.72, an)
+check("... and the goal goes on to the cancel (an anomaly changes nothing the navigator does)", st["state"] == "cancelled", st["state"])
+check("... the anomaly is in goal.status's list, for Mission Control", [a["anomaly"] for a in told.call("goal.status", {})["anomalies"]
+      if a["anomaly"] == "rtf_low"] == ["rtf_low"])
+idle = api()
+check("goal.anomaly with no goal running answers ok and records nothing", idle.call("goal.anomaly", RTF) == {"ok": True} and idle.run is None)
+bad = api()
+reply = bad.call("goal.anomaly", {"kind": "stuck", "summary": "x"})
+check("must fail: a kind the runner may not tell (the navigator's own, `stuck`) is refused, naming the ones it may",
+      (reply.get("error") or {}).get("code") == "bad_anomaly" and "rtf_low" in reply["error"]["message"], reply)
+
 # --- the navigator's gate client reads the gate's protocol (RFC-0018 §5.3) ------------------------------------------------------
 import json  # noqa: E402
 import socket  # noqa: E402

@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.5.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.6.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -29,7 +29,8 @@ error):
 - **The payload** (one process per course run, its navigator kept from one goal to the next):
   `localise` -> `{pose}` (its pose in its own map: a fix, else a survey), `stop` -> `{ok}` (its run
   is closed, the process ends). `goal.status` adds `pose`.
-- **The navigator API** (one navigator per goal run): `map` (mapd's grid), and while a goal runs
+- **The navigator API** (one navigator per goal run): `goal.anomaly {kind, summary, values?}` (1.6,
+  below), `map` (mapd's grid), and while a goal runs
   `state`, `objects`, `inventory` (RFC-0016). `goal.start` takes `seed`, `goal_run` and `scene`,
   and answers `profile {checksum, version, source}`; `goal.status` adds `progress`, `decisions`,
   `anomalies` (1.1) and
@@ -77,6 +78,23 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.6
+
+The **navigator API** answers `goal.anomaly {kind, summary, values?}`: an anomaly its runner
+measured and the navigator cannot see, recorded once per kind in the run (source `harness`) and
+served in `goal.status`'s `anomalies` as any other (phase 5 item 4b unit B8). The only kind is
+`rtf_low`: the simulator's real-time factor (its simulated seconds per wall second since the
+goal's first truth sample) read under the runner's threshold (`simhost.truth.RTF_LOW`, 0.95, a
+guess; `lab-nav-server --rtf-low`) after 5 s of wall time, with `values {sim_s, wall_s, rtf,
+below}`. Severity `minor`: the robot is not unfit, the simulator is slow. The goal goes on; **the
+run has no verdict**: the runner records `no_verdict` and the clock in the run's `runner.json`, and
+Mission Control ends the run with `as_expected` null. Another kind is `{error: {code:
+"bad_anomaly"}}`, and a goal that is not running ignores it. A runner tells a navigator only if its
+`hello` names 1.6 or later; the payload answers none (`lab-challenge` withholds the verdict itself:
+`pass` null and `no_verdict` in the row). A host with no simulated time (the NXT's) has no factor
+and no check. The runner keeps the clock for every goal: `clock {sim_s, wall_s, rtf}` in
+`runner.json`, and `sim_time` beside `wall_ns` in each line of the run's `truth.jsonl`.
 
 ## 1.5
 

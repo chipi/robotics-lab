@@ -275,6 +275,39 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   gate's refusal is); a cancel and a STOP, proven in the navigator's unit test (a stand-in gate)
   and the API test (the fake), not live in the simulator.
 
+### B8, the simulator-first flag and the run's clock (2026-11-23)
+
+Contract 1.6 (`goal.anomaly`); the flag in Mission Control's goals; the clock in the runner. What
+"simulator-first" means, and each default, with how to undo it:
+
+- **Opt-in per goal:** a goal's `sim_first: true`. Default false, as RFC-0014 §3.4.2 said (a goal not
+  rehearsed is flagged on a real run, never forbidden). Every real run records its rehearsal state
+  (`conditions.rehearsal`), flagged or not. Undo or flip: `goals.validate`, and the refusal in
+  `core._create_and_start` (to make every goal sim-first, read `flagged` as true there).
+- **What is a real run:** `target` is `real`, or the robot is a registered robot whose variant is
+  `real`. A fake robot (no registered kind) has no real variant, so it is never held to the flag.
+- **What rehearses:** a run of the same goal content (name, folder and the flag excluded: a rename
+  keeps it, any edit drops it), `target` `sim`, on another robot of the same registered kind in the
+  `sim` variant, the same site, ended as expected with a verdict, no older than 24 h
+  (`goals.REHEARSAL_MAX_AGE_S`). Not matched: the start pose (it belongs to the run), the merged
+  guardrails of the robot and site, the navigator's or the profile's version. A rehearsal is not
+  used up; the newest is named.
+- **No twin, no real run:** in a Mission Control with no simulated robot of the real robot's kind,
+  a flagged goal cannot run for real. The installation names one variant per registered robot, so
+  the twin is a robot file whose adapter's default is `sim` (`duck-sim`) beside a real adapter that
+  names no variant.
+- **The clock:** the runner keeps the simulator's time beside the wall clock for every goal
+  (`truth.jsonl` `sim_time`, `runner.json` `clock`). `rtf_low` is raised under `simhost.truth.RTF_LOW`
+  (0.95, a guess, a named constant; `lab-nav-server --rtf-low`) once the run is 5 s old
+  (`RTF_MIN_WALL_S`: a ratio over the first samples is noise). Severity `minor`: Mission Control
+  makes a robot unfit for a major one, and a slow simulator is not the robot's fault.
+- **No verdict:** a run with `rtf_low` keeps the state the navigator gave, `as_expected` is null and
+  `no_verdict` says why; it rehearses nothing. `lab-challenge` withholds its own (`pass` null).
+- **Ask:** is 0.95 right, and 24 h? Should the flag be the default for a goal run on a real robot?
+- **Not covered:** a group run's parent still reads its state, not no-verdict (its children carry
+  it); no real adapter exists, so the real side is a stand-in; the page shows the checkbox and one
+  line per run, not a "rehearse first" button.
+
 ## Findings to watch
 
 - **`test_replay_pages.py` failed once, cause unknown (2026-11-23).** It failed in a

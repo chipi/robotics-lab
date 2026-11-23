@@ -25,6 +25,8 @@ It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Me
       decisions_n, anomalies: [...], anomalies_n, objects: [...] | null, objects_v}  (anomalies since contract 1.1)
   goal.cancel {reason?} -> {ok}
   goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
+  goal.anomaly {kind, summary, values?} -> {ok}: an anomaly of the harness its runner measured (since contract 1.6: rtf_low), recorded once
+      per kind in the run, source "harness"; the run goes on
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
   inventory -> RFC-0016's inventory                           map -> mapd's grid (in the placed frame of the latest goal that had a start pose)
   calibration.list -> {procedures: [{id, params}]}            calibration.start {procedure, params?} -> {ok, procedure, params} | {error}
@@ -54,7 +56,7 @@ from duck_lab.nav.guardrails import Guard, RobotSide
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
-from runfile.navcontract import CALIBRATION_METHODS, ENDS
+from runfile.navcontract import CALIBRATION_METHODS, ENDS, HARNESS_ANOMALIES
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
 from worldmodel.site import Area, inside
@@ -153,6 +155,7 @@ class GoalRun:
         self.progress: dict = {}
         self.decisions: list = []
         self.anomalies: list = []        # the run's anomalies as written (RFC-0019 §2.1's record, with `t` and `n`), served live
+        self.told: set = set()           # the harness anomalies its runner has told (harness_anomaly)
         self.objects_v = 0
         self.nav = None
         self.runlog = None
@@ -264,6 +267,14 @@ class GoalRun:
         if by_runner:
             self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
+
+    def harness_anomaly(self, kind: str, summary: str, values: dict) -> None:
+        """An anomaly its runner measured (contract 1.6), once per kind: a runner tells it at every poll it holds, the run records it once."""
+        with self._lock:
+            if kind in self.told:
+                return
+            self.told.add(kind)
+        self.nav.anomaly(kind, summary, values=values)
 
     def _noted(self, name: str, detail: str) -> None:
         """The navigator stopped the goal on the robot's own health (motor_hot, battery_low, robot_unhealthy, stale_stream): `broken`
@@ -510,7 +521,7 @@ class NavServer:
         finally:
             rpc.close()
 
-    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "map", "state", "objects", "inventory") + CALIBRATION_METHODS
+    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "goal.anomaly", "map", "state", "objects", "inventory") + CALIBRATION_METHODS
 
     def call(self, method: str, p: dict):
         if method not in self.METHODS:
@@ -529,6 +540,13 @@ class NavServer:
         if method == "goal.break":
             if run is not None and run.state not in ENDS:
                 run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"), by_runner=True)
+            return {"ok": True}
+        if method == "goal.anomaly":
+            kind = p.get("kind")
+            if kind not in HARNESS_ANOMALIES:
+                return {"error": {"code": "bad_anomaly", "message": f"the runner may tell {', '.join(HARNESS_ANOMALIES)}, not {kind!r}"}}
+            if run is not None and run.state not in ENDS:
+                run.harness_anomaly(kind, str(p.get("summary") or kind), p.get("values") or {})
             return {"ok": True}
         if method == "goal.cancel":
             if run is not None and run.state not in ENDS:

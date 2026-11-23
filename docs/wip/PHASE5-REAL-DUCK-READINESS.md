@@ -41,7 +41,7 @@ All seven were taken into item 4b's scope (the operator, 2026-11-23).
 5. **mapd's CPU cost on the board** and a score sheet comparing the simulator with the real duck
    (RFC-0002, phase 5).
 6. **A simulator-first flag for real runs** (RFC-0014 step 5): rehearse a goal in the simulator
-   before the robot runs it. No such flag is in Mission Control.
+   before the robot runs it. Mission Control has it since 2026-11-23 (unit B8): a goal's `sim_first`.
 7. **mapd's sensor model** (K34): it assumes an axial depth sensor, while the simulator's is
    radial. Measured on the robot first (REAL-DUCK.md §2).
 

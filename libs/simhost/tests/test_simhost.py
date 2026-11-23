@@ -201,6 +201,16 @@ check("each sample carries the host's wall clock (what a navigator row is paired
 check("the real-time factor is the simulated time against the wall clock (0.5 here)", abs(sampler.rtf() - 0.5) < 0.05,
       sampler.rtf())
 check("one connection to the body server", body.connections == 1, body.connections)
+clock = sampler.clock()
+check("the clock is the simulated seconds beside the wall seconds and their ratio (0.5 here)",
+      clock is not None and abs(clock["rtf"] - 0.5) < 0.05 and abs(clock["sim_s"] / clock["wall_s"] - 0.5) < 0.05 and 0.3 < clock["wall_s"] < 1.5, clock)
+check("must fail: 0.5 in 0.6 s of wall time is not judged (RTF_MIN_WALL_S, 5 s: the first samples are noise)", sampler.rtf_low() is None)
+real_min = simhost.truth.RTF_MIN_WALL_S
+simhost.truth.RTF_MIN_WALL_S = 0.3
+check("past the minimum wall time a factor of 0.5 is under RTF_LOW (0.95) and the clock comes back", simhost.truth.RTF_LOW == 0.95
+      and sampler.rtf_low() == sampler.clock(), sampler.rtf_low())
+check("must fail: ... and not under a threshold of 0.4", sampler.rtf_low(0.4) is None)
+simhost.truth.RTF_MIN_WALL_S = real_min
 try:
     Sampler(simhost.parse({**GOOD, "truth_port": None}, tmp / "none.json"))
     msg = ""

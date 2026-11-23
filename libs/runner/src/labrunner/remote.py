@@ -147,7 +147,7 @@ class Remote:
             copy.next_source(src)
         self._lock = threading.Lock()                             # the copy is written by the pump and by the runner's events
         self._stop = threading.Event()
-        cmd = list(payload or robots.get().PAYLOAD) + [      # the robot's navigator, or any that keeps the contract
+        cmd = (list(payload) if payload else robots.navigator_command("PAYLOAD")) + [     # the robot's navigator, or any that keeps the contract
                "--robot", str(robot or host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \

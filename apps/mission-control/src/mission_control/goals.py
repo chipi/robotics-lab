@@ -1,6 +1,8 @@
 """Goals (RFC-0014 §3.4): a kind, what it is about, how it is done, what it must not do. A kind is a
 name plus a validated schema; an unknown kind or field is refused (RFC-0004 §2.1)."""
 
+import hashlib
+import json
 import math
 
 from runfile import navcontract
@@ -18,7 +20,7 @@ STATES = ACTIVE + TERMINAL
 SUCCESS = navcontract.SUCCESS
 
 EXPECTS = ("reach", "refuse")
-FIELDS = {"name", "folder", "kind", "params", "done_when", "must_not", "expect", "budget", "scene"}
+FIELDS = {"name", "folder", "kind", "params", "done_when", "must_not", "expect", "budget", "scene", "sim_first"}
 SERVER_FIELDS = {"id", "created_at", "updated_at"}
 
 # ADR-0015's REACHED_M, RFC-0014 §3.4.1's table
@@ -30,6 +32,15 @@ DEFAULT_DONE_WHEN = {
     "inventory": {},
 }
 DEFAULT_BUDGET_MIN = 5.0
+
+# An anomaly of these kinds means a run's own measures are not to be trusted (a simulator slower than real time): the run ends with the state
+# the navigator gave it and no verdict (`as_expected` null, the run's `no_verdict` says why). The runner raises it (navigator contract 1.6).
+NO_VERDICT_ANOMALIES = ("rtf_low",)
+
+# The simulator-first flag (RFC-0014 §3.4.2, phase 5 item 4b unit B8): a goal that has it runs on a real robot only after a passing simulator run
+# of the same goal, within this long. A day: the room, the site's areas and the robot's profile are what they were when it was rehearsed,
+# more or less; longer than that the rehearsal says too little about today.
+REHEARSAL_MAX_AGE_S = 24 * 3600.0
 BUDGET_KINDS = ("explore", "inventory", "go_to_object")
 
 def _num(value, what: str, positive: bool = True) -> float:
@@ -135,7 +146,19 @@ def validate(spec, *, require_name: bool = True) -> dict:
         raise invalid(f"a {kind} goal has no budget", "bad_goal")
     if "scene" in spec:
         out["scene"] = _text(spec["scene"], "scene")
+    if "sim_first" in spec:
+        if not isinstance(spec["sim_first"], bool):
+            raise invalid("sim_first is true or false", "bad_goal")
+        if spec["sim_first"]:
+            out["sim_first"] = True        # kept only when set, as `scene` is: a goal that never heard of it reads the same
     return out
+
+
+def version(goal: dict) -> str:
+    """What a rehearsal must have in common with the run it rehearses: the goal's content. Its name, its folder and the flag itself are
+    not what the robot does, so renaming or flagging a goal keeps its rehearsal, and any edit to what it asks for drops it."""
+    body = {k: v for k, v in goal.items() if k not in ("name", "folder", "sim_first")}
+    return "sha256:" + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
 
 def normalise_folder(folder) -> str:

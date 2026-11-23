@@ -1,11 +1,12 @@
 """The navigator contract's names (libs/runner/CONTRACT.md): its version, its methods, a goal's states. The duck's payload and
 its navigator API answer by them; the runner and Mission Control check what a navigator answers against them."""
 
-CONTRACT = "1.5"     # 1.1 (2026-11-23): the navigator API's goal.status adds `anomalies` (phase 5 item 3 step 3);
+CONTRACT = "1.6"     # 1.1 (2026-11-23): the navigator API's goal.status adds `anomalies` (phase 5 item 3 step 3);
 #                      1.2 (2026-11-23): goal.start takes `not_enforced`, the guardrails its runner could not check;
 #                      1.3 (2026-11-23): the navigator API's calibration.* methods (phase 5 item 4a unit A3);
 #                      1.4 (2026-11-23): a not_enforced contact, fall or drop_clearance is checked by the navigator API's robot (B3)
 #                      1.5 (2026-11-23): goal.start takes `start_pose`, where the operator says the robot stands on the map (B7)
+#                      1.6 (2026-11-23): the navigator API's goal.anomaly, a harness anomaly its runner tells it (rtf_low; B8)
 
 # A goal's states: `idle` before the first goal, `running`, then one end. Each end's meaning is in CONTRACT.md.
 ENDS = ("reached", "done", "refused", "not_found", "timeout", "stalled", "stopped_by_guardrail", "cancelled", "interrupted",
@@ -19,7 +20,9 @@ GOAL_METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break
 # what each kind of navigator answers besides the goal methods, and nothing else
 PAYLOAD_METHODS = GOAL_METHODS + ("localise", "stop")
 CALIBRATION_METHODS = ("calibration.list", "calibration.start", "calibration.status", "calibration.cancel")
-API_METHODS = GOAL_METHODS + ("map", "state", "objects", "inventory") + CALIBRATION_METHODS
+# the anomalies its runner may tell the navigator to record (the runner measures what the navigator cannot see): the clock's
+HARNESS_ANOMALIES = ("rtf_low",)
+API_METHODS = GOAL_METHODS + ("goal.anomaly", "map", "state", "objects", "inventory") + CALIBRATION_METHODS
 
 # A calibration's states: `idle` before the first, `running`, then one end (the goal's ends a procedure can have).
 CALIBRATION_ENDS = ("done", "refused", "cancelled", "interrupted", "failed")

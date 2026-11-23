@@ -80,6 +80,9 @@ class Sampler:
     def stop(self):
         pass
 
+    clock = lambda self: None                # noqa: E731 - no simulated time here: no clock, no rtf_low
+    rtf_low = lambda self, below=0.95: None  # noqa: E731
+
 
 class Guard:
     checked = ["contact"]
@@ -175,7 +178,7 @@ try:
           g is not None and g.sampler is not None and g.truth_log is not None and g.guard is not None
           and made["copy"][-1].truth == g.truth_log.nearest, [made["sampler"], made["guard"]])
     if g is not None:
-        g._sample(types.SimpleNamespace(wall_ns=1, pose=(0, 0, 0), z=0.3, quat=(1, 0, 0, 0)))
+        g._sample(types.SimpleNamespace(wall_ns=1, pose=(0, 0, 0), z=0.3, quat=(1, 0, 0, 0), sim_time=None))
     check("with truth: nothing is not enforced, the truth guard has the goal's guardrails", g is not None and getattr(g, "not_enforced", None) == [], g and getattr(g, "not_enforced", None))
     check("must fail: with truth the official run records judge_truth available, nothing unenforced",
           g is not None and made["copy"][-1].run.get("judge_truth") == {"available": True, "reason": None, "unenforced": []},

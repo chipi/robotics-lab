@@ -90,9 +90,9 @@ through its navigator, in the name of that navigator (the fake's is `fake-naviga
 
 ## Goals
 
-A goal: `{name, folder, kind, params, done_when, must_not, expect, budget?, scene?}`. A `GET` returns
-it with `id`, `created_at`, `updated_at`, and a `PUT` accepts that back. An unknown field or kind is
-a 422.
+A goal: `{name, folder, kind, params, done_when, must_not, expect, budget?, scene?, sim_first?}`. A
+`GET` returns it with `id`, `created_at`, `updated_at`, and a `PUT` accepts that back. An unknown
+field or kind is a 422.
 
 | `kind` | `params` | `done_when` defaults | `budget` |
 | --- | --- | --- | --- |
@@ -190,7 +190,22 @@ States: `queued`, `running`, then one of the navigator contract's ends
 - `not_found`: an object goal whose exploring ended without finding it.
 - `cancelled`: `cancel`, or a STOP (the latch). `interrupted`: a takeover, or the robot stopped answering.
 - `as_expected` is null while running, then true when the end matches `expect` (`reach`: `reached` or
-  `done`; `refuse`: `refused`).
+  `done`; `refuse`: `refused`). It stays null for a run that has **no verdict**: the navigator raised
+  `rtf_low` (its runner measured the simulator under real time: [libs/runner/CONTRACT.md](../../libs/runner/CONTRACT.md),
+  1.6), so the run's timing and truth pairing are not what they say. The run keeps the state the
+  navigator gave it, and `no_verdict` says why (`rtf_low: ...`); it is null for every other run.
+- **The simulator-first flag.** A goal with `sim_first: true` (absent is false) runs on the real
+  robot only after a rehearsal: a run of the same goal in the simulator that ended as expected,
+  within 24 h. A run is *real* when its `target` is `real`, or its robot is a registered robot whose
+  variant is `real`; a goal run on any other is a simulator run and is not held to the flag. A run
+  *rehearses* when it ran the same goal content (its `version`: everything but `name`, `folder` and
+  `sim_first`: an edit drops it, a rename keeps it), `target` `sim`, on a robot of the same registered
+  kind in the `sim` variant, for the same site, ended with `as_expected` true and a verdict, within
+  24 h; the newest is named. Without one the run is `refused`, `reason` saying which robot to
+  rehearse on. Every run on a real robot records `conditions.rehearsal`: `{flagged, state:
+  "rehearsed" | "not_rehearsed", run (the simulator run that rehearsed it), robot, goal_version,
+  rehearse_on}`; for an unflagged goal it is information, never a refusal. A rehearsal is not used
+  up. A group's robots are held one by one (a child run refused).
 - `progress`: `elapsed_s`, `pose`, `area` (the area it believes it is in, by the operator's outlines,
   or null), `guardrails_ok`, `distance_left_m`, and for exploring `waypoints_visited`,
   `cells_explored`. Written at most once a second.

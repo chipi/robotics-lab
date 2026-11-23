@@ -20,6 +20,10 @@ from dataclasses import dataclass
 from simhost.host import Host
 
 HZ = 20.0
+# Below this real-time factor a run's timing, timeouts and the 0.1 s truth pairing are not what they say: the run is the anomaly
+# `rtf_low` and has no verdict (RFC-0025 question 7). 0.95 is a guess; every run so far read 0.999 to 1.001.
+RTF_LOW = 0.95
+RTF_MIN_WALL_S = 5.0     # the factor is a ratio over the run so far: not judged before this much wall time (the first samples are noise)
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,20 @@ class Sampler:
             return None
         wall = (self.latest.wall_ns - self._first[0]) / 1e9
         return round((self.latest.sim_time - self._first[1]) / wall, 3) if wall > 0 else None
+
+    def clock(self) -> dict | None:
+        """The simulator's time beside the wall clock since the first sample, as a run records it: {sim_s, wall_s, rtf}, or None when
+        the host has no simulated time (the NXT's runs on the wall clock)."""
+        r = self.rtf()
+        if r is None:
+            return None
+        return {"sim_s": round(self.latest.sim_time - self._first[1], 3), "wall_s": round((self.latest.wall_ns - self._first[0]) / 1e9, 3),
+                "rtf": r}
+
+    def rtf_low(self, below: float = RTF_LOW) -> dict | None:
+        """The clock when the factor is below `below` after RTF_MIN_WALL_S of wall time, else None."""
+        c = self.clock()
+        return c if c and c["wall_s"] >= RTF_MIN_WALL_S and c["rtf"] < below else None
 
     def stop(self) -> None:
         self._stop.set()

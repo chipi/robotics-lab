@@ -155,6 +155,12 @@ check("covering: a path to the goal, but never through the known wall",
       pg is None or all(not math.isinf(grown.at(*grown.cell(*q))) for q in pg), pg and pg[-1])
 grown2 = small.covering([(0.5, 0.5), (0.5, -1.0)])
 check("covering grows downward too, origin moves", grown2.origin[1] < small.origin[1], grown2.origin)
+try:
+    nothing_to_cover = small.covering([]) is small
+except ValueError as exc:
+    nothing_to_cover = str(exc)
+check("covering no points is the grid as it is (an inventory with no hazard seen yet asked this: min() of nothing, found in sim_duck 2026-11-23)",
+      nothing_to_cover is True, nothing_to_cover)
 
 # Doorways at mapd's 5 cm cells (run 4: the office doorway closed on 10 cm cells).
 def gap_grid(gap_cells):

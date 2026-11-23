@@ -587,6 +587,7 @@ function formGoal() {
   if (ms > 0) must.push({ name: "max_speed", mps: ms });
   if (tl > 0) must.push({ name: "time_limit", seconds: tl });
   const goal = { kind, params, must_not: must, expect: $("g-expect").value };
+  if ($("g-simfirst").checked) goal.sim_first = true;
   if ($("g-name").value.trim()) goal.name = $("g-name").value.trim();
   if ($("g-folder").value.trim()) goal.folder = $("g-folder").value.trim();
   return goal;
@@ -678,6 +679,9 @@ function renderRunDetail() {
     h("h3", {}, `Run #${r.id} `, h("span", { class: "state " + r.state, id: "run-state" }, r.state), " ", watch),
     r.reason ? h("div", { class: "dim", id: "run-reason" }, r.reason) : null,
     (r.conditions || {}).start_pose ? h("div", { class: "dim", id: "run-placed" }, startPoseText(r.conditions.start_pose)) : null,
+    (r.conditions || {}).rehearsal && r.conditions.rehearsal.flagged
+      ? h("div", { class: "dim", id: "run-rehearsal" }, r.conditions.rehearsal.run ? `Rehearsed in the simulator by run #${r.conditions.rehearsal.run}` : "Not rehearsed in the simulator") : null,
+    r.no_verdict ? h("div", { class: "dim", id: "run-no-verdict" }, "No verdict: " + r.no_verdict) : null,
     h("div", { class: "kv", id: "run-progress" },
       h("span", {}, "elapsed ", h("b", {}, pr.elapsed_s != null ? pr.elapsed_s + " s" : "-")),
       h("span", {}, "left ", h("b", {}, pr.distance_left_m != null ? pr.distance_left_m + " m" : "-")),

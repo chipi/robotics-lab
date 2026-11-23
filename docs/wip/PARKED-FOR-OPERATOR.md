@@ -27,12 +27,13 @@ Cleared items are struck from the list when settled.
 | Item | What | Done meanwhile |
 | --- | --- | --- |
 | D0 | Review the NXT design note (second host kind, sensor declaration, stand-in profile) | D2 onwards built on its defaults |
-| Telemetry (5) | The robotics-lab Grafana folder's token and tailnet access from the homelab session | not started |
+| ~~Telemetry (5)~~ | Settled 2026-11-23: you approved the `robotics-lab` Grafana folder in the homelab session; service account `robotics-lab-sync` (Edit on that folder only), token in `~/grafana/robotics-lab-sync.env` on the mini, read over ssh, never printed | sending needs no token: OTLP over protobuf to the tailnet nodes (agent-access.md §5) |
 | D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sit in `capabilities.sensors`, not the profile's `sensors` block (6); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
 | B3 second opinion | Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built: only without truth |
 | B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
 | B7 frame | A start pose you place on the map lasts one goal. Keep it until the robot is carried again instead? (Needs a clear control and a rule for stale placements.) | built: per goal |
 | B7 dock | The first start pose a site sees becomes its dock pose when it has none. Right? | built that way |
+| B8 defaults | Simulator-first: opt-in per goal; a rehearsal counts for 24 h, same goal content, same site, a sim robot of the same kind. `rtf_low` below 0.95, minor. Right numbers? Should `sim_first` be the default for every goal on a real robot? | built as listed |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
 ## For the real duck's link (B5, `lab-link`, recipe in [REAL-DUCK-LINK.md](REAL-DUCK-LINK.md))
@@ -50,6 +51,22 @@ Cleared items are struck from the list when settled.
 - **An installation that registers both robots** makes `labrunner.robots.get()` ask for
   `--robot`; and `lab-go --robot nxt-shooterbot` would fail on the NXT's missing navigator API
   (`navapi.py:209`, `remote.py:150`) instead of refusing clearly. A small fix, due with D7.
+- ~~`sim_duck` in one full run fails `calibrate` after `profile`~~ Fixed 2026-11-24: the check
+  takes the version the keep reports, and the corridor setup ends with a short goal north (a
+  point goal does not choose its final heading; it had ended at 126 degrees twice).
+  `--only profile,calibrate` gave `PASS sim_duck`, EXIT=0.
+- **Duck walk speed: two numbers disagree.** Old challenge runs show 0.55 of the commanded
+  speed; fresh simulator walks 0.36 (B9). Not explained.
+- **The NXT's turn rate disagrees between Mission Control and the simulator** (D7): Mission
+  Control maps 1.5 rad/s to track powers of plus or minus 50 %, the simulated world reads its
+  1.5 rad/s as 100 %, so a 1 rad/s turn turns about 0.46 rad in a second. D1's K16 measurement
+  decides which side is right; then one side is fixed.
+- **simhost cannot pass nxt-web's takeover list** (D7): on the nxt-web that simhost starts nobody
+  may take the lock; `make sim-nxt` starts a second nxt-web itself to test takeover. A host-file
+  key for the list would remove that.
+- **A subagent could not run `flock(1)`** (the shell's deny list) and took the same simulator lock
+  through Python's `fcntl.flock` on the same file. Same lock, same semantics; say if that is not
+  acceptable.
 - **The NXT's battery percent is a guess:** a linear span from 6000 mV (0 %) to 8400 mV (100 %),
   low below 20 % (D5); D1 can calibrate it. A robot file overrides the span.
 

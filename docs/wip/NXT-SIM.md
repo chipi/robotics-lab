@@ -2,9 +2,10 @@
 
 **Status:** written 2026-11-23 for plan unit D8. Every command and key below was checked by reading
 the code (argparse, `Makefile`, the host and installation parsers) and, for `--help`, by running
-it. None of it was started: no server, no reset, no brick. What that leaves unchecked is in
-[Not verified](#not-verified). For the design behind it see [NXT-D0.md](NXT-D0.md); for the real
-brick see [NXT-D1-CHECKLIST.md](NXT-D1-CHECKLIST.md).
+it. None of sections 1 to 4 was started by hand: no server, no reset, no brick. Section 5 (unit D7,
+`make sim-nxt`) was run, and its scenarios do much of what sections 1 to 4 describe, through the
+API. What that leaves unchecked is in [Not verified](#not-verified). For the design behind it see
+[NXT-D0.md](NXT-D0.md); for the real brick see [NXT-D1-CHECKLIST.md](NXT-D1-CHECKLIST.md).
 
 ## Why this exists
 
@@ -172,8 +173,42 @@ libs/simhost/.venv/bin/simhost --host ~/.config/robotics-lab/nxt-sim-host.json d
 - The line `standing, mapd listening` that `reset` prints is the duck's wording; for the NXT it
   only means the reset returned.
 
+## 5. Runs, and `make sim-nxt`
+
+Since D6 every Mission Control drive session leaves a run: the first session that holds the robot
+starts nxt-web's recorder, the last one to let go stops it, and a recording someone else started on
+nxt-web's page is never stopped by it. In `--sim` the run is `nxt/<scene>/<run>` in the folder
+nxt-web records into (`$OBSERVATORY_DATA`, or `--miniview-data`), with the simulator's truth beside
+the belief on every tick and the scene's id and sha256 in the run. The Observatory opens it like
+any run.
+
+`make sim-nxt` is the whole of this as one scenario, in the foreground, `PASS sim_nxt` and exit 0
+at the end:
+
+```sh
+make sim-nxt                              # all six scenarios, about 40 seconds
+make sim-nxt ARGS="--only wall,replay"    # drive, wall, stop, takeover, deadman, replay
+```
+
+It needs `make control-sync nxt-sync observatory-sync` (the target runs them), no Pollen and no
+brick, and writes only into a folder of its own in the system temp dir (`--keep` leaves it). It
+writes its own installation and host file, so neither of the operator's is read. It starts the
+simulator through simhost (kind `nxt-kinematic-sim`) on a free loopback port and the Observatory's
+server on another, and drives only through Mission Control's HTTP API: the lock, drive, STOP,
+takeover.
+
+- `drive` moves it and turns it on the spot, judged by the truth.
+- `wall` runs at full speed into the north wall and checks the 15 cm stop against the scene file's
+  wall, the alarm, and backing away.
+- `stop` is STOP from a client that holds nothing; `deadman` goes quiet while holding the lock.
+- `takeover` is refused on the process simhost started (nxt-web is given no takeover list there),
+  then runs the same nxt-web command itself with a list, since simhost has no way to pass one.
+- `replay` opens the wall run in the Observatory's API and finds the truth on every tick, ending
+  where the live truth stopped.
+
 ## Verification
 
+0. `make sim-nxt` does steps 1 to 4 below through the API and adds the run's replay.
 1. Section 1, then `curl -s http://127.0.0.1:8000/api/sim/truth`: the pose is the start pose,
    about `[0.0, 2.0, 1.5708]`.
 2. Drive forward from Mission Control or nxt-web's page, read the truth again: it moved along the
@@ -199,12 +234,16 @@ The tests that already cover this: `apps/nxt-web/tests/test_sim.py` (`make test-
 
 ## Not verified
 
-- No server was started. I did not run `nxt-web --sim`, `mission-control serve` or `simhost
-  reset`, so the `curl` answers, the page at `#robot/nxt-1`, the 15 s settle and the 15 cm stop
-  against a real apartment wall are read from code and tests, not seen. Only `--help` was run, for
-  `nxt-web`, `simhost reset` and `mission-control serve`.
-- That `(0, 2)` is free floor in the apartment: the README uses `0 2 90`; I did not check it
-  against every box of `scenes/apartment/scene.json`.
+- Sections 1 to 4 as typed: I did not run `nxt-web --sim`, `mission-control serve` or the
+  `simhost` command line by hand. `make sim-nxt` ran the same pieces (simhost's reset and truth
+  reader as a library, Mission Control's API, nxt-web's 15 cm stop at the apartment's north wall),
+  so those are seen; the page at `#robot/nxt-1` and the Observatory's pages in a browser are not.
+- The turn rate: Mission Control turns the tracks to plus and minus 50 % for the profile's 1.5 rad/s,
+  while the world reads its `turn_rad_s` of 1.5 as the tracks at plus and minus 100 %. So a client's
+  1 rad/s turned the simulated robot about 0.45 rad in a second (with the 0.9 slip), not 0.9. Which
+  of the two is right is the brick's to say (D1, K16); `make sim-nxt` checks only the direction.
+- That `(0, 2)` is free floor in the apartment: `make sim-nxt` starts there and the robot drove
+  north from it, but I did not check it against every box of `scenes/apartment/scene.json`.
 - That `~` is expanded in the installation file's `registration` (the parser calls a path helper
   I did not read); the example uses absolute paths.
 - The request bodies of the API table are taken from the contract's table, not sent.

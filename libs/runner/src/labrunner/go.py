@@ -30,6 +30,7 @@ def main() -> None:
     add_args(ap)
     args = ap.parse_args()
     robots.select(args.robot)
+    robots.navigator_command("PAYLOAD")          # a robot with no navigator (the NXT) is refused before the truth sampler starts
     data = args.miniview_data or default_data()
     if data is None:
         ap.error("the run is the record: give --miniview-data (or OBSERVATORY_DATA)")

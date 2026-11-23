@@ -31,6 +31,17 @@ def select(name: str | None) -> None:
     _selected = name
 
 
+def navigator_command(kind: str, name: str | None = None) -> list:
+    """The robot's navigator command, `kind` NAVIGATOR_API or PAYLOAD. A robot registered with none (the NXT: it is driven by hand and
+    its registration names no navigator) is refused here, in one line naming it, instead of failing later on `list(None)`."""
+    r = get(name)
+    command = getattr(r, kind)
+    if command is None:
+        raise SystemExit(f"robot {r.NAME!r} has no navigator API (its registration names no {kind.lower()}): this command runs a "
+                         f"navigator, and this robot is driven by hand")
+    return list(command)
+
+
 def get(name: str | None = None):
     """A robot's module: the one named, else the one selected, else the only one registered."""
     name = name or _selected

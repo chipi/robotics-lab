@@ -37,7 +37,7 @@ from runfile import keys
 from runfile.catalog import default_data
 from runfile.truthcopy import TruthLog
 import simhost
-from simhost.truth import Sample, Sampler
+from simhost.truth import RTF_LOW, Sample, Sampler
 
 STOPS = ("fall", "bounds")     # invariants after which the run cannot mean anything more: the navigator is stopped
 
@@ -111,7 +111,8 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
             verdict = judge.verdict(out_, truth())
         if sampler.error:
             verdict = {**verdict, "pass": False, "failed": verdict["failed"] + [f"the truth sampler stopped: {sampler.error}"]}
-        nav.record(event="judged", why="PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
+        verdict = clocked(verdict, sampler.rtf_low())
+        nav.record(event="judged", why=f"NO VERDICT, {verdict['no_verdict']}" if verdict.get("no_verdict") else "PASS" if verdict["pass"] else "; ".join(verdict["failed"]))
     finally:
         if sampler is not None:
             sampler.stop()
@@ -122,10 +123,16 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
     row = {"challenge": challenge, "seed": seed, "scene": scene.id, "run": key, "right": scene.right,
            "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict,
            "truth_hz": round(sampler.samples / max(time.monotonic() - t0, 1e-9), 1) if sampler else None,
-           "rtf": sampler.rtf() if sampler else None, "truth_copy": copy, "payload": "process",
+           "rtf": sampler.rtf() if sampler else None, "clock": sampler.clock() if sampler else None, "truth_copy": copy, "payload": "process",
            "payload_truth_connections": route if nav is not None else None}
     (run_out / "result.json").write_text(json.dumps(row, indent=1))
     return row
+
+
+def clocked(verdict: dict, low: dict | None) -> dict:
+    """The verdict, or none (`pass` None) when the simulator ran under the real-time factor RTF_LOW (`low` is its clock, simhost.truth.Sampler.rtf_low):
+    timing, timeouts and the truth pairing are not what they say (RFC-0025 question 7)."""
+    return {**verdict, "pass": None, "no_verdict": f"rtf_low: {low['rtf']} under {RTF_LOW}"} if low else verdict
 
 
 def with_truth(rows: list, log: TruthLog) -> list:
@@ -165,12 +172,12 @@ def main() -> None:
                       shlex.split(args.payload) if args.payload else None, start=args.start, goal=args.goal)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
-            more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered")      # challenges 21-23
+            more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered", "no_verdict")      # challenges 21-23
             print(json.dumps({k: row[k] for k in keys + tuple(m for m in more if m in row)}), flush=True)
     finally:
         if not args.keep_up:
             simhost.down(host)
-    n, ok = len(rows), sum(r["pass"] for r in rows)
+    n, ok = len(rows), sum(r["pass"] is True for r in rows)       # a run with no verdict (rtf_low) is neither
     summary = {"challenge": args.challenge, "runs": n, "passed": ok, "rate": round(ok / n, 3) if n else None,
                "minutes": round((time.monotonic() - started) / 60, 1), "failures": [(r["run"], r["failed"]) for r in rows if not r["pass"]]}
     args.out.mkdir(parents=True, exist_ok=True)

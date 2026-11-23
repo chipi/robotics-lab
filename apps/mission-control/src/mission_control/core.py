@@ -455,6 +455,9 @@ class MissionControl:
         caps = rt.cfg.capabilities
         conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal),
                       **({"start_pose": start_pose} if start_pose else {})}
+        rehearsal = self._rehearsal(rt, goal, site_id, target)
+        if rehearsal is not None:
+            conditions["rehearsal"] = rehearsal
         now = self.wall()
         run_id = self.store.execute(
             "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id, client)"
@@ -462,6 +465,10 @@ class MissionControl:
             (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id, client))
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued", client=client)
         reason = reason or goals.capability_refusal(caps, goal, merged, has_site=site_id is not None)
+        if reason is None and rehearsal is not None and rehearsal["flagged"] and rehearsal["state"] != "rehearsed":
+            reason = (f"this goal is simulator-first and has no passing simulator run: run this goal as it is now (version "
+                      f"{rehearsal['goal_version']}) on {rehearsal['rehearse_on'] or 'a simulated robot of the same kind'} and have it end "
+                      f"as expected, within {goals.REHEARSAL_MAX_AGE_S / 3600:g} h, before it runs on the real one")
         params = None
         if reason is None:
             try:
@@ -498,6 +505,40 @@ class MissionControl:
         self._sync(rt, rt.active)
         return self.get_run(run_id)
 
+    def _real(self, rt: RobotRuntime, target: str) -> bool:
+        """Is this run on the real robot? Either the operator says so (`target`) or the robot's profile variant does; a robot with no
+        registered profile (the fake) has only the first, since its `variant` is a default, not a fact about an environment."""
+        return target == "real" or (rt.cfg.robot is not None and rt.cfg.variant == "real")
+
+    def _simulated_twins(self, rt: RobotRuntime) -> list:
+        """The robots of this Mission Control that are `rt`'s kind (the same registered robot) in the simulator variant."""
+        if rt.cfg.robot is None:
+            return []
+        return sorted(r.cfg.id for r in self.robots.values() if r is not rt and r.cfg.robot == rt.cfg.robot and r.cfg.variant == "sim")
+
+    def _rehearsal(self, rt: RobotRuntime, goal: dict, site_id, target: str) -> dict | None:
+        """What a run on the real robot records about its rehearsal in the simulator (None for a run that is not real): `flagged` (the
+        goal is simulator-first), `state` (`rehearsed` or `not_rehearsed`), `run` (the simulator run that rehearsed it), `goal_version`.
+
+        A run rehearses when it ran this goal's content (goals.version), on a robot of the same registered kind in the simulator variant
+        with target `sim`, for the same site, ended as expected with a verdict (an `rtf_low` run has none), within REHEARSAL_MAX_AGE_S.
+        The goal is the stored one, so an edit drops it; the newest such run is the one named. Nothing consumes a rehearsal: a refused or
+        failed real run can be tried again on the same one, until it is a day old."""
+        if not self._real(rt, target):
+            return None
+        version = goals.version(goal)
+        twins = self._simulated_twins(rt)
+        found = None
+        if twins:
+            rows = self.store.all(
+                f"SELECT * FROM goal_runs WHERE robot IN ({','.join('?' * len(twins))}) AND target = 'sim' AND as_expected = 1"
+                " AND site_id IS ? AND ended_at >= ? AND share IS NULL ORDER BY ended_at DESC, id DESC",
+                (*twins, site_id, self.wall() - goals.REHEARSAL_MAX_AGE_S))
+            found = next((r for r in rows if goals.version(loads(r["goal"])) == version), None)
+        return {"flagged": bool(goal.get("sim_first")), "state": "rehearsed" if found else "not_rehearsed",
+                "run": found["id"] if found else None, "robot": found["robot"] if found else None, "goal_version": version,
+                "rehearse_on": twins[0] if twins else None}
+
     def _outline(self, site_id: str, area_id: str) -> list:
         return self.sites.area(site_id, area_id)["outline"]
 
@@ -518,13 +559,23 @@ class MissionControl:
             self.store.execute("UPDATE goal_runs SET progress = ? WHERE id = ?", (dumps(status.get("progress")), act.id))
             self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=act.id, state="running", progress=status.get("progress"))
 
+    def _no_verdict(self, run_id: int) -> str | None:
+        """Why this run has no verdict (the first anomaly of goals.NO_VERDICT_ANOMALIES it carries, in the navigator's words), or None."""
+        for d in self.store.all("SELECT data FROM anomalies WHERE run_id = ? ORDER BY n", (run_id,)):
+            a = loads(d["data"])
+            if a.get("anomaly") in goals.NO_VERDICT_ANOMALIES:
+                return f"{a['anomaly']}: {a.get('summary') or ''}".strip(": ")
+        return None
+
     def _end_run(self, run_id, rt, goal, state, reason, result, broken, progress) -> None:
         as_expected = state in goals.SUCCESS if goal["expect"] == "reach" else state == "refused"
+        if self._no_verdict(run_id):
+            as_expected = None
         self.store.execute(
             "UPDATE goal_runs SET state = ?, reason = ?, result = ?, broken = ?, progress = COALESCE(?, progress),"
             " as_expected = ?, ended_at = ? WHERE id = ?",
             (state, reason, dumps(result), dumps(broken), dumps(progress) if progress is not None else None,
-             int(as_expected), self.wall(), run_id))
+             None if as_expected is None else int(as_expected), self.wall(), run_id))
         if rt.active is not None and rt.active.id == run_id:
             rt.active = None
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state=state, reason=reason, result=result,
@@ -589,6 +640,7 @@ class MissionControl:
             "expect": expected, "as_expected": None if row["as_expected"] is None else bool(row["as_expected"]),
             "created_at": row["created_at"], "started_at": row["started_at"], "ended_at": row["ended_at"],
             "parent_id": row["parent_id"], "share": row["share"], "client": row["client"],
+            "no_verdict": self._no_verdict(row["id"]) if row["ended_at"] is not None and row["as_expected"] is None else None,
         }
         if row["share"]:
             view["robots"] = row["robot"].split(",")

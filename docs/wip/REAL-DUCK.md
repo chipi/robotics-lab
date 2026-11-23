@@ -4,12 +4,15 @@
 [on] what to do when [the] real duck arrives"). Add to it whenever a simulator finding says "not
 measured on the real duck". Every number we measure here goes into the duck's profile,
 `robots/duck/profile.json` `variants.real`, with its `measured` (how, when) and `why`, as the
-simulator's numbers are.
+simulator's numbers are. The scripts that take §2's range model, §4's walking speed and the board's
+CPU cost, and the score sheet, are in [REAL-DUCK-MEASURE.md](REAL-DUCK-MEASURE.md).
 
 ## 1. First, safety
 
 - Only through the gate: every command with a lease, STOP always honoured (RFC-0017). Mission
-  Control's duck adapter drives it; no probe script talks to the robot directly.
+  Control's duck adapter drives it; no probe script talks to the robot directly. The one measuring
+  script that moves it (`lab-measure-walk`) goes through the gate with a lease too, and refuses a
+  robot that is not the simulator without `--real`.
 - Lowest speeds first: the profile's guardrail `max_speed` set below the simulator's cruise until
   the walking is seen on our floor.
 - On the floor, not a table: no drop the duck could reach until the drop checks (§3) are measured.

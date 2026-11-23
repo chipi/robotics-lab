@@ -17,7 +17,7 @@ import math
 import threading
 
 SEVERITIES = ("info", "minor", "major", "critical")
-SOURCE = {"guardrail_broken": "harness", "guardrail_unenforced": "harness"}      # the kinds the navigator records for another source; the rest are "robot"
+SOURCE = {"guardrail_broken": "harness", "guardrail_unenforced": "harness", "rtf_low": "harness"}      # the kinds the navigator records for another source; the rest are "robot"
 VERSION = 1
 
 # anomaly -> (module, detector, the severity it is raised at unless the raise point says otherwise). Proposed from the runs (RFC-0019 §6
@@ -47,6 +47,10 @@ KINDS = {
     "guardrail_broken": ("runner", "truth_guard", "critical"),
     # a guardrail the goal asked for and its runner has no truth to check (a real robot): said once at the goal's start (`not_enforced`)
     "guardrail_unenforced": ("runner", "truth_guard", "minor"),
+    # the simulator ran slower than the wall clock (the runner's sampler: simhost.truth RTF_LOW): timing, timeouts and the truth pairing
+    # of the run are not what they say, so the run has no verdict; minor, not major: the robot is not unfit (Mission Control makes a robot
+    # unfit for a major one), the simulator is slow; told to the navigator by `goal.anomaly` (contract 1.6)
+    "rtf_low": ("runner", "real_time_factor", "minor"),
 }
 
 # A refusal at one pose repeats for every target the explorer tries (b11 r5: six "no room to turn" in 1 s at one pose, 0.283-0.290

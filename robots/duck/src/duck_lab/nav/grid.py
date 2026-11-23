@@ -212,6 +212,8 @@ class CostGrid:
     def covering(self, points: list, margin_m: float = 0.5) -> "CostGrid":
         """This grid grown with unknown cells until it covers every point (plus a margin): a goal
         beyond what mapd has seen is unknown ground, expensive but not forbidden."""
+        if not points:
+            return self
         m = math.ceil(margin_m / self.res)
         cells = [self.cell(*p) for p in points]
         left = max(0, -min(c[0] for c in cells) + m)

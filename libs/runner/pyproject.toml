@@ -26,6 +26,10 @@ lab-go = "labrunner.go:main"
 lab-nav-server = "labrunner.navapi:main"
 lab-gate = "labrunner.gate:main"
 lab-link = "labrunner.link:main"
+lab-measure-cpu = "labrunner.measure_cpu:main"
+lab-measure-range = "labrunner.measure_range:main"
+lab-measure-walk = "labrunner.measure_walk:main"
+lab-score-sheet = "labrunner.measure_score:main"
 lab-rooms = "labrunner.rooms:main"
 
 [build-system]
