@@ -6,7 +6,8 @@ answer, 2026-11-23). Decisions 1, 3 and 5 are the operator's; 2 and 4 are their 
 yet designed. It would amend decision 1 of [ADR-0001](ADR-0001-ros-aligned-foxglove.md) beyond
 [ADR-0018](ADR-0018-ros2-in-a-container-for-comparison.md)'s comparison scope. Its words are
 RFC-0025's approved terms: connector, host kind, variant, interface join, contract join, mapper.
-Some details are open (below).
+Decision 3's clock rule, first a proposed amendment, is settled by the spike (2026-11-23). Some
+details are open (below).
 **Date:** 2026-11-23
 **Context from:** the operator's vision note on depth cameras, SLAM
 and 3D mapping (November 2026: a TurtleBot3 Burger in Gazebo, 2D LiDAR SLAM, then RGB-D mapping),
@@ -45,15 +46,24 @@ joins a robot to the gate is called a connector here.
    ROS 2 connector (the Burger), the NXT's, and later others. A connector is the only way commands
    reach its robot: for ROS, the connector is the sole publisher of velocity commands, so
    "someone else drives" (plan B4) is closed by construction, not left open by default. The
-   connector's placement (on the robot or on the workstation) is a per-robot setting.
+   connector's placement (on the robot or on the workstation) is a per-robot setting. The
+   **deadman is the connector's**: the Gazebo diff-drive plugin holds the last velocity, and the
+   ROS 2 OpenCR firmware has no `cmd_vel` timeout (spike §8, from source); through the spike's
+   connector the velocity was zero 0.6 s after the last command (spike §20).
 3. **The simulator runs at real time.** Our clocks are wall clocks: run times (ADR-0007), the truth
-   pairing (`runfile/truthcopy.py`), time limits. Gazebo runs at a real-time factor of 1 with wall
-   time in its bridge, and the factor is recorded per run, with the simulator's own time beside
-   wall time. Pause, step and a simulated clock are not built. Proposed amendment, pending the
-   spike: inside the ROS graph `use_sim_time` is true, and the connector is where the two clocks
-   meet, stamping wall time on receipt and keeping the ROS stamp. It stays proposed until the
-   spike confirms how Gazebo's bridge stamps messages; "wall time in its bridge" above is the
-   text the operator accepted.
+   pairing (`runfile/truthcopy.py`), time limits. Gazebo runs at a real-time factor of 1, and the
+   factor is recorded per run, with the simulator's own time beside wall time. Pause, step and a
+   simulated clock are not built. Settled by the spike (2026-11-23,
+   [MVP2-SPIKE.md](../wip/MVP2-SPIKE.md) §7, §13, §20), amending the text first accepted, which
+   said "wall time in its bridge": Gazebo's bridge stamps with simulation time, which starts at 0
+   (a node with `use_sim_time` false fails every tf lookup at its own time). So inside the ROS
+   graph `use_sim_time` is true, and the connector is where the two clocks meet: it stamps
+   `wall_ns` on receipt and keeps the ROS stamp beside it. The run's own time stays wall time
+   (`runfile/mcapio.py:193` rejects a time that goes back, and sim time does at a reset). A world
+   reset sends the sim clock back to 0, so the run carries a clock epoch: an event, an epoch
+   counter next to the source stamp, and a new `map_to_world` record (proven once in the spike,
+   §20). Not settled: after a reset the spike's connector lost its tf state (belief and truth
+   froze, cause not found); the connector must solve it, and RFC-0025 section 3.6 keeps it open.
 4. **Frames and goals are ours; each connector maps onto them.** The run file's frames (`world`,
    `map`, the robot) stay the platform's. A robot software's own frames (ROS's `odom`, robotd's)
    are the connector's to translate, and are kept in `raw` when worth keeping. A point goal gains
@@ -61,7 +71,16 @@ joins a robot to the gate is called a connector here.
    of decision 2 (open, below).
 5. **Image streams never enter `run.mcap`.** A camera's or a depth camera's raw stream is a
    companion stream in the run's folder, referenced by the run. Retention (plan step 7) acts
-   per run folder. A 2D scan fits today's tick records and needs no companion stream.
+   per run folder. The spike's numbers support it: 640 x 480 RGB and depth at 30 Hz are 3.9 GB a
+   minute uncompressed and 17 to 25 MB a minute compressed in a flat render, a lower bound
+   (spike §19), against about 75 kB a second for scan, odometry and tf (spike §11). A 2D scan
+   needs no companion stream, but it does not fit today's tick records unchanged: it needs a scan
+   channel in the run format (spike §20; RFC-0025 section 3.5, question 23). Widened, with
+   RFC-0025 section 3.11: the recording of each stream (format, quality) is declared in the
+   profile; the recorded stream is always the camera's output before any image pipeline, which is
+   applied on replay and recorded in the run; and a depth stream is never recorded lossy.
+   Retention acts per run folder and per stream. Defaults and the pipeline are RFC-0025 questions
+   25 and 26, not decided here.
 
 ## Consequences
 
@@ -82,10 +101,15 @@ joins a robot to the gate is called a connector here.
 ## Open
 
 - **Frames and goals in detail** (decision 4), in the spirit of decision 2.
-- **The clock rule** (decision 3's proposed amendment): until the spike confirms how Gazebo's
-  bridge stamps messages.
-- **ROS 2 and Gazebo versions.** The parked Nav2 image is ROS 2 Jazzy; TurtleBot3's support for
-  Jazzy and Gazebo Harmonic is not checked here. The spike decides; the default is Jazzy.
+- **The connector's tf state across a world reset** (decision 3): unsolved in the spike
+  ([MVP2-SPIKE.md](../wip/MVP2-SPIKE.md) §20); RFC-0025 section 3.6 and section 7 item 19.
+- **Whether the clock epoch is a first-class field of the run format** (decision 3):
+  RFC-0025 question 24.
+
+Settled by the spike on 2026-11-23: the clock rule (decision 3, now stated as settled, not as a
+proposed amendment), and the versions: ROS 2 Jazzy, Gazebo Sim 8.15.0 (Harmonic),
+`turtlebot3_gazebo` 2.3.7, SLAM Toolbox 2.8.5, `ros_gz` 1.0.25 (spike §2, §3). `/cmd_vel` is
+`TwistStamped` in that bridge (spike §3).
 
 Settled by the operator on 2026-11-23, in RFC-0025: where the software runs is a per-robot
 setting (decision 1); the first courses come after goals (the Burger's challenge courses in

@@ -1,15 +1,19 @@
 # RFC-0025: From MVP 1 to MVP 2, the platform's architecture and its evolution
 
-**Status:** Draft 2 (2026-11-23): the operator's answers folded in; for review. Nothing in it is
-built. The operator's answers to section 9 are recorded there and in section 8 ("Decided:").
-Two things stay open: the clock rule and the versions, both waiting for the spike. A reflection
-first, then the RFCs it names, then code. Where a point rests on the advisor's recollection, the
-text says "not verified here". The seven new words in "Names" are approved. The operator added
-one input after the answers: cameras are one of the first hardware upgrades of the real Burger
-(sections 3.5, 5 and 7, question 22).
+**Status:** Draft 3 (2026-11-23): the spike's results folded in; for review. Not accepted.
+Nothing in it is built. The operator's answers to section 9 are recorded there and in section 8
+("Decided:"). The spike
+([MVP2-SPIKE.md](../wip/MVP2-SPIKE.md), cited as "spike §N") settled the clock rule and the
+versions; one problem it found stays open (the connector's tf state across a reset, section
+3.6). A reflection first, then the RFCs it names, then code. Where a point rests on the advisor's
+recollection, the text says "not verified here"; where the spike says "not verified", this RFC
+keeps that wording. The seven new words in "Names" are approved. The operator added one input
+after the answers: cameras are one of the first hardware upgrades of the real Burger (sections
+3.5, 5 and 7, question 22).
 **Date:** 2026-11-23
 **Builds on:** [ADR-0020](../adr/ADR-0020-robots-behind-our-own-interfaces.md) (proposed;
 accepted together with this RFC),
+[MVP2-SPIKE.md](../wip/MVP2-SPIKE.md), [NXT-MVP1.md](../wip/NXT-MVP1.md),
 [ADR-0001](../adr/ADR-0001-ros-aligned-foxglove.md),
 [ADR-0018](../adr/ADR-0018-ros2-in-a-container-for-comparison.md),
 [ADR-0007](../adr/ADR-0007-run-file-format-2.md),
@@ -21,7 +25,48 @@ accepted together with this RFC),
 operator's vision note on depth cameras, SLAM and 3D mapping (November 2026).
 **Evidence:** every `file:line` below was read on 2026-11-23 in the `mission-control` worktree.
 What I did not verify is marked "not verified" and collected in section 10. The operator's
-answers are quoted from their reply of 2026-11-23.
+answers are quoted from their reply of 2026-11-23. Numbers that come from the spike carry its
+section ("spike §9"); they were measured once, on one workstation, in a container with no GPU
+(spike §20, end), and I did not repeat them.
+
+## Changes from Draft 2
+
+- **The spike is read and folded in** (it was "running" in Draft 2). Sections 1, 4, 6.1 and 10
+  say what it found instead of what was expected.
+- **The clock rule is settled** (spike §7, §13): the bridge stamps with simulation time;
+  `use_sim_time` is true inside the ROS graph; the connector stamps `wall_ns` and keeps the ROS
+  stamp; the run's time stays wall time. ADR-0020 decision 3 is amended to say so. Question 13 is
+  closed. Section 3.6.
+- **A clock epoch is first-class** (spike §20): a world reset sends the sim clock to 0. The run
+  gets an event, an epoch counter and a new `map_to_world` record. **Open, not solved:** after a
+  reset the prototype's tf buffer dropped data and its belief and truth froze (section 3.6,
+  section 7 item 19, question 24).
+- **The deadman is the connector's job** (spike §8, §20): the Gazebo base and the ROS 2 OpenCR
+  firmware both hold the last velocity. Sections 3.3 and 7 item 12.
+- **Versions are decided** (spike §2, §3): ROS 2 Jazzy, Gazebo Harmonic 8.15, `turtlebot3_gazebo`
+  2.3.7, SLAM Toolbox 2.8.5. Question 4 is closed. `/cmd_vel` is `TwistStamped` (section 3.3).
+- **The reset design** (spike §9): a world reset takes 0.26 s if the robot is in the world file;
+  otherwise it deletes the robot. Section 3.4.
+- **The scan channel** (spike §10, §20): `foxglove.LaserScan` exists but lacks the range limits
+  and the angle step, and `wire.py` cannot take a new channel unchanged. Section 8.7 and
+  question 23 pose the choice.
+- **Recording and camera cost** (spike §11, §19): rosbag2 writes MCAP by default; sizes and the
+  cost of cameras are in section 3.5 and 3.6, and support ADR-0020 decision 5.
+- **SLAM accuracy and exploration** (spike §18): numbers, with their limits, in section 3.5.
+- **The truth reader and the simhost changes** (spike §20): section 3.4 and step 4.
+- **A third robot shape** (NXT-MVP1.md, the operator's answers): the NXT with a Pi augmentation
+  module, software on the robot and sensors from two sources. New section 3.10.
+- **The NXT as a second host kind in MVP 1** (NXT-MVP1.md, item 4d): the host-kind seam is
+  exercised before Gazebo. Step 4 and its risk.
+- **Images designed in full** (the operator: super important), new section 3.11: capture settings
+  declared in the profile and the camera's actual values recorded per frame; recording options per
+  stream with the spike's sizes (depth never lossy); an optional named, versioned pipeline with
+  per-consumer branches, recorded in the run and re-run on replay; an Images block in Mission
+  Control's Settings; simulator against real. Section 5.1 lists requirements toward the
+  photogrammetry tool and the capture set contract. Steps 11 to 13 in section 6.
+- **Questions:** 4, 13 and 14 closed; 16 partly answered (the simulator half); 23 to 27 added
+  (scan channel, clock epoch, JPEG against H.264, live pipeline, the tool's own vision).
+  Section 9.
 
 ## Names
 
@@ -133,7 +178,9 @@ well so far."
   sensors, starting in a simulator (Gazebo Sim). The operator's answers add three things: our own
   navigator drives the Burger and the NXT too, not only the duck (questions 5 and 6); the real
   Burger drives from Mission Control before MVP 2 ends (question 8); and the platform's
-  connectors can be placed on the robot or on the workstation, per robot (question 1).
+  connectors can be placed on the robot or on the workstation, per robot (question 1). The NXT's
+  link goes USB, then Bluetooth, then a Pi-based augmentation module with modern sensors on the
+  robot, which is MVP 2 (NXT-MVP1.md, the operator's answers; section 3.10).
 
 The operator's intent, in their words: "robotd and ROS are two versions of the same thing and I
 need to be able to support more. This is not Pollen's style with ROS bolted on, but a platform
@@ -146,11 +193,11 @@ It does not decide; it ends in questions (section 9).
 
 Non-goals:
 
-- No platform code before the RFCs. Step 0b (section 6) is a zero-platform-code spike. The
-  operator started it on 2026-11-23 (section 9, question 14); its notes go to
-  `docs/wip/MVP2-SPIKE.md`, which I have not read.
+- No platform code before the RFCs. Step 0b (section 6) was a zero-platform-code spike. It ran on
+  2026-11-23 (section 9, question 14); its notes are `docs/wip/MVP2-SPIKE.md`, read for this
+  draft. Its throwaway connector and Observatory ran outside the repository (spike §20).
 - Changing how the duck works. MVP 1 keeps running at every step (section 6).
-- Choosing the ROS and Gazebo versions. The spike decides them (section 9, question 4).
+- Choosing the versions anew: the spike decided them (section 8.10).
 
 In this RFC "step N" means a step of section 6. A step of another document is always named
 ("plan step 7", "RFC-0021 step 2").
@@ -286,7 +333,7 @@ The next sections use these pieces. A piece is a job, not a process: one process
 
 | Piece | Owner and where | Inputs | Outputs | Contract and version |
 | --- | --- | --- | --- | --- |
-| Connector | Ours; one per robot; for the Burger a ROS 2 node process, placed per robot (section 3.8) | `robot.*` calls (interface join); gated `cmd_vel` (contract join); the robot's topics | Velocity to the base; `robot.state`, `robot.health`; sensor streams | Gate protocol 1 (existing); robot interface 1.0 (new: RFC-0026) |
+| Connector | Ours; one per robot; for the Burger a ROS 2 node process, placed per robot (section 3.8); owns the deadman (section 3.3) | `robot.*` calls (interface join); gated `cmd_vel` (contract join); the robot's topics | Velocity to the base; `robot.state`, `robot.health`; sensor streams | Gate protocol 1 (existing); robot interface 1.0 (new: RFC-0026) |
 | Navigator, ours, for any robot | Ours; today the duck's (`duck_lab.nav`); to drive a legged, a differential-drive and a tracked robot through per-kind plugins (section 3.7) | Goal; sensor streams; `robot.state` | `robot.move`; status; `map` | Navigator contract 1.2 (existing); plugin interfaces (RFC-0020, existing; widened by RFC-0027) |
 | Sensors, declared | Ours; in the profile, per robot and variant (section 3.9) | Hardware, or a host kind's simulation | Streams per sensor kind: the scan in the run, images in companion streams | Profile v2 (new: RFC-0027) |
 | Mapper | Per robot: mapd (duck); SLAM Toolbox (Burger, first); the NXT's is open (section 9, question 16) | Range sensing; odometry | A map; the belief of where the robot is | Behind the navigator contract's `map`; localisation plugin |
@@ -401,7 +448,13 @@ contract, "robot interface 1.0", would hold:
   connection, always, latching; a lease ends on release, expiry, STOP, takeover or disconnect, and
   every end stops the robot first (`robotgate/__init__.py:1-6`). The deadman (a robot stops when
   commands stop, 0.5 s on the duck, RFC-0003 §2.3) is **the connector's to guarantee**, whatever
-  the robot behind it does.
+  the robot behind it does. Decided, from the spike: the Gazebo diff-drive plugin holds the last
+  velocity forever (0.1500 m/s unchanged 6 s after the last command, spike §8), and the ROS 2
+  OpenCR firmware has no `cmd_vel` timeout (it holds the value; only a dead node trips a 500 ms
+  heartbeat; spike §8, read from source, not run on a real robot). Through the spike's connector
+  the applied velocity was zero 0.6 s after the last command (spike §20 part 1). The 500 ms
+  timeout the advisor recalled is true for the older ROS 1 firmware (spike §8), not for ROS 2. Which
+  firmware is flashed on the operator's Burger is unknown (spike §8).
 - **State.** `robot.state`: pose in the connector's odometry frame, velocity requested and
   applied, mode, flags (fallen, picked up, limp), battery, link. Today's keys are in
   `DuckAdapter.state` and `NxtAdapter.state` (`duck.py:416-429`, `nxt.py:200-210`).
@@ -425,7 +478,7 @@ How each robot gets a connector:
 | --- | --- | --- | --- |
 | Command | `robot.move` passes through | `robot.move` to `/cmd_vel` | `robot.move` to track power (`nxt.py:184-187`) |
 | State | `robot.subscribe` stream | `/odom`, `/imu`, `/battery_state`, joint states | `/api/status` poll (`nxt.py:189-210`) |
-| Deadman | robotd 0.5 s | **the connector's own** (not verified: whether the TurtleBot3 firmware has one) | robotd-lite on the brick, 0.5 s (RFC-0003 §2.3) |
+| Deadman | robotd 0.5 s | **the connector's own**: neither the simulator nor the ROS 2 firmware times out (spike §8) | robotd-lite on the brick, 0.5 s (RFC-0003 §2.3) |
 | Lease | the gate process | the gate process | nxt-web's lock over HTTP |
 | Sensors | 8x8 depth socket | `/scan`, later camera topics | ultrasonic, colour (RFC-0003) |
 
@@ -445,9 +498,17 @@ The honest list of what differs, so the contract does not pretend otherwise:
   aligned names. Section 3.6.
 - **ROS lets a node list the graph.** A graph lists topics; robotd has fixed methods. The
   connector exposes only the capabilities the profile declares, not the graph.
-- **Velocity is held after silence on robotd** (hence the explicit zero, `:261-265`). Whether a
-  ROS diff-drive base does the same is not verified; the connector publishes zero on STOP either
-  way.
+- **Velocity is held after silence on robotd** (hence the explicit zero, `:261-265`). A ROS
+  diff-drive base does the same (spike §8). The gate's own stop, `robot.stop` then an explicit
+  zero `robot.move {vx, vy, vyaw}` (`robotgate/__init__.py:313-319`), ran unchanged against the
+  spike's connector, which accepted both (spike §20). The connector publishes zero on STOP and
+  when a command goes stale.
+- **`/cmd_vel` is `TwistStamped` in the Jazzy bridge,** not `Twist` (spike §3). A plain `Twist`
+  publisher does not connect. Nav2's output and `explore_lite` publish `Twist`, so the connector
+  owns a `Twist` to `TwistStamped` relay: the spike used a 15-line relay and moved the collision
+  monitor's output to `cmd_vel_raw` (spike §18). That is the same "remap to a topic only the
+  connector publishes" as above. `Twist` commands straight into the bridge were not tested
+  (spike §17).
 
 Where the code goes: the gate library needs two small changes (method names from the interface
 contract, not constants; the stop sequence from the connector's declaration). `RemoteGate` and
@@ -468,20 +529,33 @@ not in the profile's identity (`robots.py:92-99`, the installation's `variant`).
   `ros_gz`) or the real Burger's ROS graph. Where each runs is a per-robot setting (section 3.8).
 - The host kind (Gazebo) is separate from the connector: it provides reset, truth and the scene.
   The connector does not know it is in a simulator.
-- A course reset must also reset SLAM Toolbox's and Nav2's state (a lifecycle restart of both),
-  or the new run starts on the last run's map and costmaps. It is the Burger's equivalent of a
-  fresh `mapd` after the duck's reset. Whether a lifecycle restart is enough is not verified.
+- A course reset must also reset the mapper's state, or the new run starts on the last run's map.
+  It is the Burger's equivalent of a fresh `mapd` after the duck's reset. SLAM Toolbox has a
+  service for it, `/slam_toolbox/reset`: after the call its map changed from 81 x 103 to 79 x 102
+  cells, so it re-initialised, but the spike did not compare the maps or try a long map
+  (spike §9). SLAM Toolbox itself coped with the clock going back ("Detected jump back in time.
+  Clearing TF buffer", spike §9). Nav2's costmaps after a reset were not tried (spike §17), and
+  whether a lifecycle restart is enough stays not verified.
+- **The reset design, decided** (spike §9). A world reset (`reset: {all: true}`) takes about 0.26 s
+  and sends the sim clock to 0, but only if the robot is part of the world file: with the stock
+  launch, which spawns the robot after start, the reset deleted the model, `/odom` and `/imu`
+  stopped, and a respawn crashed the Gazebo server. So the host kind starts Gazebo from a world
+  that includes the robot and resets with `reset all`; a restart of the Gazebo container is the
+  fallback (48 s, measured once). `set_pose` does not reset odometry; a world reset does.
+  `reset: {model_only: true}` had no visible effect. Odometry after a world reset on a robot in
+  the world file was back to 0 (the model pose itself was not read, spike §9). The host then
+  starts `robot_state_publisher` separately, because the world-file variant has none (spike §9).
 
 Fit with the host model (RFC-0021 §3.1): a host kind provides four things. Reset, the robot's
 connections, a truth reader, a scene writer.
 
 | | `pollen-duck-sim` (built) | `gazebo-turtlebot3` (planned, RFC-0021 §3.1) |
 | --- | --- | --- |
-| Reset | restart duck-sim, about 40 s (`simulator.py:1-6`) | a world reload or a pose reset, plus a lifecycle restart of SLAM Toolbox and Nav2 (not verified which is cheaper) |
+| Reset | restart duck-sim, about 40 s (`simulator.py:1-6`) | `reset all` on a world that holds the robot, about 0.26 s, plus `/slam_toolbox/reset`; a container restart as the fallback, 48 s (spike §9) |
 | Connections | five socket paths (`host.py:28-29`) | ROS topics through the bridge |
-| Truth | Pollen's body server, trunk pose plus z and quaternion (`truth.py`) | the model's pose from Gazebo |
+| Truth | Pollen's body server, trunk pose plus z and quaternion (`truth.py`) | the model's pose from Gazebo, read through `gz topic --json-output` because the bridge drops entity names (spike §20); a gz-transport reader or a pose plugin is not tried |
 | Scene writer | MJCF from Pollen's `scene_backlash.xml` | SDF world from `scene.json` |
-| Real time | RTF measured, runs at 1.0 (RFC-0021 §6) | RTF 1 set in the Gazebo world, recorded per run (ADR-0020 decision 3) |
+| Real time | RTF measured, runs at 1.0 (RFC-0021 §6) | RTF 1.00 in every spike run with SLAM Toolbox, about 0.7 of one core and 0.6 GiB; 10 reachable when asked (spike §6); recorded per run (ADR-0020 decision 3) |
 
 The host module is still one library (RFC-0021 §3.1: "a module per kind comes with the second
 kind"). The host file schema needs a per-kind part: `pollen` is required today (`host.py:94-96`).
@@ -489,6 +563,16 @@ kind"). The host file schema needs a per-kind part: `pollen` is required today (
 Truth for a wheeled robot is simpler, but the judge's vocabulary is legged. The judge asks for a
 "trunk height" and a fall threshold (`profile.json:188`, `profile.py` `judge` block). A wheeled
 robot's fall is a tilt. This is a profile change (section 7).
+
+What `simhost` needs for the Gazebo kind (spike §20, table; lines as read on 2026-11-23, not
+edited): in `simulator.py:25-79` (`duck_sim`, `reset`, `down`), a Gazebo host kind whose reset is
+`reset all` on a world that already holds the robot, with a restart as the fallback; in
+`truth.py:26-35` (`Sample`, `Body`), a Gazebo reader of the true pose with `sim_time`
+(`Sample.sim_time` at `:32` already exists). The spike's reader costs visible CPU: the truth
+stream is 58 messages a second of 8 entities and the reader was a `gz topic` subprocess
+(spike §20), so the real reader is open. The host kind also says which sensor kinds it can
+simulate (section 3.9); spike §16 proposes that a profile asking for more fails at the start
+instead of running without it. That is a proposal, not something the spike tested.
 
 ### 3.5 Sensors, mapping, 3D models
 
@@ -524,7 +608,7 @@ The vision note's roadmap, against that:
 | The note's roadmap step | Needs | When |
 | --- | --- | --- |
 | 1: simulated 2D mapping | `/scan`, `/odom`, tf, a map; Gazebo; SLAM Toolbox as the mapper | MVP 2 start |
-| 2: errors | The mapper's pose against the simulator's truth | MVP 2, early |
+| 2: errors | The mapper's pose against the simulator's truth (done once in the spike, spike §18; the platform's version is step 8) | MVP 2, early |
 | 3: simulated RGB-D, RTAB-Map | camera streams, intrinsics, extrinsics | step 11, after the real cameras are chosen (question 22) |
 | 4: physical mapping | a real depth camera, bandwidth, calibration | one of the real Burger's first upgrades (step 11) |
 | 5: 3D models of objects from photos | overlapping photos | a separate project (section 5) |
@@ -541,20 +625,79 @@ The advisor's "do not build yet" list, which this RFC keeps:
 - No generalisation of the sensor schema beyond the one sensor that is real (the Burger's
   scan), because a schema drawn from one example fits that one.
 
-The 2D scan in the run needs care. ADR-0020 says a scan "fits today's tick records". I could not
-confirm it. `/depth` is a point cloud in the `map` frame with a kind per point (`wire.py:264`,
-ADR-0007). A scan stored as obstacle points loses the rays, so free space and maximum range are
-gone, and those are what debugging a mapper needs. The operator's answer (question 11): the
-Observatory draws the 2D scans and the maps, from a scan channel in the run. Section 8.7 keeps the
-shape of that channel. This is not verified against a real scan. The run file already uses
-Foxglove schemas for its channels
-(`libs/runfile/src/runfile/wire.py:23-34`: `FrameTransform`, `PoseInFrame`, `PointCloud`,
-`RawImage`, `Grid`; read). The advisor says Foxglove also publishes a `LaserScan` schema; not
-verified here. If it does, a `/scan` channel in that shape follows the file's own habit.
+The 2D scan in the run needs care. ADR-0020 said a scan "fits today's tick records"; the spike
+shows it does not, without a change (spike §20). `/depth` is a point cloud in the `map` frame with
+a kind per point (`wire.py:264`, ADR-0007). A scan stored as obstacle points loses the rays, so
+free space and maximum range are gone, and those are what debugging a mapper needs. The
+operator's answer (question 11): the Observatory draws the 2D scans and the maps, from a scan
+channel in the run. What the spike found:
 
-In Gazebo, the simulated sensors come from its sensor plugins: `gpu_lidar` for the scan and
-`rgbd_camera` for RGB-D (names from the advisor's recollection; not verified here). They are
+- `foxglove.LaserScan` exists (spike §10; from Foxglove's docs page, fetched 2026-11-23). Its
+  fields are `timestamp`, `frame_id`, `pose`, `start_angle`, `end_angle`, `ranges` and
+  `intensities`. It has no `angle_increment`, no `range_min` and no `range_max`: the step is
+  derived from the two angles and the count, and the sensor's range limits are lost on
+  conversion (spike §10). ROS's `sensor_msgs/LaserScan` also has `scan_time`, `time_increment`
+  and float32.
+- `wire.py` cannot take a scan channel unchanged. A channel needs a topic and schema in `CHANNELS`
+  (`wire.py:21`), a record kind in `KINDS` (`wire.py:19`), a branch in `to_messages` (which ends in
+  `raise ValueError` at `wire.py:253`), a place in the tick protocol (`TICK_PARTS` `wire.py:260`,
+  `INSIDE` `wire.py:266`), a `PROTO` entry (`wire.py:48`) and schema registration in
+  `mcapio._channel` (`mcapio.py:268-273`). A scan point kind also needs a name in the viewer
+  (`validate.py:65`: the depth point kind is one character) (spike §20, table).
+- The spike did not modify any of that. Its scan went out as `/depth` points, each beam's end in
+  the `map` frame, kind `o`, z 0.1 m, with `angle_min`, `angle_increment`, `range_min` 0.12,
+  `range_max` 3.5, `n` 360 in the tick's `raw.scan`; the Observatory drew them as "Depth obstacle"
+  (spike §20 part 3, part 4).
+- Not verified: that our Lichtblick viewer draws `foxglove.LaserScan` (the page says the 3D panel
+  does), and a ROS bag with `sensor_msgs/LaserScan` in a viewer (spike §10).
+
+Section 8.7 poses the choice (a scan channel, or points) and question 23 asks it.
+
+In Gazebo, the simulated sensors come from its sensor plugins. The spike's camera was a sensor of
+type `rgbd_camera` (spike §19), so that name is confirmed. The advisor's `gpu_lidar` for the scan
+is not confirmed: the spike says only "lidar sensor plugin" in the SDF (spike §14). They are
 Gazebo's plugins, not RFC-0020's.
+
+What the spike measured of the Burger in Gazebo, so the sensor layer designs from numbers (one
+workstation, no GPU, single runs; spike §20 end):
+
+| Sensor | Shape and rate in the simulator | Source |
+| --- | --- | --- |
+| `/scan` | 360 beams, 0 to 6.28 rad, 0.12 to 3.5 m, 5.0 Hz, frame `base_scan` | spike §4 |
+| `/odom` | `odom` to `base_footprint`, 50.0 Hz (the SDF says 30; why 50 not found) | spike §4 |
+| `/imu` | 200 Hz, frame `burger/imu_link/tb3_imu` | spike §4 |
+| `/tf` | about 70 Hz, only `odom` to `base_footprint`; fixed links on `/tf_static` | spike §4 |
+| `/clock` | 1000 Hz, one per 1 ms physics step | spike §4 |
+
+The real Burger's sensor rates and ranges were not checked (spike §16, §17).
+
+**SLAM Toolbox against truth.** Over a 30 m loop (175 s of wall-following, 897 samples), SLAM
+Toolbox's pose was within a mean of 2.3 cm and a maximum of 5.4 cm of Gazebo's true pose
+(first-pose alignment; heading mean 0.51 degrees, one 11.6 degree sample the odometry shows too,
+taken by the spike as a pairing artefact, not verified); the error grew slowly (0.016 m at 15 s,
+0.036 m at 178 s) (spike §18). The pillars: for all nine, the nearest occupied map cell sat one
+5 cm cell inside the true surface (mean 0.052 m, max 0.053 m) (spike §18). Limits that must stay
+beside these numbers:
+
+- Gazebo's odometry is nearly ideal (mean 1.4 cm against truth), so SLAM had good input; this
+  says nothing about how it does on a real Burger's slipping, drifting wheel odometry
+  (spike §18).
+- No loop closure was logged; the spike could not say whether one fired (it did not verify what
+  the graph markers' colours mean) (spike §18).
+- The walls were not checked against the world file; the run covered the west part only
+  (spike §18).
+
+The judge's idea, belief against truth, works unchanged on SLAM Toolbox's pose (spike §13).
+
+**Exploration matters.** `explore_lite` (built from source on Nav2 1.3.14, unchanged, needing the
+`Twist` relay of section 3.3) mapped 21.35 m2 (19.57 m2 free), the whole hexagon with nine whole
+pillars, in about 51 s; the spike's crude left-wall follower mapped 11.67 m2 (west half only) in
+175 s (spike §18). The comparison is unfair to the crude one: it was written in a few minutes,
+stayed in the west part, and is not a tuned algorithm; a coverage curve was not recorded.
+`explore_lite` needs Nav2 and a costmap, a heavier stack whose CPU was not measured (spike §18).
+What the platform takes from it: "explore" for the Burger needs a frontier explorer, and a ready
+one exists for ROS (section 7 item 13). Which of ours or Nav2's runs it is part of step 3 and
+question 17.
 
 ### 3.6 Frames, time, recording
 
@@ -570,32 +713,77 @@ Frames (ADR-0020 decision 4: ours; each connector maps onto them):
 The duck's `site` frame and its odometry scale (0.91 in the simulator) are applied in the adapter
 (`duck.py:416-420`). A ROS connector does its translation in the same place, which is why the
 connector, not Mission Control, owns frames. The run's `/tf` is `world` to `map` only (ADR-0007),
-with "map <- world epochs" for relocalisation (RFC-0021 step 2 text; not verified in code). SLAM
-Toolbox's `map` to `odom` correction fits there as epochs; I did not check it.
+with "map <- world epochs" for relocalisation (RFC-0021 step 2 text; not verified in code). The
+spike's connector wrote a second `map_to_world` epoch record at a reset and the run read back
+(spike §20 part 3). Whether SLAM Toolbox's continuous `map` to `odom` corrections fit there as
+epochs is still not verified: the spike paired the frames at two epochs only (spike §20,
+"Not done").
 
 Time: the platform's clocks are wall clocks, and the real-time factor stays 1. ADR-0020 decision 3
 as the operator accepted it says "Gazebo at real time": the factor is 1 and the platform uses
 its wall clock. This RFC keeps both. The cost is real: a challenge set is 3.5 to 4 hours
 (ADR-0018 consequences), and a slow host silently changes results (RFC-0021 §6).
 
-The review adds a problem that decision 3 does not name. `ros_gz_bridge` stamps the messages it
-carries with simulation time, which starts near 0 (the advisor's recollection; not verified
-here). A ROS graph with `use_sim_time` false would then compare wall time against sim stamps,
-and tf lookups fail. RFC-0015 avoided this because `nav2/bridge.py` stamped with its own clock
-(`nav2/bridge.py:5`: "all stamped with this node's clock, use_sim_time false"; read). So that
-earlier wording, "wall time in the bridge, `use_sim_time` false", does not carry over to a
-Gazebo bridge.
+**The clock rule, settled by the spike.** Draft 2 proposed it and asked the operator to confirm
+(question 13, now closed). The bridge stamps with simulation time, which starts at 0 when Gazebo
+starts, not at wall time: `/scan`, `/odom`, `/imu`, `/tf` and `/clock` read 39 to 43 s while the
+wall clock read 1.79e9 s (spike §7). A node with `use_sim_time` false failed every tf lookup at
+its own time and only "latest" worked; with `use_sim_time` true, the node clock and the stamps
+agreed, and SLAM Toolbox ran correctly on them (spike §7). So the earlier wording, "wall time in
+its bridge", does not hold for a Gazebo bridge (RFC-0015's `nav2/bridge.py:5` stamped with its
+own clock and does not carry over). The rule, now decided:
 
-Decided (question 7): record the simulator's time beside wall time in every run, and check the
-real-time factor each run.
+1. Inside the ROS graph `use_sim_time` is true, and the bridge stamps with simulation time.
+2. The connector is where the two clocks meet. It stamps `wall_ns` on receipt and keeps the ROS
+   stamp beside it (spike §20 part 2: a tick carries `t` in wall seconds, `t_src` the ROS stamp,
+   and `wall_ns`, `ros_stamp_ns` and `epoch` in `raw`).
+3. The run's own time stays wall time. `Recorder._check_open` raises "time goes back" for a time
+   that goes back (`libs/runfile/src/runfile/mcapio.py:193`), and sim time does at a reset, so
+   that line stays unchanged (spike §20, table).
+4. The platform outside the connector stays on wall time; the real-time factor stays 1 and is
+   recorded each run (decided, question 7). The one-to-one mapping between wall time and sim
+   stamps holds only at a factor of 1 (the spike measured 0.998 to 1.0003; spike §6, §13).
+5. A ROS recorder's own time is not the run's time: `ros2 bag record` stamps the bag with sim or
+   wall time depending on `--use-sim-time` (spike §7, §11). The run takes its wall time from the
+   connector, not from a bag.
 
-The rule below stays PROPOSED until the spike confirms how Gazebo's bridge stamps messages
-(question 13). ADR-0020 decision 3 carries it as a "proposed amendment, pending the spike". Inside
-the ROS graph:
-`use_sim_time` true at a real-time factor of 1. The connector is where the two clocks meet: it
-stamps `wall_ns` on receipt and records the ROS stamp beside it. The platform outside the
-connector stays on wall time. Recording `sim_time` next to wall time costs little
-(`truth.py:7-9` already carries it).
+Not verified (spike §7): other bridge message types (images, point clouds), and a Gazebo sensor
+with its own clock; the stamps of `/scan` and `/imu` were not compared at sub-step precision.
+
+**The clock epoch.** A world reset sends the sim clock back to 0, so a sim stamp is not
+monotonic (spike §9, §13). The rule needs one more clause, proven in the spike's extension C
+(spike §20 part 2): the connector counts epochs. Across one reset, wall time stayed monotonic,
+the sim stamp jumped from 65.4 s to 0.2 s, and the epoch counter went from 0 to 1. Recorded in
+the run as:
+
+- a `clock_epoch` event ("the simulator clock went back from 65.583 s to 0.000 s");
+- an epoch counter, a first-class field next to `t_src` (the spike put it in `raw`, and its
+  table says `wire.py` tick `raw` and `mcapio.py` `begin_tick` should change);
+- a new `map_to_world` `epoch` record, a second pairing of SLAM's frame with truth (the first
+  came at t = 0.51 s, the second at t = 61.60 s).
+
+The run format already has `epoch` records. What it lacks is a place for the clock epoch and a
+reason beside the record (the spike wrote an event next to it, spike §20 "What broke" item 2).
+`robot.state` also has no place for the simulator's clock and epoch in the gate's contract; the
+spike returned `epoch` and `sim_s` (spike §20 "What broke" item 3). Question 24 asks about the
+format change.
+
+**Open problem, not solved: the connector's tf state across a reset.** After the reset in the
+spike, the connector's Python tf buffer ignored data from the past (6235 `TF_OLD_DATA` warnings)
+and did not clear when the clock went back, although SLAM Toolbox's C++ listener did. In run 1 the
+222 ticks after the reset have one distinct belief position and one distinct truth position:
+belief and truth froze. In run 2 the buffer was replaced at each epoch; warnings fell to 2221 but
+no ticks came after the reset at all. The cause was not found, for the frozen truth (the truth
+stream itself was fine after the reset, checked with `gz topic`) or for run 2's empty belief
+lookup. A guess, not verified: after a reset SLAM Toolbox's `map` to `odom` transform keeps stale
+stamps from the old sim time, so a fresh tf buffer ignores the new ones until the sim clock
+catches up (spike §20 "What broke" item 1). What it means for the connector: it cannot trust a
+ROS tf lookup across a reset, and probably must restart its tf buffers, and SLAM Toolbox's, at
+each epoch. Nothing here says that works. Step 5's proof includes a reset in the middle of a
+run with belief and truth still moving afterwards (section 6, section 7 item 19).
+
+Decided (question 7), unchanged: record the simulator's time beside wall time in every run, and
+check the real-time factor each run.
 
 Recording: a robot's ticks (`/belief/pose`, `/truth/pose`, `/depth`, commands) stay in
 `run.mcap`. Large streams are companion streams beside the run. ADR-0007 already has the
@@ -616,9 +804,43 @@ run archives whole.
 
 For the Burger the natural raw recording is rosbag2, written to MCAP, as one more companion
 stream beside the run (for example `source/`, the name ADR-0007's import uses for a copied log).
-It also meets the vision note's "save raw recordings". The advisor says `ros2 bag` writes MCAP by
-default since ROS 2 Iron; not verified here. Our own run keeps the ticks; the bag keeps
-everything the ROS graph said, with the ROS stamps, for replay into SLAM Toolbox later.
+It also meets the vision note's "save raw recordings". In Jazzy `ros2 bag record` writes MCAP by
+default (`-s {mcap,sqlite3}`, default mcap) with compression off (spike §11). The spike installed
+`ros-jazzy-rosbag2-storage-mcap` on purpose; whether the base image has it without that was not
+checked (spike §11). Our own run keeps the ticks; the bag keeps everything the ROS graph said,
+with the ROS stamps, for replay into SLAM Toolbox later. A replay of the bag into a viewer was not
+tried (spike §11).
+
+What the spike measured, so retention and the companion rule have numbers (all uncompressed, no
+camera unless said):
+
+| Recording | Size | Source |
+| --- | --- | --- |
+| `/scan /odom /tf`, 29.68 s, 5196 messages | 2.1 MiB, about 75 kB a second, 90 % of it tf and odometry | spike §11 |
+| the same plus RGB, depth and camera info, 27.46 s, 7383 messages | 1.7 GiB | spike §19 |
+| RGB 640 x 480 at 30 Hz, raw | 1,661 MB a minute | spike §19 |
+| depth 640 x 480 at 30 Hz, raw | 2,207 MB a minute | spike §19 |
+| RGB compressed (one frame: PNG 9,214 B, JPEG q80 14,098 B) | PNG 17 MB, JPEG 25 MB a minute | spike §19 |
+| depth compressed (16-bit PNG, millimetres, 13,571 B a frame) | 24 MB a minute | spike §19 |
+
+The compressed figures are a lower bound: the Gazebo render is flat shaded, with no texture and
+no noise, and a real camera's JPEG would be many times larger, which the spike did not measure
+(spike §19). The two raw figures together are the spike's "3.9 GB a minute" (spike §19 title and
+"Answers in brief"). This supports ADR-0020 decision 5: images are companion streams, never in
+`run.mcap`, stored compressed, and retention acts per run folder (plan step 7). A scan costs
+little (about 75 kB a second with odometry and tf), so it can stay in `run.mcap`.
+
+What a camera costs the simulator (spike §19, headless, software rendering, no GPU): the real-time
+factor stayed 1.0001 (one read while driving), and CPU with SLAM Toolbox and the wall-follower
+went from about 98 % (82 to 108 %, 6 samples) to about 266 % (253 to 284 %, 6 samples) of one
+core, memory from 581 MiB to 745 to 757 MiB. That is about 1.7 extra cores and about 170 MiB. A
+GPU's effect, 15 Hz and smaller sizes were not tried (spike §19, "Not done"). Gazebo's camera
+frame is `camera_link`, not a ROS optical frame, so a tool that expects z forward needs a fixed
+transform the spike did not add (spike §19). The sensor type was `rgbd_camera` (spike §19).
+
+How an image is captured, recorded and processed before a consumer sees it is designed in
+section 3.11. The layout above is its base: the index of each stream also carries the camera's
+actual settings per frame, and `streams.json` carries the recording and pipeline summary.
 
 ### 3.7 Our navigator for any robot
 
@@ -757,21 +979,243 @@ This is the design for cameras from the start (section 3.5). The first build car
 scan, the IMU and odometry. Profile v2 (step 2) writes the declaration; step 4 writes each host
 kind's list; step 5 builds the scan, IMU and odometry paths.
 
+A note from the spike on what the simulator and the real robot share (spike §14, §16): for the
+Burger nothing is shared below the topic, since the simulator uses plugins and the real robot uses
+`turtlebot3_node` and the lidar's driver; for the duck the robot's own daemons run unchanged
+against a body. So the connector must stamp wall time on receipt in all three cases (Gazebo's
+bridge forwards sim time; the real Burger's node stamps with its own clock; the duck's daemons
+have theirs) and keep the source stamp beside it (spike §16).
+
+### 3.10 Three robot shapes
+
+The platform's model must hold three shapes of robot, not two. The third comes from the
+operator's answers on the NXT (NXT-MVP1.md, "The operator's answers (2026-11-23)"): "I will start
+with 1, move to B and plan to have C as extension of the project where I will build [a Pi-]based
+augmentation module with all modern sensors, so let's plan for all of it." The link goes USB, then
+Bluetooth, then the Pi module.
+
+| | Duck | Burger | NXT with a Pi module |
+| --- | --- | --- | --- |
+| Software on the robot | robotd, tofd, mapd (in the simulator, in the host) | bringup on the Pi; the rest by placement (section 3.8) | a Pi on the robot with its own sensors beside the brick's; what the Pi runs is not decided |
+| Placement | not a setting today | a per-robot setting | a per-robot setting, in the same installation entry (proposed) |
+| Sensors, source 1 | the duck's own (depth, IMU) | the kit's lidar, IMU, odometry | the brick's: ultrasonic, colour, motor counts |
+| Sensors, source 2 | none | later cameras (step 11) | the Pi's modern sensors, each declared in the profile |
+| Link | the robotd socket | ROS over DDS | USB, then Bluetooth, then the Pi (NXT-MVP1.md) |
+| Host kind in MVP 1 or 2 | `pollen-duck-sim` | `gazebo-turtlebot3` | `nxt-kinematic-sim` (MVP 1, item 4d) |
+
+The Pi-module shape is RFC-0025's case of a robot whose software runs on the robot and whose
+sensors come from two sources, a brick and a Pi, each declared in the profile (NXT-MVP1.md). Three
+things follow, all in the existing design and none built:
+
+- **Placement is a per-robot setting** (section 3.8). The NXT's connector today is nxt-web over
+  HTTP, reached at a URL from the installation entry, never a hard-coded localhost
+  (NXT-MVP1.md). The Pi module adds a second machine on the robot.
+- **Sensors are declared per source** (section 3.9): the profile lists each sensor with its
+  id, kind and where it comes from (the brick's HTTP, or the Pi). Nothing assumes one source or
+  one machine. NXT-MVP1.md's D0 records this as a requirement so the host kind, the sensor
+  declaration and the installation entry do not assume either.
+- **The deadman covers both links** (section 3.3). Bluetooth's command latency and drop rate
+  decide the deadman's timeout over that link; unit D10 of NXT-MVP1.md measures them. The Pi
+  module's link is not measured.
+
+Not covered here: the Pi module's hardware, its sensors, its link to the brick, and who runs
+the connector between the brick and the Pi. Those are the operator's to choose when the module is
+designed (NXT-MVP1.md, "The Pi augmentation module (MVP 2, not built in 4d)").
+
+### 3.11 Images: capture, recording, pipeline
+
+The operator calls this super important, so it is designed in full here. Nothing of it is built:
+no camera is chosen (question 22) and no consumer of images exists yet. It is built at step 11
+and step 12 (section 6). The design has three layers and one rule:
+
+- **Capture:** what the camera does (resolution, rate, exposure, gain, white balance, HDR).
+- **Recording:** what is stored of what the camera produced (a companion stream in the run's
+  folder, section 3.6, ADR-0020 decision 5).
+- **Pipeline:** what a consumer sees (an optional, named, versioned chain of stages).
+- **The rule:** the recorded stream is always the camera's output before any pipeline. A
+  pipeline is never baked into a recording.
+
+"Raw" in the spike means uncompressed decoded frames (`rgb8`, `32FC1`), not a sensor's Bayer raw
+(spike §19). This section uses "uncompressed" for that and does not promise Bayer data, which a
+robot's camera driver may not offer (not verified here).
+
+```text
+ camera --capture settings--> CONNECTOR --+--> recording (companion stream, run folder)
+ (sim: Gazebo rgbd_camera)       |        |        camera output, before any pipeline
+                                 |        +--> pipeline branch per consumer
+                                 |                 mapper | detector | Observatory | model job
+                                 v
+                      actual settings per frame, recorded beside each image
+```
+
+#### 3.11.1 Capture settings, declared in the profile
+
+Each camera is a sensor declared in the profile (section 3.9, profile v2, step 2), per variant
+(`sim`, `real`). Its capture block, proposed:
+
+| Setting | Values | Note |
+| --- | --- | --- |
+| resolution | width x height | the spike ran 640 x 480 only (spike §19) |
+| rate | Hz | the spike ran 30 Hz only; 15 Hz was not tried (spike §19) |
+| exposure | `auto`, or a locked value | a locked value for calibration and photogrammetry captures |
+| gain | `auto`, or a locked value | |
+| white balance | `auto`, or a locked value | |
+| HDR | `off`, `on`, only if the camera has it | not declared for a camera without it |
+| depth range | near and far limits | the spike's clip was 0.2 to 5.0 m, set as asked, not checked |
+
+The connector applies these to the camera and reads back what the camera actually did. **The
+actual values, not only the requested ones, are recorded per frame** beside each image, in the
+stream's index: exposure time, gain, white balance and whether HDR was on. With an auto mode the
+actual value changes from frame to frame, and a run cannot be reprocessed fairly without it. A
+camera that does not honour a request is a warning at the start of a run (an alarm, RFC-0019's
+vocabulary), not a silent difference. Which settings a given camera lets us read back is not
+known until it is chosen (question 22).
+
+In the simulator the spike's render was flat shaded with no noise and it set no camera
+settings: whether Gazebo's `rgbd_camera` models exposure, gain or white balance was not checked
+(spike §19). In the simulator the stream's index records the requested values and says they are
+simulated, until that is checked.
+
+#### 3.11.2 Recording per stream, declared in the profile
+
+Recording is declared per stream (a colour stream, a depth stream), not per camera, because the
+two have different rules. Proposed choices and what they cost, from the spike's measured sizes
+(640 x 480 at 30 Hz, one workstation; a flat Gazebo render, so a lower bound for any compressed
+figure; spike §19):
+
+| Stream | Option | Cost per minute | Note |
+| --- | --- | --- | --- |
+| colour | off | 0 | the stream is not recorded; the ticks still are |
+| colour | JPEG, quality q | 25 MB at q80 (14,098 B a frame) | **default, q80**; one file per frame |
+| colour | H.264 or H.265, bitrate and keyframe interval | not measured | smaller than JPEG at like quality (general knowledge, not measured here); see the trade-off below |
+| colour | lossless PNG | 17 MB (9,214 B a frame) | a flat render; a textured scene is not measured |
+| colour | uncompressed | 1,661 MB | for calibration and photogrammetry captures only |
+| depth | off | 0 | |
+| depth | lossless 16-bit PNG, millimetres | 24 MB (13,571 B a frame) | **default** |
+| depth | an RVL-style lossless depth codec | not measured | not tried; a candidate if the PNG's size or CPU hurts |
+| depth | uncompressed (`32FC1`, metres) | 2,207 MB | calibration and capture sets only |
+
+All sizes are from spike §19. The two defaults together are about 49 MB a minute, about 2.9 GB an
+hour, in the flat render: arithmetic on the spike's figures, not a measurement of a real camera.
+A real camera's JPEG would be many times larger (spike §19), so this is a floor for retention
+planning, to be replaced by a measured number on the real robot.
+
+**Depth is never lossy.** A lossy codec smears edges and invents values at depth discontinuities,
+and the mapper, the judge and a model job would read those invented values as measurements. Depth
+is a measurement, so it is off, lossless or uncompressed. The 16-bit PNG in millimetres rounds
+the spike's metres (`32FC1`) to 1 mm; how the infinite pixels (18 % of the spike's depth pixels,
+spike §19) are written is for the format note, and the spike did not say.
+
+**JPEG against H.264 or H.265 for colour.**
+
+- JPEG: each frame is its own file, so a replay or a model job seeks to any frame at once and a
+  damaged file costs one frame. It is the largest of the lossy options (25 MB a minute in the
+  flat render).
+- H.264 or H.265: smaller for the same quality, but a frame decodes from its last keyframe, so a
+  seek costs up to the keyframe interval, and an encoder takes CPU on the machine that runs it
+  (on a Pi, not measured). The file is a segment, not a frame, so the index points to a segment
+  and a frame within it, and a damaged segment costs more.
+- The default is JPEG q80 because replay and model jobs need frame-exact access and no encoder
+  load on the robot. Whether the default should change is question 25.
+
+**Where the recording lives.** Companion streams in the run folder, as section 3.6 draws:
+`streams/<sensor_id>/`, an `index.jsonl` with one line per frame (`t`, `wall_ns`, the file or the
+segment and frame, `sha256`, and the camera's actual settings), and `streams.json` with the
+recording summary. Retention (plan step 7) acts per run folder and per stream, so a
+heavy depth stream can be dropped from an old run and its ticks and colour stream kept. The
+estimated MB a minute in the panel (3.11.4) is what retention budgets against.
+
+Where encoding runs follows placement (section 3.8): on the robot's computer or on the
+workstation. A 640 x 480 stream at 30 Hz over Wi-Fi is not measured (section 7, item 14).
+
+#### 3.11.3 The image pipeline
+
+An optional chain of stages between the connector and the consumers of images. Proposed stages:
+
+| Stage | Does | Applies to |
+| --- | --- | --- |
+| undistort, rectify | removes lens distortion with the calibration's intrinsics | colour, depth |
+| exposure, gamma | brightens or darkens | colour |
+| local contrast equalisation (CLAHE) | evens out contrast in dark and bright parts | colour |
+| denoise | reduces sensor noise | colour |
+| resize | lowers the resolution for a consumer | colour, depth |
+
+A **pipeline** is a named, versioned, ordered list of stages with parameters, for example
+`slam-clahe@1`. Rules, proposed:
+
+1. **Per-consumer branches.** Each consumer gets its own branch of the pipeline. An example in the
+   operator's words: SLAM gets CLAHE, a detector gets the plain image, the Observatory gets an
+   image tuned for display. The consumers are the mapper (RTAB-Map later, section 4; SLAM Toolbox
+   uses the scan, not images), a detector, the views, and a model job.
+2. **The recorded stream is the camera's output before the pipeline.** The pipeline does not
+   change what is on disk.
+3. **The pipeline's name, version and parameters are recorded in the run** (the start record and
+   `streams.json`), per branch.
+4. **The pipeline re-runs on replay.** The Observatory and a model job apply a named pipeline
+   version to the recorded stream, so an old run can be reprocessed with a newer version. The
+   run says which version was live, and a replay can use that one or another.
+5. **Depth takes geometric stages only** (undistort, rectify, resize that does not invent values).
+   Exposure, equalisation and denoise would invent measurements, for the reason in 3.11.2.
+6. **A stage says if it is not deterministic,** in its version, so a reprocessed run is
+   comparable. No stage that depends on a learned model is proposed here.
+
+**Later, not built: per-room or per-light choices.** The operator's example is one room lit and
+one not. The connector measures a brightness (for example the mean luminance of recent frames)
+and picks a capture setting or a pipeline branch for it. The pick is recorded as a decision
+event in `run.mcap` (the brightness, what it chose, from what), so a replay can reproduce it or
+decide again with a newer rule. It may use Mission Control's areas (RFC-0014 §3.5) as the rooms;
+that is not designed here.
+
+**Where the pipeline runs** follows placement (section 3.8): in the connector on the robot, or
+on the workstation. Because the recording is before the pipeline, the choice changes cost and
+latency but not what a run holds. A live pipeline on a Pi has a CPU cost that is not measured. It
+is question 26 whether the first build runs the pipeline live or only in a model job.
+
+#### 3.11.4 The configuration panel
+
+Mission Control's Settings is a block list with a compact read view, a side-drawer edit and a
+History drawer (the approved design, PHASE5-NEXT-PLAN.md:411-412; I did not re-read the design
+beyond those lines). Each camera gets one **Images** block that shows, before a run starts:
+
+- what is **captured**: resolution, rate, exposure, gain, white balance and HDR, as requested;
+- what is **recorded**: for each stream its format, quality or bitrate, and the estimated MB a
+  minute and the total, marked with where the estimate comes from (a spike figure in a flat
+  render, or a measurement on this robot once one exists);
+- which **pipeline each consumer gets**, by name and version.
+
+An edit opens in the side drawer; the History drawer lists changes. A change applies to the next
+run, not to one in progress (proposed). **The run's start record keeps the same summary**, so the
+Observatory shows for a run what was captured, recorded and processed, as it shows other run
+facts.
+
+#### 3.11.5 The simulator and the real robot
+
+Gazebo's render is flat shaded: grey and green shapes, no texture, no noise, uniform lighting
+(spike §19). So its compressed sizes are a lower bound and its images exercise little of the
+capture and pipeline design. The rule of section 3.9 holds: the same settings apply to the `sim`
+and `real` variants, which differ in their numbers, not their shape. To test the pipeline and the
+brightness choice in the simulator, vary the world's lighting (a darker room beside a lit one),
+which is a scene change for the Gazebo host kind (step 9). Whether Gazebo emulates exposure,
+gain, white balance or noise is not verified (3.11.1). A real camera's JPEG size and its noise
+come only from the real robot.
+
 ## 4. The external tools, one by one
 
-I read no external documentation for this section (no web access). Versions, compatibility and
-licences are from this repository or marked "not verified". "Replaces or duplicates" means
-against our own stack.
+I read no external documentation for this section. Versions and the behaviour of Gazebo, the
+bridge, SLAM Toolbox, rosbag2 and `explore_lite` now come from the spike's runs (spike §2 to §11,
+§18 to §20). Nav2, RTAB-Map, Open3D, COLMAP and Nerfstudio were not run in the spike beyond
+`explore_lite`'s Nav2, and licences were checked for none; those rows are from this repository
+or marked "not verified". "Replaces or duplicates" means against our own stack.
 
 | Tool | What it does | Role here | How it joins us | 2D / 3D | When |
 | --- | --- | --- | --- | --- | --- |
-| Gazebo Sim | Physics and sensor simulator | A second host kind | A host kind `gazebo-turtlebot3`; a process or container; SDF scenes written from `scene.json`; truth read from the model pose | both | MVP 2 start |
-| ROS 2 | Message bus and tooling | The Burger's own stack, inside the connector and Nav2 containers | A container (ADR-0018); only the connector imports it; version decided in the spike, default Jazzy | n/a | MVP 2 start |
-| TurtleBot3 packages | The robot's bringup, models, simulation worlds | The Burger's description in ROS terms | Bringup on the Pi (real) or from the simulation package (sim) | 2D LiDAR robot | MVP 2 start |
-| ros_gz bridge | Gazebo topics to ROS topics | The host kind's connection side | Runs beside Gazebo; carries `/scan`, `/odom`, `/cmd_vel`, `/clock`; stamps with sim time (section 3.6) | n/a | MVP 2 start |
-| rosbag2 (MCAP) | Records a ROS graph's topics to a file | Raw recording, a companion stream beside the run | `ros2 bag record` in the ROS container; the file goes to `source/` (section 3.6) | both | MVP 2 start |
+| Gazebo Sim | Physics and sensor simulator | A second host kind | A host kind `gazebo-turtlebot3`; a process or container; SDF scenes written from `scene.json`; truth read from the model pose; Gazebo Sim 8.15.0 (Harmonic), decided (spike §2) | both | MVP 2 start |
+| ROS 2 | Message bus and tooling | The Burger's own stack, inside the connector and Nav2 containers | A container (ADR-0018); only the connector imports it; Jazzy, decided (spike §3) | n/a | MVP 2 start |
+| TurtleBot3 packages | The robot's bringup, models, simulation worlds | The Burger's description in ROS terms | Bringup on the Pi (real) or from the simulation package (sim); `turtlebot3_gazebo` 2.3.7 on the `jazzy` branch (spike §3) | 2D LiDAR robot | MVP 2 start |
+| ros_gz bridge | Gazebo topics to ROS topics | The host kind's connection side | Runs beside Gazebo; carries `/scan`, `/odom`, `/cmd_vel` (`TwistStamped`), `/clock`; stamps with sim time (section 3.6); `ros_gz` 1.0.25 (spike §2); drops entity names from the pose stream (section 3.4) | n/a | MVP 2 start |
+| rosbag2 (MCAP) | Records a ROS graph's topics to a file | Raw recording, a companion stream beside the run | `ros2 bag record` in the ROS container, MCAP by default in Jazzy; the file goes to `source/` (section 3.6) | both | MVP 2 start |
 | Nav2 | Planner, controller, behaviour tree, costmaps, recoveries | The robot's own navigator, behind our contract | Container; a wrapper maps `goal.*` to its action | 2D | MVP 2, after our navigator drives the Burger |
-| SLAM Toolbox | 2D LiDAR mapping, a map and `map`-to-`odom` | The Burger's mapper, first under our navigator (question 17) | Container, same graph as Nav2; its grid becomes the contract's `map` | 2D | MVP 2 start |
+| SLAM Toolbox | 2D LiDAR mapping, a map and `map`-to-`odom` | The Burger's mapper, first under our navigator (question 17) | Container, same graph as Nav2; its grid becomes the contract's `map`; 2.8.5, online asynchronous mode in the spike (spike §2, §5) | 2D | MVP 2 start |
 | RViz | ROS's own live viewer | Decided (question 11): a debug aid inside the ROS container only, not a view of ours | Optional, ROS container only | both | MVP 2 start, as a debug aid |
 | RTAB-Map | RGB-D, visual and LiDAR mapping with loop closure | A mapper for 3D | ROS container; own database as a companion stream | 3D | Later |
 | Open3D | Point clouds, TSDF, meshing | A tool a model job calls | Python library in a separate job | 3D | Later |
@@ -782,38 +1226,51 @@ Notes, one tool at a time:
 
 - **Gazebo Sim.** What the repo says: RFC-0021 §3.1 plans a `gazebo-turtlebot3` kind: "its
   truth Gazebo's model pose, its scenes SDF". It duplicates MuJoCo's job for the Burger and
-  nothing else. It pulls in a large install (not measured; ROS and Gazebo are installed on no
-  host, RFC-0021 §3.1) and a second real-time risk. Versions: the vision note says to confirm a
-  "compatible ROS 2 / Gazebo / TurtleBot3 combination" and I did not; ADR-0020 notes the same.
-  The spike settles it (question 4).
+  nothing else. It pulls in a large install (the spike's image is 4.32 GB with TurtleBot3, Gazebo,
+  ros_gz and SLAM Toolbox, spike §12; ROS and Gazebo are installed on no host, RFC-0021 §3.1) and
+  a second real-time risk, which the spike measured as RTF 1.00 (section 3.4). Versions, decided:
+  Gazebo Sim 8.15.0 (Harmonic) with ROS 2 Jazzy, from `ros-jazzy-gz-sim-vendor` 0.0.13; ROBOTIS's
+  `jazzy` branch and e-Manual cover that pair (spike §2, §3; the e-Manual was read through a
+  summarising fetch tool). Not verified: the `main` branch, support dates, Gazebo's physics engine
+  name and the lidar's renderer (spike §3, §17). It runs headless (`gz sim -r -s`), with no GPU,
+  in a container (spike §4).
   The operator's answer (question 12): the workstation first; the MacBook later and not required
   for MVP 2. Whether it runs on the MacBook (Apple Silicon) is not verified. Its simulated
-  sensors come from plugins (`gpu_lidar`, `rgbd_camera`; not verified here).
-- **ROS 2 and its distro.** The parked Nav2 image is ROS 2 Jazzy on Ubuntu (ADR-0018). The
-  workstation is Arch, hence the container. Whether TurtleBot3's packages support Jazzy and
-  which Gazebo goes with it are not verified. ADR-0001 decision 4's trigger "ready-made SLAM or
-  sensor drivers" is now met (ADR-0020 context).
-- **TurtleBot3 packages.** Bringup, the Gazebo models and worlds, and navigation and SLAM
-  launch files. I did not read them. The vision note says a Burger has a Raspberry Pi, an OpenCR
-  controller, wheel encoders, an IMU and a 2D LiDAR "depending on kit generation" (section 4).
-  Which LiDAR model is on the arriving kit is a question for the operator.
+  sensors come from plugins (`rgbd_camera` confirmed, spike §19; `gpu_lidar` not verified).
+- **ROS 2 and its distro.** ROS 2 Jazzy on Ubuntu 24.04 (the image's OS, spike §2) is decided,
+  as the parked Nav2 image already was (ADR-0018). The workstation is Arch, hence the container.
+  ADR-0001 decision 4's trigger "ready-made SLAM or sensor drivers" is now met (ADR-0020
+  context). Humble and another pair were not tried (spike §17).
+- **TurtleBot3 packages.** `turtlebot3_gazebo` and `-description` 2.3.7 and `-msgs` 2.4.0 install
+  from apt, with no source build (spike §2, §3). The package does not install ROBOTIS's teleop;
+  the spike drove with its own scripts (spike §3). The vision note says a Burger has a Raspberry
+  Pi, an OpenCR controller, wheel encoders, an IMU and a 2D LiDAR "depending on kit generation"
+  (section 4). Which LiDAR model is on the arriving kit is a question for the operator.
 - **ros_gz bridge.** Needed to reach Gazebo from ROS. The connector should depend on topics, not
   on this bridge's name, so a different simulator could provide the same topics. It stamps
-  messages with simulation time (section 3.6; not verified here).
-- **rosbag2.** Not read here. The advisor says it writes MCAP by default since ROS 2 Iron (not
-  verified here). If so, it is the same container format as our run file, and Foxglove and
-  Lichtblick read it. It fits ADR-0007's import precedent: a copy beside the run, with a
-  SHA-256.
-- **Nav2.** RFC-0015's spike is the only experience here. The image is 5.1 GB; Nav2 came up
-  (version 1.3.14 in that image); explore_lite had to be built from source; no goal was reached
-  on the duck and the cause is not known (RFC-0015 §8). That result is about the duck's 8x8
-  sensor, which "nobody configures Nav2 for". Nav2's defaults suit a 360 degree LiDAR
-  (ADR-0001 context), which is the Burger's. That is evidence for a contract join on the Burger,
-  not a promise. Outcome mapping already designed: SUCCEEDED to `reached`, planner failures to
-  `refused`, controller failure to `stalled` (RFC-0015 §3.5). It duplicates our navigator's
-  planner, costmap and recoveries (the very things RFC-0015 compared).
-- **SLAM Toolbox.** Installed in the spike image (RFC-0015 §8); never driven. Needs a scan,
-  odometry and tf. Replaces mapd's role for a robot that has a LiDAR; mapd stays for the duck.
+  messages with simulation time (section 3.6, verified in the spike §7). It turns Gazebo's pose
+  stream into a `tf2_msgs/TFMessage` with every `child_frame_id` empty, so truth cannot be read
+  by entity name through it (spike §20).
+- **rosbag2.** In Jazzy it writes MCAP by default (spike §11), the same container format as our
+  run file, and Foxglove and Lichtblick read it (a replay into a viewer was not tried, spike
+  §11). It fits ADR-0007's import precedent: a copy beside the run, with a SHA-256.
+- **Nav2.** RFC-0015's spike and the spike's `explore_lite` run are the only experience here. The
+  parked image is 5.1 GB; the spike's `mvp2-spike:jazzy-nav2` is 5.18 GB and `-proto` 5.28 GB
+  (spike §12). Nav2 came up (version 1.3.14); `explore_lite` had to be built from source and
+  built without changes (spike §18); no goal was reached on the duck and the cause is not known
+  (RFC-0015 §8). That result is about the duck's 8x8 sensor, which "nobody configures Nav2 for".
+  Nav2's defaults suit a 360 degree LiDAR (ADR-0001 context), which is the Burger's. In Jazzy
+  its output is `Twist` and the bridge wants `TwistStamped`, so it needs the relay of section 3.3
+  (spike §18). That is evidence for a contract join on the Burger, not a promise; the spike ran
+  no goal on the Burger beyond `explore_lite`'s (spike §17). Outcome mapping already designed:
+  SUCCEEDED to `reached`, planner failures to `refused`, controller failure to `stalled`
+  (RFC-0015 §3.5). It duplicates our navigator's planner, costmap and recoveries (the very things
+  RFC-0015 compared).
+- **SLAM Toolbox.** 2.8.5. The spike drove it, with default parameters, in online asynchronous
+  mode (spike §5). Needs a scan, odometry and tf, and the fixed link to the lidar from
+  `/tf_static`; without `robot_state_publisher` it produced no map (spike §9, §15). Replaces
+  mapd's role for a robot that has a LiDAR; mapd stays for the duck. Its pose error against
+  truth is in section 3.5; its reset in section 3.4.
 - **RViz against our views.** The platform's views are the Observatory (live and replay),
   Mission Control, and Rerun and Lichtblick for MCAP (ADR-0002). RViz would be a second viewer
   for data that is not in our runs. Keep it inside the ROS container. Do not build a RViz
@@ -888,6 +1345,71 @@ What the photogrammetry project should know, from this RFC, without depending on
 optional poses and optional intrinsics, state its output's frame and scale, and expose a command
 line with a stable manifest. The repository is decided (its own). Its licence, and whether its
 first output may feed a Gazebo scene later, are still the operator's (section 9, question 21).
+How the images are captured and recorded, and the capture set handed to the tool, are in
+section 3.11 and section 5.1.
+
+### 5.1 Requirements toward the photogrammetry tool
+
+The photogrammetry project lives in its own repository and connects by a file contract
+(section 9, question 9, answered). **We do not compete with its image pipeline.** Reconstruction
+quality is its business: its own colour handling, feature matching, scale and meshing. What this
+platform owns is the capture, the recording and the poses (section 3.11). This subsection lists
+what we expect of the tool and what we hand it, as requirements toward a project that has its own
+vision and RFCs; where they differ, they are the operator's to reconcile (open points below).
+
+**What we hand it: a capture set.** A capture is a mode of the camera and a model job (section
+3.11.2), not a pipeline output:
+
+- **A capture mode:** exposure, gain and white balance locked (3.11.1), so a set has one look;
+  stills uncompressed or lossless (PNG), never lossy; no pipeline stage applied (3.11.3, rule 2).
+- **Camera intrinsics and distortion,** and the mount (camera to robot base), per sensor, from
+  the run's calibration record (section 5, rule 4).
+- **A per-frame pose** from our run: the belief in `map` and, in a simulator, the truth in
+  `world`, with the frame named; the pose is the camera's pose, as section 5 says.
+- **Timestamps in wall nanoseconds,** the same clock as the ticks (section 3.6), with the clock
+  epoch (section 3.6) so a set that spans a simulator reset is not misread.
+- **The camera's actual settings per frame** (3.11.1), so the tool can see that they were locked.
+
+**The file layout of a capture set is the contract.** It extends section 5's `images.json` and
+`cameras.json`:
+
+```text
+ <capture set>/
+   manifest.json        # "manifest": N, tool-neutral; run id; frames; axes; units; clock
+   images/000001.png    # lossless or uncompressed stills, one file per frame
+   images.json          # per image: file, wall_ns, sensor id, pose + frame, actual settings
+   cameras.json         # per sensor: intrinsics, distortion, resolution, mount (all optional)
+   source.json          # the run folder, the stream, the sha256 of each source file
+```
+
+Versioning: `manifest.json` carries an integer version. A reader accepts its own and older
+versions and refuses a newer one, the platform's habit (section 2.2, RFC-0018 §5.3). Neither
+repository imports the other; a command line and these files are the whole seam.
+
+**What we want back,** as section 5 says and a little more exact: a mesh, a point cloud or a
+splat, in an open format, with **a scale and a frame we can place in `world` or `map`**: either
+metric and in the frame of the poses we gave, or an explicit transform to it, with the scale
+stated; if no poses were given, it says its scale is arbitrary. Plus `provenance.json`: input
+checksums, the tool and its version, its parameters, the frame, the scale and the time.
+
+**What we expect of the tool,** without depending on it: a command line with a stable manifest;
+poses and intrinsics optional; poses accepted as priors, with a statement of whether it refines
+them and returns the refined ones; the same input and parameters giving the same output, as far
+as it can; no need for our code.
+
+**Open points for the operator's own vision and RFCs for the tool** (question 27):
+
+- the tool's name, licence, and whether its first output may feed a Gazebo scene (question 21);
+- the splat format, and which open mesh and point cloud formats it writes;
+- whether the tool does its own colour normalisation (we assume it does and we hand it locked,
+  unprocessed stills), and what it needs for capture (overlap, speed, motion blur, how many
+  frames);
+- who triggers a capture on the robot (a scan goal that sends the robot to viewpoints is the
+  vision note's roadmap step 6, section 3.5, not designed);
+- where it runs (it may need a GPU; not verified), and whether a capture set can be large
+  (uncompressed, 1,661 MB a minute of colour at the spike's size, spike §19);
+- how a result is placed into our frames and whether it is ever used by a mapper or a judge
+  (the vision note says a pleasing model is not collision-safe; section 4, Nerfstudio).
 
 ## 6. The evolution from A to B
 
@@ -903,18 +1425,20 @@ Burger is the end of MVP 2 (question 8).
 | Step | What changes | What stays | Proof | Size | Decided by |
 | --- | --- | --- | --- | --- | --- |
 | 0 | Accept this RFC and ADR-0020 together (question 10); name the follow-up RFCs | All code | The operator's decision | S | this RFC, ADR-0020 |
-| 0b | The spike, running (section 6.1), zero platform code: the TurtleBot3 Gazebo simulation in a container, driving by hand, SLAM Toolbox, a saved map; the real-time factor; the bridge's stamps; whether the base holds the last velocity | All code | Measured answers to many of section 10's "not verified" items; notes in `docs/wip/MVP2-SPIKE.md` | S | the operator (question 14) |
-| 1 | The robot interface written as a contract with a number; the duck's connector and the NXT's brought to it; the gate takes method names from it; the adapter surface written down; a connector reachable by a network address, for the placement setting (section 3.8) | Duck behaviour, protocol 1 accepted by the new gate | One contract test run against the fake, duck-gate and NXT adapters (as `test_contract.py` does for navigators); `make sim-duck` | M | RFC-0026, "the robot interface" |
+| 0b | The spike, done (section 6.1), zero platform code: the TurtleBot3 Gazebo simulation in a container, driving by hand, SLAM Toolbox, a saved map; the real-time factor; the bridge's stamps; whether the base holds the last velocity; three extensions (SLAM against truth, cameras, a throwaway connector) | All code | Measured answers to many of section 10's "not verified" items; notes in `docs/wip/MVP2-SPIKE.md` | S | the operator (question 14) |
+| 1 | The robot interface written as a contract with a number; the duck's connector and the NXT's brought to it; the gate takes method names from it (the gate's calls themselves needed no change in the spike, spike §20); the adapter surface written down, with `robot.state` gaining the clock and epoch keys (section 3.6); a connector reachable by a network address, for the placement setting (section 3.8) | Duck behaviour, protocol 1 accepted by the new gate | One contract test run against the fake, duck-gate and NXT adapters (as `test_contract.py` does for navigators); `make sim-duck` | M | RFC-0026, "the robot interface" |
 | 2 | Profile v2: required blocks shrink to identity, factsheet, control, capabilities, plugins; locomotion, footprint, sensors become per-kind; a plugin set may be empty; the judge's fall rule by kinematics; sensors declared per robot and variant (section 3.9); registration names its connector; the placement setting has a home | The duck's profile migrated by `upgrade` (`profile.py:503`), checksums rule | Every stored profile loads; the duck's numbers unchanged; a plugin-less stub profile validates | M | RFC-0027, "profiles for any robot" |
 | 3 | Our navigator for any robot (section 3.7): `duck_lab.nav` split into a part that knows no robot and the duck's plugins; the plugin interfaces widened (a scan, a single range, a mapper that is not mapd); the Burger's plugins (differential drive, 2D scan, localisation) and the NXT's (tracked, ultrasonic, dead reckoning), proved against stubs | The duck's verdicts; navigator contract 1.2 | The duck's challenge verdicts match; one contract test against all three plugin sets | L | a new RFC, "a navigator for any robot" (number to be given) |
-| 4 | The host kind written as a contract; `simhost` gets a module per kind; a stub Gazebo host, and the gate's fake adapter proves lease, STOP and state in Mission Control; a run with a stub scan, to settle the run format | MuJoCo kind unchanged; `scene.json` and the layout readers untouched | The robot page shows the stub; a run opens in the Observatory; the duck's verdicts match | M | RFC-0028, "host kinds" (the scene part moves to step 9) |
-| 5 | The Burger in Gazebo, joined at the interface: the ROS connector (split placement first), the bridge, `/scan`, `/odom`, `/imu`, truth; our navigator drives it; Mission Control's goals and driving by hand; maps and runs in the Observatory; simulator time recorded beside wall time and the real-time factor checked each run (question 7); the clock rule of section 3.6 if the spike confirms it. A stock TurtleBot3 world until step 9 (my proposal, to confirm in RFC-0028) | Nothing of the duck | Drive the Burger from Mission Control; a goal reaches by truth; a recorded run with truth; tf lookups hold | L | ADR on time and frames, after the spike (question 13) |
-| 6 | The NXT's navigator: our navigator with tracked plugins on the real NXT (RFC-0020 §6 step 5); the NXT's gate on the written interface from step 1 | The NXT's HTTP API | A goal reached by the real NXT. There may be no NXT simulator (not verified); depends on question 16 | M to L | the new navigator RFC; the operator's hardware |
+| 4 | The host kind written as a contract; `simhost` gets a module per kind, starting from what the NXT's kind needed in MVP 1 (below); a stub Gazebo host, and the gate's fake adapter proves lease, STOP and state in Mission Control; a run with a stub scan, to settle the run format and the clock epoch | MuJoCo kind unchanged; `scene.json` and the layout readers untouched | The robot page shows the stub; a run opens in the Observatory; the duck's verdicts match | M | RFC-0028, "host kinds" (the scene part moves to step 9) |
+| 5 | The Burger in Gazebo, joined at the interface: the ROS connector (split placement first), the bridge, `/scan`, `/odom`, `/imu`, truth; our navigator drives it; Mission Control's goals and driving by hand; maps and runs in the Observatory; simulator time recorded beside wall time and the real-time factor checked each run (question 7); the clock rule and the clock epoch of section 3.6; the connector's deadman and `Twist` relay (section 3.3); the reset by `reset all` on a world that holds the robot (section 3.4). A stock TurtleBot3 world until step 9 (my proposal, to confirm in RFC-0028) | Nothing of the duck | Drive the Burger from Mission Control; a goal reaches by truth; a recorded run with truth; tf lookups hold, including across a world reset with belief and truth still moving afterwards (the open problem of section 3.6) | L | ADR on time and frames, now that the clock rule is settled (question 13, closed) |
+| 6 | The NXT's navigator: our navigator with tracked plugins on the real NXT (RFC-0020 §6 step 5); the NXT's gate on the written interface from step 1 | The NXT's HTTP API | A goal reached by the real NXT. The kinematic NXT simulator of MVP 1 (below) can run the navigator first; depends on question 16 (the mapper) | M to L | the new navigator RFC; the operator's hardware |
 | 7 | The contract join: Nav2 and SLAM Toolbox behind contract 1.3 (`yaw`); the wrapper; the outcome map | Contract 1.x readers | A `point` goal reaches by truth; the contract test passes against the wrapper; the duck still passes | L | RFC-0029, "a robot that navigates itself" |
-| 8 | A 2D scan channel in the run; the mapper's pose against truth; the Observatory draws the scan and the map (question 11) | Format 2 readers (additive) | The Observatory draws the scan and the map | M | a note in ADR-0007 |
+| 8 | A 2D scan channel in the run (or points, question 23) and a first-class clock epoch (question 24); the mapper's pose against truth; the Observatory draws the scan and the map (question 11) | Format 2 readers (additive) | The Observatory draws the scan and the map; the list of `wire.py` and `mcapio.py` changes of section 3.5 is done | M | a note in ADR-0007 |
 | 9 | Courses in Gazebo: `scene.json` becomes the source; an SDF scene writer; the five layout readers move off the layout | MuJoCo kind unchanged | Challenge verdicts match; the `scene` test (61 boxes equal) extended; a challenge runs in Gazebo | M to L | RFC-0028, the scene part |
 | 10 | The real Burger on hardware: the connector placed by the robot's setting (the split first), the Pi's bringup; a safety review; link loss; STOP over Wi-Fi; driving from Mission Control | The simulator path | The operator and the robot, as the real duck's B6; STOP and a lost link measured on the real base. MVP 2 ends here | M | the operator, after the safety review |
-| 11 | Cameras: an RGB and a depth camera on the real Burger (one of its first hardware upgrades), then matching simulated ones (question 22); companion streams, calibration, retention per run; the model job and the photogrammetry seam nearer | Ticks | Calibration records; a recorded run with images; the first model job (section 5) | L | a later RFC, after the cameras are chosen |
+| 11 | Cameras and image recording (section 3.11): an RGB and a depth camera on the real Burger (one of its first hardware upgrades), then matching simulated ones (question 22); capture settings declared in the profile and the camera's actual values recorded per frame; companion streams with the recording options of 3.11.2; calibration records; retention per run and per stream; the Images block in Mission Control's Settings and its summary in the run's start record and the Observatory (3.11.4) | Ticks | A recorded run with images whose index holds the actual settings; the panel's estimated MB a minute against the measured size; a run's summary shown in the Observatory | L | a later RFC, after the cameras are chosen |
+| 12 | The image pipeline (3.11.3): named, versioned stages, per-consumer branches, recorded in the run, re-run on replay; first in a model job or live, by question 26; varied world lighting in Gazebo to test it (3.11.5) | The recorded stream stays the camera's output | An old run reprocessed with a newer pipeline version gives a new output and an unchanged recording; the pipeline version is read back from the run | M | the same later RFC, after step 11 |
+| 13 | The photogrammetry seam (section 5.1): the capture mode (locked settings, lossless stills), the capture set's file layout as a versioned contract, the first model job | Ticks, companion streams | A capture set written from a run opens in the tool's command line (the tool is the operator's, question 27); its result is placed in `world` or `map` with a scale | M | the operator's tool RFC and the later RFC |
 
 Order of the steps (a dependency graph, not a schedule):
 
@@ -923,7 +1447,9 @@ Order of the steps (a dependency graph, not a schedule):
             |         |
             +-> 4 ----+--> 5 --------------> 10   (the real Burger; MVP 2 ends)
                           |  |
-                          |  +--> 7 -> 8 -> 11    (11: cameras, after the real Burger arrives)
+                          |  +--> 7 -> 8 -> 11 -> 12 -> 13   (11: cameras, after the real
+                          |                                   Burger arrives; 12: pipeline;
+                          |                                   13: photogrammetry seam)
                           |
                           +--> 9                  (courses in Gazebo; off the critical path)
 ```
@@ -931,30 +1457,61 @@ Order of the steps (a dependency graph, not a schedule):
 Step 3 is on the critical path and is the largest. Step 9 is off it: it starts only after the
 Burger's navigation works (step 5). Step 10 needs step 5; it need not wait for 7 to 9 if the
 robot and the review are ready. Step 8 is after step 7 in the operator's order. If the
-Observatory needs the scan sooner, step 8 can move before step 7.
+Observatory needs the scan sooner, step 8 can move before step 7. Step 5 does not wait for the
+run-format change: the spike's connector carried the scan as `/depth` points with the range
+limits in `raw.scan` and the Observatory drew it (spike §20), so step 5 may do the same until
+step 8 (question 23).
 
-### 6.1 Step 0b, the spike
+### 6.0 The NXT's simulator in MVP 1 lowers the risk of step 4
 
-The operator said on 2026-11-23 that the one-day spike runs now, before the RFCs, and that it is
-running (question 14). Its notes will be `docs/wip/MVP2-SPIKE.md`. I have not read them. It
-touches no platform code. In a container, run the TurtleBot3 Gazebo simulation, drive it by hand
-with ROS's own teleop tool, run SLAM Toolbox over it, and save a map. Measure the real-time
-factor. Find out whether the base keeps its last velocity after the commands stop. The advisor
-recalls the OpenCR firmware has a motor timeout of about 500 ms; not verified here.
+NXT-MVP1.md (item 4d, units D0 to D10) builds a kinematic NXT simulator inside nxt-web and a host
+kind `nxt-kinematic-sim` in `simhost` in MVP 1 (the operator chose option A on 2026-11-23). The
+host-kind seam is therefore exercised by a real second kind before Gazebo arrives: D3 adds
+per-kind dispatch in `simhost`, a reset, a truth port and a reader giving `(wall_ns, pose)`, and
+no Pollen keys for that kind, with `make sim-duck` unchanged; D0 writes down what the kind needed
+(NXT-MVP1.md). That reduces the risk of step 4 (writing the host-kind contract) and of the second
+host kind in step 5: the contract starts from two working kinds instead of one built and one
+stubbed. It also brings forward steps 1 and 2's questions (a second connector in HTTP, a NXT
+profile) and a second sensor kind, a single range value (NXT-MVP1.md). Two cautions, both from
+NXT-MVP1.md: the risk of writing the host contract twice (keep the per-kind dispatch minimal, and
+let RFC-0028 start from D0), and the NXT kind has a different truth source and no scene writer
+(it reads `scene.json` itself), so it does not exercise the scene-writer half of the contract,
+which Gazebo does (step 9). Gazebo's reset (`reset all`, section 3.4) and truth reader
+(section 3.4) remain untried on the platform. The NXT simulator also answers the simulator half
+of question 16, so step 6 need not prove itself on the real NXT only.
 
-The spike decides two things the operator left to it. The ROS 2 and Gazebo versions: default
-ROS 2 Jazzy, the parked image's (question 4). And the clock rule: how Gazebo's bridge stamps
-messages decides whether the rule stays or goes (question 13). It also resolves many of the
-"not verified" items in section 10 and feeds RFC-0026 with facts instead of recollection.
+### 6.1 Step 0b, the spike (done)
 
-Where an ADR is warranted: the clock policy (step 5; an amendment to ADR-0020 decision 3 only if
-the spike confirms the rule), the rule that the connector owns the velocity path (ADR-0020
+The operator said on 2026-11-23 that the one-day spike runs now, before the RFCs (question 14). It
+ran the same day, about three hours, with three extensions of about one hour more (spike §1, status
+update); its notes are `docs/wip/MVP2-SPIKE.md`, read for this draft. It touched no platform code
+and nothing in the repository but its own file. Its throwaway connector, Observatory and files
+live outside the repository, in `~/.cache/robotics-lab-tests/mvp2-spike/` (spike header). What it
+settled and what it left:
+
+| Question | Result | Section here |
+| --- | --- | --- |
+| Which versions | ROS 2 Jazzy, Gazebo Harmonic 8.15, `turtlebot3_gazebo` 2.3.7, SLAM Toolbox 2.8.5, `ros_gz` 1.0.25 (spike §3) | 8.10 |
+| How the bridge stamps | simulation time; the clock rule is settled (spike §7) | 3.6 |
+| Does the base stop | no: the simulator and ROS 2 firmware hold the last velocity; the connector's deadman works (spike §8, §20) | 3.3 |
+| Reset | 0.26 s if the robot is in the world file; the clock goes to 0 (spike §9) | 3.4, 3.6 |
+| A scan schema | `foxglove.LaserScan` exists, lacks the range limits; `wire.py` needs changes (spike §10, §20) | 3.5, 8.7 |
+| Recording | MCAP by default in Jazzy (spike §11) | 3.6 |
+| Cameras, SLAM accuracy, exploration | numbers with limits (spike §18, §19) | 3.5, 3.6 |
+| A connector end to end | `robot.*` served, run written, Observatory replayed; the gate's calls unchanged (spike §20) | 3.3, 3.6 |
+| After a reset | belief and truth froze in the prototype; cause not found (spike §20) | 3.6, 7 |
+
+The OpenCR statement is from source on GitHub, not from the operator's robot (spike §8, §17).
+
+Where an ADR is warranted: the clock policy (the amendment to ADR-0020 decision 3 is made, now
+that the spike confirms the rule; step 5 still needs an ADR on time and frames that covers the
+clock epoch), the rule that the connector owns the velocity path and the deadman (ADR-0020
 decision 2, narrowed as section 3.3 says), and the frames rule (ADR-0020 decision 4 to become a
 contract in step 1).
 
 What must be true before step 3 starts: the answers to questions 16 and 17 (what the NXT senses,
-and the Burger's mapper). Before step 5: the spike's notes, and question 18 (where the placement
-setting lives).
+and the Burger's mapper). Before step 5: question 18 (where the placement setting lives), and a
+plan for the open problem of section 3.6 (the connector's tf state across a reset).
 
 ## 7. Problems still to solve, ranked
 
@@ -984,15 +1541,16 @@ critical path.
    change. It touches every stored profile and the checksum rules, so it needs a migration, not
    an edit.
 4. **Time and stamps.** The assumption of wall time is stated (ADR-0020 decision 3) but not
-   enforced, and a second problem sits under it. `ros_gz_bridge` stamps with simulation time,
-   starting near 0 (not verified here), so a ROS graph on `use_sim_time` false would fail its tf
-   lookups (section 3.6). The proposed rule (use sim time inside the graph, the connector where
-   the two clocks meet) stays proposed until the spike confirms how the bridge stamps.
-   Separately, a Gazebo
-   scene with a camera or many LiDAR rays may fall below real time on this hardware (not
-   measured). A run below real-time factor 1 silently changes timing, timeouts and the 0.1 s
-   truth pairing (`libs/runfile/src/runfile/truthcopy.py:26`). The operator decided: record the
-   simulator's time beside wall time and check the factor each run (question 7).
+   enforced, and a second problem sat under it. `ros_gz_bridge` stamps with simulation time
+   starting at 0 (spike §7), so a ROS graph on `use_sim_time` false fails its tf lookups. The
+   rule is now settled (section 3.6): sim time inside the graph, the connector where the two
+   clocks meet. What stays: a Gazebo scene may fall below real time. The spike's scan, IMU and
+   odometry run held 1.00 and cameras at 640 x 480 and 30 Hz held 1.0001 on software rendering
+   (spike §6, §19), but one workstation, single runs. A run below real-time factor 1 silently
+   changes timing, timeouts and the 0.1 s truth pairing
+   (`libs/runfile/src/runfile/truthcopy.py:26`). The operator decided: record the simulator's
+   time beside wall time and check the factor each run (question 7). The clock epoch and the
+   tf problem across a reset are item 19.
 5. **Who drives, on an open graph.** A design rule, not a blocker in the simulator. ADR-0020
    says the connector is the sole publisher, but on DDS any node can publish `/cmd_vel`. The rule
    is narrowed by convention and watched: a remap to a topic only the connector publishes, one
@@ -1018,29 +1576,45 @@ critical path.
    runs in a stock world, and the Observatory's name conventions see no `stair*` or `lm_*`.
 9. **The judge and the truth for a wheeled body.** "Trunk height" and a fall threshold
    (`profile.json:188`, `truth.py:29-31`) mean nothing for a Burger. The judge needs a
-   kinematics-aware fall rule and a truth reader per host kind.
+   kinematics-aware fall rule and a truth reader per host kind. For Gazebo the bridge cannot be
+   the truth reader: it drops entity names, so the spike read the pose with `gz topic
+   --json-output` (spike §20), at a visible CPU cost.
 10. **Frames.** SLAM Toolbox publishes `map` to `odom`, which jumps. Our run has one `map` frame
    and epochs. The duck's frame has a scale correction (0.91). A ROS connector must say which
    frame its odometry is in, and whether it scales. A map's origin differs per mapping session.
-11. **A scan in the run** (section 3.5): a point cloud with kinds is not a scan. The operator
-    decided a scan channel in the run (question 11); its shape is section 8.7.
+11. **A scan in the run** (section 3.5): a point cloud with kinds is not a scan, and `wire.py`
+    cannot take a scan channel unchanged (spike §20). The operator decided a scan channel in the
+    run (question 11); its shape is section 8.7 and question 23.
 12. **Safety on Wi-Fi.** The real Burger is on Wi-Fi, the connector on another computer. A lost
-    link must stop the robot. If the base holds the last velocity (not verified), the connector
-    cannot guarantee a stop it cannot send. A robot-side timeout on the Pi may be needed. This is
-    the Burger's version of the duck's B5 link tooling. The real Burger is in MVP 2 (question 8),
-    so the safety review, link loss and STOP over Wi-Fi are part of step 10, not later.
+    link must stop the robot. The base holds the last velocity: the simulator's plugin does, and
+    the ROS 2 firmware does while its node lives (spike §8, from source; not run on a real robot;
+    the flashed firmware is unknown). So the connector cannot guarantee a stop it cannot send
+    over a dead link: a robot-side timeout on the Pi is likely needed. A dead `turtlebot3_node`
+    stops the base within about 500 ms through the firmware's heartbeat, which does not cover a
+    live node whose `/cmd_vel` stream stops (spike §8). This is the Burger's version of the
+    duck's B5 link tooling. The real Burger is in MVP 2 (question 8), so the safety review,
+    link loss and STOP over Wi-Fi are part of step 10, not later.
 13. **Contract 1.3 and goals.** `point` has no heading (`CONTRACT.md:45`), and a Nav2 goal has
     one. The duck's other kinds (`go_to_object`, `explore`, `inventory`) have no Nav2 meaning
-    without a recogniser and a frontier explorer; "explore" for the Burger is not defined.
-14. **Data volume and bandwidth.** RGB-D at any rate is large; a Pi and Wi-Fi may not carry it
-    (vision note section 11). Nothing is measured. This decides whether images are recorded on
-    the robot's computer or the navigator's.
+    without a recogniser and a frontier explorer. "Explore" for the Burger is still not defined
+    in our contract, but exploration matters and a ready frontier explorer exists for ROS:
+    `explore_lite` mapped 21.35 m2 in about 51 s against a crude wall-follower's 11.67 m2 in
+    175 s (spike §18; the comparison is unfair to the crude one, section 3.5).
+14. **Data volume and bandwidth.** RGB-D at any rate is large: raw 640 x 480 RGB and depth at
+    30 Hz are 3.9 GB a minute, and 17 to 25 MB a minute compressed in a flat render, a lower
+    bound (spike §19). A Pi and Wi-Fi may not carry the raw rate (vision note section 11); that
+    is not measured. This decides whether images are recorded on the robot's computer or the
+    navigator's.
 15. **Calibration and sim to real.** Extrinsics and intrinsics have no home. Plan unit A3's
     calibration frame (odometry scale through a navigator method) is the nearest, and it is
     duck-only today.
-16. **Install weight and hosts.** Gazebo and a ROS image add gigabytes (the spike image is
-    5.1 GB). The setup and check scripts (RFC-0021 §4) cover Pollen's simulator only. Gazebo runs
-    on the workstation first (question 12); on the MacBook it is not verified and not required.
+16. **Install weight and hosts.** Gazebo and a ROS image add gigabytes: `mvp2-spike:jazzy` is
+    4.32 GB, `-nav2` 5.18 GB and `-proto` 5.28 GB (spike §12; `docker images` sizes, and the spike
+    notes that its `inspect` figure of 931 MB is a different measure). The apt layer with
+    TurtleBot3, ros_gz, Gazebo and SLAM Toolbox is 2.4 GB of that; the build took 157 s for apt
+    (spike §12). The setup and check scripts (RFC-0021 §4) cover Pollen's simulator only. Gazebo
+    runs on the workstation first (question 12); on the MacBook it is not verified and not
+    required.
 17. **Anomaly kinds.** The robot-raised anomaly kinds (`anomalies.py:639`) are the duck's; a
     Burger's (a scan lost, a mapper jump) need names, and the duck's should not be assumed.
 
@@ -1054,6 +1628,18 @@ critical path.
     workstation, item 14); and calibration (intrinsics, and a mount that is measured, not
     guessed, written once per run). Each one changes placement (section 3.8) and the safety
     review (step 10).
+19. **The connector's tf state across a world reset (open, not solved).** After a reset the
+    sim clock goes to 0. In the spike the connector's Python tf buffer ignored the new data
+    (`TF_OLD_DATA`), belief and truth in the run froze, and replacing the buffer at each epoch did
+    not bring them back; the cause was not found (spike §20 "What broke" item 1). The reset is
+    needed for every course, so a robust connector must solve it: restart its tf buffers, and
+    probably SLAM Toolbox's, at each epoch, or avoid ROS tf lookups across a reset. It is the
+    first thing step 5 must prove (section 6). The truth stream itself was fine after a reset
+    (spike §20), so the fault is on the belief and tf side, or in the reader; not established.
+20. **A robot with two sensor sources.** The NXT with a Pi module has a brick's sensors and a
+    Pi's, each declared in the profile, on possibly two machines (section 3.10). Nothing in
+    profile v2 (step 2) assumes it yet; D0 of NXT-MVP1.md records it as a requirement. Not
+    designed here: the Pi module's hardware and link.
 
 ## 8. Options and recommendations
 
@@ -1106,18 +1692,20 @@ any robot (section 3.7).
 - **C.** A platform clock with pause and step.
 
 Inside the ROS graph, the choice of A or B leaves one more question: the stamps. The
-simulator's bridge stamps with simulation time (not verified here), so `use_sim_time` false
-would fail tf lookups, and RFC-0015's way out (the bridge stamped with its own clock,
-`nav2/bridge.py:5`) is not available for a Gazebo bridge.
+simulator's bridge stamps with simulation time (spike §7), so `use_sim_time` false fails tf
+lookups, and RFC-0015's way out (the bridge stamped with its own clock, `nav2/bridge.py:5`) is
+not available for a Gazebo bridge.
 
-Recommendation: B, with the proposed amendment to decision 3: inside the ROS graph
+Recommendation: B, with the amendment to decision 3, now settled: inside the ROS graph
 `use_sim_time` true at a real-time factor of 1; the connector is where the two clocks meet, stamps
-`wall_ns` on receipt and records the ROS stamp beside it; the platform stays on wall time. It is
-nearly free (`truth.py:7-9`), makes slow runs visible, and leaves C open without building it.
+`wall_ns` on receipt and records the ROS stamp beside it; the run's time stays wall time; a clock
+epoch marks each reset (section 3.6). It is nearly free (`truth.py:7-9`), makes slow runs visible,
+and leaves C open without building it.
 
 Decided (question 7): B, recording the simulator's time beside wall time and checking the factor
-each run. Open (question 13): the stamp rule. It stays PROPOSED until the spike confirms how
-Gazebo's bridge stamps messages.
+each run. Decided by the spike (question 13, closed): the stamp rule and the clock epoch. Open:
+the connector's tf state across a reset (section 3.6, section 7 item 19) and whether the epoch is
+a first-class field of the run format (question 24).
 
 ### 8.5 The scene
 
@@ -1146,18 +1734,24 @@ robot) leans on it. It is settled when the operator accepts this RFC.
 
 ### 8.7 The scan in the run
 
-- **A.** As points in `/depth`.
-- **B.** A new additive `/scan` channel in a Foxglove shape. The run file already uses Foxglove
-  schemas (`libs/runfile/src/runfile/wire.py:23-34`) and the advisor says Foxglove publishes a
-  `LaserScan` schema (not verified here).
-- **C.** A companion stream, for example the rosbag2 MCAP of section 3.6.
+- **A.** As points in `/depth`, with the range limits in the tick's `raw.scan`. This is what the
+  spike's connector did, and the Observatory drew it as "Depth obstacle" (spike §20). Needs no
+  run-format change, but loses the rays: free space and maximum range.
+- **B.** A new additive `/scan` channel in a Foxglove shape. `foxglove.LaserScan` exists (spike
+  §10). It has no range limits and no angle step, so those go in the run's header or the profile
+  (spike §13), and the channel needs the `wire.py` and `mcapio.py` changes of section 3.5.
+- **C.** A companion stream, for example the rosbag2 MCAP of section 3.6, with
+  `sensor_msgs/LaserScan` (cdr), a route the spike did not test in a viewer (spike §10).
 
-Recommendation: B for a 2D scan (it is small), if the `LaserScan` schema exists as the advisor
-says; C for anything image-like.
+Recommendation: B for a 2D scan (it is small: about 75 kB a second with odometry and tf,
+spike §11), with the range limits and angle step in the profile's sensor declaration (the
+numbers sim and real disagree on belong there, spike §16); A until step 8 so that step 5 does not
+wait; C for anything image-like.
 
 Decided (question 11): a scan channel in the run (B). The Observatory draws the 2D scans and the
-maps, and MCAP viewers (Rerun, Lichtblick) read the file for free. RViz is a debug aid in the ROS
-container only. Open: the channel's exact schema, until the first real scan is stored.
+maps, and MCAP viewers (Rerun, Lichtblick) read the file for free (not verified for
+`foxglove.LaserScan` in Lichtblick, spike §10). RViz is a debug aid in the ROS container only.
+Open (question 23): where the range limits live, and whether step 5 starts with A.
 
 ### 8.8 The NXT's place in the model
 
@@ -1187,7 +1781,10 @@ the file contract; neither imports the other.
 - **A.** ROS 2 Jazzy, the parked image's (ADR-0018), with the Gazebo that goes with it.
 - **B.** Another pair, if the TurtleBot3 packages need one.
 
-Open: the spike decides (question 4). The default is A.
+Decided by the spike (question 4, closed): A. ROS 2 Jazzy, Gazebo Sim 8.15.0 (Harmonic),
+`turtlebot3_gazebo` 2.3.7, SLAM Toolbox 2.8.5, `ros_gz` 1.0.25 (spike §2, §3); no second pair was
+needed. Not verified: the `main` branch, support dates of Jazzy and Harmonic (spike §3). ADR-0020's
+"Open" item is settled.
 
 ### 8.11 Where Gazebo runs
 
@@ -1198,7 +1795,10 @@ Decided (question 12): A first. The MacBook comes later and is not required for 
 ## 9. Questions for the operator
 
 Questions 1 to 15 were answered by the operator on 2026-11-23; the answers are under each.
-Questions 16 to 22 are new, raised by the answers and the operator's later input on cameras.
+Questions 16 to 22 were raised by the answers and the operator's later input on cameras. Draft 3
+closes questions 4 and 13 (the spike answered them) and 14 (the spike ran), answers the
+simulator half of 16 (NXT-MVP1.md), and adds questions 23 to 27 where the spike and the
+operator's later input on images raise a real open question or a default that is a judgement.
 
 1. **Where does Nav2 run:** on the Burger's Pi, in a container on the navigator's computer, or
    mixed (option 8.2)? It decides where the ROS connector lives.
@@ -1221,6 +1821,8 @@ Questions 16 to 22 are new, raised by the answers and the operator's later input
 4. **ROS 2 and Gazebo versions.** The parked image is Jazzy; the Burger's support for it, and
    which Gazebo to pair, are not checked.
    Answered: decide in the spike; the default is ROS 2 Jazzy, the parked image's.
+   **Closed by the spike (spike §2, §3, §13):** ROS 2 Jazzy, Gazebo Sim 8.15.0 (Harmonic),
+   `turtlebot3_gazebo` 2.3.7, SLAM Toolbox 2.8.5, `ros_gz` 1.0.25. Section 8.10.
 5. **The NXT's place:** option 8.8 A, B or C.
    Answered: the NXT gets our navigator (tracked-robot plugins; RFC-0020 step 5) as part of
    MVP 2. That is option B (section 3.7, step 6).
@@ -1258,10 +1860,16 @@ Questions 16 to 22 are new, raised by the answers and the operator's later input
     `ros_gz_bridge` stamps with simulation time (not verified here).
     Answered: the clock rule stays PROPOSED until the spike confirms how Gazebo's bridge stamps
     messages. ADR-0020 decision 3 carries it as a "proposed amendment, pending the spike".
+    **Closed by the spike (spike §7, §13, §20):** the bridge stamps with simulation time, so the
+    rule holds and ADR-0020 decision 3 now states it as settled, with the clock epoch added
+    (section 3.6). Accepting this RFC accepts the rule with it; the operator's refusal of the
+    amendment is still possible at acceptance. What the spike did not settle is question 24 and
+    the open problem of section 7 item 19.
 14. **May the zero-platform-code Gazebo spike (step 0b, section 6.1) run?** It would use a
     container and the TurtleBot3 simulation, and no platform code.
     Answered: the one-day spike runs now, before the RFCs. It is running; its notes will be
-    `docs/wip/MVP2-SPIKE.md`.
+    `docs/wip/MVP2-SPIKE.md`. **Done and closed:** it ran on 2026-11-23 and its notes are
+    `docs/wip/MVP2-SPIKE.md` (section 6.1).
 15. **Are the seven new words in "Names" right?** Connector, interface join, contract join,
     mapper, companion streams, model job, wrapper.
     Answered: approved, all seven.
@@ -1273,28 +1881,67 @@ New questions the answers raise:
   odometry (not verified). Is that enough for our navigator to localise and map, and with
   what mapper (mapd needs depth frames; SLAM Toolbox needs a scan)? Does the NXT's navigator
   need new hardware, such as a better range sensor or a wheel or track encoder? And is there
-  a simulator for it, or does step 6 prove itself on the real NXT only?
+  a simulator for it, or does step 6 prove itself on the real NXT only? **The simulator half is
+  answered:** the operator chose option A on 2026-11-23, a kinematic NXT simulator in nxt-web and
+  the host kind `nxt-kinematic-sim` in MVP 1 (NXT-MVP1.md, item 4d; section 6.0). The sensors
+  and mapper half stays open, and the Pi module (section 3.10) adds modern sensors to it.
 - **17. What is the Burger's mapper under our navigator?** SLAM Toolbox as a ROS component under
   our navigator, with the connector handing the map and pose across, or a mapper of ours?
   The first uses ready-made SLAM, which ADR-0001's trigger asks for, but our navigator then
   depends on a ROS component through the connector. The second is more to write. This RFC's
-  lean is SLAM Toolbox first; it is not decided.
+  lean is SLAM Toolbox first; it is not decided. The spike's evidence: SLAM Toolbox's pose stayed
+  within 5.4 cm of truth over 30 m in the simulator, on near-ideal odometry (spike §18), and it
+  survived a clock reset by itself (spike §9); what it does on a real Burger's slip is not known.
 - **18. Where does the placement setting live:** the installation, the registration, or both?
   Proposed (section 3.8): the installation holds where this machine places the robot's
-  software; the registration lists the placements the robot supports.
+  software; the registration lists the placements the robot supports. The NXT's Pi module
+  (section 3.10) needs the same setting for a second machine on the robot.
 - **19. Who runs the safety review of the real Burger, and what does it cover?** At least: the
   deadman at the robot, link loss, STOP over Wi-Fi, and a first drive by hand before any
   navigator. Which join runs on hardware first: the interface join (our navigator) or both?
+  The spike adds a fact the review must start from: the ROS 2 firmware holds the last velocity
+  while its node lives (spike §8, from source), so the deadman cannot rest on the robot's
+  firmware; and which firmware the operator's Burger runs is unknown.
 - **20. Do the Burger's first runs use a stock TurtleBot3 world** until the scene writer exists
   (step 9)? It keeps the critical path short, and the Observatory's name conventions
   (`anomalies.py:85-100`) will see no `stair*` or `lm_*` there.
 - **21. The photogrammetry project's licence, and may its first output feed a Gazebo scene later?**
   The two parts of question 9 not answered.
 - **22. When the real Burger gets its cameras, does the simulator variant gain matching
-  simulated cameras?** Gazebo has camera and depth-camera sensors (not verified here). With
-  them, the sim and the real Burger stay one robot with two variants, each with its own noise
-  and calibration. Recommended: yes, after the real cameras are chosen and calibrated, so the
-  simulated ones copy real intrinsics, mount and noise.
+  simulated cameras?** Gazebo has an `rgbd_camera` sensor that ran headless at 640 x 480 and
+  30 Hz, RTF 1.0001, about 1.7 extra cores (spike §19). With them, the sim and the real Burger
+  stay one robot with two variants, each with its own noise and calibration. Recommended: yes,
+  after the real cameras are chosen and calibrated, so the simulated ones copy real intrinsics,
+  mount and noise: the spike's camera was flat shaded with no noise, and its 1.2 rad field of
+  view and 0.2 to 5 m range were set as asked, not checked against a datasheet (spike §19).
+- **23. The scan in the run: a `/scan` channel or points, and where do the range limits live?**
+  Option 8.7 B (`foxglove.LaserScan`, range limits and angle step in the profile or the run's
+  header) against A (points in `/depth` with `raw.scan`, which the spike's run used). B needs the
+  `wire.py` and `mcapio.py` changes of section 3.5. Recommended: B, with A until step 8. Raised
+  by spike §10 and §20.
+- **24. Is the clock epoch a first-class field of the run format?** The spike put an epoch counter
+  and `wall_ns` in the tick's `raw` and wrote a `clock_epoch` event beside a new `map_to_world`
+  record (spike §20). Recommended: a field next to `t_src`, an additive change noted in ADR-0007
+  (step 8), and the simulator's clock and epoch as keys of `robot.state`; the writer's time stays
+  wall time (`mcapio.py:193` unchanged). It does not decide the open problem of the connector's tf
+  state across a reset (section 7 item 19).
+- **25. The default recording for colour: JPEG q80 or H.264?** Section 3.11.2 proposes JPEG q80
+  (frame-exact seek, no encoder load on the robot; 25 MB a minute in the flat render, spike §19)
+  and lists H.264 and H.265 as options (smaller, keyframe seek, encoder CPU; not measured).
+  Also confirm: depth is never lossy (default lossless 16-bit PNG, 24 MB a minute, spike §19),
+  and uncompressed is for calibration and capture sets only. Recommended: JPEG q80 and
+  lossless 16-bit PNG until a real camera's sizes and the Pi's encoder cost are measured.
+- **26. Does the image pipeline run live at first, or only in a model job?** Section 3.11.3. Live
+  gives a consumer an adjusted image at once but costs CPU on whichever machine runs it, which
+  placement decides and which is not measured. A model job (and replay) needs no live load and
+  the recorded stream is unchanged either way. Recommended: replay and model jobs first (step
+  12), live when a live consumer needs it. Also asks whether per-room or per-light choices from a
+  measured brightness stay "later".
+- **27. The photogrammetry tool's own vision.** Section 5.1 lists what we hand it and expect
+  back. The operator's open points: its name and licence (question 21), the capture set contract
+  as written (layout, manifest version, what the tool returns), who triggers a capture, the
+  splat and mesh formats, and where it runs. Which of these this RFC should fix and which the
+  tool's own RFCs own is the operator's call.
 
 ## 10. Not covered, and what I did not verify
 
@@ -1302,8 +1949,22 @@ Not read: Mission Control's `CONTRACT.md` beyond the lines cited in "Names"; RFC
 0019, 0022 beyond the lines cited (RFC-0022 §3.3's wording is the operator's, quoted from their
 brief); ADR-0013, 0014, 0019; the duck's navigator beyond the lines cited in section 3.7, found
 by search and a spot read, not read through; the duck's plugins in code; the Observatory beyond
-`anomalies.py`; the spike's notes (`docs/wip/MVP2-SPIKE.md`); the real duck's readiness notes;
-the `nav2/` directory's bridge code beyond its docstring (`nav2/bridge.py:5`).
+`anomalies.py`; the `nav2/` directory's bridge code beyond its docstring (`nav2/bridge.py:5`);
+the real duck's readiness notes. The spike's notes and NXT-MVP1.md were read for Draft 3. The
+spike's own files outside the repository (`connector.py`, the scripts, the bags) were not
+read; every spike number here is from its notes, not repeated by me. The `file:line` citations
+of `wire.py`, `mcapio.py`, `validate.py`, `simulator.py`, `truth.py` and the gate in sections 3.4
+to 3.6 are the spike's (it read them on 2026-11-23), not re-read for this draft, and the gate's
+files are being edited in this worktree.
+
+Settled by the spike (no longer "not verified" in this RFC; each is a single run on one
+workstation, spike §20 end): that `ros_gz_bridge` stamps with simulation time starting at 0
+(§7); that a ROS graph with `use_sim_time` false fails tf lookups at its own time (§7); that
+Foxglove has a `LaserScan` schema (§10, from its docs page); that `ros2 bag` writes MCAP by
+default in Jazzy (§11); that the sensor type `rgbd_camera` exists and runs (§19); the versions
+(§2, §3); that the base holds the last velocity in the simulator, and in the ROS 2 firmware as
+read from source (§8); that a world reset takes 0.26 s when the robot is in the world file (§9),
+against the duck's 40 s; the image rates and sizes and the camera's cost in the simulator (§19).
 
 Not verified:
 
@@ -1312,27 +1973,46 @@ Not verified:
   a robot with no head and no drop sensing.
 - That a connector on the Pi, or all software on the workstation, can drive the real Burger; the
   third placement in particular.
-- That a 2D scan fits today's tick records (ADR-0020 says so; I found the opposite risk).
-- That SLAM Toolbox's `map` to `odom` corrections fit our `world` to `map` epochs.
-- Whether Foxglove has a `LaserScan` schema (the advisor's recollection).
-- That `ros_gz_bridge` stamps with simulation time starting near 0, and that a ROS graph on
-  `use_sim_time` false then fails tf lookups (the advisor's recollection).
-- That `ros2 bag` writes MCAP by default since ROS 2 Iron.
-- Gazebo's sensor plugin names `gpu_lidar` and `rgbd_camera`.
-- That the OpenCR firmware has a motor timeout of about 500 ms.
-- Whether a lifecycle restart of SLAM Toolbox and Nav2 fully resets a course.
-- Whether DDS discovery works across Wi-Fi and `--network host` containers.
-- Whether the TurtleBot3 base or its firmware holds the last velocity or has a timeout.
-- Everything about the camera upgrade: which cameras, their power draw, field of view, cable
-  limits, the Pi's compute and bandwidth, and Gazebo's camera sensors (section 7, item 18).
-- Everything about versions and compatibility: ROS 2, Gazebo, TurtleBot3 packages, `ros_gz`,
-  Nav2 beyond the parked image's 1.3.14, which is from RFC-0015 §8.
-- Licences of every tool in section 4. Disk, RAM, GPU and real-time cost of Gazebo on this
-  workstation or the MacBook. ROS traffic over Wi-Fi.
-- The data rate of any camera, and the Pi's capacity.
-- Whether a Gazebo world reload is faster than the duck's 40 s reset.
+- That `foxglove.LaserScan` draws in our Lichtblick viewer, and that a ROS bag with
+  `sensor_msgs/LaserScan` does (spike §10); a bag replay in a viewer (spike §11).
+- That SLAM Toolbox's continuous `map` to `odom` corrections fit our `world` to `map` epochs
+  (the spike paired the frames at two epochs only, spike §20).
+- **The connector's tf state across a world reset: it failed in the spike and the cause is not
+  found** (spike §20; section 3.6, section 7 item 19).
+- Whether `/slam_toolbox/reset` gives a clean map on a long map, and whether Nav2's costmaps need
+  a lifecycle restart after a reset (spike §9, §17); Nav2's costmaps after a reset were not
+  tried.
+- Bridge message types other than the ones the spike ran (images, point clouds), and a Gazebo
+  sensor with its own clock (spike §7).
+- That the OpenCR firmware flashed on the operator's Burger is the one read from source, and the
+  real Burger's sensor rates and ranges (spike §8, §16, §17). Nothing ran on hardware.
+- Gazebo's physics engine name, the lidar's renderer and the name of the `gpu_lidar` plugin
+  (spike §14, §17); that the spike's CPU and RTF figures hold at 10 times real time with good
+  maps (spike §6), and the upper limit of the factor.
+- SLAM Toolbox with a slipping odometry, loop closures (none was readable, spike §18), the walls
+  against the world file, and `explore_lite`'s coverage curve and the CPU of Nav2's stack
+  (spike §18).
+- Whether DDS discovery works across Wi-Fi and `--network host` containers (the spike ran
+  everything in one container, spike §2).
+- Everything about the camera upgrade: which cameras, their power draw, cable limits, the Pi's
+  compute and bandwidth, a real camera's compression ratio, a GPU's effect on the camera cost,
+  15 Hz, smaller sizes, an optical frame, a recording with companion streams in a run (spike §19,
+  §20; section 7, item 18). Section 3.11 adds more that is not verified: whether a camera driver
+  offers Bayer data or readback of its exposure, gain and white balance; whether Gazebo's
+  `rgbd_camera` models exposure, gain, white balance or noise; H.264, H.265 and RVL-style sizes
+  and the encoder's CPU on a Pi; a real camera's JPEG size; how infinite depth pixels are written
+  in a 16-bit PNG; the live pipeline's CPU; and that Settings' block-list design fits an Images
+  block (read only at PHASE5-NEXT-PLAN.md:411-412). The photogrammetry tool's own design was not
+  read; section 5.1 states requirements toward it, not facts about it.
+- Nav2 beyond the parked image's 1.3.14 and `explore_lite`'s run (spike §18), and Nav2 on the
+  Burger with goals (spike §17).
+- Licences of every tool in section 4. GPU and real-time cost of Gazebo on the MacBook. ROS
+  traffic over Wi-Fi.
 - That `twist_mux` or any specific tool is the right way to own the velocity path; I only say
-  the connector must own it.
+  the connector must own it. A `Twist` command straight into the bridge (spike §17).
+- The Pi module's hardware, sensors and link (NXT-MVP1.md: "not built in 4d").
+- NXT-MVP1.md's own limits: it ran nothing (its "Not covered, and not verified"), so the claims
+  of the NXT simulator and its units are from reading code, not from a run.
 - The line numbers cited in "Names" were read on 2026-11-23 for the files named there; the
   glossary rows that cite a section only (RFC-0008, RFC-0010, RFC-0014 §3.5, RFC-0018, RFC-0021
   §3) were matched by section title and a spot read, not read through.
