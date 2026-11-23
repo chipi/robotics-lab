@@ -29,7 +29,6 @@ Cleared items are struck from the list when settled.
 | D0 | Review the NXT design note (second host kind, sensor declaration, stand-in profile) | D2 onwards built on its defaults |
 | Telemetry (5) | The robotics-lab Grafana folder's token and tailnet access from the homelab session | not started |
 | D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sit in `capabilities.sensors`, not the profile's `sensors` block (6); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
-
 | B3 second opinion | Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built: only without truth |
 | B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
