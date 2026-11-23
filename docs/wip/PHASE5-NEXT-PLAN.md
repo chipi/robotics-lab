@@ -2,12 +2,11 @@
 
 **Status:** written 2026-11-22, at the end of phase 5 step 1 (parts 1 to 10, last commit `11cad9d`),
 for the next session to start from; updated the same day after item 1 (`0488ca3`, `642a82b`, both CI
-green), and on 2026-11-23 after item 2's first part. The order is
+green), and on 2026-11-23 after item 2 and item 3's step 2. The order is
 [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
-[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Item 2 is done**
-(both parts). **Next: item 3**, RFC-0023 steps 2 and 3. Its first check is done (read-only,
-[what the body data is today](PHASE5-ITEM3-BODY-DATA.md)): three choices there wait for the
-operator before step 2 is built.
+[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Items 1 and 2 are
+done; item 3 step 2 is done** (the run keeps the body; the operator's decisions and the proof are in
+[what the body data is today](PHASE5-ITEM3-BODY-DATA.md)). **Next: item 3 step 3**, the alarm feed.
 
 ## Where things stand
 
@@ -164,9 +163,10 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
 
 ### 3. RFC-0023 steps 2 and 3, side by side
 
-- **Step 2, the run keeps the body:** per joint the commanded angle, velocity and current (an empty
-  list is "not reported", never zero), and robotd's health. First a check of what the simulator's
-  bridge carries (`duck-control/src/sim.rs`) and what reaches our state stream.
+- **Step 2, the run keeps the body: done (2026-11-23).** Per joint the commanded angle, velocity and
+  current as signals (an empty list is "not reported", never zero), the stream's loop, safety flags
+  and limits every tick, `robot.health` polled every 10 s with an event when its verdict changes;
+  decisions and proof in [what the body data is today](PHASE5-ITEM3-BODY-DATA.md).
 - **Step 3, one alarm feed:** the anomalies of every source in RFC-0019's shape (the navigator's,
   the runner's truth guardrails, the subsystems, the joints with limits from the profile), served
   live by Mission Control, kept in the run, and marked on the Observatory's timeline and map.

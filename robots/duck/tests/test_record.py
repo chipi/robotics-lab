@@ -135,8 +135,14 @@ v = nav._signal_values({"joints": angles})
 check("robotd's 15 measured joint angles become joint_<name> signals, in its order",
       [v.get(f"joint_{n}") for n in JOINTS] == angles and v["joint_left_hip_yaw"] == 0.0 and v["joint_right_ankle"] == 0.14, v)
 check("a state with another number of joints gives no joint signals", not any(k.startswith("joint_") for k in nav._signal_values({"joints": angles[:14]})))
-check("the run declares the 15 joint signals, in radians", [s["name"] for s in SIGNALS if s["name"].startswith("joint_")] == [f"joint_{n}" for n in JOINTS]
-      and all(s.get("unit") == "rad" for s in SIGNALS if s["name"].startswith("joint_")))
+bv = nav._signal_values({"joints": angles, "targets": angles, "velocities": [], "currents_ma": [5.0] * 15,
+                         "move": {"limited_by": ["tilt"]}, "safety": {"fallen": True, "limp": False, "picked_up": False}})
+check("must fail: the state's body values reach the run's signals, the text ones too (phase 5 item 3)",
+      bv["joint_left_knee_target"] == angles[3] and bv["joint_mouth_ma"] == 5.0 and bv["move_limited_by"] == "tilt"
+      and bv["fallen"] == 1 and not any(k.endswith("_vel") for k in bv), sorted(k for k in bv if not k.startswith("joint_")))
+angle = {f"joint_{n}" for n in JOINTS}      # the measured angles; the body's per-joint values have a suffix (tests/test_body.py)
+check("the run declares the 15 joint angle signals, in radians", [s["name"] for s in SIGNALS if s["name"] in angle] == [f"joint_{n}" for n in JOINTS]
+      and all(s.get("unit") == "rad" for s in SIGNALS if s["name"] in angle))
 
 print("RECORD", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

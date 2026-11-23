@@ -73,3 +73,28 @@ Mission Control polls it every 10 s (`HEALTH_EVERY_S`, `mission_control/duck.py`
 
 Not read: `ImuHealth` and `CpuThrottle` past their first fields; how the vetbook (wear, trips) is
 exposed; the `ticks.jsonl` rows beyond the signal list.
+
+## Decided (the operator, 2026-11-23), and built
+
+1. **1A, signals:** `joint_<name>_target` (rad), `_vel` (rad/s) and `_ma` (mA) beside the angles. A
+   list of the wrong length, an empty list or a value that is not a number is left out (absent, never
+   zero).
+2. **2B, both:** the state stream's loop rate and misses, safety flags (0/1) and movement limits (text)
+   on every tick; `robot.health` polled every 10 s on its own connection as signals (verdict, battery,
+   hottest servo, CPU, loop, bus), and a `robot_health` event when the verdict changes or after a
+   failed ask.
+3. **Pollen is not asked:** they are an independent company. The hottest servo (`motor_hottest`,
+   `motor_max_c`, `motor_mean_c`) is the only temperature.
+
+Code: `duck_lab/nav/body.py`, used by `nav/run.py` and declared in `nav/runlog.py`; tests in
+`robots/duck/tests/test_body.py` (in `DUCK_TESTS`), 8 of 8 mutants killed.
+
+**Proof on the simulator** (this checkout's navigator as `--payload`, seed 1): challenge 1 passes,
+648 of 652 signal ticks carry the body values, health asked 4 times 10.0 s apart (7.4 V, 50 %, loop
+50.08 Hz), one `robot_health` event. Challenge 22: one run failed (coverage 0.755, ended
+`no_frontier_left`, with 35 `fix_jump_held` and a `frames_parted`, the localisation mode
+`PHASE3-PREP.md` records). Then three runs a side, alternating with main's navigator, all passed:
+before 0.895, 0.950, 0.888; after 0.956, 0.958, 0.848. The signal ticks' spacing is the same on both
+sides (median 60 ms, p95 61-62 ms). Not covered: three runs a side cannot see a small change in the
+pass rate; the body values in those six runs were not re-checked (challenge 1's were); a run is about
+5 % larger.

@@ -21,6 +21,8 @@ from runfile.catalog import data_from_env
 from runfile.adapters.duck import DuckLog, ROBOT
 from runfile.mcapio import Recorder, WriterBusy, new_run
 
+from duck_lab.nav import body
+
 # The robot's named values (ADR-0013's generic signals; ADR-0014): the IMU per state sample, and what the navigator
 # decides on as it last had it, in the same sample.
 SIGNALS = [
@@ -40,6 +42,8 @@ JOINTS = ("left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_
           "neck_pitch", "head_pitch", "head_yaw", "head_roll", "mouth",
           "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle")
 SIGNALS += [{"name": f"joint_{n}", "kind": "number", "unit": "rad"} for n in JOINTS]
+# the body beside them (phase 5 item 3): per joint the commanded angle, velocity and current, robot-wide the loop, safety and health
+SIGNALS += body.joint_signals(JOINTS) + body.SIGNALS
 NOWHERE = Path("/nonexistent/duck-run")        # no folder of a log: nothing to read start.json or results.json from
 
 

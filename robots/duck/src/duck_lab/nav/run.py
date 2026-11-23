@@ -27,7 +27,7 @@ from duck_lab.nav.client import LeaseLost, Rpc, StateStream, odom_pose
 from duck_lab import plugins
 from duck_lab.plugins.tof8x8 import FrameView     # (the depth frame as derived: re-exported for the tools that read it)
 from duck_lab.nav.follow import FollowState, Twist, step, wrap
-from duck_lab.nav import anomaly as anom, pace as pacing, recovery
+from duck_lab.nav import anomaly as anom, body, pace as pacing, recovery
 from duck_lab.nav.decision import decision
 from duck_lab.nav.frames import compose, move_xy
 from duck_lab.nav.runlog import JOINTS, RunLog
@@ -148,6 +148,7 @@ FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth se
 SURVEY_TIMEOUT_S = 8.0
 STATE_KEEP = 40          # robot states held to pair depth frames with: two seconds at 20 Hz (autod holds the last second)
 WATCHDOG_S = 0.5         # how often the streams' watchdog looks (the limits are the profile's anomalies.state_stale_s, depth_stale_s)
+HEALTH_S = 10.0          # how often a run asks robotd's health (the operator's decision, 2026-11-23: Mission Control's rate)
 
 
 
@@ -280,6 +281,7 @@ class Navigator:
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data),
                              **{k: v for k, v in (getattr(self.profile, "meta", None) or {}).items() if k in ("checksum", "version", "source")},
                              "data": self.profile.data})
+        self._start_health()           # after the calibration event: a run's first event says what it ran on
 
     def configure(self, profile) -> None:
         """The robot's numbers, from its profile (RFC-0020): everything the navigator decides with that is the robot's and not its
@@ -560,6 +562,39 @@ class Navigator:
                              values={"stream": name, "silent_s": round(age, 2), "limit_s": limit,
                                      "thread_alive": None if thread is None else thread.is_alive(), "margin_unit": "s"})
 
+    def _start_health(self) -> None:
+        """A run asks robotd's health every HEALTH_S on a connection of its own (the control loop's is not shared across threads),
+        kept as signals; robotd's verdict (healthy, degraded, reason) as a `robot_health` event when it changes, the first answer
+        included. Only while a run is written."""
+        if not self.runlog or HEALTH_S <= 0:
+            return
+        self._health_thread = threading.Thread(target=self._health, daemon=True)
+        self._health_thread.start()
+
+    def _health(self) -> None:
+        last, said = None, False
+        rpc = None
+        while True:
+            try:
+                rpc = rpc or Rpc(self.robot_sock, client=f"{self.client}-health" if self.client else None)
+                h = rpc.call("robot.health")
+                self.runlog.signals(self._sid, time.monotonic() - self._t0, body.health_values(h))
+                verdict = body.health_verdict(h)
+                if verdict != last:
+                    self.record(event="robot_health", **verdict)
+                    last = verdict
+            except Exception as e:  # noqa: BLE001 - the health is information: a failed ask is said once, the run goes on
+                if rpc is not None:
+                    rpc.close()
+                rpc, last = None, None         # the next answer is said again: the run shows the robot's health came back
+                if not said:
+                    said = True
+                    self.record(event="robot_health", healthy=None, degraded=None, reason=f"not asked: {type(e).__name__}: {e}")
+            if self._closing.wait(HEALTH_S):
+                break
+        if rpc is not None:
+            rpc.close()
+
     def stop_goal(self, end: str, reason: str) -> None:
         """Stop the goal now, as `end` (stopped_by_guardrail or cancelled) with `reason`: every loop ends at its next tick,
         its stop event named by `end`. A guardrail's stop is kept over a cancel asked before it; a cancel never replaces one."""
@@ -816,9 +851,10 @@ class Navigator:
         joints = s.get("joints") or []           # the measured angles robotd reports, in its JOINT_NAMES order (ADR-0016)
         if len(joints) == len(JOINTS):
             v.update({f"joint_{n}": a for n, a in zip(JOINTS, joints)})
+        v.update(body.state_values(s, JOINTS))   # the commanded angles, velocities, currents; the loop, safety and limits
         fv = self._fv
         v.update(nearest_mm=self.range.nearest_mm() if self.range else None, block_m=fv.block if fv else None, **self.sense)
-        return {k: x for k, x in v.items() if x is not None and math.isfinite(x)}
+        return {k: x for k, x in v.items() if isinstance(x, str) or (x is not None and math.isfinite(x))}
 
     def _pair(self, t_ns: int) -> tuple:
         """(state, state time minus frame time in ms): the state nearest the frame's capture among those received, as Pollen's
