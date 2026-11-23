@@ -25,6 +25,7 @@ lab-explore = "labrunner.explore_run:main"
 lab-go = "labrunner.go:main"
 lab-nav-server = "labrunner.navapi:main"
 lab-gate = "labrunner.gate:main"
+lab-link = "labrunner.link:main"
 lab-rooms = "labrunner.rooms:main"
 
 [build-system]
