@@ -77,6 +77,6 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0024 — One platform: should Mission Control and the Observatory stay two
   apps?](RFC-0024-one-platform.md) (Proposed, 2026-11-23; for the operator's decision)
 - [RFC-0025 — From MVP 1 to MVP 2: the platform's architecture and its
-  evolution](RFC-0025-mvp1-to-mvp2.md) (Draft, 2026-11-23; for the operator's review)
+  evolution](RFC-0025-mvp1-to-mvp2.md) (Accepted, 2026-11-23)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).

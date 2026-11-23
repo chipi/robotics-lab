@@ -939,3 +939,105 @@ Not covered by the extensions (sections 18 to 20):
   views of the run; a connector for the real Burger; images in the run; throughput of the
   connector (it ran at 5 Hz ticks only); a `Twist` in place of `TwistStamped`.
 - All parts: single runs, not repeats; the numbers are one workstation's.
+
+## 21. Reset re-run with the advisor's fixes
+
+**Answer: with all three fixes and the reset sequence `reset all`, then `/slam_toolbox/reset`,
+the belief and the truth both kept moving after the reset (run `spike-0003`), and the
+connector and SLAM Toolbox logged 0 `TF_OLD_DATA`. Taking the fixes out one at a time
+(runs 0004 and 0006) brought back the belief fault for fix 3 and fix 2, and a direct
+read of the truth stream showed the missing `sec` for fix 1. Nothing was left to the
+"scan gating" suspect: the first attempt worked, so no driving distance was varied.**
+
+What was run (all in `~/.cache/robotics-lab-tests/mvp2-spike/`, image `mvp2-spike:jazzy-proto`,
+world `world_static.world`, bridge `bridge_base.yaml`, one container `mvp2-spike-gz` per
+run set, under the simulator lock):
+
+- `connector3.py`: a copy of `connector.py` with three changed lines. `Buffer()` became
+  `Buffer(node=self)` (line 66 and the `CONNECTOR_FIX_TF` branch, line 113), and the truth
+  reader reads `int(s.get("sec", 0)) + int(s.get("nsec", 0)) / 1e9` (line 144).
+- `runC3.sh`: a copy of `runC2.sh` with three changes. It starts SLAM Toolbox itself with
+  a params file whose `restamp_tf` is `true` (`runC2.sh` relied on a SLAM from `runC.sh`);
+  it calls `/slam_toolbox/reset` right after `reset all`; and `CONNECTOR_FIX_TF` is no
+  longer set, so the only thing that clears the connector's tf buffer is the node clock.
+  Drive time after the reset is 60 s (6 to 10 m of path), well over 0.6 m.
+- `runC3v.sh`, `connector3c.py`: the same with `RESTAMP`, the connector file and the run
+  tag as variables; `connector3c.py` is `connector3.py` with `Buffer()` again.
+
+**Does `restamp_tf` exist in 2.8.5?** Yes. The installed package is
+`ros-jazzy-slam-toolbox 2.8.5-1noble.20261105.115130`; its shipped
+`config/mapper_params_online_async.yaml:32` has `restamp_tf: false`, and on the running node:
+
+```text
+param get: Boolean value is: True      (run 0003, params file with restamp_tf: true)
+param get: Boolean value is: False     (run 0004, restamp_tf: false)
+```
+
+(`ros2 param list /slam_toolbox` printed `Node not found` in run 0003, because the
+lifecycle node was not up 8 s after launch; the `get` seconds later worked.)
+
+**Attempt 1: all three fixes together (run `spike-0003`, `out/runC3.txt`, `out/readrun3.txt`).**
+
+```text
+state before reset: {'epoch': 0, 'sim_s': 65.466, 'map_to_world': [-2.0031, -0.5, -0.0]}
+state after reset:  {'epoch': 1, 'sim_s': 6.15, 'map_to_world': [-1.9768, -0.5389, -0.00698]}
+t=  61.63 event clock_epoch: the simulator clock went back from 65.898 s to 0.000 s
+t=  61.84 epoch {'map_to_world': [-1.97677, -0.5389, -0.00698]}
+epoch 0: distinct belief positions 226, distinct truth positions 264, ticks 306
+epoch 1: distinct belief positions 300, distinct truth positions 303, ticks 333
+belief vs truth, epoch 0: 306 ticks, median 0.014 m, max 0.029 m
+belief vs truth, epoch 1: 333 ticks, median 0.050 m, max 0.072 m
+TF_OLD_DATA count: 0
+```
+
+Both moved. No `KeyError` in `connector3.log`. The reset is one `clock_epoch` event and
+one new `epoch` record, 0.2 s apart in wall time. The belief is 5 cm from truth after the
+reset (1.4 cm before it), using the new epoch's `map_to_world`. The connector's own buffer
+logged `Detected jump back in time. Clearing tf buffer.` once.
+
+**Taking the fixes out, one at a time, from a fresh container each.**
+
+| Run | Change | Epoch 1 ticks | Belief / truth distinct | Median / max error | TF_OLD_DATA |
+| --- | --- | --- | --- | --- | --- |
+| 0003 | none | 333 | 300 / 303 | 0.050 / 0.072 m | 0 |
+| 0004 | `restamp_tf: false` | 74 | 73 / 73 | 0.009 / 0.027 m | 1712 |
+| 0006 | `Buffer()` in the connector | 326 | 24 / 300 | 0.419 / 0.718 m | 0 (connector: 7102) |
+
+Run 0004: right after the reset the state read `'map_to_world': None` (no belief), and
+the belief came back only when the sim clock was near 50 s (`sim stamp goes back at ticks:
+[(279, 60.4, 50.6)]`), so the belief was empty for about 46 s of sim time after the
+reset, with `TF_OLD_DATA ignoring data from the past for frame odom at time 50.400000`. Fix 3
+is confirmed as a cause: it is the difference between 74 and 333 ticks after the reset.
+Run 0006: belief stays at 24 distinct positions while truth moves through 300, the
+`map_to_world` pairing after the reset is wrong (yaw 1.81 rad), and the error is 0.42 m
+median. Fix 2 is confirmed as a cause. Run 0005 (same as 0006) is not used: I had not
+stopped run 0004's SLAM, two SLAM nodes were publishing, and `param get` answered `False` for
+a file that says `true`; it showed the same freeze, 8444 `TF_OLD_DATA` lines.
+
+**Fix 1 (the truth reader).** After `reset all` the stamp of
+`/world/default/dynamic_pose/info` has no `sec`:
+
+```text
+"header":{"stamp":{"nsec":114000000}}      (first messages after the reset; out/stampcheck.txt)
+```
+
+and the old log has `KeyError: 'sec'` at `connector.py` line 144 (`out/connector.log`). With
+`s.get("sec", 0)` the truth had 303 distinct positions after the reset in run 0003 and no
+traceback. I did not run the old line on the new setup, so "the truth froze only for this
+reason" rests on the traceback and on this stamp, not on a third run.
+
+Not covered by this re-run:
+
+- The fixes were tested as a set (run 0003) and taken out only for `restamp_tf` and the
+  node clock; the `sec` fix was not taken out in a run.
+- Each variant ran once. The 0.050 m error in run 0003 against 0.009 m in run 0004
+  (which has only 74 ticks after the reset) is not a comparison of accuracy.
+- The advisor's fourth suspect (scan gating, `minimum_travel_distance` 0.5 m) was not
+  needed and was not tested; with `restamp_tf: true` the belief returned at once.
+- `/slam_toolbox/reset` was always called; a run with `reset all` alone and all three fixes
+  was not done, so what the service adds is unknown.
+- The map in SLAM after the reset (the 82 x 103 grid kept growing) and the Observatory's
+  view of the run were not checked.
+- A reset at another moment, two resets in a row, and a reset while the robot is moving.
+- The node-clock fix was tested with the Jazzy `tf2_ros` (`Buffer.__init__(cache_time, node)`);
+  other distributions and the C++ buffer were not.
