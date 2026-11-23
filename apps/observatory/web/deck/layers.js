@@ -8,14 +8,17 @@ const CART = COORDINATE_SYSTEM.CARTESIAN;
 export const C = {
   belief: [70, 130, 255], truth: [40, 180, 90], plan: [230, 180, 0], obst: [255, 150, 0], haz: [230, 0, 230],
   x: [224, 48, 48], y: [48, 176, 48], z: [48, 96, 224], box: [138, 138, 150], grid: [216, 216, 224], text: [100, 100, 112],
-  rel: [30, 30, 30], sel: [0, 0, 0], bg: [255, 255, 255], boxFill: [138, 138, 150, 41],
+  rel: [30, 30, 30], sel: [0, 0, 0], bg: [255, 255, 255], boxFill: [138, 138, 150, 41], error: [224, 90, 79], warn: [224, 160, 48], dim: [154, 157, 166],
 };
+// an anomaly's colour by severity (the theme's error, warn and dim colours)
+export const sevColor = (s) => (s === 'critical' || s === 'major' ? C.error : s === 'minor' ? C.warn : C.dim);
 const rgb = (hex) => { const n = parseInt(hex.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the layers are built with
 export function setPalette(p) {
   const c = (k) => rgb(p[k]);
   Object.assign(C, { belief: c('c-belief'), truth: c('c-truth'), plan: c('c-plan'), obst: c('c-obst'), haz: c('c-drop'), x: c('c-x'), y: c('c-y'), z: c('c-z'),
-    box: c('c-box'), boxFill: [...rgb(p['box-fill'].slice(0, 7)), parseInt(p['box-fill'].slice(7, 9) || 'ff', 16)], grid: c('draw-grid'), text: c('draw-label'), rel: c('draw-rel'), sel: c('draw-sel'), bg: c('bg-viewport') });
+    box: c('c-box'), boxFill: [...rgb(p['box-fill'].slice(0, 7)), parseInt(p['box-fill'].slice(7, 9) || 'ff', 16)], grid: c('draw-grid'), text: c('draw-label'), rel: c('draw-rel'), sel: c('draw-sel'), bg: c('bg-viewport'),
+    error: c('error'), warn: c('warn'), dim: c('text-dim') });
   Object.assign(KIND_COL, { f: [...c('c-floor'), 255], o: [...c('c-ob'), 255], v: [...c('c-over'), 255], b: [...c('c-drop'), 255] });
   Object.assign(CELL_COL, { occ: [...c('c-occ'), 255], free: [...c('c-free'), 255] });
   gridCache.clear();
@@ -182,6 +185,13 @@ export function buildLayers(S, pane) {
   const q = rel ? [(bp[0] + tp[0]) / 2, (bp[1] + tp[1]) / 2, h / 2] : [0, 0, 0], d = rel ? Math.hypot(bp[0] - tp[0], bp[1] - tp[1]) : 0;
   out.push(new LineLayer({ id: id('rel'), data: rel ? [0] : EMPTY, visible: rel, getSourcePosition: () => [bp[0], bp[1], h / 2], getTargetPosition: () => [tp[0], tp[1], h / 2], getColor: C.rel.concat(255), getWidth: 2, widthUnits: 'pixels', modelMatrix: V, ...Z }));
   out.push(new TextLayer({ id: id('reltext'), data: rel ? [0] : EMPTY, visible: rel, getPosition: () => q, getText: () => `${(d * 100).toFixed(1)} cm`, getSize: 11, getColor: C.rel.concat(255), getPixelOffset: [0, -12], background: true, getBackgroundColor: C.bg.concat(215), modelMatrix: V, ...Z }));
+  // the anomalies (RFC-0019): a pin where the robot believed it was (a harness's finding ringed in the viewport's colour), in the world frame also a
+  // ring where it was, joined to it by a line; coloured by severity
+  const pins = D.anomalyPins(), onA = on('anomalies'), at = (d) => (dv ? d.map : d.world), believed = onA ? pins.filter(at) : EMPTY;
+  const both = onA && !dv ? pins.filter((d) => d.world && d.truth) : EMPTY, truthPins = onA && !dv ? pins.filter((d) => d.truth) : EMPTY;
+  out.push(new LineLayer({ id: id('anomjoin'), data: both, visible: both.length > 0, getSourcePosition: (d) => d.world, getTargetPosition: (d) => d.truth, getColor: (d) => sevColor(d.severity).concat(255), getWidth: 1.5, widthUnits: 'pixels', modelMatrix: V, ...Z }));
+  out.push(new ScatterplotLayer({ id: id('anomtruth'), data: truthPins, visible: truthPins.length > 0, getPosition: (d) => d.truth, getRadius: 6, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: (d) => sevColor(d.severity).concat(255), lineWidthUnits: 'pixels', getLineWidth: 2, pickable: true, modelMatrix: V, ...Z }));
+  out.push(new ScatterplotLayer({ id: id('anomalies'), data: believed, visible: onA, getPosition: at, getRadius: 6, radiusUnits: 'pixels', getFillColor: (d) => sevColor(d.severity).concat(255), stroked: true, getLineColor: (d) => (d.source === 'harness' ? C.bg : sevColor(d.severity)).concat(255), lineWidthUnits: 'pixels', getLineWidth: 2, pickable: true, modelMatrix: V, ...Z }));
   const sp = S.selPos;
   const ring = (n, col, w) => new ScatterplotLayer({ id: id(n), data: sp ? [sp] : EMPTY, visible: !!sp, getPosition: (d) => d, getRadius: 10, radiusUnits: 'pixels', stroked: true, filled: false, getLineColor: col.concat(255), lineWidthUnits: 'pixels', getLineWidth: w, modelMatrix: V, ...Z });
   out.push(ring('selhalo', C.bg, 5.5), ring('sel', C.sel, 3));    // the ring in the theme's selection colour, a halo in the viewport's

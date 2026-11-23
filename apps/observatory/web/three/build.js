@@ -6,7 +6,7 @@ export const C = {
   belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
   depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
   occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
-  boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0,
+  boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0, error: 0xe05a4f, warn: 0xe0a030, dim: 0x9a9da6,
   ...SEMANTIC,                                 // the semantic map's (RFC-0016): not themed, the legend uses the same
 };
 
@@ -19,6 +19,7 @@ export function setPalette(p) {
     belief: h('c-belief'), truth: h('c-truth'), plan: h('c-plan'), obst: h('c-obst'), hazard: h('c-drop'), occ: h('c-occ'), free: h('c-free'),
     x: h('c-x'), y: h('c-y'), z: h('c-z'), box: h('c-box'), grid: h('draw-grid'), rel: h('draw-rel'),
     depth: { f: h('c-floor'), o: h('c-ob'), v: h('c-over'), b: h('c-drop') },
+    error: h('error'), warn: h('warn'), dim: h('text-dim'),
   });
 }
 const col = (hex) => new THREE.Color(hex);
@@ -280,6 +281,20 @@ function pointsObj(pos, colors, size) {
   return p;
 }
 
+// an anomaly pin's shape as a white texture the severity's colour multiplies: a dot, a diamond, a ring
+const pinTextures = {};
+function pinTexture(shape) {
+  if (pinTextures[shape]) return pinTextures[shape];
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = c.height = 64;
+  g.fillStyle = g.strokeStyle = '#fff'; g.lineWidth = 9; g.beginPath();
+  if (shape === 'diamond') { g.moveTo(32, 4); g.lineTo(60, 32); g.lineTo(32, 60); g.lineTo(4, 32); g.closePath(); g.fill(); }
+  else if (shape === 'ring') { g.arc(32, 32, 24, 0, 7); g.stroke(); }
+  else { g.arc(32, 32, 27, 0, 7); g.fill(); }
+  return (pinTextures[shape] = new THREE.CanvasTexture(c));
+}
+const sevHex = (s) => (s === 'critical' || s === 'major' ? C.error : s === 'minor' ? C.warn : C.dim);
+
 const epochAt = (run, t) => {
   let e = run.epochs[0];
   for (const x of run.epochs) if (x.from_t <= t) e = x;
@@ -415,6 +430,30 @@ export function buildRun(run, fr, world) {
     const e = segs(pos, C.area); e.frustumCulled = false; areas.add(e);
     wear(areas);
   }
+  // The anomalies the run recorded (RFC-0019): a pin where the robot believed it was (`where.belief`, in the map frame: moved by the epoch in
+  // force at its time in the world frame, as it is in the map frame), a dot for what the robot said and a diamond for what the harness found;
+  // in the world frame of a simulated run also a ring where it was (`truth`) joined to the pin by a line. Coloured by severity. Built from the
+  // run's events, as the areas are; the page builds the run again when a live run records one.
+  const pinsG = add('anomalies', new THREE.Group());
+  L.anomalies = [];
+  const pinned = new Map(), joins = new Map();
+  for (const e of run.events || []) {
+    const a = e.anomaly;
+    if (!a) continue;
+    const hex = sevHex(a.severity), b = a.where?.belief ? tf(e.t)(a.where.belief[0], a.where.belief[1]) : null, w = world && a.truth ? a.truth : null;
+    const pin = (shape, p) => { const k = shape + hex, g = pinned.get(k) || pinned.set(k, { shape, hex, pos: [], ts: [] }).get(k); g.pos.push(p[0], p[1], 0.05); g.ts.push(e.t); };
+    if (b) pin(a.source === 'harness' ? 'diamond' : 'dot', b);
+    if (w) pin('ring', w);
+    if (b && w) { const j = joins.get(hex) || joins.set(hex, []).get(hex); j.push(b[0], b[1], 0.05, w[0], w[1], 0.05); }
+    L.anomalies.push({ t: e.t, severity: a.severity, source: a.source, hex, belief: b && [b[0], b[1]], truth: w && [w[0], w[1]] });
+  }
+  for (const { shape, hex, pos, ts } of pinned.values()) {
+    const p = pointsObj(new Float32Array(pos), null, shape === 'ring' ? 12 : 14);
+    Object.assign(p.material, { map: pinTexture(shape), alphaTest: 0.3, depthTest: false, color: col(hex) });
+    p.renderOrder = 7; p.userData.pick = (hit) => ({ kind: 'anomaly', t: ts[hit.index] });
+    pinsG.add(p);
+  }
+  for (const [hex, pos] of joins) { const l = segs(pos, hex); l.frustumCulled = false; l.renderOrder = 7; l.material.depthTest = false; pinsG.add(l); }
   const setSighting = (sighting) => {
     const key = sighting ? sighting.t : null;
     if (key === sightingKey) return;

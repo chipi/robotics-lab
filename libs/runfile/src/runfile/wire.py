@@ -441,6 +441,8 @@ class Assembler:
                 d["area"] = o.get("area") or {}
             if o["kind"] == "site":
                 d["site"] = o.get("site") or {}
+            if o["kind"] == "anomaly":                     # the record is the event: kept without keep_raw, which keeps the rest of `raw` (RFC-0019 §4.1)
+                d["raw"] = o.get("raw") or {}
             if self.keep_raw:
                 d.update(notable=o.get("notable", True), t_src=o.get("t_src"), raw=o.get("raw", {}))
             return [(t, "event", d)]

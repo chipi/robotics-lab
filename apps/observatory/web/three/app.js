@@ -10,7 +10,7 @@ import { axes as sensorAxes } from '../shell/eye.js';
 // which is what makes "off in this view only" free. Layer 0 is the coordinate frame and the marker.
 const DRAWN = ['scene.boxes', 'scene.hazards', 'belief.pose', 'belief.track', 'truth.pose', 'truth.track',
   'sensors.depth.floor', 'sensors.depth.obstacle', 'sensors.depth.overhead', 'sensors.depth.below',
-  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.sighting', 'semantic.areas', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
+  'world.grid', 'world.obstacles', 'world.drops', 'world.gaps', 'plan.path', 'semantic.objects', 'semantic.sighting', 'semantic.areas', 'anomalies', 'rel.belief_truth', 'fill.boxes', 'fill.hazards', 'body.model', 'hazards.top'];
 // what the eye does not draw: the robot itself, whose body the sensor sits in
 const NOT_IN_EYE = new Set(['body.model', 'belief.pose', 'truth.pose', 'rel.belief_truth']);
 const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
@@ -199,11 +199,12 @@ const adapter = {
       rc.setFromCamera({ x, y }, s.camera);
       rc.layers.mask = views.layerMask(s.name);
       rc.params.Points.threshold = 7 * views.metresPerPx(s);
-      const rank = { depth: 0, robot: 1, cell: 2 };
+      const rank = { anomaly: -1, depth: 0, robot: 1, cell: 2 };
       const hits = rc.intersectObject(R().group, true)
         .map((h) => ({ h, sel: h.object.userData.pick?.(h) })).filter((x) => x.sel && x.sel.kind in rank)
         .sort((a, b) => rank[a.sel.kind] - rank[b.sel.kind] || (a.h.distanceToRay ?? a.h.distance) - (b.h.distanceToRay ?? b.h.distance));
-      S.pick(hits.length ? hits[0].sel : null);
+      if (hits[0]?.sel.kind === 'anomaly') S.seek(hits[0].sel.t);      // a pin on the map: the playhead goes to its anomaly
+      else S.pick(hits.length ? hits[0].sel : null);
     };
   },
 
@@ -259,6 +260,8 @@ const adapter = {
   // the semantic map as drawn at the playhead, in the world frame: how many objects and confirmed ones (labelled), and the current sighting
   semantic: () => (RW ? { ...RW.semantic, objectsVisible: RW.obj['semantic.objects'].visible && S.shown('semantic.objects'),
     sightingVisible: RW.obj['semantic.sighting'].visible && S.shown('semantic.sighting'), labelPx: labelPx() } : null),
+  // the anomaly pins as drawn in the frame being looked at: [{t, severity, source, belief, truth}] (for this repository's tests), and whether they are shown
+  anomalies: () => (R() ? { pins: R().anomalies, visible: R().obj.anomalies.visible && S.shown('anomalies') } : null),
   // tick i's returns as drawn in the world frame, by kind
   returns: (i) => RW?.returnsAt(i) ?? null,
   cursor: (x, y) => views.cursorAt(x, y),

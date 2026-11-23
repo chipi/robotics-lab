@@ -23,6 +23,8 @@ const RECORDS = ['tick', 'signals', 'plan', 'world', 'event', 'depth_frame', 'ob
 export const SIGHTING_FRESH_S = 1.0;       // a sighting is "current" this long (the navigator looks every 0.5 s); the video's is the same
 const DEPTH_STREAM = { f: 'sensors.depth.floor', o: 'sensors.depth.obstacle', v: 'sensors.depth.overhead', b: 'sensors.depth.below' };
 const TICK_FIELDS = ['t', 'belief', 'truth', 'truth_3d', 'tilt', 'cmd', 'depth', 'plan_at', 'world_at'];
+// the navigator's anomaly record (RFC-0019) as an event keeps it: the same fields libs/runfile's store.py keeps
+const ANOMALY_FIELDS = ['anomaly', 'source', 'module', 'severity', 'detector', 'version', 'summary', 'values', 'margin', 'where', 'evidence', 'related', 'duration_s', 'truth'];
 const idle = () => new Promise((r) => setTimeout(r, 0));
 
 // the first index in [a, b) whose time is >= x (strict: > x)
@@ -299,8 +301,10 @@ export class RunStore {
       }
     } else if (kind === 'event') {
       this._span(d.t);
-      r.events.push({ t: d.t, kind: d.kind, text: d.text, ...(d.decision && { decision: d.decision }), ...(d.kind === 'room' && { room: d.room ?? null, votes: d.votes ?? {} }) });
+      r.events.push({ t: d.t, kind: d.kind, text: d.text, ...(d.decision && { decision: d.decision }), ...(d.kind === 'room' && { room: d.room ?? null, votes: d.votes ?? {} }),
+        ...(d.kind === 'anomaly' && d.raw && { anomaly: Object.fromEntries(ANOMALY_FIELDS.filter((k) => k in d.raw).map((k) => [k, d.raw[k]])) }) });
       this._count('events');
+      if (d.kind === 'anomaly') this._count('anomalies');
     } else if (kind === 'depth_frame') {
       this._count('sensors.raw');
     } else if (kind === 'epoch') {

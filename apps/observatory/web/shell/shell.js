@@ -19,7 +19,7 @@
 //   scale() -> pixels per metre of the first (bottom-left) orthographic pane, or null (3D)
 //   gizmo() -> {x:[dx,dy,dz], y, z} | null     camera-space unit vectors (3D view only)
 // }
-// shell (given to the adapter): M, shown(id, view), cfg(id), size(id), pick(sel), viewChanged(), tickAt(t), palette()
+// shell (given to the adapter): M, shown(id, view), cfg(id), size(id), pick(sel), viewChanged(), tickAt(t), palette(), seek(t)
 import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
@@ -83,7 +83,9 @@ const KINDS = {
 };
 const kindColor = (k) => KINDS[k]?.[0] || `hsl(${[...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 360} 50% 55%)`;
 const isStop = (k) => (k in KINDS ? !!KINDS[k][1] : /stop|refus|trap/.test(k));
-
+// anomalies (RFC-0019): a severity's colour token (the theme's), and the severities in order of how much they matter
+const SEVERITY = { critical: 'error', major: 'error', minor: 'warn', info: 'text-dim' };
+const sevColor = (s) => `var(--${SEVERITY[s] || 'text-dim'})`;
 const MODES = [['at', 'At t'], ['window', 'Window'], ['upto', 'Up to t']];
 const MODE_WORD = { at: 'at t', window: 'window', upto: 'up to t' };
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
@@ -115,6 +117,7 @@ function styleOf(id) {
   if (id === 'semantic.sighting') return c('c-plan', 'points');
   if (id === 'semantic.areas') return c('c-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
+  if (id === 'anomalies') return c('error', 'hazard');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
   return c('text-dim', 'points');
 }
@@ -158,7 +161,7 @@ function buildTree(run, desc = null) {
     section('sec.senses', 'Senses', [...ids(['sensors.depth', 'sensors.raw']),
       grp('g.imu', 'IMU', [...ids(['sensors.tilt']), ...ids(IMU_SIGNALS.map(sig))], '')]),
     section('sec.mind', 'Mind', [grp('g.belief', 'Belief', ofGroup(['Robot (belief)'])), grp('g.world', 'World model', ofGroup(['World model'])),
-      grp('g.semantic', 'Semantic map', ofGroup(['Semantic map'])), ...ids(['plan.path', 'events'])]),
+      grp('g.semantic', 'Semantic map', ofGroup(['Semantic map'])), ...ids(['plan.path', 'anomalies', 'events'])]),
   ].filter(Boolean);
   const others = S.filter((s) => !taken.has(s.id) && !s.parent);
   const other = section('sec.other', 'Other values', others.map(mk), others.length ? `${others.length}` : '');
@@ -242,7 +245,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const palette = () => {
     const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue('--' + n).trim();
     return Object.fromEntries(['bg-viewport', 'c-belief', 'c-truth', 'c-plan', 'c-obst', 'c-drop', 'c-floor', 'c-ob', 'c-over', 'c-box', 'c-occ', 'c-free',
-      'c-x', 'c-y', 'c-z', 'draw-grid', 'draw-label', 'draw-rel', 'draw-sel', 'box-fill', 'text'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
+      'c-x', 'c-y', 'c-z', 'draw-grid', 'draw-label', 'draw-rel', 'draw-sel', 'box-fill', 'text', 'error', 'warn', 'text-dim'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
   };
 
   // ---- epochs, belief in the world, the moment ---------------------------------------------------------
@@ -478,6 +481,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
         adapter.setRun(M.run, M.fr);
       }
       if (kind === 'event' && !(d.kind in M.kinds)) M.kinds[d.kind] = d.kind !== 'leg';
+      if (kind === 'event' && d.kind === 'anomaly' && built && hasTicks()) adapter.setRun(M.run, M.fr);      // the pins are built from the run's events
       grew();
     },
     onStatus: () => { renderChrome(); grew(); },
@@ -982,7 +986,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       h = `<div class="phead"><span>${svgI(n.i, 16)}</span><span class="nm">${esc(n.name)}</span>${n.sfx ? `<span class="fchip">${esc(n.sfx)}</span>` : '<span></span>'}`
         + `<span class="id">${esc(n.id)}</span><span class="stat">${leafIds.length} streams · ${leafIds.length - live.length} missing</span></div>`;
     }
-    const timed = live.filter((l) => !(l.startsWith('scene.') || l === 'events') && stream(l).time_modes?.length);
+    const timed = live.filter((l) => !(l.startsWith('scene.') || l === 'events' || l === 'anomalies') && stream(l).time_modes?.length);
     if (timed.length) {
       const modes = new Set(timed.map((l) => cfg(l).mode)), cur = modes.size === 1 ? [...modes][0] : null;
       const avail = [...new Set(timed.flatMap((l) => stream(l).time_modes))];
@@ -1073,12 +1077,18 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function eventSections(ev) {
     const prev = [...M.run.events].reverse().find((e) => M.kinds[e.kind] !== false && e.t < M.t - 1e-6), next = M.run.events.find((e) => M.kinds[e.kind] !== false && e.t > M.t + 1e-6);
     return isec('v', 'Last event', '', (ev ? `<div class="evrow"><span class="sw" style="background:${kindColor(ev.kind)}"></span><span class="mono">${fx(ev.t, 2)} s</span><b style="font-weight:500">${esc(ev.kind)}</b><span class="txt">${esc((ev.text.startsWith(ev.kind) ? ev.text.slice(ev.kind.length) : ev.text).trimStart())}${Math.max(0, M.t - ev.t) > 0 ? ` · ${Math.max(0, M.t - ev.t).toFixed(2)} s ago` : ''}</span></div>` : '<div class="evrow"><span></span><span class="faint">none yet</span></div>')
-      + (ev?.decision ? decisionRows(ev.decision) : ''))
+      + (ev?.decision ? decisionRows(ev.decision) : '') + (ev?.anomaly ? anomalyRows(ev.anomaly) : ''))
       + `<div class="evnav"><button data-seek="${prev ? prev.t : ''}" ${prev ? '' : 'disabled'}>${svgI('left', 12)} ${prev ? esc(prev.kind) + ' ' + prev.t.toFixed(2) : 'no earlier event'}</button><button data-seek="${next ? next.t : ''}" ${next ? '' : 'disabled'}>${next ? next.t.toFixed(2) + ' ' + esc(next.kind) : 'no later event'} ${svgI('right', 12)}</button></div>`;
   }
   // the rule that fired and the values it compared (ADR-0014): the reason, then each value
   const decisionRows = (d) => `<div class="decision" data-rule="${esc(d.rule)}"><div class="why"><span class="faint">${esc(d.rule)}</span> ${esc(d.reason)}</div>`
     + Object.entries(d.values).map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)), '', v == null ? 'na' : '')).join('') + '</div>';
+  // the robot's record of an anomaly (RFC-0019): what, how bad, who said so, the summary, how far past its limit and for how long, the values compared
+  const anomalyRows = (a) => `<div class="anomaly" data-anomaly="${esc(a.anomaly ?? '')}" data-severity="${esc(a.severity ?? '')}"><div class="why">${esc(a.summary ?? '')}</div>`
+    + kv('Anomaly', esc(a.anomaly ?? '—')) + kv('Severity', `<span style="color:${sevColor(a.severity)}">${esc(a.severity ?? '—')}</span>`)
+    + kv('Source', esc([a.source, a.module, a.detector].filter(Boolean).join(' · ') || '—'))
+    + (a.margin != null ? kv('Margin', fx(a.margin, 3), esc(a.values?.margin_unit || 'm')) : '') + (a.duration_s ? kv('Duration', fx(a.duration_s, 2), 's') : '')
+    + Object.entries(a.values || {}).filter(([k]) => k !== 'margin_unit').map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(typeof v === 'object' ? JSON.stringify(v) : String(v)))).join('') + '</div>';
   // the values of the robot's signals at the playhead (ADR-0013), one row each, in the left panel's order (a joint in Body,
   // the IMU in Senses, then the rest)
   function signalsSection(sg) {
@@ -1235,14 +1245,20 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('mlane').innerHTML = M.run.events.map((e, i) => (M.kinds[e.kind] === false ? '' : `<span class="mk ${isStop(e.kind) ? 'stop' : ''}" style="left:${pct(e.t)}%;color:${kindColor(e.kind)}" data-ev="${i}"><i style="background:${isStop(e.kind) ? 'none' : kindColor(e.kind)}"></i></span>`)).join('');
     const n = M.run.events.filter((e) => M.kinds[e.kind] !== false).length;
     $('kindsN').textContent = n;
+    const al = anomalyEvents();
+    $('alane').hidden = $('alabel').hidden = !al.length;
+    $('alane').innerHTML = al.map(([e, i]) => { const a = e.anomaly; return `<span class="mk al ${SEVERITY[a.severity] ? a.severity : 'info'} ${a.source === 'harness' ? 'harness' : 'robot'}" style="left:${pct(e.t)}%" data-ev="${i}"><i></i></span>`; }).join('');
+    $('alarmsN').textContent = al.length;
   }
+  // the events that are anomalies (RFC-0019), with their place in the run's events
+  const anomalyEvents = () => M.run.events.flatMap((e, i) => (e.anomaly ? [[e, i]] : []));
   function renderLanes() {
     const wrap = $('lanes'); wrap.hidden = !M.rows;
     $('lanesBtn').setAttribute('aria-pressed', M.rows);
     if (!M.run || !M.rows) { $('lanesL').innerHTML = ''; $('dlanes').innerHTML = ''; return; }
     // one row per stream the API reports presence for (the events have their own lane), in outliner order
     // a run with no pose has nothing to show for the streams it lacks: only the rows it has
-    const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && (M.pres?.streams?.[id] || stream(id)?.missing)
+    const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && id !== 'anomalies' && (M.pres?.streams?.[id] || stream(id)?.missing)
       && (hasTicks() || !hasSignals() || !stream(id)?.missing));
     const quant = (t) => Math.round(pct(t) * 20) / 20;
     $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || T.nodes[id]?.label || cap(s.name))}</div>`; }).join('');
@@ -1394,6 +1410,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // ---- wiring ---------------------------------------------------------------------------------------
   const shell = {
     M, shown, cfg, size, tickAt, palette,
+    // a pin on the map was clicked: the playhead goes to its anomaly
+    seek: (t) => window.miniview.setTime(t),
     // the Robot layer (RFC-0011): the run's robot's description (null when it has none) and its joints' values at the playhead
     robot: () => M.robot,
     joints: () => (hasSignals() ? Object.fromEntries(Object.entries(sigMoment()?.values || {}).filter(([k, v]) => k.startsWith('joint_') && typeof v === 'number').map(([k, v]) => [k.slice(6), v])) : {}),
@@ -1469,7 +1487,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('tLast').onclick = () => setTime(M.run?.t1 ?? 0);
 
   // seeking on the strip: click or drag on the ruler, the data rows, the range bar, or an event marker
-  for (const id of ['ruler', 'dlanes', 'range', 'mlane']) {
+  for (const id of ['ruler', 'dlanes', 'range', 'mlane', 'alane']) {
     const el = $(id);
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || !M.run) return;
@@ -1488,6 +1506,15 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
+  $('alane').addEventListener('click', (e) => { const m = e.target.closest('.mk'); if (m) setTime(M.run.events[m.dataset.ev].t); });
+  $('alane').addEventListener('mousemove', (e) => {
+    const m = e.target.closest('.mk');
+    if (!m) { tip.hidden = true; return; }
+    const ev = M.run.events[m.dataset.ev], a = ev.anomaly;
+    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${sevColor(a.severity)}">${esc(a.anomaly ?? ev.kind)}</span> · ${esc(a.severity ?? '')}<br><span class="dim">${esc(a.summary ?? ev.text)}</span>`;
+    tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
+  });
+  $('alane').addEventListener('mouseleave', () => { tip.hidden = true; });
   dragField($('tfT'), { get: () => M.t, set: (v) => setTime(v), lo: -1e9, hi: 1e9, k: () => (M.run ? (M.run.t1 - M.run.t0) / 700 : 0.05), fmt: (v) => (+v).toFixed(2) });
   dragField($('tfK'), {
     get: () => (hasTicks() ? M.i + 1 : sampleIdx(M.t) + 1),
@@ -1685,6 +1712,8 @@ const TEMPLATE = `
     </div>
     <div class="ruler" id="ruler"></div>
     <div class="mlane" id="mlane"></div>
+    <div class="alabel" id="alabel" hidden>Alarms <span class="mono" id="alarmsN">0</span></div>
+    <div class="mlane alane" id="alane" hidden></div>
     <div class="lanes" id="lanes"><div class="lanes-l" id="lanesL"></div><div class="dlanes" id="dlanes"></div></div>
     <div class="tlfill-l"></div>
     <div class="range" id="range"><div class="bar" id="rbar"></div></div>

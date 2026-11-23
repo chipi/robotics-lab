@@ -130,7 +130,20 @@ export function prepareRun(run, f) {
     }
     return o;
   };
-  const X = { run, f, t: f.t, epochs, epochAt, epochIdx, beliefW, trackMap, trackW, trackT, depthIdx, chunks, depthRange, depthId, depthPoint, planData, worldAt, append,
+  // The anomalies the run recorded (RFC-0019), as pins: where the robot believed it was (`where.belief`, the map frame) and that point through the epoch
+  // in force at the anomaly's time (the world frame), and where it was (`truth`, the world frame). Made again when the run has more events.
+  let pinsOf = -1, pins = [];
+  const anomalyPins = () => {
+    const evs = run.events || [];
+    if (pinsOf === evs.length) return pins;
+    pinsOf = evs.length;
+    pins = evs.filter((e) => e.anomaly).map((e) => {
+      const a = e.anomaly, b = a.where?.belief, ep = epochAt(e.t), w = b && ep ? apply(ep.p, [b[0], b[1], 0]) : null;
+      return { t: e.t, severity: a.severity, source: a.source, map: b ? [b[0], b[1], 0] : null, world: w && [w[0], w[1], 0], truth: a.truth ? [a.truth[0], a.truth[1], 0] : null };
+    });
+    return pins;
+  };
+  const X = { run, f, t: f.t, epochs, epochAt, epochIdx, anomalyPins, beliefW, trackMap, trackW, trackT, depthIdx, chunks, depthRange, depthId, depthPoint, planData, worldAt, append,
     get t0() { return run.t0; }, get t1() { return run.t1; } };
   append({ ranges: f.ranges.map((r) => [...r]), plans: f.plans.map((x, k) => (x ? k : -1)).filter((k) => k >= 0) });
   return X;

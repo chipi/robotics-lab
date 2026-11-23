@@ -388,7 +388,7 @@ def run_page(b, base, rid, other):
     spans, pts = ev("document.querySelectorAll('#dlanes .sp').length"), ev("document.querySelectorAll('#dlanes .pt').length")
     miss_dl = ev("document.querySelectorAll('#dlanes .dl.missing').length")
     labels = ev("[...document.querySelectorAll('#lanesL .lane-l')].map(l => l.textContent)")
-    check("data rows render from /presence (rows, spans, point marks, missing rows)", nrows_dl == len(labels) and nrows_dl >= 8 and spans >= 4 and pts > 10 and miss_dl == len([m for m in miss if m != "events"]), (nrows_dl, spans, pts, miss_dl, labels))
+    check("data rows render from /presence (rows, spans, point marks, missing rows)", nrows_dl == len(labels) and nrows_dl >= 8 and spans >= 4 and pts > 10 and miss_dl == len([m for m in miss if m not in ("events", "anomalies")]), (nrows_dl, spans, pts, miss_dl, labels))
     gaps = ev("[...document.querySelectorAll('#dlanes .gap')].map(g => g.title)")
     nums = [[float(x) for x in re.findall(r"\d+\.\d+", g)] for g in gaps]
     check("hatched bands mark where the run has no depth frames", len(gaps) == 1 and nums[0][0] <= GAP[0] + 0.3 and nums[0][1] >= GAP[1] - 0.3 and ev("getComputedStyle(document.querySelector('#dlanes .gap')).backgroundImage").startswith("repeating-linear-gradient"), gaps)

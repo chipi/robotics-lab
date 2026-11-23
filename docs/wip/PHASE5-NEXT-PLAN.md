@@ -194,9 +194,20 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      much; STOP, the run, the Observatory at that moment). Proof: the contract, body and adapter
      tests and the page in Chromium at phone width, 5 of 5 mutants killed, `make ci-fast` PASS.
      Not covered: no live run through Mission Control with this navigator (`make sim-duck` runs the
-     registered one); the Observatory does not yet seek to `#t=` (part 4).
-  4. **The Observatory's marks:** the anomaly track on the timeline and the pins on the map, and
-     the watch page opening at `#t=` (next).
+     registered one). (Corrected in part 4: the Observatory's pages already seek to `#t=`.)
+  4. **The Observatory's marks** (the operator, 2026-11-23: (a) now, (b) later).
+     **(a) The tagged ones: done (2026-11-23).** A run's `anomaly` events keep the navigator's record
+     (`runfile.store.anomaly_of`; `wire` keeps an anomaly event's `raw`); an `anomalies` stream;
+     the shell's Alarms lane (one mark per anomaly, coloured by severity, the harness's a diamond,
+     a click seeks), the inspector's rows, and pins on the map in both renderers (the belief's place
+     by the epoch in force, the truth's ring joined to it). `#t=` opening at a moment was already
+     there; it is tested now. Proof: `libs/runfile/tests/test_store_anomaly.py`,
+     `apps/observatory/tests/test_anomaly_pages.py` (three, deck, the watch page; 390 px; light),
+     7 of 7 mutants killed, `make ci-fast` and `make test-observatory-pages` PASS. Not covered: a
+     live run's pins (rebuilt on a live anomaly, untested); runs indexed before this lack the
+     `anomalies` stream until the index is rebuilt (the operator's go).
+     **(b) The analysis's found anomalies** on the same track: needs RFC-0019's derived index
+     (later).
 
 ### 4. Before step 6
 

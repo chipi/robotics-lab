@@ -128,7 +128,8 @@ class RunData:
             r["events"].append({"t": t, "kind": p["kind"], "text": p["text"], **({"decision": p["decision"]} if p.get("decision") else {}),
                                 **({"room": p.get("room"), "votes": p.get("votes") or {}} if p["kind"] == "room" else {}),
                                 **({"area": p.get("area") or {}} if p["kind"] == "area" else {}),
-                                **({"site": p.get("site") or {}} if p["kind"] == "site" else {})})
+                                **({"site": p.get("site") or {}} if p["kind"] == "site" else {}),
+                                **({"anomaly": a} if p["kind"] == "anomaly" and (a := anomaly_of(p.get("raw"))) else {})})
         elif kind == "objects":
             self.sem["objects"].append({"t": t, "objects": p["objects"], "changes": p["changes"]})
             self.counts["objects"] += 1
@@ -191,6 +192,16 @@ def verdict_before(events: list) -> str:
     return last or stop_before(None)
 
 
+ANOMALY_FIELDS = ("anomaly", "source", "module", "severity", "detector", "version", "summary", "values", "margin", "where", "evidence",
+                  "related", "duration_s", "truth")
+
+
+def anomaly_of(raw: dict | None) -> dict:
+    """The navigator's record of an anomaly (RFC-0019 §2.1) as an event carries it: the fields it has, `truth` (the simulator's, in the
+    world frame) among them; `where.belief` is in the map frame."""
+    return {k: raw[k] for k in ANOMALY_FIELDS if raw and k in raw}
+
+
 def verdict_of(events: list, evaluated: bool) -> str:
     if evaluated:
         return "evaluated"
@@ -248,6 +259,7 @@ def streams(f: dict, events: list, counts: dict, run: dict | None = None, sig: d
         s("semantic.sighting", "Semantic map", "sightings", "map", counts.get("sightings", 0), why="no sighting recorded"),
         s("semantic.areas", "Semantic map", "areas", "map", max((len(e["site"].get("areas") or []) for e in events if e["kind"] == "site"),
                                                                 default=0), why="no site with areas"),
+        s("anomalies", "Anomalies", "anomalies", "map", sum(e["kind"] == "anomaly" for e in events), modes=(), why="no anomaly recorded"),
         s("events", "Events", "events", "time", len(events), why="no events"),
     ]
     st = sig["t"] if sig else []

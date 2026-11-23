@@ -1,7 +1,7 @@
 // The deck.gl page: the shared workbench (../shell/) with a deck.gl renderer in #stage.
 import { createShell } from '../shell/shell.js';
 import { prepareScene, prepareRun, applyPose, KIND_NAME } from './data.js';
-import { buildLayers, setPalette } from './layers.js';
+import { buildLayers, setPalette, sevColor } from './layers.js';
 
 const { Deck, OrthographicView, OrbitView } = deck;
 
@@ -84,6 +84,7 @@ function onClick(info) {
   if (!lid || info.index < 0) return S.pick(null);
   if (lid.startsWith('depth')) { const b = X.pickBase[info.layer.id]; return S.pick({ kind: 'depth', index: X.D.depthId(b.ci, b.ch, b.base + info.index) }); }
   if (lid === 'map') return S.pick({ kind: 'cell', index: info.object.k });
+  if (lid === 'anomalies' || lid === 'anomtruth') return S.seek(info.object.t);      // a pin on the map: the playhead goes to its anomaly
   if (lid.startsWith('belief')) return S.pick({ kind: 'robot', index: 0 });
   if (lid.startsWith('truth')) return S.pick({ kind: 'robot', index: 1 });
   return S.pick(null);
@@ -161,6 +162,11 @@ const adapter = {
   },
   describe,
   deck: () => dk,
+  // the anomaly pins as drawn in the frame being looked at (for this repository's tests): where, in what colour, and whether the layer shows
+  anomalies() {
+    const D = X.D, l = dk.props.layers.find((q) => q.id.startsWith('anomalies@')), dv = M.frame === 'map';
+    return D && l ? { pins: D.anomalyPins().map((d) => ({ t: d.t, severity: d.severity, source: d.source, color: sevColor(d.severity), belief: dv ? d.map : d.world, truth: dv ? null : d.truth })), visible: l.props.visible } : null;
+  },
   fillsDrawn: (pane) => dk.props.layers.some((l) => l.id === 'boxfill@' + pane && l.props.visible),
   project(p) {
     const vp = dk.getViewports()[0], r = stage.getBoundingClientRect();
