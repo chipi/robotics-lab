@@ -7,7 +7,18 @@
   "joints": {
     "names": ["left_hip_yaw", "left_hip_roll", "left_hip_pitch", "left_knee", "left_ankle", "neck_pitch", "head_pitch", "head_yaw",
               "head_roll", "mouth", "right_hip_yaw", "right_hip_roll", "right_hip_pitch", "right_knee", "right_ankle"],
-    "why": "robotd's JOINT_NAMES order (Pollen's duck-ipc-proto; the body server's is the same): the order of every per-joint list robotd reports (angles, targets, velocities, currents_ma)"
+    "why": "robotd's JOINT_NAMES order (Pollen's duck-ipc-proto; the body server's is the same): the order of every per-joint list robotd reports (angles, targets, velocities, currents_ma)",
+    "limits": {
+      "current_ma": 900,
+      "current_s": 1.0,
+      "tracking_rad": null,
+      "tracking_s": 1.0,
+      "hot_c": 60.0,
+      "loop_min_hz": 45.0,
+      "loop_slow_s": 2.0,
+      "measured": "Not on the robot: from Pollen's code (microduck, read 2026-11-23). Each servo's current_limit is 1000 mA, set by robotd at startup against the XL330's factory 1750 (duck-control/src/model.rs CURRENT_LIMIT_MA: what the gear-breakage bench ran at, enforced by the impact guard firmware in position control). The XL330 shuts itself down at 70 C; Pollen counts a servo at 60 C or more as hot, a joint working hard rather than warm (duck-ipc-proto/src/vetbook.rs HOT_C). The control loop's target is 50 Hz (robotd's health control_loop.target_hz). No number for the tracking error exists there.",
+      "why": "the body's anomalies (phase 5 item 3 step 3, RFC-0023 §7 step 3: 'the joints (load, tracking error, a trip; limits in the profile)'). joint_overload: a joint's current at or over current_ma (90 % of the servo's own limit, where position control caps it) for current_s; joint_tracking: its commanded angle less its angle over tracking_rad for tracking_s (null: not checked on the real duck until a recorded run measures it with sim/probes/body_limits.py; the run's body_watch event says so); motor_hot: the hottest servo at or over hot_c (Pollen's hot, 10 C short of the shutdown); loop_slow: the state stream's loop rate under loop_min_hz (10 % short of 50 Hz) for loop_slow_s. The hold times are proposed, not measured: long enough that one tick does not raise it."
+    }
   },
   "subsystems": [
     {"name": "robotd", "what": "the body: the motors, the IMU, the deadman, the walking policies", "check": {"kind": "socket", "socket": "robot"}},
@@ -212,6 +223,14 @@
   "plugins": {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1"},
   "variants": {
     "sim": {
+      "joints": {
+        "limits": {
+          "current_ma": 120,
+          "tracking_rad": 0.5,
+          "measured": "2026-11-23, sim/probes/body_limits.py over the 18 runs with body signals (challenges 1-11 and 21 once, challenge 1 twice, challenge 22 five times, seed 1). Current: the simulator's is not milliamps (the body server reports abs(actuator_force) x 100); per joint p99.9 at most 43.2 (left knee), the largest 54.9. Tracking error (commanded angle less angle): the knees lag on every step, median 0.16 and 0.21 rad, p99.9 0.85 and 0.76; the longest stretch over 0.5 rad on any joint 0.2 s, over 0.3 rad 3.3 s (the left knee). With these limits the 13 runs of challenges 1-11, 21 and 22 raised no body anomaly. The hottest servo is a constant 32 C (no thermal model), so motor_hot cannot fire here; the loop rate's lowest 48.04 Hz.",
+          "why": "the real duck's 900 mA is about 16 times anything the simulator's stand-in reaches, so it would never fire here: 120 is a little over twice the largest seen. 0.5 rad held 1 s is five times the longest stretch over it in the runs: a joint that stops following (a knee caught, the duck fallen and pressing) stays over it, a step does not."
+        }
+      },
       "localisation": {
         "odometry": {
           "scale": 0.91,

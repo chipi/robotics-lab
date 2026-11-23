@@ -169,7 +169,20 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
   decisions and proof in [what the body data is today](PHASE5-ITEM3-BODY-DATA.md).
 - **Step 3, one alarm feed:** the anomalies of every source in RFC-0019's shape (the navigator's,
   the runner's truth guardrails, the subsystems, the joints with limits from the profile), served
-  live by Mission Control, kept in the run, and marked on the Observatory's timeline and map.
+  live by Mission Control, kept in the run, and marked on the Observatory's timeline and map. In
+  four parts, each its own commit (the operator, 2026-11-23: all four, in this order; limits in the
+  profile for both the simulator and the real duck):
+  1. **The body's anomalies: done (2026-11-23).** `body.BodyWatch` at the profile's new
+     `joints.limits`: `joint_overload`, `joint_tracking`, `loop_slow` from each state, `motor_hot`
+     and `robot_unhealthy` from each health answer; a `body_watch` event says the limits in force
+     and what is not checked. The real duck's limits are Pollen's (900 mA of the servo's 1000 mA
+     current limit, hot at 60 C of the 70 C shutdown), its tracking limit null (not measured);
+     the simulator's from `sim/probes/body_limits.py` over 18 runs (its current is a stand-in).
+     Proof in [what the body data is today](PHASE5-ITEM3-BODY-DATA.md).
+  2. **The runner's truth guardrails** as `harness` anomalies, at `goal.break` (next).
+  3. **The live feed:** `goal.status` hands out anomalies as it does decisions; Mission Control's
+     bus, a header badge and an inspector (what, where, since when; stop, open in the Observatory).
+  4. **The Observatory's marks:** the anomaly track on the timeline and the pins on the map.
 
 ### 4. Before step 6
 

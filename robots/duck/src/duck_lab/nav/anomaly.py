@@ -34,6 +34,13 @@ KINDS = {
     "thread_failed": ("navigator", "stream_watchdog", "major"),
     "stop_latched": ("gate", "lease_watch", "info"),
     "lease_lost": ("gate", "lease_watch", "major"),
+    # the body's (body.BodyWatch, at the profile's joints.limits): a joint held past its current or tracking limit, the hottest servo,
+    # the control loop, robotd's own verdict (minor when it says degraded)
+    "joint_overload": ("body", "joint_current", "major"),
+    "joint_tracking": ("body", "joint_tracking", "major"),
+    "motor_hot": ("body", "motor_temperature", "major"),
+    "loop_slow": ("body", "control_loop", "minor"),
+    "robot_unhealthy": ("body", "robot_health", "major"),
 }
 
 # A refusal at one pose repeats for every target the explorer tries (b11 r5: six "no room to turn" in 1 s at one pose, 0.283-0.290

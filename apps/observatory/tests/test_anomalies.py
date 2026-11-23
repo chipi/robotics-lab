@@ -281,7 +281,7 @@ check("a run that carries none: no robot record", not [a for a in nobody["anomal
 real = make(still(10, [1.0, 1.0, 0.0]), events=[(1.0, "anomaly", {"anomaly": "stuck", "severity": "major"}), (1.1, "leg", {"status": "reached"})])
 check("an anomaly event that does not say it is the robot's (source robot) is not read as one", not [a for a in A.analyse(real, None)["anomalies"]
                                                                                                                      if a["source"] == "robot"])
-check("the robot's kinds are the RFC's vocabulary, each named once", len(set(A.ROBOT_KINDS)) == len(A.ROBOT_KINDS) == 13 and "fix_jump_held" in A.ROBOT_KINDS)
+check("the robot's kinds are the RFC's vocabulary, each named once", len(set(A.ROBOT_KINDS)) == len(A.ROBOT_KINDS) == 18 and "fix_jump_held" in A.ROBOT_KINDS)
 
 
 # ---- fixtures: slices of real recordings -----------------------------------------------------------------------------

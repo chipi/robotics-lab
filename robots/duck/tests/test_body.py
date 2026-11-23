@@ -91,7 +91,7 @@ class FakeRpc:
 
 
 closing = threading.Event()
-fake = types.SimpleNamespace(robot_sock="/nowhere", client="lab-go", _sid=1, _t0=0.0, _closing=closing,
+fake = types.SimpleNamespace(robot_sock="/nowhere", client="lab-go", _sid=1, _t0=0.0, _closing=closing, _body=None,
                              runlog=types.SimpleNamespace(signals=lambda sid, t, v: sigs.append(v)),
                              record=lambda **row: rows.append(row))
 fake._closing.wait = lambda s: len(asked) >= len(answers)      # one ask per tick, closed after the last answer
@@ -109,6 +109,93 @@ check("must fail: the verdict is an event when it changes, the first answer incl
 check("must fail: a failed ask is said once, the connection is opened again after each, and the next answer is an event even with "
       "the verdict as before", [e for e in events if e[2] and e[2].startswith("not asked")] == [(None, None, "not asked: OSError: gone")]
       and events[-1] == (False, True, "bus: servo 3 missing") and len(opened) == 3, (events, opened))
+
+# the body's anomalies (phase 5 item 3 step 3): body.BodyWatch at the profile's joints.limits
+from duck_lab.nav import anomaly as anom  # noqa: E402
+
+LIM = {"current_ma": 100, "current_s": 1.0, "tracking_rad": 0.5, "tracking_s": 1.0, "hot_c": 60.0, "loop_min_hz": 45.0, "loop_slow_s": 2.0}
+KNEE = JOINTS.index("left_knee")
+
+
+def st(ma=10.0, err=0.0, hz=50.0, **over):
+    cur = [10.0] * n
+    cur[KNEE] = ma
+    tg = [0.0] * n
+    tg[KNEE] = err
+    return {"joints": [0.0] * n, "targets": tg, "currents_ma": cur, "loop": {"hz": hz, "missed": 0}, **over}
+
+
+def run_states(w, states, dt=0.1):
+    return [a for i, s in enumerate(states) for a in w.state(i * dt, s)]
+
+
+w = body.BodyWatch(LIM, JOINTS)
+got = run_states(w, [st(ma=150)] * 25)
+check("must fail: a joint at or over its current for the hold is joint_overload, said once a stretch",
+      [a["kind"] for a in got] == ["joint_overload"] and got[0]["values"]["joint"] == "left_knee" and got[0]["margin"] == 50.0
+      and got[0]["values"]["held_s"] == 1.0, got)
+check("must fail: over the limit for less than the hold is nothing", run_states(body.BodyWatch(LIM, JOINTS), [st(ma=150)] * 10) == [])
+again = run_states(w, [st(ma=10)] + [st(ma=150)] * 12, dt=0.1)
+check("must fail: a new stretch after the current came back under is said again", [a["kind"] for a in again] == ["joint_overload"], again)
+trk = run_states(body.BodyWatch(LIM, JOINTS), [st(err=0.7)] * 12)
+check("must fail: a joint over its tracking error for the hold is joint_tracking, with the error and the margin",
+      [a["kind"] for a in trk] == ["joint_tracking"] and trk[0]["values"]["error_rad"] == 0.7 and abs(trk[0]["margin"] - 0.2) < 1e-9, trk)
+check("must fail: tracking_rad null (the real duck, not measured) checks no tracking and says so",
+      run_states(body.BodyWatch({**LIM, "tracking_rad": None}, JOINTS), [st(err=2.0)] * 30) == []
+      and "joint_tracking" in body.BodyWatch({**LIM, "tracking_rad": None}, JOINTS).checked()["not_checked"])
+slow = run_states(body.BodyWatch(LIM, JOINTS), [st(hz=40.0)] * 22)
+check("must fail: the loop under its rate for loop_slow_s is loop_slow", [a["kind"] for a in slow] == ["loop_slow"], slow)
+check("must fail: nothing reported is nothing checked (empty currents, no loop): absent, never zero",
+      run_states(body.BodyWatch(LIM, JOINTS), [{"joints": [0.0] * n, "targets": [0.0] * n, "currents_ma": []}] * 30) == [])
+hw = body.BodyWatch(LIM, JOINTS)
+hot = hw.health(0.0, {**health, "motors": {"hottest": "right_knee", "max_c": 63.0, "mean_c": 40.0}})
+check("must fail: the hottest servo at or over hot_c is motor_hot, at once (a poll is 10 s)",
+      [a["kind"] for a in hot] == ["motor_hot"] and hot[0]["values"]["joint"] == "right_knee", hot)
+check("motor_hot is said once while it stays hot", hw.health(10.0, {**health, "motors": {"hottest": "right_knee", "max_c": 64.0}}) == [])
+sick = {**health, "healthy": False, "degraded": True, "reason": "bus: servo 3 missing"}
+v1 = hw.health(20.0, sick)
+check("must fail: robotd not healthy is robot_unhealthy, major, said when it changes",
+      [(a["kind"], a.get("severity")) for a in v1] == [("robot_unhealthy", "major")] and hw.health(30.0, sick) == [], v1)
+deg = hw.health(40.0, {**health, "degraded": True, "reason": "battery low"})
+check("degraded but healthy is minor", [(a["kind"], a.get("severity")) for a in deg] == [("robot_unhealthy", "minor")], deg)
+check("healthy again, then sick: said again", hw.health(50.0, health) == [] and len(hw.health(60.0, sick)) == 1)
+check("every body anomaly is a kind the record knows", all(anom.record(a["kind"], a["summary"], a.get("severity"), margin=a.get("margin"),
+                                                                       values=a.get("values")) for a in got + trk + slow + hot + v1))
+
+# the profile: the real duck's limits in the base (Pollen's numbers, tracking not measured), the simulator's in variants.sim
+from pathlib import Path  # noqa: E402
+
+from runfile.profile import load_profile  # noqa: E402
+
+PROFILE = Path(__file__).resolve().parents[1] / "profile.json"
+real, sim = load_profile(PROFILE, "real").get("joints.limits"), load_profile(PROFILE, "sim").get("joints.limits")
+check("the real duck: Pollen's numbers (900 mA of the servo's 1000, hot at 60 C), tracking not measured (null)",
+      real["current_ma"] == 900 and real["hot_c"] == 60.0 and real["tracking_rad"] is None, real)
+check("the simulator: its own current (the stand-in's scale) and a tracking limit; the rest the base's",
+      sim["current_ma"] == 120 and sim["tracking_rad"] == 0.5 and sim["hot_c"] == 60.0 and sim["loop_min_hz"] == 45.0, sim)
+
+# the navigator raises them: the state stream and the health thread hand each found anomaly to Navigator.anomaly
+raised = []
+nav = types.SimpleNamespace(_body=body.BodyWatch({**LIM, "current_s": 0.0}, JOINTS), anomaly=lambda kind, summary, **f: raised.append(kind))
+for _ in range(15):
+    navrun.Navigator._check_body(nav, st(ma=150))
+check("must fail: the state stream's check raises joint_overload through Navigator.anomaly", raised == ["joint_overload"], raised)
+broken = types.SimpleNamespace(_body=types.SimpleNamespace(state=lambda t, s: 1 / 0), anomaly=lambda **f: None)
+navrun.Navigator._check_body(broken, st())
+check("a failing watch stops itself and never the state stream", broken._body is None)
+answers = [sick]
+asked.clear()
+rows.clear()
+raised.clear()
+fake._body, fake.anomaly = body.BodyWatch(LIM, JOINTS), lambda kind, summary, **f: raised.append(kind)
+fake._closing.wait = lambda s: len(asked) >= len(answers)
+real_rpc, navrun.Rpc = navrun.Rpc, FakeRpc
+try:
+    navrun.Navigator._health(fake)
+finally:
+    navrun.Rpc = real_rpc
+check("must fail: the health thread raises robot_unhealthy beside its robot_health event", raised == ["robot_unhealthy"]
+      and [r.get("healthy") for r in rows] == [False], (raised, rows))
 
 print("BODY", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

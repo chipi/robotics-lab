@@ -172,6 +172,10 @@ OLD = {
                   "unexplained_clear_m": 0.30,
                   # the refusal burst and the once-per-place rule, out of nav/anomaly.py (the operator: configurable)
                   "refusal_burst_n": 3, "refusal_burst_moved_m": 0.10, "same_place_moved_m": 0.10, "same_place_gap_s": 5.0},
+    # new in phase 5 item 3 step 3 (no constant before it): the body's limits as the simulator has them (its block's `measured`:
+    # sim/probes/body_limits.py); the real duck's current and temperature are Pollen's, its tracking limit not measured (null)
+    "joints": {"limits": {"current_ma": 120, "current_s": 1.0, "tracking_rad": 0.5, "tracking_s": 1.0, "hot_c": 60.0,
+                          "loop_min_hz": 45.0, "loop_slow_s": 2.0}},
     "rates": WAS_ROBOT_FILE["rates"],
     "capabilities": WAS_ROBOT_FILE["capabilities"],
 }

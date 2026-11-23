@@ -191,6 +191,7 @@ class Navigator:
     _lease_said = False
     anomalies = _head = _beat = None      # the profile's anomalies block, the head watch and the streams' watchdog state (configure)
     _returns = None          # the depth returns of the last few seconds (anomaly.Returns), for room_disagrees (configure)
+    _body = None             # the body's anomalies at the profile's joints.limits (body.BodyWatch, configure)
 
     def __init__(self, sockets: dict, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None,
@@ -281,6 +282,8 @@ class Navigator:
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data),
                              **{k: v for k, v in (getattr(self.profile, "meta", None) or {}).items() if k in ("checksum", "version", "source")},
                              "data": self.profile.data})
+        if self._body:
+            self.record(event="body_watch", **self._body.checked())     # the body's limits in force, and what is not checked
         self._start_health()           # after the calibration event: a run's first event says what it ran on
 
     def configure(self, profile) -> None:
@@ -322,6 +325,8 @@ class Navigator:
             self._returns = anom.Returns(an["room_disagrees_window_s"])
             now = time.monotonic()
             self._beat = {"state": anom.Staleness(an["state_stale_s"], now), "depth": anom.Staleness(an["depth_stale_s"], now)}
+        limits = profile.get("joints.limits")
+        self._body = body.BodyWatch(limits, JOINTS) if limits else None
 
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
@@ -522,6 +527,17 @@ class Navigator:
         self.anomaly("refused_unexplained", f"{why}, with nothing in the map within {limit} m of the pose and the goal not lethal",
                      values={"why": why, "start_cost": start_cost, "goal_cost": goal_cost, "clear_m": limit, "goal": [round(v, 3) for v in goal]})
 
+    def _check_body(self, s: dict) -> None:
+        """The body's anomalies from one state (body.BodyWatch): a joint's current or tracking error held past its limit, the loop."""
+        try:
+            found = self._body.state(time.monotonic(), s)
+        except Exception as e:  # noqa: BLE001 - an observer must not stop the state stream
+            self._body = None
+            print(f"body watch stopped: {type(e).__name__}: {e}", file=sys.stderr)
+            return
+        for a in found:
+            self.anomaly(**a)
+
     def _check_head(self, s: dict) -> None:
         """head_off_walk, on the state stream: the head joints against the walking pose while the last command was a walk."""
         joints = s.get("joints") or []
@@ -583,6 +599,9 @@ class Navigator:
                 if verdict != last:
                     self.record(event="robot_health", **verdict)
                     last = verdict
+                if self._body:
+                    for a in self._body.health(time.monotonic(), h):
+                        self.anomaly(**a)
             except Exception as e:  # noqa: BLE001 - the health is information: a failed ask is said once, the run goes on
                 if rpc is not None:
                     rpc.close()
@@ -833,6 +852,8 @@ class Navigator:
         if self._beat:
             self._beat["state"].seen(time.monotonic())
             self._check_head(s)
+        if self._body:
+            self._check_body(s)
         if self.runlog and not self._logging_failed:
             try:
                 self.runlog.signals(self._sid, time.monotonic() - self._t0, self._signal_values(s))

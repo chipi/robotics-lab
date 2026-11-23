@@ -98,3 +98,31 @@ before 0.895, 0.950, 0.888; after 0.956, 0.958, 0.848. The signal ticks' spacing
 sides (median 60 ms, p95 61-62 ms). Not covered: three runs a side cannot see a small change in the
 pass rate; the body values in those six runs were not re-checked (challenge 1's were); a run is about
 5 % larger.
+
+## Step 3, part 1: the body's anomalies (2026-11-23)
+
+The operator: limits in the profile, for the simulator and the real duck both. `joints.limits` in
+`robots/duck/profile.json`, read by `body.BodyWatch` (`duck_lab/nav/body.py`) in the navigator:
+
+| Anomaly | Raised when | Real duck | Simulator |
+| --- | --- | --- | --- |
+| `joint_overload` (major) | a joint's current at or over `current_ma` for `current_s` | 900 mA, 1 s | 120, 1 s |
+| `joint_tracking` (major) | commanded angle less angle over `tracking_rad` for `tracking_s` | not checked (null) | 0.5 rad, 1 s |
+| `loop_slow` (minor) | the state's loop rate under `loop_min_hz` for `loop_slow_s` | 45 Hz, 2 s | the same |
+| `motor_hot` (major) | the hottest servo at or over `hot_c` (each health answer) | 60 C | the same (never fires: 32 C constant) |
+| `robot_unhealthy` | robotd's verdict, when it changes: major not healthy, minor degraded | | |
+
+The real duck's numbers are Pollen's (`duck-control/src/model.rs` `CURRENT_LIMIT_MA` 1000,
+`duck-ipc-proto/src/vetbook.rs` `HOT_C` 60, the XL330's shutdown at 70 C); no tracking number
+exists there, so it is null until `sim/probes/body_limits.py` measures a real run, and every run's
+`body_watch` event says what is not checked. The hold times are proposed, not measured.
+
+**Proof:** `tests/test_body.py` (the watch, both variants of the profile, the navigator raising
+through the state stream and the health thread), 9 of 9 mutants killed; `make ci-fast` PASS. On
+the simulator (seed 1, this navigator as `--payload`): challenges 1-11, 21 and 22 once each, every
+run with its `body_watch` event and no anomaly of any kind; challenges 1-11 the same verdicts as
+item 2's batch (6 and 7 refused there too). Challenge 21 failed once by a hair (goal 9 said reached
+0.25 m from it); then 21 and 6 three times a side, alternating with main's navigator: 21 before 2
+of 3 (one stalled on goal 9), after 3 of 3; 6 before 0 of 3, after 2 of 3 (K40). **Not covered:** no
+run raised a body anomaly live, so the raise is proven by the unit tests only; the real duck's
+limits have not met a real run.

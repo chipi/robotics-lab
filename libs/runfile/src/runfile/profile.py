@@ -168,7 +168,8 @@ NEEDS = {"locomotion": "locomotion", "sensors": "range_sensing", "localisation":
 PLUGIN = re.compile(r"^[a-z][a-z0-9_-]*@[1-9][0-9]*$")
 META = ("measured", "why")
 
-# A field's kind: "pos" (a number above 0), "num" (any number), "nonneg", "int" (an integer above 0), "str", "bool", "strs", "ints",
+# A field's kind: "pos" (a number above 0), "opt_pos" (a number above 0, or null: not checked, and said so), "num" (any number),
+# "nonneg", "int" (an integer above 0), "str", "bool", "strs", "ints",
 # "pos_map" (an object of numbers above 0: a leaf, as a table of values), "num_map", or a nested dict. Every dict may also carry
 # `measured` and `why`.
 SCHEMA = {
@@ -223,8 +224,10 @@ SCHEMA = {
     "capabilities": "any",
     "guardrails": "any",
     "rates": {"state_hz": "pos", "map_hz": "pos", "max_state_hz": "pos"},
-    # the robot's joints by name, in its own controller's order (limits come with phase 5's step 3)
-    "joints": {"names": "strs"},
+    # the robot's joints by name, in its own controller's order, and the body's limits its anomalies are raised at (phase 5 item 3
+    # step 3): a joint's current and its tracking error held past a limit, the hottest servo, the control loop's rate
+    "joints": {"names": "strs", "limits": {"current_ma": "pos", "current_s": "pos", "tracking_rad": "opt_pos", "tracking_s": "pos",
+                                          "hot_c": "pos", "loop_min_hz": "pos", "loop_slow_s": "pos"}},
     # the robot's parts that run beside the navigator, each with how its state is checked (checked in _check_subsystems)
     "subsystems": "any",
 }
@@ -245,6 +248,8 @@ def _leaf(v, kind: str, where: str) -> None:
         ok = isinstance(v, int) and not isinstance(v, bool) and v > 0
     elif kind == "pos":
         ok = _is_number(v) and v > 0
+    elif kind == "opt_pos":
+        ok = v is None or (_is_number(v) and v > 0)
     elif kind == "nonneg":
         ok = _is_number(v) and v >= 0
     elif kind == "num":
@@ -262,6 +267,7 @@ def _leaf(v, kind: str, where: str) -> None:
         raise AssertionError(f"{where}: kind {kind!r}")
     if not ok:
         want = {"str": "a non-empty string", "bool": "true or false", "int": "a whole number above 0", "pos": "a number above 0",
+                "opt_pos": "a number above 0 or null",
                 "nonneg": "a number, 0 or more", "num": "a number", "strs": "a list of strings", "ints": "a list of whole numbers",
                 "nums": "a list of numbers above 0", "pos_map": "an object of numbers above 0",
                 "num_map": "an object of numbers"}[kind]
