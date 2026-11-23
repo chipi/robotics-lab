@@ -9,7 +9,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from labrunner.geometry import LAYOUT
+from labrunner import geometry
+
+LAYOUT = geometry.layout_path()
 from labrunner.guard import TruthGuard, drop_distance, load_layout
 from runfile import scenefile
 

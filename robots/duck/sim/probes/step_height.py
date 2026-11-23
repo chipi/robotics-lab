@@ -1,7 +1,7 @@
 """How high a bar the duck can walk over (the robot's capability, for the challenges that ask it: RFC-0008 challenge 16,
 the operator 2026-11-17: challenges follow the robot's physical limits). A straight 1 m wide corridor with a bar 4 cm
 deep across it 0.6 m ahead; the duck walks straight at WALK_MPS until past it, stuck or WALK_S, the truth sampled every tick. Per bar height,
-TRIALS trials: crossed (the trunk 0.25 m past the bar), stalled (did not), fell (trunk below evaluate.FALLEN_Z_M).
+TRIALS trials: crossed (the trunk 0.25 m past the bar), stalled (did not), fell (trunk below the profile's `judge.fall_z_m`).
 
 Needs the simulator (each trial resets it on its scene, ~40 s).
 
@@ -16,7 +16,9 @@ from pathlib import Path
 
 from labrunner.scene import Scene, mjcf, slab, wall
 import simhost
-from labrunner.geometry import FALLEN_Z_M
+from labrunner import geometry
+
+FALLEN_Z_M = geometry.profile().judge.fall_z_m
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.run import Navigator, host_links
 from simhost.truth import Body  # noqa: E402 - the probe's own truth, to measure with (the navigator has none)

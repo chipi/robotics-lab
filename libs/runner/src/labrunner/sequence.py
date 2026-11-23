@@ -8,11 +8,10 @@ import math
 
 from labrunner.judge import Judge
 from labrunner.scene import Scene
-from labrunner.geometry import REACHED_M
 from labrunner.frames import compose, inverse
 
 
-def run(nav, scene: Scene, truth) -> list:
+def run(nav, scene: Scene, truth, reached_m: float) -> list:
     """Visit scene.goals in order, each within scene.time_s; stop at the first goal not reached (the run after it would
     start from a place nobody planned). One row per goal tried: the status the navigator gave, the truth's distance to the
     goal, and the belief's distance and heading difference from the truth (both in the map frame, the truth put there by the
@@ -30,7 +29,7 @@ def run(nav, scene: Scene, truth) -> list:
                "belief_error_m": round(math.dist(belief[:2], in_map[:2]), 3) if belief else None,
                "heading_error_deg": round(abs(math.degrees(math.remainder(belief[2] - in_map[2], math.tau))), 1) if belief else None,
                "leg_m": round(math.dist(began[:2], goal), 2)}
-        row["reached"] = out["status"] == "reached" and row["error_m"] <= REACHED_M
+        row["reached"] = out["status"] == "reached" and row["error_m"] <= reached_m
         rows.append(row)
         nav.record(event="goal", **row)
         if not row["reached"]:
@@ -51,7 +50,7 @@ def verdict(judge: Judge, scene: Scene, rows: list) -> dict:
     reached = sum(r["reached"] for r in rows)
     if reached < n:
         last = rows[-1] if rows else {"n": 1, "status": "none", "why": None, "error_m": None}
-        failed.append(f"goal {last['n']} of {n}: " + (f"said reached {last['error_m']:.2f} m from it (over {REACHED_M} m)"
+        failed.append(f"goal {last['n']} of {n}: " + (f"said reached {last['error_m']:.2f} m from it (over {judge.reached} m)"
                       if last["status"] == "reached" else f"{last['status']}" + (f": {last['why']}" if last["why"] else "")))
     return {"pass": not failed, "failed": failed, "status": "reached" if reached == n else (rows[-1]["status"] if rows else "none"),
             "why": None if reached == n or not rows else rows[-1]["why"],

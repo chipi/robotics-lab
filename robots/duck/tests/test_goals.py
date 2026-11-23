@@ -4,7 +4,12 @@ import json
 import sys
 
 from labrunner.evaluate import draw_goals
-from labrunner.geometry import GOAL_CLEARANCE_M, GOALS, LAYOUT, clearance, obstacles
+from labrunner import geometry
+from labrunner.geometry import clearance, obstacles
+
+GOAL_CLEARANCE_M = geometry.profile().footprint.goal_clearance_m
+GOALS = geometry.goals_path()
+LAYOUT = geometry.layout_path()
 
 failures = []
 

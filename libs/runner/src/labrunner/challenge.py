@@ -88,7 +88,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
             out_ = {"status": "refused", "why": "no pose on the map after the survey"}
             verdict = judge.verdict(out_, truth())
         elif scene.mode == "sequence":
-            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene, truth))
+            verdict = sequence.verdict(judge, scene, sequence.run(nav, scene, truth, judge.reached))
         elif scene.mode == "explore":
             (run_out / "start.json").write_text(json.dumps({"map": list(pose), "truth": truth(), "scale": nav.scale}))
             result = nav.explore(scene.time_s / 60)

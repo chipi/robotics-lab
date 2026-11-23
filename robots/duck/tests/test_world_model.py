@@ -4,7 +4,10 @@ import json
 import math
 import sys
 
-from labrunner.geometry import LAYOUT, obstacles
+from labrunner import geometry
+from labrunner.geometry import obstacles
+
+LAYOUT = geometry.layout_path()
 from worldmodel.objects import Part, load_kinds, part_from_geom
 from worldmodel.semantic_map import CONFIRM_N, Detection, SemanticMap
 from labrunner.sim_camera import SimCamera

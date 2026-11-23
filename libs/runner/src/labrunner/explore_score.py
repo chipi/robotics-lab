@@ -7,7 +7,7 @@ Per run, from its ticks.jsonl, start.json and map_grid.json (the simulator's tru
 - rooms visited (rooms.score: the truth inside one of the scene's rooms, runfile.scenefile) and each room's map area within 25 % (phase 2's bar);
 - coverage: the share of each room's floor the map knows (free or occupied cells, truth frame);
 - how it ended (the last of trapped / no_frontier_left / stopped_by_guardrail / cancelled, else the time ran out) and when;
-- safety by truth: contacts (trunk centre nearer an obstacle's outline than evaluate.FOOTPRINT_M), falls (stopped_by_guardrail: the truth guard);
+- safety by truth: contacts (trunk centre nearer an obstacle's outline than the profile's footprint), falls (stopped_by_guardrail: the truth guard);
 - legs by outcome, and every leg that did not reach its target as a blocker: its kind (status and reason, numbers
   removed), the room it happened in, and the seconds it took (from the previous leg's end).
 """
@@ -19,7 +19,8 @@ import re
 import statistics
 from pathlib import Path
 
-from labrunner.geometry import FOOTPRINT_M, LAYOUT, clearance, obstacles
+from labrunner import geometry
+from labrunner.geometry import clearance, obstacles
 from labrunner.frames import compose, inverse
 from labrunner.rooms import score as rooms_score
 from runfile import scenefile
@@ -159,7 +160,7 @@ def belief_score(run: Path, rows: list) -> dict:
             "refused": sum(1 for r in ev if r["event"] == "relocalise" and r["status"] == "refused")}
 
 
-def score_run(run: Path, obs: list, scene: scenefile.Scene) -> dict:
+def score_run(run: Path, obs: list, scene: scenefile.Scene, footprint_m: float) -> dict:
     rows = [json.loads(line) for line in open(run / "ticks.jsonl")]
     rooms = rooms_score(run, scene)
     end, end_t, last_t, prev_leg_t = "time", None, 0.0, 0.0
@@ -196,7 +197,7 @@ def score_run(run: Path, obs: list, scene: scenefile.Scene) -> dict:
             if prev:
                 walked += math.dist(p, prev)
             prev = p
-            near = clearance(p, obs)[0] < FOOTPRINT_M
+            near = clearance(p, obs)[0] < footprint_m
             contacts += near and not in_contact
             in_contact = near
     return {"run": run.name, "visited": rooms["visited"], "areas_ok": rooms["areas_ok"], "bar": rooms["bar"],
@@ -213,9 +214,10 @@ def main() -> None:
     ap.add_argument("--md", action="store_true", help="also print the batch's row for EXPLORE-PROGRESS.md")
     ap.add_argument("--scene", default="apartment", help="the runs' scene (default apartment)")
     args = ap.parse_args()
-    obs = obstacles(json.loads(LAYOUT.read_text()))
+    obs = obstacles(json.loads(geometry.layout_path().read_text()))
     scene = scenefile.load(args.scene)
-    out = [score_run(r, obs, scene) for r in args.runs]
+    footprint = geometry.profile().footprint.radius_m
+    out = [score_run(r, obs, scene, footprint) for r in args.runs]
     for o in out:
         cov = " ".join(f"{n[:4]} {int(v * 100)}%" for n, v in o["coverage"].items())
         print(f"{o['run']}: rooms {o['visited']}/6 ({', '.join(o['rooms'])}), areas ok {o['areas_ok']}/6, "

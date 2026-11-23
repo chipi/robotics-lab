@@ -19,7 +19,6 @@ from labrunner import robots
 from worldmodel.objects import part_from_geom
 from worldmodel.semantic_map import Detection, centre
 
-SIM_DIR = robots.sim_dir()          # the robot's simulator files (labrunner.robots): the apartment's layout and objects
 DEFAULTS = {"hfov_deg": 60.0, "range_m": 3.0, "p_detect": 0.8, "range_noise": 0.05, "bearing_noise_deg": 2.0,
             "period_s": 0.5}
 
@@ -44,8 +43,11 @@ def _segment_hits_box(a: tuple, b: tuple, g: dict) -> bool:
 
 
 class SimCamera:
-    def __init__(self, layout: Path = SIM_DIR / "apartment_layout.json", objects: Path = SIM_DIR / "apartment_objects.json",
-                 config: dict = None, seed: int = None):
+    def __init__(self, layout: Path | None = None, objects: Path | None = None, config: dict = None, seed: int = None):
+        """`layout`, `objects`: the scene's (default: the robot's simulator files, labrunner.robots, read now)."""
+        if layout is None or objects is None:
+            sim = robots.sim_dir()
+            layout, objects = layout or sim / "apartment_layout.json", objects or sim / "apartment_objects.json"
         geoms = {g["name"]: g for g in json.loads(Path(layout).read_text())["geoms"]}
         self.cfg = {**DEFAULTS, **{k: v for k, v in (config or {}).items() if k in DEFAULTS}}
         self.walls = [g for n, g in geoms.items() if n.startswith("w") and g["type"] == "box"]

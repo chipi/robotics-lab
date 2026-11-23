@@ -7,17 +7,20 @@ apartment are scored the same way.
 import math
 
 from labrunner.scene import Scene, layout
-from labrunner.geometry import FALLEN_Z_M, FOOTPRINT_M, PROFILE, REACHED_M, footprint_distance, obstacles
-
-DROP_MARGIN_M = PROFILE.judge.drop_margin_m      # the trunk centre's nearest distance to a drop's outline (ADR-0015, the operator's)
-BOUNDS_MARGIN_M = PROFILE.judge.bounds_margin_m
+from labrunner import geometry
+from labrunner.geometry import footprint_distance, obstacles
 
 
 class Judge:
-    def __init__(self, scene: Scene):
+    def __init__(self, scene: Scene, profile=None):
+        """`profile`: the robot's profile it judges by (its footprint, fall height, margins, reach), else labrunner.geometry's."""
+        p = profile if profile is not None else geometry.profile()
+        self.footprint, self.fallen_z, self.reached = p.footprint.radius_m, p.judge.fall_z_m, p.judge.reached_m
+        self.drop_margin = p.judge.drop_margin_m      # the trunk centre's nearest distance to a drop's outline (ADR-0015, the operator's)
+        self.bounds_margin = p.judge.bounds_margin_m
         self.scene = scene
         lay = layout(scene)
-        self.obs = obstacles(lay)
+        self.obs = obstacles(lay, overhead_clear_m=p.footprint.overhead_clear_m)
         self.drops = [g for g in lay["geoms"] if g["name"].startswith("floor_") and not g["name"].startswith("floor_step")
                       and g["pos"][2] + g["size"][2] < -1e-6]
         self.bounds = scene.bounds()
@@ -39,13 +42,14 @@ class Judge:
         z -= self.scene.floor_top(p)      # above the floor it is on (a flight down, a step up)
         self.lowest = min(self.lowest, z)
         x0, x1, y0, y1 = self.bounds
-        if z < FALLEN_Z_M:
-            why = ("fall", f"trunk {z:.3f} m above its floor, below {FALLEN_Z_M} m")
-        elif drop < DROP_MARGIN_M:
-            why = ("drop_margin", f"{drop:.3f} m from a drop's edge, under {DROP_MARGIN_M} m")
-        elif self.obs and near[0] < FOOTPRINT_M:
-            why = ("contact", f"{near[0]:.3f} m from {near[1]}, under the footprint {FOOTPRINT_M} m")
-        elif not (x0 - BOUNDS_MARGIN_M < p[0] < x1 + BOUNDS_MARGIN_M and y0 - BOUNDS_MARGIN_M < p[1] < y1 + BOUNDS_MARGIN_M):
+        m = self.bounds_margin
+        if z < self.fallen_z:
+            why = ("fall", f"trunk {z:.3f} m above its floor, below {self.fallen_z} m")
+        elif drop < self.drop_margin:
+            why = ("drop_margin", f"{drop:.3f} m from a drop's edge, under {self.drop_margin} m")
+        elif self.obs and near[0] < self.footprint:
+            why = ("contact", f"{near[0]:.3f} m from {near[1]}, under the footprint {self.footprint} m")
+        elif not (x0 - m < p[0] < x1 + m and y0 - m < p[1] < y1 + m):
             why = ("bounds", f"at ({p[0]:.2f}, {p[1]:.2f}), outside the scene")
         else:
             return None
@@ -56,12 +60,12 @@ class Judge:
 
     def verdict(self, out: dict, truth_end: tuple) -> dict:
         """PASS when no invariant broke and the outcome is the right one: `reach` — the navigator said reached and truth is
-        within REACHED_M of the goal; `refuse` — it refused, with its reason (a stall or a timeout is not a refusal)."""
+        within the profile's `judge.reached_m` of the goal; `refuse` — it refused, with its reason (a stall or a timeout is not a refusal)."""
         err = math.dist(truth_end[:2], self.scene.goal)
         if self.scene.right == "reach":
-            right = out.get("status") == "reached" and err <= REACHED_M
+            right = out.get("status") == "reached" and err <= self.reached
             wrong = None if right else (f"{out.get('status')}: {out.get('why', '')}".strip(": ") if out.get("status") != "reached"
-                                        else f"said reached {err:.2f} m from the goal (over {REACHED_M} m)")
+                                        else f"said reached {err:.2f} m from the goal (over {self.reached} m)")
         else:   # only a refusal is right: a stall stops safely, but it gave up rather than said why not (the operator, 2026-11-16)
             right = out.get("status") == "refused" and bool(out.get("why"))
             wrong = None if right else f"{out.get('status')} where refusing was right" + (f" ({out['why']})" if out.get("why") else "")

@@ -5,7 +5,7 @@
 The format 2 run (Observatory, ADR-0014) is the record; ticks.jsonl is kept during the transition.
 
 Goals are drawn once, with a fixed seed, from free floor in the apartment layout (sim/apartment_layout.json,
-from MuJoCo): at least GOAL_CLEARANCE_M from every colliding geom and the staircase. Every goal starts
+from MuJoCo): at least the profile's `footprint.goal_clearance_m` from every colliding geom and the staircase. Every goal starts
 from the dock with an empty map (the host's reset, simhost.reset: the simulator restarted, mapd fresh), as the bar
 says; --chain runs them one after another instead (run 4 did, by mistake: drift and failures carried
 from goal to goal). Each goal is given in world coordinates
@@ -14,7 +14,7 @@ and converted to the map with the map ← world transform measured at the first 
 Scored against the simulator's truth (the body server's trunk pose), not the navigator's belief:
 - error: truth's distance to the goal when the navigator says "reached";
 - clearance: the trunk centre's nearest distance to any colliding geom's footprint, every tick.
-  "Contact" is clearance under FOOTPRINT_M. This is an approximation of MuJoCo's contact list,
+  "Contact" is clearance under the profile's footprint (`footprint.radius_m`). This is an approximation of MuJoCo's contact list,
   which the body server does not expose.
 """
 
@@ -28,17 +28,18 @@ from pathlib import Path
 from labrunner import robots
 from labrunner.cli import add_args
 from labrunner.frames import compose, inverse
-from labrunner.geometry import (FALLEN_Z_M, FOOTPRINT_M, GOAL_CLEARANCE_M, GOALS, LAYOUT, REACHED_M, clearance,
-                                footprint_distance, obstacles)
+from labrunner import geometry
+from labrunner.geometry import clearance, footprint_distance, obstacles
 from runfile import keys, scenefile
 from runfile.catalog import default_data
 
 
-def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
+def draw_goals(layout: dict, n: int, seed: int = 1, clearance_m: float | None = None) -> list:
     # Phase 1's scope (RFC-0002 §3.4, revised): what the duck sees from the dock or on the way — the
     # office and the north corridor. Rooms behind walls it has not seen are phase 2's (exploring).
     floors = [g for g in layout["geoms"] if g["name"] in ("floor_office", "floor_cor_n")]
     obs = obstacles(layout, landmarks=False)      # phase 1's goals as they were drawn (comparable with old runs)
+    clearance_m = geometry.profile().footprint.goal_clearance_m if clearance_m is None else clearance_m
     rng = random.Random(seed)
     goals = []
     while len(goals) < n:
@@ -47,14 +48,14 @@ def draw_goals(layout: dict, n: int, seed: int = 1) -> list:
              f["pos"][1] + rng.uniform(-f["size"][1], f["size"][1]))
         stairs = [g for g in layout["geoms"] if g["name"].startswith("stair")]
         near_stairs = min((footprint_distance(p, s) for s in stairs), default=math.inf)
-        if clearance(p, obs)[0] >= GOAL_CLEARANCE_M and near_stairs >= GOAL_CLEARANCE_M:
+        if clearance(p, obs)[0] >= clearance_m and near_stairs >= clearance_m:
             goals.append((round(p[0], 2), round(p[1], 2), f["name"].removeprefix("floor_")))
     return goals
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--goals-file", type=Path, default=GOALS, help="the fixed goals (default: phase 1's 20)")
+    ap.add_argument("--goals-file", type=Path, help="the fixed goals (default: phase 1's 20, the robot's simulator files)")
     ap.add_argument("--draw", action="store_true", help="draw goals from the layout instead (--goals, --seed)")
     ap.add_argument("--goals", type=int, default=20)
     ap.add_argument("--seed", type=int, default=1)
@@ -68,7 +69,10 @@ def main() -> None:
     robots.select(args.robot)
     host = simhost.load(args.host)
     x0, x1, y0, y1 = scenefile.load(args.scene).bounds    # outside the scene's bounds is a fall
-    layout = json.loads(LAYOUT.read_text())
+    prof = geometry.profile()
+    footprint, fallen_z, reached = prof.footprint.radius_m, prof.judge.fall_z_m, prof.judge.reached_m
+    args.goals_file = args.goals_file or geometry.goals_path()
+    layout = json.loads(geometry.layout_path().read_text())
     obs = obstacles(layout)
     if args.draw:
         goals = draw_goals(layout, args.goals, args.seed)
@@ -134,9 +138,9 @@ def main() -> None:
                    **out, "truth_end": [round(v, 3) for v in end[:2]],
                    "error_m": round(math.dist(end[:2], (gx, gy)), 3),
                    "min_clearance_m": round(near[0], 3), "nearest": near[1],
-                   "contact": near[0] < FOOTPRINT_M, "wall_s": round(time.monotonic() - started, 1),
-                   "lowest_trunk_m": round(low, 3), "fell": low < FALLEN_Z_M or outside}
-            row["reached_truth"] = out["status"] == "reached" and row["error_m"] <= REACHED_M
+                   "contact": near[0] < footprint, "wall_s": round(time.monotonic() - started, 1),
+                   "lowest_trunk_m": round(low, 3), "fell": low < fallen_z or outside}
+            row["reached_truth"] = out["status"] == "reached" and row["error_m"] <= reached
             results.append(row)
             print(json.dumps(row), flush=True)
             if row["fell"]:
@@ -161,9 +165,9 @@ def main() -> None:
     # not counted, so the bar read MET.
     timeouts = sum(r["status"] in ("timeout", "stalled") for r in results)
     bar = (n == args.goals and falls == 0 and contacts == 0 and timeouts == 0 and true_ok >= 18)
-    print(f"PHASE1 goals {n}: navigator reached {said}, within {REACHED_M} m by truth {true_ok}, "
+    print(f"PHASE1 goals {n}: navigator reached {said}, within {reached} m by truth {true_ok}, "
           f"refused {refused}, timeouts or stalls {timeouts}, goals with a contact {contacts}, falls {falls} — "
-          f"bar {'MET' if bar else 'NOT MET'} (20 goals, 0 falls, 0 contacts, 0 timeouts or stalls, >= 18 within {REACHED_M} m)")
+          f"bar {'MET' if bar else 'NOT MET'} (20 goals, 0 falls, 0 contacts, 0 timeouts or stalls, >= 18 within {reached} m)")
 
 
 if __name__ == "__main__":

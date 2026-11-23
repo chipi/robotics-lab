@@ -11,7 +11,8 @@ import json
 import math
 from pathlib import Path
 
-from labrunner.geometry import FALLEN_Z_M, FOOTPRINT_M, LAYOUT, footprint_distance, obstacles
+from labrunner import geometry
+from labrunner.geometry import footprint_distance, obstacles
 from runfile.scenefile import Scene
 from worldmodel.site import inside
 
@@ -24,10 +25,11 @@ def drop_distance(scene: Scene, p) -> float:
     return min((footprint_distance(p, g) for g in scene.drop_geoms()), default=math.inf)
 
 
-def load_layout(scene: Scene, path: Path = LAYOUT) -> tuple:
-    """(obstacles of the simulator's layout, the scene's drops); no obstacles when there is no layout: no truth to check against."""
+def load_layout(scene: Scene, path: Path | None = None) -> tuple:
+    """(obstacles of the simulator's layout (`path`, else the robot's: labrunner.geometry), the scene's drops); no obstacles when
+    there is no layout: no truth to check against."""
     try:
-        obs = obstacles(json.loads(Path(path).read_text()))
+        obs = obstacles(json.loads(Path(path or geometry.layout_path()).read_text()))
     except OSError:
         obs = []
     return obs, scene.drop_geoms()
@@ -39,8 +41,8 @@ class TruthGuard:
     def __init__(self, guardrails: list, layout: tuple | None = None, profile=None, scene: Scene | None = None):
         """`layout`: (obstacles, drops), else the simulator's layout's and `scene`'s drops (load_layout); `profile`: the robot's
         profile this goal is judged by (its footprint and fall height); None: labrunner.geometry's."""
-        self.fallen_z = profile.judge.fall_z_m if profile is not None else FALLEN_Z_M
-        self.footprint = profile.footprint.radius_m if profile is not None else FOOTPRINT_M
+        p = profile if profile is not None else geometry.profile()
+        self.fallen_z, self.footprint = p.judge.fall_z_m, p.footprint.radius_m
         self.by_name: dict = {}
         for g in guardrails:
             if g["name"] in TRUTH:

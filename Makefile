@@ -73,11 +73,11 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 	@cd $(DUCK_DIR) && uv sync --frozen && echo "duck-sync PASS"
 
 # The libraries' own tests (phase 5 step 1, the architecture review of 2026-11-22): each library in its own environment, no robot's
-# package installed, so a library is proven without the duck. Tests of the runner that need a registered robot stay in the duck's
-# until the apartment leaves the runner.
+# package installed, so a library is proven without the duck (test_import: the runner imports with none). Tests of the runner that
+# need a robot (its simulator files, its profile) stay in the duck's.
 LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               runfile:tests/test_profilestore.py runfile:tests/test_observatory_paths.py gate:tests/test_gate.py runner:tests/test_gate_proxy.py \
-              runner:tests/test_profile_source.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_scenefile.py
+              runner:tests/test_profile_source.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_scenefile.py runner:tests/test_import.py
 libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
 	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
 

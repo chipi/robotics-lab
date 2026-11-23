@@ -15,7 +15,9 @@ from pathlib import Path
 import legacy_rows
 
 from labrunner.floor import coverage_by, known_test, reachable_floor
-from labrunner.geometry import LAYOUT
+from labrunner import geometry
+
+LAYOUT = geometry.layout_path()
 from runfile import scenefile
 
 layout = json.loads(LAYOUT.read_text())

@@ -1,27 +1,35 @@
 """The judge's geometry and numbers (RFC-0022, from the evaluation): the robot's footprint and thresholds (its profile's,
 variant sim), the simulator layout's files, and the distances the judge, the scores and the truth guard measure with.
 
-The robot is the one the runner runs (labrunner.robots): read once, when this module is imported. With one robot
-registered that is it; a second one needs its --robot read before the course's modules are imported (not built yet)."""
+The robot is the one the runner runs (labrunner.robots), read when asked (`profile()`, `layout_path()`, `goals_path()`), not
+when this module is imported: a command reads it after its --robot (phase 5 item 2).
+
+The numbers a course judges by are the profile's (robots/duck/profile.json, variant sim, for the duck): `footprint.radius_m`
+(the trunk centre closer than this to an obstacle's outline: a part can touch), `judge.fall_z_m` (trunk height below this is a
+fall), `footprint.overhead_clear_m` (obstacles whose underside is higher pass over the robot's head), `footprint.goal_clearance_m`,
+`judge.reached_m` (truth within this of the goal counts as reached). The duck as the simulator models it
+(robots/duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every collision part within 8.3 cm of the trunk's centre in plan
+view."""
 
 import math
+from pathlib import Path
 
 from labrunner import robots
 
-ROBOT = robots.get()
-LAYOUT = robots.sim_dir() / "apartment_layout.json"
-GOALS = robots.sim_dir() / "phase1_goals.json"
-# The duck as the simulator models it (robots/duck/sim/measure_duck.py, STAND pose): 27.2 cm tall, every
-# collision part within 8.3 cm of the trunk's centre in plan view. Pollen publishes ~25 cm tall,
-# 14 cm wide, under 800 g; the model's extra 2 cm is the head in the standing pose.
-# The harness judges the simulated duck: the numbers are its profile's (robots/duck/profile.json, variant sim).
-PROFILE = robots.profile("sim")
-DUCK_HEIGHT_M = PROFILE.footprint.height_m
-FOOTPRINT_M = PROFILE.footprint.radius_m       # the trunk centre closer than this to an obstacle's outline: a part can touch
-FALLEN_Z_M = PROFILE.judge.fall_z_m         # trunk height below this (standing: 0.116) is a fall; so is leaving the flat
-OVERHEAD_CLEAR_M = PROFILE.footprint.overhead_clear_m   # obstacles whose underside is higher than this pass over the duck's head
-GOAL_CLEARANCE_M = PROFILE.footprint.goal_clearance_m
-REACHED_M = PROFILE.judge.reached_m          # truth within this of the goal counts as reached
+
+def profile():
+    """The robot's profile in the simulator, the version this machine runs (labrunner.robots.profile_file)."""
+    return robots.profile("sim")
+
+
+def layout_path() -> Path:
+    """The robot's simulator layout (what the robot can walk into in the apartment)."""
+    return robots.sim_dir() / "apartment_layout.json"
+
+
+def goals_path() -> Path:
+    """Phase 1's fixed goals in the apartment."""
+    return robots.sim_dir() / "phase1_goals.json"
 
 
 def footprint_distance(p: tuple, g: dict) -> float:
@@ -47,11 +55,12 @@ def underside(g: dict) -> float:
     return z - g["size"][0]
 
 
-def obstacles(layout: dict, landmarks: bool = True) -> list:
+def obstacles(layout: dict, landmarks: bool = True, overhead_clear_m: float | None = None) -> list:
     """Colliding geoms the duck can walk into: not the floors, not the stairs' treads (the hole is the
     cliff check's business, not a contact). With landmarks, also the per-room lm_* markers: visual only
     in the simulator, but the depth sensor sees them, so in this world they are things the duck would hit
-    (RFC-0016; b7 ended three runs 3 cm from lm_office, uncounted)."""
+    (RFC-0016; b7 ended three runs 3 cm from lm_office, uncounted). `overhead_clear_m`: the profile's when not given."""
+    clear = profile().footprint.overhead_clear_m if overhead_clear_m is None else overhead_clear_m
     out = []
     for g in layout["geoms"]:
         name = g["name"]
@@ -59,7 +68,7 @@ def obstacles(layout: dict, landmarks: bool = True) -> list:
         if (not g["collides"] and not marker) or g["type"] == "plane" or name.startswith("floor") or \
                 name.startswith("stair"):
             continue
-        if underside(g) > OVERHEAD_CLEAR_M:
+        if underside(g) > clear:
             continue    # above the duck's head (a table top, a high shelf): it walks under it
         out.append(g)
     return out

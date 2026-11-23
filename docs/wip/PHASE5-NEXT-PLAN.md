@@ -4,9 +4,9 @@
 for the next session to start from; updated the same day after item 1 (`0488ca3`, `642a82b`, both CI
 green), and on 2026-11-23 after item 2's first part. The order is
 [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
-[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Next: item 2's
-second part, the course modules reading the robot when a command starts.** Items 3 to 5 are not
-started.
+[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Item 2 is done**
+(both parts). **Next: item 3**, RFC-0023 steps 2 and 3; its first check (what the simulator's
+bridge carries per joint) is read-only.
 
 ## Where things stand
 
@@ -147,10 +147,19 @@ refused, refused (0 of 3); both sides show both failures, too few runs to tell 1
 run); the stairwell copies in the duck's viewer and probes stay (K47). **Waiting for the operator
 after the push:** `observatory scene apartment` replaces the data folder's 57-box file.
 
-**Part 2, next:** no module-level `robots.get()` or `robots.profile()`: `geometry.py` (`ROBOT`,
-`LAYOUT`, `GOALS`, `PROFILE` and the numbers from it), `sim_camera.py` (`SIM_DIR`), `judge.py` and
-`floor.py` (margins from `PROFILE`), read when a command starts; their importers (the runner's
-modules, the duck's probes and tests) follow.
+**Part 2 done 2026-11-23 (the robot read when a command starts).** No module-level `robots.get()`,
+`robots.profile()` or `robots.sim_dir()` left in the runner: `geometry.py` has `profile()`,
+`layout_path()`, `goals_path()` (its `ROBOT`, `LAYOUT`, `GOALS`, `PROFILE` and the numbers from it
+are gone); `Judge(scene, profile=None)` keeps its numbers (fall height, footprint, margins, reach),
+`sequence.run` takes `reached_m`, `floor.lattice`, the truth guard, `lab-eval` and the explore
+score read the profile when called, `SimCamera` its files when made. The duck's probes and tests
+read the same values at their top. Proof: `test_import` (in the runner's own environment, no robot
+registered: every labrunner module imports, and the judge judges by the profile it is given), in
+`make test-libs`; 5 mutants killed (a module-level profile or sim folder read, the judge ignoring
+its profile or its reach, a sequence ignoring `reached_m`); `make ci-fast` PASS; the explore score
+and `lab-rooms` of the 8 runs the same as before item 2; on the simulator challenges 1 and 8 pass,
+21 and 22 pass on part 1's code (`cb1c1cf`) and on this; `make sim-duck` PASS 48 FAIL 0. Not
+covered: `lab-eval` and `lab-explore` not run live (as part 1).
 
 ### 3. RFC-0023 steps 2 and 3, side by side
 

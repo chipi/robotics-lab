@@ -8,9 +8,15 @@ import tempfile
 from pathlib import Path
 
 from labrunner.challenges import CHALLENGES, build
-from labrunner.judge import DROP_MARGIN_M, Judge
+from labrunner import geometry
+from labrunner.judge import Judge
+
+DROP_MARGIN_M = geometry.profile().judge.drop_margin_m
+REACHED_M = geometry.profile().judge.reached_m
 from labrunner.scene import TRUNK_START, Box, Scene, layout, miniview_scene, mjcf, moved, slab
-from labrunner.geometry import FOOTPRINT_M, footprint_distance
+from labrunner.geometry import footprint_distance
+
+FOOTPRINT_M = geometry.profile().footprint.radius_m
 
 failures = []
 
@@ -111,7 +117,7 @@ check("challenge 12: the edge 0.9-1.1 m ahead, met at 0-45 deg", all(0.9 <= sc.n
                                                                       0 <= abs(sc.notes["angle_deg"]) <= 45 for sc in t12))
 
 # challenges 13-16 (RFC-0008 §3), before the start's jitter: the start at the origin facing +x
-from labrunner.geometry import OVERHEAD_CLEAR_M  # noqa: E402
+OVERHEAD_CLEAR_M = geometry.profile().footprint.overhead_clear_m
 
 c13 = [CHALLENGES["13"](s, random.Random(f"13-{s}")) for s in range(10)]
 shelves = [next(b for b in sc.boxes if b.name == "shelf") for sc in c13]
@@ -378,7 +384,7 @@ check("reachable floor: the layout-level function (floors in, points out) is the
       sorted(floor.reachable_floor(layout(flat))) == sorted(pts))
 
 # not challenge-only (the apartment scoreboard's coverage later): the apartment's layout and its rooms through the same functions
-from labrunner.geometry import LAYOUT  # noqa: E402
+LAYOUT = geometry.layout_path()
 from runfile import scenefile  # noqa: E402
 
 apartment = json.loads(LAYOUT.read_text())
@@ -460,7 +466,7 @@ class StandIn:
 
 
 nav = StandIn()
-rows = sequence.run(nav, j21, nav.body.pose)
+rows = sequence.run(nav, j21, nav.body.pose, REACHED_M)
 jj = Judge(j21)
 v = sequence.verdict(jj, j21, rows)
 check("sequence: every goal is gone to in order, each within the scene's time, and none is left out",
@@ -475,19 +481,19 @@ check("sequence: the heading's error too (belief yaw against the truth's, 3 degr
 check("sequence: each goal is an event in the run, with its number and its truth error",
       [(r["event"], r["n"]) for r in nav.rows] == [("goal", i) for i in (1, 2, 3, 4)])
 nav = StandIn(fail={3: ("timeout", None, 0.4)})
-rows = sequence.run(nav, j21, nav.body.pose)
+rows = sequence.run(nav, j21, nav.body.pose, REACHED_M)
 v = sequence.verdict(Judge(j21), j21, rows)
 check("sequence: a goal not reached stops the sequence there (no fourth goal from where nobody planned), FAIL naming goal 3 of 4",
       len(nav.calls) == 3 and not v["pass"] and v["reached"] == 2 and v["failed"] == ["goal 3 of 4: timeout"], (len(nav.calls), v["failed"]))
 nav = StandIn(fail={2: ("reached", None, 0.4)})
-v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21, nav.body.pose))
+v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21, nav.body.pose, REACHED_M))
 check("sequence: said reached 0.4 m from the goal is not reached (over 0.25 m by truth): FAIL with the distance",
       not v["pass"] and v["failed"] == ["goal 2 of 4: said reached 0.40 m from it (over 0.25 m)"], v["failed"])
 nav = StandIn(fail={1: ("refused", "no path on the map", 0.0)})
-v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21, nav.body.pose))
+v = sequence.verdict(Judge(j21), j21, sequence.run(nav, j21, nav.body.pose, REACHED_M))
 check("sequence: a refusal at the first goal names its reason", v["failed"] == ["goal 1 of 4: refused: no path on the map"] and v["reached"] == 0, v["failed"])
 nav = StandIn()
-rows = sequence.run(nav, j21, nav.body.pose)
+rows = sequence.run(nav, j21, nav.body.pose, REACHED_M)
 jb = Judge(j21)
 jb.check(2.0, (0.0, 1.40, 0.0), 0.116)
 v = sequence.verdict(jb, j21, rows)

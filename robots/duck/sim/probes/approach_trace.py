@@ -12,7 +12,10 @@ from pathlib import Path
 
 import legacy_rows
 
-from labrunner.geometry import LAYOUT, footprint_distance
+from labrunner import geometry
+from labrunner.geometry import footprint_distance
+
+LAYOUT = geometry.layout_path()
 from duck_lab.nav.frames import compose, inverse
 
 

@@ -17,7 +17,11 @@ import tempfile
 from pathlib import Path
 
 from duck_lab.nav import recovery as new
-from labrunner.geometry import FOOTPRINT_M, LAYOUT, clearance, obstacles
+from labrunner import geometry
+from labrunner.geometry import clearance, obstacles
+
+FOOTPRINT_M = geometry.profile().footprint.radius_m
+LAYOUT = geometry.layout_path()
 from duck_lab.profile import load
 
 REPO = Path(__file__).resolve().parents[3]

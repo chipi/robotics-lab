@@ -18,10 +18,9 @@ import math
 from collections import deque
 
 from labrunner.scene import Scene, _inside, layout
-from labrunner.geometry import FOOTPRINT_M, PROFILE, footprint_distance, obstacles
+from labrunner import geometry
+from labrunner.geometry import footprint_distance, obstacles
 from labrunner.frames import compose, inverse
-
-DROP_LETHAL_M = PROFILE.error_budget.drop_lethal_m
 
 STEP_M = 0.05         # the lattice's cell, mapd's finest (0.0455 m raw)
 
@@ -43,9 +42,12 @@ def _extent(lay: dict) -> tuple:
 
 
 def lattice(lay: dict, step: float = STEP_M, landmarks: bool = False) -> dict:
-    """{(i, j): (x, y)}: lattice points on a level-0 floor, at least FOOTPRINT_M from every obstacle's outline and
-    DROP_LETHAL_M from every drop's: where the planner can put the duck, so what a complete map must know."""
-    obs = obstacles(lay, landmarks=landmarks)
+    """{(i, j): (x, y)}: lattice points on a level-0 floor, at least the footprint (`footprint.radius_m`) from every obstacle's
+    outline and the lethal drop distance (`error_budget.drop_lethal_m`) from every drop's (the robot's profile,
+    labrunner.geometry): where the planner can put the robot, so what a complete map must know."""
+    p = geometry.profile()
+    footprint, lethal = p.footprint.radius_m, p.error_budget.drop_lethal_m
+    obs = obstacles(lay, landmarks=landmarks, overhead_clear_m=p.footprint.overhead_clear_m)
     drops = [g for g in lay["geoms"] if _is_drop(g)]
     floors = [g for g in lay["geoms"] if g["name"].startswith("floor_") and g["type"] == "box" and g not in drops]
     x0, x1, y0, y1 = _extent(lay)
@@ -55,9 +57,9 @@ def lattice(lay: dict, step: float = STEP_M, landmarks: bool = False) -> dict:
             p = (x0 + (i + 0.5) * step, y0 + (j + 0.5) * step)
             if not any(footprint_distance(p, f) <= 1e-9 for f in floors):
                 continue
-            if any(footprint_distance(p, g) < FOOTPRINT_M for g in obs):
+            if any(footprint_distance(p, g) < footprint for g in obs):
                 continue
-            if any(footprint_distance(p, g) < DROP_LETHAL_M for g in drops):
+            if any(footprint_distance(p, g) < lethal for g in drops):
                 continue
             out[(i, j)] = p
     return out
