@@ -36,7 +36,15 @@ version 1. And then we are evolving architecture to fit MVP version 2." Things w
 MVP 2 is "stepping up the game", by a proper architectural evolution, not by bolting a robot on.
 
 - **MVP 1:** everything the operator needs with the Microduck and the Lego (NXT) in the current
-  ecosystem. Items 4a, 4b and 4c, then 5 (telemetry) and step 7 (retention), below.
+  ecosystem. Items 4a, 4b and 4c, then 5 (telemetry) and step 7 (retention), below. **The Lego
+  NXT too (the operator, 2026-11-23):** it is the robot the operator has working today, so MVP 1
+  closes its gaps: what is missing to fully integrate and operate it, and a way to drive it in a
+  simulator, on the simulator setup we have now. Item 4d below, scoped by a survey first.
+- **Between MVP 1 and MVP 2, a close-out (the operator, 2026-11-23):** fix the documentation and
+  the README, take screenshots, and make the GitHub repository a first-class one; decide on a new
+  name for the repository and on the project's branding; and review, with MVP 2's architecture in
+  mind, whether bringing Mission Control and the Observatory together (RFC-0024) was right for
+  the long term.
 - **MVP 2:** the TurtleBot3 Burger (arriving about a week after 2026-11-23) with more sensors,
   starting in a simulator (Gazebo), on an architecture that supports every approach as a peer
   (robotd, ROS 2, the NXT's, more later). Its direction: the operator's vision note on depth
@@ -402,6 +410,33 @@ platform.
 The robot page's look follows the mock-up the operator approved on 2026-11-23 ("mockup is
 good"): tabs, collapsible sections, Settings as a block list with a compact read view, a
 side-drawer edit and a History drawer. A1 and A2 are rebuilt to it inside 4a.
+
+### 4d. The NXT in MVP 1 (after 4c, before telemetry)
+
+**The operator, 2026-11-23:** "for MVP1, we do have to go back to Lego NXT and actually see what
+else is missing there to fully integrate that and see how to operate it… The gap we have is how to
+drive Lego in simulator." The survey and the operator's answers (2026-11-23) are in
+[NXT-MVP1.md](NXT-MVP1.md). Chosen: a kinematic NXT sim as nxt-web's `SimRobot` backend, started
+by a new host kind `nxt-kinematic-sim` in `simhost`; the apartment scene; a stand-in profile; every
+Mission Control drive session recorded; the shooter left out. The link is USB first, then
+Bluetooth (D10); a Pi-based sensor module on the robot follows in MVP 2, and D0 keeps room for it.
+
+| Unit | What | Size | Needs the robot |
+| --- | --- | --- | --- |
+| D0 | Design note: the second host kind, the NXT sim's sensors, the profile route | S | no |
+| D1 | Hardware check at the brick: `hw_*` scripts, K15, K16 measured, the 15 cm stop | S | yes |
+| D2 | A world for nxt-web: kinematic pose, collisions, ultrasonic cone cast | M | no |
+| D3 | Host kind `nxt-kinematic-sim` in `simhost`: dispatch, reset, truth | M | no |
+| D4 | The NXT registered like the duck: profile, variants `sim`/`real`, description | M | no |
+| D5 | Mission Control shows its sensors, stops and alarms | M | no |
+| D6 | A drive session from Mission Control records a format 2 run | M | no |
+| D7 | `make sim-nxt`: the scenario end to end, PASS in the foreground | M | no |
+| D8 | Docs: stale `nxt/` paths, ROADMAP, ADR-0013 names, a sim recipe | S | no |
+| D9 | Measured numbers into the sim; one real and one sim run compared | S | yes |
+| D10 | Bluetooth: the same nxt-web over BT; latency and drops measured; deadman timeout set | S | yes |
+
+Order: D0, then D2 with D1 alongside (this week, the operator's answer), D3 to D8, D9 after D1,
+D10 last.
 
 ### 5. Step 6 (telemetry): needs the operator before it starts
 
