@@ -106,6 +106,7 @@ class Recorder:
         paused = self.program and self.program != deadman.PROGRAM
         sensors = {} if paused else self.controller.call(lambda r: r.read_sensors())
         self.controller.note_stops(robot.deadman_state)
+        truth = self._read_truth(robot) if self.recording is not None else None
         with self._lock:
             self.seq += 1
             sample = {
@@ -120,7 +121,18 @@ class Recorder:
             }
             self.samples.append(sample)
             if self.recording is not None:
-                self._write_row(sample, now)
+                self._write_row(sample, now, truth)
+
+    def _read_truth(self, robot) -> tuple | None:
+        """The simulator's (wall_ns, pose) taken right after the sample's tachos, from the same process and model: it pairs with the
+        sample's tick exactly, where the runner's copy takes the nearest within 0.1 s. None on a brick that has none."""
+        reader = getattr(robot, "truth", None)
+        if reader is None:
+            return None
+        try:
+            return reader()
+        except Exception:
+            return None                                    # a tick with no truth is drawn as on a real robot
 
     def since(self, seq: int) -> list:
         with self._lock:
@@ -134,12 +146,20 @@ class Recorder:
             last = self.samples[-1]
         return last["sensors"], round(time.monotonic() - self._t0 - last["t"], 2)
 
+    def _world(self):
+        return getattr(self.controller, "world", None)
+
+    def _scene(self) -> str:
+        """The scene a run belongs to: the simulator's (--sim --world), else `unmapped` (nothing is known of the real floor)."""
+        world = self._world()
+        return world.scene_id if world is not None and world.scene_id else nxt_run.SCENE
+
     def _free_name(self) -> str:
         """run-YYYYMMDD-HHMMSS, with -2, -3, ... when that name (a CSV, or an Observatory run) is already taken."""
         base = datetime.now().strftime("run-%Y%m%d-%H%M%S")
         for n in range(1, 1000):
             name = base if n == 1 else f"{base}-{n}"
-            if not (self.runs_dir / f"{name}.csv").exists() and not keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{name}").exists():
+            if not (self.runs_dir / f"{name}.csv").exists() and not keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{self._scene()}/{name}").exists():
                 return name
         raise RuntimeError(f"no free run name after {base}")
 
@@ -167,13 +187,25 @@ class Recorder:
         """Open the Observatory run beside the CSV. A failure here costs the run, never the recording: the CSV goes on."""
         self._run = None
         try:
-            key = f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{name}"
+            world = self._world()
+            key = f"{nxt_run.ROBOT}/{self._scene()}/{name}"
             geometry = nxt_run.geometry_from(config.to_dict(), "config")
+            judge_scene = None
+            if world is not None:
+                if geometry is None:      # a sim has no brick to measure: the wheel geometry its own tachos imply, so the belief exists
+                    d, w = world.params.track_geometry()
+                    geometry = nxt_run.Geometry(d, w, config.left, config.right, config.invert_left, config.invert_right, "sim world")
+                if world.scene_id:
+                    judge_scene = {"id": world.scene_id, "path": world.scene_path, "checksum": world.scene_checksum,
+                                   "sha256": world.scene_sha256}
             run = nxt_run.run_record(key, time.time_ns(), "writer", {c: nxt_run.kind_of(c) for c in columns}, geometry,
-                                     {"name": f"{name}.csv"}, writer={"program": "nxt-web", "version": "0.1.0"})
+                                     {"name": f"{name}.csv"}, writer={"program": "nxt-web", "version": "0.1.0"}, scene=self._scene(),
+                                     judge_scene=judge_scene)
             writer = RunWriter(keys.run_dir(self.miniview_data, key), run)
-            nxt_run.header(writer, geometry)
-            self._run = {"key": key, "writer": writer, "odom": nxt_run.Odometry(geometry) if geometry else None, "error": None}
+            if world is None:
+                nxt_run.header(writer, geometry)       # a sim's epoch is written with its first truth: that is what places the map in the world
+            self._run = {"key": key, "writer": writer, "odom": nxt_run.Odometry(geometry) if geometry else None, "error": None,
+                         "epoch": world is not None}
         except Exception as exc:
             self._run = {"key": None, "writer": None, "odom": None, "error": f"{type(exc).__name__}: {exc}"}
             return
@@ -212,7 +244,7 @@ class Recorder:
         """Run time for a moment: seconds since the recording began, never behind what was already written."""
         return max(round(now - self.recording["started"], 3), self._run["writer"].last_t, 0.0)
 
-    def _write_row(self, sample: dict, now: float) -> None:
+    def _write_row(self, sample: dict, now: float, truth: tuple | None = None) -> None:
         tacho = sample["tacho"]
         row = [
             round(now - self.recording["started"], 3),
@@ -234,7 +266,10 @@ class Recorder:
         run = self._run
         if run and run["writer"]:
             try:
-                nxt_run.write_sample(run["writer"], self._run_time(now), dict(zip(self._header[1:], row[1:])), run["odom"], tacho)
+                nxt_run.write_sample(run["writer"], self._run_time(now), dict(zip(self._header[1:], row[1:])), run["odom"], tacho,
+                                     truth, epoch=run["epoch"] and truth is not None)
+                if truth is not None:
+                    run["epoch"] = False
             except Exception as exc:
                 run["error"] = f"{type(exc).__name__}: {exc}"
                 run["writer"] = None                              # the Observatory run stops here (its live file stays); the CSV goes on
@@ -256,7 +291,14 @@ class Recorder:
         return {"key": run["key"], "error": run["error"]} if run else None
 
     def _final(self, name: str) -> Path:
-        return keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{Path(name).stem}") / FINAL
+        """The finished run of a recording, in whichever scene it was made (this server's now, or an earlier --sim one's)."""
+        stem = Path(name).stem
+        mine = keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{self._scene()}/{stem}") / FINAL
+        if mine.exists():
+            return mine
+        for p in sorted(keys.run_dir(self.miniview_data, f"{nxt_run.ROBOT}/{nxt_run.SCENE}/{stem}").parent.parent.glob(f"*/{stem}/{FINAL}")):
+            return p
+        return mine
 
     def list_runs(self) -> list:
         if not self.runs_dir.exists():

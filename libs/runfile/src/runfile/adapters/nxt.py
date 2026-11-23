@@ -24,6 +24,7 @@ from pathlib import Path
 
 from runfile import keys
 from runfile.mcapio import FINAL, Recorder, WriterBusy, new_run
+from runfile.se2 import compose, inverse
 
 ROBOT = "nxt"
 SCENE = "unmapped"
@@ -141,10 +142,15 @@ class Odometry:
 
 # ---- the run ----------------------------------------------------------------------------------------------------
 def run_record(key: str, started_at_ns: int, started_at_source: str, columns: dict, geometry: Geometry | None,
-               source: dict | None = None, run_uuid: str | None = None, writer: dict | None = None) -> dict:
-    return new_run(key, dict(FOOTPRINT, name=ROBOT), SCENE, KIND, started_at_ns, started_at_source, source, run_uuid,
-                   signals=declare(columns), odometry=geometry.record() if geometry else None,
-                   no_pose=None if geometry else NO_POSE, writer=writer)
+               source: dict | None = None, run_uuid: str | None = None, writer: dict | None = None, scene: str = SCENE,
+               judge_scene: dict | None = None) -> dict:
+    """`scene` and `judge_scene` (scenefile.describe plus the file's sha256) are for a recording made in a simulator's scene."""
+    run = new_run(key, dict(FOOTPRINT, name=ROBOT), scene, KIND, started_at_ns, started_at_source, source, run_uuid,
+                  signals=declare(columns), odometry=geometry.record() if geometry else None,
+                  no_pose=None if geometry else NO_POSE, writer=writer)
+    if judge_scene:
+        run["judge_scene"] = judge_scene
+    return run
 
 
 def header(rec: Recorder, geometry: Geometry | None) -> None:
@@ -153,11 +159,19 @@ def header(rec: Recorder, geometry: Geometry | None) -> None:
         rec.add(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})
 
 
-def write_sample(rec: Recorder, t: float, values: dict, odom: Odometry | None = None, tacho: dict | None = None) -> None:
-    """One sample: a pose tick when there is odometry, then a signals tick, both at t. Values that are None or empty are absent."""
+def write_sample(rec: Recorder, t: float, values: dict, odom: Odometry | None = None, tacho: dict | None = None,
+                 truth: tuple | None = None, epoch: bool = False) -> None:
+    """One sample: a pose tick when there is odometry, then a signals tick, both at t. Values that are None or empty are absent.
+    `truth` is a simulator's (wall_ns, [x, y, yaw]) read with this sample: the tick holds it beside the belief, and its wall time in
+    its raw (as truthcopy keeps it). `epoch` first writes the map <- world epoch that puts this belief on this truth."""
     if odom is not None:
-        rec.begin_tick(t, [round(v, 5) for v in odom.step(tacho or {})], t_src=t)
-        rec.end_tick({})
+        belief = [round(v, 5) for v in odom.step(tacho or {})]
+        if epoch and truth is not None:
+            rec.add(t, "epoch", {"map_to_world": [round(v, 5) for v in compose(tuple(truth[1]), inverse(tuple(belief)))]})
+        rec.begin_tick(t, belief, t_src=t)
+        if truth is not None:
+            rec.tick_truth([round(v, 4) for v in truth[1]])
+        rec.end_tick({} if truth is None else {"wall_ns": truth[0]})
     present = {}
     for k, v in values.items():
         v = int(v) if isinstance(v, bool) else v                     # a touch sensor reads a bool

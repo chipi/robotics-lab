@@ -147,6 +147,11 @@ try:
     sess = b["lock"]["session"]
     check("acquire takes nxt-web's lock for the client", st == 200 and nxt("GET", "/api/lock")[1]["holder"] == "page", (st, b))
     check("and Mission Control shows who holds it", wait(lambda: robot()["lock"]["holder"] == "page"), robot()["lock"])
+    # D6: a drive session leaves a run
+    rec = lambda: nxt("GET", "/api/status")[1]["recording"]
+    check("the session started nxt-web's recorder: a recording, and the robot's state names its run and says it is ours",
+          rec() is not None and wait(lambda: (robot()["status"].get("recording") or {}).get("ours") is True)
+          and robot()["status"]["recording"]["run"] == rec()["miniview"]["key"] and robot()["status"]["recording_error"] is None, (rec(), robot()["status"].get("recording")))
     st, b = call("POST", "/robots/nxt-1/lock", {"client": "phone"})
     check("a second client is refused, naming the holder", st == 409 and b["error"]["code"] == "held" and b["error"]["holder"] == "page", b)
     st, b = nxt("POST", "/api/drive", {"left": 50, "right": 50})
@@ -188,6 +193,9 @@ try:
     check("the holder's next drive is refused with the reason", st == 409 and b["error"]["code"] == "lease_ended" and "stopped_by bystander" in b["error"]["reason"], b)
     check("nothing moved", (nxt("GET", "/api/status")[1]["left"], nxt("GET", "/api/status")[1]["right"]) == (0, 0))
     check("and the lock shows free", wait(lambda: robot()["lock"]["holder"] is None))
+    check("the lease ended, so the recording ended: a finished run, not a live one", wait(lambda: rec() is None)
+          and list((tmp / "miniview" / "runs" / "nxt" / "unmapped").glob("run-*/run.mcap")) != [], rec())
+    first_run = sorted(p.name for p in (tmp / "miniview" / "runs" / "nxt" / "unmapped").iterdir())
 
     # a lease that ends at nxt-web (its own page STOP) is noticed by Mission Control
     st, b = call("POST", "/robots/nxt-1/lock", {"client": "page"})
@@ -203,8 +211,22 @@ try:
     check("takeover by a name that is not on nxt-web's list is refused", st == 403 and b["error"]["code"] == "not_allowed", b)
     st, b = call("POST", "/robots/nxt-1/lock/takeover", {"client": "operator-laptop"})
     check("by one that is: the robot is stopped and the laptop holds it", st == 200 and nxt("GET", "/api/lock")[1]["holder"] == "operator-laptop", b)
+    check("a takeover is one session after another: the recording goes on (the lease the old one lost does not end it)", rec() is not None and wait(lambda: robot()["lock"]["holder"] == "operator-laptop")
+          and rec() is not None, rec())
     call("DELETE", "/robots/nxt-1/lock", {"session": b["lock"]["session"]})
     check("release frees it", nxt("GET", "/api/lock")[1]["holder"] is None and wait(lambda: robot()["lock"]["holder"] is None))
+    check("and ends the recording; every session so far left a run of its own, none live", wait(lambda: rec() is None)
+          and len(list((tmp / "miniview" / "runs" / "nxt" / "unmapped").iterdir())) > len(first_run)
+          and not list((tmp / "miniview" / "runs" / "nxt" / "unmapped").glob("*/run.live.mcap")), rec())
+    # a recording someone started on nxt-web's page is theirs: a session beside it neither starts a second nor stops it
+    nxt("POST", "/api/record/start", {})
+    st, b2 = call("POST", "/robots/nxt-1/lock", {"client": "page"})
+    check("with Record already pressed a session does not own the recording",
+          rec() is not None and wait(lambda: (robot()["status"].get("recording") or {}).get("ours") is False), robot()["status"].get("recording"))
+    call("DELETE", "/robots/nxt-1/lock", {"session": b2["lock"]["session"]})
+    time.sleep(1.0)
+    check("and releasing leaves it running", rec() is not None, rec())
+    nxt("POST", "/api/record/stop", {})
     st, b = call("DELETE", "/robots/nxt-1/lock", {"session": b["lock"]["session"]})
     check("releasing twice is refused", st == 409, b)
 

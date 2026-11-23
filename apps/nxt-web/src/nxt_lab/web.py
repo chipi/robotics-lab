@@ -438,6 +438,7 @@ def make_handler(controller: Controller):
                         raise RuntimeError("a program is running on the brick; stop it first")
                     c.call(lambda r: r.fire())
                 elif path == "/api/record/start":
+                    result["already"] = c.recorder.recording is not None       # whoever started it stops it: Mission Control only ends its own
                     result["recording"] = c.recorder.start()["name"]
                 elif path == "/api/record/stop":
                     done = c.recorder.stop()

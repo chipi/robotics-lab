@@ -47,6 +47,11 @@ class NxtGate:
         self._conns: dict = {}
         self._next = 0
         self._lock = threading.Lock()
+        # the recording nxt-web is making for a drive session of ours (a format 2 run, ADR-0013): started with the first session that
+        # holds the robot, stopped with the last. One that was already running (Record pressed on nxt-web's page) is not ours to stop.
+        self.recorded: str | None = None
+        self.record_error: str | None = None
+        self._rec_lock = threading.Lock()
 
     # --- connections: a client of Mission Control is a connection here, a session at nxt-web ---------------------
 
@@ -84,6 +89,35 @@ class NxtGate:
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ConnectionError(f"nxt-web does not answer at {self.base}: {getattr(exc, 'reason', exc)}") from None
 
+    def _holding(self) -> bool:
+        return any(c.session is not None for c in list(self._conns.values()))
+
+    def _record_start(self) -> None:
+        """A drive session leaves a run. A failure costs the run, never the session: the error stays in `record_error`, which the
+        robot's state shows."""
+        with self._rec_lock:
+            if self.recorded is not None:
+                return
+            try:
+                reply = self._http("POST", "/api/record/start", {})
+            except (OSError, RuntimeError, GateError) as exc:
+                self.record_error = f"{type(exc).__name__}: {exc}"
+                return
+            self.record_error = None
+            if not reply.get("already"):
+                self.recorded = reply.get("recording")
+
+    def _record_stop(self) -> None:
+        """Ends our recording once no session of ours holds the robot (a release, a lease lost, a client gone)."""
+        with self._rec_lock:
+            if self.recorded is None or self._holding():
+                return
+            self.recorded = None
+            try:
+                self._http("POST", "/api/record/stop", {})
+            except (OSError, RuntimeError, GateError) as exc:
+                self.record_error = f"{type(exc).__name__}: {exc}"
+
     def _conn(self, cid: int) -> _Conn:
         conn = self._conns.get(cid)
         if conn is None:
@@ -103,12 +137,16 @@ class NxtGate:
         if method in ("gate.acquire", "gate.takeover"):
             reply = self._http("POST", "/api/lock", {"action": "takeover" if method == "gate.takeover" else "acquire", "client": conn.client})
             conn.session, conn.lease_id = reply["session"], reply["lease_id"]
+            self._record_start()
             return {"lease_id": reply["lease_id"], "expires_in_s": reply["expires_in_s"]}
         if method == "gate.release":
             if conn.session is None:
                 raise GateError("not_holder", "this connection does not hold the robot")
             session, conn.session = conn.session, None
-            self._http("POST", "/api/lock", {"action": "release", "session": session})
+            try:
+                self._http("POST", "/api/lock", {"action": "release", "session": session})
+            finally:
+                self._record_stop()
             return {"ok": True}
         if method == "gate.keepalive":
             if conn.session is None:
@@ -146,6 +184,7 @@ class NxtGate:
                     reason = "lost"
                 if conn.notify:
                     conn.notify("lease_lost", {"reason": reason})
+        self._record_stop()
         return {"protocol": PROTOCOL, **who}
 
 
@@ -303,8 +342,14 @@ class NxtAdapter:
         left, right = st.get("left", 0), st.get("right", 0)
         vx = 0.0 if halted else (left + right) / 2 / FULL * self.max_vx
         vyaw = 0.0 if halted else (right - left) / FULL * self.max_vyaw
+        rec = st.get("recording")
+        miniview = (rec or {}).get("miniview") or {}
+        gate = self._gate
+        # the run nxt-web is recording (ours for a drive session, or one started on its page): its key is the Observatory's
+        recording = None if rec is None else {"name": rec["name"], "rows": rec["rows"], "run": miniview.get("key"),
+                                              "run_error": miniview.get("error"), "ours": gate is not None and gate.recorded == rec["name"]}
         # flags are the conditions that make it not fit to go: the running program is a fact, not a flag, so it stands beside them
-        return {"velocity": {"vx": round(vx, 4), "vyaw": round(vyaw, 4)},
+        return {"recording": recording, "recording_error": gate.record_error if gate is not None else None,"velocity": {"vx": round(vx, 4), "vyaw": round(vyaw, 4)},
                 "mode": "stopped" if halted and (left or right) else "moving" if left or right else "idle",
                 "tracks": {"left": left, "right": right},
                 "link": st.get("link"), "battery_mv": st.get("battery_mv"), "battery_pct": self.battery_pct(st.get("battery_mv")),

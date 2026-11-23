@@ -12,6 +12,8 @@ import math
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from runfile import scenefile
+
 
 @dataclass
 class WorldParams:
@@ -57,6 +59,12 @@ class WorldParams:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def track_geometry(self) -> tuple:
+        """(sprocket diameter, track width) in metres that read this model's own tachos back as its commanded motion: the wheel
+        geometry of a sim run when the config has none. Not a measurement of the brick; the sim's slip is what the belief misses."""
+        m_per_deg = self.speed_m_s / (100.0 * self.tacho_deg_s_per_power)
+        return m_per_deg * 360.0 / math.pi, 2.0 * self.speed_m_s / self.turn_rad_s
 
 
 @dataclass
@@ -108,10 +116,13 @@ def _wrap(angle: float) -> float:
 
 class World:
     def __init__(self, boxes: list, bounds: list | None, params: WorldParams | None = None,
-                 start: tuple = (0.0, 0.0, 0.0), scene_id: str = "", scene_sha256: str = ""):
+                 start: tuple = (0.0, 0.0, 0.0), scene_id: str = "", scene_sha256: str = "",
+                 scene_path: str = "", scene_checksum: str = ""):
         self.params = params or WorldParams()
         self.params.validate()
         self.scene_id, self.scene_sha256 = scene_id, scene_sha256
+        # the file's path and runfile's checksum of it (scenefile.describe), taken when the world was: what a run records it was in
+        self.scene_path, self.scene_checksum = scene_path, scene_checksum
         self.bounds = bounds
         # Boxes wholly below the floor (the stairwell's steps) cannot be hit; a table top above the body's height cannot either.
         self.blockers = [b for b in boxes if b.z1 > 0.0 and b.z0 < self.params.body_height_m]
@@ -126,7 +137,8 @@ class World:
         scene = json.loads(raw)
         boxes = [Box(**{k: b[k] for k in ("name", "cx", "cy", "z0", "z1", "hx", "hy")}, yaw=b.get("yaw", 0.0))
                  for b in scene["boxes"]]
-        return cls(boxes, scene.get("bounds"), params, start, scene.get("id", ""), hashlib.sha256(raw).hexdigest())
+        return cls(boxes, scene.get("bounds"), params, start, scene.get("id", ""), hashlib.sha256(raw).hexdigest(),
+                   str(Path(path).resolve()), scenefile.checksum(scene))
 
     def reset(self, start: tuple | None = None) -> None:
         """Back to the start pose; the model is settled the moment it returns (no simulator to wait for)."""
