@@ -153,8 +153,8 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
-	@for t in test_page test_robot_page test_settings_page test_body_page; do log=$$(mktemp); \
-	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then echo "PASS $(CONTROL_DIR)/tests/$$t.py"; \
+	@for t in test_page test_robot_page test_settings_page test_body_page test_body_duck_page; do log=$$(mktemp); \
+	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then if grep -q "^SKIP" $$log; then grep "^SKIP" $$log; else echo "PASS $(CONTROL_DIR)/tests/$$t.py"; fi; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/$$t.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log; done
 	@echo "test-control-page PASS"
 

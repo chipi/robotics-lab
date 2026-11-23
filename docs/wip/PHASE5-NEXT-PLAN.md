@@ -29,6 +29,22 @@ done; item 3 step 2 is done** (the run keeps the body; the operator's decisions 
   `--keep` is a chance to catch one.
 - Not in reach without the operator: the NXT hardware checks (K15, K16).
 
+## MVP 1 and MVP 2
+
+**The operator, 2026-11-23:** "By the time we get to Gazebo and Burger, we're going to be MVP
+version 1. And then we are evolving architecture to fit MVP version 2." Things work well so far;
+MVP 2 is "stepping up the game", by a proper architectural evolution, not by bolting a robot on.
+
+- **MVP 1:** everything the operator needs with the Microduck and the Lego (NXT) in the current
+  ecosystem. Items 4a, 4b and 4c, then 5 (telemetry) and step 7 (retention), below.
+- **MVP 2:** the TurtleBot3 Burger (arriving about a week after 2026-11-23) with more sensors,
+  starting in a simulator (Gazebo), on an architecture that supports every approach as a peer
+  (robotd, ROS 2, the NXT's, more later). Its direction: the operator's vision note on depth
+  cameras, SLAM and 3D mapping, and [ADR-0020](../adr/ADR-0020-robots-behind-our-own-interfaces.md)
+  (proposed, for reflection). Its first step is an architecture reflection on paper, then RFCs;
+  nothing for it is built before those are agreed. Item 6 below is its old shape (stubs) and is
+  revised by that work.
+
 ## The order
 
 ### 1. One navigator contract (first: the smallest, and it unblocks 2 and 3)
@@ -352,7 +368,7 @@ implements", built unattended. Decisions are made by the recommended default and
 | A2 | Modules (the plugins), Settings (versions, edit a copy, diff, export, import; the API exists) | page test: edit, save, diff | M | yes |
 | A3 | Calibration frame, plus one simulator procedure (odometry scale), through a navigator-API method (contract 1.3, the operator's choice) | runner unit test, page test, one simulator run | L | yes; the real duck's tape entry stubbed |
 | A4 | RFC-0024 steps 1 and 2 (accepted 2026-11-23): the shared `libs/web` (tokens, three.js, the body from `robotbody.js`), then the body in Mission Control, live, beside the watch page's | page tests in both apps | L | done, `aea6d23` |
-| A5 | The body with the duck's real meshes in Chromium: every link drawn, a joint coloured by an alarm. A page test that skips when the meshes are not built | screenshots, phone and desktop | S | yes, after A2 (operator, 2026-11-23) |
+| A5 | The body with the duck's real meshes in Chromium: every link drawn, a joint coloured by an alarm. A page test that skips when the meshes are not built | screenshots, phone and desktop | S | done (2026-11-23): 15 of 15 links, 70 of 70 visuals, a hip red on `joint_overload` |
 | A6 | The robot view carries the last minute's alarms (the worst per joint, the worst overall), so the body's colours and Overview's fit verdict are right when the page opens | page test: opened after an alarm, the joint is already coloured and the robot unfit | S | yes, after A5, before B2 (operator, 2026-11-23) |
 
 #### 4b units

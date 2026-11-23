@@ -52,5 +52,7 @@ Required sections:
   tool](ADR-0018-ros2-in-a-container-for-comparison.md) (Accepted, 2026-11-18; amends ADR-0001)
 - [ADR-0019 — The semantic map in a run: `objects` and `sighting` records, and what the pages and the video
   draw of them](ADR-0019-semantic-map-records.md) (Accepted, 2026-11-18)
+- [ADR-0020 — Robots behind our own interfaces: robotd and ROS 2 are peer
+  backends](ADR-0020-robots-behind-our-own-interfaces.md) (Proposed, 2026-11-23)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

@@ -41,7 +41,7 @@ export async function mount(box, id, desc, api, init) {
   const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 50);
   camera.up.set(0, 0, 1);                                         // a description is z up
   const bounds = new THREE.Box3().setFromObject(body.root), centre = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3());
-  const reach = Math.max(size.x, size.y, size.z, 0.05) * 1.2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const reach = Math.max(size.x, size.y, size.z, 0.05) * 0.75 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   camera.position.copy(centre).add(new THREE.Vector3(0.8, -1.0, 0.5).normalize().multiplyScalar(reach));
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.copy(centre);
@@ -76,9 +76,10 @@ export function update(joints, alarms, now, within) {
   return states;
 }
 
-// what is drawn, for this repository's tests: the parts, the joints last posed with, each link's turn, each joint's state and colour
+// what is drawn, for this repository's tests: the parts, the meshes, the extent in metres, the joints last posed with, each link's turn, each joint's state and colour
 export function state() {
   if (!view) return null;
-  return { drawn: view.body.drawn(), pose: view.pose, joints: view.body.healthOf(),
+  const size = new THREE.Box3().setFromObject(view.body.root).getSize(new THREE.Vector3());
+  return { drawn: view.body.drawn(), meshes: Object.values(view.body.links).reduce((n, g) => n + g.children.length, 0), size: [size.x, size.y, size.z], pose: view.pose, joints: view.body.healthOf(),
     links: Object.fromEntries(Object.entries(view.body.links).map(([n, g]) => [n, { quat: [g.quaternion.w, g.quaternion.x, g.quaternion.y, g.quaternion.z].map((x) => +x.toFixed(5)) }])) };
 }
