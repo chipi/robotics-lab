@@ -4,3 +4,5 @@ __pycache__/
 site/
 .viewers/
 .venv-broken-*/
+# lab-go writes its run folder to ./runs by default; a hand run in an app folder left two empty ones (2026-11-23)
+/apps/*/runs/
