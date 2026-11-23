@@ -18,6 +18,13 @@ from runfile import keys, mcapio, scenefile
 from runfile.catalog import FOLLOW_EVERY_S
 
 check = Checks("SERVER")
+
+# every page names its icon: a page that names none makes the browser ask /favicon.ico, a 404 in its console
+# (the deployed 3D page, 2026-11-23); Mission Control's page names the empty one
+WEB = Path(__file__).resolve().parents[1] / "web"
+pages = sorted(WEB.glob("*/*.html"))
+check("must fail: every page names an icon, so the browser asks no /favicon.ico",
+      pages and all('rel="icon"' in p.read_text() for p in pages), [str(p.relative_to(WEB)) for p in pages if 'rel="icon"' not in p.read_text()])
 MARGIN = 3 * FOLLOW_EVERY_S          # what a record may take to reach a stream: three rounds of the follower
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
 
