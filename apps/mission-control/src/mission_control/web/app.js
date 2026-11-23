@@ -217,6 +217,8 @@ function fitChecks(r) {
     { id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none" },
   ];
 }
+// A sensor's reading for the facts line: a range in cm (or that nothing is in range), else the colour's name or the value.
+const sensorText = (v) => ("range_m" in v ? (v.range_m == null ? "nothing in range" : Math.round(v.range_m * 100) + " cm") : v.label ?? v.value ?? "-");
 const fitReasons = (r) => fitChecks(r).filter((c) => c.ok === false).map((c) => c.val);
 
 function applyTab(tab) {
@@ -234,6 +236,19 @@ function paintPicker() {
   const sel = $("rp-picker"), sig = S.robots.map((x) => x.id + "\n" + x.label).join("\n");
   if (sel.dataset.sig !== sig) { sel.dataset.sig = sig; setKids(sel, S.robots.map((x) => h("option", { value: x.id }, `${x.label} (${x.id})`))); }
   sel.value = routeId();
+}
+
+// The facts line under the title: mode, battery, each sensor the robot reports, who holds it. Repainted on its own at every state event, so a
+// reading is not five seconds old; the rest of the page is not rebuilt that often (an open settings form would be lost).
+function paintFacts(r) {
+  const st = r.status || {}, pr = r.profile, held = holderText(r);
+  setKids($("rp-facts"),
+    h("span", {}, "mode ", h("b", {}, st.mode || "-")),
+    h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
+    ...Object.entries(st.sensors || {}).map(([k, v]) => h("span", { "data-sensor": k }, k + " ", h("b", {}, sensorText(v)))),
+    h("span", {}, "held by ", h("b", { id: "rp-holder" }, held === "free" ? "nobody" : held)),
+    pr ? h("span", {}, "runs ", h("b", {}, pr.variant), " variant") : null,
+    h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")));
 }
 
 function renderRobotPage() {
@@ -259,13 +274,7 @@ function renderRobotPage() {
   const checks = fitChecks(r), why = fitReasons(r), st = r.status || {}, pr = r.profile, now = Date.now() / 1000;
   fit.hidden = false; fit.dataset.fit = String(!why.length); fit.className = "verdict " + (why.length ? "bad" : "ok");
   setKids(fit, h("span", { class: "pip" }), why.length ? "Not fit" : "Fit to go");
-  const held = holderText(r);
-  setKids($("rp-facts"),
-    h("span", {}, "mode ", h("b", {}, st.mode || "-")),
-    h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
-    h("span", {}, "held by ", h("b", { id: "rp-holder" }, held === "free" ? "nobody" : held)),
-    pr ? h("span", {}, "runs ", h("b", {}, pr.variant), " variant") : null,
-    h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")));
+  paintFacts(r);
   const badge = $("tab-settings-badge");
   badge.hidden = !(pr && pr.version != null);
   badge.textContent = pr && pr.version != null ? "v" + pr.version : "";
@@ -458,6 +467,7 @@ function setMode(mode) {
   if (mode !== "draw") S.draft = [];
   $("area-draw").setAttribute("aria-pressed", String(mode === "draw"));
   $("area-draft").hidden = mode !== "draw";
+  $("g-place-tap").setAttribute("aria-pressed", String(mode === "place"));
   renderHint(); requestDraw();
 }
 
@@ -465,6 +475,7 @@ function renderHint() {
   const r = robot();
   $("maphint").textContent = S.mode === "draw"
     ? `Drawing an area: tap the map to place corners (${S.draft.length} so far; at least 3), then name it and save.`
+    : S.mode === "place" ? "Tap the map where the robot stands: that is its start pose. Set which way it faces beside it."
     : r && r.capabilities.navigator ? "Tap the map to set a point goal, then press Run now." : "This robot has no navigator: it cannot take goals.";
   $("area-draft-hint").textContent = `${S.draft.length} corner(s). Tap the map for more.`;
   $("area-save").disabled = S.draft.length < 3;
@@ -533,6 +544,24 @@ function renderGoalFields() {
 }
 $("g-kind").addEventListener("change", renderGoalFields);
 
+// A start pose (navigator contract 1.5): the robot cannot read where it stands, so the operator says. Unticked, a run starts where the robot's map does.
+function startPose() {
+  const x = parseFloat($("g-px").value), y = parseFloat($("g-py").value), deg = parseFloat($("g-pyaw").value);
+  return $("g-place").checked && !Number.isNaN(x) && !Number.isNaN(y) && !Number.isNaN(deg) ? { x, y, yaw: deg * Math.PI / 180 } : null;
+}
+function startBody() {
+  if (!$("g-place").checked) return {};
+  const sp = startPose();
+  if (!sp) throw new Error("Set the start pose: tap the map where the robot stands, and say which way it faces.");
+  return { start_pose: sp };
+}
+$("g-place").addEventListener("change", () => {
+  $("g-place-fields").hidden = !$("g-place").checked;
+  setMode($("g-place").checked ? "place" : "point");
+});
+$("g-place-tap").addEventListener("click", () => setMode(S.mode === "place" ? "point" : "place"));
+for (const id of ["g-px", "g-py", "g-pyaw"]) $(id).addEventListener("input", () => requestDraw());
+
 function formGoal() {
   const kind = $("g-kind").value;
   let params;
@@ -566,7 +595,7 @@ function formGoal() {
 $("g-run").addEventListener("click", guard(async () => {
   const r = robot();
   if (!r) throw new Error("No robot.");
-  const j = await api("POST", "/goal-runs", { goal: formGoal(), robots: [r.id], ...(S.site ? { site: S.site } : {}) });
+  const j = await api("POST", "/goal-runs", { goal: formGoal(), robots: [r.id], ...(S.site ? { site: S.site } : {}), ...startBody() });
   S.run = j.run.id;
   await Promise.all([loadRuns(), refreshRobot(r.id)]);
   if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
@@ -580,7 +609,7 @@ $("say-go").addEventListener("click", guard(async () => {
     p.goals.map((x) => h("div", { class: "row", "data-plan": "1" },
       h("span", { class: "grow" }, x.read_back), h("span", { class: "faint", style: "font-size:12px" }, p.source),
       h("button", { class: "btn sm primary", type: "button", "data-action": "run-plan", onclick: guard(async () => {
-        const j = await api("POST", "/goal-runs", { goal: x.goal, robots: [r.id], ...(S.site ? { site: S.site } : {}) });
+        const j = await api("POST", "/goal-runs", { goal: x.goal, robots: [r.id], ...(S.site ? { site: S.site } : {}), ...startBody() });
         S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
         if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
       }) }, "Run"))),
@@ -618,7 +647,7 @@ function renderLibrary() {
         h("span", { class: "grow" }, h("b", {}, g.name), " ", h("span", { class: "dim" }, goalSummary(g))),
         h("button", { class: "btn sm primary", type: "button", "data-action": "run", onclick: guard(async () => {
           const r = robot();
-          const j = await api("POST", `/goals/${g.id}/runs`, { robots: [r.id], ...(S.site ? { site: S.site } : {}) });
+          const j = await api("POST", `/goals/${g.id}/runs`, { robots: [r.id], ...(S.site ? { site: S.site } : {}), ...startBody() });
           S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
           if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
         }) }, "Run"),
@@ -634,6 +663,8 @@ function renderRuns() {
     `#${r.id} ${r.goal.name} `, h("span", { class: "state " + r.state }, r.state))) : [h("div", { class: "dim" }, "No goal runs for this robot yet.")]));
 }
 
+const startPoseText = (p) => `Started from a pose the operator placed: (${p.x}, ${p.y}) facing ${Math.round(p.yaw * 180 / Math.PI)} deg`;
+
 function renderRunDetail() {
   const box = $("run-detail"), r = detail;
   if (!r || r.id !== S.run) { box.replaceChildren(); return; }
@@ -646,6 +677,7 @@ function renderRunDetail() {
   setKids(box,
     h("h3", {}, `Run #${r.id} `, h("span", { class: "state " + r.state, id: "run-state" }, r.state), " ", watch),
     r.reason ? h("div", { class: "dim", id: "run-reason" }, r.reason) : null,
+    (r.conditions || {}).start_pose ? h("div", { class: "dim", id: "run-placed" }, startPoseText(r.conditions.start_pose)) : null,
     h("div", { class: "kv", id: "run-progress" },
       h("span", {}, "elapsed ", h("b", {}, pr.elapsed_s != null ? pr.elapsed_s + " s" : "-")),
       h("span", {}, "left ", h("b", {}, pr.distance_left_m != null ? pr.distance_left_m + " m" : "-")),
@@ -767,6 +799,12 @@ function draw() {
     ctx.strokeStyle = col("--c-plan"); ctx.lineWidth = 2; ctx.beginPath();
     ctx.moveTo(sx - 8, sy); ctx.lineTo(sx + 8, sy); ctx.moveTo(sx, sy - 8); ctx.lineTo(sx, sy + 8); ctx.stroke();
   }
+  const sp = startPose();
+  if (sp) {      // where the operator says the robot stands: a ring and the way it faces
+    const [sx, sy] = toScreen(sp.x, sp.y), rad = Math.max(8, 0.18 * V.scale);
+    ctx.strokeStyle = col("--warn"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 7);
+    ctx.moveTo(sx, sy); ctx.lineTo(sx + rad * 1.8 * Math.cos(sp.yaw), sy - rad * 1.8 * Math.sin(sp.yaw)); ctx.stroke();
+  }
   const r = robot();
   if (r && r.status && r.status.pose) {
     const p = r.status.pose, [sx, sy] = toScreen(p.x, p.y), rad = Math.max(6, 0.15 * V.scale);
@@ -787,6 +825,7 @@ $("map").addEventListener("click", (ev) => {
   const rect = $("map").getBoundingClientRect();
   const [x, y] = toWorld(ev.clientX - rect.left, ev.clientY - rect.top).map((v) => Math.round(v * 100) / 100);
   if (S.mode === "draw") { S.draft.push([x, y]); renderHint(); }
+  else if (S.mode === "place") { $("g-px").value = x; $("g-py").value = y; $("maphint").textContent = `Start pose at (${x}, ${y}), facing ${$("g-pyaw").value || 0} deg.`; }
   else {
     S.target = [x, y];
     if ($("g-kind").value !== "point") { $("g-kind").value = "point"; renderGoalFields(); }
@@ -935,9 +974,9 @@ function onEvent(e) {
   switch (e.kind) {
     case "state":
       if (r) {
-        r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags, joints: e.joints };
+        r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags, joints: e.joints, sensors: e.sensors, program: e.program };
         later("robots-render", async () => renderRobots(), 150); requestDraw();
-        if (routeId() === r.id) paintBody(r);
+        if (routeId() === r.id) { paintBody(r); later("robot-facts", () => paintFacts(r), 150); }
       }
       break;
     case "map":

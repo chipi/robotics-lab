@@ -61,10 +61,28 @@ class Controller:
         self.event_seq = 0
         self._events_lock = threading.Lock()
         self._last_drive_logged = (0, 0)
+        # Why the brick last stopped itself, held until the next motion command or STOP: the brick's own flag is cleared by the
+        # watchdog's stop 0.1 s after the deadman fires, and a poller at 2 Hz would miss it.
+        self.stops = {"deadman_stop": False, "obstacle_stop": False}
         self.events_path = RUNS_DIR / ("events-sim.jsonl" if world else "events-fake.jsonl" if fake else EVENTS_FILE)
         self.lock = Lock(self._stop_motors, takeover_names=takeover_names, event=self.event)
 
+    def note_stops(self, state: dict | None, how: str = "sample") -> None:
+        """Latch what robotd-lite's answer says (`state` is deadman.parse_state). The brick's own flags are cleared by its next D or S, and
+        the watchdog's S comes 0.1 s after the deadman, so only a motion command (`drive`: it re-reads the flag from the answer to
+        that command) or STOP lets go; a sample or the watchdog only adds. The watchdog firing with no obstacle flagged is a deadman
+        stop (in direct drive it is the only one there is)."""
+        flags = state or {}
+        if how == "drive":
+            self.stops.update(deadman_stop=False, obstacle_stop=bool(flags.get("obstacle_stop")))
+            return
+        if flags.get("obstacle_stop"):
+            self.stops["obstacle_stop"] = True
+        if flags.get("deadman_stop") or (how == "watchdog" and not self.stops["obstacle_stop"]):
+            self.stops["deadman_stop"] = True
+
     def _stop_motors(self) -> None:
+        self.stops.update(deadman_stop=False, obstacle_stop=False)
         if self.robot is not None:
             self.call(lambda r: r.stop())
             self._last_drive_logged = (0, 0)
@@ -223,6 +241,12 @@ class Controller:
                 link_detail=robot.link_detail,
                 link_ms=round(calls[len(calls) // 2], 1) if calls else None,
             )
+        # The sampler's newest readings, so a client that only polls /api/status (Mission Control) sees the sensors without a second
+        # reader on the brick's link; each carries its kind from Setup. Empty while another program owns the brick.
+        readings, age = self.recorder.latest_sensors()
+        out["sensors"] = {port: {"kind": self.config.sensors.get(port), **reading} for port, reading in readings.items()}
+        out["sensors_age_s"] = age
+        out["stops"] = dict(self.stops)
         out["deadman"] = {
             "mode": self.config.drive_mode,
             "running": self.recorder.program == deadman.PROGRAM,
@@ -240,6 +264,8 @@ class Controller:
                                "listed), or choose direct drive in Setup")
         self.last_drive = time.monotonic()
         self.call(lambda r: r.drive(left, right))
+        if left or right:
+            self.note_stops(self.robot.deadman_state if self.robot is not None else None, "drive")
         # The page resends a held drive every 200 ms; log only changes, not every keepalive.
         if (left, right) != self._last_drive_logged:
             self._last_drive_logged = (left, right)
@@ -264,6 +290,7 @@ class Controller:
                 continue
             if time.monotonic() - self.last_drive > WATCHDOG_SECONDS:
                 try:
+                    self.note_stops(self.call(lambda r: r.deadman_query()) if robot.deadman else None, "watchdog")
                     self.call(lambda r: r.stop())
                     self._last_drive_logged = (0, 0)
                     self.event("watchdog stop", detail=f"no drive command for {WATCHDOG_SECONDS} s")
@@ -400,6 +427,7 @@ def make_handler(controller: Controller):
                     c.drive(int(data.get("left", 0)), int(data.get("right", 0)))
                 elif path == "/api/stop":
                     c.lock.stop_from(data.get("client") or "unnamed client")
+                    c.stops.update(deadman_stop=False, obstacle_stop=False)
                     c.call(lambda r: r.stop())
                     c._last_drive_logged = (0, 0)
                 elif path == "/api/fire":

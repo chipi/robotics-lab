@@ -40,7 +40,7 @@ REAL_DATA = Path("/work/robotics-lab/data")
 NAV_PORT = 18061
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--only", help="comma separated: point, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop, calibrate")
+ap.add_argument("--only", help="comma separated: point, placed, profile, cancel, stop, takeover, explore, inventory, object, area, speed, nogo, timelimit, drop, calibrate")
 ap.add_argument("--keep", action="store_true", help="keep the working folder (the gate's log, the navigator's runs) to read after a failure")
 ap.add_argument("--profile", type=Path, help="seed the version store with this profile instead of the duck's own: a test profile whose body "
                 "limits fire on a walk proves the alarm feed live (the point scenario then checks it)")
@@ -179,7 +179,7 @@ try:
         end = finished(run["id"], 180)
         check("the real navigator reaches the point (truth within 0.5 m)", end and end["state"] == "reached" and math.dist(body.pose()[:2], (1.5, 0.5)) < 0.5,
               end and (end["state"], end["reason"], body.pose()))
-        check("its decisions are relayed, with rules", end and len(end["decisions"]) > 0 and all(d.get("rule") for d in end["decisions"]), end and end["decisions"][:3])
+        check("its decisions are relayed, with rules", end and len(end["decisions"]) > 0 and all(d.get("rule") for d in (end or {}).get("decisions", [])), end and end["decisions"][:3])
         if ARGS.profile:
             kinds = sorted({a["anomaly"] for a in (end or {}).get("anomalies", [])})
             live = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly" and e.get("goal_run") == run["id"]]
@@ -323,7 +323,7 @@ try:
                   and end["result"]["stand"], end and (end["state"], end["reason"], end["result"]))
             tx, ty = target["x"], target["y"]
             check("the robot stands near it (truth within 1.2 m of its position)", math.dist(body.pose()[:2], (tx, ty)) < 1.2, (body.pose(), (tx, ty)))
-            check("its decisions say it went to the object", end and any("went to the" in d["text"] for d in end["decisions"]), end and [d["text"] for d in end["decisions"]][-4:])
+            check("its decisions say it went to the object", end and any("went to the" in d["text"] for d in (end or {}).get("decisions", [])), end and [d["text"] for d in end["decisions"]][-4:])
             run = start({"kind": "go_to_object", "params": {"label": "the unicorn"}, "budget": {"minutes": 0.5}})
             end = finished(run["id"], 60)
             check("an object nobody knows is not_found, at once", end and end["state"] == "not_found", end and (end["state"], end["reason"]))
@@ -399,7 +399,7 @@ try:
         end = finished(run["id"], 120)
         check("the time limit stops the run: stopped_by_guardrail, which guardrail broke", end and end["state"] == "stopped_by_guardrail"
               and end["broken"]["name"] == "time_limit", end and (end["state"], end["reason"], end["broken"]))
-        check("it is not 'failed': the decision with its reason is in the run", end and any("guardrail broken" in d["text"] and d.get("rule") == "guardrail" for d in end["decisions"]),
+        check("it is not 'failed': the decision with its reason is in the run", end and any("guardrail broken" in d["text"] and d.get("rule") == "guardrail" for d in (end or {}).get("decisions", [])),
               end and [d["text"] for d in end["decisions"]][-3:])
         check("the robot stands (truth) and the lease is back", stands_still() and robot()["lock"]["holder"] is None)
 
@@ -482,6 +482,56 @@ try:
         check("with 0.1 m, no contact, no fall, no stuck the same robot reaches its point: the guardrails do not stop a good run",
               end and end["state"] == "reached" and end["broken"] is None, end and (end["state"], end["reason"], end["broken"]))
 
+    def placed_proof():
+        """A start pose without a truth (phase 5 item 4b unit B7, contract 1.5): the operator says the duck stands at (0.5, 0) on the map,
+        though it is at the dock, which the navigator takes to be the map's origin. A point goal at (1.5, 0.5) of that map is then 1.0 m east
+        and 0.5 m north of where the duck is, not 1.5 m east: judged by the truth, which the navigator never reads (the run's runner has it
+        or not; this test reads it either way)."""
+        need_clean()
+        wait_for(lambda: robot()["online"], 60)
+        w0 = body.pose()
+        said, goal = (0.5, 0.0, 0.0), (1.5, 0.5)
+
+        def compose(a, b):
+            c, s = math.cos(a[2]), math.sin(a[2])
+            return a[0] + c * b[0] - s * b[1], a[1] + s * b[0] + c * b[1]
+
+        def inverse(a):
+            c, s = math.cos(a[2]), math.sin(a[2])
+            return -c * a[0] - s * a[1], s * a[0] - c * a[1], -a[2]
+
+        # the map's frame as the operator means it: the duck at w0 in the world is at `said` on the map
+        frame = (*compose(w0, inverse(said)), w0[2] - said[2])
+        target, naive = compose(frame, goal), compose(w0, goal)
+        run = start({"kind": "point", "params": {"x": goal[0], "y": goal[1]}}, start_pose={"x": said[0], "y": said[1], "yaw": said[2]})
+        check("the navigator speaks contract 1.5 and takes the start pose: the run starts, and keeps the pose among its conditions",
+              run["state"] == "running" and run["conditions"].get("start_pose", {}).get("x") == said[0], run)
+        end = finished(run["id"], 180)
+        wait_for(lambda: robot()["lock"]["holder"] is None, 15)
+        x, y, _ = body.pose()
+        here, there = math.dist((x, y), target), math.dist((x, y), naive)
+        print(f"   truth: started at {tuple(round(v, 2) for v in w0)}, ended at ({x:.2f}, {y:.2f}); the placed goal is at {tuple(round(v, 2) for v in target)}, "
+              f"the unplaced one at {tuple(round(v, 2) for v in naive)}", flush=True)
+        check("must fail: the duck reached the goal of the map the operator placed it on: within 0.45 m of the goal the placement means, "
+              "and nearer to it than to the goal with no placement (0.5 m off)",
+              end is not None and end["state"] == "reached" and here < 0.45 and here + 0.15 < there, (end and (end["state"], end["reason"]), here, there))
+        check("the run says the operator placed the robot, as a decision", any(d["rule"] == "placed" and "placed by the operator" in d["text"] for d in (end or {}).get("decisions", [])),
+              [d["text"] for d in (end or {}).get("decisions", [])][:4])
+        pose = robot()["status"]["pose"]
+        check("the pose on the page is in the map's frame too: it reads near the goal (1.5, 0.5), not near where mapd's own frame would put it",
+              math.dist((pose["x"], pose["y"]), goal) < 0.6, pose)
+        grid = call("GET", "/robots/duck-sim/map")["map"]
+        cell = lambda px, py: grid["data"][int((py - grid["origin"][1]) / grid["resolution_m"]) * grid["width"] + int((px - grid["origin"][0]) / grid["resolution_m"])]    # noqa: E731
+        check("and so is the map: the cell under the pose and the cell the operator said the duck started on are both known free there",
+              cell(pose["x"], pose["y"]) == 0 and cell(said[0], said[1]) == 0, (cell(pose["x"], pose["y"]), cell(said[0], said[1])))
+        recorded = [p for p in (tmp / "nav").glob(f"mc{run['id']}-*/ticks.jsonl") if '"event": "placed"' in p.read_text()]
+        check("the navigator's own run records a `placed` event", len(recorded) == 1, [str(p) for p in (tmp / "nav").glob("mc*")])
+        clean[0] = False
+
+    if wanted("placed"):
+        print("\n--- a start pose (phase 5 item 4b unit B7, contract 1.5)", flush=True)
+        placed_proof()
+
     if ARGS.no_truth:
         print("\n--- no truth: calibration with the operator's tape (phase 5 item 4a unit A3)", flush=True)
         calibrate_proof(tape=True)
@@ -525,6 +575,8 @@ try:
         print("   broken:", broken, flush=True)
         check("the break says it was what the robot's sensor saw, and the robot stands outside the stairwell (truth)",
               "its sensor saw" in broken.get("detail", "") and body.pose()[1] > -0.7 and stands_still(), (broken, body.pose()))
+        print("\n--- no truth: a goal started from the pose the operator gives (phase 5 item 4b unit B7, contract 1.5)", flush=True)
+        placed_proof()
 
     # --- the split (RFC-0021 step 6): the navigator behind its runner, with no route to the truth ---------------------
     print("\n--- the split", flush=True)

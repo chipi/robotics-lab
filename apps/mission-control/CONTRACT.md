@@ -35,7 +35,7 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | Call | Meaning |
 | --- | --- |
 | `GET /api/v1/robots` | `[{id, label, kind, online, lock, last_seen_age_s}]` |
-| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports its joint angles: absent when it reports none), `guardrails` (the robot's own), `rates`, `site`, `goal_run`, `alarms` (additive: the last minute's alarms kept from the `anomaly` events, `{window_s, worst, joints}`: `window_s` the window, 60; `worst` the worst alarm of the window (the latest of equal severity) or null; `joints` the worst alarm naming each joint in `anomaly.values.joint`, `{joint: entry}`; an entry is `{at, goal_run, watch, anomaly}`, `at` the event's wall time and `anomaly` RFC-0019's record; `GET /robots` does not carry it. The page seeds its alarm feed, so its fit verdict and the body's colours, from it, and goes on from the live `anomaly` events without counting one twice), `profile` (`{robot, variant, version, checksum, subsystems}`: the profile this machine runs for the robot, `version` null for the robot's own file, `subsystems` the profile's parts, each `{name, what?, check, logs?, conflicts?}`; null for a robot file that holds the robot itself) |
+| `GET /api/v1/robots/{id}` | the same, plus `capabilities`, `status` (the last state: `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports its joint angles: absent when it reports none, and `sensors` `{id: reading}` under the ids of `capabilities.sensors` when the robot reports them: absent when it reports none; the NXT's `ultrasonic` is `{range_m}` (null when nothing is in range) and its `colour` `{value, label}`; its `flags` are `deadman_stop` and `obstacle_stop`, held until the next motion command or STOP), `guardrails` (the robot's own), `rates`, `site`, `goal_run`, `alarms` (additive: the last minute's alarms kept from the `anomaly` events, `{window_s, worst, joints}`: `window_s` the window, 60; `worst` the worst alarm of the window (the latest of equal severity) or null; `joints` the worst alarm naming each joint in `anomaly.values.joint`, `{joint: entry}`; an entry is `{at, goal_run, watch, anomaly}`, `at` the event's wall time and `anomaly` RFC-0019's record; `GET /robots` does not carry it. The page seeds its alarm feed, so its fit verdict and the body's colours, from it, and goes on from the live `anomaly` events without counting one twice), `profile` (`{robot, variant, version, checksum, subsystems}`: the profile this machine runs for the robot, `version` null for the robot's own file, `subsystems` the profile's parts, each `{name, what?, check, logs?, conflicts?}`; null for a robot file that holds the robot itself) |
 | `PUT /api/v1/robots/{id}/site` | `{site}` (an id, or null): a robot is at one site at a time; refused while a goal run holds it |
 | `GET /api/v1/robots/{id}/description` | `{description}`: the robot's body for the page (RFC-0024), as the Observatory's `/api/v1/robots/{robot}` gives it (`name`, `root`, `links` with their visuals, `joints` from the root out, `meshes_missing`); each visual's `url` is a path under the API. `description` is null for a robot whose file holds the robot itself (no registered robot) or whose registration has no `robot.urdf` |
 | `GET /api/v1/robots/{id}/meshes/{file}` | a mesh of that description, binary STL (`model/stl`); `{file}` is one URL-encoded path inside the robot's folder; `404 not_found` for anything else |
@@ -109,8 +109,8 @@ a 422.
 | `GET /goals?folder=` | the library; a folder lists itself and its subfolders |
 | `POST /goals` | define one: 201; a name is unique in its folder |
 | `GET`, `PUT`, `DELETE /goals/{id}` | read, change, retire; neither change nor retire while a run of it is active |
-| `POST /goals/{id}/runs` | `{robots: [id], target?: "sim" \| "real", site?}`: 201, a goal run |
-| `POST /goal-runs` | `{goal, robots, target?, site?}`: a goal that is not in the library; saves none |
+| `POST /goals/{id}/runs` | `{robots: [id], target?: "sim" \| "real", site?, start_pose?}`: 201, a goal run (`start_pose`: below) |
+| `POST /goal-runs` | `{goal, robots, target?, site?, start_pose?}`: a goal that is not in the library; saves none |
 | `POST /goal-runs/{id}/save` | `{name, folder?}`: the run's goal goes in the library and the run links to it |
 | `GET /goal-runs?robot=&state=&goal=&parent=` | runs, newest first; the children of a group are listed on their own only with `robot` or `parent` |
 | `GET /goal-runs/{id}` | one run, with its `decisions` and `anomalies`; a group with its `children` |
@@ -120,6 +120,18 @@ a 422.
 `robots` names one robot, or several, or `team` names a team (the robots whose files list it in
 `teams`); `share` (below) applies to several. `site` defaults to the robot's site. A `target` of
 `real` is refused for the fake robot.
+
+**`start_pose`** (phase 5 item 4b unit B7) is where the operator says the robot stands on the map
+when the run starts: `{x, y, yaw}`, the site frame, metres and radians (`yaw` is taken modulo a
+turn; a `frame` other than `site` or any other key is a `422 bad_start_pose`). It belongs to the
+run, not the goal, and is kept in the run's `conditions.start_pose`. It is one robot's: with a team
+or several robots it is a 422. A robot with no truth cannot read where it stands, so the navigator
+takes the word and sets the run's frame by it ([navigator contract 1.5](../../libs/runner/CONTRACT.md));
+the run says so in a decision (`placed`), the robot's pose and map on the page are in that frame
+until a run without one, and a navigator that does not speak 1.5 refuses the run (the reason says
+so) rather than run it in the wrong frame. The fake robot is set down at the pose. Refused, as the
+run's reason: inside a no-go area, and for the fake outside its world or inside an object. The
+robot's dock is the first start pose a site sees, when it has none.
 
 ### One goal on several robots
 
@@ -252,7 +264,7 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 
 | Kind | When |
 | --- | --- |
-| `state` | each robot's status at its `rates.state_hz` (default 2): `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports them (the duck: robotd's angles under the profile's `joints.names`) |
+| `state` | each robot's status at its `rates.state_hz` (default 2): `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports them (the duck: robotd's angles under the profile's `joints.names`); the NXT adds `sensors` (see `GET /robots/{id}`) and raises `anomaly` events itself: `low_battery` (major, under 20 %), `link_lost` (major), `deadman_stop` (major) and `obstacle_stop` (minor), source `robot` |
 | `map` | when a robot's map changes, at most `rates.map_hz` (default 1) |
 | `robot-online`, `robot-offline` | a change, with the error |
 | `lock` | the gate's log: `event` is `acquired`, `refused`, `released`, `expired`, `taken_over`, `lease_ended`, `stop`, `stop_failed` |
@@ -406,7 +418,7 @@ API):
 | Method | Meaning |
 | --- | --- |
 | `hello` | `{name, version, contract, kinds, camera}`: asked before every goal; a navigator speaking another major version of the contract is refused, both versions said, and no goal starts |
-| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, not_enforced?}` | `{run_key, profile {checksum, version, source}}` at once (the profile version the goal runs, as its run records it), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera); `not_enforced` (contract 1.2) is the runner's: the guardrails it cannot check, each a `guardrail_unenforced` anomaly |
+| `goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, not_enforced?, start_pose?}` | `{run_key, profile {checksum, version, source}, placed?}` at once (the profile version the goal runs, as its run records it; `placed {pose, frame}` when a `start_pose` was taken, contract 1.5), or `{error: {code, message, holder?}}`: `held` (another client holds the robot: the gate's own refusal), `busy`, `unknown_kind`, `no_camera` (a goal that looks for objects, on a navigator with no camera), `bad_start_pose` (not three finite numbers, or inside a no-go area the goal carries); `not_enforced` (contract 1.2) is the runner's: the guardrails it cannot check, each a `guardrail_unenforced` anomaly |
 | `goal.status {decisions_since, objects_since, anomalies_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, anomalies, anomalies_n, objects, objects_v}`; `anomalies` the run's since `anomalies_since` (RFC-0019's record, contract 1.1); `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel {reason?}` | the navigator stops, ends the run `cancelled`, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |

@@ -22,7 +22,7 @@ import math
 import time
 
 from duck_lab.nav.decision import decision
-from duck_lab.nav.frames import Localizer, move_grid
+from duck_lab.nav.frames import Localizer, compose, inverse, move_grid
 
 
 class Mapd:
@@ -45,10 +45,21 @@ class Mapd:
         self.rpc = None
         self.seen = None             # mapd's last account of itself (lost, loops, relocalizations, islands)
         self._loop_credit = None     # until when a large fix is taken to be the loop closure mapd believed (time.monotonic)
+        self.frame = None            # where the operator placed the robot (`place`): the change from mapd's frame to the map's, true metres
 
     def bind(self, rpc) -> None:
         """The channel mapd answers on (a robot RPC with `call(method, params)`)."""
         self.rpc = rpc
+
+    def place(self, pose: tuple) -> tuple:
+        """The robot stands at `pose` on the map (x, y, yaw: the operator's word, there being no truth to read it by). From here every
+        mapd pose and mapd's grid are put into that frame, so the belief, the memory and the grid are the map's and its goals, areas
+        and objects mean what the operator drew. The change is mapd's pose now against `pose`; mapd with no pose yet starts its map
+        at the robot's first stop, which is here. Returns the change in mapd's own (unscaled) metres, as its `map` grid is in."""
+        mp = (self.rpc.call("map.status").get("state") or {}).get("pose")
+        here = self.scaled((mp["x"], mp["y"], mp["yaw"])) if mp else (0.0, 0.0, 0.0)
+        self.frame = compose(tuple(pose), inverse(here))
+        return self.frame[0] / self.scale, self.frame[1] / self.scale, self.frame[2]
 
     def scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
@@ -137,6 +148,8 @@ class Mapd:
         raw = self.scaled((pose["x"], pose["y"], pose["yaw"])) if pose else None
         if raw and fault and time.monotonic() - t0 >= fault[0]:
             raw = (raw[0] + fault[1], raw[1] + fault[2], raw[2])
+        if raw and self.frame:
+            raw = compose(self.frame, raw)
         if not (pose and t_ns and self.belief.on_fix(t_ns, raw, closure=closure)):
             return False
         f = self.belief.last_fix
@@ -167,6 +180,8 @@ class Mapd:
             g["origin"] = [v * self.scale for v in g["origin"]]
             if fault_grid and fault and time.monotonic() - t0 >= fault[0]:
                 g["origin"] = [g["origin"][0] + fault[1], g["origin"][1] + fault[2]]
+            if self.frame:
+                g = move_grid(g, self.frame)
             if frames_on:
                 g = move_grid(g, self.belief.delta())
         return g

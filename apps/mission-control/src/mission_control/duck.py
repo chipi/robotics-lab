@@ -244,7 +244,11 @@ class DuckNavigatorClient:
     def goal_start(self, spec: dict) -> dict:
         self._dn, self._ov, self._fails, self._an = 0, -1, 0, 0
         try:
-            check_hello(self._rpc("hello"))     # asked at every goal: the server behind the address can be restarted between two
+            hello = check_hello(self._rpc("hello"))     # asked at every goal: the server behind the address can be restarted between two
+            if spec.get("start_pose") and not speaks(hello, "1.5"):
+                # a navigator below 1.5 would ignore the field and run the goal in the wrong frame: worse than no run
+                self._status = {"state": "refused", "reason": f"the navigator speaks contract {hello.get('contract')}: it takes no start pose (1.5)"}
+                return {"run_key": None}
             out = self._rpc("goal.start", spec)
         except ContractError as exc:
             self._status = {"state": "refused", "reason": str(exc)}
@@ -255,6 +259,10 @@ class DuckNavigatorClient:
         if "error" in out:
             err = out["error"]
             self._status = {"state": "refused", "reason": err.get("message", str(err))}
+            return {"run_key": None}
+        if spec.get("start_pose") and not out.get("placed"):
+            self._rpc("goal.cancel", {"reason": "the navigator did not place the robot"})
+            self._status = {"state": "refused", "reason": "the navigator answered no `placed` to the start pose: it was not heard, so the goal is cancelled"}
             return {"run_key": None}
         self._active = True
         self._status = {"state": "running", "run_key": out["run_key"]}
@@ -374,6 +382,7 @@ class DuckAdapter:
         self._stream_at = 0.0
         self._health = (0.0, None)
         self._gate = None
+        self.placed = None          # {x, y, yaw} in mapd's own metres: where the latest goal's start pose put the map's frame (contract 1.5)
 
     def call(self, method: str, params: dict | None = None):
         raise NotImplementedError("the duck's calls go through its gate (make_gate)")
@@ -397,6 +406,7 @@ class DuckAdapter:
         """A goal has started: the profile read again (a version saved since applies from this run), and checked against the one
         the navigator says it runs. A difference is said, as a decision on the goal run: the poses are scaled by Mission Control's."""
         from .robots import ConfigError, read_profile
+        self.placed = (reply.get("placed") or {}).get("frame")      # the frame the goal's start pose set; the navigator's `map` is in it too
         try:
             self.profile = read_profile(self.cfg.robot, self.cfg.variant)
         except ConfigError as exc:
@@ -413,6 +423,14 @@ class DuckAdapter:
         return f"{self.observatory}/watch/{run_key}" if self.observatory and run_key else None
 
     # --- state: the subscription's latest, in the page's shape ------------------------------------------
+
+    def _placed(self, pos, yaw) -> tuple:
+        """The odometry's pose (robotd's metres, which the page takes to be mapd's frame) in the frame the latest start pose set."""
+        f = self.placed
+        if not f:
+            return pos, yaw
+        c, s = math.cos(f["yaw"]), math.sin(f["yaw"])
+        return (f["x"] + c * pos[0] - s * pos[1], f["y"] + s * pos[0] + c * pos[1]), math.atan2(math.sin(f["yaw"] + yaw), math.cos(f["yaw"] + yaw))
 
     def _on_state(self, _state: dict) -> None:
         self._stream_at = self.clock()
@@ -436,6 +454,7 @@ class DuckAdapter:
         pos, yaw = s["odom"]["position"], s["odom"]["yaw"]
         applied = (s.get("move") or {}).get("applied") or [0.0, 0.0, 0.0]
         safety = s.get("safety") or {}
+        pos, yaw = self._placed(pos, yaw)
         out = {"pose": {"x": round(pos[0] * self.scale, 4), "y": round(pos[1] * self.scale, 4), "yaw": round(yaw, 4), "frame": "site"},
                "velocity": {"vx": round(applied[0], 4), "vyaw": round(applied[2], 4)},
                "mode": "moving" if abs(applied[0]) > 1e-3 or abs(applied[2]) > 1e-3 else "idle",

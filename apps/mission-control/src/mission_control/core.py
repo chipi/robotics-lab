@@ -283,6 +283,8 @@ class MissionControl:
         if not isinstance(body, dict):
             raise invalid("body is {robots, target, site?}")
         if body.get("team") is not None or (isinstance(body.get("robots"), list) and len(body["robots"]) > 1):
+            if body.get("start_pose") is not None:
+                raise invalid("a start pose is where one robot stands: name one robot, not several or a team", "bad_start_pose")
             return self._start_group(goal_spec, body, goal_id, client)
         robots = body.get("robots")
         if not isinstance(robots, list) or not robots or not all(isinstance(r, str) for r in robots):
@@ -296,13 +298,14 @@ class MissionControl:
         if target == "real" and rt.cfg.kind == "fake":
             raise invalid("the fake robot is not a real robot")
         goal = goals.validate(goal_spec, require_name=False)
+        start_pose = goals.start_pose(body.get("start_pose"))
         site_id = self._site_of(body, rt)
         if not rt.online():
             raise ApiError(503, "robot_offline", f"{rt.cfg.id} is offline: nothing was queued", robot=rt.cfg.id)
         with rt.mutex:
             if rt.active:
                 raise conflict("robot_busy", f"goal run {rt.active.id} holds {rt.cfg.id}", goal_run=rt.active.id)
-            return self._create_and_start(rt, goal, goal_id, site_id, target, None, client)
+            return self._create_and_start(rt, goal, goal_id, site_id, target, None, client, start_pose)
 
     # --- one goal on several robots (RFC-0014 §3.4.4) ----------------------------------------------------------
 
@@ -433,7 +436,8 @@ class MissionControl:
         except ApiError:
             pass                                   # it ended by itself in the meantime
 
-    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target, parent_id=None, client=None) -> dict:
+    def _create_and_start(self, rt: RobotRuntime, goal: dict, goal_id, site_id, target, parent_id=None, client=None,
+                          start_pose: dict | None = None) -> dict:
         reason = None
         goal_guards = []
         for g in goal["must_not"]:
@@ -449,7 +453,8 @@ class MissionControl:
             levels["site"] = self.sites.guardrails(site_id)
         merged = guardrails.merge(levels)
         caps = rt.cfg.capabilities
-        conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal)}
+        conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal),
+                      **({"start_pose": start_pose} if start_pose else {})}
         now = self.wall()
         run_id = self.store.execute(
             "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id, client)"
@@ -471,11 +476,12 @@ class MissionControl:
             return self.get_run(run_id)
         seed = self.sites.seed(site_id) if site_id is not None else {"objects": [], "areas": []}
         if site_id is not None and (rt.status or {}).get("pose") and caps.get("localisation", {}).get("how") == "dock":
-            self.sites.set_dock_if_unset(site_id, {**rt.status["pose"], "robot": rt.cfg.id})
+            self.sites.set_dock_if_unset(site_id, {**(start_pose and {**start_pose, "frame": "site"} or rt.status["pose"]), "robot": rt.cfg.id})
         rt.active = ActiveRun(run_id, goal, site_id)
         spec = {"kind": goal["kind"], "params": params, "budget": goal.get("budget"),
                 "conditions": {"done_when": goal["done_when"], "guardrails": merged}, "seed": seed,
-                "goal_run": {"id": run_id, "name": goal["name"], "kind": goal["kind"], "robot": rt.cfg.id, "site": site_id}}
+                "goal_run": {"id": run_id, "name": goal["name"], "kind": goal["kind"], "robot": rt.cfg.id, "site": site_id},
+                **({"start_pose": start_pose} if start_pose else {})}
         try:
             started = rt.navigator.goal_start(spec)
         except Exception as exc:

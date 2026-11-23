@@ -132,6 +132,50 @@ with sync_playwright() as p:
     check("Watch is there and disabled while run_key is null: nothing to open", page.locator("#watch").get_attribute("aria-disabled") == "true"
           and page.locator("#watch").get_attribute("href") == "#")
     check("the robot card follows: free again, the robot's pose moved", page.locator("#robot-fake-1 .lock").inner_text() == "free")
+
+    # --- a start pose: the operator places the robot on the map (navigator contract 1.5, phase 5 item 4b unit B7) ------
+    runs_before = len(get("/goal-runs")["runs"])
+    check("the start pose is off until asked for: its fields are hidden and a run sends none", not page.locator("#g-place-fields").is_visible())
+    page.check("#g-place")
+    check("ticking it shows the fields and puts the map in place mode, and the hint says so", page.locator("#g-place-fields").is_visible()
+          and "start pose" in page.locator("#maphint").inner_text() and page.get_attribute("#g-place-tap", "aria-pressed") == "true")
+    page.click("#g-run")
+    wait(page, "document.getElementById('toast').textContent.includes('Set the start pose')")
+    check("must fail: Run now with the box ticked and no pose set starts nothing and says what to set",
+          len(get("/goal-runs")["runs"]) == runs_before and "tap the map" in page.locator("#toast").inner_text(), page.locator("#toast").inner_text())
+    goal_x, goal_y = page.input_value("#g-x"), page.input_value("#g-y")
+    tap(page, -2.0, 0.5)
+    px, py = float(page.input_value("#g-px")), float(page.input_value("#g-py"))
+    check("tapping the map fills the start pose, not the point goal (its fields keep their values)", abs(px + 2.0) < 0.1 and abs(py - 0.5) < 0.1
+          and (page.input_value("#g-x"), page.input_value("#g-y")) == (goal_x, goal_y) and "Start pose at" in page.locator("#maphint").inner_text(), (px, py))
+    page.fill("#g-pyaw", "90")
+    page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")     # the map is drawn on a frame of its own
+    ring = page.evaluate("""() => { const c = document.getElementById('map'), k = c.width / c.clientWidth, sp = window.__mc.toScreen(Number(document.getElementById('g-px').value), Number(document.getElementById('g-py').value));
+        const rad = Math.max(8, 0.18 * (window.__mc.toScreen(1, 0)[0] - window.__mc.toScreen(0, 0)[0])), d = c.getContext('2d');
+        const at = (dx) => Array.from(d.getImageData(Math.round((sp[0] + dx) * k), Math.round(sp[1] * k), 1, 1).data).join(',');
+        return [at(rad), at(rad + 8)]; }""")
+    check("the start pose is drawn on the map: a ring where it was tapped (its pixel differs from the floor just outside it)", ring[0] != ring[1], ring)
+    page.fill("#g-x", "-3.0")
+    page.fill("#g-y", "0.5")
+    page.click("#g-run")
+    wait_state(page, ["reached"])
+    run = get("/goal-runs")["runs"][0]
+    sp = run["conditions"].get("start_pose") or {}
+    check("Run now sends the start pose with the run: where it was tapped, its yaw in radians (90 deg)",
+          abs(sp.get("x", 9) + 2.0) < 0.1 and abs(sp.get("y", 9) - 0.5) < 0.1 and abs(sp.get("yaw", 0) - 1.5707963267948966) < 1e-9, sp)
+    pose = get("/robots/fake-1")["robot"]["status"]["pose"]
+    check("the robot was set down there and drove to the goal from it (the API's truth)", run["state"] == "reached"
+          and ((pose["x"] + 3.0) ** 2 + (pose["y"] - 0.5) ** 2) ** 0.5 < 0.4, (run["state"], pose))
+    check("the run's detail says it started from a placed pose, and its decisions say the operator placed it",
+          "placed" in page.locator("#run-placed").inner_text() and "facing 90 deg" in page.locator("#run-placed").inner_text()
+          and "placed by the operator" in page.locator("#decisions").inner_text(), page.locator("#run-placed").inner_text())
+    page.uncheck("#g-place")
+    check("unticked: the fields are hidden and the map is back to setting a point goal", not page.locator("#g-place-fields").is_visible()
+          and "point goal" in page.locator("#maphint").inner_text())
+    page.fill("#g-x", "-2.5")
+    page.click("#g-run")
+    wait_state(page, ["reached"])
+    check("a run after that carries no start pose", "start_pose" not in get("/goal-runs")["runs"][0]["conditions"], get("/goal-runs")["runs"][0]["conditions"])
     # --- who holds the robot: one line on the robot's card, from the gate's who -----------------------------
     def send(method, path, body):
         req = urllib.request.Request(BASE + "/api/v1" + path, data=json.dumps(body).encode(), method=method,

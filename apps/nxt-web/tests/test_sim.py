@@ -268,8 +268,19 @@ try:
     samples = http(base, "/api/live?since=0")[1]["samples"]
     check("the ultrasonic in the live samples is the world's, not the sine", samples and samples[-1]["sensors"]["4"]["value"] is not None
           and samples[-1]["sensors"]["4"]["value"] <= 15, samples[-1]["sensors"] if samples else None)
+    # D5: what Mission Control reads from /api/status alone: the sampler's sensors by port, and why the brick stopped, held
+    until = time.monotonic() + 3.0
+    while time.monotonic() < until and not (http(base, "/api/status")[1]["stops"]["obstacle_stop"]):
+        time.sleep(0.1)
+    status = http(base, "/api/status")[1]
+    check("status: the obstacle stop is held, and the ultrasonic is the world's distance, with its kind and age",
+          status["stops"] == {"deadman_stop": False, "obstacle_stop": True} and status["sensors"]["4"]["kind"] == "ultrasonic"
+          and status["sensors"]["4"]["value"] <= 15 and status["sensors"]["3"]["kind"] == "color" and status["sensors"]["3"]["value"] is None
+          and 0 <= status["sensors_age_s"] < 2, (status["stops"], status["sensors"], status["sensors_age_s"]))
     http(base, "/api/stop", {"session": session})
-    fake = subprocess.Popen([NXT_WEB, "--fake", "--port", str(port + 1), "--config", str(tmp / "config.json")],
+    time.sleep(0.5)     # a sample in flight when STOP came may still note the old answer; the next one reads the brick's cleared flag
+    check("STOP clears what was held", http(base, "/api/status")[1]["stops"] == {"deadman_stop": False, "obstacle_stop": False})
+    fake =subprocess.Popen([NXT_WEB, "--fake", "--port", str(port + 1), "--config", str(tmp / "config.json")],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
     try:
         fake.stdout.readline()

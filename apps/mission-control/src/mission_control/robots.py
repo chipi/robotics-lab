@@ -260,6 +260,7 @@ class RobotRuntime:
             self.gate = Gate(self.link, clock=clock, wall=wall, lease_s=cfg.lease_s, takeover_names=cfg.takeover, log=self._log,
                              own_sources=(self.OWN_SOURCE,))
         self._holder = None
+        self.watcher = adapter.make_watcher() if hasattr(adapter, "make_watcher") else None     # an adapter's own alarms (the NXT has no navigator to raise them)
         self.navigator = adapter.make_navigator(self.gate, clock) if cfg.capabilities.get("navigator") else None
         self.mutex = threading.RLock()
         self.sessions: OrderedDict = OrderedDict()
@@ -295,10 +296,11 @@ class RobotRuntime:
     def poll(self, force: bool = False) -> None:
         """Read the robot's state at its rate (§3.2.2) and note whether it answered."""
         now = self.clock()
+        answered = None
         if force or now >= self._next_poll:
             self._next_poll = now + 1.0 / self.cfg.rates["state_hz"]
             try:
-                self.status = self.gate.handle(self._conn, "robot.state")
+                self.status = answered = self.gate.handle(self._conn, "robot.state")
                 self.status_at = now
                 self.bus.emit("state", robot=self.cfg.id, **self.status)
                 if not getattr(self.gate, "remote", False):     # a remote gate (duck-gate) watches its own stream
@@ -328,6 +330,9 @@ class RobotRuntime:
             self._was_online = online
             self.bus.emit("robot-online" if online else "robot-offline", robot=self.cfg.id,
                           error=None if online else self.link.last_error)
+        if self.watcher is not None and (answered is not None or not online):
+            for anomaly in self.watcher.update(answered, online, self.wall()):
+                self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly=anomaly)
 
     # --- the lock: sessions over the gate ---------------------------------------------------------
 

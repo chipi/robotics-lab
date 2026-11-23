@@ -31,6 +31,8 @@ Cleared items are struck from the list when settled.
 | D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sit in `capabilities.sensors`, not the profile's `sensors` block (6); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
 | B3 second opinion | Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built: only without truth |
 | B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
+| B7 frame | A start pose you place on the map lasts one goal. Keep it until the robot is carried again instead? (Needs a clear control and a rule for stale placements.) | built: per goal |
+| B7 dock | The first start pose a site sees becomes its dock pose when it has none. Right? | built that way |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
 ## For the real duck's link (B5, `lab-link`, recipe in [REAL-DUCK-LINK.md](REAL-DUCK-LINK.md))
@@ -48,8 +50,8 @@ Cleared items are struck from the list when settled.
 - **An installation that registers both robots** makes `labrunner.robots.get()` ask for
   `--robot`; and `lab-go --robot nxt-shooterbot` would fail on the NXT's missing navigator API
   (`navapi.py:209`, `remote.py:150`) instead of refusing clearly. A small fix, due with D7.
-- **The robot page shows the NXT "Not fit"** while online and idle (D4's page check); D5 looks at
-  it.
+- **The NXT's battery percent is a guess:** a linear span from 6000 mV (0 %) to 8400 mV (100 %),
+  low below 20 % (D5); D1 can calibrate it. A robot file overrides the span.
 
 - **B3's fall and contact are proven only by stubs:** the sim duck neither tilts past 45 degrees
   nor reports `bumped` or `carried` on demand. Only drop clearance has a simulator proof. A false

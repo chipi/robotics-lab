@@ -51,7 +51,9 @@ class FakeNav:
                                              get=lambda path, default=None: {"robot_guards": {"fall_tilt_deg": 45.0, "fall_s": 0.3}}.get(path, default))
         self.records = []
         self.drops, self.edges, self.tilt_now = [], [], None       # what the robot-side guardrails read (phase 5 B3): the cliff check's drops, the IMU's tilt
-        self.localisation = types.SimpleNamespace(seen=None, pose=lambda: (0.0, 0.0, 0.0))
+        self.placed_at = None            # what GoalRun._place gave the localisation (contract 1.5)
+        self.localisation = types.SimpleNamespace(seen=None, pose=lambda: (0.0, 0.0, 0.0), name="mapd",
+                                                  place=lambda pose: (setattr(self, "placed_at", pose), (0.25, -0.5, 0.1))[1])
         watch = getattr(body_mod, "StopWatch", None)
         self._stops = watch({"hot_c": 60.0}, {"battery_min_pct": 15.0, "battery_low_s": 0.0}) if watch else None
 
@@ -355,6 +357,40 @@ run_goal(broken, "wait", poke("navigator API", tilt_over), BLIND)
 check("must fail: a robot-side break is a guardrail event of the run saying side robot",
       any(r.get("event") == "guardrail" and r["name"] == "fall" and r["decision"]["values"].get("side") == "robot" for r in broken.run.nav.records),
       broken.run.nav.records[-2:])
+
+# --- a start pose without a truth (phase 5 B7, contract 1.5): the navigator API takes the operator's word for where the robot stands -------
+START = {"x": 2.0, "y": 1.5, "yaw": 0.5}
+check("this is contract 1.5 or later (the start pose)", tuple(map(int, CONTRACT.split("."))) >= (1, 5), CONTRACT)
+placed_nav = api()
+st = run_goal(placed_nav, "wait", lambda m: m.call("goal.cancel", {}), {"start_pose": START})
+check("navigator API: goal.start with a start pose answers `placed`: the pose taken (site frame) and the frame change",
+      st["started"].get("placed") == {"pose": {**START, "frame": "site"}, "frame": {"x": 0.25, "y": -0.5, "yaw": 0.1}}, st["started"])
+check("... the navigator's localisation was placed at it", placed_nav.run.nav.placed_at == (2.0, 1.5, 0.5), placed_nav.run.nav.placed_at)
+ev = [r for r in placed_nav.run.nav.records if r.get("event") == "placed"]
+check("... the run records a `placed` event with a decision saying the operator's word set the frame",
+      len(ev) == 1 and ev[0]["pose"] == [2.0, 1.5, 0.5] and "placed by the operator" in ev[0]["decision"]["reason"], ev)
+check("... and the goal runs as any: the cancel ends it", st["state"] == "cancelled", st["state"])
+plain = api()
+run_goal(plain, "wait", lambda m: m.call("goal.cancel", {}))
+check("a goal with no start pose is not placed, and its answer has no `placed`",
+      plain.run.nav.placed_at is None and not [r for r in plain.run.nav.records if r.get("event") == "placed"], plain.run.nav.records[:2])
+st = run_goal(payload(), "wait", lambda m: m.call("goal.cancel", {}), {"start_pose": START})
+check("the payload takes no start pose: it ignores the field, runs the goal and answers no `placed`", "placed" not in st["started"]
+      and st["state"] == "cancelled", st["started"])
+
+
+class NoPlace(FakeNav):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.localisation = types.SimpleNamespace(seen=None, pose=lambda: (0.0, 0.0, 0.0), name="other")
+
+
+unplaceable = api()
+server_mod.Navigator = NoPlace
+err = unplaceable.call("goal.start", {**GOAL, "start_pose": START}).get("error") or {}
+server_mod.Navigator = FakeNav
+check("must fail: a localisation that cannot be placed is answered start_failed, naming it, and no goal is left running",
+      err.get("code") == "start_failed" and "other localisation" in err.get("message", "") and unplaceable.run is None, err)
 
 # --- the navigator's gate client reads the gate's protocol (RFC-0018 §5.3) ------------------------------------------------------
 import json  # noqa: E402

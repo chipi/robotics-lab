@@ -23,6 +23,7 @@ from .errors import ApiError
 CALL_TIMEOUT_S = 5.0
 GATE_NAME = "mission-control"
 FULL = 100          # nxt-web drives the tracks in percent, -100 to 100
+BATTERY_EMPTY_MV, BATTERY_FULL_MV = 6000, 8400      # 0 % and 100 %: where the brick gives up, and a charged rechargeable pack; fresh alkalines read above
 
 
 class _Conn:
@@ -148,6 +149,55 @@ class NxtGate:
         return {"protocol": PROTOCOL, **who}
 
 
+class NxtWatcher:
+    """The NXT's alarms (RFC-0019's record, source "robot"), from each poll's state: a low battery, a lost link, a deadman stop, an
+    obstacle stop. The runtime asks `update` after every poll and puts what it returns on the bus, where the page's fit verdict and
+    the robot's `alarms` read them like the duck's. The NXT has no navigator, which is where the duck's alarms come from.
+
+    One alarm of a name is not raised twice inside its gap: a held drive meets the same wall every 200 ms, and the battery sags under
+    load. Only the low battery is raised again while it holds (every 30 s, so a major alarm stays inside the page's 60 s window);
+    the others fire on the change."""
+
+    LOW_PCT, CLEAR_PCT = 20, 25         # low below 20 %, until it is over 25 % (a hysteresis: a sag under load is not a recovery)
+    GAP_S = {"obstacle_stop": 10.0, "deadman_stop": 10.0, "link_lost": 10.0, "low_battery": 30.0}
+
+    def __init__(self):
+        self._last: dict = {}
+        self._flags = {"obstacle_stop": False, "deadman_stop": False}
+        self._low = False
+        self._was_online = False
+
+    def _raise(self, name: str, severity: str, module: str, summary: str, now: float, **values) -> list:
+        if name in self._last and now - self._last[name] < self.GAP_S[name]:
+            return []
+        self._last[name] = now
+        return [{"anomaly": name, "severity": severity, "source": "robot", "module": module, "t": now, "summary": summary, "values": values}]
+
+    def update(self, status: dict | None, online: bool, now: float) -> list:
+        out = []
+        if self._was_online and not online:
+            out += self._raise("link_lost", "major", "nxt-web", "the NXT stopped answering: nxt-web or the brick's link is gone; "
+                               "the brick stops its tracks by itself when commands stop", now)
+        self._was_online = online
+        if status is None:
+            return out
+        flags = status.get("flags") or {}
+        rng = ((status.get("sensors") or {}).get("ultrasonic") or {}).get("range_m")
+        if flags.get("obstacle_stop") and not self._flags["obstacle_stop"]:
+            out += self._raise("obstacle_stop", "minor", "robotd-lite", "the brick stopped the tracks: something is closer than 15 cm ahead"
+                               + (f" ({rng * 100:.0f} cm)" if rng is not None else ""), now, range_m=rng)
+        if flags.get("deadman_stop") and not self._flags["deadman_stop"]:
+            out += self._raise("deadman_stop", "major", "robotd-lite", "the tracks stopped because no drive command arrived for 0.5 s", now)
+        self._flags = {k: bool(flags.get(k)) for k in self._flags}
+        pct = status.get("battery_pct")
+        if pct is not None:
+            self._low = pct < self.LOW_PCT or (self._low and pct < self.CLEAR_PCT)
+            if self._low:
+                out += self._raise("low_battery", "major", "nxt-web", f"the battery is at {pct} %; the brick will stop driving soon", now,
+                                   battery_pct=pct, battery_mv=status.get("battery_mv"))
+        return out
+
+
 class NxtAdapter:
     """Robot file: {"type": "nxt-web", "url": "http://127.0.0.1:8000", "full_speed_mps": 0.3, "full_turn_rps": 1.5}. `full_speed_mps` and
     `full_turn_rps` say what a full track command is: a forward speed of full_speed_mps is both tracks at 100, a turn of full_turn_rps is
@@ -169,6 +219,12 @@ class NxtAdapter:
             raise ConfigError(f"{cfg.id}: the nxt-web adapter needs full_speed_mps and full_turn_rps (or the profile's locomotion.cruise_mps and "
                               "yaw_max_rad_s, or the factsheet's maximumSpeed and maximumAngularSpeed) to turn a speed into a track command")
         self.max_vx, self.max_vyaw = float(self.max_vx), float(self.max_vyaw)
+        # the brick's battery in millivolts, as a percent of this span: assumed, not measured (NXT-MVP1.md D1 measures the pack); a
+        # robot file may set its own, as for the speeds
+        self.empty_mv = float(options.get("battery_empty_mv", BATTERY_EMPTY_MV))
+        self.full_mv = float(options.get("battery_full_mv", BATTERY_FULL_MV))
+        # the sensors the profile (or the robot file) declares, by the id the state names them with: {id: (nxt-web's port, kind)}
+        self.sensors = {s["id"]: (str(s["port"]), s.get("kind")) for s in cfg.capabilities.get("sensors", []) if "port" in s}
         self.clock = clock
         self._gate = None
 
@@ -192,6 +248,9 @@ class NxtAdapter:
         self._gate = NxtGate(self.url, link, self)
         return self._gate
 
+    def make_watcher(self) -> NxtWatcher:
+        return NxtWatcher()
+
     def make_navigator(self, gate, clock=time.monotonic):
         raise ApiError(501, "not_built", "the NXT has no navigator")
 
@@ -214,21 +273,48 @@ class NxtAdapter:
             raise ConnectionError(f"nxt-web has no brick: {st.get('error') or 'not connected'}")
         return st
 
+    def battery_pct(self, mv) -> int | None:
+        if mv is None:
+            return None
+        return int(round(max(0.0, min(1.0, (mv - self.empty_mv) / (self.full_mv - self.empty_mv))) * 100))
+
+    def _sensors(self, st: dict) -> dict:
+        """Each declared sensor's newest reading, from nxt-web's sampler (`/api/status` `sensors`, by port). One that nxt-web does not
+        report (another program owns the brick) is left out, never made up. An ultrasonic reads 255 cm when nothing is in range."""
+        out = {}
+        for sid, (port, kind) in self.sensors.items():
+            reading = (st.get("sensors") or {}).get(port)
+            if reading is None:
+                continue
+            if kind == "range":
+                cm = reading.get("value")
+                out[sid] = {"range_m": None if cm is None or cm >= 255 else round(cm / 100, 2)}
+            else:
+                out[sid] = {"value": reading.get("value"), "label": reading.get("label")}
+            if reading.get("error"):
+                out[sid]["error"] = reading["error"]
+        return out
+
     def state(self) -> dict:
         st = self._status()
+        stops = st.get("stops") or {}
+        # the tracks nxt-web last commanded; a brick that stopped itself (the obstacle, the deadman) is not moving, whatever was asked
+        halted = bool(stops.get("deadman_stop") or stops.get("obstacle_stop"))
         left, right = st.get("left", 0), st.get("right", 0)
-        vx = (left + right) / 2 / FULL * self.max_vx
-        vyaw = (right - left) / FULL * self.max_vyaw
+        vx = 0.0 if halted else (left + right) / 2 / FULL * self.max_vx
+        vyaw = 0.0 if halted else (right - left) / FULL * self.max_vyaw
+        # flags are the conditions that make it not fit to go: the running program is a fact, not a flag, so it stands beside them
         return {"velocity": {"vx": round(vx, 4), "vyaw": round(vyaw, 4)},
-                "mode": "moving" if left or right else "idle",
+                "mode": "stopped" if halted and (left or right) else "moving" if left or right else "idle",
                 "tracks": {"left": left, "right": right},
-                "link": st.get("link"), "battery_mv": st.get("battery_mv"), "battery_pct": None,
-                "fake": bool(st.get("fake")),
-                "flags": {"program": st.get("program"), "deadman_stop": bool((st.get("deadman", {}).get("state") or {}).get("deadman_stop"))}}
+                "link": st.get("link"), "battery_mv": st.get("battery_mv"), "battery_pct": self.battery_pct(st.get("battery_mv")),
+                "fake": bool(st.get("fake")), "program": st.get("program"),
+                "sensors": self._sensors(st),
+                "flags": {"deadman_stop": bool(stops.get("deadman_stop")), "obstacle_stop": bool(stops.get("obstacle_stop"))}}
 
     def health(self) -> dict:
         st = self._status()
-        return {"ok": True, "battery_mv": st.get("battery_mv"), "link": st.get("link")}
+        return {"ok": True, "battery_mv": st.get("battery_mv"), "battery_pct": self.battery_pct(st.get("battery_mv")), "link": st.get("link")}
 
     def map(self) -> dict:
         raise ApiError(404, "no_map", "the NXT has no map")

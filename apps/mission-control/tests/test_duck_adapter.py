@@ -7,6 +7,7 @@ the profile read again at each goal's start. The real navigator in the real simu
 Run: cd apps/mission-control && uv run python tests/test_duck_adapter.py"""
 
 import json
+import math
 import os
 import socket
 import socketserver
@@ -124,6 +125,7 @@ class StubNav:
         self.profile = None                  # what goal.start says the goal runs (the navigator's calibration event)
         self.contract = "1.0"                # the navigator contract hello names
         self.map_calls = 0
+        self.placed = None                   # contract 1.5: what goal.start answers a start pose with (none: a navigator that did not hear it)
         self.cal_calls, self.cal_answer = [], {}     # contract 1.3's calibration.* calls received, and what each is answered with
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
@@ -146,7 +148,8 @@ class StubNav:
                     elif m == "goal.start":
                         stub.started.append(p)
                         result = {"error": {"code": "held", "message": "driven by script since 12:00", "holder": "script"}} \
-                            if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile}
+                            if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile,
+                                                         **({"placed": stub.placed} if stub.placed and p.get("start_pose") else {})}
                     elif m == "map":
                         stub.map_calls += 1
                         result = {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"}
@@ -339,6 +342,48 @@ nav.mode = "ok"
 r = call("POST", "/goal-runs", {"goal": {"kind": "point", "params": {"x": 2.0, "y": 0.0}}, "robots": ["duck-sim"]})["run"]
 cancelled = call("POST", f"/goal-runs/{r['id']}/cancel")["run"]
 check("cancel goes to the server and waits for it to end the run", nav.cancelled == 1 and cancelled["state"] == "cancelled", cancelled)
+# a start pose without a truth (phase 5 B7, contract 1.5): refused by a navigator that would ignore it, shown in the frame it sets
+START = {"x": 2.0, "y": 1.0, "yaw": math.pi / 2}
+POINT = {"kind": "point", "params": {"x": 2.0, "y": 0.0}}
+nav.state, nav.reason = "running", None
+n_started = len(nav.started)
+r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"], "start_pose": START})["run"]
+check("must fail: a navigator below contract 1.5 would ignore a start pose and run the goal in the wrong frame: refused before goal.start, saying why",
+      r["state"] == "refused" and "takes no start pose" in r["reason"] and "1.0" in r["reason"] and len(nav.started) == n_started, r)
+r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"]})["run"]
+check("... and the same goal with no start pose still starts on it (an older navigator keeps working)", r["state"] == "running" and "start_pose" not in nav.started[-1], r)
+call("POST", f"/goal-runs/{r['id']}/cancel")
+nav.contract, nav.state, nav.reason = CONTRACT, "running", None
+cancelled_before = nav.cancelled
+r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"], "start_pose": START})["run"]
+check("must fail: a 1.5 navigator that answers no `placed` did not hear the pose: the goal is cancelled and refused",
+      r["state"] == "refused" and "no `placed`" in r["reason"] and nav.cancelled == cancelled_before + 1, r)
+nav.placed = {"pose": {**START, "frame": "site"}, "frame": {"x": 0.5, "y": -1.0, "yaw": math.pi / 2}}
+nav.state, nav.reason = "running", None
+r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"], "start_pose": {**START, "yaw": START["yaw"] + 2 * math.pi}})["run"]
+check("a 1.5 navigator gets goal.start with the start pose (yaw wrapped), and the run keeps it among its conditions",
+      r["state"] == "running" and abs(nav.started[-1]["start_pose"]["yaw"] - START["yaw"]) < 1e-9 and nav.started[-1]["start_pose"]["x"] == 2.0
+      and r["conditions"]["start_pose"]["y"] == 1.0, (r["state"], nav.started[-1].get("start_pose")))
+adapter = mc.robot("duck-sim").adapter
+check("the adapter knows the frame the start pose set (mapd's metres), from goal.start's answer", adapter.placed == {"x": 0.5, "y": -1.0, "yaw": math.pi / 2}, adapter.placed)
+
+
+def shown_pose():
+    s = (robot().get("status") or {}).get("pose") or {}
+    return s.get("x"), s.get("y"), s.get("yaw")
+
+
+# odometry (x, 0, yaw) is placed by the frame (0.5, -1.0, pi/2): x' = 0.5 - 0 (y is 0), y' = -1.0 + x, yaw' = yaw + pi/2; then scaled by the profile
+want = lambda: (round((0.5 - math.sin(math.pi / 2) * 0.0) * adapter.scale, 4), round((-1.0 + robotd.x) * adapter.scale, 4))      # noqa: E731
+check("the robot's pose on the page is in that frame: odometry composed with it, then scaled by the profile",
+      wait_for(lambda: shown_pose()[:2] == want() or None, 5.0), (shown_pose(), want()))
+call("POST", f"/goal-runs/{r['id']}/cancel")
+nav.state, nav.reason = "running", None
+r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"]})["run"]
+check("a goal with no start pose leaves the placed frame: the pose is odometry again", adapter.placed is None, adapter.placed)
+call("POST", f"/goal-runs/{r['id']}/cancel")
+nav.placed = None
+
 # the navigator contract (libs/runner/CONTRACT.md): what Mission Control refuses of a navigator
 nav.state, nav.reason, nav.contract = "running", None, "2.0"
 n_started = len(nav.started)

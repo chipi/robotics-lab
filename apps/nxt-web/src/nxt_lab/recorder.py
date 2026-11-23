@@ -105,6 +105,7 @@ class Recorder:
         # robotd-lite is the exception: it leaves the other ports alone and reports its distance.
         paused = self.program and self.program != deadman.PROGRAM
         sensors = {} if paused else self.controller.call(lambda r: r.read_sensors())
+        self.controller.note_stops(robot.deadman_state)
         with self._lock:
             self.seq += 1
             sample = {
@@ -124,6 +125,14 @@ class Recorder:
     def since(self, seq: int) -> list:
         with self._lock:
             return [s for s in self.samples if s["seq"] > seq]
+
+    def latest_sensors(self) -> tuple:
+        """(the newest sample's readings by port, how old it is in seconds); ({}, None) before the first sample."""
+        with self._lock:
+            if not self.samples:
+                return {}, None
+            last = self.samples[-1]
+        return last["sensors"], round(time.monotonic() - self._t0 - last["t"], 2)
 
     def _free_name(self) -> str:
         """run-YYYYMMDD-HHMMSS, with -2, -3, ... when that name (a CSV, or an Observatory run) is already taken."""

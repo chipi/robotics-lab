@@ -11,7 +11,10 @@
   },
   "control": {"deadman_s": 0.6, "lease_s": 20.0, "takeover": []},
   "capabilities": {
-    "sensors": [],
+    "sensors": [
+      {"id": "ultrasonic", "kind": "range", "port": "4", "source": "nxt-web", "range_m": 2.55},
+      {"id": "colour", "kind": "colour", "port": "3", "source": "nxt-web"}
+    ],
     "recognisers": [],
     "guardrails": [],
     "skills": [],

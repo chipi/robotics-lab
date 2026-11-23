@@ -180,3 +180,19 @@ def not_checkable(caps: dict, goal: dict) -> list:
     conditions were and were not checkable)."""
     can = set((caps.get("navigator") or {}).get("conditions", []))
     return sorted(k for k in goal["done_when"] if k not in can)
+
+
+def start_pose(raw) -> dict | None:
+    """The operator's word for where the robot stands on the map when a run starts (navigator contract 1.5, phase 5 item 4b unit B7):
+    `{x, y, yaw}` in the site frame, metres and radians, or None for a robot that starts where its map does. It belongs to the run, not
+    the goal: the same goal is run from another place tomorrow. Raises a 422 for anything else."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) - {"x", "y", "yaw", "frame"} or not {"x", "y", "yaw"} <= set(raw) \
+            or raw.get("frame", "site") != "site":
+        raise invalid("start_pose is {x, y, yaw}: metres in the site frame and radians", "bad_start_pose")
+    for k in ("x", "y", "yaw"):
+        if isinstance(raw[k], bool) or not isinstance(raw[k], (int, float)) or not math.isfinite(raw[k]):
+            raise invalid(f"start_pose's {k} must be a number, got {raw[k]!r}", "bad_start_pose")
+    yaw = float(raw["yaw"])
+    return {"x": float(raw["x"]), "y": float(raw["y"]), "yaw": math.atan2(math.sin(yaw), math.cos(yaw))}

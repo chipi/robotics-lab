@@ -1,7 +1,13 @@
 """The NXT on Mission Control's robot page (phase 5 item 4d, unit D4), in headless Chromium: the registered NXT (robots/nxt-shooterbot) behind
 a pointer robot file, the real server, nxt-web --fake as its connector (the installation's `connections.nxt-web` names its address; never a
-real brick: --fake, a scratch data folder, a free loopback port). Parts, Body (the built Shooterbot description: every mesh loaded, none
+real brick: --fake, a scratch data folder, a free loopback port). The sim variant runs against nxt-web --sim (D2: the kinematic world, the apartment's
+north wall 2 m ahead of the start), the real variant against --fake. Parts, Body (the built Shooterbot description: every mesh loaded, none
 failed), Modules and Settings open for it, in the sim variant and in the real one, and the page logs no error.
+
+Unit D5 (the NXT's sensors and stops): an idle, online NXT is "Fit to go" (it was "Not fit": nxt-web's running program was a status flag); the
+facts line reads the ultrasonic (and, for the variant that has it, the colour); in the sim the robot is driven at the wall through Mission
+Control's API, and the page shows the obstacle stop as a status flag that fails the fit verdict, as a minor alarm in the alarm list, the range
+at 15 cm or less, and who holds it; STOP clears the flag.
 
 The built meshes are not in git (`make robots-lego` writes them; it needs the LDraw library in ~/opt/ldraw). The folder is MC_ROBOT_FOLDER,
 else robots/nxt-shooterbot in this checkout, else in the main checkout this one is a worktree of; with no built meshes it prints SKIP and
@@ -18,6 +24,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -88,11 +96,34 @@ def stop_nxt_web():
 
 atexit.register(stop_nxt_web)
 
+# the sim variant's connector: nxt-web --sim in the apartment, facing its north wall from 2 m (the robot starts at (0, 2) heading north)
+with socket.socket() as s:
+    s.bind(("127.0.0.1", 0))
+    SIM_PORT = s.getsockname()[1]
+SIM_URL = f"http://127.0.0.1:{SIM_PORT}"
+(tmp / "sim").mkdir()
+sim_proc = subprocess.Popen([NXT_WEB, "--sim", "--world", str(REPO / "scenes" / "apartment" / "scene.json"), "--start", "0", "2", "90", "--host", "127.0.0.1",
+                             "--port", str(SIM_PORT), "--config", str(tmp / "sim" / "config.json")],
+                            env=dict(os.environ, NXT_LAB_DATA=str(tmp / "sim"), OBSERVATORY_DATA=str(tmp / "sim" / "obs"), MINIVIEW_DATA=str(tmp / "sim" / "obs")),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+
+def stop_sim():
+    sim_proc.terminate()
+    try:
+        sim_proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        sim_proc.kill()
+
+
+atexit.register(stop_sim)
+URLS = {"sim": SIM_URL, "real": NXT_URL}
+
 POINTER = json.loads((REPO / "apps" / "mission-control" / "robots.nxt-registered" / "nxt-1.json").read_text())
 with_visuals = [l["name"] for l in desc["links"] if l["visuals"]]
 n_visuals = sum(len(l["visuals"]) for l in desc["links"])
 n_files = len({v["url"] for l in desc["links"] for v in l["visuals"]})
-print(f"nxt: {len(desc['links'])} links, {len(with_visuals)} with visuals, {n_visuals} visuals, {n_files} mesh files, {len(desc['joints'])} joints; nxt-web --fake at {NXT_URL}")
+print(f"nxt: {len(desc['links'])} links, {len(with_visuals)} with visuals, {n_visuals} visuals, {n_files} mesh files, {len(desc['joints'])} joints; nxt-web --fake at {NXT_URL}, --sim at {SIM_URL}")
 
 errors, failed, meshes_ok = [], [], []
 PARTS = {"sim": ["nxt-web"], "real": ["nxt-web", "robotd-lite"]}
@@ -104,7 +135,7 @@ with sync_playwright() as p:
         for n, variant in enumerate(("sim", "real")):
             inst = tmp / f"installation-{variant}.json"
             inst.write_text(json.dumps({"installation": 1, "robots": {"nxt-shooterbot": {
-                "registration": str(FOLDER / "registration.json"), "variant": variant, "placement": "workstation", "connections": {"nxt-web": NXT_URL}}}}))
+                "registration": str(FOLDER / "registration.json"), "variant": variant, "placement": "workstation", "connections": {"nxt-web": URLS[variant]}}}}))
             os.environ[installation.ENV] = str(inst)
             mc = MissionControl([RobotConfig(POINTER), RobotConfig(FAKE_FILE)], state_dir=tmp / f"state-{variant}")
             srv = serve(mc, "127.0.0.1", 0)
@@ -188,8 +219,51 @@ with sync_playwright() as p:
                 check(f"[{variant}] the robot's sensors are the variant's", [x["id"] for x in r["capabilities"]["sensors"]] == SENSORS[variant], r["capabilities"]["sensors"])
                 prof = api("/robots/nxt-1/profile")["profile"]
                 check(f"[{variant}] the profile view runs the variant and the registered file", prof["variant"] == variant and prof["running"]["path"].endswith("robots/nxt-shooterbot/profile.json"), (prof["variant"], prof["running"]["path"]))
-                check(f"[{variant}] the address is the installation's connection: the robot is online through nxt-web --fake at {NXT_URL}, which the code names nowhere",
-                      r["online"] is True and NXT_URL != "http://127.0.0.1:8000", r["online"])
+                check(f"[{variant}] the address is the installation's connection: the robot is online through nxt-web at {URLS[variant]}, which the code names nowhere",
+                      r["online"] is True and URLS[variant] != "http://127.0.0.1:8000", r["online"])
+
+                # --- D5: an idle, online NXT is fit; the facts line reads its sensors --------------------------------------------------
+                page.goto(BASE + "/#robot/nxt-1")
+                wait("!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#rp-facts [data-sensor]')")
+                check(f"[{variant}] online and idle, the NXT is Fit to go (no flag, no alarm)", page.locator("#fit").get_attribute("data-fit") == "true",
+                      (page.locator("#fit").inner_text(), page.locator("#fit-checks li[data-ok=false]").all_inner_texts()))
+                sensors = page.eval_on_selector_all("#rp-facts [data-sensor]", "(els) => els.map((e) => [e.dataset.sensor, e.innerText])")
+                check(f"[{variant}] the facts line names the declared sensors, the ultrasonic in cm", [x[0] for x in sensors] == SENSORS[variant] and " cm" in sensors[0][1], sensors)
+                check(f"[{variant}] the battery is a percent, not a dash", "75%" in page.locator("#rp-facts").inner_text(), page.locator("#rp-facts").inner_text())
+                if variant == "real":
+                    check("[real] the colour sensor reads a colour name", sensors[1][1].split(" ", 1)[1].strip() not in ("", "-"), sensors)
+                if variant == "sim":
+                    # the wall: drive at it through Mission Control's API; the brick stops itself at 15 cm
+                    def mcall(method, path, body=None):
+                        req = urllib.request.Request(BASE + "/api/v1" + path, data=json.dumps(body).encode() if body is not None else None, method=method,
+                                                     headers={"Content-Type": "application/json"})
+                        with urllib.request.urlopen(req, timeout=10) as resp:
+                            return json.loads(resp.read())
+                    session = mcall("POST", "/robots/nxt-1/lock", {"client": "page-test"})["lock"]["session"]
+                    wait("document.getElementById('rp-holder')?.textContent.startsWith('page-test')")
+                    check("[sim] the holder line names who holds it", page.locator("#rp-holder").inner_text().startswith("page-test"), page.locator("#rp-holder").inner_text())
+                    end, stopped = time.monotonic() + 20, False
+                    while time.monotonic() < end and not stopped:
+                        mcall("POST", "/robots/nxt-1/drive", {"session": session, "vx": 0.3, "vyaw": 0.0})
+                        time.sleep(0.2)
+                        stopped = ((mcall("GET", "/robots/nxt-1")["robot"]["status"] or {}).get("flags") or {}).get("obstacle_stop")
+                    check("[sim] driving at the wall, the brick stops the tracks: the obstacle flag is in Mission Control's state", stopped)
+                    wait("document.querySelector('#fit')?.dataset.fit === 'false'")
+                    reasons = page.locator("#fit-checks li[data-ok=false]").all_inner_texts()
+                    check("[sim] the facts line says the robot is stopped, not moving", "mode stopped" in page.locator("#rp-facts").inner_text().replace("\n", " "),
+                          page.locator("#rp-facts").inner_text())
+                    check("[sim] the page says Not fit, and the flags check names the obstacle stop", page.locator("#fit").inner_text() == "Not fit"
+                          and any("obstacle_stop" in t for t in reasons), reasons)
+                    wait("!!document.querySelector('#rp-alarms-body .alarmrows')")
+                    alarm = page.locator("#rp-alarms-body").inner_text()
+                    check("[sim] the alarm list shows the obstacle stop, minor, with the range", "obstacle_stop" in alarm and "minor" in alarm.lower() and "cm" in alarm, alarm)
+                    wait("(() => { const b = document.querySelector('#rp-facts [data-sensor=ultrasonic] b'); return !!b && parseInt(b.textContent) <= 15; })()")
+                    check("[sim] the facts line reads the ultrasonic at the wall, 15 cm or less", True, page.locator("#rp-facts [data-sensor=ultrasonic]").inner_text())
+                    page.screenshot(path=str(SHOTS / "d5-obstacle-phone-dark.png"), full_page=True)
+                    page.click("#stop-robot")
+                    wait("document.querySelector('#fit')?.dataset.fit === 'true'")
+                    check("[sim] STOP clears the flag: Fit to go again, and the holder is nobody", page.locator("#fit").inner_text() == "Fit to go"
+                          and page.locator("#rp-holder").inner_text() == "nobody", (page.locator("#fit").inner_text(), page.locator("#rp-holder").inner_text()))
             finally:
                 ctx.close()
                 srv.shutdown()

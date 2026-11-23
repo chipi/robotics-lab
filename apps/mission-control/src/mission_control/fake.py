@@ -173,6 +173,12 @@ class FakeRobot:
             raise KeyError(flag)
         self.flags[flag] = on
 
+    def place(self, x: float, y: float, yaw: float) -> None:
+        """Set the robot down at a pose (an operator carrying it): it stands there, stopped."""
+        with self._lock:
+            self._advance()
+            self.x, self.y, self.yaw, self.vx, self.vyaw = x, y, yaw, 0.0, 0.0
+
     def pose(self) -> tuple:
         with self._lock:
             self._advance()
@@ -287,6 +293,7 @@ class FakeNavigator:
             r.state, r.reason = "refused", "a calibration is running here"
             return {"run_key": None}
         try:
+            placed = self._place(r)
             self._plan_start(r)
         except _Refused as exc:
             r.state, r.reason = "refused", str(exc)
@@ -300,7 +307,7 @@ class FakeNavigator:
             return {"run_key": None}
         r.gen = self._script(r)
         self._decide(f"goal {spec['kind']} started")
-        return {"run_key": None}
+        return {"run_key": None, **({"placed": placed} if placed else {})}
 
     def goal_status(self) -> dict:
         r = self.run
@@ -484,6 +491,25 @@ class FakeNavigator:
         for g in self._no_go(r):
             if geometry.segment_hits_polygon(a, b, g["outline"]):
                 raise _Refused(f"no path that avoids the no-go area {g['area']}")
+
+    def _place(self, r: _Run) -> dict | None:
+        """`start_pose` (contract 1.5): the fake's world is the site, so being placed is being set down there. Refused where the real
+        navigator refuses (a no-go area) and where nothing can stand (outside the world, inside an object)."""
+        sp = r.spec.get("start_pose")
+        if not sp:
+            return None
+        bx0, by0, bx1, by1 = self.robot.world["bounds"]
+        if not (bx0 <= sp["x"] <= bx1 and by0 <= sp["y"] <= by1):
+            raise _Refused("the start pose is outside the world")
+        for o in self.robot.world["objects"]:
+            if abs(sp["x"] - o["x"]) <= o["hx"] and abs(sp["y"] - o["y"]) <= o["hy"]:
+                raise _Refused(f"the start pose is inside a {o['kind']}")
+        for g in self._no_go(r):
+            if geometry.point_in_polygon((sp["x"], sp["y"]), g["outline"]):
+                raise _Refused(f"the start pose is inside the no-go area {g['area']}")
+        self.robot.place(sp["x"], sp["y"], sp["yaw"])
+        self._decide(f"placed by the operator at ({sp['x']:.2f}, {sp['y']:.2f}) facing {math.degrees(sp['yaw']):.0f} deg", rule="placed", values=sp)
+        return {"pose": {**sp, "frame": "site"}, "frame": {"x": 0.0, "y": 0.0, "yaw": 0.0}}
 
     def _plan_start(self, r: _Run) -> None:
         kind, p = r.spec["kind"], r.spec["params"]

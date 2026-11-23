@@ -90,12 +90,53 @@ def robot():
     return call("GET", "/robots/nxt-1")[1]["robot"]
 
 
+# --- the alarms, on invented statuses and a clock of our own (the rules; the end to end follows below and in test_nxt_page) ---------------------
+from mission_control.nxt import NxtWatcher
+
+w = NxtWatcher()
+ok = {"battery_pct": 80, "flags": {"deadman_stop": False, "obstacle_stop": False}, "sensors": {"ultrasonic": {"range_m": 0.3}}}
+names = lambda out: [(a["anomaly"], a["severity"]) for a in out]
+check("a healthy NXT raises nothing", w.update(ok, True, 100.0) == [])
+check("an obstacle stop raises one minor alarm, with the range", names(w.update({**ok, "flags": {"deadman_stop": False, "obstacle_stop": True}}, True, 101.0)) == [("obstacle_stop", "minor")])
+check("held, it raises no second", w.update({**ok, "flags": {"deadman_stop": False, "obstacle_stop": True}}, True, 102.0) == [])
+w.update(ok, True, 103.0)
+check("flapping inside the cooldown (a held drive re-meets the wall) raises no second", w.update({**ok, "flags": {"deadman_stop": False, "obstacle_stop": True}}, True, 104.0) == [])
+w.update(ok, True, 150.0)
+again = w.update({**ok, "flags": {"deadman_stop": False, "obstacle_stop": True}}, True, 160.0)
+check("a new stop after the cooldown raises one again", names(again) == [("obstacle_stop", "minor")] and again[0]["values"]["range_m"] == 0.3, again)
+check("a deadman stop is major", names(w.update({**ok, "flags": {"deadman_stop": True, "obstacle_stop": False}}, True, 161.0)) == [("deadman_stop", "major")])
+low = {**ok, "battery_pct": 12, "battery_mv": 6290}
+check("a low battery is major, once", names(w.update(low, True, 200.0)) == [("low_battery", "major")] and w.update(low, True, 210.0) == [])
+check("and again every 30 s while it stays low, so the fit verdict keeps it (a major alarm counts for 60 s)", names(w.update(low, True, 231.0)) == [("low_battery", "major")])
+check("recovered it says nothing; a dip again inside the 30 s (a sag under load) raises no second, one after them does",
+      w.update(ok, True, 232.0) == [] and w.update(low, True, 233.0) == [] and names(w.update(low, True, 262.0)) == [("low_battery", "major")])
+w.update({**ok, "battery_pct": 22}, True, 263.0)
+check("hysteresis: 22 % is still low once low (the threshold is 20, it clears above 25)", names(w.update({**ok, "battery_pct": 22}, True, 300.0)) == [("low_battery", "major")])
+check("an unknown battery raises nothing", w.update({**ok, "battery_pct": None}, True, 400.0) == [])
+check("no answer while it was never online raises no link alarm", NxtWatcher().update(None, False, 1.0) == [])
+w2 = NxtWatcher()
+w2.update(ok, True, 1.0)
+check("going offline after being online raises link_lost, major, once", names(w2.update(None, False, 2.0)) == [("link_lost", "major")] and w2.update(None, False, 3.0) == [])
+w2.update(ok, True, 4.0)
+check("a link lost again after the cooldown raises it again", names(w2.update(None, False, 40.0)) == [("link_lost", "major")])
+check("every alarm has the record's fields: source, module, summary, t", all({"anomaly", "severity", "source", "module", "summary", "t", "values"} <= set(a) for a in again), again)
+
 try:
     check("the NXT is online through nxt-web, free", wait(lambda: robot()["online"]) and robot()["lock"]["holder"] is None, robot())
     r = robot()
     check("its status is the brick's: idle tracks, the battery, the link, and no pose", wait(lambda: (robot()["status"] or {}).get("mode") == "idle")
           and robot()["status"]["tracks"] == {"left": 0, "right": 0} and robot()["status"]["battery_mv"] == 7800 and robot()["status"]["link"] == "fake"
           and "pose" not in robot()["status"], robot()["status"])
+    # D5: what the page's fit verdict reads. nxt-web's `program` (robotd.rxe, running) was a truthy flag, so an online idle NXT was "Not fit"
+    check("an idle robot sets no status flag: the running program is not a flag", all(v is False for v in robot()["status"]["flags"].values()) and robot()["status"]["flags"], robot()["status"]["flags"])
+    check("the running program is named beside the flags", robot()["status"]["program"] == "robotd.rxe", robot()["status"])
+    check("the battery is a percent: 7800 mV is 75 % of the assumed 6.0-8.4 V", robot()["status"]["battery_pct"] == 75, robot()["status"]["battery_pct"])
+    check("capabilities.sensors names the ultrasonic (a range, port 4) and the colour sensor (port 3)",
+          [(s["id"], s["kind"], s["port"]) for s in r["capabilities"]["sensors"]] == [("ultrasonic", "range", "4"), ("colour", "colour", "3")], r["capabilities"]["sensors"])
+    check("the state carries the ultrasonic in metres and the colour's name, under the ids capabilities.sensors gives",
+          wait(lambda: 0.1 < ((robot()["status"].get("sensors") or {}).get("ultrasonic") or {}).get("range_m", 0) < 1.1
+               and isinstance(((robot()["status"].get("sensors") or {}).get("colour") or {}).get("label"), str)), robot()["status"].get("sensors"))
+    check("no obstacle and no deadman stop yet", robot()["status"]["flags"] == {"deadman_stop": False, "obstacle_stop": False}, robot()["status"]["flags"])
     check("the robot file says what it is: no navigator, no map, drive only", "physicalParameters" not in r["factsheet"] and r["factsheet"]["typeSpecification"]["mobileRobotKinematics"] == "DIFFERENTIAL" and "navigator" not in r["capabilities"])
 
     check("must fail: the lock says the gate protocol it speaks, as the duck's gate does (nxt-web's own lock has none)",
@@ -125,6 +166,18 @@ try:
     check("renew", st == 200 and b["lock"]["expires_in_s"] > 0, b)
     st, b = call("POST", "/robots/nxt-1/drive", {"session": "made-up", "vx": 0.1})
     check("a session that is not Mission Control's is refused", st == 409 and b["error"]["code"] == "no_lease", b)
+
+    # the brick stops itself when the drives stop (its deadman 0.5 s, nxt-web's watchdog 0.6 s, whose stop clears the brick's own flag):
+    # nxt-web keeps the reason until the next motion command, so a poll at 2 Hz sees it, and Mission Control raises it as an alarm
+    check("with no drive for a moment the deadman stop is held at nxt-web", wait(lambda: nxt("GET", "/api/status")[1]["stops"]["deadman_stop"], 5), nxt("GET", "/api/status")[1].get("stops"))
+    check("Mission Control shows it as a status flag", wait(lambda: robot()["status"]["flags"]["deadman_stop"], 5), robot()["status"]["flags"])
+    def alarms(name):
+        return [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "anomaly" and e["anomaly"]["anomaly"] == name]
+    check("and as a major alarm on the stream and on the robot's view, which the page's fit verdict reads",
+          wait(lambda: alarms("deadman_stop")) and alarms("deadman_stop")[0]["anomaly"]["severity"] == "major"
+          and robot()["alarms"]["worst"]["anomaly"]["anomaly"] == "deadman_stop", robot()["alarms"])
+    call("POST", "/robots/nxt-1/drive", {"session": sess, "vx": 0.15, "vyaw": 0.0})
+    check("a motion command clears the held reason at nxt-web (the watchdog sets it again 0.6 s after the last one)", nxt("GET", "/api/status")[1]["stops"]["deadman_stop"] is False)
 
     # STOP: anyone, no lease, ends the lease and stops the tracks
     st, b = call("POST", "/robots/nxt-1/stop", {"client": "bystander"})

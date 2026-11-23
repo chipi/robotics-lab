@@ -59,7 +59,9 @@ META = {"source": "given", "path": "/s/profiles/duck/2.json", "checksum": "sha25
 
 class FakeRun:
     def __init__(self, srv, spec):
-        self.state, self.nav = "starting", None
+        self.state, self.nav, self.placed = "starting", None, None
+        if spec.get("start_pose"):           # as GoalRun._place answers: the pose and the change from mapd's frame (metres, mapd's own)
+            self.placed = {"pose": {**spec["start_pose"], "frame": "site"}, "frame": {"x": 0.5, "y": -0.25, "yaw": 0.0}}
 
     def start(self):
         self.nav = types.SimpleNamespace(profile=types.SimpleNamespace(meta=META))
@@ -71,6 +73,31 @@ server.GoalRun, nav._gate_holder = FakeRun, lambda: None
 reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}})
 check("goal.start's answer names the profile the goal runs: checksum, version and source, no machine path",
       reply == {"run_key": "duck/apartment/mc1-x", "profile": {"checksum": "sha256:abc", "version": 2, "source": "given"}}, reply)
+
+# --- a start pose (contract 1.5) ---------------------------------------------------------------------------------------------------
+nav.run.state = "reached"
+POSE = {"x": 2.0, "y": 1.0, "yaw": 0.5}
+reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}, "start_pose": POSE})
+check("goal.start with a start pose answers `placed`: the pose taken and the frame change in mapd's metres",
+      reply.get("placed") == {"pose": {**POSE, "frame": "site"}, "frame": {"x": 0.5, "y": -0.25, "yaw": 0.0}}, reply)
+moved = nav.call("map", {})
+check("`map` is then answered in the placed frame (the grid's origin moved by the change, the cells as they were)",
+      moved["origin"] == [0.4, -0.45] and moved["cells"] == GRID["cells"] and moved["width"] == 3, moved)
+nav.run.state = "reached"
+reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}})
+check("a goal with no start pose answers no `placed`, and `map` is mapd's own again (the frame is per goal)",
+      "placed" not in reply and nav.call("map", {}) == GRID, (reply, nav.call("map", {})))
+nav.run.state = "reached"
+for label, bad in (("a pose without a yaw", {"x": 1.0, "y": 2.0}), ("a string for x", {"x": "1", "y": 2.0, "yaw": 0.0}),
+                   ("a NaN", {"x": float("nan"), "y": 2.0, "yaw": 0.0}), ("a list", [1, 2, 0]), ("a boolean for yaw", {"x": 1, "y": 2, "yaw": True})):
+    err = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}, "start_pose": bad}).get("error") or {}
+    check(f"must fail: {label} is not a start pose: bad_start_pose, no goal started", err.get("code") == "bad_start_pose" and nav.run.state == "reached", err)
+ROOM = [[0, 0], [2, 0], [2, 2], [0, 2]]
+nogo = {"conditions": {"guardrails": [{"name": "no_go_area", "area": "cellar", "outline": ROOM}]}}
+err = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}, "start_pose": {"x": 1.0, "y": 1.0, "yaw": 0.0}, **nogo}).get("error") or {}
+check("must fail: a start pose inside a no-go area the goal carries is refused, naming the area", err.get("code") == "bad_start_pose" and "cellar" in err.get("message", ""), err)
+reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}, "start_pose": {"x": 3.0, "y": 1.0, "yaw": 0.0}, **nogo})
+check("... and one outside it is taken", "placed" in reply, reply)
 
 print()
 print("NAV SERVER", "FAIL " + ", ".join(failures) if failures else "PASS")

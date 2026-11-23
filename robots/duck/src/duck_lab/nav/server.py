@@ -17,14 +17,16 @@ It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Me
   hello -> {name, version, contract, kinds, camera}
   goal.start {kind, params, budget, conditions {done_when, guardrails}, seed {objects, areas}, goal_run {id, name, kind}, scene?,
       not_enforced?}  (not_enforced since contract 1.2: guardrails its runner cannot check, one harness anomaly each, except from 1.4
-      the contact, fall and drop_clearance this navigator checks by the robot's own sensors: guardrails.RobotSide)
-      -> {run_key}, or {error} when another client holds the robot (the gate's own refusal), or a goal is running here
+      the contact, fall and drop_clearance this navigator checks by the robot's own sensors: guardrails.RobotSide;
+      start_pose? {x, y, yaw} since 1.5: where the operator says the robot stands on the map, which sets the goal's frame)
+      -> {run_key, profile, placed? {pose, frame}}, or {error} when another client holds the robot (the gate's own refusal), a goal is
+      running here, or the start pose is not a pose or is inside a no-go area (bad_start_pose)
   goal.status {decisions_since, objects_since, anomalies_since} -> {state, reason, progress, result, broken, run_key, decisions: [...],
       decisions_n, anomalies: [...], anomalies_n, objects: [...] | null, objects_v}  (anomalies since contract 1.1)
   goal.cancel {reason?} -> {ok}
   goal.break {name, detail} -> {ok}: a guardrail its runner checks (by the truth) broke; the run stops stopped_by_guardrail
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
-  inventory -> RFC-0016's inventory                           map -> mapd's grid
+  inventory -> RFC-0016's inventory                           map -> mapd's grid (in the placed frame of the latest goal that had a start pose)
   calibration.list -> {procedures: [{id, params}]}            calibration.start {procedure, params?} -> {ok, procedure, params} | {error}
   calibration.status -> {state, procedure, step, reason, params, measured, marks}      calibration.cancel -> {ok}   (contract 1.3; duck_lab.nav.calibration)
 `seed.objects` are Mission Control's confirmed objects of the site (their ids are Mission Control's; they come back as `seed`
@@ -47,6 +49,7 @@ from duck_lab.nav import calibration, contract
 from duck_lab.nav.calibration import Calibration
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
+from duck_lab.nav.frames import move_grid
 from duck_lab.nav.guardrails import Guard, RobotSide
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
@@ -58,6 +61,21 @@ from worldmodel.site import Area, inside
 
 NAME, VERSION = "duck-nav-server", "0.2.0"
 GOAL_KINDS = ("point", "go_to_object", "go_to_area", "explore", "inventory")
+
+
+def bad_start_pose(spec: dict) -> str | None:
+    """Why `start_pose` (contract 1.5) cannot be taken, or None. No truth reads where the robot stands, so what can be checked is the
+    word itself: three finite numbers, and not inside a no-go area the goal carries (the planner would refuse to leave it)."""
+    sp = spec.get("start_pose")
+    if sp is None:
+        return None
+    if not isinstance(sp, dict) or not all(isinstance(sp.get(k), (int, float)) and not isinstance(sp.get(k), bool)
+                                           and math.isfinite(sp[k]) for k in ("x", "y", "yaw")):
+        return "start_pose is {x, y, yaw}: metres in the map's frame and radians, all numbers"
+    for g in (spec.get("conditions") or {}).get("guardrails") or []:
+        if g.get("name") == "no_go_area" and g.get("outline") and inside((sp["x"], sp["y"]), [tuple(p) for p in g["outline"]]):
+            return f"the start pose ({sp['x']:.2f}, {sp['y']:.2f}) is inside the no-go area {g.get('area')}"
+    return None
 
 
 def interior_point(polygon: list) -> tuple:
@@ -141,6 +159,7 @@ class GoalRun:
         self.run_key = None
         self.explorer = None
         self.cancelled: str | None = None
+        self.placed: dict | None = None      # the start pose and the frame it set (`start_pose`, contract 1.5)
         self.t0 = time.monotonic()
         self.target = None
         self.seed_ids: dict = {}
@@ -171,6 +190,12 @@ class GoalRun:
         self.nav.on_anomaly = self._on_anomaly
         self.nav.on_self_stop = self._noted
         self.out = out
+        try:
+            self.placed = self._place()
+        except BaseException:
+            self.nav.close()
+            self.runlog.finish()
+            raise
         self._prepare()
         for name in self.spec.get("not_enforced") or []:
             if name not in self.robot_side:
@@ -178,6 +203,24 @@ class GoalRun:
         self.state = "running"
         threading.Thread(target=self._work, name=f"goal-{label}", daemon=True).start()
         return self.run_key
+
+    def _place(self) -> dict | None:
+        """`start_pose` (contract 1.5): the robot's belief takes the operator's word for where it stands on the map. What it says is
+        recorded as a decision of the run, so a run reads as one that was placed, not localised."""
+        sp = self.spec.get("start_pose")
+        if sp is None:
+            return None
+        place = getattr(self.nav.localisation, "place", None)
+        if place is None:
+            raise RuntimeError(f"the {self.nav.localisation.name} localisation of this robot cannot be placed on the map")
+        pose = (float(sp["x"]), float(sp["y"]), float(sp["yaw"]))
+        frame = [round(v, 4) for v in place(pose)]
+        shown = {"x": pose[0], "y": pose[1], "yaw": pose[2], "frame": "site"}
+        self.nav.record(event="placed", pose=list(pose), frame=frame,
+                        decision=decision("placed", f"placed by the operator at ({pose[0]:.2f}, {pose[1]:.2f}) facing "
+                                          f"{math.degrees(pose[2]):.0f} deg: no truth reads it, so the map's frame is set by this word",
+                                          pose=list(pose), frame=frame))
+        return {"pose": shown, "frame": {"x": frame[0], "y": frame[1], "yaw": frame[2]}}
 
     def _prepare(self) -> None:
         kinds = load_kinds()
@@ -443,6 +486,7 @@ class NavServer:
         self.variant, self.profile = variant, profile       # the profile version every goal's navigator runs (phase 5 step 1)
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
+        self.placed_frame: dict | None = None       # the latest goal's start-pose frame, which `map` is answered in
         self.calibration: Calibration | None = None
         self._lock = threading.Lock()
 
@@ -491,7 +535,9 @@ class NavServer:
                 run.cancel(p.get("reason"))
             return {"ok": True}
         if method == "map":
-            return self._map()                  # the robot's map, between goals too: its clients never open mapd themselves
+            grid = self._map()                  # the robot's map, between goals too: its clients never open mapd themselves
+            f = self.placed_frame               # in the frame the latest goal's start pose set (mapd's metres, as the grid is)
+            return move_grid(grid, (f["x"], f["y"], f["yaw"])) if f and grid.get("cells") else grid
         if method in ("state", "objects", "inventory"):
             if run is None or run.nav is None or run.state in ENDS:
                 return {"error": "no goal is running"} if method != "objects" else {"objects": []}
@@ -515,6 +561,9 @@ class NavServer:
                 return {"error": {"code": "no_camera", "message": f"a {spec['kind']} goal looks for objects: this navigator has no camera"}}
             if spec.get("kind") not in GOAL_KINDS:
                 return {"error": {"code": "unknown_kind", "message": f"no goal kind {spec.get('kind')!r}"}}
+            why = bad_start_pose(spec)
+            if why:
+                return {"error": {"code": "bad_start_pose", "message": why}}
             holder = self._gate_holder()
             if holder not in (None, self.client, self.client + "-probe"):
                 return {"error": {"code": "held", "message": f"driven by {holder}", "holder": holder}}
@@ -526,9 +575,13 @@ class NavServer:
             except Exception as exc:                                # noqa: BLE001
                 return {"error": {"code": "start_failed", "message": f"{type(exc).__name__}: {exc}"}}
             self.run = run
+            self.placed_frame = run.placed["frame"] if run.placed else None
             meta = getattr(run.nav.profile, "meta", None) or {}
             # the profile this goal runs, as its run records it: a client scaling the robot's poses checks it reads the same one
-            return {"run_key": key, "profile": {k: meta.get(k) for k in ("checksum", "version", "source")}}
+            answer = {"run_key": key, "profile": {k: meta.get(k) for k in ("checksum", "version", "source")}}
+            if run.placed:
+                answer["placed"] = run.placed          # a client that sent a start pose and reads none here was not heard (a 1.4 navigator)
+            return answer
 
     def calibrate(self, method: str, p: dict) -> dict:
         """calibration.list / start / status / cancel (contract 1.3): one procedure at a time, never with a goal."""

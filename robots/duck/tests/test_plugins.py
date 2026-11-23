@@ -194,6 +194,39 @@ mr.bind(rpc3)
 mr.fix(lambda **kw: None)
 check("a profile without a table keeps its one scale at every speed (the real duck's 1.0)", abs(mr.pose()[0] - 1.0) < 1e-9, mr.pose())
 
+# ---- placed on the map (contract 1.5: the operator's start pose; no truth reads it) --------------------------------------------------
+from duck_lab.nav.frames import move_grid  # noqa: E402
+# the real duck (scale 1): mapd's pose is (1, 2, 0.5) and the operator says the robot stands at (4, 1, pi/2) on the map
+rpcp = Mapd_RPC()
+mq = Mapd(REAL)
+mq.bind(rpcp)
+check("a localisation not placed has no frame", mq.frame is None)
+mq.place((4.0, 1.0, math.pi / 2))
+mq.on_odom(1_000_000_000, (1.0, 2.0, 0.5))
+mq.fix(lambda **kw: None)
+check("placed: the belief reads the operator's pose where mapd read its own", all(abs(a - b) < 1e-9 for a, b in zip(mq.pose(), (4.0, 1.0, math.pi / 2))), mq.pose())
+check("... and the belief is not parted from mapd's placed frame (the fix gate watches that, not the placement)",
+      mq.belief.delta() is not None and math.hypot(*mq.belief.delta()[:2]) < 1e-9, mq.belief.delta())
+rpcp.status = {"state": {"pose": {"x": 2.0, "y": 2.0, "yaw": 0.5}, "t_ns": 2_000_000_000}, "loops": 0, "relocalizations": 0, "island_keyframes": 0}
+mq.on_odom(2_000_000_000, (2.0, 2.0, 0.5))
+mq.fix(lambda **kw: None)
+check("a step of 1 m along the world's x (0.5 rad off the robot's heading) is a step of 1 m turned by the placement: (4 + sin 0.5, 1 + cos 0.5)",
+      abs(mq.pose()[0] - (4.0 + math.sin(0.5))) < 1e-9 and abs(mq.pose()[1] - (1.0 + math.cos(0.5))) < 1e-9, mq.pose())
+check("a fix is held or taken by the gate as ever: the placement did not make a 1 m step a jump", mq.belief.last_fix["status"] == "taken", mq.belief.last_fix)
+# the sim's scale: the change comes back in mapd's unscaled metres, so mapd's raw grid moved by it and scaled is the placed grid
+sim = Mapd(P)
+sim.bind(Mapd_RPC())
+change = sim.place((0.5, 0.0, 0.5))
+raw = Mapd_RPC().call("map.grid")
+moved = move_grid(raw, change)
+check("with scale 0.91 the change is in mapd's own metres: the raw grid moved by it, then scaled, is the grid the navigator plans on",
+      all(abs(a * 0.91 - b) < 1e-9 for a, b in zip(moved["origin"], sim.grid()["origin"])), (moved["origin"], sim.grid()["origin"]))
+blank = Mapd(REAL)
+blank.bind(type("R", (), {"call": lambda self, m, p=None: {"state": {}}})())
+here = blank.place((2.0, 3.0, 1.0))
+check("mapd with no pose yet starts its map at the robot's first stop, which is here: the change is the placed pose itself",
+      all(abs(a - b) < 1e-9 for a, b in zip(here, (2.0, 3.0, 1.0))), here)
+
 # ---- the walk's steering deadband (off in the profile: K1) ----------------------------------------------------------------------
 import copy  # noqa: E402
 from duck_lab.nav.follow import FollowState  # noqa: E402

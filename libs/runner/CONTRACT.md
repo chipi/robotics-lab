@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.4.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.5.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -18,7 +18,7 @@ Every navigator answers the goal methods:
 | Method | Answer |
 | --- | --- |
 | `hello {client?}` | `{name, version, contract, kinds, camera}`: `contract` is this file's version; `kinds` the goal kinds it takes; `camera` whether it was given one |
-| `goal.start {kind, params, budget, conditions, ...}` | `{run_key, ...}` at once, or `{error: {code, message}}` when it will not start one |
+| `goal.start {kind, params, budget, conditions, start_pose?, ...}` | `{run_key, ...}` at once, or `{error: {code, message}}` when it will not start one |
 | `goal.status` | `{state, reason, result, broken, ...}` |
 | `goal.cancel {reason?}` | `{ok}`: the navigator stops the robot, the goal ends `cancelled` |
 | `goal.break {name, detail}` | `{ok}`: a guardrail its runner checks by the truth broke; the goal ends `stopped_by_guardrail` |
@@ -77,6 +77,28 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.5
+
+`goal.start` of the **navigator API** takes `start_pose {x, y, yaw}`: where the operator says the
+robot stands on the map when the goal starts (metres in the map's frame, which is the frame goals,
+areas and objects are given in, and radians). A robot with no truth cannot read where it is placed,
+so the word is taken and the frame is set by it (phase 5 item 4b unit B7):
+
+- The navigator puts every pose and the grid of its localisation into that frame: the change is its
+  localisation's pose now against `start_pose` (a localisation with no pose yet starts its map at
+  the robot's first stop, which is here). It records a `placed` event, with a decision, in the run.
+- The answer adds `placed {pose {x, y, yaw, frame}, frame {x, y, yaw}}`: the pose taken, and the
+  change from mapd's frame to the map's, in mapd's own (unscaled) metres, as `map`'s grid is. A
+  goal started with no `start_pose` is in mapd's frame, as before: the frame is per goal.
+- `map` is answered in the frame of the latest goal's start pose (none: mapd's, as before).
+- It checks only the word: `start_pose` must be three finite numbers, and not inside a `no_go_area`
+  the goal carries (`outline`), else `{error: {code: "bad_start_pose", message}}`. It cannot tell a
+  pose that is wrong; with a truth, the run's official copy is made as ever, and the truth shows
+  where the robot stood (the run records both).
+- A navigator below 1.5 ignores the field and answers no `placed`: a client sends `start_pose` only
+  to one whose `hello` names 1.5 or later (`runfile.navcontract.speaks`) and refuses the goal for
+  the others, since a goal run in the wrong frame is worse than none. The payload takes none.
 
 ## 1.4
 

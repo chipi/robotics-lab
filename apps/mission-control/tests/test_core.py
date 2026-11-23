@@ -214,6 +214,37 @@ r = finish_run(mc, clock, run["id"])
 check("a path that stays out of it runs", r["state"] == "reached")
 mc.sites.set_guardrails("home", [])
 
+# a start pose (phase 5 item 4b unit B7, contract 1.5): where the operator says the robot stands on the map when the run starts
+SP = {"x": -2.0, "y": 0.5, "yaw": 0.0}
+run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}}, start_pose=SP)
+check("a run with a start pose keeps it with the run (its conditions)", run["state"] == "running" and run["conditions"]["start_pose"] == SP, run["conditions"])
+check("the robot stands where it was placed (the fake's world is the site)", fake(mc).pose() == (-2.0, 0.5, 0.0), fake(mc).pose())
+r = finish_run(mc, clock, run["id"])
+check("the run says it was placed, as a decision, and goes on to reach its point from there",
+      r["state"] == "reached" and any(d["rule"] == "placed" and "placed by the operator at (-2.00, 0.50)" in d["text"] for d in r["decisions"]), (r["state"], r["decisions"][:2]))
+run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}}, start_pose={"x": -2.0, "y": 0.5, "yaw": 2 * math.pi + 0.5})
+check("a yaw is taken modulo a turn", abs(run["conditions"]["start_pose"]["yaw"] - 0.5) < 1e-9, run["conditions"])
+finish_run(mc, clock, run["id"])
+run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}})
+check("a run with none has none among its conditions", "start_pose" not in run["conditions"], run["conditions"])
+finish_run(mc, clock, run["id"])
+mc.sites.set_guardrails("home", [{"name": "no_go_area", "area": "Stairwell"}])
+for label, pose, why in (("inside the site's no-go area", {"x": 1.2, "y": 1.0, "yaw": 0.0}, "no-go area stairwell"),
+                         ("outside the world", {"x": 9.0, "y": 0.0, "yaw": 0.0}, "outside the world"),
+                         ("inside the fridge", {"x": 3.0, "y": 1.5, "yaw": 0.0}, "inside a fridge")):
+    r = start(mc, POINT, start_pose=pose)
+    check(f"must fail: a start pose {label} is refused, saying why, and the robot is free", r["state"] == "refused" and why in r["reason"]
+          and mc.get_robot("fake-1")["lock"]["holder"] is None, r["reason"])
+mc.sites.set_guardrails("home", [])
+for label, pose in (("without a yaw", {"x": 1.0, "y": 2.0}), ("with a string", {"x": "1", "y": 2.0, "yaw": 0.0}),
+                    ("with a NaN", {"x": float("nan"), "y": 2.0, "yaw": 0.0}), ("in another frame", {"x": 1.0, "y": 2.0, "yaw": 0.0, "frame": "map"}),
+                    ("with an extra key", {"x": 1.0, "y": 2.0, "yaw": 0.0, "z": 1}), ("that is a list", [1.0, 2.0, 0.0])):
+    exc = refusal(start, mc, POINT, start_pose=pose)
+    check(f"must fail: a start pose {label} is a 422 bad_start_pose and creates no run", exc is not None and exc.code == "bad_start_pose"
+          and exc.status == 422, exc and exc.code)
+exc = refusal(mc.run_adhoc, {"goal": POINT, "team": "all", "start_pose": SP})
+check("a start pose is one robot's: with a team (or several robots) it is a 422 bad_start_pose", exc is not None and exc.code == "bad_start_pose", exc and exc.code)
+
 # cancelled: by the operator, by STOP; interrupted: by a takeover, by the robot going silent
 run = start(mc, {"kind": "point", "params": {"x": 3.5, "y": -2.0}})
 run_for(mc, clock, 1.0)

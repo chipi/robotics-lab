@@ -90,7 +90,7 @@ for label, setup in (("no installation names the NXT", lambda: os.environ.__seti
     old = load_robot_files(CONTROL / "robots.nxt")[0]
     oa = NxtAdapter(old)
     check(f"the old nxt-1.json loads and keeps its own numbers and address when {label}",
-          old.id == "nxt-1" and old.robot is None and old.capabilities["sensors"] == [] and (oa.max_vx, oa.max_vyaw, oa.url) == (0.3, 1.5, "http://127.0.0.1:8000"),
+          old.id == "nxt-1" and old.robot is None and [x["id"] for x in old.capabilities["sensors"]] == ["ultrasonic", "colour"] and (oa.max_vx, oa.max_vyaw, oa.url) == (0.3, 1.5, "http://127.0.0.1:8000"),
           (old.id, oa.max_vx, oa.max_vyaw, oa.url))
 
 # --- the registration's own words --------------------------------------------------------------------------------------------------
