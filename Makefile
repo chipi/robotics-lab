@@ -122,7 +122,7 @@ define run_tests
 	done; exit $$fail
 endef
 
-DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recovery.py tests/test_record.py tests/test_explore.py tests/test_cliff.py tests/test_step_check.py \
+DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recovery.py tests/test_record.py tests/test_explore.py tests/test_explore_hazards.py tests/test_cliff.py tests/test_step_check.py \
                        tests/test_world.py tests/test_miniview.py tests/test_replay.py tests/test_challenge.py tests/test_side_drops.py \
                        tests/test_world_model.py tests/test_stuck.py tests/test_site.py tests/test_guardrails.py tests/test_profile.py tests/test_plugins.py tests/test_anomaly.py tests/test_goals.py tests/test_probe_rows.py tests/test_pace.py tests/test_payload.py tests/test_camera_server.py tests/test_nav_server.py tests/test_forget_replay.py tests/test_registration_file.py tests/test_contract.py tests/test_scene_layout.py tests/test_body.py
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \

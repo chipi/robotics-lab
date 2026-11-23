@@ -102,3 +102,25 @@ def pick(clusters: list, pose: tuple, avoid: list, ok=None) -> tuple | None:
             if ok is None or ok(goal):
                 return goal
     return None
+
+# Challenge 22 (docs/wip/CH22-RIM.md): mapd draws a hole as free and the navigator knows only the rim it was shown, so a frontier
+# at an unseen stretch of the rim is a target on the edge, approached from the side where the cliff check does not look.
+RIM_M = 0.35           # the ring round a target looked at: the judge's 0.15 m, the belief's error, the frontier's pull-back
+RIM_UNSEEN = 0.10      # the share at which a target counts as on a rim (a straight rim 0.2 m off); recorded in `pick`, not enforced
+
+
+def rim_unseen(grid: dict, goal: tuple, seen_at, radius_m: float = RIM_M) -> float:
+    """The share of mapd's free cells within radius_m of goal in which the depth sensor never saw floor (seen_at(xy) False): a
+    hole mapd drew as free, a stairwell (upstream #599). Unknown cells are not counted; no free cell, 0."""
+    res, (ox, oy), w, h = grid["res_m"], grid["origin"], grid["width"], grid["height"]
+    r = math.ceil(radius_m / res)
+    cx, cy = math.floor((goal[0] - ox) / res), math.floor((goal[1] - oy) / res)
+    free = unseen = 0
+    for y in range(max(cy - r, 0), min(cy + r + 1, h)):
+        for x in range(max(cx - r, 0), min(cx + r + 1, w)):
+            p = (ox + (x + 0.5) * res, oy + (y + 0.5) * res)
+            if grid["cells"][y * w + x] != "." or math.dist(p, goal) > radius_m:
+                continue
+            free += 1
+            unseen += not seen_at(p)
+    return unseen / free if free else 0.0

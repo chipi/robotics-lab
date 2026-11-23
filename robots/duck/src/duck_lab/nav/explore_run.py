@@ -8,12 +8,12 @@ import math
 import time
 from pathlib import Path
 
-from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, without_retired
+from duck_lab.nav.explore import STANDOFF_M, frontiers, pick, rim_unseen, without_retired
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.frames import move_xy
 from duck_lab.nav.grid import LETHAL_COST, CostGrid, EmptyMap, clearance, plan
 from duck_lab.nav import anomaly as anom, recovery
-from duck_lab.nav.run import Navigator, decision
+from duck_lab.nav.run import FLOOR_CELL_M, Navigator, decision
 
 # the events that end an exploration before its time (its runner reads them): a stop is named by what stopped it
 ENDS = ("trapped", "no_frontier_left", "stopped_by_guardrail", "cancelled")
@@ -170,6 +170,18 @@ class Explorer:
                   decision=decision("leave_drop", "the run started beside a drop: first to a place away from it",
                                     status=out["status"], start_margin_m=recovery.START_MARGIN_M))
 
+    def avoid(self) -> list:
+        """The points a target keeps AVOID_M from: failed targets and the navigator's hazards, the planner's own set (drops, measured
+        edges, suspected drops). Drops alone left a 44-point rim unavoided (challenge 22, no cliff stop)."""
+        return self.failed + self.nav.hazards()
+
+    def hazard_costs(self, costs: CostGrid) -> CostGrid:
+        """costs with the hazards' zones as the planner grows them (Navigator.leg's rings): a drop's, an edge's, a suspect's."""
+        nav, suspected = self.nav, self.nav.suspects.points()
+        costs = costs.covering(nav.drops + nav.edges + suspected).with_blocked(nav.drops, nav.drop_lethal_m, nav.drop_inflate_m)
+        costs = costs.with_blocked(nav.edges, nav.edge_lethal_m, nav.edge_inflate_m)
+        return costs.with_blocked(suspected, nav.edge_lethal_m, nav.edge_inflate_m)
+
     def survey(self) -> None:
         for _ in range(self.nav.profile.looking.survey_steps):
             self.nav.survey()
@@ -197,8 +209,7 @@ class Explorer:
                 # (trial 6 picked a goal the navigator then scored lethal).
                 costs = self.nav.grid()
                 seen = self.nav.blocked + self.nav.semantic_points()
-                costs = costs.covering([pose[:2]] + seen + self.nav.drops).with_points(seen)
-                costs = costs.with_blocked(self.nav.drops, self.nav.drop_lethal_m, self.nav.drop_inflate_m)
+                costs = self.hazard_costs(costs.covering([pose[:2]] + seen).with_points(seen))
             except EmptyMap:
                 self.survey()
                 continue
@@ -211,6 +222,8 @@ class Explorer:
                     return False
                 # Floor the depth sensor saw, not only mapd's "free": mapd draws a stairwell as free
                 # (upstream #599) and trial 10 picked a target inside one.
+                # The rim share (explore.rim_unseen) is recorded in `pick`, not enforced: at RIM_UNSEEN it raised challenge 22's
+                # trapped runs from 1 in 20 to 4 in 10 (docs/wip/CH22-RIM.md).
                 return self.nav.floor_seen_near(goal)
 
             if self.find and self.nav.semantic is not None:
@@ -225,7 +238,7 @@ class Explorer:
                                 "minutes": round((time.monotonic() - (end - minutes * 60)) / 60, 1)}
                     self.find_failed[obj.oid] = legs
 
-            avoid = self.failed + self.nav.drops
+            avoid = self.avoid()
             blocked = list(self.nav.blocked)
             clusters = without_retired(frontiers(grid, 1.0, obstacles=blocked), self.retired)
             # a reached target takes out only the frontier where it stood (b8 r1, r2: the 0.4 m discs of 15 reached
@@ -242,7 +255,8 @@ class Explorer:
                       obstacles=[[round(v, 3) for v in b[:2]] for b in blocked],
                       retired=[[round(v, 3) for v in r] for r in self.retired],
                       reached=[[round(v, 3) for v in r] for r in self.reached],
-                      target=[round(v, 3) for v in target] if target else None)
+                      target=[round(v, 3) for v in target] if target else None,
+                      rim=round(rim_unseen(grid, target, lambda p: self.nav.floor_seen_near(p, FLOOR_CELL_M)), 3) if target else None)
             if target is None:
                 if not surveyed_here:
                     self.survey()

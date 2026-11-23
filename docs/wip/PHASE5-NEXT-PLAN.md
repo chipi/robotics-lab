@@ -359,7 +359,7 @@ implements", built unattended. Decisions are made by the recommended default and
 
 | Unit | What | Proof | Size | Builds here |
 | --- | --- | --- | --- | --- |
-| B1 | Challenge 22's blind spot: a target on an unmapped rim, approached from the side | the `lab-challenge --start/--goal` probe, then 10 runs; a unit test on a synthetic rim | M-L | yes |
+| B1 | Challenge 22's blind spot: a target on an unmapped rim, approached from the side | the `lab-challenge --start/--goal` probe, then 10 runs; a unit test on a synthetic rim | M-L | partly done (2026-11-23): the hazard set fixed; the rim share recorded, not enforced; the path-grazing case open ([CH22-RIM.md](CH22-RIM.md)) |
 | B2 | Stopping on its own health (`motor_hot`, battery, unhealthy, a stale stream) | contract test with a stub health; `sim_duck --profile` | M | yes |
 | B3 | Robot-side guardrails enforced without truth (fall from tilt, contact from `bumped` and `carried`, drop from the cliff check) | contract test; `sim_duck --no-truth` | M | yes, after B1 and B2 |
 | B4 | The other-doors watch (`autonomous`, `move.source`, `someone_else_drives`) | gate tests with a fake state source | S-M | logic only; the simulator's robotd fills neither field |
