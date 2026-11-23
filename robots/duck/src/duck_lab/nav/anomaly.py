@@ -17,6 +17,7 @@ import math
 import threading
 
 SEVERITIES = ("info", "minor", "major", "critical")
+SOURCE = {"guardrail_broken": "harness"}      # the kinds the navigator records for another source; the rest are "robot"
 VERSION = 1
 
 # anomaly -> (module, detector, the severity it is raised at unless the raise point says otherwise). Proposed from the runs (RFC-0019 §6
@@ -41,6 +42,9 @@ KINDS = {
     "motor_hot": ("body", "motor_temperature", "major"),
     "loop_slow": ("body", "control_loop", "minor"),
     "robot_unhealthy": ("body", "robot_health", "major"),
+    # the harness's (RFC-0019 §2.1's third source): the runner's guardrails only the simulator's truth can check (a contact, a fall,
+    # a drop margin broken), told to the navigator by `goal.break`; recorded by it, with source "harness"
+    "guardrail_broken": ("runner", "truth_guard", "critical"),
 }
 
 # A refusal at one pose repeats for every target the explorer tries (b11 r5: six "no room to turn" in 1 s at one pose, 0.283-0.290
@@ -70,7 +74,8 @@ def record(kind: str, summary: str, severity: str | None = None, *, belief=None,
         where["belief"] = [round(float(belief[0]), 3), round(float(belief[1]), 3)]
     if mapd is not None:
         where["mapd"] = [round(float(mapd[0]), 3), round(float(mapd[1]), 3)]
-    return {"event": "anomaly", "anomaly": kind, "source": "robot", "module": module, "severity": severity, "detector": detector,
+    return {"event": "anomaly", "anomaly": kind, "source": SOURCE.get(kind, "robot"), "module": module, "severity": severity,
+            "detector": detector,
             "version": VERSION, "summary": summary, "values": values or {}, "margin": None if margin is None else round(float(margin), 4),
             "where": where, "evidence": evidence or {}, "related": related or [], "duration_s": round(float(duration_s), 3)}
 

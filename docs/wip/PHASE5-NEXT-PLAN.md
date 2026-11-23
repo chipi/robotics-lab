@@ -179,7 +179,12 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      current limit, hot at 60 C of the 70 C shutdown), its tracking limit null (not measured);
      the simulator's from `sim/probes/body_limits.py` over 18 runs (its current is a stand-in).
      Proof in [what the body data is today](PHASE5-ITEM3-BODY-DATA.md).
-  2. **The runner's truth guardrails** as `harness` anomalies, at `goal.break` (next).
+  2. **The runner's truth guardrails: done (2026-11-23).** At `goal.break` (both the payload and
+     the navigator API) the navigator records a `guardrail_broken` anomaly, source `harness`,
+     severity critical, naming the guardrail; its own guardrails (a time limit spent) are none. The
+     Observatory reads `harness` beside `robot`. Proof: `tests/test_contract.py` on both navigators,
+     5 of 5 mutants killed, `make ci-fast` PASS; not covered: no live break on the simulator (no
+     challenge breaks the truth guard on purpose).
   3. **The live feed:** `goal.status` hands out anomalies as it does decisions; Mission Control's
      bus, a header badge and an inspector (what, where, since when; stop, open in the Observatory).
   4. **The Observatory's marks:** the anomaly track on the timeline and the pins on the map.

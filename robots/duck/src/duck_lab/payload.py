@@ -116,6 +116,7 @@ class Payload:
             name, detail = str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner")
             self.broken = {"name": name, "detail": detail}
         self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
         return {"ok": True}
 

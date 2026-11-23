@@ -188,13 +188,17 @@ class GoalRun:
         self.guard = Guard(self.nav, self.guardrails, self._break, self.t0)
         self.guard.arm()
 
-    def _break(self, name: str, detail: str) -> None:
-        """A guardrail broke: the run stops, with which one, and the decision says why (it is in the Observatory run too)."""
+    def _break(self, name: str, detail: str, by_runner: bool = False) -> None:
+        """A guardrail broke: the run stops, with which one, and the decision says why (it is in the Observatory run too). `by_runner`:
+        one its runner checks by the truth (`goal.break`), also an anomaly of the harness; the navigator's own (Guard) are rules doing
+        their job (a time limit spent), not anomalies."""
         with self._lock:
             if self.broken is not None:
                 return
             self.broken = {"name": name, "detail": detail}
         self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name))
+        if by_runner:
+            self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")
 
     # --- what a poll sees ---------------------------------------------------------------------------
@@ -443,7 +447,7 @@ class NavServer:
             return run.snapshot(int(p.get("decisions_since", 0)), int(p.get("objects_since", -1)))
         if method == "goal.break":
             if run is not None and run.state not in ENDS:
-                run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"))
+                run._break(str(p.get("name") or "guardrail"), str(p.get("detail") or "broken, says the runner"), by_runner=True)
             return {"ok": True}
         if method == "goal.cancel":
             if run is not None and run.state not in ENDS:

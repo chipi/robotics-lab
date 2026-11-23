@@ -62,6 +62,7 @@ class FakeNav:
         return dict(o)
 
     stop_goal, clear_stop = RealNavigator.stop_goal, RealNavigator.clear_stop       # the navigator's own rule
+    anomaly = RealNavigator.anomaly
 
     def record(self, **row):
         self.records.append(row)
@@ -178,6 +179,20 @@ for name, make in NAVIGATORS.items():
     unknown = make().call("goal.start", {"kind": "fly", "params": {}})
     check(f"{name}: a goal kind it does not take is answered unknown_kind", (unknown.get("error") or {}).get("code") == "unknown_kind",
           unknown)
+
+# --- a guardrail its runner checks, broken: an anomaly of the harness (RFC-0019 §2.1), the navigator's own breaks none ----------
+for name, make in NAVIGATORS.items():
+    nav = make()
+    run_goal(nav, "wait", lambda m: m.call("goal.break", {"name": "contact", "detail": "touched the box"}))
+    inner = nav.nav if name == "payload" else nav.run.nav
+    an = [r for r in inner.records if r.get("event") == "anomaly"]
+    check(f"must fail: {name}: goal.break is a critical guardrail_broken anomaly with source harness, naming the guardrail",
+          [(a["anomaly"], a["source"], a["severity"], a["values"].get("guardrail")) for a in an]
+          == [("guardrail_broken", "harness", "critical", "contact")], an)
+api_nav = api()
+run_goal(api_nav, "wait", lambda m: m.run._break("time_limit", "60 s spent"))
+check("must fail: the navigator's own guardrail (a time limit spent) is no anomaly",
+      not [r for r in api_nav.run.nav.records if r.get("event") == "anomaly"], api_nav.run.nav.records)
 
 # --- the navigator's stop: named by what stopped it (its stop event is the contract's end, not `aborted`) ---------------
 n = FakeNav()

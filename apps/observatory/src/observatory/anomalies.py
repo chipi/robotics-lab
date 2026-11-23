@@ -633,18 +633,20 @@ DETECTORS = {d.id: d for d in (
 # ---- tagged by the robot (RFC-0019 section 3.1): events of the run, already records -----------------------------------------
 
 # The kinds the navigator tags (the format's vocabulary, RFC-0019 section 3.1; no robot code is imported): `--detector` takes them too.
+# guardrail_broken is recorded by the navigator for the harness (the runner's truth guard, `goal.break`): source "harness".
+TAGGED_SOURCES = ("robot", "harness")
 ROBOT_KINDS = ("fix_jump_held", "mapd_lost", "reloc_refused", "stuck", "frames_parted", "refusal_burst", "room_disagrees", "head_off_walk",
                "refused_unexplained", "camera_failed", "thread_failed", "stop_latched", "lease_lost", "joint_overload", "joint_tracking",
-               "motor_hot", "loop_slow", "robot_unhealthy")
+               "motor_hot", "loop_slow", "robot_unhealthy", "guardrail_broken")
 
 
 def robot_records(run: Run) -> list:
-    """The anomalies the robot tagged while it ran (events of kind `anomaly`, source "robot"), in the same record as the found ones:
+    """The anomalies tagged while it ran (events of kind `anomaly`, source "robot" or "harness"), in the same record as the found ones:
     `t_end` is `t` plus the duration the raise point knew; `where` in the world frame, the belief placed there by the epoch in force
     and the truth from the event's own row (the simulator's, absent on a real robot). mapd's own place stays in the event."""
     out = []
     for e in run.events:
-        if e.get("kind") != "anomaly" or e.get("source") != "robot" or "anomaly" not in e:
+        if e.get("kind") != "anomaly" or e.get("source") not in TAGGED_SOURCES or "anomaly" not in e:
             continue
         where = {"frame": "world"}
         belief = (e.get("where") or {}).get("belief")
@@ -653,7 +655,7 @@ def robot_records(run: Run) -> list:
         truth = e.get("truth")
         if truth:
             where["truth"] = [round(truth[0], 3), round(truth[1], 3)]
-        out.append({"anomaly": e["anomaly"], "source": "robot", "module": e.get("module"), "severity": e.get("severity") or "info",
+        out.append({"anomaly": e["anomaly"], "source": e["source"], "module": e.get("module"), "severity": e.get("severity") or "info",
                     "detector": e.get("detector"), "version": e.get("version"), "t": round(e["t"], 3),
                     "t_end": round(e["t"] + (e.get("duration_s") or 0.0), 3), "where": where, "summary": e.get("summary") or "",
                     "values": e.get("values") or {}, "margin": e.get("margin"), "evidence": e.get("evidence") or {},
