@@ -53,6 +53,34 @@ MVP 2 is "stepping up the game", by a proper architectural evolution, not by bol
   nothing for it is built before those are agreed. Item 6 below is its old shape (stubs) and is
   revised by that work.
 
+### What RFC-0025 (accepted 2026-11-23) changes in MVP 1
+
+The operator agreed the order on 2026-11-23: A3 first, then two streams side by side, the duck
+(B3, B7, B8, then B5, B6, then 4c) and the NXT (4d). Items needing the operator are parked in
+[PARKED-FOR-OPERATOR.md](PARKED-FOR-OPERATOR.md). RFC-0025's decisions reach MVP 1 here:
+
+1. **D10, the NXT over Bluetooth:** the deadman is a last-hop watchdog on the computer wired to
+   the motors (RFC-0025 §3.3). Over USB nxt-web's deadman on the workstation is that computer;
+   over Bluetooth it is not, so the brick must stop by itself when commands stop. D10 checks the
+   brick-side program for that timeout, and adds one if it is missing, before any drive over
+   Bluetooth.
+2. **D0 and D3:** the host kind follows RFC-0025's rules: minimal per-kind dispatch in `simhost`
+   (RFC-0028 starts from it), truth as `(wall_ns, pose)`, and a reset that returns only when the
+   simulator is settled (§3.4).
+3. **D4:** the NXT's stand-in profile takes profile v2's shapes where they are decided: a source
+   per sensor (§3.10), the supported placements in the registration and nxt-web's address in the
+   installation (question 18).
+4. **D5 and D6:** the NXT adapter grows only within the existing `robot.*` methods; our robot
+   interface becomes a written contract in RFC-0025 step 1.
+5. **Step 7, retention:** acts on whole run folders, companion files included (ADR-0020
+   decision 5), though MVP 1 records none.
+6. **Step 6, telemetry:** robot-neutral labels (robot id, robot kind, host kind).
+7. **B8:** check whether the duck's simulated runs record the simulator's time and the
+   real-time factor (question 7); if not, add it, with the `rtf_low` alarm below 0.95 (the
+   threshold a guess).
+8. **B6:** a real run refused unless the robot file allows it covers a calibration walk too: A3's
+   `odometry_scale` walks blind, with no wall, cliff or contact check.
+
 ## The order
 
 ### 1. One navigator contract (first: the smallest, and it unblocks 2 and 3)
@@ -423,9 +451,9 @@ Bluetooth (D10); a Pi-based sensor module on the robot follows in MVP 2, and D0 
 
 | Unit | What | Size | Needs the robot |
 | --- | --- | --- | --- |
-| D0 | Design note: the second host kind, the NXT sim's sensors, the profile route | S | no |
+| D0 | Design note: the second host kind, the NXT sim's sensors, the profile route. **Done 2026-11-23** ([NXT-D0.md](NXT-D0.md), defaults for the operator's review) | S | no |
 | D1 | Hardware check at the brick: `hw_*` scripts, K15, K16 measured, the 15 cm stop | S | yes |
-| D2 | A world for nxt-web: kinematic pose, collisions, ultrasonic cone cast | M | no |
+| D2 | A world for nxt-web: kinematic pose, collisions, ultrasonic cone cast. **Done 2026-11-23** (`nxt-web --sim --world`, `apps/nxt-web/tests/test_sim.py`; D1's checklist: [NXT-D1-CHECKLIST.md](NXT-D1-CHECKLIST.md)) | M | no |
 | D3 | Host kind `nxt-kinematic-sim` in `simhost`: dispatch, reset, truth | M | no |
 | D4 | The NXT registered like the duck: profile, variants `sim`/`real`, description | M | no |
 | D5 | Mission Control shows its sensors, stops and alarms | M | no |

@@ -44,17 +44,19 @@ def parse_state(message: bytes) -> dict:
 class FakeDeadman:
     """The brick program's behaviour, for the simulated brick and the tests."""
 
-    def __init__(self):
+    def __init__(self, clock=time.monotonic):
+        # A clock to inject: the simulated brick's program lives on the world's time, so tests need no sleeping.
+        self.clock = clock
         self.left = self.right = 0
         self.forward = False
         self.flags = 0
         self.dist = 255
-        self.last_move = time.monotonic()
-        self.started = time.monotonic()
+        self.last_move = clock()
+        self.started = clock()
         self.reply = None
 
     def tick(self) -> None:
-        if (self.left or self.right) and time.monotonic() - self.last_move > DEADMAN_S:
+        if (self.left or self.right) and self.clock() - self.last_move > DEADMAN_S:
             self.left = self.right = 0
             self.forward = False
             self.flags |= FLAG_DEADMAN
@@ -69,7 +71,7 @@ class FakeDeadman:
         if kind == "D" and len(text) == 12:
             self.left, self.right = int(text[5:8]) - 100, int(text[8:11]) - 100
             self.forward = text[11] == "1"
-            self.last_move = time.monotonic()
+            self.last_move = self.clock()
             self.flags = 0
         elif kind == "S":
             self.left = self.right = 0
@@ -80,5 +82,5 @@ class FakeDeadman:
             self.forward = False
             self.flags = FLAG_BAD
         self.tick()
-        ms = int((time.monotonic() - self.started) * 1000)
+        ms = int((self.clock() - self.started) * 1000)
         self.reply = f"{seq},{self.left},{self.right},{self.dist},{self.flags},{ms}".encode()

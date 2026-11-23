@@ -42,7 +42,13 @@ make nxt-web                       # real brick, http://127.0.0.1:8000 (from the
 make nxt-web NXT_LINK=bluetooth    # or usb / auto; NXT_HOST, NXT_PORT too
 make nxt-web-fake                  # simulated brick with made-up readings, nothing moves
 uv run nxt-web --help              # the same, from apps/nxt-web/
+uv run nxt-web --sim --world ../../scenes/apartment/scene.json --start 0 2 90   # a simulated brick driving in a world
 ```
+
+`--sim` (nxt_lab/world.py) integrates the two track powers into a pose, stops at the scene's boxes,
+and reads the ultrasonic from the world, so the 15 cm obstacle stop fires on a real distance. Its
+numbers (speeds, turn slip, the sensor's cone) are assumptions until measured; `--sim-params` takes
+a JSON file that overrides them. Colour is not simulated.
 
 **Anywhere, in Docker** (`apps/nxt-web/Dockerfile`; config and recordings in the `nxt-web-data` volume):
 

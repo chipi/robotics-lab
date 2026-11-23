@@ -2,11 +2,13 @@
 
     uv run nxt-web            # real brick over USB, http://127.0.0.1:8000
     uv run nxt-web --fake     # no hardware; a simulated brick with made-up readings
+    uv run nxt-web --sim --world scenes/apartment/scene.json   # no hardware; a simulated brick driving in a world
 """
 
 import argparse
 import collections
 import json
+import math
 import signal
 import threading
 import time
@@ -20,7 +22,8 @@ from nxt_lab import deadman, diag
 from nxt_lab.config import SENSOR_TYPES, Config
 from nxt_lab.lock import Lock, LockError, load_names
 from nxt_lab.recorder import RUNS_DIR, Recorder
-from nxt_lab.robot import LINK_BACKENDS, FakeRobot, NxtRobot
+from nxt_lab.robot import LINK_BACKENDS, FakeRobot, NxtRobot, SimRobot
+from nxt_lab.world import World, WorldParams
 
 INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_bytes()
 
@@ -37,10 +40,11 @@ LOCKED_PATHS = ("/api/drive", "/api/fire", "/api/program/start", "/api/program/s
 
 class Controller:
     def __init__(self, config: Config, fake: bool, config_path: Path, link: str = "auto", miniview_data: Path | None = None,
-                 takeover_names=()):
+                 takeover_names=(), world=None):
         self.config = config
         self.config_path = config_path
         self.fake = fake
+        self.world = world                # a World: the simulated brick drives in it (--sim); fake is True with it
         self.link_pref = link
         self.robot = None
         self.error = None
@@ -57,7 +61,7 @@ class Controller:
         self.event_seq = 0
         self._events_lock = threading.Lock()
         self._last_drive_logged = (0, 0)
-        self.events_path = RUNS_DIR / ("events-fake.jsonl" if fake else EVENTS_FILE)
+        self.events_path = RUNS_DIR / ("events-sim.jsonl" if world else "events-fake.jsonl" if fake else EVENTS_FILE)
         self.lock = Lock(self._stop_motors, takeover_names=takeover_names, event=self.event)
 
     def _stop_motors(self) -> None:
@@ -99,7 +103,8 @@ class Controller:
                 except Exception:
                     pass
             try:
-                self.robot = FakeRobot(self.config) if self.fake else NxtRobot(self.config, self.link_pref)
+                self.robot = (SimRobot(self.config, world=self.world) if self.world else FakeRobot(self.config)) if self.fake \
+                    else NxtRobot(self.config, self.link_pref)
                 self.error = None
                 self.connected_at = time.monotonic()
                 self.connects += 1
@@ -471,14 +476,28 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to reach it from a phone on the LAN")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--fake", action="store_true", help="simulated brick, nothing moves")
+    parser.add_argument("--sim", action="store_true", help="simulated brick in a world (needs --world): it drives, hits walls, and its ultrasonic sees them")
+    parser.add_argument("--world", type=Path, help="the scene for --sim, e.g. scenes/apartment/scene.json")
+    parser.add_argument("--start", type=float, nargs=3, metavar=("X", "Y", "YAW_DEG"), default=(0.0, 0.0, 0.0),
+                        help="the simulated robot's start pose: metres, metres, degrees counter-clockwise (default 0 0 0)")
+    parser.add_argument("--sim-params", type=Path, help="JSON file overriding the world's parameters (nxt_lab.world.WorldParams): speeds, turn slip, the ultrasonic's cone")
     parser.add_argument("--config", type=Path, default=config_mod.CONFIG_PATH, help="port setup file")
     parser.add_argument("--miniview-data", type=Path, help="the lab data folder the recordings are written to as miniview runs (default: $OBSERVATORY_DATA, else miniview/ in this program's data folder)")
     parser.add_argument("--takeover-names", type=Path, help="file of client names (one per line) that may take the control lock from its holder; empty: nobody")
     parser.add_argument("--link", choices=sorted(LINK_BACKENDS), default="auto",
                         help="auto tries USB, then Bluetooth (/dev/rfcomm*)")
     args = parser.parse_args()
+    if args.sim and (args.fake or not args.world):
+        parser.error("--sim takes --world and is not combined with --fake")
+    if (args.world or args.sim_params) and not args.sim:
+        parser.error("--world and --sim-params only go with --sim")
+    world = None
+    if args.sim:
+        params = WorldParams.from_dict(json.loads(args.sim_params.read_text())) if args.sim_params else None
+        x, y, yaw_deg = args.start
+        world = World.from_scene(args.world, params, (x, y, math.radians(yaw_deg)))
 
-    controller = Controller(config_mod.load(args.config), fake=args.fake, config_path=args.config, link=args.link, miniview_data=args.miniview_data,
+    controller = Controller(config_mod.load(args.config), fake=args.fake or args.sim, world=world, config_path=args.config, link=args.link, miniview_data=args.miniview_data,
                             takeover_names=load_names(args.takeover_names))
     controller.connect()
     threading.Thread(target=controller.watchdog, daemon=True).start()
@@ -491,7 +510,7 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), make_handler(controller))
     robot = controller.robot
     via = f"{robot.link} ({robot.link_detail})" if robot else f"not connected: {controller.error}"
-    print(f"{'FAKE robot' if args.fake else 'NXT'}: http://{args.host}:{args.port}  via {via}", flush=True)
+    print(f"{'SIM robot' if args.sim else 'FAKE robot' if args.fake else 'NXT'}: http://{args.host}:{args.port}  via {via}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

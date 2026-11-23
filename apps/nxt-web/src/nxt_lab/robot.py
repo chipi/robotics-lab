@@ -1,4 +1,4 @@
-"""Robot backends: the real NXT over USB, and a fake that needs no hardware."""
+"""Robot backends: the real NXT over USB, a fake that needs no hardware, and a simulated one that drives in a world."""
 
 import math
 import random
@@ -14,6 +14,7 @@ import nxt.sensor.generic as generic
 
 from nxt_lab import deadman
 from nxt_lab.config import MOTOR_PORTS, Config
+from nxt_lab.world import World
 
 SENSOR_CLASSES = {
     "touch": generic.Touch,
@@ -425,3 +426,102 @@ class FakeRobot(DeadmanMixin):
 
     def close(self) -> None:
         self.stop()
+
+
+class SimRobot(FakeRobot):
+    """The simulated brick with a world (nxt_lab.world): the tracks move a pose, boxes stop it, and the ultrasonic reads
+    the real simulated distance, so robotd-lite's 15 cm obstacle stop fires on a wall and not on a sine wave.
+
+    The brick program and the world run on one clock, `clock`, in steps of the world's step_s: the deadman and the obstacle
+    stop are tested at that grain, and a test that injects a clock needs no sleep. Tachos count what the motors were told;
+    they keep counting while the robot is held by a wall (the tracks spin), and they know nothing of the turn slip. That is
+    the odometry's belief; `truth()` is the model's pose."""
+
+    link = "sim"
+    link_detail = "kinematic simulator"
+
+    def __init__(self, config: Config, link: str = "auto", *, world: World, clock=time.monotonic):
+        self.world = world
+        self._clock = clock
+        self._sim_lock = threading.RLock()
+        self._t = clock()
+        super().__init__(config, link)
+        self.link_detail = f"kinematic simulator, world {world.scene_id or 'unnamed'}"
+
+    def set_deadman(self, on: bool) -> None:
+        if on == self.deadman:
+            return
+        self.deadman = on
+        self.deadman_state = None
+        self._brick_program = deadman.FakeDeadman(clock=lambda: self._t) if on else None
+
+    def truth(self) -> tuple:
+        """(wall_ns, (x, y, yaw)): the model's ideal pose, as simhost's truth readers give it (RFC-0025 section 3.4)."""
+        with self._sim_lock:
+            self._advance()
+            return time.time_ns(), self.world.pose()
+
+    def reset_world(self, start: tuple | None = None) -> None:
+        """The start pose again, motors stopped. Settled on return: nothing is running that could still be moving."""
+        with self._sim_lock:
+            self.stop()
+            self.world.reset(start)
+            self._tacho = {p: 0.0 for p in MOTOR_PORTS}
+
+    def _exchange(self, message: bytes) -> dict:
+        with self._sim_lock:
+            self._advance()
+            return super()._exchange(message)
+
+    def drive(self, left: int, right: int) -> None:
+        with self._sim_lock:
+            super().drive(left, right)
+
+    def stop(self) -> None:
+        with self._sim_lock:
+            super().stop()
+
+    def read_tachos(self) -> dict:
+        with self._sim_lock:
+            return super().read_tachos()
+
+    def _fake_distance(self) -> int:
+        return self.world.range_cm()
+
+    def _advance(self) -> None:
+        with self._sim_lock:
+            end = self._clock()
+            while end - self._t > 1e-9:
+                self._substep(min(self.world.params.step_s, end - self._t))
+
+    def _substep(self, dt: float) -> None:
+        self._t += dt
+        config = self.config
+        sign_l = -1 if config.invert_left else 1
+        sign_r = -1 if config.invert_right else 1
+        if self._brick_program is not None:
+            self._brick_program.dist = self.world.range_cm()
+            self._brick_program.tick()
+            port_l, port_r = self._brick_program.left, self._brick_program.right   # already signed for the inversions
+        else:
+            port_l, port_r = sign_l * self.left, sign_r * self.right
+        rate = self.world.params.tacho_deg_s_per_power
+        self._tacho[config.left] += port_l * rate * dt
+        self._tacho[config.right] += port_r * rate * dt
+        self.world.step(sign_l * port_l, sign_r * port_r, dt)
+
+    def read_sensors(self) -> dict:
+        """The ultrasonic from the world. Colour, touch, light and sound are not modelled (scene.json has no floor colour and
+        no touch bumper is fitted), so they read empty rather than a made-up value."""
+        with self._sim_lock:
+            self._advance()
+            out = {}
+            for port, kind in self.config.sensors.items():
+                if kind == "ultrasonic":
+                    out[port] = {"value": self.deadman_query()["dist"] if self.deadman and port == deadman.US_PORT
+                                 else self.world.range_cm()}
+                elif kind == "color":
+                    out[port] = {"value": None, "label": None}
+                elif kind != "none":
+                    out[port] = {"value": None}
+            return out
