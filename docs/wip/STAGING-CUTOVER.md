@@ -27,6 +27,11 @@ robot processes (gate, navigator, simulator) stay where they are.
 
 The old copies stay where they are until you remove them yourself.
 
+**Precondition: the deployed commit contains 9ef2d59 or later.** Before it, an open drawer in
+Mission Control covers STOP and STOP ALL (on a phone and on a desktop). No real robot goes on a
+stack older than that. The fix is CSS in the image, so it needs the X3's maintenance window
+(the build hold) first.
+
 ## 0. Before anything: read what is there
 
 ```bash

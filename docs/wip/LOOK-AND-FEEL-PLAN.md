@@ -35,6 +35,32 @@ aside for it. So:
   3. after U14 to U18 and U20 to U25: time, panels, layouts, palette, readiness, evidence;
   4. after U26: the whole set, for step 5's screenshots.
 
+### How to take the shots
+
+`scripts/look_shots.py` starts its own Observatory and Mission Control (the fake robot, behind
+`/control/`) on free ports and temp folders under `~/.cache/robotics-lab-tests`; it never touches
+8060 or 8070. It takes 42 pictures, `<app>-<view>-<theme>-<width>.png`: views `runs`, `3d`, `map`,
+`eye`, `chase`, `watch`, `explore` of the Observatory, `overview`, `robot`, `body` of Mission
+Control, and `drawer` (phone only), each dark and light at 1440 and 390 px.
+
+```bash
+cd apps/observatory
+uv run --frozen python ../../scripts/look_shots.py --out DIR --html
+uv run --frozen python ../../scripts/look_shots.py \
+  --compare ../../docs/wip/look-and-feel/before DIR --out CMP
+```
+
+- The "before" set is `docs/wip/look-and-feel/before/` (`index.html`, `shots.json` with the commit).
+  Open `CMP/index.html` for before and after side by side; unpaired names are listed.
+- `--only TEXT` takes just the names containing TEXT; `--slim` drops the 1440 light shots of the
+  flat views.
+- Two runs of the same code gave byte-identical files (41 of 42 on the first try; the
+  fake robot's map fills in over a second, so a shot now waits until two pictures agree).
+- The "before" set was taken at 9ef2d59, which already has U-STOP (STOP above the drawer).
+- Not covered: the 3D camera is the page's default orbit plus four wheel steps (the page has no
+  camera setter); a live run, a real robot, the semantic-object layer and the video export have no
+  fixture; the drawer shot shows the robot's profile path of the checkout it was taken in.
+
 ## Facts the plan rests on (read, not run)
 
 - STOP on a phone: Mission Control's `.scrim` is `z-index: 40` and the phone `.stops` bar

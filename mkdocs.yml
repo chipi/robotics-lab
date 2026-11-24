@@ -130,9 +130,11 @@ nav:
     - Status and open decisions: wip/STATUS.md
     - The plan we execute on: wip/EXECUTION-PLAN.md
     - "Phase 5, step 1: the installation file and profile versions": wip/PHASE5-STEP1-DESIGN.md
+    - "Handover: the MVP 1 wrap-up, for the next session": wip/HANDOVER.md
     - "Phase 5: the plan after step 1": wip/PHASE5-NEXT-PLAN.md
     - "MCP coverage: every route against the tools": wip/MCP-COVERAGE.md
     - "Look and feel: independent research for both apps": wip/LOOK-AND-FEEL-RESEARCH.md
+    - "Look and feel: the step 4.5 plan": wip/LOOK-AND-FEEL-PLAN.md
     - "Deploying the platform (phase 5 item 4c)": wip/DEPLOY.md
     - "Telemetry: turning it on, the send check, the dashboard": wip/TELEMETRY.md
     - "Phase 5 item 3: what the body data is today": wip/PHASE5-ITEM3-BODY-DATA.md

@@ -83,6 +83,8 @@ The operator agreed the order on 2026-11-23: A3 first, then two streams side by 
 
 ## The MVP 1 wrap-up, in order (the operator, 2026-11-24)
 
+Where each step stands, and how to continue in a new session: [HANDOVER](HANDOVER.md).
+
 Steps 6 and 7 and every 4e unit are built, and so are the known loose ends (the flakes, the
 `lock_held` mapping, K48 measured, the sensors against ROS). What is left, in this order:
 
