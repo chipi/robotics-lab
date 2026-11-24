@@ -337,6 +337,7 @@ with sync_playwright() as p:
     check("Export site downloads a file: the area and the named object", exported["format"] == "mission-control-site"
           and [a["name"] for a in exported["areas"]] == ["Galley"] and [o["label"] for o in exported["objects"]] == ["my sofa"], exported["areas"])
     page.locator("#area-list [data-action=delete]").click()
+    wait(page, "!!document.querySelector('#area-list [data-action=delete][data-armed]')")   # U20: confirm.js loads on the first press
     check("Delete asks twice: the first press only arms it", page.locator("#area-list [data-action=delete]").inner_text() == "Sure?" and len(get("/sites/home/areas")["areas"]) == 1)
     page.evaluate("window.__mc.renderAreas()")
     check("a redraw of the list does not disarm it", page.locator("#area-list [data-action=delete]").inner_text() == "Sure?")

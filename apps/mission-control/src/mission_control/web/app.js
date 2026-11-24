@@ -4,7 +4,6 @@
 
 const API = "api/v1";       // relative: the page is served at / by Mission Control and at /control/ behind the Observatory (RFC-0024 step 3)
 const $ = (id) => document.getElementById(id);
-const ARM_MS = 6000; // a delete needs a second press within this long
 const TERMINAL = ["reached", "done", "refused", "not_found", "timeout", "stalled", "stopped_by_guardrail", "cancelled", "interrupted", "failed"];   // the navigator contract's ends (runfile.navcontract)
 
 function h(tag, attrs, ...kids) {
@@ -21,7 +20,7 @@ function h(tag, attrs, ...kids) {
 
 const S = {
   robots: [], robot: null, sites: [], site: null, objects: [], areas: [], map: null, goals: [], runs: [], run: null,
-  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null, token: null, open: {},
+  mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, token: null, open: {},
 };
 
 // The shared kit (libs/web) loads after the page works and on its own: a module that fails to load leaves the static page, STOP and STOP ALL included,
@@ -84,6 +83,30 @@ function toast(msg, err) {
   toastTimer = setTimeout(() => { t.hidden = true; }, err ? 7000 : 3500);
 }
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+
+// A dangerous action that is not STOP needs a second press (libs/web/confirm.js, U8). The module and its style load on the first press, so the
+// phone overview fetches neither. A press that cannot load them does nothing: the safe side. STOP, STOP ALL and the alarm's stop never come here.
+let confirmLoad = null;
+function loadConfirm() {
+  confirmLoad ||= Promise.all([import("/lib/confirm.js"), new Promise((ok, no) => {
+    const l = h("link", { rel: "stylesheet", href: "/lib/confirm.css" });
+    l.onload = ok; l.onerror = () => no(new Error("confirm.css")); document.head.append(l);
+  })]).then(([m]) => m).catch((e) => { confirmLoad = null; throw e; });
+  return confirmLoad;
+}
+function dangerous(button, onConfirm, armedLabel = "Sure?") {
+  button._dangerous = true;
+  const first = guard(async () => {
+    button.removeEventListener("click", first);
+    let m;
+    try { m = await loadConfirm(); }
+    catch (e) { button.addEventListener("click", first); throw new Error("The confirm step could not be loaded, so nothing was done."); }
+    m.arm(button, { ms: 6000, armedLabel, onConfirm: guard(onConfirm) });
+    button.click();                   // this press is the first of the two: it arms
+  });
+  button.addEventListener("click", first);
+  return button;
+}
 
 // --- status badges and freshness (ADR-0021) ----------------------------------------------------------------
 function badge(status, word, attrs, wordAttrs) {
@@ -518,22 +541,17 @@ $("site-create").addEventListener("click", guard(async () => {
 
 function renderAreas() {
   const box = $("area-list");
+  // An event redraws the page; a list that did not change is left alone, or the redraw would disarm a Delete the operator has just pressed
+  // (a removed focused button blurs, and a blur disarms).
+  const sig = JSON.stringify([S.site, S.areas.map((a) => [a.id, a.name, a.type, a.objects.length])]);
+  if (box.dataset.sig === sig && box.firstChild) return;
+  box.dataset.sig = "";
   if (!S.site) { box.replaceChildren(h("div", { class: "dim" }, "Pick a site for this robot to see and draw its areas.")); return; }
   if (!S.areas.length) { box.replaceChildren(h("div", { class: "dim" }, "No areas yet: " + "none defined.")); return; }
+  box.dataset.sig = sig;
   box.replaceChildren(h("ul", { class: "list" }, S.areas.map((a) => {
-    // Armed in S, not in the button: a redraw of the list (an event, a refresh) must not disarm it.
-    const armed = S.armed && S.armed.id === a.id && Date.now() < S.armed.until;
-    const del = h("button", { class: "btn sm danger", type: "button", "data-area": a.id, "data-action": "delete", onclick: guard(async () => {
-      if (!(S.armed && S.armed.id === a.id && Date.now() < S.armed.until)) {
-        const mine = { id: a.id, until: Date.now() + ARM_MS };
-        S.armed = mine;
-        setTimeout(() => { if (S.armed === mine) { S.armed = null; renderAreas(); } }, ARM_MS);
-        renderAreas();
-        return;
-      }
-      S.armed = null;
-      await api("DELETE", `/sites/${S.site}/areas/${a.id}`); await loadSite();
-    }) }, armed ? "Sure?" : "Delete");
+    const del = dangerous(h("button", { class: "btn sm danger", type: "button", "data-area": a.id, "data-action": "delete" }, "Delete"),
+      async () => { await api("DELETE", `/sites/${S.site}/areas/${a.id}`); await loadSite(); });
     const name = h("input", { class: "grow", value: a.name, "aria-label": "Area name", "data-area": a.id, onchange: guard(async (ev) => {
       try { await api("PUT", `/sites/${S.site}/areas/${a.id}`, { name: ev.target.value }); } catch (e) { ev.target.value = a.name; throw e; }
       await loadSite();
@@ -724,7 +742,11 @@ function renderLibrary() {
 }
 function renderLibraryList() {
   const box = $("goal-list");
+  const sig = JSON.stringify(S.goals.map((g) => [g.id, g.name, g.folder, goalSummary(g)]));
+  if (box.dataset.sig === sig && box.firstChild) return;      // see renderAreas
+  box.dataset.sig = "";
   if (!S.goals.length) { box.replaceChildren(h("div", { class: "dim" }, "Nothing saved yet. Define a goal and press Save to library, or save a run.")); return; }
+  box.dataset.sig = sig;
   const folders = new Map();
   for (const g of S.goals) { if (!folders.has(g.folder)) folders.set(g.folder, []); folders.get(g.folder).push(g); }
   box.replaceChildren(...[...folders].map(([folder, goals]) => h("div", {},
@@ -738,9 +760,8 @@ function renderLibraryList() {
           S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
           if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
         }) }, "Run"),
-        h("button", { class: "btn sm danger", type: "button", "data-action": "delete", onclick: guard(async () => {
-          await api("DELETE", `/goals/${g.id}`); await loadGoals();
-        }) }, "Delete"))))))));
+        dangerous(h("button", { class: "btn sm danger", type: "button", "data-action": "delete" }, "Delete"),
+          async () => { await api("DELETE", `/goals/${g.id}`); await loadGoals(); }))))))));
 }
 
 // --- runs ------------------------------------------------------------------------------------------------

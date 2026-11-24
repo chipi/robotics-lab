@@ -160,6 +160,9 @@ with sync_playwright() as p:
     with soft("keep"):
         open_drawer()
         page.click("#cal-keep")
+        wait(page, "!!document.querySelector('#cal-keep[data-armed]')")   # U20: Keep needs a second press
+        check("Keep: the first press arms it and keeps nothing", not (FOLDER / "2.json").exists())
+        page.click("#cal-keep")
         wait(page, "document.querySelector('#cal-drawer .calbody')?.textContent.includes('Kept as version 2')")
         check("must fail: kept as version 2: the store holds it, the sim variant's scale is 0.909 and Mission Control runs it",
               get("/robots/duck-1/profile")["profile"]["current"] == 2
@@ -197,6 +200,11 @@ with sync_playwright() as p:
         check("must fail: 0.57 m gives 0.864 by the operator's tape, and Keep as version 3 is on",
               "operator's tape" in page.locator("#cal-result").inner_text() and page.locator("#cal-implausible").count() == 0
               and page.locator("#cal-keep").inner_text() == "Keep as version 3" and page.locator("#cal-keep").is_enabled())
+        page.click("#cal-keep")
+        wait(page, "!!document.querySelector('#cal-keep[data-armed]')")
+        # a reload with nothing new (a profile event, a late poll) must not rebuild the armed Keep, or its second press only arms again (CI)
+        page.evaluate("calLoad()")
+        check("must fail: a repaint with nothing new keeps Keep armed", page.evaluate("!!document.querySelector('#cal-keep[data-armed]')"))
         page.click("#cal-keep")
         wait(page, "document.querySelector('#cal-drawer .calbody')?.textContent.includes('Kept as version 3')")
         check("kept as version 3", json.loads((FOLDER / "3.json").read_text())["variants"]["sim"]["localisation"]["odometry"]["scale"] == 0.864)

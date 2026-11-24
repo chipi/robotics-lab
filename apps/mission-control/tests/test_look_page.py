@@ -3,6 +3,9 @@ STOP ALL are one tap and never under another layer. With each drawer open (the S
 drawer) and with the toast showing, at phone and at desktop width: the element at the centre of each STOP button is that button, a real
 click on it makes its API call, and on a phone the drawer ends above the STOP bar instead of running under it.
 
+U20 (confirm for dangerous actions that are not STOP): an area's Delete needs two presses (the first arms and announces, the second calls),
+a timeout or Escape disarms without a call, confirm.js and confirm.css load on the first press and not on the overview, STOP and STOP ALL stay one press.
+
 U19 (the restyle on the shared tokens and kit): style.css holds no hex; the top bar's brand is brand.js's; a state is a status badge (glyph and word); a robot
 whose state is old dims its values and says how old, and disables the actions that need a fresh state, while STOP, STOP ALL and the alarm panel's stop
 stay enabled and fire on the first click; a kit module that fails to load leaves the page and STOP usable; the overview fetches no three.js; reduced motion
@@ -11,6 +14,8 @@ zeroes the chevron's transition.
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
 
 import atexit
+import json
+import urllib.request
 from contextlib import contextmanager
 import os
 import re
@@ -230,13 +235,14 @@ with sync_playwright() as p:
             with page.expect_request(lambda r, route=route: r.method == "POST" and r.url.endswith("/api/v1" + route), timeout=4000):
                 page.click("#" + sid, timeout=4000)
             check(f"stale: the first click on {sid} posts {route}", True)
-    page.evaluate("window.__mc.S.robots[0].state_at = Date.now() - 40000; window.__mc.tickFreshness();")
-    wait(page, "document.querySelector('#robot-duck-1 [data-age]')?.textContent.includes('offline')")
-    off = page.evaluate("(() => { const e = document.querySelector('#robot-duck-1 [data-age]'); return {status: e.dataset.status, text: e.textContent}; })()")
+    # one synchronous step: the fake robot keeps sending state, and one landing between a back-date and a read re-renders the card (CI, ea2dcf7)
+    off = page.evaluate("""(() => { const mc = window.__mc, r = mc.S.robots[0]; r.state_at = Date.now() - 40000; mc.tickFreshness();
+        const e = document.querySelector('#robot-duck-1 [data-age]');
+        return {status: e && e.dataset.status, text: e && e.textContent, fresh: mc.freshOf(r), run: document.getElementById('g-run').disabled}; })()""")
     glyphs = page.evaluate("import('/lib/status.js').then((m) => [m.glyph('offline'), m.glyph('stale')])")
-    check("an offline robot's age is the offline status: its own glyph (not stale's clock) and word", off["status"] == "offline" and off["text"].startswith(glyphs[0]) and glyphs[0] != glyphs[1]
-          and "stale" not in off["text"], [off, glyphs])
-    check("a robot silent for 30 s or more is offline, its Run disabled", page.evaluate("window.__mc.freshOf(window.__mc.S.robots[0]) === 'offline' && document.getElementById('g-run').disabled"))
+    check("an offline robot's age is the offline status: its own glyph (not stale's clock) and word", off["status"] == "offline" and (off["text"] or "").startswith(glyphs[0])
+          and glyphs[0] != glyphs[1] and "stale" not in (off["text"] or ""), [off, glyphs])
+    check("a robot silent for 30 s or more is offline, its Run disabled", off["fresh"] == "offline" and off["run"], off)
     with soft("offline: a click on stop-robot"):
         with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/v1/robots/duck-1/stop"), timeout=4000):
             page.click("#stop-robot", timeout=4000)
@@ -286,6 +292,87 @@ with sync_playwright() as p:
     check("the overview fetches no three.js, vendor module or body view", heavy == [], heavy)
     check("the overview loads the kit's status, brand and motion modules", all(any(u.endswith(f"/lib/{m}.js") for u in seen) for m in ("status", "brand", "motion")), seen)
     light.close()
+
+    # --- U20: a dangerous action that is not STOP needs two presses; confirm.js loads on the first one ---------------------------------------
+    def call(method, path, body=None):
+        req = urllib.request.Request(BASE + "/api/v1" + path, data=None if body is None else json.dumps(body).encode(), method=method,
+                                     headers={"Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(req))
+
+    site = call("POST", "/sites", {"name": "Home", "kind": "home"})["site"]["id"]
+    call("PUT", "/robots/duck-1/site", {"site": site})
+    outline = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    for nm in ("Hall", "Pantry"):
+        call("POST", f"/sites/{site}/areas", {"name": nm, "type": None, "outline": outline})
+    n_areas = lambda: len(call("GET", f"/sites/{site}/areas")["areas"])
+
+    for view, size in (("phone 390x844", {"width": 390, "height": 844}), ("desktop 1440x900", {"width": 1440, "height": 900})):
+        arm_page = ctx.new_page()
+        arm_page.set_viewport_size(size)
+        reqs, calls = [], []
+        arm_page.on("request", lambda r: reqs.append(r.url))
+        arm_page.on("request", lambda r: calls.append((r.method, r.url)) if r.method in ("POST", "DELETE", "PUT") else None)
+        arm_page.goto(BASE + "/")
+        arm_page.wait_for_function("window.__mc && window.__mc.ready && window.__mc.S.areas.length === 2", timeout=8000)
+        arm_page.wait_for_timeout(800)
+        check(f"{view}: the overview has not fetched confirm.js or confirm.css", not [u for u in reqs if "/lib/confirm." in u], [u for u in reqs if "confirm" in u])
+        check(f"{view}: STOP and STOP ALL are not armed and carry no confirm", arm_page.evaluate("[...document.querySelectorAll('#stop-robot, #stop-all, #alarm-stop')].every((b) => !b.hasAttribute('data-armed') && !b._dangerous)"))
+        for sid, route in STOPS.items():
+            with arm_page.expect_request(lambda r, route=route: r.method == "POST" and r.url.endswith("/api/v1" + route), timeout=4000):
+                arm_page.click("#" + sid, timeout=4000)
+            check(f"{view}: one press on {sid} posts {route} with confirm.js still unfetched", not [u for u in reqs if "/lib/confirm." in u])
+        arm_page.wait_for_function("!document.getElementById('toast').hidden")
+
+        del_btn = lambda: arm_page.locator("#area-list [data-action=delete]").first
+        is_del = lambda r: r.method == "DELETE" and "/areas/" in r.url
+        del_btn().click()
+        arm_page.wait_for_function("document.querySelector('#area-list [data-action=delete]').hasAttribute('data-armed')")
+        check(f"{view}: the first press on an area's Delete arms it and loads confirm.js and confirm.css",
+              any(u.endswith("/lib/confirm.js") for u in reqs) and any(u.endswith("/lib/confirm.css") for u in reqs), reqs[-6:])
+        check(f"{view}: armed, the button says so and the polite region announces it",
+              del_btn().inner_text() == "Sure?" and arm_page.evaluate("document.querySelector('.ui-confirm-live')?.textContent") == "Sure?")
+        check(f"{view}: the first press made no DELETE call and deleted nothing", not [c for c in calls if c[0] == "DELETE"] and n_areas() == 2, calls)
+        arm_page.evaluate("window.__mc.renderAreas()")
+        check(f"{view}: a redraw of the list does not disarm it", del_btn().get_attribute("data-armed") is not None)
+        with arm_page.expect_request(is_del, timeout=4000):
+            del_btn().click()
+        arm_page.wait_for_function("window.__mc.S.areas.length === 1")
+        check(f"{view}: the second press made the DELETE call, once", len([c for c in calls if c[0] == "DELETE"]) == 1 and n_areas() == 1, calls)
+
+        # a timeout disarms without a call: the 6 s is arm()'s default, the page passes no other
+        del_btn().click()
+        arm_page.wait_for_function("document.querySelector('#area-list [data-action=delete]').hasAttribute('data-armed')")
+        arm_page.wait_for_function("!document.querySelector('#area-list [data-action=delete]').hasAttribute('data-armed')", timeout=8000)
+        check(f"{view}: after the timeout the button is disarmed and says Delete", del_btn().inner_text() == "Delete")
+        check(f"{view}: a timeout made no call", len([c for c in calls if c[0] == "DELETE"]) == 1 and n_areas() == 1, calls)
+
+        # Escape disarms, and a drawer open does not change STOP: one press
+        del_btn().click()
+        arm_page.wait_for_function("document.querySelector('#area-list [data-action=delete]').hasAttribute('data-armed')")
+        arm_page.keyboard.press("Escape")
+        check(f"{view}: Escape disarms without a call", del_btn().get_attribute("data-armed") is None and n_areas() == 1)
+
+        # Cancel run is one tap: it stops a run, like STOP, and loses no data
+        check(f"{view}: Cancel run is not armed", arm_page.evaluate("!document.getElementById('run-cancel') || !document.getElementById('run-cancel')._dangerous"))
+        arm_page.close()
+        if view.startswith("phone"):
+            call("POST", f"/sites/{site}/areas", {"name": "Hall", "type": None, "outline": outline})
+
+    # STOP with a drawer open (settings edit drawer) still fires on one press, confirm.js unfetched
+    drawer_reqs = []
+    dp = ctx.new_page()
+    dp.on("request", lambda r: drawer_reqs.append(r.url))
+    dp.set_viewport_size({"width": 390, "height": 844})
+    dp.goto(BASE + "/#robot/duck-1")
+    dp.wait_for_function("window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden", timeout=8000)
+    dp.click("#tab-settings")
+    dp.wait_for_function("!!document.querySelector('#st-blocks [data-block]')")
+    dp.click("#st-history-open")
+    dp.locator("#st-history").wait_for()
+    with dp.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/v1/robots/duck-1/stop"), timeout=4000):
+        dp.click("#stop-robot", timeout=4000)
+    check("a drawer open: STOP posts on one press, and confirm.js is not fetched", not [u for u in drawer_reqs if "/lib/confirm." in u])
+    dp.close()
 
     # reduced motion: the chevron's transition is gone
     def chevron_ms(reduced):

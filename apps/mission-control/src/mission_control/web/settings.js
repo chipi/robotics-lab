@@ -100,7 +100,7 @@ function paintModules(r) {
 
 // --- Calibration (RFC-0023 D11, unit A3): guided procedures through the calibration API, then what the profile says was measured ------------------------------
 // A card per procedure; its side drawer holds the step guide, the parameters, the run and what keeping it changes. The page polls while a run runs.
-const CAL = { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null };
+const CAL = { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null, paintSig: null };
 const CAL_PHASE = { running: "running", needs_tape: "waiting for the tape", measured: "measured", refused: "refused", cancelled: "cancelled", interrupted: "interrupted", failed: "failed" };
 const CAL_STEP = { settle: "standing still", walk: "walking", stop: "stopping" };
 const CAL_WHO = { operator: "you", robot: "robot", runner: "runner" };
@@ -124,7 +124,7 @@ function calSchedule() {          // one poll pending at most: the page repaints
   } else { clearTimeout(CAL.timer); CAL.timer = null; }
 }
 
-function calForget() { clearTimeout(CAL.timer); Object.assign(CAL, { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null }); }
+function calForget() { clearTimeout(CAL.timer); Object.assign(CAL, { robot: null, data: null, error: null, loading: false, timer: null, proc: null, params: {}, tape: "", sig: null, paintSig: null }); }
 
 function calSay(msg, err) {
   const el = $("cal-status");
@@ -221,9 +221,13 @@ const calDrawer = () => stDrawer("cal-drawer", "cal-title", "Calibrate",
   [h("div", { id: "cal-body", class: "calbody" }), h("div", { id: "cal-status", class: "sterr", role: "alert" })],
   h("div", { id: "cal-foot", class: "dfoot" }), "calibration");
 
-function calPaint() {
+// A repaint with nothing new is skipped: rebuilding the foot would drop an armed Keep or Discard between its two presses. Opening forces it.
+function calPaint(force) {
   const d = CAL.data, p = d && d.procedures.find((x) => x.id === CAL.proc);
   if (!p) return;
+  const sig = JSON.stringify([CAL.proc, d, d.writable ? stNext() : null]);
+  if (!force && CAL.paintSig === sig) return;
+  CAL.paintSig = sig;
   const run = d.run && d.run.procedure === p.id ? d.run : null, phase = run ? run.phase : null, live = phase === "running";
   setKids($("cal-title"), p.title);
   const steps = (run ? run.steps : p.steps.map((s) => ({ ...s, status: "todo" })));
@@ -258,9 +262,9 @@ function calPaint() {
   setKids($("cal-foot"),
     h("span", { id: "cal-note", class: "note" }, phase === "measured" ? (d.writable ? `Kept as version ${n}. It applies from the next goal, never during one.` : `Cannot be kept here: ${d.why_not}`) : ""),
     live ? h("button", { id: "cal-cancel", class: "btn", type: "button", "data-fk": "cal:cancel", onclick: () => calDo("POST", "/cancel", {}, "Cancel asked: the robot stops.") }, "Cancel the run") : null,
-    run && !live && phase !== "kept" ? h("button", { id: "cal-discard", class: "btn", type: "button", "data-fk": "cal:discard", onclick: () => calDo("DELETE", "", undefined, "The run is discarded.") }, "Discard") : null,
+    run && !live && phase !== "kept" ? dangerous(h("button", { id: "cal-discard", class: "btn", type: "button", "data-fk": "cal:discard" }, "Discard"), () => calDo("DELETE", "", undefined, "The run is discarded."), "Press again to discard") : null,
     live ? null : h("button", { id: "cal-start", class: "btn" + (phase === "measured" ? "" : " primary"), type: "button", "data-fk": "cal:start", disabled: !p.available, onclick: calStart }, run ? "Run again" : "Start"),
-    phase === "measured" ? h("button", { id: "cal-keep", class: "btn primary", type: "button", "data-fk": "cal:keep", disabled: !(run.plausible && d.writable), onclick: calKeep }, `Keep as version ${n ?? "?"}`) : null);
+    phase === "measured" ? dangerous(h("button", { id: "cal-keep", class: "btn primary", type: "button", "data-fk": "cal:keep", disabled: !(run.plausible && d.writable) }, `Keep as version ${n ?? "?"}`), calKeep, "Press again to keep") : null);
 }
 
 // --- Settings -----------------------------------------------------------------------------------------------------------------------------------------
@@ -338,10 +342,10 @@ function stOpen(id) {
   if (!el) return;
   ST.opener = (document.activeElement && document.activeElement.id) || ST.opener;
   if (id === "st-edit") stForm();
-  else if (id === "cal-drawer") { setKids($("cal-status")); calPaint(); }
+  else if (id === "cal-drawer") { setKids($("cal-status")); calPaint(true); }
   else {
     const n = ST.view.versions.map((x) => x.version);
-    stVersions();
+    stVersions(true);
     if (n.length > 1) { $("st-diff-a").value = n[n.length - 2]; $("st-diff-b").value = n[n.length - 1]; stDiff(); }
   }
   el.hidden = false;
@@ -431,8 +435,11 @@ function stRender() {
   paintCalibration(S.robots.find((x) => x.id === ST.robot));
 }
 
-function stVersions() {
+function stVersions(force) {          // skipped when nothing changed, so a reload between its two presses keeps Make current armed
   const v = ST.view, box = $("st-versions");
+  const sig = JSON.stringify([v.versions, v.writable, ST.pending, ST.shown]);
+  if (!force && box.dataset.sig === sig && box.firstChild) return;
+  box.dataset.sig = sig;
   if (!v.versions.length) return setKids(box, h("li", { class: "dim" }, `No versions yet: the robot's own file runs (${v.running.path}). The first save keeps it as version 1 and saves the change as version 2.`));
   keepFocus(box, () => setKids(box, [...v.versions].reverse().map((x) => h("li", { class: "vrow", "data-version": x.version, "data-current": String(x.current) },
     h("span", { class: "nm" }, `Version ${x.version}`), h("span", { class: "faint mono" }, x.checksum.slice(7, 19)),
@@ -441,7 +448,7 @@ function stVersions() {
     ST.shown === x.version ? h("span", { class: "dim" }, "shown") : null,
     h("span", { class: "sp" }),
     h("button", { class: "btn ghost", type: "button", "data-act": "view", "data-fk": `view:${x.version}`, onclick: () => stAct(async () => { await stShow_(x.version); stClose(); }) }, "View"),
-    x.current ? null : h("button", { class: "btn", type: "button", "data-act": "use", "data-fk": `use:${x.version}`, disabled: !v.writable, onclick: () => stAct(() => stUse(x.version)) }, "Make current")))));
+    x.current ? null : dangerous(h("button", { class: "btn", type: "button", "data-act": "use", "data-fk": `use:${x.version}`, disabled: !v.writable }, "Make current"), () => stAct(() => stUse(x.version)), "Press again to make current")))));
 }
 
 const stAct = async (fn) => { try { await fn(); } catch (e) { stSay(e.message, true); } };

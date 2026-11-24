@@ -379,6 +379,13 @@ with sync_playwright() as p:
     # --- set current -----------------------------------------------------------------------------------------------------------------
     with soft("set current"):
         open_history()
+        before = current()
+        page.locator("#st-versions li[data-version='1'] button[data-act=use]").click()
+        wait(page, "!!document.querySelector('#st-versions li[data-version=\"1\"] button[data-armed]')")   # U20: Make current needs a second press
+        check("Make current: the first press arms it and changes nothing", current() == before and before != 1, current())
+        page.evaluate("stLoad(ST.robot)")
+        check("must fail: a reload with nothing new keeps Make current armed",
+              page.evaluate("!!document.querySelector('#st-versions li[data-version=\"1\"] button[data-armed]')"))
         page.locator("#st-versions li[data-version='1'] button[data-act=use]").click()
         wait(page, "document.querySelector('#st-versions li[data-version=\"1\"]')?.dataset.current === 'true'")
         check("must fail: choosing version 1 makes it current, in the API too, marked from the next goal", current() == 1
