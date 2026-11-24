@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Run a command under the simulator lock: one simulator job at a time on this machine, a human's or an agent's.
+
+    scripts/sim-lock -- make sim-duck ARGS="--only point"
+    scripts/sim-lock --timeout 600 -- make sim-nxt
+    scripts/sim-lock --path   # print the lock file's path and exit
+
+The lock is an exclusive flock(2) on one file: ${ROBOTICS_LAB_SIM_LOCK}, else ${XDG_RUNTIME_DIR:-/tmp}/robotics-lab-sim.lock.
+It is the same lock `flock -w 7200 <file> <cmd>` takes, so a job started either way waits for the other. A job that has to wait
+says who holds it (the holder writes its pid and command into the file) and gives up with exit 75 after --timeout seconds
+(default 7200, ROBOTICS_LAB_SIM_LOCK_TIMEOUT). With no other job holding the lock the command just runs: this process is replaced
+by it (exec), so its exit status, signals and output are the command's own, and the lock is released when it exits.
+
+A command that runs under sim-lock and starts another sim-lock (`sim-lock -- make sim-duck`) does not wait for itself: the environment
+names the file already held (ROBOTICS_LAB_SIM_LOCK_HELD). Do not wrap `make sim-*` in `flock(1)` any more: its lock is not ours to see,
+so the target would wait for it for good. Use sim-lock, or set ROBOTICS_LAB_SIM_LOCK and run the target itself.
+
+Standard library only."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import os
+import sys
+import time
+
+DEFAULT_TIMEOUT_S = 7200.0
+HELD = "ROBOTICS_LAB_SIM_LOCK_HELD"      # the lock file this process tree already holds; also set by hand under an outer `flock`
+POLL_S = 0.5
+WAITING = 75                # EX_TEMPFAIL: the lock was not free in time; not a status a command of ours returns
+
+
+def lock_path() -> str:
+    explicit = os.environ.get("ROBOTICS_LAB_SIM_LOCK")
+    if explicit:
+        return os.path.expanduser(explicit)
+    return os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "robotics-lab-sim.lock")
+
+
+def holder(fd: int) -> str:
+    """What the current holder wrote into the file, for the line a waiting job prints; empty if it is a plain flock(1) holder."""
+    try:
+        return os.pread(fd, 400, 0).decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def acquire(path: str, timeout_s: float, say=lambda m: print(m, file=sys.stderr, flush=True)) -> int | None:
+    """The open, locked file descriptor, or None if the lock was not free within timeout_s. flock(2) has no timeout of its own,
+    so a non-blocking try is repeated."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+    end = time.monotonic() + timeout_s
+    told = False
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            pass
+        if not told:
+            who = holder(fd)
+            say(f"sim-lock: waiting for {path}" + (f" (held by {who})" if who else "") + f", up to {timeout_s:g} s")
+            told = True
+        if time.monotonic() >= end:
+            os.close(fd)
+            return None
+        time.sleep(POLL_S)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0], usage="sim-lock [--timeout S] [--path] -- COMMAND [ARGS...]")
+    ap.add_argument("--timeout", type=float, default=float(os.environ.get("ROBOTICS_LAB_SIM_LOCK_TIMEOUT", DEFAULT_TIMEOUT_S)),
+                    help="seconds to wait for the lock (default 7200, or $ROBOTICS_LAB_SIM_LOCK_TIMEOUT)")
+    ap.add_argument("--path", action="store_true", help="print the lock file's path and exit")
+    ap.add_argument("command", nargs=argparse.REMAINDER, help="after --: the command to run under the lock")
+    args = ap.parse_args(argv)
+    if args.path:
+        print(lock_path())
+        return 0
+    cmd = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not cmd:
+        ap.error("no command: sim-lock [--timeout S] -- COMMAND [ARGS...]")
+    path = lock_path()
+    # `sim-lock -- make sim-duck` runs a recipe that is itself under sim-lock: the inner one must not wait for the outer (a second open
+    # file description conflicts with the first, even in the same process tree). The marker names the file held, so a changed path locks again.
+    if os.environ.get(HELD) != path:
+        fd = acquire(path, args.timeout)
+        if fd is None:
+            print(f"sim-lock: {path} was not free in {args.timeout:g} s; not running {cmd[0]}", file=sys.stderr)
+            return WAITING
+        os.ftruncate(fd, 0)
+        os.pwrite(fd, f"pid {os.getpid()} {' '.join(cmd)[:200]}\n".encode(), 0)      # exec keeps the pid: the holder is this one
+        os.set_inheritable(fd, True)    # the lock belongs to the open file description, which the command inherits across exec
+        os.environ[HELD] = path
+    try:
+        os.execvp(cmd[0], cmd)
+    except OSError as exc:
+        print(f"sim-lock: cannot run {cmd[0]}: {exc}", file=sys.stderr)
+        return 127 if isinstance(exc, FileNotFoundError) else 126
+
+
+if __name__ == "__main__":
+    sys.exit(main())

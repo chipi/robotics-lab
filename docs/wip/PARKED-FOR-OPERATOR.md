@@ -19,7 +19,7 @@ Cleared items are struck from the list when settled.
 | D1 | NXT hardware check at the brick: `hw_*` scripts, K15, K16, sprocket and track width, the 15 cm stop | checklist and scripts, when written |
 | D9 | One real and one simulated NXT run of the same command list | after D1 |
 | D10 | NXT over Bluetooth; first check that the brick stops by itself when the link drops | after D1 |
-| B6 | The real duck's safety review before a real run | adapter code only |
+| B6 | The real duck's safety review before a real run | the adapter is built; [the checklist](REAL-DUCK-SAFETY-REVIEW.md) is written, none of it done |
 | B9 | Measurement scripts run on the real duck | scripts only |
 
 ## Needs a decision or a review
@@ -36,11 +36,35 @@ Cleared items are struck from the list when settled.
 | B8 defaults | Simulator-first: opt-in per goal; a rehearsal counts for 24 h, same goal content, same site, a sim robot of the same kind. `rtf_low` below 0.95, minor. Right numbers? Should `sim_first` be the default for every goal on a real robot? | built as listed |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
+## The operator's answers (2026-11-24)
+
+The operator decided every item in the table above, and the ones in the link and findings lists
+that needed a decision. The work each answer creates is the "follow-ups" unit set in
+[PHASE5-NEXT-PLAN.md](PHASE5-NEXT-PLAN.md) (item 4e).
+
+| Item | Answer |
+| --- | --- |
+| B8 sim-first | On by default for goals on a real robot, opt out per goal |
+| B8 numbers | 24 h and 0.95, as built |
+| B3 second opinion | The robot-side guardrails also run when a truth exists, recording only (the referee still judges) |
+| B3 alarm | A robot-side stop raises a critical `robot_guard` alarm |
+| B7 frame | A placement lasts one goal, as built |
+| B7 dock | Kept, and the site page says the dock was set from the first placed start |
+| D0 sensors | Generalise the profile's `sensors` block now, for both robots (not `capabilities.sensors`) |
+| D0 ADR | No ADR; RFC-0028 starts from NXT-D0.md |
+| B6 hand drive | Behind `allow_real_runs` too; STOP never is |
+| B5 gate restart | `lab-link up --gate` restarts the gate once the forwards are back |
+| D7 takeover | A `takeover_names` key in the NXT host file, passed to nxt-web |
+| Simulator lock | `fcntl.flock` on the same file is acceptable; a repo `sim-lock` helper for every job |
+| NXT turn rate | Wait for D1's measurement, then fix the wrong side (D9) |
+| Duck motion | One investigation unit now: turning in place, the two speed figures, the placed-start stall |
+| Link check | Moved into `libs/runfile`, one copy for `lab-link` and Mission Control |
+
 ## For the real duck's link (B5, `lab-link`, recipe in [REAL-DUCK-LINK.md](REAL-DUCK-LINK.md))
 
 - Confirm the duck's ssh address, key and sshd; `microduck@duck` comes from RFC-0002.
-- `lab-gate` does not reconnect: after a dropped link it exits and is restarted once `lab-link`
-  says `up`. A hook that restarts it is not built (a scope decision).
+- `lab-gate` does not reconnect: after a dropped link it exits. `lab-link up --restart-gate`
+  starts it again once the forwards answer (E6, 2026-11-24).
 - The link polls `robot.health` every 2 s on its own connection; if the real robotd refuses a
   second connection beside the gate's, the check says DEAD on a working link.
 - A dropped link does not stop the robot; robotd's own 0.5 s deadman is the backstop, not
@@ -61,12 +85,16 @@ Cleared items are struck from the list when settled.
   Control maps 1.5 rad/s to track powers of plus or minus 50 %, the simulated world reads its
   1.5 rad/s as 100 %, so a 1 rad/s turn turns about 0.46 rad in a second. D1's K16 measurement
   decides which side is right; then one side is fixed.
-- **simhost cannot pass nxt-web's takeover list** (D7): on the nxt-web that simhost starts nobody
-  may take the lock; `make sim-nxt` starts a second nxt-web itself to test takeover. A host-file
-  key for the list would remove that.
-- **A subagent could not run `flock(1)`** (the shell's deny list) and took the same simulator lock
-  through Python's `fcntl.flock` on the same file. Same lock, same semantics; say if that is not
-  acceptable.
+- ~~simhost cannot pass nxt-web's takeover list~~ Settled 2026-11-24 (E7): a `takeover_names` key
+  in the NXT host file, passed to nxt-web; `make sim-nxt` no longer starts its own.
+- ~~A subagent took the simulator lock through `fcntl.flock`~~ Settled 2026-11-24 (E8): accepted,
+  and `scripts/sim-lock` takes it the same way for every simulator job.
+- ~~An intermittent `test_recorder_sim` failure~~ Fixed 2026-11-24: a record start that landed
+  between a sample's truth read and its write gave the run a first tick without a truth, so the
+  epoch came after it. That sample now goes to the next recording only; an in-process check
+  reproduces the race.
+- **A page-test flake under load** (`test_page`, "event stream is live"): seen once at a load of
+  60 to 70 during B8, passed on re-run. Not diagnosed.
 - **The NXT's battery percent is a guess:** a linear span from 6000 mV (0 %) to 8400 mV (100 %),
   low below 20 % (D5); D1 can calibrate it. A robot file overrides the span.
 

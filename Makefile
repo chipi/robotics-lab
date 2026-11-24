@@ -47,6 +47,8 @@ DUCK_DIR       := robots/duck
 OBSERVATORY_DIR     := apps/observatory
 OBSERVATORY_IMAGE   ?= observatory:ci
 CONTROL_DIR    := apps/mission-control
+# every simulator target runs under this (docs/wip/DUCK-SIM-FOR-AGENTS.md): one simulator job at a time, a human's or an agent's
+SIM_LOCK       := $(abspath scripts/sim-lock)
 CONTROL_PORT   ?= 8060
 CONTROL_STATE  ?= /work/robotics-lab/state/control
 
@@ -128,11 +130,11 @@ DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recover
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
-                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py
+                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
 
-CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py
 
 .PHONY: test-control test-duck test-observatory test-observatory-pages
 test-control: control-sync nxt-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)
@@ -153,7 +155,7 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
-	@for t in test_page test_robot_page test_settings_page test_calibration_page test_body_page test_body_duck_page test_nxt_page; do log=$$(mktemp); \
+	@for t in test_page test_robot_page test_settings_page test_calibration_page test_body_page test_body_duck_page test_nxt_page test_one_origin_page; do log=$$(mktemp); \
 	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then if grep -q "^SKIP" $$log; then grep "^SKIP" $$log; else echo "PASS $(CONTROL_DIR)/tests/$$t.py"; fi; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/$$t.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log; done
 	@echo "test-control-page PASS"
@@ -263,7 +265,7 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 # ---- Composite tiers ---------------------------------------------------------
 
 .PHONY: ci-fast
-ci-fast: lint test-libs test-web test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
+ci-fast: lint test-sim-lock test-deploy test-libs test-web test-unit test-duck test-observatory test-control ## What every push must pass (fast feedback): every project's unit tests
 	@echo "ci-fast PASS"
 
 .PHONY: ci
@@ -284,17 +286,23 @@ nxt-web-fake: nxt-sync ## Serve the NXT web UI with a simulated brick (no robot 
 nxt-image: ## Build the NXT web UI image (NXT_IMAGE); the context is the repository root (it installs libs/runfile too, ADR-0013)
 	docker build -f $(NXT_DIR)/Dockerfile -t $(NXT_IMAGE) .
 
+.PHONY: test-sim-lock
+test-sim-lock: ## scripts/sim-lock's self-test: the command runs, waits for a holder, gives up after its timeout, does not wait for itself (no simulator)
+	@$(PYTHON) scripts/test_sim_lock.py >$(TEST_TMP)/test_sim_lock.log 2>&1 \
+	  || { cat $(TEST_TMP)/test_sim_lock.log; echo "test-sim-lock FAIL"; exit 1; }
+	@echo "test-sim-lock PASS"
+
 .PHONY: sim-gate-scenarios
 sim-gate-scenarios: duck-sync ## NOT in CI: RFC-0017 step 3 on the real simulator: a second navigator refused, a killed one frees the robot, a frozen one refused after its lease (resets the simulator three times, ~6 min; nobody else may use it)
-	cd $(DUCK_DIR) && .venv/bin/python sim/probes/gate_scenarios.py
+	cd $(DUCK_DIR) && $(SIM_LOCK) -- .venv/bin/python sim/probes/gate_scenarios.py
 
 .PHONY: sim-duck
 sim-duck: control-sync duck-sync ## NOT in CI: Mission Control on the real simulator: the gate, lab-nav-server and the real navigator behind the API, the duck found by its registration file and run by its own environment (resets the simulator, ~10 min; nobody else may use it); ARGS="--only point,cancel" picks scenarios
-	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_duck.py $(ARGS)
+	cd $(CONTROL_DIR) && $(SIM_LOCK) -- uv run --frozen python tests/sim_duck.py $(ARGS)
 
 .PHONY: sim-nxt
 sim-nxt: control-sync nxt-sync observatory-sync ## NOT in CI: Mission Control on the NXT simulator (phase 5 item 4d unit D7): simhost starts nxt-web --sim in the apartment, a client drives it by hand through the API, hits a wall, STOP, takeover, deadman, and the run it left opens in the Observatory with the truth (no Pollen, no brick, ~1 min); ARGS="--only wall,stop" picks scenarios
-	cd $(CONTROL_DIR) && uv run --frozen python tests/sim_nxt.py $(ARGS)
+	cd $(CONTROL_DIR) && $(SIM_LOCK) -- uv run --frozen python tests/sim_nxt.py $(ARGS)
 
 .PHONY: control-run
 control-run: control-sync ## Mission Control on 127.0.0.1:$(CONTROL_PORT) in the foreground with the fake robot (apps/mission-control/robots.example), state in $(CONTROL_STATE)
@@ -321,7 +329,7 @@ STACK_CONTROL_PORT ?= $(CONTROL_PORT)
 STACK_VIEWER_STATE ?= $(OBSERVATORY_STATE)
 STACK_TAG          ?= local
 STACK_ENV           = OBSERVATORY_PORT=$(STACK_VIEWER_PORT) OBSERVATORY_DATA=$(OBSERVATORY_DATA) OBSERVATORY_STATE=$(STACK_VIEWER_STATE) OBSERVATORY_IMAGE_TAG=$(STACK_TAG) \
-	MC_PORT=$(STACK_CONTROL_PORT) MC_STATE_DIR=$(CONTROL_STATE) MC_ROBOTS_DIR=$(CONTROL_ROBOTS) MC_IMAGE_TAG=$(STACK_TAG) \
+	MC_PORT=$(STACK_CONTROL_PORT) MC_STATE_DIR=$(CONTROL_STATE) MC_ROBOTS_DIR=$(CONTROL_ROBOTS) MC_IMAGE_TAG=$(STACK_TAG) OBSERVATORY_CONTROL=http://mission-control:8060 \
 	OBSERVATORY_UID=$$(id -u) OBSERVATORY_GID=$$(id -g) MC_UID=$$(id -u) MC_GID=$$(id -g)
 
 .PHONY: stack-up stack-down
@@ -333,6 +341,32 @@ stack-up: ## The Observatory ($(STACK_VIEWER_PORT)) and Mission Control ($(STACK
 
 stack-down: ## Stop and remove the stack's two containers (project robotics-lab); the state folders and the images stay
 	@$(STACK_ENV) docker compose down
+
+# The deployed platform (phase 5 item 4c, docs/wip/DEPLOY.md): a NAMED commit, built from `git archive` (not this checkout's files), the host network, the
+# installation file's mounts, the Observatory proxying Mission Control at /control/, the solo Observatory project taken down, then a smoke. DEPLOY_ARGS passes
+# flags on (--project, --viewer-port, --installation, --tokens, ...; scripts/deploy.py --help); the defaults are the deployed stack's.
+.PHONY: deploy deploy-dry deploy-rollback deploy-smoke test-deploy sim-deployed
+deploy: ## Deploy the commit COMMIT=<sha|ref> (no default): build it, replace what runs, record it, run the smoke; DEPLOY_ARGS="..." for flags
+	@test -n "$(COMMIT)" || { echo "make deploy COMMIT=<sha>: a deploy names what it deploys"; exit 2; }
+	@$(PYTHON) scripts/deploy.py up --commit $(COMMIT) $(DEPLOY_ARGS)
+
+deploy-dry: ## What `make deploy COMMIT=<sha>` would do, printed, none of it done
+	@test -n "$(COMMIT)" || { echo "make deploy-dry COMMIT=<sha>"; exit 2; }
+	@$(PYTHON) scripts/deploy.py up --commit $(COMMIT) --dry-run $(DEPLOY_ARGS)
+
+deploy-rollback: ## Deploy the commit that ran before the current one (the record of scripts/deploy.py)
+	@$(PYTHON) scripts/deploy.py rollback $(DEPLOY_ARGS)
+
+deploy-smoke: observatory-sync ## The smoke alone: health of both, /lib/, the pages in headless Chromium, against the stack that runs (DEPLOY_ARGS for its ports)
+	@$(PYTHON) scripts/deploy.py smoke $(DEPLOY_ARGS)
+
+test-deploy: ## scripts/deploy.py's self-test: a named commit's files, the overlay and its mounts, the record and the rollback, a dry run changing nothing (no Docker)
+	@$(PYTHON) scripts/test_deploy.py >$(TEST_TMP)/test_deploy.log 2>&1 \
+	  || { cat $(TEST_TMP)/test_deploy.log; echo "test-deploy FAIL"; exit 1; }
+	@echo "test-deploy PASS"
+
+sim-deployed: control-sync duck-sync observatory-sync ## NOT in CI: the deployed Mission Control (a container) drives the simulated duck from the page (phase 5 item 4c unit C2; resets the simulator, ~10 min); COMMIT=<sha> ROOT=<folder> PROJECT=<not robotics-lab> VIEWER_PORT= CONTROL_PORT=
+	cd $(CONTROL_DIR) && $(SIM_LOCK) -- uv run --frozen python tests/sim_deployed.py --commit $(COMMIT) --root $(ROOT) --project $(PROJECT) --viewer-port $(VIEWER_PORT) --control-port $(CONTROL_PORT)
 
 .PHONY: viewers viewers-down
 viewers: observatory-up ## The viewers on loopback: the Observatory (:8070), Rerun (:9090) and Lichtblick (:8090) (ADR-0002, ADR-0005)

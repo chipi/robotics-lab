@@ -69,6 +69,9 @@ TESTS_EXTRA = {
 # and so do two functions that fall back to it (named as `from m import f` gives m.f; a call through `m.f` after `import m` is not seen)
 FORBIDDEN_MODULES = {
     "duck_nav": ("runfile.installation", "runfile.registry", "runfile.catalog.default_data", "runfile.index.default_index"),
+    # Mission Control reads runs only through the Observatory's API, never the files (RFC-0024 question 5, the operator's rule of 2026-11-23):
+    # nothing that opens the data folder, the index or a run's record. Its container mounts no data folder either (compose).
+    "mission_control": ("runfile.catalog", "runfile.index", "runfile.mcapio", "runfile.store", "runfile.truthcopy", "runfile.signals"),
 }
 
 # by importing module, each with its retiring RFC; none now (the last, Mission Control's duck adapter importing the duck's

@@ -140,7 +140,7 @@ FILE = {"id": "duck-sim", "label": "Simulated duck", "robot": "duck", "variant":
                     "observatory": "http://127.0.0.1:8070"}}
 # the simfirst scenario's stand-in for the real duck (no adapter for it exists yet, B6): the duck's profile behind the fake adapter, whose variant is
 # real (the installation names none), so a run on it is a real run; the simulated duck above is its simulator twin
-STANDIN = {"id": "duck-standin", "robot": "duck", "adapter": {"type": "fake"}}
+STANDIN = {"id": "duck-standin", "robot": "duck", "adapter": {"type": "fake", "allow_real_runs": True}}
 mc = MissionControl([RobotConfig(FILE), *([RobotConfig(STANDIN)] if wanted("simfirst") and not ARGS.no_truth else [])], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"

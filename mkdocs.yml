@@ -129,6 +129,7 @@ nav:
     - The plan we execute on: wip/EXECUTION-PLAN.md
     - "Phase 5, step 1: the installation file and profile versions": wip/PHASE5-STEP1-DESIGN.md
     - "Phase 5: the plan after step 1": wip/PHASE5-NEXT-PLAN.md
+    - "Deploying the platform (phase 5 item 4c)": wip/DEPLOY.md
     - "Phase 5 item 3: what the body data is today": wip/PHASE5-ITEM3-BODY-DATA.md
     - "Architecture review, 2026-11-22": wip/ARCHITECTURE-REVIEW-2026-11-22.md
     - Known issues: wip/KNOWN-ISSUES.md
@@ -140,6 +141,7 @@ nav:
     - "Draft note to Pollen: the step height (not sent)": wip/UPSTREAM-STEP-HEIGHT-DRAFT.md
     - "Robot file format proposal": wip/ROBOT-FILE-FORMAT-PROPOSAL.md
     - When the real duck arrives: wip/REAL-DUCK.md
+    - "The real duck: the safety review before the first real run": wip/REAL-DUCK-SAFETY-REVIEW.md
     - Starting the NXT simulator: wip/NXT-SIM.md
     - Opportunities and competitions: wip/OPPORTUNITIES.md
     - "Vision: an arena for any robot": wip/VISION-ARENA.md

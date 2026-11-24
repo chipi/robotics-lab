@@ -355,24 +355,24 @@ class DuckAdapter:
     def __init__(self, cfg, clock=time.monotonic):
         from .robots import ConfigError
         if cfg.profile is None:
-            raise ConfigError(f"{cfg.id}: a duck-sim robot file points at its robot's profile (\"robot\": \"duck\")")
+            raise ConfigError(f"{cfg.id}: a {cfg.adapter.get('type')} robot file points at its robot's profile (\"robot\": \"duck\")")
         options = cfg.adapter
         try:
             inst = installation.load(required=False)
         except installation.InstallationError as exc:
             raise ConfigError(f"{cfg.id}: {exc}") from None
-        mine = inst.robot(cfg.robot) if inst is not None else None
+        mine = self._installed(inst, cfg)
         where = inst.source if inst is not None else installation.where()
 
         def socket_of(option: str, key: str, what: str) -> Path:
-            value = options.get(option) or (getattr(mine, key) if mine is not None else None)
+            value = options.get(option) or (getattr(mine, key) if mine is not None else None) or self._default(option, cfg)
             if not value:
                 raise ConfigError(f"{cfg.id}: where is the robot's {what}? name robots.{cfg.robot}.{key} in {where}, or {option} "
                                   f"in the robot file's adapter block")
             return _addr(str(value))
 
         self.gate_socket = socket_of("gate_socket", "gate", "gate")
-        self.nav_address = options.get("navigator") or (mine.navigator if mine is not None else None) or "127.0.0.1:8061"
+        self.nav_address = options.get("navigator") or (mine.navigator if mine is not None else None) or self._default("navigator", cfg)
         self._map_nav = DuckNavigatorClient(self.nav_address, clock)
         self.observatory = (options.get("observatory") or (inst.observatory if inst is not None else None) or "").rstrip("/") or None
         self.cfg, self.clock = cfg, clock
@@ -384,11 +384,23 @@ class DuckAdapter:
         self._gate = None
         self.placed = None          # {x, y, yaw} in mapd's own metres: where the latest goal's start pose put the map's frame (contract 1.5)
 
+    # Where an adapter reads its addresses beyond the robot file's block: the installation's entry for the robot, and a default per address.
+    # The real duck's adapter overrides both: the installation's entry is the simulator's unless it says it is the real one.
+    @staticmethod
+    def _installed(inst, cfg):
+        return inst.robot(cfg.robot) if inst is not None else None
+
+    @staticmethod
+    def _default(option: str, cfg) -> str | None:
+        return "127.0.0.1:8061" if option == "navigator" else None
+
+    gate_class = RemoteGate
+
     def call(self, method: str, params: dict | None = None):
         raise NotImplementedError("the duck's calls go through its gate (make_gate)")
 
     def make_gate(self, link) -> RemoteGate:
-        self._gate = RemoteGate(self.gate_socket, link, self)
+        self._gate = self.gate_class(self.gate_socket, link, self)
         return self._gate
 
     def make_navigator(self, gate, clock=time.monotonic) -> DuckNavigatorClient:

@@ -183,7 +183,8 @@ check("a run is discarded before a new one; running cannot be discarded", start(
 STATE2 = tmp / "inst-state-real"
 Store(STATE2 / "profiles").seed("duck", REPO_FILE)       # a store the installation names is made before anything reads it
 write_installation(STATE2 / "profiles" / "duck", variant="real", state=STATE2)
-mc2, clock, BASE = serving(RobotConfig({"id": "duck-real", "robot": "duck", "variant": "real", "adapter": {"type": "fake"}}))
+mc2, clock, BASE = serving(RobotConfig({"id": "duck-real", "robot": "duck", "variant": "real", "adapter": {"type": "fake", "allow_real_runs": True}}),
+                          RobotConfig({"id": "duck-real-held", "robot": "duck", "variant": "real", "adapter": {"type": "fake"}}))
 v = call("GET", "/robots/duck-real/calibration")["calibration"]
 check("the real variant: the scale now is 1.0 (the base's), no table", v["variant"] == "real" and v["procedures"][0]["current"] == 1.0)
 start("duck-real")
@@ -195,6 +196,11 @@ odo = real["variants"]["real"]["localisation"]["odometry"]
 check("the real variant of version 2 carries scale, a measured line and a why of its own: the profile validates, sim untouched",
       kept["run"]["kept"]["version"] == 2 and odo["scale"] == 0.909 and odo["measured"].startswith("1970-01-01, Mission Control's calibration procedure")
       and "why" in odo and real["variants"]["sim"] == REPO["variants"]["sim"], odo)
+held = start("duck-real-held")
+check("must fail: a calibration on a robot whose variant is real is refused unless its robot file allows real runs: the key and the review named",
+      held["error"]["code"] == "real_runs_not_allowed" and "allow_real_runs" in held["error"]["message"]
+      and "REAL-DUCK-SAFETY-REVIEW" in held["error"]["message"], held)
+check("... and nothing was started: the robot has no calibration run", call("GET", "/robots/duck-real-held/calibration")["calibration"]["run"] is None)
 
 # --- the rule itself -------------------------------------------------------------------------------------------------------------
 check("_writes: a profile with no table gets `scale`; a table with no at_speed_mps gets its entry only",

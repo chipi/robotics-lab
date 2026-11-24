@@ -28,7 +28,8 @@ inst = installation_file(tmp / "installation.json", state=str(tmp / "inst-state"
 os.environ[installation.ENV] = str(inst)
 clock = Clock()
 mc = MissionControl([RobotConfig({"id": "duck-sim", "robot": "duck", "adapter": {"type": "fake"}}),
-                     RobotConfig({"id": "duck-real", "robot": "duck", "adapter": {"type": "fake"}}), RobotConfig(FAKE_FILE)],
+                     RobotConfig({"id": "duck-real", "robot": "duck", "adapter": {"type": "fake", "allow_real_runs": True}}),
+                     RobotConfig({"id": "duck-held", "robot": "duck", "adapter": {"type": "fake"}}), RobotConfig(FAKE_FILE)],
                     state_dir=tmp / "state", clock=clock, wall=clock)
 mc.robot("duck-sim").cfg.variant = "sim"
 srv = serve(mc, "127.0.0.1", 0)
@@ -171,4 +172,15 @@ st, b = call("POST", "/goal-runs", {"goal": {**POINT, "name": "adhoc"}, "robots"
 kids = {k["robot"]: k for k in b["run"]["children"]}
 check("a group on the real target: each robot is held on its own (the real one refused, the sim one has no twin: refused too)",
       kids["duck-real"]["state"] == "refused" and kids["duck-sim"]["state"] == "refused", {k: v["reason"][:60] for k, v in kids.items()})
+
+# --- a real robot whose file does not allow real runs (B6): the refusal comes first, and simulator-first stays on top of it ----------------------------
+r = run(plain, "duck-held", "real")
+check("must fail: a robot of the real variant whose file has no allow_real_runs refuses even a goal with no flag, naming the key and the review",
+      r["state"] == "refused" and "allow_real_runs" in r["reason"] and "REAL-DUCK-SAFETY-REVIEW" in r["reason"], r["reason"])
+r = run(gid, "duck-held", "real")
+check("... and a flagged goal that has a passing rehearsal is refused all the same: the rehearsal is not the permission",
+      r["state"] == "refused" and "allow_real_runs" in r["reason"], r["reason"])
+r = run(gid, "duck-sim", "real")
+check("a robot of the sim variant is not asked for the key, whatever the run's target says (it moves no real robot)",
+      "allow_real_runs" not in (r["reason"] or ""), r["reason"])
 finish("sim_first")

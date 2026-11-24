@@ -148,6 +148,37 @@ check("and a bad token is ignored, not an error, when they are not", call("GET",
 srv.shutdown()
 srv.server_close()
 
+# --- a token for actions only (RFC-0024 question 4: reading and watching stay open) ---------------------------------------------
+srv = serve(mc, "127.0.0.1", 0, require_tokens="actions")
+URL = f"http://127.0.0.1:{srv.server_address[1]}"
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+reads = ("/robots", "/robots/fake-1", "/goals", "/goal-runs", "/robots/fake-1/map", "/sites", "/tokens")
+check("tokens for actions: a read needs none (robots, goals, runs, the map, the sites, the token list)",
+      all(call("GET", p)[0] == 200 for p in reads), [(p, call("GET", p)[0]) for p in reads])
+with urllib.request.urlopen(URL + "/api/v1/events?since=0", timeout=5) as resp:
+    check("... nor does the event stream", resp.status == 200 and resp.readline().startswith(b":"))
+for method, path, body in (("POST", "/robots/fake-1/lock", {}), ("POST", "/goal-runs", {"goal": POINT, "robots": ["fake-1"]}), ("POST", "/robots/fake-1/drive", {"vx": 0.1}),
+                           ("PUT", "/robots/fake-1/site", {"site": None}), ("POST", "/robots/fake-1/profile", {"profile": {}}), ("POST", "/sites", {"name": "x"}),
+                           ("DELETE", "/goals/1", {}), ("POST", "/tokens", {"client": "x"})):
+    st, b = call(method, path, body)
+    check(f"... an action ({method} {path}) is 401 with no token", st == 401 and b["error"]["code"] == "unauthorized", (st, b))
+check("... and 401 with one that is not valid", call("POST", "/robots/fake-1/lock", {}, token="mc_forged")[0] == 401)
+check("STOP and STOP-all stay open", call("POST", "/robots/fake-1/stop", {"client": "bystander"})[0] == 200 and call("POST", "/stop")[0] == 200)
+st, b = call("POST", "/robots/fake-1/lock", {"client": "pretender"}, token=T_PHONE)
+check("an action with a token works, in the token's name", st == 200 and mc.get_robot("fake-1")["lock"]["holder"] == "phone", (st, b))
+call("DELETE", "/robots/fake-1/lock", {"session": b["lock"]["session"]}, token=T_PHONE)
+st, b = call("GET", "/tokens")
+check("GET /tokens says tokens are required, and for what", st == 200 and b["required"] is True and b["scope"] == "actions", b)
+srv.shutdown()
+srv.server_close()
+srv = serve(mc, "127.0.0.1", 0, require_tokens=True)
+URL = f"http://127.0.0.1:{srv.server_address[1]}"
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+check("the other scope is unchanged: with tokens required for everything a read is 401, and /tokens says so", call("GET", "/robots")[0] == 401
+      and call("GET", "/tokens", token=T_PHONE)[1]["scope"] == "all")
+srv.shutdown()
+srv.server_close()
+
 # --- the MCP server carries a token ---------------------------------------------------------------------------------------
 srv = serve(mc, "127.0.0.1", 0, require_tokens=True)
 URL = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -195,6 +226,15 @@ with tempfile.TemporaryDirectory() as tmp:
     (robots / "fake-1.json").write_text(json.dumps(robot_file("fake-1")))
     code, _, err = run("serve", "--robots", str(robots), "--state", str(Path(tmp) / "empty"), "--require-tokens", "--port", "0")
     check("serve --require-tokens with no token made refuses to start, and says how to make one", code == 2 and "token create" in err, err)
+    code, _, err = run("serve", "--robots", str(robots), "--state", str(Path(tmp) / "empty2"), "--require-tokens", "actions", "--port", "0")
+    check("... and so does --require-tokens actions (an action nobody could authorise)", code == 2 and "token create" in err, err)
+    try:
+        code, _, err = run("serve", "--robots", str(robots), "--state", str(Path(tmp) / "empty3"), "--require-tokens", "sometimes", "--port", "0")
+    except SystemExit as exc:           # argparse's own refusal
+        code, err = exc.code, "invalid choice"
+    check("... and a scope that is neither all nor actions is refused by the parser", code == 2 and "invalid choice" in err, err)
+    check("the scope is the flag's value, or the environment's MC_REQUIRE_TOKENS (1 and all: every call; actions: the actions)",
+          [cli.token_scope(v) for v in (None, "", "0", "1", "all", "actions")] == [False, False, False, True, True, "actions"])
 
 # --- the migration --------------------------------------------------------------------------------------------------------
 with tempfile.TemporaryDirectory() as tmp:

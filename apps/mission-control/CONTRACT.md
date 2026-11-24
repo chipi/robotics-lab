@@ -330,6 +330,14 @@ that names its client: `Authorization: Bearer mc_...`, or `?token=` on the event
 cannot give a header. It refuses to start while no token exists. Without the flag nothing changes: every
 call works and a client names itself in the body.
 
+- **A token for actions only** (RFC-0024 question 4): `--require-tokens actions` (env
+  `MC_REQUIRE_TOKENS=actions`). Every read, `GET`, is open, the event stream included (reading and
+  watching stay open on the LAN and the tailnet); every call that is not a read (moving the robot,
+  the lock, a goal, a site, a profile save, a token) needs one. STOP stays open. `GET /tokens` says
+  `required` and `scope` (`all` or `actions`; `null` when none). It refuses to start with no token
+  made, as the other scope does. A server before this scope knows only `1`, and `actions` reads
+  there as no tokens at all: the deploy's smoke compares `scope` with what it asked.
+
 - **Make, list, revoke**: `mission-control token create --client NAME` prints the token once; only its
   sha256 is kept. `token list` shows id, client and state, never the token. `token revoke ID` ends it.
   Over the API (with a token): `GET /tokens` (`required`, `tokens`), `POST /tokens {client}` (201, the
@@ -379,6 +387,11 @@ a robot with a description is opened. The shared web library, `libs/web` (the de
 vendored three.js, the body component), is served at `/lib/`: `/lib/tokens.css` (the colour tokens,
 light and dark, one file with the Observatory), `/lib/vendor/` and `/lib/body/`. The page fits a
 390 px phone. `window.__mc` is a hook for the page test.
+
+**One origin** (RFC-0024 step 3): the page's addresses are relative (`api/v1/...`, `web/...`), so the
+same page works at `/` here and at `/control/` behind the Observatory, which forwards `/control/...`
+to this server as it is (the page, the API, the event stream, the `Authorization` header). The
+library stays absolute, `/lib/`: the Observatory serves the same files.
 
 ## The simulated duck and the navigator API
 

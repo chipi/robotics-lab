@@ -44,6 +44,14 @@ profile = json.loads((CONTROL.parents[1] / "robots" / "duck" / "profile.json").r
 check("the duck's file is a pointer (robot, adapter type; the variant is the installation's): its factsheet, control, capabilities and rates are the profile's",
       set(shipped) == {"id", "label", "robot", "adapter"} and shipped["adapter"] == {"type": "duck-sim"}
       and all(getattr(duck, k) == profile[k] for k in ("factsheet", "control", "capabilities", "rates")), shipped)
+real = load_robot_files(CONTROL / "robots.real")[0]
+check("the real duck's file is a pointer too, of the duck-real adapter; it names the key allow_real_runs, false: a real run is refused until it is flipped",
+      real.id == "duck-real" and real.adapter == {"type": "duck-real", "allow_real_runs": False} and real.variant == "real"
+      and real.allow_real_runs is False and real.runs_real and "allow_real_runs" in real.real_run_refusal(), real.real_run_refusal())
+check("must fail: allow_real_runs is true or false: a string 'false' is not a no (it would read as yes), and is refused",
+      "allow_real_runs is true or false" in (refused(adapter={"type": "fake", "allow_real_runs": "false"}) or ""))
+check("the fake robot has no registered profile, so it never runs a real robot: no refusal, allowed or not",
+      RobotConfig(robot_file()).real_run_refusal() is None and not RobotConfig(robot_file()).runs_real)
 nxt = load_robot_files(CONTROL / "robots.nxt")[0]
 check("the NXT: speeds are not measured, so the factsheet has none; its fire action says it cannot be undone",
       "physicalParameters" not in nxt.factsheet and nxt.factsheet["protocolFeatures"]["mobileRobotActions"][0]["irreversible"] is True)

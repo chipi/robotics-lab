@@ -333,6 +333,90 @@ with contextlib.redirect_stdout(out):
 check("--forward replaces the duck's three with a named socket (a robot other than the duck)",
       rc == 1 and out.getvalue().count("DEAD") == 1 and "DEAD x:" in out.getvalue(), out.getvalue())
 
+# ---- --restart-gate: the gate starts once the forwards answer, again after each reconnect, never while the link is down ----
+class FakeGate:
+    """A lab-gate stand-in: records the link's state and whether the robot forward answered at the moment it was started."""
+
+    def __init__(self, argv, lk):
+        self.argv, self.rc, self.pid = argv, None, 4242
+        self.state_at_start, self.answered_at_start = lk.state, check_socket("robot", real[0].local, "robot.health", 1.0).ok
+        self.terminated = False
+
+    def poll(self):
+        return self.rc
+
+    def terminate(self):
+        self.rc, self.terminated = -15, True
+
+    kill = terminate
+
+    def wait(self, t=None):
+        return self.rc
+
+
+gates: list = []
+sessions.clear()
+said3: list = []
+stop4 = threading.Event()
+lk = Link("microduck@duck", real, spawn=spawn_real, stop=stop4, report=said3.append, poll_s=0.05, fails_to_drop=3, up_timeout_s=5.0,
+          backoff=Backoff(0.05, 2, 0.2), gate_argv=["lab-gate", "--listen", "g.sock", "--upstream", "u.sock"],
+          spawn_gate=lambda argv: gates.append(FakeGate(argv, lk)) or gates[-1])
+t = threading.Thread(target=lk.run, daemon=True)
+t.start()
+check("the gate is started once the link is up, on the forwards that answer",
+      wait_for(lambda: len(gates) == 1) and gates[0].state_at_start == "up" and gates[0].answered_at_start and
+      gates[0].argv[0] == "lab-gate", (gates, said3))
+check("... and says the lease is gone", any("gate started" in m and "acquire again" in m for m in said3), said3)
+sessions[0].break_remote("robot")
+check("a dead tunnel ends the old gate", wait_for(lambda: gates[0].terminated), said3)
+check("... and the next session starts a new gate only once it is up and answering",
+      wait_for(lambda: len(gates) == 2) and gates[1].state_at_start == "up" and gates[1].answered_at_start and lk.sessions == 2,
+      (len(gates), lk.sessions, said3))
+stop4.set()
+t.join(timeout=5)
+check("stopping the link ends its gate too", not t.is_alive() and gates[1].terminated and len(gates) == 2, (len(gates), said3))
+
+# a window that stays shut (ssh exits before the forwards answer): no gate at all
+clock5 = FakeClock()
+stop5 = FakeStop(clock5)
+gates5: list = []
+procs5: list = []
+
+
+def spawn_shut(argv):
+    procs5.append(FakeProc(clock5, 99, 0))
+    if len(procs5) > 3:
+        stop5.set()
+    return procs5[-1]
+
+
+Link("h", fw, spawn=spawn_shut, check=lambda: [link.Check(f.name, False, "closed") for f in fw], stop=stop5, clock=lambda: clock5.t,
+     report=lambda m: None, gate_argv=["lab-gate"], spawn_gate=lambda argv: gates5.append(argv)).run()
+check("no gate is started while the link never comes up", len(procs5) >= 3 and not gates5, (len(procs5), gates5))
+
+# without gate_argv the supervisor never touches the gate (the old behaviour)
+gates6: list = []
+lk6 = Link("h", fw, spawn=spawn2, check=check2, stop=FakeStop(FakeClock()), report=lambda m: None, spawn_gate=gates6.append)
+check("with no gate command given there is no gate to start", lk6.gate_argv is None and not gates6)
+
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    rc = link.main(["up", "--host", "h", "--dir", str(tmp / "dry2"), "--gate", str(tmp / "g.sock"), "--restart-gate", "--dry-run"])
+check("--restart-gate --dry-run prints the gate's command: lab-gate on the gate socket and the forwarded robot socket",
+      rc == 0 and "labrunner.gate --listen" in out.getvalue() and str(tmp / "g.sock") in out.getvalue() and
+      str(tmp / "dry2" / "duck.sock") in out.getvalue(), out.getvalue())
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    rc = link.main(["up", "--host", "h", "--gate-cmd", "my-gate --x 'a b'", "--dry-run"])
+check("--gate-cmd is split like a shell line", rc == 0 and "my-gate --x 'a b'" in out.getvalue(), out.getvalue())
+try:
+    with contextlib.redirect_stderr(io.StringIO()):
+        link.main(["up", "--host", "h", "--restart-gate", "--dry-run"])
+    refused = False
+except SystemExit as exc:
+    refused = exc.code == 2
+check("--restart-gate without --gate is refused", refused)
+
 if failures:
     print(f"\nFAIL {len(failures)}: {failures}")
     raise SystemExit(1)

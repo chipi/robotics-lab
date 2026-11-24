@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -112,6 +113,46 @@ finally:
     except subprocess.TimeoutExpired:
         proc.kill()
     shutil.rmtree(tmp, ignore_errors=True)
+
+# A record start that lands between a sample's truth read and its write: that sample was written without its truth, so its tick
+# came before the epoch (seen under load, 2026-11-24). In process, with the start made at exactly that moment.
+from nxt_lab.robot import SimRobot
+from nxt_lab.web import Controller
+from nxt_lab.world import World
+
+tmp2 = Path(tempfile.mkdtemp(prefix="nxt-rec-race-", dir=os.environ.get("TMPDIR")))
+try:
+    cfg = Config.from_dict({})
+    world = World.from_scene(APARTMENT, None, (0.0, 2.0, math.pi / 2))
+    ctl = Controller(cfg, fake=True, config_path=tmp2 / "config.json", miniview_data=tmp2 / "mv", world=world)
+    ctl.recorder.runs_dir = tmp2 / "runs"
+    ctl.robot = SimRobot(cfg, world=world)
+    class StartFirst:
+        """The recorder's lock, but the first sample to wait for it finds a record start has taken it just before."""
+        def __init__(self):
+            self.real, self.armed = threading.Lock(), True
+
+        def __enter__(self):
+            if self.armed:
+                self.armed = False
+                ctl.recorder.start()
+            self.real.acquire()
+
+        def __exit__(self, *exc):
+            self.real.release()
+    ctl.recorder._lock = StartFirst()
+    for _ in range(4):
+        ctl.recorder.sample_once()
+    key = ctl.recorder.recording["run"]
+    ctl.recorder.stop()
+    records = mcapio.read(keys.run_dir(tmp2 / "mv", key), keep_raw=True)
+    ticks = [(t, p) for t, k, p in records if k == "tick"]
+    epochs = [t for t, k, p in records if k == "epoch"]
+    check("a recording started between a sample's truth read and its write: every tick has a truth and the epoch is first",
+          bool(ticks and epochs) and epochs[0] <= ticks[0][0] and all(p.get("truth") is not None for _, p in ticks),
+          (len(ticks), epochs[:1], ticks[:1]))
+finally:
+    shutil.rmtree(tmp2, ignore_errors=True)
 
 print("test_recorder_sim", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

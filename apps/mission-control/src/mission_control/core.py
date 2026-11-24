@@ -118,8 +118,10 @@ class MissionControl:
         return None if rt.link.ok_at is None else round(self.clock() - rt.link.ok_at, 2)
 
     def robot_brief(self, rt: RobotRuntime) -> dict:
-        return {"id": rt.cfg.id, "label": rt.cfg.label, "kind": rt.cfg.kind, "online": rt.online(),
-                "lock": rt.gate.who(), "last_seen_age_s": self._age(rt)}
+        online = rt.online()
+        return {"id": rt.cfg.id, "label": rt.cfg.label, "kind": rt.cfg.kind, "online": online,
+                "lock": rt.gate.who(), "last_seen_age_s": self._age(rt),
+                **({} if online else {"offline_reason": rt.link.last_error})}      # a robot that never answered says why, not only that
 
     @staticmethod
     def _profile_brief(cfg) -> dict | None:
@@ -465,6 +467,7 @@ class MissionControl:
             (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id, client))
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued", client=client)
         reason = reason or goals.capability_refusal(caps, goal, merged, has_site=site_id is not None)
+        reason = reason or rt.cfg.real_run_refusal()        # before the rehearsal's: a robot not allowed to run for real is not asked whether it rehearsed
         if reason is None and rehearsal is not None and rehearsal["flagged"] and rehearsal["state"] != "rehearsed":
             reason = (f"this goal is simulator-first and has no passing simulator run: run this goal as it is now (version "
                       f"{rehearsal['goal_version']}) on {rehearsal['rehearse_on'] or 'a simulated robot of the same kind'} and have it end "

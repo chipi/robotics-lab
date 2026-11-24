@@ -106,7 +106,8 @@ class Recorder:
         paused = self.program and self.program != deadman.PROGRAM
         sensors = {} if paused else self.controller.call(lambda r: r.read_sensors())
         self.controller.note_stops(robot.deadman_state)
-        truth = self._read_truth(robot) if self.recording is not None else None
+        recording = self.recording
+        truth = self._read_truth(robot) if recording is not None else None
         with self._lock:
             self.seq += 1
             sample = {
@@ -120,7 +121,8 @@ class Recorder:
                 "deadman": robot.deadman_state,
             }
             self.samples.append(sample)
-            if self.recording is not None:
+            # a recording that started after the truth was read begins with the next sample, so its first tick holds a truth
+            if self.recording is not None and self.recording is recording:
                 self._write_row(sample, now, truth)
 
     def _read_truth(self, robot) -> tuple | None:

@@ -1,0 +1,6 @@
+{
+  "id": "duck-real",
+  "label": "The real duck",
+  "robot": "duck",
+  "adapter": {"type": "duck-real", "allow_real_runs": false}
+}

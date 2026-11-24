@@ -18,6 +18,9 @@ services:
       OBSERVATORY_DATA: /data
       OBSERVATORY_INDEX: /index/index.sqlite
       OBSERVATORY_ROBOTS: /robots
+      # Mission Control's address for the /control/ proxy (RFC-0024 step 3): none, no proxy. `make stack-up` names the other service; scripts/deploy.py (the host's
+      # network) names 127.0.0.1.
+      OBSERVATORY_CONTROL: "${OBSERVATORY_CONTROL:-}"
     volumes:
       # the robots' descriptions and meshes (RFC-0011), read only like the runs
       - type: bind

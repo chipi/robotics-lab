@@ -44,6 +44,9 @@ MAX_SESSIONS = 128
 FROM_PROFILE = ("kind", "factsheet", "control", "capabilities", "guardrails", "rates")   # a pointer file's blocks: the profile's
 
 
+REAL_REVIEW = "docs/wip/REAL-DUCK-SAFETY-REVIEW.md"
+
+
 class ConfigError(ValueError):
     pass
 
@@ -144,6 +147,25 @@ class RobotConfig:
         if not all(isinstance(t, str) and t for t in self.teams):
             raise ConfigError(f"{self.id}: teams is a list of team names")
         self.call_timeout_s = self.adapter.get("call_timeout_s")
+        allow = self.adapter.get("allow_real_runs", False)
+        if not isinstance(allow, bool):
+            raise ConfigError(f"{self.id}: adapter.allow_real_runs is true or false, got {allow!r}")
+        self.allow_real_runs = allow
+
+    @property
+    def runs_real(self) -> bool:
+        """Does a goal run or a calibration on this robot move the real one? The profile's variant says so; a robot with no registered
+        profile (the fake) has only a default variant, not a fact about an environment."""
+        return self.robot is not None and self.variant == "real"
+
+    def real_run_refusal(self) -> str | None:
+        """Why a run that moves the real robot is refused (None: it is not one, or the robot file allows it). The default is no: a
+        run on the real robot happens because a person read the safety review and wrote the key, never because nobody said no."""
+        if not self.runs_real or self.allow_real_runs:
+            return None
+        return (f"{self.id} runs the real robot and its robot file does not allow real runs: set \"allow_real_runs\": true in the file's "
+                f"adapter block only after the first-run safety review ({REAL_REVIEW}); a calibration walk is a real run too, and walks "
+                f"with no wall or cliff check")
 
     def reload(self) -> None:
         """A pointer file's robot read again from the version this machine runs now (after Mission Control saved or chose one):
@@ -426,7 +448,10 @@ def make_adapter(cfg: RobotConfig, clock):
     if cfg.adapter["type"] == "duck-sim":
         from .duck import DuckAdapter
         return DuckAdapter(cfg, clock)
+    if cfg.adapter["type"] == "duck-real":
+        from .duck_real import RealDuckAdapter
+        return RealDuckAdapter(cfg, clock)
     if cfg.adapter["type"] == "nxt-web":
         from .nxt import NxtAdapter
         return NxtAdapter(cfg, clock)
-    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim, nxt-web)")
+    raise ConfigError(f"{cfg.id}: no adapter for the type {cfg.adapter['type']!r} (built: fake, duck-sim, duck-real, nxt-web)")

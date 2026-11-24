@@ -1,11 +1,12 @@
 # RFC-0024 — One platform: should Mission Control and the Observatory stay two apps?
 
 **Status:** Accepted (2026-11-23, the operator: "I agree on B, reached in C's order, as next step
-here"): questions 1 and 2 of §7 are answered. Questions 3 to 6 stay open until B's step 3. The build
-starts with steps 1 and 2: the shared library, then the body in Mission Control. These are phase 5's
-item 4a unit A4. Proposed the same day. The operator, 2026-11-23, asked where the duck's
-realistic 3D body view should live: "maybe we rethink about bringing together mission control and
-observatory into one platform and not look at them as 2 fully independent things".
+here"): questions 1 and 2 of §7 are answered. Questions 3 to 6 were answered the same day (§7),
+and step 3 is built (§9; phase 5 item 4c unit C1). The build started with steps 1 and 2: the
+shared library, then the body in Mission Control (phase 5's item 4a unit A4). Proposed the same
+day. The operator, 2026-11-23, asked where the duck's realistic 3D body view should live: "maybe
+we rethink about bringing together mission control and observatory into one platform and not look
+at them as 2 fully independent things".
 **Builds on:** [RFC-0022](RFC-0022-platform-layout-and-names.md) (the layout),
 [RFC-0023](RFC-0023-the-views.md) (the views, D1, D2, D4, D12 and step 5), RFC-0014 §1-3
 (Mission Control), RFC-0009 and RFC-0013 (the Observatory), RFC-0006 and RFC-0007 (the platform's
@@ -340,3 +341,32 @@ The questions, as they were asked:
   compose file or two) and the build order against phase 5's open items.
 - **Out of scope:** the telemetry to the operator's stack (RFC-0023 D6, D7); the operator's
   other tools.
+
+## 9. Step 3 as built (2026-11-24, phase 5 item 4c units C1 to C3)
+
+- **Question 3, the proxy.** `observatory/server.py` forwards `/control/...` to `OBSERVATORY_CONTROL`
+  with `http.client` (no new dependency): any method, the body, six request headers, the answer as it
+  comes, the event stream a chunk at a time. Mission Control's page is relative (`api/v1/...`), so
+  it works at `/` and at `/control/`. The container's route to the host's :8060: both containers
+  run on the host's network and listen on 127.0.0.1 only (`scripts/deploy.py`; the reason is the
+  navigator, below), so the address is `http://127.0.0.1:8060`; `make stack-up` (bridge network)
+  names the other service, `http://mission-control:8060`. The wire is in the
+  [Observatory's contract](https://github.com/chipi/robotics-lab/blob/main/apps/observatory/CONTRACT.md).
+- **Question 4, a token for actions only.** `mission-control serve --require-tokens actions` (env
+  `MC_REQUIRE_TOKENS=actions`): every `GET` is open, every other call needs a token, STOP is open.
+  The deploy turns it on when the state folder holds a token and warns when it does not (Mission
+  Control refuses to start with tokens required and none made). The Observatory forwards the
+  header and holds no token. POST routes that only read (`/plan`, a site's export) need the token
+  too: a rule by method, not by route, kept simple.
+- **Question 5, no run files in Mission Control.** `scripts/check_boundaries.py` (part of
+  `make lint`) forbids Mission Control's source to import `runfile.catalog`, `index`, `mcapio`,
+  `store`, `truthcopy` or `signals`, and its container mounts no data folder and no index. Nothing
+  read a run before this; the rule keeps it so.
+- **Question 6, the phone.** Not built here: the shared navigation (step 3's "Robots / Runs" bar)
+  and the watch page's place at phone width are not part of unit C1.
+- **The navigator is TCP.** The installation file names the navigator as `127.0.0.1:8061`, a port on
+  the host's loopback, which a bridged container cannot reach; only the gate is a socket. With the
+  host's network the file's addresses mean the same in the container as outside it, and the file
+  needs no change. The cost: the containers share the host's network namespace (loopback only,
+  checked by the deploy's tests). A Unix socket for the navigator would let the containers bridge
+  again; it is a change to the runner and to Mission Control's adapter, not made.

@@ -25,6 +25,9 @@
     GET /api/v1/render                                the render service's engines (OBSERVATORY_RENDER), or {"available": false, "why"}
     POST /api/v1/runs/{robot}/{scene}/{run}/video     a video of the run: {"engine", "from"?, "to"?, "size"?} -> 202 {"id"}
     GET /api/v1/videos/{id}  and  .../file            the job's progress; the finished video (the render service's, passed through)
+    ANY /control/...                                  Mission Control, one origin (RFC-0024 step 3): its page at /control/, its API at
+                                                      /control/api/v1/..., its event stream at /control/api/v1/events; forwarded as they are
+                                                      (the Authorization header too) to OBSERVATORY_CONTROL; none named: 404
 
 Errors are JSON ({"error": ...}): 400 bad input, 404, 405, 409 (no ticks yet, a broken run), 500 with an id that is
 also in the log. gzip for JSON over 1 KB when accepted; static files carry an ETag.
@@ -32,6 +35,7 @@ also in the log. gzip for JSON over 1 KB when accepted; static files carry an ET
 
 import bisect
 import gzip
+import http.client
 import http.server
 import json
 import logging
@@ -62,6 +66,11 @@ GZIP_OVER = 1024
 PER_TICK = ("t", "belief", "truth", "truth_3d", "tilt", "cmd", "depth", "plan_at", "world_at")
 ONE_DAY = "public, max-age=86400"
 JOB_ID = re.compile(r"^[0-9a-f]{6,32}$")
+# what a call to Mission Control carries across, and nothing else (no cookie of this origin goes to another service)
+CONTROL_FORWARD = ("Authorization", "Content-Type", "Accept", "If-None-Match", "Last-Event-ID", "X-Client")
+CONTROL_MAX_BODY = 1_000_000        # Mission Control's own limit (MAX_BODY in its api.py)
+CONTROL_CONNECT_S = 5.0
+CONTROL_HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "date", "server"}
 # the pages load only from their own origin (the libraries are vendored in libs/web and served at /lib/, the fonts served, no CDN); inline scripts and
 # styles are the import map and the shell's own, eval is what deck.gl's shaders need
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; "
@@ -245,17 +254,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._json({"error": f"{self.command} is not allowed here", "allow": "GET, HEAD"}, 405, {"Connection": "close", "Allow": "GET, HEAD"})
         self.close_connection = True       # the body of the request, if any, was not read
 
-    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
+    do_PATCH = do_OPTIONS = _not_allowed
+
+    def _for_control(self) -> bool:
+        path = urllib.parse.urlsplit(self.path).path
+        return path == "/control" or path.startswith("/control/")
 
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
-        self._guarded(self._route)
+        self._guarded(self._control if self._for_control() else self._route)
+
+    def do_PUT(self):
+        if self._for_control():
+            self._guarded(self._control)
+        else:
+            self._not_allowed()
+
+    do_DELETE = do_PUT
 
     def do_POST(self):
         parts = [p for p in urllib.parse.urlsplit(self.path).path.split("/") if p]
-        if len(parts) == 7 and parts[:3] == ["api", "v1", "runs"] and parts[6] == "video":     # the only POST there is
+        if self._for_control():
+            self._guarded(self._control)
+        elif len(parts) == 7 and parts[:3] == ["api", "v1", "runs"] and parts[6] == "video":     # the only other POST there is
             self._guarded(self._start_video)
         else:
             self._not_allowed()
@@ -426,6 +449,60 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD":
                 shutil.copyfileobj(r, self.wfile)
+
+    # ---- Mission Control behind this origin (RFC-0024 step 3, the operator's answer to question 3) ----------------
+    def _control(self) -> None:
+        """/control/<path> goes to OBSERVATORY_CONTROL/<path>, whatever the method, and the answer comes back as it is, a stream a chunk at a time.
+        This holds no token, makes no decision (Mission Control's tokens, STOP and lock are its own) and reads no run. A Mission Control that
+        does not answer is a 502 in its own error shape, so its page can say so."""
+        base = env.get("CONTROL", "").rstrip("/")
+        if not base:
+            raise HttpError(404, "no Mission Control behind this Observatory (OBSERVATORY_CONTROL names none)")
+        url = urllib.parse.urlsplit(self.path)
+        if url.path == "/control":
+            return self._send(301, b"", "text/plain", {"Location": "/control/" + ("?" + url.query if url.query else "")})
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if not 0 <= n <= CONTROL_MAX_BODY:
+            self.close_connection = True
+            raise HttpError(413 if n > 0 else 400, "the request body is missing or too large")
+        body = self.rfile.read(n) if n else None
+        headers = {k: self.headers[k] for k in CONTROL_FORWARD if self.headers.get(k)}
+        up = urllib.parse.urlsplit(base)
+        conn = http.client.HTTPConnection(up.hostname, up.port or 80, timeout=CONTROL_CONNECT_S)
+        try:
+            try:
+                conn.request("GET" if self.command == "HEAD" else self.command,
+                             url.path[len("/control"):] + ("?" + url.query if url.query else ""), body, headers)
+                resp = conn.getresponse()
+            except (OSError, http.client.HTTPException) as e:
+                return self._json({"ok": False, "error": {"code": "control_unreachable", "message": f"Mission Control is not answering: {e}"}}, 502)
+            if conn.sock is not None:
+                conn.sock.settimeout(STREAM_TIMEOUT_S)      # its keepalive comes every 15 s: a silence this long is a dead stream
+            length = resp.getheader("Content-Length")
+            self.send_response(resp.status, resp.reason)
+            for k, v in resp.getheaders():
+                if k.lower() not in CONTROL_HOP:
+                    self.send_header(k, v)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            if length is not None:
+                self.send_header("Content-Length", length)
+            else:
+                self.send_header("Connection", "close")      # a stream, or an answer with no length: its end is the close
+                self.close_connection = True
+            self.end_headers()
+            if self.command == "HEAD" or resp.status in (204, 304):
+                return
+            while True:
+                chunk = resp.read1(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        finally:
+            conn.close()
 
     def _snapshot(self, ld):
         """(run copy, n ticks, seq) taken under the run's lock; what is served is built after it is released."""

@@ -12,8 +12,8 @@ on a free port), the Observatory (a subprocess, its own environment, for the rep
 the lock, the drive, STOP, takeover. Judged by the simulator's truth (`/api/sim/truth`, through simhost's reader), as the duck's test is;
 nxt-web's own status says what the brick would have done, the truth says where the robot is.
 
-One thing simhost cannot do: its `reset` starts nxt-web with no takeover list, so on its process nobody may take the lock. The takeover
-scenario shows that refusal, then runs the same nxt-web command itself with a list (this test's own process, stopped by its pid)."""
+The takeover list is the host file's `takeover_names`, which simhost passes to nxt-web, so the takeover scenario runs on the same nxt-web as
+the others."""
 
 import argparse
 import atexit
@@ -104,12 +104,12 @@ os.environ["ROBOTICS_LAB_INSTALLATION"] = str(tmp / "installation.json")
     "connections": {"nxt-web": NXT}}}}))
 (tmp / "host.json").write_text(json.dumps({"host": 1, "kind": "nxt-kinematic-sim", "robot": "nxt-1", "state": str(tmp / "sim-state"),
                                            "nxt_web": {"url": NXT, "project": str(REPO / "apps" / "nxt-web")}, "scene": str(SCENE),
-                                           "start": list(START), "params": None}))
+                                           "start": list(START), "params": None, "takeover_names": str(tmp / "takeover.txt")}))
 # nxt-web, started by simhost, inherits these: its config and data in the scratch folder, its recordings where the Observatory reads them
 os.environ["NXT_LAB_DATA"] = str(tmp / "nxt-data")
 os.environ["OBSERVATORY_DATA"] = str(data)
 HOST = simhost.load(tmp / "host.json")
-own: list = []                            # the processes this test started itself (the takeover scenario's nxt-web, the Observatory)
+own: list = []                            # the processes this test started itself (the Observatory)
 
 mc = MissionControl([RobotConfig(json.loads((CONTROL / "robots.nxt-registered" / "nxt-1.json").read_text()))], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
@@ -308,22 +308,6 @@ try:
         phone = acquire("phone")
         wait_for(lambda: (status().get("recording") or {}).get("ours") is True, 5)
         key = recording_key()
-        hold(phone, 0.15, 0.0, 0.8)
-        st, b = call("POST", "/robots/nxt-1/lock/takeover", {"client": "operator-laptop"})
-        check("on the process simhost started nobody may take the lock (nxt-web is given no list): refused, the phone still holds it",
-              st == 403 and b["error"]["code"] == "not_allowed" and robot()["lock"]["holder"] == "phone", (st, b))
-        release(phone)
-        wait_for(lambda: not status().get("recording"), 5)
-        simhost.down(HOST)
-        check("simhost stopped the nxt-web it started, and the port is free", wait_for(lambda: not nxt_up(), 5))
-        proc = subprocess.Popen(simnxt._command(HOST, None) + ["--takeover-names", str(tmp / "takeover.txt")], stdout=open(tmp / "nxt-web-takeover.log", "w"),
-                                stderr=subprocess.STDOUT, start_new_session=True)
-        own.append(proc)
-        check("the same nxt-web command, with a takeover list, is up at the start pose", wait_for(lambda: nxt_up() and abs(truth()[1] - START[1]) < 1e-3, 15))
-        wait_for(lambda: robot()["online"] and robot()["lock"]["holder"] is None, 15)
-        phone = acquire("phone")
-        wait_for(lambda: (status().get("recording") or {}).get("ours") is True, 5)
-        key = recording_key()
         hold(phone, 0.15, 0.0, 1.0)
         st, b = call("POST", "/robots/nxt-1/lock/takeover", {"client": "script"})
         check("a name that is not on the list is refused, and the phone's drive still works", st == 403 and b["error"]["code"] == "not_allowed"
@@ -341,9 +325,6 @@ try:
         release(laptop)
         check("released, the recording ended", wait_for(lambda: not status().get("recording"), 5))
         runs["takeover"] = key
-        proc.send_signal(signal.SIGTERM)
-        proc.wait(timeout=20)
-        own.remove(proc)
 
     # --- the deadman: no command, no motion ---------------------------------------------------------------------------------------
     if wanted("deadman"):

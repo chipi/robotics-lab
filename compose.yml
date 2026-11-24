@@ -2,6 +2,9 @@
 # from the repository root) starts both, each from its own compose file, on loopback (the Observatory :8070, Mission Control :8060).
 # Each file also works on its own (`make observatory-up`, `make control-up`). Needs Docker Compose 2.20 or newer for `include`.
 # (The MINIVIEW_* names of before the rename still work where an OBSERVATORY_* one is not set.)
+# What is deployed is not this file alone: `scripts/deploy.py up --commit <sha>` (make deploy) builds a named commit, lays the host network, the installation
+# file's mounts and the one origin over these two files, replaces the solo Observatory project and ends with a smoke (docs/wip/DEPLOY.md). `make stack-up`
+# below is for trying the pair on a machine with no robot: bridge network, the fake robot, and the Observatory proxies Mission Control at /control/.
 # This project is `robotics-lab`; `make observatory-up` runs the project `observatory`. Do not start both while one holds :8070: the ports
 # are OBSERVATORY_PORT and MC_PORT (the Makefile's STACK_VIEWER_PORT and STACK_CONTROL_PORT), the image tags OBSERVATORY_IMAGE_TAG and
 # MC_IMAGE_TAG, and each service's memory is capped (OBSERVATORY_MEM 768m, MC_MEM 512m).

@@ -439,7 +439,8 @@ def guardrails_put(c: Ctx):
 
 @route("GET", "/tokens")
 def tokens_list(c: Ctx):
-    return {"ok": True, "tokens": c.mc.tokens.list(), "required": c.server.require_tokens}
+    scope = c.server.require_tokens
+    return {"ok": True, "tokens": c.mc.tokens.list(), "required": bool(scope), "scope": "actions" if scope == "actions" else "all" if scope else None}
 
 
 @route("POST", "/tokens")
@@ -601,7 +602,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ApiError(404, "no_route", f"no such path {url.path}")
             query = parse_qs(url.query)
             identity = self._identity(query)
-            if self.server.require_tokens and identity is None and r.fn.__name__ not in OPEN_ROUTES:
+            scope = self.server.require_tokens      # True: every call; "actions": only what is not a read (RFC-0024 question 4)
+            if identity is None and r.fn.__name__ not in OPEN_ROUTES and (scope is True or (scope == "actions" and method != "GET")):
                 raise unauthorized("this server wants a token: Authorization: Bearer mc_... (the event stream also takes ?token=)"
                                    if "Authorization" not in self.headers and "token" not in query else "that token is not valid (revoked or unknown)")
             body = self._body() if method in ("POST", "PUT", "DELETE") else {}
@@ -642,7 +644,7 @@ class Handler(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, mc: MissionControl, require_tokens: bool = False):
+    def __init__(self, address, mc: MissionControl, require_tokens: bool | str = False):
         super().__init__(address, Handler)
         self.mc = mc
         self.require_tokens = require_tokens
@@ -654,6 +656,6 @@ class Server(ThreadingHTTPServer):
         super().shutdown()
 
 
-def serve(mc: MissionControl, host: str = "127.0.0.1", port: int = 8060, require_tokens: bool = False) -> Server:
+def serve(mc: MissionControl, host: str = "127.0.0.1", port: int = 8060, require_tokens: bool | str = False) -> Server:
     """Build the server; the caller runs `serve_forever` (in a thread, for a test)."""
     return Server((host, port), mc, require_tokens)

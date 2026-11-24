@@ -15,6 +15,23 @@ reversible) or parked (not built). It says why and what to ask. The plan is
 
 ## Parked
 
+### P4. Deploy the one-origin platform from a named commit (waiting for the operator)
+
+Units C1 to C3 of 4c are built and proven on a test stack only (project `robotics-lab-test`, ports
+18070 and 18060, its own folders): the deployed stack was not touched. The real deploy needs the
+operator's go, after the work is committed on main ([the recipe](DEPLOY.md)).
+
+- **Ask:** "Deploy main at `<sha>` with `make deploy COMMIT=<sha>`?" First `scripts/deploy.py record
+  --commit 36670fb` (what runs now), then `make deploy-dry COMMIT=<sha>` to read what it would do.
+- **What changes for the running stack:** it is replaced (about a minute without the Observatory),
+  both containers move to the host's network (loopback only), the Observatory serves Mission Control
+  at `/control/`, and Mission Control gets the installation file and the profile store.
+- **Choices to confirm:** tokens for actions only (needs a first token:
+  `docker compose -p robotics-lab exec mission-control mission-control token create --client page`,
+  then deploy again; until then actions need none); whether Mission Control gets the duck's robot
+  file (`--control-robots`); a folder of its own for the gate's socket, so it need not be mounted by
+  the file.
+
 ### P3. The Observatory and Mission Control deployed together (done)
 
 **Done (2026-11-23), the operator: "we should deploy now together observatory and mission

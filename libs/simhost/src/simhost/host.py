@@ -17,7 +17,9 @@ The host file above is the duck's (`pollen-duck-sim`). Its `kind` picks the read
      "nxt_web": {"url": "http://127.0.0.1:8000", "project": "/work/robotics-lab/apps/nxt-web"},
      "scene": "scenes/apartment/scene.json", "start": [0, 0, 0], "params": null}
 
-`start` is x, y in metres and yaw in radians (the truth's unit); `project` is where `.venv/bin/nxt-web` is.
+`start` is x, y in metres and yaw in radians (the truth's unit); `project` is where `.venv/bin/nxt-web` is. The optional
+`takeover_names` is a file of client names (one per line) that may take the control lock from its holder, passed to nxt-web as
+`--takeover-names`; absent or null: nobody may.
 
 Where it is read from: `--host` where a command takes one, else $ROBOTICS_LAB_HOST, else
 ~/.config/robotics-lab/host.json. A missing or wrong file is an error that says which file and why; there is no
@@ -38,7 +40,7 @@ DEFAULT = Path("~/.config/robotics-lab/host.json")
 SOCKETS = {"robot": "{robot}.sock", "depth": "{robot}-tof.sock", "map": "{robot}-map.sock", "gate": "{robot}-gate.sock",
            "camera": "{robot}-camera.sock"}
 KEYS = {"host", "kind", "robot", "pollen", "state", "truth_port", "cargo_bin", "sockets"}
-NXT_KEYS = {"host", "kind", "robot", "state", "nxt_web", "scene", "start", "params"}
+NXT_KEYS = {"host", "kind", "robot", "state", "nxt_web", "scene", "start", "params", "takeover_names"}
 
 
 class HostError(ValueError):
@@ -91,6 +93,7 @@ class NxtHost:
     scene: Path             # scene.json for --world
     start: tuple            # x, y, yaw: metres, metres, radians (the unit of the truth's pose)
     params: Path | None     # JSON overriding nxt_lab.world.WorldParams, or None
+    takeover_names: Path | None = None      # nxt-web's --takeover-names file, or None: nobody may take the lock
 
     @property
     def truth_port(self) -> int:
@@ -103,7 +106,8 @@ class NxtHost:
     def as_json(self) -> dict:
         return {"host": VERSION, "kind": self.kind, "robot": self.robot, "state": str(self.state),
                 "nxt_web": {"url": self.url, "project": str(self.project)}, "scene": str(self.scene),
-                "start": list(self.start), "params": None if self.params is None else str(self.params)}
+                "start": list(self.start), "params": None if self.params is None else str(self.params),
+                "takeover_names": None if self.takeover_names is None else str(self.takeover_names)}
 
 
 def where(path: str | Path | None = None) -> Path:
@@ -162,8 +166,12 @@ def parse_nxt(d: dict, source: Path) -> NxtHost:
     params = d.get("params")
     if params is not None and (not isinstance(params, str) or not params):
         raise bad("'params' must be a path or null")
+    names = d.get("takeover_names")
+    if names is not None and (not isinstance(names, str) or not names):
+        raise bad("'takeover_names' must be a path or null")
     return NxtHost(source, d["kind"], robot, _path(d["state"]), f"http://{url.hostname}:{port}", _path(web["project"]),
-                   _path(d["scene"]), tuple(float(v) for v in start), None if params is None else _path(params))
+                   _path(d["scene"]), tuple(float(v) for v in start), None if params is None else _path(params),
+                   None if names is None else _path(names))
 
 
 def parse_duck(d: dict, source: Path) -> Host:

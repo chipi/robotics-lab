@@ -61,6 +61,31 @@ Re-apply it after any update or reset of the Pollen checkout. The operator decid
   service or terminal), which is how a lockout is read without root. Run it with no simulator
   in use: it stops the simulator.
 
+## One simulator job at a time: `scripts/sim-lock`
+
+The simulator is one process set on fixed ports, reset by every run; two jobs at once corrupt each
+other. Every simulator target (`make sim-duck`, `sim-nxt`, `sim-gate-scenarios`, `sim-deployed`) runs
+under `scripts/sim-lock`, an exclusive `fcntl.flock` on one file, so a person and every agent take
+the same lock without being told to.
+
+- The file is `${XDG_RUNTIME_DIR:-/tmp}/robotics-lab-sim.lock`, or the one `ROBOTICS_LAB_SIM_LOCK`
+  names. Every job on a machine must resolve to the same file: set the variable in the shell
+  profile or the session's environment if the default differs.
+- A job that finds the lock held says who holds it (the holder's pid and command) and waits up to
+  7200 s (`--timeout`, or `ROBOTICS_LAB_SIM_LOCK_TIMEOUT`); then it exits 75 without running.
+  With nobody holding the lock it runs at once, and the command's exit status, output and signals
+  are its own.
+- Any other command: `scripts/sim-lock -- <command>`. `scripts/sim-lock --path` prints the file.
+- Nested use is safe: a recipe under `sim-lock` that starts `sim-lock` again does not wait for
+  itself (`ROBOTICS_LAB_SIM_LOCK_HELD`).
+- The same lock is what `flock -w 7200 <file> <command>` takes, so an old-style job and a new one
+  exclude each other. But do not wrap a `make sim-*` target in `flock(1)` on the same file: the
+  target's own `sim-lock` cannot see that holder and waits for it. Run the target directly (it
+  takes the lock itself), or with `ROBOTICS_LAB_SIM_LOCK_HELD=<the file>` set under an outer
+  `flock`.
+- Not covered: a job that runs the simulator by other means (`uv run lab-challenge`, a probe
+  script, `simhost reset`) is under the lock only if it is started as `scripts/sim-lock -- ...`.
+
 ## When sudo says "Sorry, try again"
 
 1. Read the tally: `uv run python sim/probes/sudo_free_down.py` (in `robots/duck/`, nothing running),

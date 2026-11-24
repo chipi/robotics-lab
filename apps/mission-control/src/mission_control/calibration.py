@@ -174,6 +174,10 @@ def start(rt, body) -> dict:
     if not isinstance(params, dict):
         raise invalid("params: an object")
     with _lock:
+        _navigator(rt)
+        refusal = rt.cfg.real_run_refusal()        # a calibration walks blind: no wall, cliff or contact check, so it is a real run in the strictest sense
+        if refusal:
+            raise conflict("real_runs_not_allowed", refusal)
         if rt.active is not None:
             raise conflict("robot_busy", f"goal run {rt.active.id} holds this robot")
         if rt.calibration is not None and _phase(rt.calibration) == "running":

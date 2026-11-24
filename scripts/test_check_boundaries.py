@@ -117,6 +117,13 @@ check("must fail: the navigator may not read the installation file (runfile.inst
       len(got) == 3 and any("nav/server.py:1" in g for g in got) and any("profile.py:1" in g for g in got)
       and any("nav/runlog.py:1" in g and "default_data" in g for g in got), got)
 
+got = run(lambda r: (project(r, "apps/mission-control", "mission_control", {"core.py": "from runfile.profile import checksum\nfrom runfile import registry, installation\n",
+                                                                          "runs.py": "from runfile.catalog import Catalog\nimport runfile.mcapio\nfrom runfile import index\n"}),
+                     project(r, "libs/runfile", "runfile", {})))
+check("Mission Control reads runs only through the Observatory's API: no catalog, index or MCAP reader of the run format "
+      "(RFC-0024 question 5); its profile, registry and installation reads are allowed",
+      len(got) == 3 and all("runs.py" in g for g in got) and not any("core.py" in g for g in got), got)
+
 # a path source is held to the table
 got = run(lambda r: (project(r, "libs/runfile", "runfile", {}, '[tool.uv.sources]\nduck-lab = { path = "../../robots/duck" }\n'),
                      project(r, "robots/duck", "duck_lab", {})))

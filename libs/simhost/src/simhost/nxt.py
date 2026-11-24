@@ -83,7 +83,8 @@ def _command(host: NxtHost, scene) -> list:
     url = host.url.split("//", 1)[1].rsplit(":", 1)
     cmd = [str(exe), "--sim", "--world", str(scene or host.scene), "--host", url[0], "--port", str(url[1]),
            "--start", str(x), str(y), str(math.degrees(yaw))]
-    return cmd + (["--sim-params", str(host.params)] if host.params else [])
+    return cmd + (["--sim-params", str(host.params)] if host.params else []) + \
+        (["--takeover-names", str(host.takeover_names)] if host.takeover_names else [])
 
 
 def _at_start(host: NxtHost) -> bool:

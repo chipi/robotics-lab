@@ -2,7 +2,7 @@
 /* Mission Control's page (RFC-0014 step 1). Plain JS, no build, no library. Everything it does is a call of the API
    in CONTRACT.md and the event stream; nothing works only here. Data goes into the page by textContent, never as HTML. */
 
-const API = "/api/v1";
+const API = "api/v1";       // relative: the page is served at / by Mission Control and at /control/ behind the Observatory (RFC-0024 step 3)
 const $ = (id) => document.getElementById(id);
 const ARM_MS = 6000; // a delete needs a second press within this long
 const TERMINAL = ["reached", "done", "refused", "not_found", "timeout", "stalled", "stopped_by_guardrail", "cancelled", "interrupted", "failed"];   // the navigator contract's ends (runfile.navcontract)
@@ -335,7 +335,7 @@ async function openBody(id) {
   closeBody();
   bodyFor = id;
   try {
-    bodyMod ||= await import("/web/bodyview.js");
+    bodyMod ||= await import("./bodyview.js");
     if (bodyFor !== id) return;
     await bodyMod.mount($("rp-body-view"), id, descs[id], API + "/", S.token ? { headers: { Authorization: "Bearer " + S.token } } : undefined);
     const r = S.robots.find((x) => x.id === id);

@@ -306,6 +306,20 @@ fails when the two part).
   its
   centre at `origin + ((i + 0.5) res, (j + 0.5) res)`.
 
+### `/control/...`: Mission Control behind this origin (RFC-0024 step 3)
+
+`OBSERVATORY_CONTROL` (an `http://host:port`, read at each request) names Mission Control. Then
+`/control/<path>` goes to `<that>/<path>` with any method, and the answer comes back as it is, a
+stream a chunk at a time: `/control/` is its page, `/control/api/v1/...` its API,
+`/control/api/v1/events` its event stream. Forwarded: the method, the path and query, the body (at
+most 1 MB, else 413), and the headers `Authorization`, `Content-Type`, `Accept`, `If-None-Match`,
+`Last-Event-ID` and `X-Client`; nothing else of the request (no cookie). The Observatory holds no
+token, makes no decision and reads nothing of Mission Control's: its tokens, STOP and lock stay its
+own. `/control` is a 301 to `/control/`. A Mission Control that does not answer is a 502,
+`{"ok": false, "error": {"code": "control_unreachable", "message": ...}}`, in its own error shape.
+With no `OBSERVATORY_CONTROL` the path is a 404. The Observatory's own routes keep their rules:
+`GET` and `HEAD`, and the one video `POST`.
+
 ## The pages (ADR-0011)
 
 The pages share a web library with Mission Control, `libs/web` (RFC-0024), served at `/lib/` like `/web/`:

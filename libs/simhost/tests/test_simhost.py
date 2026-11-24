@@ -244,6 +244,9 @@ check("an nxt host file loads as an NxtHost, the kind kept", isinstance(nh, simh
 check("its truth port is nxt-web's, and it names one connection", nh.truth_port == 8123
       and nh.connections() == {"nxt-web": "http://127.0.0.1:8123"})
 check("an nxt host reads back from its own json", simhost.parse(nh.as_json(), nh.source) == nh)
+nt = simhost.parse({**NXT, "takeover_names": str(tmp / "names.txt")}, tmp / "nt.json")
+check("takeover_names is read as a path, kept through its json, and absent means None",
+      nt.takeover_names == tmp / "names.txt" and simhost.parse(nt.as_json(), nt.source) == nt and nh.takeover_names is None)
 check("an nxt host has no Pollen fields: a duck field is an AttributeError at once",
       not any(hasattr(nh, a) for a in ("microduck", "sockets", "cargo_bin", "scenarios", "scene_dir")))
 check("the duck's host is the same class and fields as before", isinstance(h, simhost.Host) and h.kind == "pollen-duck-sim")
@@ -261,6 +264,8 @@ for why, d, says in [("a Pollen key on the nxt kind (a duck file copied over)", 
                      ("a start of two numbers", {**NXT, "start": [0, 0]}, "start"),
                      ("a start with a string in it", {**NXT, "start": [0, 0, "x"]}, "start"),
                      ("a robot with a path in it", {**NXT, "robot": "a/b"}, "robot"),
+                     ("a takeover_names that is a list, not a path", {**NXT, "takeover_names": ["a"]}, "takeover_names"),
+                     ("an empty takeover_names", {**NXT, "takeover_names": ""}, "takeover_names"),
                      ("a duck key missing is not asked of the nxt kind, but a wrong version is", {**NXT, "host": 2}, "version 1")]:
     msg = refused(d)
     check(f"refused: {why}, the reason named with the file", says in msg and "bad.json" in msg, msg)
@@ -353,7 +358,14 @@ log = (rh.state / "nxt-web.log").read_text()
 check("reset starts nxt-web --sim with the host's scene, port and start pose (yaw in degrees), and returns settled at it",
       f"--sim --world {tmp / 'scene.json'}" in log and f"--port {free}" in log and "--start 0.5 -1.0 85.9" in log
       and nxt._at_start(rh) and (rh.state / "nxt-web.pid").exists(), log)
+check("with no takeover_names nxt-web is not given the flag (nobody may take the lock)", "--takeover-names" not in log, log)
 first_pid = int((rh.state / "nxt-web.pid").read_text())
+rt = simhost.parse({**NXT, "nxt_web": {"url": f"http://127.0.0.1:{free}", "project": str(proj)}, "takeover_names": str(tmp / "names.txt")},
+                   tmp / "reset-names.json")
+simhost.reset(rt)
+check("with takeover_names the same nxt-web is started with --takeover-names FILE, so the host file is the whole story",
+      f"--takeover-names {tmp / 'names.txt'}" in (rt.state / "nxt-web.log").read_text(), (rt.state / "nxt-web.log").read_text())
+simhost.down(rt)
 simhost.reset(rh, str(tmp / "other.json"))
 second_pid = int((rh.state / "nxt-web.pid").read_text())
 check("a second reset stops the first process, starts another, and takes the scene given instead of the host's",

@@ -20,6 +20,11 @@ def _terminate(*_):
     raise KeyboardInterrupt
 
 
+def token_scope(value) -> bool | str:
+    """What a flag or MC_REQUIRE_TOKENS means: False (none), True (every call needs a token) or "actions" (only a call that is not a read does)."""
+    return "actions" if value == "actions" else value in ("1", "all", True)
+
+
 def token_command(args) -> int:
     from .auth import Tokens
     from .errors import ApiError
@@ -64,8 +69,9 @@ def main(argv=None) -> int:
     s.add_argument("--port", type=int, default=int(os.environ.get("MC_PORT", "8060")))
     s.add_argument("--planner", type=Path, default=os.environ.get("MC_PLANNER"),
                    help="the LLM planner's settings (default planner.json beside the robot files; none: no LLM) (env MC_PLANNER)")
-    s.add_argument("--require-tokens", action="store_true", default=os.environ.get("MC_REQUIRE_TOKENS") == "1",
-                   help="every call but STOP and /health needs a token naming its client (env MC_REQUIRE_TOKENS=1); make them with `token create`")
+    s.add_argument("--require-tokens", nargs="?", const="all", choices=("all", "actions"), default=None,
+                   help="a call needs a token naming its client: every call but STOP and /health ('all', or no value; env MC_REQUIRE_TOKENS=1), or only "
+                   "the calls that are not reads ('actions': reading and watching stay open; env MC_REQUIRE_TOKENS=actions); make tokens with `token create`")
     t = sub.add_parser("token", help="per-client tokens (RFC-0014 section 3.9): create one (shown once), list them, revoke one")
     t.add_argument("action", choices=("create", "list", "revoke"))
     t.add_argument("id", nargs="?", help="the token's id, for revoke")
@@ -98,12 +104,14 @@ def main(argv=None) -> int:
         return 2
     llm = load_planner(args.planner or args.robots / "planner.json")     # none: the LLM is off; the phrase matcher is always there
     mc = MissionControl(configs, state_dir=args.state, planner=llm)
-    if args.require_tokens and mc.tokens.active() == 0:
-        print("mission-control: --require-tokens and no token exists: nobody could call anything but STOP. "
+    scope = token_scope(args.require_tokens or os.environ.get("MC_REQUIRE_TOKENS"))
+    if scope and mc.tokens.active() == 0:
+        print("mission-control: tokens are required and no token exists: nobody could call anything but STOP"
+              f"{' and read' if scope == 'actions' else ''}. "
               "Make one: mission-control token create --client page", file=sys.stderr)
         mc.close()
         return 2
-    server = serve(mc, args.host, args.port, args.require_tokens)
+    server = serve(mc, args.host, args.port, scope)
     mc.start()
     signal.signal(signal.SIGTERM, _terminate)
     print(f"mission-control: {len(configs)} robot(s), http://{args.host}:{args.port}/api/v1/", flush=True)

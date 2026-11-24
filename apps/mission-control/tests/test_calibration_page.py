@@ -169,6 +169,8 @@ with sync_playwright() as p:
               and page.locator("#tab-settings-badge").inner_text() == "v2", card_status())
         check("Keep is gone for a kept run, and the run can be repeated", page.locator("#cal-keep").count() == 0 and page.locator("#cal-start").inner_text() == "Run again")
         close_drawer()
+        # the table repaints after the keep; under load (60 and more) it was read before it had (2026-11-24)
+        wait(page, "document.querySelector(\"#cal-table tr[data-path='localisation.odometry'][data-layer=sim]\")?.textContent.includes('odometry_scale')")
         row = page.locator("#cal-table tr[data-path='localisation.odometry'][data-layer=sim]").inner_text()
         check("must fail: the measured table's sim row for the odometry is the new line: this year's date, by odometry_scale",
               "Mission Control's calibration procedure odometry_scale" in row and "odometry_scale" in row.split("\t")[3], row)

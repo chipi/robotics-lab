@@ -146,7 +146,8 @@ written by hand, for example `~/.config/robotics-lab/nxt-sim-host.json`:
   "nxt_web": {"url": "http://127.0.0.1:8000", "project": "/work/robotics-lab/main/apps/nxt-web"},
   "scene": "/work/robotics-lab/main/scenes/apartment/scene.json",
   "start": [0, 2, 1.5707963],
-  "params": null
+  "params": null,
+  "takeover_names": null
 }
 ```
 
@@ -158,8 +159,10 @@ libs/simhost/.venv/bin/simhost --host ~/.config/robotics-lab/nxt-sim-host.json d
 ```
 
 - Keys: exactly `host`, `kind`, `robot`, `state`, `nxt_web` (with `url` and `project`), `scene`,
-  `start` and `params`. Any Pollen key (`pollen`, `cargo_bin`, `sockets`) is an error. `url` must
-  be `http://host:port`. `params` is a path to a `--sim-params` file, or null.
+  `start` and `params`, and optionally `takeover_names`. Any Pollen key (`pollen`, `cargo_bin`,
+  `sockets`) is an error. `url` must be `http://host:port`. `params` is a path to a `--sim-params`
+  file, or null. `takeover_names` is a path to nxt-web's `--takeover-names` file (one client name
+  per line), or null or absent: then nobody may take the lock from its holder.
 - `reset [SCENE]` takes a scene.json path that replaces the host's for that start.
 - `reset` starts `<project>/.venv/bin/nxt-web --sim --world ... --start ...` itself (so `make
   nxt-sync` first), keeps its pid and log in `state` (`nxt-web.pid`, `nxt-web.log`), and stops the
@@ -201,8 +204,9 @@ takeover.
 - `wall` runs at full speed into the north wall and checks the 15 cm stop against the scene file's
   wall, the alarm, and backing away.
 - `stop` is STOP from a client that holds nothing; `deadman` goes quiet while holding the lock.
-- `takeover` is refused on the process simhost started (nxt-web is given no takeover list there),
-  then runs the same nxt-web command itself with a list, since simhost has no way to pass one.
+- `takeover` runs on the nxt-web simhost started, whose host file names a `takeover_names` list
+  (`operator-laptop`): a name not on it is refused, one on it takes the lock and the recording
+  goes on.
 - `replay` opens the wall run in the Observatory's API and finds the truth on every tick, ending
   where the live truth stopped.
 

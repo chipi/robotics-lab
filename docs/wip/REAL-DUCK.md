@@ -13,6 +13,9 @@ CPU cost, and the score sheet, are in [REAL-DUCK-MEASURE.md](REAL-DUCK-MEASURE.m
   Control's duck adapter drives it; no probe script talks to the robot directly. The one measuring
   script that moves it (`lab-measure-walk`) goes through the gate with a lease too, and refuses a
   robot that is not the simulator without `--real`.
+- No real run until the review is done: Mission Control refuses every goal run and calibration on
+  the real duck unless its robot file says `allow_real_runs: true`. What to verify before setting
+  it is in [the safety review](REAL-DUCK-SAFETY-REVIEW.md).
 - Lowest speeds first: the profile's guardrail `max_speed` set below the simulator's cruise until
   the walking is seen on our floor.
 - On the floor, not a table: no drop the duck could reach until the drop checks (§3) are measured.

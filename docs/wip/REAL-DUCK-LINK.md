@@ -60,10 +60,26 @@ answers for the real duck.
      --upstream ~/.cache/duck-real/duck.sock
    ```
 
+   Or let `lab-link` run it (step 3 with `--restart-gate`, which needs `--gate` for the socket and
+   uses the robot forward as the upstream; `--gate-cmd "<command>"` runs another command in its
+   place, for example with `--takeover-names` or `--log`):
+
+   ```bash
+   cd libs/runner && uv run lab-link up --host microduck@duck \
+     --gate ~/.cache/duck-real/duck-gate.sock --restart-gate
+   ```
+
 ## When the link drops
 
 - The gate does not reconnect. When the forward dies it prints "the robot's socket closed the
-  connection" and exits. Start it again after `lab-link` says `up`.
+  connection" and exits. With `--restart-gate` (or `--gate-cmd`) `lab-link` ends the old gate when
+  it tears the session down and starts a new one only after the forwards answer again, so never
+  while the link is down; without the option, start it again by hand after `lab-link` says `up`.
+- A new gate has no lease: the old lease went with the old gate. After a reconnect the robot stays
+  stopped (nobody holds it) until a client acquires it again; `lab-link` never acquires for
+  anyone, and a client that held the robot sees its lease refused and must ask again.
+- If the gate exits on its own while the link stays up, `lab-link` does not start it again (a gate
+  that dies at once would loop); the next reconnect starts one.
 - With no gate, the robot's own 0.5 s deadman is the backstop (RFC-0017). A dropped link is not a
   stop command; the gate cannot send one to a robot it can no longer reach.
 - `lab-link check` says `FAIL` while ssh is down, so it is a fit pre-flight line for a run.
