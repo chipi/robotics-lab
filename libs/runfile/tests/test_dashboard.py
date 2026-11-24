@@ -1,5 +1,5 @@
 """The Grafana dashboard (dashboards/robotics-lab-live.json) and its importer (scripts/grafana_import.py), docs/wip/TELEMETRY-RETENTION-DESIGN.md:
-the file is valid JSON with the uid and no id, its datasources are template variables, no token-like string is in it, every metric its
+the file is valid JSON with the uid and no id, its panels name their datasources literally and its variables are filters, no token-like string is in it, every metric its
 queries name is one runfile.telemetry emits (histograms by their _bucket, _sum and _count); the importer's dry run prints what it would post
 and touches no network, the import posts the dashboard, the folder and overwrite with the token as a bearer header and never prints the
 token, and it refuses with no URL or no token. The import runs against a stub on 127.0.0.1, never a real Grafana.
@@ -28,13 +28,19 @@ d = json.loads(text or "{}")
 check("uid robotics-lab-live, id null, a title", d.get("uid") == "robotics-lab-live" and d.get("id") is None and "id" in d and d.get("title"), list(d)[:8])
 
 variables = {v["name"]: v for v in d.get("templating", {}).get("list", [])}
-check("the datasources are template variables: metrics, logs, traces",
-      {"ds_metrics", "ds_logs", "ds_traces"} <= set(variables) and all(variables[n]["type"] == "datasource" for n in ("ds_metrics", "ds_logs", "ds_traces")),
-      sorted(variables))
-check("their types: prometheus (VictoriaMetrics), victoriametrics-logs-datasource, jaeger (VictoriaTraces)",
-      (variables["ds_metrics"]["query"], variables["ds_logs"]["query"], variables["ds_traces"]["query"])
-      == ("prometheus", "victoriametrics-logs-datasource", "jaeger") if variables else False)
-check("an environment variable", "env" in variables)
+check("the template variables are filters only: environment, robot_id, search; no datasource variable",
+      set(variables) == {"environment", "robot_id", "search"} and not any(v["type"] == "datasource" for v in variables.values()), sorted(variables))
+VM = {"type": "prometheus", "uid": "victoriametrics"}
+VL = {"type": "victoriametrics-logs-datasource", "uid": "victorialogs"}
+VT = {"type": "jaeger", "uid": "victoriatraces-jaeger"}
+env, rid = variables.get("environment", {}), variables.get("robot_id", {})
+check("environment: a VictoriaMetrics label-values query of deployment.environment.name, default dev, 'check' excluded",
+      env.get("datasource") == VM and "deployment.environment.name" in str(env.get("query")) and env.get("current", {}).get("value") == ["dev"]
+      and "check" in env.get("regex", "") and "?!" in env.get("regex", ""), env)
+check("robot_id: label values of robot_id on robotics_lab.robot.online, multi and All",
+      rid.get("datasource") == VM and "label_values" in str(rid.get("query")) and "robotics_lab.robot.online" in str(rid.get("query"))
+      and rid.get("multi") is True and rid.get("includeAll") is True, rid)
+check("a log search textbox", variables.get("search", {}).get("type") == "textbox")
 
 
 def panels(items):
@@ -45,15 +51,22 @@ def panels(items):
 
 ps = list(panels(d.get("panels", [])))
 titles = [p.get("title") for p in ps]
-want = ["Robots online", "Lock held", "Goals active", "Goals finished by state", "Goal duration p95", "Anomalies by severity",
-        "Stops and errors", "Anomaly log", "Recent goal traces"]
-check("the panels of the design", titles == want, titles)
-check("every panel names a datasource variable, never a fixed uid", all(
-    re.fullmatch(r"\$\{ds_(metrics|logs|traces)\}", str((p.get("datasource") or {}).get("uid"))) for p in ps), [p.get("datasource") for p in ps])
+want = ["Robots", "Robots online", "Lock held", "Goals", "Goals active", "Goals finished by state", "Goal duration p95", "Anomalies and stops",
+        "Anomalies by severity", "Anomalies by kind", "Stops and errors", "Logs", "Mission Control logs", "Traces", "Recent goal.run traces"]
+check("the panels of the design, in rows by subject", titles == want, titles)
+body = [p for p in ps if p["type"] != "row"]
+check("every panel and target names its datasource literally (VictoriaMetrics, VictoriaLogs, VictoriaTraces), no variable", all(
+    p.get("datasource") in (VM, VL, VT) and all(t.get("datasource") == p["datasource"] for t in p["targets"]) for p in body)
+    and "${ds_" not in text and "$ds_" not in text, [p.get("datasource") for p in body])
+check("the logs panel is a VictoriaLogs logs panel filtered by robot, environment and the search box", any(
+    p["type"] == "logs" and p["datasource"] == VL and all(x in p["targets"][0]["expr"] for x in ("robot_id", "environment", "${search}")) for p in body))
+check("the traces panel searches goal.run", any(p["datasource"] == VT and p["targets"][0].get("operation") == "goal.run" for p in body))
+check("the metric queries filter by $robot_id and $environment", all(
+    "$robot_id" in t["expr"] and "$environment" in t["expr"] for p in body if p["datasource"] == VM for t in p["targets"]))
 check("panel ids are unique", len({p["id"] for p in ps}) == len(ps))
 
 queries = [t.get("expr") or t.get("query") or "" for p in ps for t in p.get("targets", [])]
-check("every panel has a query", all(p.get("targets") for p in ps))
+check("every panel has a query", all(p.get("targets") for p in body))
 names = set(re.findall(r'robotics_lab\.[a-z_.]+', " ".join(q for q in queries if "event.kind" not in q)))
 known = set(T.INSTRUMENTS)
 allowed = known | {f"{n}{s}" for n, (k, _, _) in T.INSTRUMENTS.items() if k == "histogram" for s in ("_bucket", "_sum", "_count")}

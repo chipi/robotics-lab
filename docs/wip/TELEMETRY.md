@@ -53,10 +53,13 @@ query names them in a selector: `{__name__="robotics_lab.goals"}`. A histogram a
 
 ## The dashboard
 
-`dashboards/robotics-lab-live.json` (uid `robotics-lab-live`): robots online, lock held, goals
-active, goals finished by state, goal duration p95, anomalies by severity, stops and errors, the
-anomaly log, recent goal traces. The three datasources are template variables
-(`ds_metrics`, `ds_logs`, `ds_traces`) and so is the environment.
+`dashboards/robotics-lab-live.json` (uid `robotics-lab-live`, "Robotics Lab — Live"), in rows by
+subject: Robots (online, lock held), Goals (active, finished by state, duration p95), Anomalies and
+stops (by severity, by kind, stops and errors), Logs (Mission Control's VictoriaLogs records) and
+Traces (recent `goal.run`). Following the homelab's Grafana conventions, every panel names its
+datasource literally (VictoriaMetrics `victoriametrics`, VictoriaLogs `victorialogs`, VictoriaTraces
+`victoriatraces-jaeger`) and the template variables are filters only: `environment` (default `dev`,
+`check` excluded), `robot_id` (multi, All) and a log search box (LogsQL).
 
 ```sh
 make grafana-dry
@@ -67,10 +70,10 @@ GRAFANA_HTTP_URL=https://grafana.tail6d0ed4.ts.net GRAFANA_API_TOKEN=... make gr
 - `grafana-import` posts to `$GRAFANA_HTTP_URL/api/dashboards/db` into the folder `robotics-lab`
   (it must exist) with `overwrite`, so running it again replaces the dashboard. The URL and the
   token are read from the environment only, and the token is never printed.
-- **Not verified:** the datasource types the variables filter on (`prometheus`,
-  `victoriametrics-logs-datasource`, `jaeger`) and how Grafana renders the queries. Check the
-  panels after the first import. The p95 panel reads the SDK's default bucket bounds (0, 5, 10, 25,
-  50 s and up), so it is coarse for short goals.
+- **Not verified:** how Grafana renders the panels and variables (the PromQL and LogsQL were run
+  against the stack, the dashboard was not imported). Check the panels after the first
+  import. The p95 panel reads the SDK's default bucket bounds (0, 5, 10, 25, 50 s and up), so it is
+  coarse for short goals.
 
 ## Old runs
 

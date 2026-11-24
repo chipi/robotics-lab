@@ -1,103 +1,645 @@
 {
   "id": null,
   "uid": "robotics-lab-live",
-  "title": "Robotics lab: live",
-  "description": "Mission Control's telemetry (docs/wip/TELEMETRY-RETENTION-DESIGN.md): robots, goals, anomalies, stops, errors. Labels robot_id, robot_kind, host_kind (RFC-0025). The datasource variables are chosen at the top.",
-  "tags": ["robotics-lab", "telemetry"],
+  "title": "Robotics Lab — Live",
+  "description": "Mission Control's telemetry (docs/wip/TELEMETRY-RETENTION-DESIGN.md): robots, goals, anomalies and stops, logs, traces. Labels robot_id, robot_kind, host_kind (RFC-0025).",
+  "tags": [
+    "robotics-lab",
+    "telemetry"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
   "refresh": "30s",
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "templating": {
     "list": [
-      {"name": "ds_metrics", "label": "Metrics", "type": "datasource", "query": "prometheus", "current": {}, "hide": 0, "refresh": 1},
-      {"name": "ds_logs", "label": "Logs", "type": "datasource", "query": "victoriametrics-logs-datasource", "current": {}, "hide": 0, "refresh": 1},
-      {"name": "ds_traces", "label": "Traces", "type": "datasource", "query": "jaeger", "current": {}, "hide": 0, "refresh": 1},
-      {"name": "env", "label": "Environment", "type": "custom", "query": "dev,prod,check", "multi": true, "includeAll": true, "allValue": ".*",
-       "current": {"selected": true, "text": "All", "value": "$__all"}, "options": [], "hide": 0}
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values({__name__=\"robotics_lab.robot.online\"}, deployment.environment.name)",
+          "refId": "VariableQuery"
+        },
+        "definition": "label_values({__name__=\"robotics_lab.robot.online\"}, deployment.environment.name)",
+        "regex": "/^(?!check$).*/",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": false,
+        "current": {
+          "selected": true,
+          "text": [
+            "dev"
+          ],
+          "value": [
+            "dev"
+          ]
+        },
+        "sort": 1
+      },
+      {
+        "name": "robot_id",
+        "label": "Robot",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values({__name__=\"robotics_lab.robot.online\", deployment.environment.name=~\"$environment\"}, robot_id)",
+          "refId": "VariableQuery"
+        },
+        "definition": "label_values({__name__=\"robotics_lab.robot.online\", deployment.environment.name=~\"$environment\"}, robot_id)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "search",
+        "label": "Log search (LogsQL)",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
     ]
   },
   "panels": [
     {
-      "id": 1, "type": "stat", "title": "Robots online",
-      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "online",
-                   "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.robot.online\",deployment.environment.name=~\"${env:regex}\"}[5m])))"}],
-      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
-      "fieldConfig": {"defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []}
+      "id": 1,
+      "type": "row",
+      "title": "Robots",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
     },
     {
-      "id": 2, "type": "stat", "title": "Lock held",
-      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "locked",
-                   "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.robot.lock_held\",deployment.environment.name=~\"${env:regex}\"}[5m])))"}],
-      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
-      "fieldConfig": {"defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []}
-    },
-    {
-      "id": 3, "type": "stat", "title": "Goals active",
-      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "active",
-                   "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.goals.active\",deployment.environment.name=~\"${env:regex}\"}[5m])))"}],
-      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"},
-      "fieldConfig": {"defaults": {"unit": "none"}, "overrides": []}
-    },
-    {
-      "id": 4, "type": "timeseries", "title": "Goals finished by state",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "{{state}}",
-                   "expr": "sum by (state) (increase({__name__=\"robotics_lab.goals\",deployment.environment.name=~\"${env:regex}\"}[$__rate_interval]))"}],
-      "fieldConfig": {"defaults": {"unit": "none", "custom": {"drawStyle": "bars", "stacking": {"mode": "normal"}}}, "overrides": []}
-    },
-    {
-      "id": 5, "type": "timeseries", "title": "Goal duration p95",
-      "description": "From the histogram's buckets, which are the SDK's default bounds (0, 5, 10, 25, 50 ... s): coarse for short goals.",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "p95",
-                   "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=\"robotics_lab.goal.duration_bucket\",deployment.environment.name=~\"${env:regex}\"}[$__rate_interval])))"}],
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
-    },
-    {
-      "id": 6, "type": "timeseries", "title": "Anomalies by severity",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
-      "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "{{severity}}",
-                   "expr": "sum by (severity) (increase({__name__=\"robotics_lab.anomalies\",deployment.environment.name=~\"${env:regex}\"}[$__rate_interval]))"}],
-      "fieldConfig": {"defaults": {"unit": "none", "custom": {"drawStyle": "bars", "stacking": {"mode": "normal"}}}, "overrides": []}
-    },
-    {
-      "id": 7, "type": "timeseries", "title": "Stops and errors",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
-      "datasource": {"type": "prometheus", "uid": "${ds_metrics}"},
+      "id": 2,
+      "type": "stat",
+      "title": "Robots online",
+      "description": "Robots whose robotics_lab.robot.online gauge was 1 in the last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
-        {"refId": "A", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "stops",
-         "expr": "sum(increase({__name__=\"robotics_lab.stops\",deployment.environment.name=~\"${env:regex}\"}[$__rate_interval]))"},
-        {"refId": "B", "datasource": {"type": "prometheus", "uid": "${ds_metrics}"}, "legendFormat": "errors",
-         "expr": "sum(increase({__name__=\"robotics_lab.errors\",deployment.environment.name=~\"${env:regex}\"}[$__rate_interval]))"}
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.robot.online\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[5m])))",
+          "instant": true,
+          "legendFormat": "Robots online"
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "none", "custom": {"drawStyle": "bars"}}, "overrides": []}
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 8, "type": "logs", "title": "Anomaly log",
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 21},
-      "datasource": {"type": "victoriametrics-logs-datasource", "uid": "${ds_logs}"},
-      "targets": [{"refId": "A", "datasource": {"type": "victoriametrics-logs-datasource", "uid": "${ds_logs}"}, "queryType": "instant", "maxLines": 200,
-                   "expr": "\"service.name\":\"robotics-lab-mission-control\" \"event.kind\":anomaly \"deployment.environment.name\":~\"${env:regex}\" | sort by (_time) desc"}],
-      "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending"}
+      "id": 3,
+      "type": "stat",
+      "title": "Lock held",
+      "description": "Robots holding the robot lock (robotics_lab.robot.lock_held) in the last 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.robot.lock_held\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[5m])))",
+          "instant": true,
+          "legendFormat": "Lock held"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
-      "id": 9, "type": "table", "title": "Recent goal traces",
-      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 30},
-      "datasource": {"type": "jaeger", "uid": "${ds_traces}"},
-      "targets": [{"refId": "A", "datasource": {"type": "jaeger", "uid": "${ds_traces}"}, "queryType": "search",
-                   "service": "robotics-lab-mission-control", "operation": "goal.run", "limit": 20}]
+      "id": 4,
+      "type": "row",
+      "title": "Goals",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Goals active",
+      "description": "Goals running now (robotics_lab.goals.active).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(max by (robot_id) (last_over_time({__name__=\"robotics_lab.goals.active\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[5m])))",
+          "instant": true,
+          "legendFormat": "Goals active"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Goals finished by state",
+      "description": "Goals that ended in each state per interval (robotics_lab.goals).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (state) (increase({__name__=\"robotics_lab.goals\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Goal duration p95",
+      "description": "95th percentile of goal duration over the dashboard range's interval, from the SDK's default histogram buckets, so coarse for short goals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate({__name__=\"robotics_lab.goal.duration_bucket\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Anomalies and stops",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Anomalies by severity",
+      "description": "Anomalies raised per interval, by severity.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (severity) (increase({__name__=\"robotics_lab.anomalies\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Anomalies by kind",
+      "description": "Anomalies raised per interval, by anomaly kind.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (anomaly) (increase({__name__=\"robotics_lab.anomalies\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "{{anomaly}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Stops and errors",
+      "description": "Stops and errors counted per interval.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase({__name__=\"robotics_lab.stops\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "stops"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase({__name__=\"robotics_lab.errors\", robot_id=~\"$robot_id\", deployment.environment.name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Logs",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "Mission Control logs",
+      "description": "Mission Control's log records, filtered by robot, environment and the search box (LogsQL words, e.g. \"event.kind\":anomaly).",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "expr": "\"service.name\":\"robotics-lab-mission-control\" robot_id:~\"${robot_id:regex}\" \"deployment.environment.name\":~\"${environment:regex}\" ${search}",
+          "queryType": "instant",
+          "maxLines": 200
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending",
+        "prettifyLogMessage": false
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "Traces",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "panels": []
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Recent goal.run traces",
+      "description": "The latest goal.run traces of robotics-lab-mission-control.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces-jaeger"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces-jaeger"
+          },
+          "queryType": "search",
+          "service": "robotics-lab-mission-control",
+          "operation": "goal.run",
+          "limit": 20
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
     }
   ]
 }
