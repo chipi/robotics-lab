@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-density="regular">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,27 +7,28 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/lib/tokens.css">
 <link rel="stylesheet" href="/lib/fonts/fonts.css">
+<link rel="stylesheet" href="/lib/ui.css">
 <link rel="stylesheet" href="web/style.css">
 <script type="importmap">
 {"imports": {"three": "/lib/vendor/three.module.js", "three/addons/": "/lib/vendor/"}}
 </script>
 </head>
 <body>
-<header class="top">
-  <span class="mark"><i></i><span class="mark-t">Mission Control</span></span>
+<header class="top ui-topbar">
+  <span class="mark"><i></i><span class="mark-t" data-slot="brand">Mission Control</span></span>
   <span id="rp-crumbs" class="crumbs" hidden>
     <button id="rp-back" class="crumb" type="button" aria-label="Back to the robots"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span class="crumb-t">Robots</span></button>
     <span class="crumb-sep" aria-hidden="true">/</span>
     <span class="picker"><span class="lbl">Robot</span><select id="rp-picker" aria-label="Choose a robot"></select></span>
   </span>
-  <span class="grow"></span>
+  <nav data-slot="nav" aria-label="Apps"></nav>
   <span id="tokenbox" hidden class="row">
     <input id="token" type="password" placeholder="Access token" aria-label="Access token" autocomplete="off">
     <button id="token-set" class="btn sm" type="button">Use</button>
   </span>
-  <span id="conn" class="chip">connecting</span>
+  <span id="connbox" class="ui-badge" data-status="unknown"><span class="ui-glyph" aria-hidden="true">?</span><span id="conn">connecting</span></span>
   <button id="alarm" class="chip alarm" type="button" hidden aria-expanded="false" aria-controls="alarms">alarms</button>
-  <button id="theme" class="btn icon" type="button" aria-label="Switch between light and dark"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  <span data-slot="theme"><button id="theme" class="btn icon" type="button" aria-label="Switch between light and dark"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button></span>
   <div class="stops">
     <button id="stop-all" class="stop all" type="button">STOP ALL</button>
     <button id="stop-robot" class="stop" type="button">STOP</button>
@@ -115,9 +116,10 @@
         <input id="g-folder" class="grow" placeholder="Folder (tests/course)" aria-label="Goal folder">
       </div>
       <div class="row">
-        <button id="g-run" class="btn primary" type="button">Run now</button>
+        <button id="g-run" class="btn primary" type="button" data-needs-fresh="1">Run now</button>
         <button id="g-save" class="btn" type="button">Save to library</button>
       </div>
+      <div id="goal-fresh" class="needs-fresh" role="status" hidden></div>
     </div>
   </section>
 

@@ -24,6 +24,17 @@ const S = {
   mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, armed: null, token: null, open: {},
 };
 
+// The shared kit (libs/web) loads after the page works and on its own: a module that fails to load leaves the static page, STOP and STOP ALL included,
+// exactly as it is, and each use below falls back to plain text.
+const KIT = {};
+function loadKit() {
+  const one = (key, url) => import(url).then((m) => { KIT[key] = m; }).catch((e) => { KIT[key + "Error"] = e.message; });
+  return Promise.all([one("status", "/lib/status.js"), one("brand", "/lib/brand.js"), one("motion", "/lib/motion.js")]).then(paintKit);
+}
+
+// A freshness check with the signature of libs/web/time/freshness.js (U6, built at the same time): replace this with an import of it.
+const freshness = (ageS, { staleAfterS = 5, offlineAfterS = 30 } = {}) => (ageS == null || ageS >= offlineAfterS ? "offline" : ageS >= staleAfterS ? "stale" : "fresh");
+
 async function api(method, path, body) {
   const headers = { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...(S.token ? { Authorization: "Bearer " + S.token } : {}) };
   const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -74,6 +85,63 @@ function toast(msg, err) {
 }
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
 
+// --- status badges and freshness (ADR-0021) ----------------------------------------------------------------
+function badge(status, word, attrs, wordAttrs) {
+  const g = KIT.status ? KIT.status.glyph(status) : "";
+  return h("span", { class: "ui-badge", "data-status": status, ...attrs }, h("span", { class: "ui-glyph", "aria-hidden": "true" }, g), h("span", wordAttrs, word));
+}
+// a goal's or run's state: glyph, word and status colour; the id is on the word, so its text is the state alone
+function stateBadge(state, id) {
+  if (!KIT.status) return h("span", { class: "state " + state, id }, state);
+  return badge(KIT.status.statusOf("goal_state", state), state, { class: "ui-badge state", "data-state": state }, { id });
+}
+
+// How old a robot's state is. A state event stamps it; a load of the robot stamps it with the age the server read it at (last_seen_age_s).
+const stamp = (r, prev) => { r.state_at = Math.max(prev || 0, r.last_seen_age_s == null ? 0 : Date.now() - r.last_seen_age_s * 1000) || null; };
+const ageS = (r) => (r.state_at == null ? null : Math.max(0, (Date.now() - r.state_at) / 1000));
+const freshOf = (r) => (r.online === false ? "offline" : freshness(ageS(r)));
+function ageText(r) {
+  const a = ageS(r), g = KIT.status ? KIT.status.glyph("stale") : "";
+  const how = a == null ? "no state yet" : a < 90 ? `${Math.round(a)} s old` : `${Math.round(a / 60)} min old`;
+  return `${g} ${freshOf(r) === "offline" ? "offline" : "stale"}, ${how}`.trim();
+}
+// the dimmed values of a robot whose state is old, and the one age that says how old
+const dimOf = (r) => (freshOf(r) === "fresh" ? "" : "ui-stale-value");
+const ageEl = (r) => (freshOf(r) === "fresh" ? null : h("span", { class: "ui-stale-age", "data-age": r.id }, ageText(r)));
+
+// Actions that need a fresh state of the robot are disabled with the reason beside them. STOP, STOP ALL and the alarm panel's stop are never
+// among them: nothing here touches them (they are static HTML, and a stale or silent robot is exactly when STOP is needed).
+function applyFreshness() {
+  const r = robot(), fr = r ? freshOf(r) : "fresh";
+  const why = fr === "fresh" ? "" : `${r.id}'s state is ${fr === "offline" ? "missing" : "stale"}, so a goal cannot start until it is fresh. STOP still works.`;
+  for (const b of document.querySelectorAll("[data-needs-fresh]")) { b.disabled = !!why; if (why) b.title = why; else b.removeAttribute("title"); }
+  const note = $("goal-fresh");
+  note.hidden = !why; if (note.textContent !== why) note.textContent = why;
+}
+function tickFreshness() {
+  let changed = false;
+  for (const r of S.robots) { const f = freshOf(r); if (r.fresh_seen !== f) changed = true; }
+  if (changed) { renderRobots(); return; }
+  for (const el of document.querySelectorAll("[data-age]")) { const r = S.robots.find((x) => x.id === el.dataset.age); if (r) el.textContent = ageText(r); }
+  applyFreshness();
+}
+setInterval(tickFreshness, 1000);
+
+// the connection chip: live is yellow with the live dot; reconnecting reads as an error (status.js, kind conn)
+function paintConn() {
+  const w = S.conn || "connecting", st = KIT.status ? KIT.status.statusOf("conn", w) : "unknown", box = $("connbox");
+  $("conn").textContent = w; box.dataset.status = st;
+  box.firstElementChild.textContent = KIT.status ? KIT.status.glyph(st) : "";
+}
+// the top bar's brand and nav slots; STOP, the chips and the theme button are the page's own markup and are not touched
+function paintBar() {
+  if (!KIT.brand) return;
+  const nav = [{ label: "Robots", href: "#", current: !route() }];
+  if (location.pathname.startsWith("/control/")) nav.unshift({ label: KIT.brand.APPS.observatory.name, href: KIT.brand.APPS.observatory.href });
+  try { KIT.brand.mountTopBar(document.querySelector("header.top"), { app: "control", nav }); } catch (e) { KIT.brandError = e.message; }   // the static bar stays
+}
+function paintKit() { paintBar(); paintConn(); renderRuns(); renderRunDetail(); renderRobots(); }
+
 // --- theme -----------------------------------------------------------------------------------------------
 function effectiveTheme() {
   return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
@@ -91,11 +159,11 @@ $("theme").addEventListener("click", () => {
 const robot = () => S.robots.find((r) => r.id === S.robot) || null;
 
 async function loadRobots() {
-  const list = (await api("GET", "/robots")).robots;
+  const list = (await api("GET", "/robots")).robots, before = new Map(S.robots.map((r) => [r.id, r.state_at]));
   S.robots = await Promise.all(list.map(async (r) => (await api("GET", "/robots/" + r.id)).robot));
   S.robots.forEach(seedAlarms);
   const now = Date.now();
-  for (const r of S.robots) r.lock_at = now;
+  for (const r of S.robots) { r.lock_at = now; stamp(r, before.get(r.id)); }
   if (!robot() && S.robots.length) await selectRobot(S.robots[0].id, true);
   renderRobots();
 }
@@ -103,9 +171,11 @@ async function loadRobots() {
 async function refreshRobot(id) {
   const i = S.robots.findIndex((r) => r.id === id);
   if (i < 0) return loadRobots();
+  const prev = S.robots[i].state_at;
   S.robots[i] = (await api("GET", "/robots/" + id)).robot;
   seedAlarms(S.robots[i]);
   S.robots[i].lock_at = Date.now();
+  stamp(S.robots[i], prev);
   renderRobots();
   if (id === S.robot && S.robots[i].site !== S.site) await loadSite();
 }
@@ -164,24 +234,27 @@ function holderText(r) {
 function renderRobots() {
   const box = $("robot-list");
   box.replaceChildren(...S.robots.map((r) => {
-    const st = r.status || {}, p = st.pose;
+    const st = r.status || {}, p = st.pose, fr = freshOf(r), dim = dimOf(r);
+    r.fresh_seen = fr;
     return h("div", { class: "robotcard" }, h("button", { class: "robot", type: "button", id: "robot-" + r.id, "data-online": String(r.online), "aria-pressed": String(r.id === S.robot),
       onclick: guard(() => selectRobot(r.id)) },
       h("div", { class: "name" }, h("span", { class: "dot" + (r.online ? " on" : "") }), r.label, " ", h("span", { class: "faint mono" }, r.id)),
-      h("div", { class: "kv" },
+      h("div", { class: "kv" + (fr === "fresh" ? "" : " ui-stale"), "data-fresh": fr },
         h("span", {}, "", h("b", { class: "online" }, r.online ? "online" : "offline")),
         h("span", {}, "lock ", h("b", { class: "lock" }, lockText(r))),
-        h("span", {}, "mode ", h("b", {}, st.mode || "-")),
-        h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
-        h("span", {}, "pose ", h("b", { class: "mono" }, p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : "-")),
+        h("span", {}, "mode ", h("b", { class: dim }, st.mode || "-")),
+        h("span", {}, "battery ", h("b", { class: dim }, st.battery_pct != null ? st.battery_pct + "%" : "-")),
+        h("span", {}, "pose ", h("b", { class: "mono " + dim }, p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : "-")),
         h("span", {}, "site ", h("b", {}, r.site || "none")),
-        r.goal_run ? h("span", {}, "run ", h("b", {}, "#" + r.goal_run)) : null),
+        r.goal_run ? h("span", {}, "run ", h("b", {}, "#" + r.goal_run)) : null,
+        ageEl(r)),
       h("div", { class: "holder faint" }, holderText(r))),
       h("a", { class: "open", href: "#robot/" + r.id, "data-robot": r.id }, "Open the robot's page"));
   }));
   const r = robot();
   $("stop-robot").textContent = r ? "STOP " + r.id : "STOP";
   $("stop-robot").disabled = !r;
+  applyFreshness();
   renderRobotPage();
 }
 
@@ -242,13 +315,16 @@ function paintPicker() {
 // reading is not five seconds old; the rest of the page is not rebuilt that often (an open settings form would be lost).
 function paintFacts(r) {
   const st = r.status || {}, pr = r.profile, held = holderText(r);
+  const fr = freshOf(r), dim = dimOf(r);
+  $("rp-facts").classList.toggle("ui-stale", fr !== "fresh");
   setKids($("rp-facts"),
-    h("span", {}, "mode ", h("b", {}, st.mode || "-")),
-    h("span", {}, "battery ", h("b", {}, st.battery_pct != null ? st.battery_pct + "%" : "-")),
-    ...Object.entries(st.sensors || {}).map(([k, v]) => h("span", { "data-sensor": k }, k + " ", h("b", {}, sensorText(v)))),
+    h("span", {}, "mode ", h("b", { class: dim }, st.mode || "-")),
+    h("span", {}, "battery ", h("b", { class: dim }, st.battery_pct != null ? st.battery_pct + "%" : "-")),
+    ...Object.entries(st.sensors || {}).map(([k, v]) => h("span", { "data-sensor": k }, k + " ", h("b", { class: dim }, sensorText(v)))),
     h("span", {}, "held by ", h("b", { id: "rp-holder" }, held === "free" ? "nobody" : held)),
     pr ? h("span", {}, "runs ", h("b", {}, pr.variant), " variant") : null,
-    h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")));
+    h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")),
+    ageEl(r));
 }
 
 function renderRobotPage() {
@@ -257,6 +333,7 @@ function renderRobotPage() {
   document.querySelector("main.page").hidden = !!rt;
   $("rp-crumbs").hidden = !rt;
   document.body.classList.toggle("on-robot", !!rt);
+  paintBar();
   if (!rt) { closeBody(); stCloseDrawers(); requestDraw(); return; }
   const r = S.robots.find((x) => x.id === id);
   if (r && S.robot !== id) { guard(() => selectRobot(id, true))(); return; }
@@ -613,13 +690,14 @@ $("say-go").addEventListener("click", guard(async () => {
   setKids($("plan-out"),
     p.goals.map((x) => h("div", { class: "row", "data-plan": "1" },
       h("span", { class: "grow" }, x.read_back), h("span", { class: "faint", style: "font-size:12px" }, p.source),
-      h("button", { class: "btn sm primary", type: "button", "data-action": "run-plan", onclick: guard(async () => {
+      h("button", { class: "btn sm primary", type: "button", "data-action": "run-plan", "data-needs-fresh": "1", onclick: guard(async () => {
         const j = await api("POST", "/goal-runs", { goal: x.goal, robots: [r.id], ...(S.site ? { site: S.site } : {}), ...startBody() });
         S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
         if (j.run.state === "refused") toast("Refused: " + j.run.reason, true);
       }) }, "Run"))),
     p.goals.length ? null : h("div", { class: "dim", id: "plan-none" }, p.message),
     p.dropped.length ? h("div", { class: "faint", style: "font-size:12px" }, `${p.dropped.length} part(s) of the plan were not valid goals and were dropped.`) : null);
+  applyFreshness();
 }));
 
 $("g-save").addEventListener("click", guard(async () => {
@@ -641,6 +719,10 @@ function goalSummary(g) {
 }
 
 function renderLibrary() {
+  renderLibraryList();
+  applyFreshness();
+}
+function renderLibraryList() {
   const box = $("goal-list");
   if (!S.goals.length) { box.replaceChildren(h("div", { class: "dim" }, "Nothing saved yet. Define a goal and press Save to library, or save a run.")); return; }
   const folders = new Map();
@@ -650,7 +732,7 @@ function renderLibrary() {
     h("ul", { class: "list" }, goals.map((g) => h("li", { "data-goal": g.id },
       h("div", { class: "row" },
         h("span", { class: "grow" }, h("b", {}, g.name), " ", h("span", { class: "dim" }, goalSummary(g))),
-        h("button", { class: "btn sm primary", type: "button", "data-action": "run", onclick: guard(async () => {
+        h("button", { class: "btn sm primary", type: "button", "data-action": "run", "data-needs-fresh": "1", onclick: guard(async () => {
           const r = robot();
           const j = await api("POST", `/goals/${g.id}/runs`, { robots: [r.id], ...(S.site ? { site: S.site } : {}), ...startBody() });
           S.run = j.run.id; await Promise.all([loadRuns(), refreshRobot(r.id)]);
@@ -665,7 +747,7 @@ function renderLibrary() {
 function renderRuns() {
   $("run-list").replaceChildren(...(S.runs.length ? S.runs.map((r) => h("button", { class: "run", type: "button", "data-run": r.id, "aria-pressed": String(r.id === S.run),
     onclick: guard(async () => { S.run = r.id; renderRuns(); await loadRunDetail(r.id); }) },
-    `#${r.id} ${r.goal.name} `, h("span", { class: "state " + r.state }, r.state))) : [h("div", { class: "dim" }, "No goal runs for this robot yet.")]));
+    `#${r.id} ${r.goal.name} `, stateBadge(r.state))) : [h("div", { class: "dim" }, "No goal runs for this robot yet.")]));
 }
 
 const startPoseText = (p) => `Started from a pose the operator placed: (${p.x}, ${p.y}) facing ${Math.round(p.yaw * 180 / Math.PI)} deg`;
@@ -680,7 +762,7 @@ function renderRunDetail() {
   const saveName = h("input", { id: "save-name", class: "grow", placeholder: "Name", "aria-label": "Name to save this goal as" });
   const saveFolder = h("input", { id: "save-folder", class: "grow", placeholder: "Folder", "aria-label": "Folder", value: r.goal.folder || "" });
   setKids(box,
-    h("h3", {}, `Run #${r.id} `, h("span", { class: "state " + r.state, id: "run-state" }, r.state), " ", watch),
+    h("h3", {}, `Run #${r.id} `, stateBadge(r.state, "run-state"), " ", watch),
     r.reason ? h("div", { class: "dim", id: "run-reason" }, r.reason) : null,
     (r.conditions || {}).start_pose ? h("div", { class: "dim", id: "run-placed" }, startPoseText(r.conditions.start_pose)) : null,
     (r.conditions || {}).rehearsal && r.conditions.rehearsal.flagged
@@ -982,9 +1064,10 @@ function onEvent(e) {
   switch (e.kind) {
     case "state":
       if (r) {
+        r.state_at = Date.now();
         r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags, joints: e.joints, sensors: e.sensors, program: e.program };
         later("robots-render", async () => renderRobots(), 150); requestDraw();
-        if (routeId() === r.id) { paintBody(r); later("robot-facts", () => paintFacts(r), 150); }
+        if (routeId() === r.id) { paintBody(r); later("robot-facts", () => paintFacts(S.robots.find((x) => x.id === r.id) || r), 150); }
       }
       break;
     case "map":
@@ -1015,13 +1098,12 @@ function onEvent(e) {
 function connect() {
   const es = new EventSource(API + "/events" + (S.token ? "?token=" + encodeURIComponent(S.token) : ""));
   S.es = es;
-  const conn = $("conn");
   es.onopen = () => {
-    conn.textContent = "live"; conn.className = "chip ok";
+    S.conn = "live"; paintConn();
     if (S.lastConn === "lost") guard(loadAll)();
     S.lastConn = "live";
   };
-  es.onerror = () => { conn.textContent = "reconnecting"; conn.className = "chip bad"; S.lastConn = "lost"; };
+  es.onerror = () => { S.conn = "reconnecting"; paintConn(); S.lastConn = "lost"; };
   for (const k of ["state", "map", "robot-online", "robot-offline", "lock", "stop", "stop-all", "goal-run", "decision", "anomaly", "objects", "object-named"]) {
     es.addEventListener(k, (ev) => onEvent(JSON.parse(ev.data)));
   }
@@ -1036,7 +1118,7 @@ async function loadAll() {
   renderAll();
 }
 
-window.__mc = { S, renderAreas, renderRobotPage, loadRobots, get body() { return bodyMod; }, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
+window.__mc = { S, KIT, freshOf, tickFreshness, renderAreas, renderRobotPage, loadRobots, get body() { return bodyMod; }, toScreen: (x, y) => toScreen(x, y), toWorld: (x, y) => toWorld(x, y), draw, get ready() { return S.ready; } };
 async function start() { renderGoalFields(); await loadAll(); connect(); S.ready = true; }
 $("token-set").addEventListener("click", guard(async () => {
   S.token = $("token").value.trim();
@@ -1047,3 +1129,4 @@ $("token-set").addEventListener("click", guard(async () => {
 }));
 renderRobotPage();
 guard(start)();
+loadKit();
