@@ -361,6 +361,7 @@ function renderRobotPage() {
   const r = S.robots.find((x) => x.id === id);
   if (r && S.robot !== id) { guard(() => selectRobot(id, true))(); return; }
   applyTab(rt.tab);
+  loadLayout();
   paintPicker();
   const fit = $("fit");
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
@@ -499,6 +500,15 @@ $("robot-page").querySelector(".tabs").addEventListener("keydown", (ev) => {
   goTab(TABS[to]);
 });
 
+// The robot page's panels and layouts (layout.js, with libs/web/layout/store.js): loaded the first time a robot page opens, never by the overview.
+let layoutMod = null, layoutBusy = null;
+function loadLayout() {
+  layoutBusy ||= import("./layout.js").then((m) => { layoutMod = m.mount({ page: $("robot-page"), setOpen }); })
+    .catch((e) => { toast("The layout could not be loaded: " + e.message, true); });   // not retried: the page repaints every 5 s and would toast every time
+  return layoutBusy;
+}
+$("rp-layout").addEventListener("click", async () => { await loadLayout(); if (layoutMod) layoutMod.toggle(); });
+
 function setOpen(head, open) {
   head.setAttribute("aria-expanded", String(open));
   const body = $(head.getAttribute("aria-controls"));
@@ -507,7 +517,7 @@ function setOpen(head, open) {
 }
 document.addEventListener("click", (ev) => {
   const head = ev.target.closest("button[data-collapse]");
-  if (head) { setOpen(head, head.getAttribute("aria-expanded") !== "true"); return; }
+  if (head) { setOpen(head, head.getAttribute("aria-expanded") !== "true"); if (layoutMod) layoutMod.folded(head.dataset.collapse, head.getAttribute("aria-expanded") === "true"); return; }
   const go = ev.target.closest("[data-goto-tab]");
   if (go) goTab(go.dataset.gotoTab);
 });

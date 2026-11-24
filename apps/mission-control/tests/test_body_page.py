@@ -240,6 +240,26 @@ with sync_playwright() as p:
         wait("window.__mc.body?.state()?.drawn === 3")
         check("and back on the duck the body is drawn again, once", page.locator("#rp-body canvas").count() == 1)
 
+        # --- U22: the body view keeps working in whatever the layout does to the joints card beside it --------------------------------------
+        page.set_viewport_size({"width": 1500, "height": 900})
+        wait("window.__mc.body?.state()?.drawn === 3")
+        page.click("#rp-layout")
+        page.uncheck("#lay-show-joints")
+        page.wait_for_timeout(300)
+        solo = page.evaluate("(() => { const r = document.querySelector('#rp-body canvas')?.getBoundingClientRect(); return r ? [r.width, r.height] : [0, 0]; })()")
+        check("must fail: with the joints card hidden the body view takes the whole row and still draws its three links", solo[0] > 900 and solo[1] > 200
+              and page.evaluate("window.__mc.body.state().drawn") == 3 and page.locator("#rp-body canvas").count() == 1, solo)
+        page.check("#lay-show-joints")
+        page.evaluate("() => { const r = document.getElementById('lay-w-joints'); r.value = 560; r.dispatchEvent(new Event('input', {bubbles: true})); r.dispatchEvent(new Event('change', {bubbles: true})); }")
+        page.wait_for_timeout(300)
+        wide = page.evaluate("(() => { const r = document.querySelector('#rp-body canvas')?.getBoundingClientRect(); return r ? [r.width, r.height] : [0, 0]; })()")
+        check("must fail: a joints column of 560 px narrows the body view, which redraws at its new size and keeps its toolbar", 300 < wide[0] < solo[0] and wide[1] > 200
+              and page.locator("#rp-body-view .bodytools button").count() == 7, [wide, solo])
+        page.click("#lay-reset")
+        page.click("#lay-close")
+        page.wait_for_timeout(200)
+        check("and a reset puts the joints card and the 340 px column back", page.evaluate("!document.querySelector('[data-panel=joints]').hidden && getComputedStyle(document.querySelector('.bodygrid')).gridTemplateColumns.split(' ').length === 2"))
+
         # --- U21: the shared stage, the camera presets, Fit robot, x-ray and the inspector -------------------------------------------------
         cam = lambda: page.evaluate("window.__mc.body.state().camera")
         settled = lambda: wait("window.__mc.body.state().camera.moving === false")

@@ -11,6 +11,10 @@ whose state is old dims its values and says how old, and disables the actions th
 stay enabled and fire on the first click; a kit module that fails to load leaves the page and STOP usable; the overview fetches no three.js; reduced motion
 zeroes the chevron's transition.
 
+U22 (panels and layouts on the robot page, libs/web/layout/store.js): a panel hidden, a card folded and a size set persist across a reload (rl.layouts.control),
+Reset returns the default, a saved layout loads and deletes, and STOP and STOP ALL stay uncovered and one press with the menu open, every panel hidden and the
+joints column at its widest, at phone and desktop width; the overview fetches neither layout.js nor the store.
+
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
 
 import atexit
@@ -373,6 +377,136 @@ with sync_playwright() as p:
         dp.click("#stop-robot", timeout=4000)
     check("a drawer open: STOP posts on one press, and confirm.js is not fetched", not [u for u in drawer_reqs if "/lib/confirm." in u])
     dp.close()
+
+    # --- U22: panels and layouts: saved in this browser (libs/web/layout/store.js), restored on a reload, reset to the default ---------------------
+    LS = "JSON.parse(localStorage.getItem('rl.layouts.control') || 'null')"
+    PANEL_IDS = ("fit", "alarms", "parts", "body", "joints")
+    ALL = list(PANEL_IDS)
+
+    def setrange(page_, rid, px):
+        page_.evaluate("([i, v]) => { const r = document.getElementById(i); r.value = v; r.dispatchEvent(new Event('input', {bubbles: true})); r.dispatchEvent(new Event('change', {bubbles: true})); }", [rid, str(px)])
+
+    for view, size in (("phone 390x844", {"width": 390, "height": 844}), ("desktop 1440x900", {"width": 1440, "height": 900})):
+        lctx = browser.new_context(viewport=size, color_scheme="dark")
+        lp = lctx.new_page()
+        lp.set_default_timeout(5000)
+        lp.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+        lp.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
+        lreqs = []
+        lp.on("request", lambda r: lreqs.append(r.url))
+
+        def lhit(sid):
+            return lp.evaluate("""(id) => { const b = document.getElementById(id), r = b.getBoundingClientRect();
+                const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                return e && (e === b || b.contains(e)) ? 'button' : (e ? e.tagName + '#' + e.id + '.' + e.className : 'nothing'); }""", sid)
+
+        def lopen(tab_name="overview"):
+            lp.goto(BASE + "/#robot/duck-1" + ("" if tab_name == "overview" else "/" + tab_name))
+            wait(lp, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+            wait(lp, "document.getElementById('stop-robot').textContent === 'STOP duck-1'")
+            wait(lp, "!!document.querySelector('#rp-layout-menu')")      # layout.js is mounted
+
+        def shown():
+            return lp.evaluate("(ids) => ids.filter((i) => !document.querySelector(`[data-panel=${i}]`).hidden)", list(PANEL_IDS))
+
+        def stops_clear(label):
+            check(f"{view}, {label}: nothing covers STOP or STOP ALL", all(lhit(s) == "button" for s in STOPS), [lhit(s) for s in STOPS])
+
+        with soft(f"{view}: layouts"):
+            lopen()
+            check(f"{view}: the layout menu is loaded by the robot page, and starts shut", lp.locator("#rp-layout-menu").is_hidden() and any(u.endswith("/lib/layout/store.js") for u in lreqs), lreqs[-5:])
+            check(f"{view}: no layout saved yet: every panel is shown and nothing is stored", shown() == ALL and lp.evaluate(LS) is None, shown())
+            lp.click("#rp-layout")
+            check(f"{view}: the Layout button opens the menu and says so", lp.locator("#rp-layout-menu").is_visible() and lp.get_attribute("#rp-layout", "aria-expanded") == "true")
+            stops_clear("menu open")
+            check(f"{view}: the default layout: overview cards all shown, joints column 340 px, cards 420 px", lp.evaluate("""() => ['fit', 'alarms', 'parts', 'body'].every((i) => !document.querySelector(`[data-panel=${i}]`).hidden)
+                && document.getElementById('robot-page').style.getPropertyValue('--rp-joints-w') === '340px' && document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'"""))
+
+            # hide two panels, fold a third, size the cards: it persists across a reload
+            lp.uncheck("#lay-show-alarms")
+            lp.uncheck("#lay-show-parts")
+            setrange(lp, "lay-w-cards", 560)
+            lp.click("#lay-close")
+            lp.click("#rp-fit-head")
+            check(f"{view}: hiding panels hides them now", shown() == ["fit", "body", "joints"], shown())
+            saved = lp.evaluate(LS)
+            check(f"{view}: the change is in rl.layouts.control under the name default, and the layout in use is default",
+                  saved and saved["layouts"]["default"]["panels"]["open"].get("hidden:alarms") is True and saved["layouts"]["default"]["panels"]["open"].get("fit") is False
+                  and saved["layouts"]["default"]["widths"].get("cards") == 560 and lp.evaluate("localStorage.getItem('rl.layout.current.control')") == "default", saved)
+            lp.reload()
+            wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
+            check(f"{view}: after a reload the hidden panels are still hidden", shown() == ["fit", "body", "joints"], shown())
+            got = lp.evaluate("[document.getElementById('rp-fit-head').getAttribute('aria-expanded'), document.getElementById('robot-page').style.getPropertyValue('--rp-card-min')]")
+            check(f"{view}: after a reload the folded card is still folded, the size is kept", got == ["false", "560px"], got)
+            stops_clear("two panels hidden, after a reload")
+
+            # every panel hidden: the page says so, the menu brings them back, and STOP is clear throughout
+            lp.click("#rp-layout")
+            for pid in ("fit", "body"):
+                lp.uncheck(f"#lay-show-{pid}")
+            check(f"{view}: every overview panel hidden: the page says so", lp.locator("#rp-layout-empty").is_visible() and shown() == ["joints"], shown())
+            stops_clear("every overview panel hidden, menu open")
+            lp.click("#lay-close")
+            stops_clear("every overview panel hidden, menu shut")
+
+            # a named layout, then a reset to the default, then the named one back
+            lp.click("#rp-layout")
+            lp.fill("#lay-name", "bare")
+            lp.click("#lay-save")
+            check(f"{view}: Save as keeps it under its name and puts it in use", lp.evaluate("[localStorage.getItem('rl.layout.current.control'), Object.keys(" + LS + ".layouts).sort()]") == ["bare", ["bare", "default"]])
+            lp.click("#lay-reset")
+            check(f"{view}: Reset to default shows every panel and the default sizes", shown() == ALL and lp.evaluate("""document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'
+                && document.getElementById('rp-fit-head').getAttribute('aria-expanded') === 'true'"""), shown())
+            lp.reload()
+            wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
+            check(f"{view}: the reset survives a reload", shown() == ALL and lp.evaluate("document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'"), shown())
+            lp.click("#rp-layout")
+            lp.select_option("#lay-list", "bare")
+            check(f"{view}: choosing the saved layout brings it back, and it is the one in use", shown() == ["joints"] and lp.evaluate("localStorage.getItem('rl.layout.current.control')") == "bare")
+            stops_clear("the saved layout loaded, menu open")
+            lp.click("#lay-delete")
+            check(f"{view}: Delete removes the saved layout and the default is back", shown() == ALL and lp.evaluate(LS + ".layouts.bare === undefined"))
+            lp.click("#lay-close")
+
+            # the Body tab: the joints card hidden and the column widest; the STOP buttons stay clear and the layout is the one for the tab
+            lp.click("#tab-body")
+            wait(lp, "!document.getElementById('rp-body').hidden")
+            lp.click("#rp-layout")
+            setrange(lp, "lay-w-joints", 560)
+            stops_clear("the Body tab, joints column at 560 px, menu open")
+            lp.uncheck("#lay-show-joints")
+            check(f"{view}: the joints card hidden leaves the body column alone in its grid", lp.evaluate("document.querySelector('.bodygrid').classList.contains('solo') && document.querySelector('[data-panel=joints]').hidden"))
+            stops_clear("the Body tab, joints hidden, menu open")
+            lp.reload()
+            wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
+            check(f"{view}: the hidden joints card stays hidden after a reload", shown() == ["fit", "alarms", "parts", "body"] and lp.evaluate("document.querySelector('[data-panel=joints]').hidden"), shown())
+            stops_clear("the Body tab, joints hidden, after a reload")
+            lp.click("#rp-layout")
+            lp.click("#lay-reset")
+            check(f"{view}: reset shows the joints card again", lp.evaluate("!document.querySelector('[data-panel=joints]').hidden && !document.querySelector('.bodygrid').classList.contains('solo')"))
+            lp.keyboard.press("Escape")
+            check(f"{view}: Escape closes the menu and the focus goes back to the Layout button", lp.locator("#rp-layout-menu").is_hidden() and lp.evaluate("document.activeElement.id") == "rp-layout")
+
+        # STOP with a panel arrangement saved, on a freshly loaded page: still one press, and the menu code has not been asked to confirm anything
+        with soft(f"{view}: STOP with the layout menu open"):
+            lopen()
+            lp.click("#rp-layout")
+            for sid, route in STOPS.items():
+                with lp.expect_request(lambda r, route=route: r.method == "POST" and r.url.endswith("/api/v1" + route), timeout=4000):
+                    lp.click("#" + sid, timeout=4000)
+                check(f"{view}, menu open: one press on {sid} posts {route}", True)
+        lctx.close()
+
+    # the overview does not fetch the layout module or the store, and a stored layout does not change that
+    olay = ctx.new_page()
+    oreqs = []
+    olay.on("request", lambda r: oreqs.append(r.url))
+    olay.set_viewport_size({"width": 390, "height": 844})
+    olay.goto(BASE + "/")
+    olay.wait_for_function("window.__mc && window.__mc.ready", timeout=8000)
+    olay.wait_for_timeout(800)
+    check("the phone overview fetches neither layout.js nor the layout store", not [u for u in oreqs if "layout" in u], [u for u in oreqs if "layout" in u])
+    olay.close()
 
     # reduced motion: the chevron's transition is gone
     def chevron_ms(reduced):
