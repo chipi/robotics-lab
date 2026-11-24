@@ -71,8 +71,8 @@ them.
 - **The operator's answers to questions 16 to 27 and the confirmation of the advisor's five
   decisions** (2026-11-23): the five are the truth reader plugin, no drop sensing for the
   Burger and the NXT, `rtf_low`, the DDS settings, and the settled reset. Section 9 records each
-  answer. Two parts are still open: the Gazebo-scene half of questions 9 and 21, and the NXT's
-  range sensor (question 16, decided with the Pi module's design). Section 5.1 is now
+  answer. The two parts left open then (the Gazebo-scene half of questions 9 and 21, the NXT's
+  range sensor of question 16) were answered on 2026-11-24. Section 5.1 is now
   requirements toward the tool's own RFCs; step 10 gains the review plan (question 19).
 - **Advisor review, Fable 5.1, folded** (it read the spike's work files and upstream sources;
   nothing was run). The tf freeze has three diagnosed causes and an ordered reset sequence for
@@ -354,8 +354,8 @@ The next sections use these pieces. A piece is a job, not a process: one process
 | Connector | Ours; one per robot; for the Burger a ROS 2 node process, placed per robot (section 3.8); the deadman's home in the simulator (section 3.3) | `robot.*` calls (interface join); gated `cmd_vel` (contract join); the robot's topics | Velocity to the base; `robot.state`, `robot.health`; sensor streams | Gate protocol 1 (existing); robot interface 1.0 (new: RFC-0026) |
 | Navigator, ours, for any robot | Ours; today the duck's (`duck_lab.nav`); to drive a legged, a differential-drive and a tracked robot through per-kind plugins (section 3.7) | Goal; sensor streams; `robot.state` | `robot.move`; status; `map` | Navigator contract 1.2 (existing); plugin interfaces (RFC-0020, existing; widened by RFC-0027) |
 | Sensors, declared | Ours; in the profile, per robot and variant (section 3.9) | Hardware, or a host kind's simulation | Streams per sensor kind: the scan in the run, images in companion streams | Profile v2 (new: RFC-0027) |
-| Mapper | Per robot: mapd (duck); SLAM Toolbox (Burger, first); the NXT's is open (section 9, question 16) | Range sensing; odometry | A map; the belief of where the robot is | Behind the navigator contract's `map`; localisation plugin |
-| Navigator, the robot's own (Burger, later) | Nav2 with SLAM Toolbox as its mapper, behind a wrapper | Goal (as a Nav2 action); `/scan`, `/odom`, tf | Gated `cmd_vel`; goal outcome; map grid | Navigator contract 1.3 with `yaw` (new: RFC-0029) |
+| Mapper | Per robot: mapd (duck); SLAM Toolbox (Burger, first); mapd on the NXT's Pi module, from its depth camera (section 9, question 16) | Range sensing; odometry | A map; the belief of where the robot is | Behind the navigator contract's `map`; localisation plugin |
+| Navigator, the robot's own (Burger, later) | Nav2 with SLAM Toolbox as its mapper, behind a wrapper | Goal (as a Nav2 action); `/scan`, `/odom`, tf | Gated `cmd_vel`; goal outcome; map grid | Navigator contract, a version after 1.7, with `yaw` (new: RFC-0029; 1.3 shipped as calibration) |
 | Host kind | A kind in `simhost`; for the Burger `gazebo-turtlebot3` | Reset, a scene, the robot's commands | The robot's topics; truth; the real-time factor | Host file 1 (existing); host kind contract (new: RFC-0028) |
 | Scene | `scenes/<id>/scene.json`; a scene writer per host kind | Bounds, rooms, drops, boxes | MJCF, SDF | Scene file (existing); the scene as the source (new: RFC-0028) |
 | Runner and judge | `libs/runner` | Course, navigator, truth | Verdict; the official run with truth copied in | Navigator contract; run file format 2 (existing) |
@@ -380,7 +380,7 @@ the interface join first (our navigator) and the contract join second.
     |   robotd (duck)   HTTP (NXT)   ROS 2 node (Burger)      kind: pollen-duck-sim | gazebo-turtlebot3
     |                                  |  ^ gated cmd_vel (contract join)  ^
     |                                  v  |                                | scene from scene.json
-    |                          navigator wrapper <-- contract 1.3 --> Nav2 + SLAM Toolbox
+    |                          navigator wrapper <-- contract 1.8+ --> Nav2 + SLAM Toolbox
     v
  interface join: our navigator <-- contract 1.2 --> runner / Mission Control
 ```
@@ -440,7 +440,7 @@ The Burger joins both ways, in this order: the interface join, then the contract
 | --- | --- | --- |
 | Connector | A ROS 2 connector: `robot.move` to `/cmd_vel`, `/odom` to `robot.state`, STOP; the last-hop watchdog (section 3.3) | The same connector. Same lease, same STOP |
 | Navigator | Our navigator for any robot (section 3.7) with a differential-drive locomotion plugin, a 2D-scan range plugin and a localisation plugin | A wrapper: `goal.start` to a Nav2 action, its outcomes mapped to our ends (RFC-0015 §3.5 has the map), `map` from SLAM Toolbox's grid |
-| Contract | Profile accepts a robot with no head, no mapd, a scan sensor | Contract 1.3: `point` gets `yaw` (`CONTRACT.md:45`) |
+| Contract | Profile accepts a robot with no head, no mapd, a scan sensor | A contract version after 1.7: `point` gets `yaw` (`libs/runner/CONTRACT.md`, "A goal") |
 | Safety | Lease held by the navigator | Lease held by the wrapper for the goal's duration |
 
 The "Safety" row is where the two joins meet. If Nav2 publishes `/cmd_vel` itself, anyone on
@@ -1075,7 +1075,7 @@ Bluetooth, then the Pi module.
 
 | | Duck | Burger | NXT with a Pi module |
 | --- | --- | --- | --- |
-| Software on the robot | robotd, tofd, mapd (in the simulator, in the host) | bringup on the Pi; the rest by placement (section 3.8) | a Pi on the robot with its own sensors beside the brick's; what the Pi runs is not decided |
+| Software on the robot | robotd, tofd, mapd (in the simulator, in the host) | bringup on the Pi; the rest by placement (section 3.8) | a Pi on the robot with its own sensors beside the brick's; the Pi carries a depth camera and runs mapd (question 16); the rest is not decided |
 | Placement | not a setting today | a per-robot setting | a per-robot setting, in the same installation entry (question 18) |
 | Sensors, source 1 | the duck's own (depth, IMU) | the kit's lidar, IMU, odometry | the brick's: ultrasonic, colour, motor counts |
 | Sensors, source 2 | none | later cameras (step 11) | the Pi's modern sensors, each declared in the profile |
@@ -1500,18 +1500,37 @@ as it can; no need for our code.
 
 **Points for the tool's own RFCs, not fixed here** (question 27):
 
-- the tool's name, its licence (decided in its RFCs, question 21), and whether its first output
-  may feed a Gazebo scene (not answered);
+- the tool's name and its licence (decided in its RFCs, question 21); that its output feeds a
+  Gazebo scene is decided (question 21, 2026-11-24) and the import is ours, designed in MVP 2;
 - the splat format, and which open mesh and point cloud formats it writes;
 - whether the tool does its own colour normalisation (we assume it does and we hand it locked,
   unprocessed stills), and what it needs for capture (overlap, speed, motion blur, how many
   frames);
-- who triggers a capture on the robot (a scan goal that sends the robot to viewpoints is the
-  vision note's roadmap step 6, section 3.5, not designed);
+- who triggers a capture on the robot: decided on our side (2026-11-24) as the `capture_view`
+  goal kind below;
 - where it runs (it may need a GPU; not verified), and whether a capture set can be large
   (uncompressed, 1,661 MB a minute of colour at the spike's size, spike §19);
 - how a result is placed into our frames and whether it is ever used by a mapper or a judge
   (the vision note says a pleasing model is not collision-safe; section 4, Nerfstudio).
+
+**The gap list: from a model back to the planner** (the tool's proposal of 2026-11-24, its
+`docs/wip/gap-list-interface.md`; the operator took the recommendations on 2026-11-24). After a
+reconstruction the tool lists what the model lacks, each gap with viewpoints a robot could shoot
+it from. The tool advises; our planner owns goals, reachability and no-go areas.
+
+| # | Proposal | Decided |
+| --- | --- | --- |
+| 1 | "What we want back" gains `gaps.json`, versioned like the manifest | yes: pulled, a file beside `provenance.json` |
+| 2 | The manifest gains `site`, `frame_id` and `targets` (the gaps a set was shot for) | `site` and `targets` yes; `frame_id` once frame identity (row 5) is designed |
+| 3 | A goal kind `capture_view {pose or planar, tolerance, burst, gap_ids}`, done when the burst is recorded | yes, its own kind rather than `point` with a burst (one done-condition per kind); after the Burger's cameras (step 11), with a navigator contract version that gives a goal a yaw |
+| 4 | The robot file's `capabilities` gain a camera entry: mount, height, pitch range, field of view | yes, in the profile's `sensors`; the tool reads our robot file, no format of its own |
+| 5 | A frame identity a planner can check | ours to mint: one id per map of a site, minted when the map is made, kept across a relocalisation only when the navigator says so; designed with section 7 item 10 |
+| 6 | A slot for the tool's MCP server beside Mission Control's, with its own token and client name | yes; the tool serves its own HTTP API on the tailnet with a token, and a stdio MCP on the agent's machine is its client, as ours is |
+| 7 | A robot's claim on a gap has a shorter lease than a person's | yes |
+
+Yaw in every pose we exchange is REP-103: radians about +z, zero along +x, counter-clockwise
+positive; a quaternion is the named `{x, y, z, w}` on the wire (`runfile/wire.py`), `[w, x, y, z]`
+in the run (ADR-0016).
 
 ## 6. The evolution from A to B
 
@@ -1928,10 +1947,10 @@ Questions 1 to 15 were answered by the operator on 2026-11-23; the answers are u
 Questions 16 to 27 were raised by the answers, the operator's later input on cameras, and the
 spike; the operator answered them on 2026-11-23 too, and each answer is under its question
 ("Answered (2026-11-23)"). The advisor's recommendations (Fable 5.1) stay on the questions as
-the record of what was proposed. Two parts remain open: the Gazebo-scene half of questions 9
-and 21, and the NXT's range sensor and mapper (question 16, decided with the Pi module's
-design). Draft 3 closed questions 4 and 13 (the spike answered them) and 14 (the spike ran),
-answered the simulator half of 16 (NXT-MVP1.md), and added questions 23 to 27.
+the record of what was proposed. The last two open parts, the Gazebo-scene half of questions 9
+and 21 and the NXT's range sensor and mapper (question 16), were answered on 2026-11-24.
+Draft 3 closed questions 4 and 13 (the spike answered them) and 14 (the spike ran), answered
+the simulator half of 16 (NXT-MVP1.md), and added questions 23 to 27.
 
 1. **Where does Nav2 run:** on the Burger's Pi, in a container on the navigator's computer, or
    mixed (option 8.2)? It decides where the ROS connector lives.
@@ -2021,6 +2040,9 @@ New questions the answers raised:
   its Pi module, gets a range sensor that can map.
   Answered (2026-11-23): decided with the Pi module's design (section 3.10). Until then the NXT
   drives and reaches goals with our navigator, ultrasonic for stops, and no map.
+  Answered (2026-11-24): the Pi module gets a depth camera and the NXT maps with mapd, the
+  duck's depth path (the recommendation was a 2D LiDAR and SLAM Toolbox, the Burger's path).
+  The camera model, its price and the Pi's CPU headroom for mapd are not checked.
 - **17. What is the Burger's mapper under our navigator?** SLAM Toolbox as a ROS component under
   our navigator, with the connector handing the map and pose across, or a mapper of ours?
   The first uses ready-made SLAM, which ADR-0001's trigger asks for, but our navigator then
@@ -2056,8 +2078,10 @@ New questions the answers raised:
   Answered (2026-11-23): yes, a stock TurtleBot3 world first (step 5a).
 - **21. The photogrammetry project's licence, and may its first output feed a Gazebo scene later?**
   The two parts of question 9 not answered. **Genuinely the operator's.**
-  Answered (2026-11-23): the licence is decided in the photogrammetry project's own RFCs. The
-  Gazebo-scene half (of this question and question 9) is not answered.
+  Answered (2026-11-23): the licence is decided in the photogrammetry project's own RFCs.
+  Answered (2026-11-24), the Gazebo-scene half (of this question and question 9): yes, and the
+  import is designed now, in MVP 2: a model from the tool, metric and placed in `world` or `map`,
+  becomes a Gazebo scene beside the scene writer's from `scene.json` (step 9).
 - **22. When the real Burger gets its cameras, does the simulator variant gain matching simulated
   cameras?** Gazebo has an `rgbd_camera` sensor that ran headless at 640 x 480 and 30 Hz, RTF
   1.0001, about 1.7 extra cores (spike §19). With them, the sim and the real Burger stay one robot

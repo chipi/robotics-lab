@@ -62,14 +62,20 @@ Otherwise it can run **remote**.
 - **Observability:** every part carries `deployment.environment.name` and a host kind, so the
   dashboards split dev, staging and prod.
 
-## Open questions for the RFC
+## Decided for MVP 2 (the operator, 2026-11-24)
 
-1. Mission Control: does it move remote at all, or does a remote page drive an edge Mission
-   Control through an authenticated link?
-2. Data replication: push (rsync or restic copy) or a pull by prod; and how fresh it must be.
-3. Is the remote viewer public, or tailnet-only with sharing by link?
-4. Where images are built (GitHub Actions to a registry) and how the edge pulls them.
-5. The cost and size of the VPS (the homelab sizes it).
+1. **Mission Control stays at the edge.** A remote page reaches it through an authenticated link
+   (the tailnet and a token, the cut-over's `tailscale serve`); it never drives robots across the
+   internet, and STOP never depends on it.
+2. **Run data: the edge pushes finished runs to prod, one-way (rsync).** A finished run does not
+   change; prod never writes edge data. The restic copy stays the backup, not the replica.
+   Freshness: minutes are enough for a viewer.
+3. **The remote viewer is tailnet-only, shared by link.** Public access (real users, a public
+   name) is not in MVP 2.
+4. **Images are built by GitHub Actions and pushed to a registry (GHCR); the edge pulls them.**
+   Staging and prod run the image CI tested, and no image is built on the X3.
+5. **The VPS is decided when the Observatory actually goes remote,** not before; the homelab
+   sizes it then. It is off the robots' critical path.
 
 ## Not covered
 
