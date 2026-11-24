@@ -86,10 +86,9 @@ The operator agreed the order on 2026-11-23: A3 first, then two streams side by 
 Steps 6 and 7 and every 4e unit are built, and so are the known loose ends (the flakes, the
 `lock_held` mapping, K48 measured, the sensors against ROS). What is left, in this order:
 
-1. **The NXT at the brick** (D1, D9, D10), with the operator, today.
-2. **The staging cut-over** ([STAGING-CUTOVER.md](STAGING-CUTOVER.md)), after the X3's
-   maintenance window: the first image build on the staging engine waits for it. Tokens and
-   `tailscale serve` come at the cut-over.
+Reordered by the operator the same day: 3, 4, 4.5, 4.9 and 5 come first, then the NXT, then the
+staging cut-over once everything else is done.
+
 3. **MCP for every surface:**
    1. Check every HTTP route of Mission Control and the Observatory against the MCP tools, in a
       gap table.
@@ -99,10 +98,21 @@ Steps 6 and 7 and every 4e unit are built, and so are the known loose ends (the 
 
    The same safety rules as today: no firing, no takeover, no real robot without the operator's
    switch, STOP never refused.
-4. **Look and feel:** tokens, the design system and the 3D presentation, from independent research
-   (the parked item), as the last unit before the close-out.
-5. **The close-out:** docs, the README and screenshots, the rename and branding, and the RFC-0024
-   review with the advisor.
+4. **Look and feel, the research:** independent research across industries (the parked item, the
+   brief Recce shared), done before reading Recce's own.
+
+   4.5. **Look and feel, the build:** the findings the operator picks, put into the tokens, the
+   design system and the 3D presentation.
+
+   4.9. **Ready for MVP 2?** Review the repository's structure and how the two apps are combined
+   (RFC-0024), check that the repository is ready for MVP 2, and ask whether anything else
+   belongs here before the close-out.
+5. **The close-out:** docs, the README and the screenshots (taken after 4.5), the rename and
+   branding, the RFC-0024 review with the advisor.
+6. **The NXT at the brick** (D1, D9, D10), with the operator; before it, staging is redeployed with
+   the NXT's robot file.
+7. **The staging cut-over** ([STAGING-CUTOVER.md](STAGING-CUTOVER.md)), once everything else is
+   done and after the X3's maintenance window. Tokens and `tailscale serve` come with it.
 
 The real duck (B6, B9 and the rest, [REAL-DUCK-BACKLOG.md](REAL-DUCK-BACKLOG.md)) waits for the
 duck itself and is not part of this list. The deployment direction (dev, staging, a later prod) is
