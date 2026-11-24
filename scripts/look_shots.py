@@ -89,8 +89,9 @@ def build_data(data: Path, joints: list) -> None:
                 "rows": 8, "cols": 8, "distance_mm": [300 + 20 * i for i in range(64)], "status": [5] * 64, "seq": k, "frame_t_ns": 1_000_000_000 + k,
                 "state_t_ns": 1_000_000_000 + k - 1000, "pair_dt_ms": -0.001, "t_src": round(t + 0.01, 3), "derived": {"points": points(k)},
                 "state": {"quat": list(q), "odom_z": 0.118 + 0.0005 * k, "tof": {"pos": [0.08, 0.02, 0.11], "quat": list(qy(0.2 + 0.001 * k))}}, "pose": b}))
-        rec.append((round(t + 0.05, 3), "signals", {"values": {f"joint_{j}": round(0.25 * math.sin(0.7 * k + i), 4) for i, j in enumerate(joints)},
-                                                     "t_src": round(t + 0.05, 3)}))
+        if joints:      # a run declares its signals; with no joints it has none, and a signals record would be refused
+            rec.append((round(t + 0.05, 3), "signals", {"values": {f"joint_{j}": round(0.25 * math.sin(0.7 * k + i), 4) for i, j in enumerate(joints)},
+                                                         "t_src": round(t + 0.05, 3)}))
     dec = lambda rule, reason, **v: {"rule": rule, "reason": reason, "values": v}  # noqa: E731
     rec += [(1.55, "event", {"kind": "tight_pivot", "text": "tight_pivot room_m 0.156", "notable": True, "t_src": 1.55, "raw": {},
                              "decision": dec("tight_pivot", "no clear floor for an arc", room_m=0.156, min_room_m=0.11)}),
@@ -242,6 +243,8 @@ def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index
 
     meshes_built = (duck / "robot.urdf").is_file() and any((duck / "meshes").glob("*.stl"))
     joints = [j.name for j in kinematics.load(duck / "robot.urdf").joints.values() if j.type != "fixed"] if meshes_built else []
+    if not meshes_built:
+        print(f"WARNING: no duck meshes in {duck}: the body and joint views differ from a set taken with them", flush=True)
     data = tmp / "data"
     build_data(data, joints)
 
