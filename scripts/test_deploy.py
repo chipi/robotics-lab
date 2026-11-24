@@ -137,6 +137,22 @@ with tempfile.TemporaryDirectory() as tmp:
     check("Mission Control reads the installation by its own path, with HOME set so `~` means the same", f'ROBOTICS_LAB_INSTALLATION: "{inst_file}"' in ov and "HOME:" in ov)
     check("tokens for actions: MC_REQUIRE_TOKENS says so; with none asked it is not set", "MC_REQUIRE_TOKENS: actions" in ov
           and "MC_REQUIRE_TOKENS" not in d.overlay(S, inst, t2, mounts, None))
+
+    # Docker drops a loopback resolver from a container's resolv.conf even on the host's network, so systemd-resolved's stub (the tailnet's
+    # MagicDNS names, the telemetry hosts) went missing: telemetry could not resolve vm.tail6d0ed4.ts.net (2026-11-24)
+    stub = t2 / "stub-resolv.conf"
+    stub.write_text("nameserver 127.0.0.53\noptions edns0 trust-ad\nsearch tail6d0ed4.ts.net\n")
+    link = t2 / "resolv.conf"
+    link.symlink_to(stub)
+    rm = d.resolver_mount(link)
+    check("a host whose resolver is the loopback stub: Mission Control gets the stub's file as its /etc/resolv.conf, read only",
+          rm is not None and f'source: "{stub}"' in rm and "target: /etc/resolv.conf" in rm and "read_only: true" in rm, rm)
+    plain = t2 / "plain-resolv.conf"
+    plain.write_text("nameserver 192.168.1.1\n")
+    check("a host with an ordinary resolver: nothing is mounted (Docker's own copy works)", d.resolver_mount(plain) is None)
+    check("no resolv.conf at all: nothing is mounted", d.resolver_mount(t2 / "missing") is None)
+    ov_r = d.overlay(S, inst, t2, [*mounts, rm], None)
+    check("the overlay carries it under Mission Control's volumes", "target: /etc/resolv.conf" in ov_r.split("mission-control:")[1])
     check("without an installation file Mission Control gets none", "ROBOTICS_LAB_INSTALLATION" not in d.overlay(S, None, t2, [], None))
 
     # --- tokens: auto -------------------------------------------------------------------------------------------------------------------

@@ -174,6 +174,21 @@ def installation_mounts(inst, create: bool) -> tuple:
     return mounts, notes
 
 
+def resolver_mount(conf: Path = Path("/etc/resolv.conf")) -> str | None:
+    """The host's resolver file, mounted as the container's, when every nameserver in it is loopback (systemd-resolved's stub). Docker drops a
+    loopback nameserver from a container's copy even on the host's network, and the tailnet's MagicDNS names (the telemetry hosts) then do not
+    resolve; on the host's network the stub itself is reachable. None for an ordinary resolver, or no file."""
+    try:
+        real = conf.resolve(strict=True)
+        servers = [ln.split()[1] for ln in real.read_text().splitlines() if ln.startswith("nameserver") and len(ln.split()) > 1]
+    except OSError:
+        return None
+    if not servers or not all(s.startswith("127.") or s == "::1" for s in servers):
+        return None
+    return (f"      - {{type: bind, source: {json.dumps(str(real))}, target: /etc/resolv.conf, read_only: true, "
+            f"bind: {{create_host_path: false}}}}")
+
+
 def overlay(s: dict, inst, tree: Path, mounts: list, scope: str | None) -> str:
     """The compose file laid over the repository's two (YAML; JSON strings are YAML strings)."""
     vport, cport = s["viewer_port"], s["control_port"]
@@ -369,6 +384,8 @@ def plan(s: dict, sha: str, create: bool) -> dict:
         if inst is None:
             notes.append(f"no installation file {ipath}: Mission Control gets none, so a robot that points at a profile cannot load; only the fake robot runs")
     mounts, mnotes = installation_mounts(inst, create) if inst else ([], [])
+    if (rm := resolver_mount()) is not None:
+        mounts = [*mounts, rm]
     scope, snote = pick_scope(s["tokens"], Path(s["control_state"]))
     tag, tree = sha[:12], tree_of(s, sha)
     ov_file = Path(s["deploy_state"]) / s["project"] / f"overlay-{tag}.yml"
