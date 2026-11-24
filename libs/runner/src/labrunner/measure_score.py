@@ -12,8 +12,8 @@ An arm is the runs under the paths given (a run folder holds run.mcap; a run sti
 - the trunk's tilt (the IMU's, so the real duck has it too): its p99 and largest, in degrees;
 - the speed gain, first: straight walking at a constant commanded speed, measured speed over commanded, by commanded speed. Measured two
   ways: by the navigator's belief (the odometry with mapd's corrections: what the duck knows, in both arms) and by the simulator's truth
-  (the simulated arm only; a real run has none). The belief path ignores a one-tick jump over STEP_MAX_M, which is a position fix, not a
-  step. 1.0 is a duck that walks the speed it is asked; STATUS.md has the simulator walking about 0.13 m/s when asked 0.3.
+  (the simulated arm only; a real run has none). A speed is a stretch's net displacement over its time (summed 10 Hz steps count the pose's
+  sway across the walk as distance and read ~20 % fast); a one-tick jump over STEP_MAX_M is a position fix, not a step, and cuts the stretch. 1.0 is a duck that walks the speed it is asked; STATUS.md has the simulator walking about 0.13 m/s when asked 0.3.
 
 The real duck has no truth, so its gain by truth is "-" until a tape-measured walk fills it: `lab-measure-walk --tape` records one, and
 the odometry scale it gives is what the calibration card keeps. Not scored here: a contact (needs the scene and the truth), a fall by
@@ -39,8 +39,8 @@ TROUBLE = ("stuck", "stalled", "reflex_stop", "cliff_stop", "guardrail", "refuse
 
 def legs(ticks: list) -> list:
     """The straight, constant-command stretches of a run: [(asked m/s, belief m/s, truth m/s or None)], one per leg. `ticks` is [(t, payload)].
-    A leg is cut at a change of the command, a turn, or a gap; its first SKIP_S is dropped; each speed is path over time of the pairs that
-    were not a fix, so a fix does not count as a step nor its time as walking."""
+    A leg is cut at a change of the command, a turn, or a gap; its first SKIP_S is dropped; each speed is the net displacement over time of
+    the stretches between fixes, so a fix does not count as a step nor its time as walking, and the sway across the walk is not distance."""
     out, leg = [], []
 
     def close():
@@ -72,13 +72,25 @@ def _leg_speed(leg: list):
         return None
     asked = leg[0][1]["cmd"][0]
     dist = dt = tdist = tdt = 0.0
-    for (ta, a), (tb, b) in pairs:
-        step = math.dist(a["belief"][:2], b["belief"][:2])
-        if step > STEP_MAX_M:
-            continue
-        dist, dt = dist + step, dt + (tb - ta)
-        if a.get("truth") and b.get("truth"):
-            tdist, tdt = tdist + math.dist(a["truth"][:2], b["truth"][:2]), tdt + (tb - ta)
+    run = []                  # the unbroken stretch so far, closed at a fix and at the end
+
+    def close():
+        nonlocal dist, dt, tdist, tdt
+        if run:
+            (ta, a), (tb, b) = run[0][0], run[-1][1]
+            dist, dt = dist + math.dist(a["belief"][:2], b["belief"][:2]), dt + (tb - ta)
+            if a.get("truth") and b.get("truth"):
+                tdist, tdt = tdist + math.dist(a["truth"][:2], b["truth"][:2]), tdt + (tb - ta)
+            run.clear()
+
+    # A stretch's net displacement, not its summed steps: the pose sways across the walk by a few cm at every tick, and summed steps
+    # count the sway as walking (the sheet read 0.55 of the asked speed where the same walk is 0.47 over the ground; E10).
+    for pair in pairs:
+        if math.dist(pair[0][1]["belief"][:2], pair[1][1]["belief"][:2]) > STEP_MAX_M:
+            close()
+        else:
+            run.append(pair)
+    close()
     if dt < MIN_LEG_S:
         return None
     return round(asked, 2), dist / dt, (tdist / tdt if tdt >= MIN_LEG_S else None)

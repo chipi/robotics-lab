@@ -186,6 +186,7 @@ SCHEMA = {
                   "tight_spot_m": "pos", "tight_gap_s": "pos"},
         "arc": {"clear_mm": "pos", "ahead_m": "pos", "reach_m": "pos", "outer_deg": "pos", "inner_deg": "pos"},
         "stuck": {"window_s": "pos", "moved_max_m": "pos"},
+        "stand_turn": {"min_rad_s": "pos"},
     },
     "sensors": {
         "tof8x8": {"fov_deg": "pos", "rows": "int", "cols": "int", "valid_status": "ints", "no_target_status": "int", "range_m": "pos",
@@ -389,6 +390,10 @@ def _check_numbers(p: dict, where: str) -> None:
         for k in ("yaw_max_rad_s", "kick_rad_s", "hold_rad_s"):
             if k in loco and loco[k] > ang:
                 raise FormatError(f"{where}.locomotion.{k} {loco[k]:g} is above factsheet.physicalParameters.maximumAngularSpeed {ang:g}")
+    floor, kick = (loco.get("stand_turn") or {}).get("min_rad_s"), loco.get("kick_rad_s")
+    if floor is not None and kick is not None and kick < floor:
+        raise FormatError(f"{where}.locomotion.kick_rad_s {kick:g} is below locomotion.stand_turn.min_rad_s {floor:g}: a turn on the spot "
+                          f"would not start from a stand")
     fp = p["footprint"]
     if "lethal_m" in fp and "radius_m" in fp and fp["radius_m"] > fp["lethal_m"]:
         raise FormatError(f"{where}.footprint.radius_m {fp['radius_m']:g} is above footprint.lethal_m {fp['lethal_m']:g}")

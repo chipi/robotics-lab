@@ -36,6 +36,13 @@ Cleared items are struck from the list when settled.
 | B8 defaults | Simulator-first: opt-in per goal; a rehearsal counts for 24 h, same goal content, same site, a sim robot of the same kind. `rtf_low` below 0.95, minor. Right numbers? Should `sim_first` be the default for every goal on a real robot? | built as listed |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
+## Asked after the answers (2026-11-24)
+
+| Item | What | Done meanwhile |
+| --- | --- | --- |
+| Retention: official | A run record has no "official" marker. Proposal: official = the record has `judge_truth` or `judge_profile` (the runner's truth copy writes them). Explore runs, NXT recordings and imported runs are not verified under it ([the design](TELEMETRY-RETENTION-DESIGN.md)) | `observatory archive` built on the proposal, a dry run by default; not run on the real data folder |
+| Retention: first apply | Run `observatory archive` on the real data folder (moves whole run folders to `<data>-archive/`, deletes nothing) | the dry run only |
+
 ## The operator's answers (2026-11-24)
 
 The operator decided every item in the table above, and the ones in the link and findings lists
@@ -79,8 +86,9 @@ that needed a decision. The work each answer creates is the "follow-ups" unit se
   takes the version the keep reports, and the corridor setup ends with a short goal north (a
   point goal does not choose its final heading; it had ended at 126 degrees twice).
   `--only profile,calibrate` gave `PASS sim_duck`, EXIT=0.
-- **Duck walk speed: two numbers disagree.** Old challenge runs show 0.55 of the commanded
-  speed; fresh simulator walks 0.36 (B9). Not explained.
+- ~~Duck walk speed: two numbers disagree~~ Explained 2026-11-24 (E10, KNOWN-ISSUES K49): B9's
+  0.36 was a wall 0.55 m ahead in the default scene; the sheet's 0.55 summed the pose's sway; the
+  duck walks about 0.47 of the asked speed over the ground. Both tools fixed.
 - **The NXT's turn rate disagrees between Mission Control and the simulator** (D7): Mission
   Control maps 1.5 rad/s to track powers of plus or minus 50 %, the simulated world reads its
   1.5 rad/s as 100 %, so a 1 rad/s turn turns about 0.46 rad in a second. D1's K16 measurement
@@ -109,9 +117,12 @@ that needed a decision. The work each answer creates is the "follow-ups" unit se
   run): while robotd-lite runs on the brick it stops the tracks 0.5 s after the last command;
   stock firmware and direct drive mode have no brick-side stop. So D10 drives over Bluetooth
   only with robotd-lite running; the D1 checklist has the checks.
-- **The standing duck did not turn in the simulator** on `POST /robots/{id}/drive` with `vx` 0 and
-  `vyaw` 0.5 to 0.8 (A3's run, not investigated).
-- **The duck walks slower than commanded:** a 5 s walk at 0.3 m/s covered about 0.66 m by the
-  truth, about 0.13 m/s. The calibration's `by_speed` row is keyed by the commanded speed.
+- **The standing duck does not turn on `vx` 0 with `vyaw` under about 1.0 to 1.1 rad/s** (E10,
+  KNOWN-ISSUES K48): the simulator's walking network, not ours. Open and needs an owner of
+  `robots.py` / `duck.py`: Mission Control's `POST /robots/{id}/drive` should refuse that command
+  with the reason (the floor is the profile's `locomotion.stand_turn.min_rad_s`, 1.1).
+- **The duck walks about 0.47 of the commanded speed over the ground:** a 5 s walk at 0.3 m/s
+  covers 0.65 m (the slow first second in it). The calibration's `by_speed` row is keyed by the
+  commanded speed (K49).
 - **Calibration walks blind** (A3): no wall, cliff or contact check. On the real duck it needs a
   clear floor and B6's safety review.

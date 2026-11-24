@@ -10,7 +10,10 @@ Each leg: hold still 1 s, walk straight at the asked speed for --ramp-s (getting
 1.5 s. Measured speed is the odometry's distance over its time in the measured part, divided by the asked speed: the gain. The odometry
 distance of the WHOLE leg (the ramp and the stop included) is what a tape can be laid against: with --interactive the script waits for you to
 put the duck on its start mark before each leg and asks for the tape distance after it; walked / believed is then the odometry scale
-(the calibration card keeps that number). In the simulator the truth gives the same, no tape.
+(the calibration card keeps that number). In the simulator the truth gives the same, no tape. A leg whose last second of the measured window
+went under half its fastest is marked `blocked` (a wall, an obstacle): the simulator's default scene has a wall 0.55 m ahead of the duck's
+start, which made the first measured speed 0.098 m/s where an open floor gives 0.14 (phase 5 item 4e unit E10); stand it on clear floor
+(reset the simulator to a challenge scene such as ch15-s1, `simhost.reset(host, <scenarios>/ch15-s1/scene.xml)`) and walk again.
 
 Safety, all of it the gate's and this script's, nothing of the robot's own:
 
@@ -41,6 +44,8 @@ from labrunner.rpc import LeaseLost, Rpc
 MAX_SPEED_MPS = 0.4
 TICK_S = 0.1                 # one robot.move per tick: the robot's deadman is 0.5 s, so a missed tick or two is not a stop
 SETTLE_S, STOP_S = 1.0, 1.5
+WINDOW_PART_S = 1.0          # the measured window is sampled this often, to see a walk that stopped inside it
+BLOCKED_BELOW = 0.5          # a window whose last part went under this share of its fastest part was blocked
 CLIENT = "lab-measure-walk"
 
 
@@ -83,9 +88,24 @@ def window(a: dict, b: dict, key: str) -> float | None:
     return math.dist(a[key][:2], b[key][:2]) / (b[f"{key}_t"] - a[f"{key}_t"])
 
 
-def leg_metrics(asked: float, s0: dict, w0: dict, w1: dict, s1: dict, tape_m: float | None) -> dict:
-    """One leg's numbers from the four samples: the whole leg's start and end (s0, s1) and the measured window's (w0, w1)."""
+def blocked(samples: list) -> bool:
+    """True when the measured window ended slower than it began: its last stretch under BLOCKED_BELOW of the fastest, by the truth when
+    the samples have one, else by the odometry (which keeps counting steps against a wall: a real duck is caught by the tape, not by this).
+    The simulator's default scene has a wall 0.55 m ahead of the duck's start: a 4 s window after a 1.5 s ramp read 0.098 m/s there
+    and 0.14 in the open (phase 5 item 4e unit E10)."""
+    for key in ("truth", "odom"):
+        speeds = [window(a, b, key) for a, b in zip(samples, samples[1:])]
+        if speeds and all(v is not None for v in speeds):
+            return len(speeds) > 1 and speeds[-1] < BLOCKED_BELOW * max(speeds)
+    return False
+
+
+def leg_metrics(asked: float, s0: dict, w0: dict, w1: dict, s1: dict, tape_m: float | None, window_samples: list | None = None) -> dict:
+    """One leg's numbers from the four samples: the whole leg's start and end (s0, s1) and the measured window's (w0, w1); the
+    window's samples between (w0 and w1 included) say whether the walk was blocked before the window ended."""
     out = {"asked_mps": asked, "window_s": round(w1["odom_t"] - w0["odom_t"], 2)}
+    if window_samples and blocked(window_samples):
+        out["blocked"] = True
     for key in ("odom", "truth"):
         v = window(w0, w1, key)
         if v is not None:
@@ -121,15 +141,18 @@ def walk(move, sample, sleep, speeds: list, seconds: float, ramp_s: float, ask=N
             s0 = sample()
             hold(move, sleep, ramp_s, asked)
             w0 = sample()
-            hold(move, sleep, seconds, asked)
-            w1 = sample()
+            inside, parts = [w0], max(2, round(seconds / WINDOW_PART_S))
+            for _ in range(parts):
+                hold(move, sleep, seconds / parts, asked)
+                inside.append(sample())
+            w1 = inside[-1]
             hold(move, sleep, STOP_S, 0.0)
             s1 = sample()
             tape = None
             if ask:
                 text = ask("tape: distance from the start mark to where it stopped, metres (Enter to skip): ").strip()
                 tape = float(text) if text else None
-            legs.append(leg_metrics(asked, s0, w0, w1, s1, tape))
+            legs.append(leg_metrics(asked, s0, w0, w1, s1, tape, inside))
             tell(f"leg {asked} m/s: " + json.dumps(legs[-1]))
     finally:
         try:
@@ -147,6 +170,9 @@ def table(result: dict) -> str:
         scale = l.get("odom_scale_by_tape", l.get("odom_scale_by_truth"))
         lines.append(f"{l['asked_mps']:>6.2f}{g('odom_mps'):>10}{g('odom_gain'):>7}{g('truth_mps'):>11}{g('truth_gain'):>7}"
                      f"{g('odom_leg_m'):>12}{g('truth_leg_m'):>13}{g('tape_leg_m', 2):>8}{'-' if scale is None else f'{scale:.3f}':>7}")
+        if l.get("blocked"):
+            lines.append(f"       ^ blocked: the {l['asked_mps']:.2f} m/s leg slowed before its window ended (a wall or something in the way?): "
+                         f"that is not the walk's speed; walk again on clear floor")
     lines.append("gain = measured / asked speed; scale = walked (tape, else truth) / believed distance over the whole leg")
     return "\n".join(lines)
 

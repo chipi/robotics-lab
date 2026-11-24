@@ -79,6 +79,8 @@ check("the creep a pivot is sent with is the profile's, per environment: the sim
 st = FollowState()
 kick = DuckWalk(P, pivot_vx=0.0).drive(math.radians(120), 0.0, 10.0, st, near=False, pivot_ok=True, close=False)
 check("drive: 120 degrees off turns on the spot with the kick (1.2 rad/s, standing still)", st.turning and kick == Twist(0.0, 1.2), kick)
+check("the kick starts a turn from a stand: it is at or above the rate the duck needs for that (E10: 1.0 rad/s and below left the "
+      "simulated duck standing), and the profile names the number", DuckWalk(P).stand_turn_min == 1.1 and kick.vyaw >= DuckWalk(P).stand_turn_min)
 st = FollowState()
 arc = DuckWalk(P).drive(math.radians(120), 0.0, 10.0, st, near=False, pivot_ok=False, close=False)
 check("drive: no room to pivot is an arc at the slowest walk", st.turning and arc == Twist(0.2, 1.0), arc)

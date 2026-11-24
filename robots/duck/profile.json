@@ -94,7 +94,12 @@
       "why": "pace is chosen from the map ahead so the duck slows before it arrives: a known drop beside the way (within the error budget's drop_inflate_m + corridor_m of the path), a narrow passage (an obstacle within slow_clearance_m of the path) or floor the map has not seen, within look_m of the path."
     },
     "arc": {"clear_mm": 300, "ahead_m": 0.25, "reach_m": 0.45, "outer_deg": 20.0, "inner_deg": 120.0},
-    "stuck": {"window_s": 3.0, "moved_max_m": 0.05}
+    "stuck": {"window_s": 3.0, "moved_max_m": 0.05},
+    "stand_turn": {
+      "min_rad_s": 1.1,
+      "measured": "2026-11-24, sim/probes/drive_response.py, one fresh simulator per rate, vx 0, 8 s of robot.move every 0.1 s from a stand: 0.5 and 0.8 rad/s turned 5 and 9 degrees in all (the first second's sway; none after); 1.0 rad/s started in 1 of 3 runs (9, 9 and 245 degrees), so 1.0 is the edge, not a floor; 1.05, 1.1, 1.15, 1.2 and 1.5 rad/s (one run each) turned from the first second on (44 to 60 deg/s once stepping, about 0.65 of the asked rate). With vx 0.2 (walking) 0.5 and 0.8 rad/s turn at once (13 and 23 deg/s); vx -0.06 with 0.8 rad/s from a stand does not. Not measured on the real duck. First found in phase 0 (PHASE0-SPIKE.md: about 1.1).",
+      "why": "From a stand the walking network does not start stepping below this turn rate, so a pure turn under it does nothing (E10: A3's POST /drive of 0.5 to 0.8 rad/s). The kick (locomotion.kick_rad_s) must be at or above it, and a profile that says otherwise is refused. Once stepping, a turn at hold_rad_s (below it) goes on, so a client that must turn a standing duck sends the kick first, or walks while turning."
+    }
   },
   "sensors": {
     "tof8x8": {

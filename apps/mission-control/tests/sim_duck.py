@@ -576,7 +576,11 @@ try:
         need_clean()
         wait_for(lambda: robot()["online"], 60)
         w0 = body.pose()
-        said, goal = (0.5, 0.0, 0.0), (1.5, 0.5)
+        # The operator says the duck faces the way it does: a duck stood up by a reset faces 0.02 to 0.28 rad off the dock's east, and
+        # a said yaw of 0 turned the goal's world place with it, 0.3 m, into the cabinet and shelf (E10: one run stalled 0.63 m short,
+        # one was refused "no path on the map", the same code reached it in five others). The yaw the frame is told is still the test's
+        # (the world and the map differ by it), the goal now lands in the same place whatever the stand-up did.
+        said, goal = (0.5, 0.0, w0[2]), (1.5, 0.5)
 
         def compose(a, b):
             c, s = math.cos(a[2]), math.sin(a[2])
@@ -589,6 +593,8 @@ try:
         # the map's frame as the operator means it: the duck at w0 in the world is at `said` on the map
         frame = (*compose(w0, inverse(said)), w0[2] - said[2])
         target, naive = compose(frame, goal), compose(w0, goal)
+        check("the placed goal's world place is where the dock puts it, whatever the duck's standing heading was (it moved 0.3 m with the heading before)",
+              math.dist(target, (w0[0] + goal[0] - said[0], w0[1] + goal[1] - said[1])) < 0.05, (target, w0))
         run = start({"kind": "point", "params": {"x": goal[0], "y": goal[1]}}, start_pose={"x": said[0], "y": said[1], "yaw": said[2]})
         check("the navigator speaks contract 1.5 and takes the start pose: the run starts, and keeps the pose among its conditions",
               run["state"] == "running" and run["conditions"].get("start_pose", {}).get("x") == said[0], run)

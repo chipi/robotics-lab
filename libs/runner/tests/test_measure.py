@@ -160,6 +160,12 @@ check("a leg of under a second after the ramp is not a speed", measure_score.leg
 cut = [tick(i / 10, (0.3 if i < 30 else 0.2, 0.0), 0.1 * i) for i in range(60)]
 check("a change of the asked speed cuts a leg in two, each its own speed", sorted(x[0] for x in measure_score.legs(cut)) == [0.2, 0.3],
       measure_score.legs(cut))
+# phase 5 item 4e unit E10: the pose sways about 2 cm across the walk at 10 Hz, and summed steps count every sway as walking (a belief
+# walked at 0.15 m/s read as 0.2): a speed is the stretch's net displacement over its time
+sway = [(i / 10, {"belief": [0.15 * i / 10, 0.02 * (i % 2), 0.0], "truth": [0.12 * i / 10, 0.02 * (i % 2), 0.0], "cmd": [0.3, 0.0]}) for i in range(51)]
+lg = measure_score.legs(sway)
+check("a sway across the walk is not walking: the speed is the net displacement (belief 0.15, truth 0.12), not the summed steps",
+      len(lg) == 1 and abs(lg[0][1] - 0.15) < 0.01 and abs(lg[0][2] - 0.12) < 0.01, lg)
 no_truth = measure_score.legs([tick(i / 10, (0.3, 0.0), 0.15 * i / 10) for i in range(51)])
 check("without a truth the leg's truth speed is None", no_truth[0][2] is None, no_truth)
 
@@ -235,6 +241,28 @@ legs = measure_walk.walk(fake.move, fake.sample, fake.sleep, [0.3], 4.0, 1.5, as
 check("--interactive waits before the leg, asks the tape after it, and the scale is tape over believed distance",
       len(asked_prompts) == 2 and "start mark" in asked_prompts[0] and legs[0]["tape_leg_m"] == 0.4
       and abs(legs[0]["odom_scale_by_tape"] - legs[0]["tape_leg_m"] / legs[0]["odom_leg_m"]) < 0.01, legs[0])
+class WalledRobot(FakeRobot):
+    """Stops where a wall is: the simulator's default scene has one 0.55 m ahead of the duck's start, which is B9's 0.108 m/s (E10)."""
+
+    def __init__(self, wall_m=None):
+        super().__init__()
+        self.wall_m = wall_m
+
+    def sleep(self, dt):
+        super().sleep(dt)
+        if self.wall_m is not None:
+            self.x = min(self.x, self.wall_m)
+
+
+def walk_in(robot):
+    return measure_walk.walk(robot.move, robot.sample, robot.sleep, [0.3], 4.0, 1.5, tell=lambda m: None)
+
+
+free, walled = walk_in(WalledRobot()), walk_in(WalledRobot(0.35))
+check("a leg that kept its speed to the end is not marked blocked", not free[0].get("blocked"), free[0])
+check("a leg that slowed to a stop before the end (a wall) is marked blocked: its speed is not the walk's", walled[0].get("blocked") is True, walled[0])
+table_of = lambda legs: measure_walk.table({"variant": "simulator", "seconds": 4.0, "ramp_s": 1.5, "legs": legs})    # noqa: E731
+check("the table says so under the blocked leg, and not under a free one", "blocked" in table_of(walled) and "blocked" not in table_of(free), table_of(walled))
 fake = FakeRobot()
 fake.fail_at = 30
 try:

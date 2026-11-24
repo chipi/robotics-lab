@@ -32,6 +32,7 @@ class DuckWalk:
         self.pivot_drop_m, self.pivot_edge_m = loco.pivot.drop_clear_m, loco.pivot.edge_clear_m
         self.tight_pivot_m, self.tight_spot_m, self.tight_gap_s = loco.pivot.tight_m, loco.pivot.tight_spot_m, loco.pivot.tight_gap_s
         self.arc = loco.arc
+        self.stand_turn_min = float(loco.get("stand_turn.min_rad_s") or 0.0)   # the profile refuses a kick under it (runfile.profile)
         self.deadband = float(loco.get("steer.deadband_rad") or 0.0)
         self.drop_lethal_m = profile.error_budget.drop_lethal_m
         self.tight_spots = []        # [(x, y), last tick] of each tight pivot: one per spot (tight_pivot_ok)

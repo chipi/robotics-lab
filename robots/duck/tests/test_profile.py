@@ -111,6 +111,7 @@ OLD = {
         "arc": {"clear_mm": 300, "ahead_m": 0.25, "reach_m": 0.45,            # run.ARC_CLEAR_MM, ARC_AHEAD_M, ARC_REACH_M
                 "outer_deg": 20.0, "inner_deg": 120.0},                       # run.ARC_OUTER_DEG, ARC_INNER_DEG
         "stuck": {"window_s": 3.0, "moved_max_m": 0.05},                      # stuck.WINDOW_S, MOVED_MAX_M
+        "stand_turn": {"min_rad_s": 1.1},                                     # phase 5 item 4e unit E10: from a stand the duck starts no turn below this
         "pace": {"caution_mps": 0.2, "look_m": 0.7, "unknown_reach_m": 0.4},  # RFC-0012 section 3, as the profile's measured says
     },
     "sensors": {
@@ -274,6 +275,8 @@ check("cruise above the factsheet's maximum speed is refused", says(mutated("loc
 check("slowest above cruise is refused", says(mutated("locomotion", "slowest_mps", to=0.31), "slowest_mps 0.31", "cruise_mps 0.3"))
 check("a turn limit above the maximum angular speed is refused", says(mutated("locomotion", "kick_rad_s", to=1.6), "kick_rad_s 1.6",
                                                                       "maximumAngularSpeed 1.5"))
+check("a turn kick below the rate the duck needs to start a turn from a stand is refused (the duck would stand and not turn)",
+      says(mutated("locomotion", "kick_rad_s", to=1.0), "kick_rad_s 1", "stand_turn.min_rad_s 1.1"))
 check("a radius above the lethal ring is refused", says(mutated("footprint", "radius_m", to=0.13), "radius_m 0.13", "lethal_m 0.12"))
 check("a lethal ring above the inflation is refused", says(mutated("footprint", "lethal_m", to=0.3), "lethal_m 0.3", "inflate_m 0.28"))
 check("a max_speed guardrail above the maximum speed is refused",
