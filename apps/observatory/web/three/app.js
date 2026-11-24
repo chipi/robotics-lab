@@ -20,7 +20,7 @@ const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
 
-let S, M, renderer, scene, views, marker, canvas, stg, camBar, floorSaved = true, camPending = false;
+let S, M, renderer, scene, views, marker, canvas, stg, camBar, camToggle, floorSaved = true, camPending = false, ovSaved = { ghost: true, open_scene: false };
 let camRun = null;
 let sceneG = null, scn = null, run = null, fr = null, RW = null, RM = null, rebuilding = false;
 const R = () => (M.frame === 'world' ? RW : RM);
@@ -203,8 +203,13 @@ function setFloor(on) {
   M.ov.floor = !!on;
   stg.floor.visible = M.ov.floor;
 }
-function applyVis() {
+// the viewer preferences kept across a reload: the ones that differ from what was stored are written
+function persistOv() {
   if (M.ov.floor !== floorSaved) { floorSaved = M.ov.floor; savePref({ floor: floorSaved }); }
+  for (const k of Object.keys(ovSaved)) if (!!M.ov[k] !== ovSaved[k]) { ovSaved[k] = !!M.ov[k]; savePref({ [k]: ovSaved[k] }); }
+}
+function applyVis() {
+  persistOv();
   setFloor(M.ov.floor);
   stg.grid.visible = M.ov.coords;                                   // the grid is the coordinate system's, as the flat views' is
   const w = M.frame === 'world';
@@ -342,12 +347,19 @@ function buildCamBar(stage) {
   camBar = document.createElement('div');
   camBar.id = 'camCtl'; camBar.className = 'camctl'; camBar.hidden = true;
   camBar.setAttribute('role', 'toolbar'); camBar.setAttribute('aria-label', 'Camera');
-  camBar.innerHTML = `<div class="seg sm" role="group" aria-label="View">${btns('cam', CAM_VIEWS, (k, t) => `${t} view`)}</div>
+  camBar.innerHTML = `<button type="button" class="camtoggle" id="camToggle" aria-expanded="false" aria-controls="camPanel">Camera</button>
+    <div class="campanel" id="camPanel"><div class="seg sm" role="group" aria-label="View">${btns('cam', CAM_VIEWS, (k, t) => `${t} view`)}</div>
     <div class="seg sm" role="group" aria-label="Fit"><button type="button" data-cam="fit-scene" title="Fit the whole scene">Fit scene</button><button type="button" data-cam="fit-robot" title="Fit the robot with its surroundings">Fit robot</button></div>
-    <div class="camfol"><span class="lab" id="camFolLab">Follow</span><div class="seg sm" role="group" aria-labelledby="camFolLab">${btns('follow', CAM_FOLLOW, (k) => FOLLOW_TIP[k])}</div></div>`;
+    <div class="camfol"><span class="lab" id="camFolLab">Follow</span><div class="seg sm" role="group" aria-labelledby="camFolLab">${btns('follow', CAM_FOLLOW, (k) => FOLLOW_TIP[k])}</div></div></div>`;
+  camToggle = camBar.querySelector('#camToggle');
+  // on a phone the controls sit behind the one button (camera.css); on a wide screen the button is hidden and the panel always shows
+  const openCam = (on) => { camBar.classList.toggle('open', on); camToggle.setAttribute('aria-expanded', String(on)); };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && camBar.classList.contains('open')) { openCam(false); if (camBar.contains(document.activeElement)) camToggle.focus(); } });
+  document.addEventListener('pointerdown', (e) => { if (camBar.classList.contains('open') && !camBar.contains(e.target)) openCam(false); });
   camBar.onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b === camToggle) { openCam(!camBar.classList.contains('open')); return; }
     const v = b.dataset.cam, f = b.dataset.follow;
     if (f) camAct(() => views.setFollow(f, robotAt(M.i, true)));
     else if (v === 'fit-scene') camAct(() => views.fitBox(sceneFrame()));
@@ -390,9 +402,10 @@ const adapter = {
     setLayers(trail.object, 'body.model');
     trail.object.visible = false;
     scene.add(trail.object);
-    Object.assign(M.ov, { ghost: true, trail: true, xray: false, inspector: false });       // overlays like the floor: the Overlays menu and setOverlay
+    ovSaved = { ghost: prefs().ghost !== false, open_scene: prefs().open_scene === true };     // the ghost is on and the view opens on the robot until a viewer chooses otherwise
+    Object.assign(M.ov, { ghost: ovSaved.ghost, open_scene: ovSaved.open_scene, trail: true, xray: false, inspector: false });       // overlays like the floor: the Overlays menu and setOverlay
     buildInspector(stage);
-    views.home3d = () => (run && fr && RW ? robotFrame(camTick()) : null);
+    views.home3d = () => (run && fr && RW && !M.ov.open_scene ? robotFrame(camTick()) : null);       // null: the fixed iso that sees the whole scene
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = new URL('../shell/camera.css', import.meta.url).href;
     document.head.append(css);
@@ -456,6 +469,7 @@ const adapter = {
   settled: () => new Promise((res) => requestAnimationFrame(() => res())),
   resize() { views.resize(); },
   fit() { views.fit(); },
+  persist: persistOv,
   theme() {
     readPalette();
     stg.setTheme();                                                  // the clear colour, the floor, the grid, the lights and the shadows

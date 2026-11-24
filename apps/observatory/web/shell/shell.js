@@ -1389,7 +1389,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
     // an overlay on or off: coords, gizmo, legend, hazards_top (the scene's real hazards drawn over the robot's model)
-    setOverlay: (name, on) => { if (!(name in M.ov)) return false; M.ov[name] = !!on; renderChrome(); if (hasTicks()) adapter.draw(); return !!on; },
+    setOverlay: (name, on) => { if (!(name in M.ov)) return false; M.ov[name] = !!on; renderChrome(); if (hasTicks()) adapter.draw(); adapter.persist?.(); return !!on; },
     select: (sel) => select(sel),
     // the left panel (UXS-001): a section open or closed, the joints' angles shown or not
     setSection: (id, open = true) => { const k = nodeId(id); if (!T.nodes[k]?.section) return false; M.open[k] = !!open; saveOpen(); renderTree(); return M.open[k]; },
@@ -1459,11 +1459,19 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     <label class="cb"><input type="checkbox" data-ov="hazards_top" ${M.ov.hazards_top ? 'checked' : ''}>Real hazards over the model</label>
     <label class="cb"><input type="checkbox" data-ov="gizmo" ${M.ov.gizmo ? 'checked' : ''}>Axis gizmo</label>
     <label class="cb"><input type="checkbox" data-ov="floor" ${M.ov.floor ? 'checked' : ''}>Floor (3D and chase)</label>
+    ${'open_scene' in M.ov ? `<div class="cb" role="group" aria-label="Open the 3D view on">Open the 3D view on <span class="seg sm">${[['robot', 'Robot', !M.ov.open_scene], ['scene', 'Whole scene', M.ov.open_scene]].map(([k, l, on]) => `<button type="button" data-open="${k}" aria-pressed="${on}">${l}</button>`).join('')}</span></div>` : ''}
     ${'ghost' in M.ov ? [['ghost', 'Belief ghost beside the truth body'], ['trail', 'Trail to the playhead'], ['xray', 'X-ray body'], ['inspector', 'Model inspector (I)']].map(([k, l]) => `<label class="cb"><input type="checkbox" data-ov="${k}" ${M.ov[k] ? 'checked' : ''}>${l}</label>`).join('') : ''}
     <label class="cb"><input type="checkbox" data-ov="legend" ${M.ov.legend ? 'checked' : ''}>Legend</label>${legendHidden() && M.run ? `<h6>Legend</h6><div class="lg" id="lgpop">${legendHtml()}</div>` : ''}`,
-  (p) => p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
-    if (c.dataset.ov === 'rel') setRelation('belief_truth', c.checked); else { M.ov[c.dataset.ov] = c.checked; renderChrome(); if (hasTicks()) adapter.draw(); }
-  })));
+  (p) => {
+    p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
+      if (c.dataset.ov === 'rel') setRelation('belief_truth', c.checked); else { M.ov[c.dataset.ov] = c.checked; renderChrome(); if (hasTicks()) adapter.draw(); adapter.persist?.(); }
+    }));
+    p.querySelectorAll('[data-open]').forEach((b) => (b.onclick = () => {
+      M.ov.open_scene = b.dataset.open === 'scene';
+      p.querySelectorAll('[data-open]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+      adapter.persist?.();
+    }));
+  });
   $('exportBtn').onclick = (e) => openExport(e.currentTarget);
   $('fitBtn').onclick = () => fit();
   $('helpBtn').onclick = () => help();

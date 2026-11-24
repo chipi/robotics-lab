@@ -556,7 +556,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
         c = cam()
         check("camera: the corner has the controls (Iso, Top, Front, Side, Fit scene, Fit robot, Follow Off, Position, Heading, Pose) and the follow control starts on Off",
-              c["bar"] and pg.evaluate("[...document.querySelectorAll('#camCtl button')].map((b) => b.textContent)")
+              c["bar"] and pg.evaluate("[...document.querySelectorAll('#camCtl .campanel button')].map((b) => b.textContent)")
               == ["Iso", "Top", "Front", "Side", "Fit scene", "Fit robot", "Off", "Position", "Heading", "Pose"] and c["follow"] == "off"
               and pg.evaluate("document.querySelector('#camCtl [data-follow=off]').getAttribute('aria-pressed')") == "true", c)
         n0 = c["ndc"]
@@ -757,6 +757,113 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         pg.evaluate("document.querySelector('#inspector button[aria-label^=Close]').click()")      # the popover is open over the panel
         pg.wait_for_function(f"{A}.bodies().inspector.open === false")
         check("inspector: the panel's close button closes it", pg.evaluate("window.miniview.config().overlays.inspector") is False)
+
+        # review round 2: the opening camera is a setting (robot by default, or the whole scene), the ghost setting is kept, the camera toolbar is one button on a phone
+        def fresh(width=1440, height=900):
+            return b.new_context(viewport={"width": width, "height": height}, color_scheme="dark").new_page()
+
+        def open_on(p, key="arm/room/r1", view="3d", reload=False):
+            p.goto(f"{base}/web/three/#scene=room&run={key}&view={view}")
+            if reload:
+                p.reload()
+            p.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+            p.wait_for_function("window.miniview.state().run !== null")
+            p.evaluate("window.miniview.whenLoaded()")
+            p.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+            p.wait_for_function(f"{A}.camera().moving === false")
+
+        def pose(c):
+            return c["position"] + c["target"]
+
+        p2 = fresh()
+        p2.set_default_timeout(30000)
+        open_on(p2)
+        robot_open = p2.evaluate(f"{A}.camera()")
+        p2.evaluate(f"{A}.iso()")
+        iso_pose = p2.evaluate(f"{A}.camera()")
+        check("open on: by default the 3D view opens framed on the robot (target within 0.05 m of it, the robot's box inside the view) and not on the fixed whole-scene iso",
+              near3(robot_open["target"][:2], robot_open["robot"][:2], 0.05) and robot_open["ndc"]["inside"] and not near3(pose(robot_open), pose(iso_pose), 0.05), (robot_open["target"], robot_open["robot"], iso_pose["position"]))
+        p2.click("#ovBtn")
+        check("open on: the Overlays popover has the setting, Robot pressed by default",
+              p2.evaluate("[...document.querySelectorAll('.pop [data-open]')].map((x) => [x.dataset.open, x.getAttribute('aria-pressed')])") == [["robot", "true"], ["scene", "false"]])
+        p2.click(".pop [data-open=scene]")
+        check("open on: choosing Whole scene presses it and the config shows it", p2.evaluate("document.querySelector('.pop [data-open=scene]').getAttribute('aria-pressed')") == "true"
+              and p2.evaluate("window.miniview.config().overlays.open_scene") is True)
+        open_on(p2, reload=True)
+        scene_open = p2.evaluate(f"{A}.camera()")
+        p2.evaluate(f"{A}.iso()")
+        iso2 = p2.evaluate(f"{A}.camera()")
+        check("open on: with Whole scene a reload opens on the whole-scene fit (the camera is the one iso() gives, within 1e-6) and not on the robot",
+              near3(pose(scene_open), pose(iso2), 1e-6) and not near3(pose(scene_open), pose(robot_open), 0.05), (pose(scene_open), pose(iso2)))
+        p2.goto(f"{base}/web/three/#scene=room&run=arm/room/r3&view=3d&t=2")
+        p2.reload()
+        p2.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        p2.wait_for_function("window.miniview.state().t > 1.9")
+        p2.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        p2.wait_for_function(f"{A}.camera().moving === false")
+        t_scene = p2.evaluate(f"{A}.camera()")
+        check("open on: with Whole scene a #t=2 link opens at 2 s but still on the whole scene, not on the robot there", abs(p2.evaluate("window.miniview.state().t") - 2.0) < 0.11
+              and near3(pose(t_scene), pose(iso2), 1e-6), (pose(t_scene), pose(iso2)))
+        p2.click("#ovBtn")
+        p2.click(".pop [data-open=robot]")
+        p2.goto(f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2")
+        p2.reload()
+        p2.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        p2.wait_for_function("window.miniview.state().t > 1.9")
+        p2.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        p2.wait_for_function(f"{A}.camera().moving === false")
+        t_robot = p2.evaluate(f"{A}.camera()")
+        check("open on: back on Robot, the #t=2 link frames the robot at that moment (target within 0.05 m of it, x %.2f)" % t_robot["robot"][0],
+              near3(t_robot["target"][:2], t_robot["robot"][:2], 0.05) and t_robot["robot"][0] > 0.3, (t_robot["target"], t_robot["robot"]))
+        p2.context.close()
+
+        p3 = fresh()
+        p3.set_default_timeout(30000)
+        open_on(p3, "arm/room/r3")
+        g_on = p3.evaluate(f"{A}.bodies().ghost")
+        check("ghost setting: a fresh profile has the ghost on, shown, and its row ticked", p3.evaluate("window.miniview.config().overlays.ghost") is True and g_on["visible"] is True
+              and p3.evaluate("(document.getElementById('ovBtn').click(), document.querySelector('input[data-ov=ghost]').checked)") is True, g_on)
+        p3.click("input[data-ov=ghost]")
+        check("ghost setting: unticking the row hides the ghost", p3.evaluate(f"{A}.bodies().ghost.visible") is False)
+        open_on(p3, "arm/room/r3", reload=True)
+        check("ghost setting: the off choice survives a reload (the ghost is hidden, the config says off, the row is unticked)",
+              p3.evaluate("window.miniview.config().overlays.ghost") is False and p3.evaluate(f"{A}.bodies().ghost.visible") is False
+              and p3.evaluate("(document.getElementById('ovBtn').click(), document.querySelector('input[data-ov=ghost]').checked)") is False)
+        p3.click("input[data-ov=ghost]")
+        open_on(p3, "arm/room/r3", reload=True)
+        check("ghost setting: ticking it again is kept too (on after a reload)", p3.evaluate("window.miniview.config().overlays.ghost") is True and p3.evaluate(f"{A}.bodies().ghost.visible") is True)
+        p3.context.close()
+
+        PH = "document.querySelectorAll('#camCtl button')"
+        vis = "[...%s].filter((x) => { const r = x.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(x).visibility !== 'hidden'; }).map((x) => x.textContent)"
+        p4 = fresh(390, 844)
+        p4.set_default_timeout(30000)
+        open_on(p4, "arm/room/r1")
+        check("camera on a phone (390 px): the toolbar is one button, Camera, collapsed (aria-expanded false)", p4.evaluate(vis % PH) == ["Camera"]
+              and p4.evaluate("document.getElementById('camToggle').getAttribute('aria-expanded')") == "false", p4.evaluate(vis % PH))
+        p4.click("#camToggle")
+        check("camera on a phone: a click opens the controls (aria-expanded true, the ten presets / fit / follow buttons shown)",
+              p4.evaluate("document.getElementById('camToggle').getAttribute('aria-expanded')") == "true" and len(p4.evaluate(vis % PH)) == 11, p4.evaluate(vis % PH))
+        small = p4.evaluate("[...document.querySelectorAll('#camCtl button')].map((x) => { const r = x.getBoundingClientRect(); return [x.textContent, Math.round(r.width), Math.round(r.height)]; }).filter((q) => q[1] < 44 || q[2] < 44)")
+        check("camera on a phone: every button in the toolbar is at least 44 x 44 px", small == [], small)
+        p4.click("#camCtl [data-cam=top]")
+        p4.wait_for_function(f"{A}.camera().moving === false")
+        check("camera on a phone: a preset button works from the opened toolbar (top view: looks down)", p4.evaluate(f"{A}.camera().position[2] - {A}.camera().target[2]") > 1
+              and abs(p4.evaluate(f"{A}.camera().position[0] - {A}.camera().target[0]")) < 1e-3)
+        p4.focus("#camToggle")
+        p4.keyboard.press("Escape")
+        check("camera on a phone: Esc closes the controls and leaves the one button (aria-expanded false)",
+              p4.evaluate("document.getElementById('camToggle').getAttribute('aria-expanded')") == "false" and p4.evaluate(vis % PH) == ["Camera"], p4.evaluate(vis % PH))
+        p4.keyboard.press("Enter")
+        check("camera on a phone: the button is keyboard reachable (focused, Enter opens it)", p4.evaluate("document.getElementById('camToggle').getAttribute('aria-expanded')") == "true")
+        p4.context.close()
+
+        p5 = fresh(1440, 900)
+        p5.set_default_timeout(30000)
+        open_on(p5, "arm/room/r1")
+        check("camera on a wide screen (1440 px): the full toolbar shows with no Camera button (ten buttons)", p5.evaluate(vis % PH)
+              == ["Iso", "Top", "Front", "Side", "Fit scene", "Fit robot", "Off", "Position", "Heading", "Pose"], p5.evaluate(vis % PH))
+        p5.context.close()
         check("page: no console error or warning, no failed request on the page", not console and not missing, (console[:5], missing))
 
         # no colour literal in the page's scene code: the tokens are read, not copied (the allowed: the white of the pins' texture mask)
