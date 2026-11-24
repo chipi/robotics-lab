@@ -187,7 +187,8 @@ with tempfile.TemporaryDirectory() as tmp:
         d.deploy = real_deploy
 
     # --- a dry run changes nothing -----------------------------------------------------------------------------------------------------
-    d.solo_running = lambda project: ["abc"]
+    real_solo = d.solo_running
+    d.solo_running = lambda project, context=None: ["abc"]
     dr = tmp / "dry-state"
     before = (tree_files(dr), tree_files(tmp / "data"), tree_files(tmp / "vs"), tree_files(tmp / "cs"))
     code, out = main_out("up", "--commit", one, "--dry-run", "--no-browser", "--project", "robotics-lab-dry", "--deploy-state", str(dr), "--installation", str(inst_file),
@@ -206,6 +207,68 @@ with tempfile.TemporaryDirectory() as tmp:
           and "rollback" in out and f"commit {here}" in out, out[-600:])
     code, out = main_out("record", "--commit", here, "--dry-run", "--deploy-state", str(dr))
     check("record --dry-run changes nothing either", code == 0 and not dr.exists() and "would record" in out, out)
+
+    # --- --context: every docker call runs against the named engine (the X3's prod engine), by the flag and not by the environment ----------
+    seen_ctx = []
+    d.solo_running = lambda project, context=None: seen_ctx.append(context) or ["abc"]
+    base_args = ["--dry-run", "--no-browser", "--project", "robotics-lab-dry", "--deploy-state", str(dr), "--installation", str(inst_file),
+                 "--data", str(tmp / "data"), "--viewer-state", str(tmp / "vs"), "--control-state", str(tmp / "cs"), "--robots-dir", "/srv/elsewhere/robots"]
+    saved_env = os.environ.pop("DOCKER_CONTEXT", None)
+    try:
+        code, out = main_out("up", "--commit", here, "--context", "prod", *base_args)
+        dock = [ln for ln in out.splitlines() if ln.startswith("  $ ") and "docker" in ln]
+        check("--context prod: a dry run exits 0 and prints docker command lines", code == 0 and len(dock) >= 4, out[-300:])
+        check("... every one of them is `docker --context prod ...` (compose: `docker --context prod compose -p ...`)",
+              all("docker --context prod " in ln for ln in dock) and any("docker --context prod compose -p robotics-lab-dry" in ln for ln in dock), dock)
+        check("... including the solo project's `down`, and the solo project is looked for in that context", any(" down" in ln for ln in dock) and seen_ctx == ["prod"], (dock, seen_ctx))
+        check("... --robots-dir may be a folder outside the checkout", 'source: "/srv/elsewhere/robots", target: /robots' in out, out[-300:])
+        code, out = main_out("up", "--commit", here, *base_args)
+        check("no --context: today's command lines, no --context flag", code == 0 and "--context" not in out and "  $ " in out and "docker compose -p robotics-lab-dry" in out, out[-300:])
+        os.environ["DOCKER_CONTEXT"] = "default"
+        code, out = main_out("up", "--commit", here, "--context", "prod", *base_args)
+        check("DOCKER_CONTEXT differing from --context is refused, naming both, before anything is printed about a deploy",
+              code == 2 and "DOCKER_CONTEXT" in out and "'default'" in out and "'prod'" in out and "project:" not in out, out)
+        os.environ["DOCKER_CONTEXT"] = "prod"
+        code, out = main_out("up", "--commit", here, "--context", "prod", *base_args)
+        check("DOCKER_CONTEXT equal to --context is accepted", code == 0 and "DRY RUN END" in out, out[-200:])
+        code, out = main_out("status", "--context", "other", "--deploy-state", str(dr))
+        check("... the refusal holds for every verb (status here)", code == 2 and "DOCKER_CONTEXT" in out, out)
+    finally:
+        os.environ.pop("DOCKER_CONTEXT", None)
+        if saved_env is not None:
+            os.environ["DOCKER_CONTEXT"] = saved_env
+
+    argvs = []
+    real_run = d.subprocess.run
+    d.subprocess.run = lambda cmd, **kw: argvs.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0, "", "")
+    try:
+        d.solo_running = real_solo
+        d.solo_running("p", "prod")
+        d.solo_running("p")
+        d.cmd_status(type("A", (), {}), {**S2, "context": "prod"})
+        d.cmd_status(type("A", (), {}), {**S2, "context": None})
+    finally:
+        d.subprocess.run = real_run
+    docker_argvs = [a_ for a_ in argvs if a_[0] == "docker"]
+    check("solo_running and status call `docker --context prod ps` with the flag, and plain `docker ps` with none",
+          [a_[:4] for a_ in docker_argvs] == [["docker", "--context", "prod", "ps"], ["docker", "ps", "-q", "--filter"], ["docker", "--context", "prod", "ps"], ["docker", "ps", "--filter",
+                                                                                                                                                         "label=com.docker.compose.project=robotics-lab-test"]], docker_argvs)
+
+    # --- the smoke without the browser needs no uv, no Observatory environment: only the standard library ------------------------------------
+    calls = []
+    d.subprocess.run = lambda cmd, **kw: calls.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0, "", "")
+    real_get = d._get
+    d._get = lambda url, timeout=10.0: (200, json.dumps({"ok": True, "service": "mission-control", "required": False}).encode())
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            ok_nb = d.smoke(S, browser=False)
+        calls_nb = list(calls)
+        with contextlib.redirect_stdout(io.StringIO()):
+            d.smoke(S, browser=True)
+    finally:
+        d.subprocess.run, d._get = real_run, real_get
+    check("smoke --no-browser runs no subprocess at all (no uv, no Observatory venv), and passes on healthy answers", ok_nb and calls_nb == [], calls_nb)
+    check("... and the browser smoke is the one that runs uv", [c_[0] for c_ in calls] == ["uv"], calls)
 
     # --- the stack's defaults are the deployed one's ---------------------------------------------------------------------------------------
     check("the defaults are the deployed stack's: project robotics-lab, the Observatory on 8070, Mission Control on 8060, loopback",

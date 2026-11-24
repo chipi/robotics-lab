@@ -21,7 +21,10 @@ from the installation file, at the same paths and under the same UID: the file i
 (description and meshes, read only) and the profile store (read write). It gets no data folder, no index: it reads runs only through the Observatory's
 API (RFC-0024 question 5). All of it is the generated overlay (`overlay()`), printed by --dry-run.
 
-Standard library only. Needs Docker Compose 2.24 or newer (`!reset`), git, and for the browser smoke the Observatory's environment (`make observatory-sync`)."""
+`--context NAME` (the X3's prod engine: `--context prod`) puts `--context NAME` on every docker call; a DOCKER_CONTEXT in the environment that differs from it is refused. `--robots-dir` may be a folder outside
+the checkout (the generated meshes are not in git).
+
+Standard library only. Needs Docker Compose 2.24 or newer (`!reset`) and git; the browser smoke alone also needs `uv` and the Observatory's environment (`make observatory-sync`): `--no-browser` needs neither."""
 
 import argparse
 import datetime
@@ -53,6 +56,12 @@ WAIT_S = 900        # the Observatory indexes every run on its first start (its 
 
 class DeployError(Exception):
     pass
+
+
+def docker_cli(context: str | None) -> list:
+    """The docker command every call starts from: with a context, `--context NAME` on the command line (not the environment alone, which a caller can
+    lose), so the X3's prod engine is never confused with the shared one."""
+    return ["docker", "--context", context] if context else ["docker"]
 
 
 def say(text: str = "") -> None:
@@ -227,7 +236,7 @@ def pick_scope(requested: str, control_state: Path) -> tuple:
 def settings_of(a) -> dict:
     s = {k: getattr(a, k) if getattr(a, k, None) is not None else v for k, v in DEFAULTS.items()}
     s["robots_dir"] = str(Path(a.robots_dir).resolve()) if a.robots_dir else str(REPO / "robots")
-    s["control_robots"] = a.control_robots
+    s["control_robots"], s["context"] = a.control_robots, a.context
     s["tokens"], s["installation"] = a.tokens, str(Path(s["installation"]).expanduser())
     return s
 
@@ -333,7 +342,7 @@ class Compose:
         }
 
     def base(self) -> list:
-        return ["docker", "compose", "-p", self.s["project"], "-f", str(self.tree / "compose.yml" if self.tree else "<tree>/compose.yml"),
+        return [*docker_cli(self.s.get("context")), "compose", "-p", self.s["project"], "-f", str(self.tree / "compose.yml" if self.tree else "<tree>/compose.yml"),
                 "-f", str(self.overlay_file or "<overlay>")]
 
     def show(self, *args) -> str:
@@ -343,8 +352,8 @@ class Compose:
         return run([*self.base(), *args], env=self.env, **kw)
 
 
-def solo_running(project: str) -> list:
-    p = subprocess.run(["docker", "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"], text=True, capture_output=True)
+def solo_running(project: str, context: str | None = None) -> list:
+    p = subprocess.run([*docker_cli(context), "ps", "-q", "--filter", f"label=com.docker.compose.project={project}"], text=True, capture_output=True)
     return p.stdout.split() if p.returncode == 0 else []
 
 
@@ -381,7 +390,7 @@ def deploy(s: dict, sha: str, dry: bool, browser: bool = True, verb: str = "depl
     for n in pl["notes"]:
         say(f"  NOTE {n}")
     if dry:
-        running = solo_running(s["solo_project"])
+        running = solo_running(s["solo_project"], s.get("context"))
         say("DRY RUN: nothing below is done.")
         say(f"--- the overlay, {ov_file}:\n{pl['text']}---")
         say(f"would: export {sha[:12]} with `git archive` into {tree} (kept)" + ("   [already there: reused]" if tree.exists() else ""))
@@ -389,6 +398,7 @@ def deploy(s: dict, sha: str, dry: bool, browser: bool = True, verb: str = "depl
         say(c.show("config", "-q"))
         say(c.show("build"))
         say(f"would: take down the solo project {s['solo_project']!r} " + (f"(running now: {len(running)} container(s))" if running else "(not running now: nothing to take down)"))
+        say("  $ " + " ".join([*docker_cli(s.get("context")), "compose", "-p", s["solo_project"], "down"]) + "   (only when it runs)")
         say(c.show("up", "-d", "--wait", "--wait-timeout", str(WAIT_S)))
         say(f"would: record {sha} as current in {state_file(s)} (the one before it is kept for `rollback`)")
         say("would: run the smoke" + (" (without the browser)" if not browser else "") + f": health of both, /lib/, the pages in Chromium ({REPO / 'scripts' / 'smoke_pages.py'})")
@@ -410,9 +420,9 @@ def deploy(s: dict, sha: str, dry: bool, browser: bool = True, verb: str = "depl
         ov_file.write_text(pl["text"])
         c.do("config", "-q")
         c.do("build")
-        if solo_running(s["solo_project"]):
+        if solo_running(s["solo_project"], s.get("context")):
             say(f"the solo project {s['solo_project']!r} is running: taking it down (its image and state folder stay)")
-            run(["docker", "compose", "-p", s["solo_project"], "down"])
+            run([*docker_cli(s.get("context")), "compose", "-p", s["solo_project"], "down"])
         c.do("up", "-d", "--wait", "--wait-timeout", str(WAIT_S))
         write_state(s, sha, tag, c.tree)
         say(f"recorded: {state_file(s)}")
@@ -459,7 +469,7 @@ def cmd_status(a, s) -> bool:
     say(f"project {s['project']}  state file {state_file(s)}")
     st = read_state(s)
     say(json.dumps({k: st.get(k) for k in ("current", "previous")}, indent=2) if st else "nothing recorded")
-    running = subprocess.run(["docker", "ps", "--filter", f"label=com.docker.compose.project={s['project']}", "--format", "{{.Names}}  {{.Image}}  {{.Status}}"],
+    running = subprocess.run([*docker_cli(s.get("context")), "ps", "--filter", f"label=com.docker.compose.project={s['project']}", "--format", "{{.Names}}  {{.Image}}  {{.Status}}"],
                              text=True, capture_output=True).stdout
     say(running.strip() or "no container of this project is running")
     return True
@@ -470,7 +480,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("command", choices=("up", "rollback", "record", "smoke", "status"))
     p.add_argument("--commit", help="the commit to deploy: a sha or a ref (up, record; rollback takes the recorded previous one)")
     p.add_argument("--dry-run", action="store_true", help="print what would be done, and do none of it")
-    p.add_argument("--no-browser", action="store_true", help="the smoke without Chromium")
+    p.add_argument("--no-browser", action="store_true", help="the smoke without Chromium (it then needs no uv and no Observatory environment)")
+    p.add_argument("--context", help="run every docker and docker compose call against this Docker context (docker --context NAME ...); default: none, the CLI's own")
     p.add_argument("--project", help=f"the compose project (default {DEFAULTS['project']})")
     p.add_argument("--solo-project", help=f"the solo Observatory project to take down when it runs (default {DEFAULTS['solo_project']})")
     p.add_argument("--viewer-port", type=int, help=f"the Observatory's port (default {DEFAULTS['viewer_port']})")
@@ -489,6 +500,10 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     a = parser().parse_args(argv)
+    env_ctx = os.environ.get("DOCKER_CONTEXT")
+    if a.context and env_ctx and env_ctx != a.context:
+        say(f"deploy.py: DOCKER_CONTEXT is {env_ctx!r} but --context is {a.context!r}: they must agree (unset one, or make them equal)")
+        return 2
     s = settings_of(a)
     try:
         ok = {"up": cmd_up, "rollback": cmd_rollback, "record": cmd_record, "smoke": cmd_smoke, "status": cmd_status}[a.command](a, s)
