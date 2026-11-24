@@ -1,0 +1,73 @@
+/* The UI kit both apps use (ADR-0021): components on the tokens of tokens.css only. Density is the one difference between the apps and comes from
+   data-density="compact"|"regular" on <html> (--ctl-h, --fs-base, --pad). Classes carry the ui- prefix so they sit beside an app's own .btn or .status
+   until U10 and U19 move the apps over; .num is the one bare name. Every duration is a --dur-* token, so reduced motion zeroes them all.
+   The kit styles no STOP: that button is the app's, static, in its own markup. */
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* focus: a ring on every control, not colour alone (an outline) */
+.ui-btn:focus-visible, .ui-input:focus-visible, .ui-topbar [data-slot="nav"] a:focus-visible, .ui-brand:focus-visible {
+  outline: 2px solid var(--line-focus); outline-offset: 1px; box-shadow: 0 0 0 var(--sp-1) var(--accent-ring);
+}
+
+/* buttons and inputs: the height is the density's */
+.ui-btn, .ui-input {
+  box-sizing: border-box; height: var(--ctl-h); padding: 0 var(--pad); font: var(--fs-base) / var(--lh-tight) var(--font-ui);
+  color: var(--text-1); border: 1px solid var(--control-border); border-radius: var(--radius-2);
+  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-base) var(--ease);
+}
+.ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); background: var(--surface-2); cursor: pointer; white-space: nowrap; }
+.ui-btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--line-hover); }
+.ui-btn:active:not(:disabled) { background: var(--surface-press); }
+.ui-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ui-btn--primary { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
+.ui-btn--primary:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--line-focus); }
+.ui-btn--danger { background: var(--status-error-soft); color: var(--status-error-on); border-color: var(--status-error); }
+.ui-btn--danger:hover:not(:disabled) { background: var(--status-error-soft); border-color: var(--status-error-on); }
+.ui-btn--touch { height: var(--ctl-h-touch); min-width: var(--tap-min); }
+.ui-btn--icon { width: var(--ctl-h); padding: 0; }
+.ui-input { background: var(--surface-field); width: 100%; }
+.ui-input::placeholder { color: var(--text-3); }
+.ui-input:hover:not(:disabled) { border-color: var(--line-hover); }
+.ui-input:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 700px) {
+  :root[data-density="regular"] .ui-btn, :root[data-density="regular"] .ui-input { min-height: var(--tap-min); }
+}
+
+/* status badge: glyph, word and colour together (status.js names the glyphs and words); -soft is the ground, -on the word, the solid colour the glyph */
+.ui-badge {
+  --c: var(--status-unknown); --soft: var(--status-unknown-soft); --on: var(--status-unknown-on);
+  display: inline-flex; align-items: center; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-pill);
+  background: var(--soft); color: var(--on); font: var(--fs-2) / var(--lh-tight) var(--font-ui); white-space: nowrap;
+}
+.ui-badge .ui-glyph { color: var(--c); }
+.ui-badge[data-status="ok"] { --c: var(--status-ok); --soft: var(--status-ok-soft); --on: var(--status-ok-on); }
+.ui-badge[data-status="info"] { --c: var(--status-info); --soft: var(--status-info-soft); --on: var(--status-info-on); }
+.ui-badge[data-status="warn"] { --c: var(--status-warn); --soft: var(--status-warn-soft); --on: var(--status-warn-on); }
+.ui-badge[data-status="alert"] { --c: var(--status-alert); --soft: var(--status-alert-soft); --on: var(--status-alert-on); }
+.ui-badge[data-status="error"] { --c: var(--status-error); --soft: var(--status-error-soft); --on: var(--status-error-on); }
+.ui-badge[data-status="stale"] { --c: var(--status-stale); --soft: var(--status-stale-soft); --on: var(--status-stale-on); }
+.ui-badge[data-status="neutral"] { --c: var(--status-neutral); --soft: var(--status-neutral-soft); --on: var(--status-neutral-on); }
+.ui-badge[data-status="live"] { --c: var(--status-live); --soft: var(--status-live-soft); --on: var(--status-live-on); }
+.ui-badge[data-status="live"] .ui-glyph { animation: ui-pulse calc(var(--dur-slow) * 5) var(--ease) infinite; }
+@keyframes ui-pulse { 50% { opacity: .35; } }
+
+/* a stale value: the value dimmed, its age said in words beside it */
+.ui-stale { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
+.ui-stale .ui-stale-value { opacity: .55; }
+.ui-stale .ui-stale-age { color: var(--status-stale-on); font-size: var(--fs-1); white-space: nowrap; }
+
+/* top bar: the brand, the nav and the theme control sit in slots (brand.js fills the first two); anything else in the bar, STOP included, is the app's */
+.ui-topbar {
+  display: flex; align-items: center; gap: var(--sp-3); min-height: calc(var(--ctl-h) + var(--sp-2)); padding: 0 var(--pad);
+  background: var(--surface-3); border-bottom: 1px solid var(--line); color: var(--text-1); font: var(--fs-base) / var(--lh-tight) var(--font-ui);
+}
+.ui-topbar [data-slot="nav"] { display: flex; align-items: center; gap: var(--sp-1); flex: 1; min-width: 0; }
+.ui-topbar [data-slot="theme"] { display: flex; align-items: center; margin-left: auto; }
+.ui-brand { color: var(--text-1); font-weight: 600; text-decoration: none; border-radius: var(--radius-2); }
+.ui-topbar [data-slot="nav"] a {
+  display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 var(--pad); border-radius: var(--radius-2);
+  color: var(--text-2); text-decoration: none; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ui-topbar [data-slot="nav"] a:hover { background: var(--surface-hover); color: var(--text-1); }
+.ui-topbar [data-slot="nav"] a[aria-current="page"] { background: var(--surface-selected); color: var(--text-1); }
