@@ -15,7 +15,11 @@ reversible) or parked (not built). It says why and what to ask. The plan is
 
 ## Parked
 
-### P4. Deploy the one-origin platform from a named commit (waiting for the operator)
+### P4. Deploy the one-origin platform from a named commit (done 2026-11-24)
+
+**Done:** `4e13c2e` deployed to the `robotics-lab` project from `~/deploy/robotics-lab` (the X3
+rule), after `PASS sim_deployed` on a test stack at the same commit: `DEPLOY PASS`, `SMOKE PASS`,
+the record's previous is `36670fb`. What follows is the request as it was written.
 
 Units C1 to C3 of 4c are built and proven on a test stack only (project `robotics-lab-test`, ports
 18070 and 18060, its own folders): the deployed stack was not touched. The real deploy needs the

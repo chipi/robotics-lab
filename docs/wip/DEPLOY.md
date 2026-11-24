@@ -5,6 +5,14 @@ whole procedure; the `make` targets wrap it. It replaces `make stack-up` for the
 runs the robot: that target builds whatever the checkout holds under the tag `local`, gives
 Mission Control no robot, and leaves a solo Observatory project holding the port.
 
+**Where it runs from (2026-11-24):** `~/deploy/robotics-lab`, a checkout of `main` that is only
+pulled (`git pull --ff-only`), never edited: the X3's rule is that deploys never come from `/work`.
+It holds the duck's generated meshes (`robots/duck/meshes`, ignored by git) and its own
+Observatory venv (`make observatory-sync`) for the smoke. Until the X3's maintenance window, a
+deploy must not build new image layers on the X3 (the homelab's NEXT_STEPS): deploy a commit
+whose images exist, and check the build output says `CACHED`. A prod engine of its own is
+planned ([PROD-ON-X3.md](PROD-ON-X3.md)).
+
 ## The one-line commands
 
 ```bash
