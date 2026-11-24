@@ -288,8 +288,8 @@ with sync_playwright() as p:
     light.goto(BASE + "/")
     light.wait_for_function("window.__mc && window.__mc.ready", timeout=8000)
     light.wait_for_timeout(1200)
-    heavy = [u for u in seen if "/lib/vendor/" in u or "three" in u.lower() or "bodyview" in u]
-    check("the overview fetches no three.js, vendor module or body view", heavy == [], heavy)
+    heavy = [u for u in seen if "/lib/vendor/" in u or "three" in u.lower() or "bodyview" in u or "/lib/stage/" in u or "/lib/body/inspector" in u]
+    check("the overview fetches no three.js, vendor module, stage, inspector or body view", heavy == [], heavy)
     check("the overview loads the kit's status, brand and motion modules", all(any(u.endswith(f"/lib/{m}.js") for u in seen) for m in ("status", "brand", "motion")), seen)
     light.close()
 

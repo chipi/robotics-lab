@@ -203,8 +203,13 @@ table.t { width: 100%; border-collapse: collapse; }
 
 /* Body tab: the three.js view as large as the screen allows, the joints beside it */
 .bodygrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--sp-4); align-items: start; }
-.bodyview { position: relative; height: min(70vh, 640px); min-height: 320px; background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden; }
+.bodyview { position: relative; height: min(70vh, 640px); min-height: 320px; background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden; isolation: isolate; }
 .bodyview canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.bodytools { position: absolute; top: var(--sp-2); left: var(--sp-2); right: var(--sp-2); display: flex; flex-wrap: wrap; gap: var(--sp-1); pointer-events: none; }
+.bodytools .ui-btn { pointer-events: auto; background: var(--veil-1); }
+.bodytools .ui-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
+.bodyinsp { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: min(360px, calc(100% - 2 * var(--sp-2))); max-height: 55%; overflow: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-3); box-shadow: 0 var(--sp-1) var(--sp-4) var(--elev-shadow); }
+.bodyinsp[hidden] { display: none; }
 .bodyjoints { font-size: var(--fs-2); margin-top: 6px; }
 .bodycol > .dim:not(:empty) { padding: var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius-3); background: var(--surface-1); text-align: center; }
 
@@ -299,6 +304,7 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--font-mono); font-si
   #stop-robot { order: -1; }
   .stop.all { flex: 0 0 116px; font-size: var(--fs-3); white-space: nowrap; padding: 0 var(--sp-2); }
   .top [data-slot="nav"] { display: none; }
+  .bodytools .ui-btn { min-height: var(--tap-min); min-width: var(--tap-min); }
   #toast { bottom: 108px; }
   .strip { padding: var(--sp-3) var(--sp-3) 0; gap: 6px 14px; }
   .strip h1 { font-size: var(--fs-5); }

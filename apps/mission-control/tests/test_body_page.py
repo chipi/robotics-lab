@@ -240,6 +240,80 @@ with sync_playwright() as p:
         wait("window.__mc.body?.state()?.drawn === 3")
         check("and back on the duck the body is drawn again, once", page.locator("#rp-body canvas").count() == 1)
 
+        # --- U21: the shared stage, the camera presets, Fit robot, x-ray and the inspector -------------------------------------------------
+        cam = lambda: page.evaluate("window.__mc.body.state().camera")
+        settled = lambda: wait("window.__mc.body.state().camera.moving === false")
+        unit = lambda c: (lambda off: [x / (math.hypot(*off) or 1) for x in off])([a - b for a, b in zip(c["position"], c["target"])])
+        close = lambda a, b, tol=2e-3: all(abs(x - y) < tol for x, y in zip(a, b))
+        page.set_viewport_size({"width": 1200, "height": 800})
+        wait("window.__mc.body?.state()?.drawn === 3")
+        stg = body().get("stage") or {}
+        check("must fail: the body stands on the shared stage: floor in the scene, grid, contact shadow with some opacity", stg.get("floor") is True and stg.get("grid") is True
+              and stg.get("shadow") is True and (stg.get("shadowOpacity") or 0) > 0, stg)
+        check("must fail: theme lights (hemisphere and sun), NeutralToneMapping, and the camera draws the stage layer", sorted(stg.get("lights") or []) == ["DirectionalLight", "HemisphereLight"]
+              and stg.get("neutral") is True and stg.get("cameraSeesStage") is True, stg)
+        check("must fail: the stage's colours are the page's --scene tokens", bool((stg.get("tokens") or {}).get("floor")) and stg["tokens"]["floor"] == page.evaluate(
+            "getComputedStyle(document.documentElement).getPropertyValue('--scene-floor').trim()"), stg.get("tokens"))
+        check("must fail: the toolbar offers Iso, Top, Front, Side, Fit robot, X-ray and Inspector", page.locator("#rp-body-view .bodytools button").all_inner_texts()
+              == ["Iso", "Top", "Front", "Side", "Fit robot", "X-ray", "Inspector"], page.locator("#rp-body-view .bodytools button").all_inner_texts())
+        iso = [-5.5, -7.5, 6.5]
+        iso = [x / math.hypot(*iso) for x in iso]
+        for name, axis in (("iso", iso), ("top", [0, 0, 1]), ("front", [1, 0, 0]), ("side", [0, -1, 0]), ("iso", iso)):
+            page.click(f"#rp-body-view [data-preset={name}]")
+            settled()
+            c = cam()
+            check(f"must fail: the {name} preset puts the camera on its axis, z up, the robot in view", close(unit(c), axis) and close(c["up"], [0, 0, 1], 1e-3) and c["preset"] == name
+                  and c["ndc"]["inside"] is True and page.locator(f"#rp-body-view [data-preset={name}]").get_attribute("aria-pressed") == "true", c)
+        page.mouse.move(600, 450)
+        for _ in range(6):
+            page.mouse.wheel(0, -600)
+        page.wait_for_timeout(200)
+        zoomed = cam()
+        check("must fail: zoomed in until the robot spills out of the view, the preset is let go", zoomed["ndc"]["inside"] is False and zoomed["preset"] is None, zoomed)
+        page.click("#rp-body-view [data-act=fit]")
+        settled()
+        fit = cam()
+        check("must fail: Fit robot frames the whole robot: every corner of its box in view, and it fills the pane", fit["ndc"]["inside"] is True and fit["ndc"]["height"] > 0.3, fit)
+
+        check("must fail: x-ray is off at first, solid", body()["xray"] is False and body()["style"] == "solid")
+        page.click("#rp-body-view [data-act=xray]")
+        check("must fail: the x-ray toggle makes the body see-through, and says it is on", body()["xray"] is True and body()["style"] == "xray"
+              and page.locator("#rp-body-view [data-act=xray]").get_attribute("aria-pressed") == "true", body().get("style"))
+        page.click("#rp-body-view [data-act=xray]")
+        check("must fail: a second press makes it solid again", body()["xray"] is False and body()["style"] == "solid")
+
+        check("the inspector is closed and not mounted at first", body()["inspector"] == {"open": False, "rows": 0, "selected": None}, body()["inspector"])
+        page.keyboard.press("Escape")
+        check("Escape with the inspector closed does nothing", body()["inspector"]["open"] is False)
+        page.keyboard.press("i")
+        check("must fail: i opens the inspector: a row for each of the three links", body()["inspector"]["open"] is True and body()["inspector"]["rows"] == 3
+              and page.locator("#rp-body-view .bodyinsp .insp-row").count() == 3, body()["inspector"])
+        shin = page.locator("#rp-body-view .bodyinsp .insp-row[data-link=shin]")
+        shin.click()
+        check("must fail: choosing a part in the inspector marks it", body()["inspector"]["selected"] == "shin" and shin.get_attribute("aria-selected") == "true", body()["inspector"])
+        page.set_viewport_size({"width": 390, "height": 800})
+        page.wait_for_timeout(200)
+        check("on a phone the open inspector and the toolbar sit under STOP and STOP ALL: nothing covers them", page.evaluate("""() => ['stop-robot', 'stop-all'].every((id) => { const b = document.getElementById(id), r = b.getBoundingClientRect();
+            const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return e === b || b.contains(e); })"""))
+        page.keyboard.press("Escape")
+        check("must fail: Escape closes the inspector and lets the part go", body()["inspector"] == {"open": False, "rows": 3, "selected": None}, body()["inspector"])
+        page.evaluate("() => { const i = document.createElement('input'); i.id = 'u21-probe'; document.body.append(i); i.focus(); }")
+        page.keyboard.type("i")
+        check("must fail: an i typed in a text field does not open the inspector, and lands in the field", body()["inspector"]["open"] is False
+              and page.evaluate("document.getElementById('u21-probe').value") == "i", body()["inspector"])
+        page.evaluate("document.getElementById('u21-probe').remove()")
+        page.click("#rp-body-view [data-act=inspector]")
+        check("the Inspector button opens it too", body()["inspector"]["open"] is True)
+        page.keyboard.press("Escape")
+        check("and Escape closes it again", body()["inspector"]["open"] is False)
+
+        page.evaluate("location.hash = '#robot/duck-1'")
+        wait("document.querySelectorAll('#rp-body canvas').length === 0")
+        page.keyboard.press("i")
+        check("with the Body tab left, the i key does nothing (the listener went with the view)", page.evaluate("window.__mc.body.state()") is None)
+        page.evaluate("location.hash = '#robot/duck-1/body'")
+        wait("window.__mc.body?.state()?.drawn === 3")
+
         # a page opened after the alarm: the server's last minute (shortened to 3 s here) seeds it, so the joint is coloured at once
         alarms_mod.WINDOW_S = 3
         page.wait_for_timeout(3500)
