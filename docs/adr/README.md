@@ -54,5 +54,7 @@ Required sections:
   draw of them](ADR-0019-semantic-map-records.md) (Accepted, 2026-11-18)
 - [ADR-0020 — Robots behind our own interfaces: robotd and ROS 2 are peer
   backends](ADR-0020-robots-behind-our-own-interfaces.md) (Accepted, 2026-11-23)
+- [ADR-0021 — One design system and one 3D stage for both web
+  apps](ADR-0021-one-design-system-and-3d-stage.md) (Accepted, 2026-11-24)
 
 Accepted RFCs ([Proposals](../rfc/README.md)) become ADRs here.

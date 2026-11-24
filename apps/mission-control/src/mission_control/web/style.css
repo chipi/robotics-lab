@@ -94,14 +94,14 @@ a.open { display: inline-block; padding: 6px 4px; font-size: 12px; color: var(--
 pre.json { margin: 4px 0; padding: 6px; max-height: 160px; overflow: auto; background: var(--bg-field); border: 1px solid var(--border); border-radius: 4px; font: 12px/1.3 var(--mono); }
 .log { max-height: 180px; overflow: auto; font: 11px/1.35 var(--mono); color: var(--text-dim); }
 #toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; max-width: min(92vw, 520px); background: var(--bg-header); border: 1px solid var(--border-strong);
-  border-radius: 6px; padding: 8px 12px; z-index: 60; box-shadow: 0 4px 16px #0006; }
+  border-radius: 6px; padding: 8px 12px; z-index: 60; box-shadow: 0 4px 16px #0006; pointer-events: none; }   /* a message, never a target: it must not catch a tap meant for a button under it */
 #toast.err { border-color: var(--error); color: var(--error); }
 #tokenbox input { width: 130px; }
 a.watch { color: var(--accent); }
 a.watch[aria-disabled="true"] { color: var(--text-faint); pointer-events: none; text-decoration: none; }
 
 /* STOP: always on screen. In the header from 700 px; pinned to the bottom of a phone, 56 px tall (the robot's first, STOP ALL outlined) */
-.stops { display: flex; gap: 8px; align-items: center; }
+.stops { display: flex; gap: 8px; align-items: center; position: relative; z-index: 70; }   /* above the drawer scrim (40) and the toast (60): STOP is never under a layer */
 .stop { min-height: 40px; padding: 0 18px; font-weight: 700; letter-spacing: .04em; border-radius: 6px; border: 1px solid var(--error); background: var(--error); color: #fff; }
 .stop.all { padding: 0 14px; font-weight: 600; background: transparent; color: var(--error); }
 .stop:hover:not(:disabled) { filter: brightness(1.1); }
@@ -293,7 +293,7 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--mono); font-size: 1
   .picker { flex: 1; min-width: 0; padding: 0; }
   .picker select { width: 100%; }
   .top { padding: 4px 12px; }
-  .stops { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; gap: 8px; padding: 10px 12px calc(14px + env(safe-area-inset-bottom)); background: var(--bg-header); border-top: 1px solid var(--border-strong); }
+  .stops { position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; gap: 8px; padding: 10px 12px calc(14px + env(safe-area-inset-bottom)); background: var(--bg-header); border-top: 1px solid var(--border-strong); }
   .stop { flex: 1; min-height: 56px; border-radius: 8px; font-size: 16px; }
   #stop-robot { order: -1; }
   .stop.all { flex: 0 0 116px; font-size: 14px; white-space: nowrap; padding: 0 8px; }
@@ -315,6 +315,7 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--mono); font-size: 1
   .toolbar .sel, .toolbar .toggle, .cmp .toggle { min-height: 44px; }
   .toggle input[type="checkbox"] { width: 22px; height: 22px; }
   .drawer { width: 100%; border-left: 0; }
+  .scrim { padding-bottom: calc(81px + env(safe-area-inset-bottom)); }   /* the drawer ends above the fixed STOP bar */
   .frow { grid-template-columns: 112px minmax(0, 1fr) 44px; }
   .frow input { min-height: 44px; }
   .tx textarea { min-height: 64px; }
