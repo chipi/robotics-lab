@@ -16,6 +16,7 @@ from .auth import Tokens
 from .events import EventBus
 from .robots import RobotRuntime, make_adapter
 from .sites import Sites
+from .telemetry import make as make_telemetry_hook
 from .store import Store, dumps, loads
 
 TICK_S = 0.1
@@ -43,14 +44,17 @@ def _map_ids(value, ids: dict):
 
 
 class MissionControl:
-    def __init__(self, robot_configs: list, *, state_dir=None, clock=time.monotonic, wall=time.time, planner=None):
+    def __init__(self, robot_configs: list, *, state_dir=None, clock=time.monotonic, wall=time.time, planner=None, telemetry=None):
         self.clock, self.wall = clock, wall
+        self.telemetry = telemetry     # a runfile.telemetry Sink or None; the caller (cli) closes it, after close()
         self.planner = planner         # an LLM planner (planner.LlmPlanner) or None: off
         self.state_dir = Path(state_dir) if state_dir else None
         self.store = Store(self.state_dir / "mission-control.sqlite" if self.state_dir else None)
         self.bus = EventBus(wall)
         self.alarms = RecentAlarms(wall)
         self.bus.listen(self.alarms.on_event)
+        if telemetry is not None:
+            self.bus.listen(make_telemetry_hook(telemetry, lambda rid: self.robots[rid].cfg.adapter["type"]).listener)
         self.sites = Sites(self.store, wall)
         self.tokens = Tokens(self.store, wall)
         self.robots: dict = {}

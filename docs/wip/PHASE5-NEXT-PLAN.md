@@ -493,6 +493,18 @@ the homelab session for the robotics-lab Grafana folder's token and the tailnet 
 Step 7 (retention) when convenient. **Decided:** N is configurable, `runs.archive_after_days` in the
 installation file, default 30 days; official runs are always kept.
 
+**Status, 2026-11-24** (design: [TELEMETRY-RETENTION-DESIGN.md](TELEMETRY-RETENTION-DESIGN.md); how
+to use it: [TELEMETRY.md](TELEMETRY.md)):
+
+- **Built:** the `telemetry` and `runs` blocks (U1); `runfile.telemetry` and the stub receiver
+  (U2); Mission Control's hook and wiring (U3); `make telemetry-send-check`, run against the real
+  stack (U4); the dashboard file, `make grafana-dry` and `make grafana-import` (U5);
+  `observatory archive`, a dry run unless `--apply` (U6); these docs (U7).
+- **Not done:** the dashboard is not imported into Grafana, and its datasource types and panel
+  queries are untested there (the operator imports it); `observatory archive --apply` has not
+  been run on the real data folder, and which runs count as official is still to confirm with the
+  operator against the dry run's table.
+
 ### 6. Next integration goal: a second robot and a second simulator
 
 **The operator, 2026-11-23:** after the planned work (steps 6 and 7), the next robot is a

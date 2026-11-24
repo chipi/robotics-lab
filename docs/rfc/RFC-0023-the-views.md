@@ -162,6 +162,8 @@ already does, never a schematic like the mock-up's.
   `environment=dev` for the simulator on the workstation and `prod` for a real robot; `robot`,
   `host` and `run_key` as attributes. B: the simulator as an environment of its own (`sim`), which
   the contract does not list today (the homelab session would add it).
+  *Update 2026-11-24 (RFC-0025):* the attributes are `robot_id`, `robot_kind` and `host_kind`
+  (not `robot` and `host`); `run_key` stays a span and log attribute, never a metric label.
 - **D8. The runs over time.** A: the data folder as it is, with a retention rule (keep the
   official runs, archive the rest after N days) and an object store only when a second machine
   writes runs. B: an object store (MinIO on the mini) now.

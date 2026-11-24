@@ -130,6 +130,7 @@ nav:
     - "Phase 5, step 1: the installation file and profile versions": wip/PHASE5-STEP1-DESIGN.md
     - "Phase 5: the plan after step 1": wip/PHASE5-NEXT-PLAN.md
     - "Deploying the platform (phase 5 item 4c)": wip/DEPLOY.md
+    - "Telemetry: turning it on, the send check, the dashboard": wip/TELEMETRY.md
     - "Phase 5 item 3: what the body data is today": wip/PHASE5-ITEM3-BODY-DATA.md
     - "Architecture review, 2026-11-22": wip/ARCHITECTURE-REVIEW-2026-11-22.md
     - Known issues: wip/KNOWN-ISSUES.md

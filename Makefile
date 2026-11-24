@@ -79,7 +79,7 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 # need a robot (its simulator files, its profile) stay in the duck's.
 LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               runfile:tests/test_profilestore.py runfile:tests/test_observatory_paths.py gate:tests/test_gate.py runner:tests/test_gate_proxy.py \
-              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py runfile:tests/test_linkcheck.py runfile:tests/test_retention.py
+              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py runfile:tests/test_linkcheck.py runfile:tests/test_retention.py runfile:tests/test_dashboard.py
 libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
 	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
 
@@ -134,12 +134,22 @@ OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/te
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
 
-CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py tests/test_telemetry_hook.py
 
 .PHONY: test-control test-duck test-observatory test-observatory-pages
 test-control: control-sync nxt-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)
 	$(call run_tests,$(CONTROL_DIR),$(CONTROL_TESTS),)
 	@echo "test-control PASS"
+
+.PHONY: telemetry-send-check
+telemetry-send-check: control-sync ## Send one metric, span and log to the real Victoria stack and poll until each arrives (needs the tailnet; not in CI)
+	@cd $(CONTROL_DIR) && uv run --frozen python ../../scripts/telemetry_send_check.py
+
+.PHONY: grafana-dry grafana-import
+grafana-dry: ## What grafana-import would post (the dashboard, folder robotics-lab, overwrite): no network, no token
+	@$(PYTHON) scripts/grafana_import.py --dry-run
+grafana-import: ## POST dashboards/robotics-lab-live.json to $$GRAFANA_HTTP_URL with $$GRAFANA_API_TOKEN (both from the environment only)
+	@$(PYTHON) scripts/grafana_import.py
 
 test-duck: duck-sync ## The duck's navigator and tools, no simulator
 	$(call run_tests,$(DUCK_DIR),$(DUCK_TESTS),)

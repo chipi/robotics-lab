@@ -5,6 +5,7 @@ Defaults are loopback and the folders in the environment, so nothing here is tie
 authentication in v1)."""
 
 import argparse
+import logging
 import os
 import signal
 import sys
@@ -14,6 +15,7 @@ from .api import serve
 from .core import MissionControl
 from .planner import load_planner
 from .robots import ConfigError, load_robot_files
+from .telemetry import sink_from_installation
 
 
 def _terminate(*_):
@@ -103,13 +105,16 @@ def main(argv=None) -> int:
         print(f"mission-control: {exc}", file=sys.stderr)
         return 2
     llm = load_planner(args.planner or args.robots / "planner.json")     # none: the LLM is off; the phrase matcher is always there
-    mc = MissionControl(configs, state_dir=args.state, planner=llm)
+    sink = sink_from_installation()      # off with no installation file or no telemetry block; read once, so a change needs a restart
+    logging.getLogger("mission_control").addHandler(sink.logging_handler())
+    mc = MissionControl(configs, state_dir=args.state, planner=llm, telemetry=sink)
     scope = token_scope(args.require_tokens or os.environ.get("MC_REQUIRE_TOKENS"))
     if scope and mc.tokens.active() == 0:
         print("mission-control: tokens are required and no token exists: nobody could call anything but STOP"
               f"{' and read' if scope == 'actions' else ''}. "
               "Make one: mission-control token create --client page", file=sys.stderr)
         mc.close()
+        sink.close()
         return 2
     server = serve(mc, args.host, args.port, scope)
     mc.start()
@@ -123,6 +128,7 @@ def main(argv=None) -> int:
         server.shutdown()
         server.server_close()
         mc.close()
+        sink.close()
     return 0
 
 

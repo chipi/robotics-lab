@@ -100,8 +100,11 @@ What changes, and why:
    Control's robot file gains `"robot": "duck"`; the host file's `robot` stays the simulator's
    instance (`duck-a`). Versions are keyed by that robot name, so two ducks on one machine keep two
    chains.
-7. **No `telemetry` block yet:** step 6 decides its shape; a guessed block would be a breaking
-   change later (unknown keys are errors).
+7. **The `telemetry` block (settled 2026-11-24):** step 6 decided its shape, in
+   [TELEMETRY-RETENTION-DESIGN.md](TELEMETRY-RETENTION-DESIGN.md): `environment`, one OTLP/HTTP
+   URL per signal, `metrics_interval_s`; absent means off, unknown keys are errors. The same
+   change adds the `runs.archive_after_days` block. The version stays 1, because it is additive.
+   How to use it: [TELEMETRY.md](TELEMETRY.md).
 
 The commit order and the tests are the review's (six commits, each green; must-fail cases: a
 named profile that does not exist refuses to start a navigator; an import whose checksum does not
