@@ -2,18 +2,31 @@
 /lib/fonts; every libs/web module (outside vendor/) imports clean; status.js maps what the plan says and every status has a glyph and a word; the
 badge shows glyph, word and the status colour; .num is tabular; a button is 24 px tall compact and 36 px regular; reduced motion zeroes the
 durations (and setMotion overrides the system); a stale value is dimmed and says its age; mountTopBar fills the brand and nav and leaves STOP alone.
+U10 (the Observatory restyle): shell.css has no hex and uses no old token name; the page is compact; at 1440 px no top-bar control is clipped or
+wraps, even with long names; a runs list of 5 benign and 1 abnormal verdict shows exactly one coloured verdict (glyph and word, never colour alone);
+the live indicator is --status-live, not the error colour; under reduced motion .live-dot has no animation; the theme is read from the legacy
+miniview.theme and written to rl.theme.
 Run: cd apps/observatory && uv run python tests/test_look_ui_pages.py"""
 
+import re
 import tempfile
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, scene, serve
+from helpers import Checks, T0_NS, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("LOOK UI PAGES")
 LIB = Path(__file__).resolve().parents[3] / "libs" / "web"
+SHELL_CSS = Path(__file__).resolve().parents[1] / "web" / "shell" / "shell.css"
+HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
+# the names the tokens kept as aliases until U26: shell.css must use the new ones
+OLD_NAMES = ["--bg-app", "--bg-viewport", "--bg-panel", "--bg-header", "--bg-field", "--bg-hover", "--bg-selected", "--bg-shead", "--bg-shead-hover", "--bg-press",
+             "--border", "--border-strong", "--border-hover", "--text", "--text-dim", "--text-faint", "--on-accent", "--warn", "--error", "--ok", "--hair",
+             "--hair-2", "--hair-3", "--hair-4", "--hair-5", "--veil", "--shadow", "--scrim", "--tip-bg", "--range-bar", "--range-knob", "--check-border",
+             "--c-belief", "--c-truth", "--c-plan", "--c-obst", "--c-drop", "--c-floor", "--c-ob", "--c-over", "--c-box", "--c-occ", "--c-free", "--c-x", "--c-y",
+             "--c-z", "--c-gap", "--draw-grid", "--draw-label", "--draw-rel", "--draw-sel", "--box-fill", "--gap-hatch", "--ui", "--mono"]
 
 # the plan's verdict mapping (docs/wip/LOOK-AND-FEEL-PLAN.md, "Frozen contracts"), written out value by value
 VERDICTS = {
@@ -192,6 +205,103 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
       const t = document.createElement('button'); m.mountTopBar(d, {app: 'control', themeControl: t}); return d.querySelector('[data-slot=theme]').firstChild === t;
     })""")
     check("a theme control the caller hands over goes into the theme slot", theme_ok is True)
+
+    # ---- U10: the Observatory restyle -----------------------------------------------------------------------------
+    css = SHELL_CSS.read_text()
+    check("shell.css has no hex colour", not re.findall(r"#[0-9a-fA-F]{3,8}\b", css), re.findall(r"#[0-9a-fA-F]{3,8}\b", css)[:5])
+    used = sorted({n for n in OLD_NAMES if re.search(re.escape(n) + r"(?![\w-])", css.replace("--left", "").replace("--right", ""))})
+    check("shell.css uses no old token name (the aliases until U26)", not used, used)
+
+    long_scene = {**scene("apartment_with_a_rather_long_name"), "name": "An apartment with a rather long name indeed"}
+    LONG = "duck/apartment_with_a_rather_long_name/exploration_run_with_a_long_identifier_0042"
+    VERDICT_RUNS = [("ended1", "ended"), ("ended2", "ended"), ("ended3", "ended"), ("cancel", "cancelled"), ("nofront", "no_frontier_left"), ("trap", "trapped")]
+    with tempfile.TemporaryDirectory() as tmp2:
+        cat2 = catalog(Path(tmp2) / "data")
+        cat2.put_scene(long_scene)
+        cat2.put_scene(scene("room"))
+        make_run(Path(tmp2) / "data", LONG, HEAD + [tick(1.0, 0.0), tick(1.1, 0.1), (2.0, "end", {"verdict": "reached"})])
+        for rid, v in VERDICT_RUNS:
+            make_run(Path(tmp2) / "data", f"duck/room/{rid}", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": v})])
+        live = make_run(Path(tmp2) / "data", "duck/room/livenow", HEAD + [tick(1.0, 0.0)], close=False)
+        cat2.scan()
+        httpd2, base2 = serve(cat2, follow=False)
+        pg = b.new_page(viewport={"width": 1440, "height": 900})
+        pg.set_default_timeout(8000)
+        pg.goto(base2 + "/web/three/index.html")
+        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        check("the page is compact: data-density=\"compact\" on <html>", pg.evaluate("document.documentElement.dataset.density") == "compact")
+        check("the page links the kit's ui.css", pg.evaluate("[...document.styleSheets].some((s) => (s.href || '').endsWith('/lib/ui.css'))"))
+
+        # the runs list: five benign verdicts and one abnormal, one coloured verdict (a glyph and a word with it)
+        rows = pg.evaluate("""[...document.querySelectorAll('#scenespage tr[data-run]')].filter((r) => r.dataset.scene === 'room').map((r) => {
+          const b = r.querySelector('.ui-badge'); return [r.dataset.run.split('/').pop(), b ? b.dataset.status : null, b ? b.textContent.trim() : r.cells[4].textContent.trim()]; })""")
+        by = {r[0]: r for r in rows}
+        coloured = [r for r in rows if r[1] not in ("neutral", None, "live", "ok")]
+        check("the runs list shows 5 benign and 1 abnormal verdict as exactly one coloured badge", [r[0] for r in coloured] == ["trap"], rows)
+        check("... a correct end is neutral, the trap is an alert with its glyph and word", by["ended1"][1] == "neutral" and by["trap"][1] == "alert"
+              and "trapped" in by["trap"][2] and by["trap"][2] != "trapped", by)
+        reached = pg.evaluate("[...document.querySelectorAll('#scenespage tr[data-run]')].filter((r) => r.dataset.run.endsWith('0042')).map((r) => r.querySelector('.ui-badge')?.dataset.status)")
+        check("... reached reads as ok", reached == ["ok"], reached)
+
+        # the live indicator is --status-live, with the live glyph, never the error colour
+        li = pg.evaluate("""(() => {
+          const probe = (v) => { const d = document.createElement('i'); d.style.color = v; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+          const dot = document.querySelector('#scenespage .live-dot, #scenespage .ui-badge[data-status="live"] .ui-glyph');
+          const bd = document.querySelector('#scenespage .ui-badge[data-status="live"]');
+          if (!dot || !bd) return null;
+          const c = getComputedStyle(dot);
+          return {dot: dot.className, colour: c.color, bg: c.backgroundColor, live: probe('var(--status-live)'), error: probe('var(--status-error)'), glyph: bd.textContent.trim()}; })()""")
+        check("the live run is a live badge with the live glyph and word", li is not None and li["glyph"].startswith("●") and "live" in li["glyph"], li)
+        check("... its colour is --status-live and not the error colour", li is not None and li["live"] in (li["colour"], li["bg"]) and li["error"] not in (li["colour"], li["bg"]), li)
+        # reduced motion: the live glyph's pulse stops
+        anim = "[...document.querySelectorAll('#scenespage .ui-badge[data-status=live] .ui-glyph, .live-dot')].map((e) => { const c = getComputedStyle(e); return [c.animationName, c.animationDuration]; })"
+        pg.emulate_media(reduced_motion="no-preference")
+        moving = pg.evaluate(anim)
+        pg.emulate_media(reduced_motion="reduce")
+        still = pg.evaluate(anim)
+        check("with no request the live dot pulses; under reduced motion its animation is none or 0 s",
+              any(n != "none" and d not in ("0s",) for n, d in moving) and all(n == "none" or d in ("0s", "0ms") for n, d in still), [moving, still])
+        pg.emulate_media(reduced_motion="no-preference")
+
+        # a run open at 1440: the top bar, no control clipped or wrapped, even with long names (the run info, which has no fixed width, may shorten with an ellipsis)
+        pg.evaluate(f"window.miniview.load('apartment_with_a_rather_long_name', {LONG!r})")
+        pg.wait_for_function("window.__ready === true", timeout=30000)
+        bar = pg.evaluate("""(() => {
+          const top = document.querySelector('header.top'), W = innerWidth, out = [];
+          for (const e of top.querySelectorAll('button, a, label, .chip, .seg, select')) {
+            const r = e.getBoundingClientRect(); if (!r.width || e.closest('[hidden]') || getComputedStyle(e).display === 'none') continue;
+            out.push({id: e.id || e.textContent.trim().slice(0, 14), left: r.left, right: r.right, h: r.height, clipped: !e.classList.contains('chip') && e.scrollWidth > e.clientWidth + 1});
+          }
+          return {W, bar: top.getBoundingClientRect().height, out}; })()""")
+        bad = [o for o in bar["out"] if o["right"] > bar["W"] + 0.5 or o["left"] < -0.5 or o["h"] > 30 or o["clipped"]]
+        check("at 1440 px no top-bar control is clipped, off screen or wrapped, with long scene, run and robot names", not bad and len(bar["out"]) > 8 and bar["bar"] <= 40, [bad, bar["bar"]])
+        lap = pg.evaluate("""(() => { const kids = [...document.querySelector('header.top').children].filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none')
+          .map((e) => [e.id || e.dataset.slot || e.className, e.getBoundingClientRect()]).sort((x, y) => x[1].left - y[1].left);
+          const bad = []; for (let i = 1; i < kids.length; i++) if (kids[i][1].left < kids[i - 1][1].right - 0.5) bad.push([kids[i - 1][0], kids[i][0]]);
+          const nav = document.querySelector('[data-slot=nav]'), link = nav.querySelector('a');
+          if (link.getBoundingClientRect().right > nav.getBoundingClientRect().right + 0.5) bad.push(['nav', 'its link overflows']);
+          return bad; })()""")
+        check("... and no two top-bar items overlap, the Scenes link stays inside its slot", not lap, lap)
+        probe_tn = pg.evaluate("""(() => ['tin', 'kin'].map((id) => getComputedStyle(document.getElementById(id)).fontVariantNumeric.includes('tabular-nums')))()""")
+        check("the time and tick readouts use tabular figures", all(probe_tn), probe_tn)
+        shell_btn = pg.evaluate("document.getElementById('exportBtn').getBoundingClientRect().height")
+        check("a top-bar button is a compact control tall (24 px)", shell_btn == 24, shell_btn)
+
+        # the theme: the legacy key is read, rl.theme is written, and both keep working
+        pg.evaluate("localStorage.clear(); localStorage.setItem('miniview.theme', 'light')")
+        pg.reload()
+        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        check("the legacy miniview.theme is read", pg.evaluate("document.documentElement.dataset.theme") == "light")
+        pg.click("#themeBtn")
+        keys = pg.evaluate("[document.documentElement.dataset.theme, localStorage.getItem('rl.theme'), localStorage.getItem('miniview.theme')]")
+        check("the switch writes rl.theme (and the legacy key, so an older page still works)", keys == ["dark", "dark", "dark"], keys)
+        pg.evaluate("localStorage.clear(); localStorage.setItem('rl.theme', 'light')")
+        pg.reload()
+        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        check("rl.theme is read first", pg.evaluate("document.documentElement.dataset.theme") == "light")
+        pg.close()
+        httpd2.shutdown()
+        live.close()
 
     b.close()
     httpd.shutdown()

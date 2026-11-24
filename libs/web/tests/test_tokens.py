@@ -240,7 +240,7 @@ for sheet in SHEETS:
 check("no app stylesheet declares a token again (the values live in libs/web/tokens.css only)", not redeclared, redeclared)
 
 # Today's hex colours in the two app stylesheets; the restyle units (U10, U19) shrink these and U26 takes them to zero. A new hex in any app stylesheet fails.
-HEX_ALLOWED = {"apps/observatory/web/shell/shell.css": 21, "apps/mission-control/src/mission_control/web/style.css": 0}
+HEX_ALLOWED = {"apps/observatory/web/shell/shell.css": 0, "apps/mission-control/src/mission_control/web/style.css": 0}
 HEX = re.compile(r"(?<![\w-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])")
 
 

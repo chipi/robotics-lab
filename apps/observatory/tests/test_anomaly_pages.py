@@ -105,11 +105,12 @@ with tempfile.TemporaryDirectory() as tmp:
 
             # ---- the alarms lane ---------------------------------------------------------------------------------------
             marks = page.evaluate("[...document.querySelectorAll('#alane .mk.al')].map((m) => ({ cls: m.className, ev: +m.dataset.ev, left: m.style.left, color: getComputedStyle(m).color, radius: getComputedStyle(m.firstChild).borderRadius }))")
-            err, warn, dim = (page.evaluate(f"({RGB})('{n}')") for n in ("error", "warn", "text-dim"))
+            err, warn, dim = (page.evaluate(f"({RGB})('{n}')") for n in ("status-error", "status-warn", "status-neutral"))
+            pin_dim = page.evaluate(f"({RGB})('text-dim')")     # the pins are drawn by the page adapters, which still use --text-dim for info; the lane takes the status colour
             check(f"[{lib}] must fail: one mark per anomaly on the alarms lane, the lane and its label shown, the events lane still there",
                   len(marks) == 4 and page.evaluate("!document.getElementById('alane').hidden && !document.getElementById('alabel').hidden")
                   and page.evaluate("document.querySelectorAll('#mlane .mk').length") >= 4, marks)
-            check(f"[{lib}] must fail: marks are coloured by severity (critical and major the error colour, minor the warn colour, info dim)",
+            check(f"[{lib}] must fail: marks are coloured by severity (critical and major the error colour, minor the warn colour, info the neutral status colour; U10 moved info from text-dim)",
                   [m["color"] for m in marks] == [err, err, warn, dim] and len({err, warn, dim}) == 3, ([m["color"] for m in marks], err, warn, dim))
             check(f"[{lib}] must fail: the source is told apart (the harness's mark has another shape than the robot's)",
                   marks[1]["cls"].split().count("harness") == 1 and "harness" not in marks[0]["cls"] and marks[1]["radius"] != marks[0]["radius"], marks)
@@ -132,7 +133,7 @@ with tempfile.TemporaryDirectory() as tmp:
             check(f"[{lib}] ... its margin with its unit (metres by default), its duration and its values",
                   "0.120" in insp and "0.40" in insp and "jump_m" in insp and "0.900" in insp
                   and page.evaluate("[...document.querySelectorAll('#inspBody .anomaly .kv')].find((k) => k.querySelector('.k').textContent === 'Margin').querySelector('.u').textContent") == "m", insp)
-            check(f"[{lib}] ... in the severity's colour", page.evaluate("getComputedStyle(document.querySelector('#inspBody .anomaly .kv span[style]')).color") == err)
+            check(f"[{lib}] ... as a badge in the severity's status: its glyph the error colour, its word beside it", page.evaluate("(() => { const b = document.querySelector('#inspBody .anomaly .kv .ui-badge'); return b.dataset.status + '/' + getComputedStyle(b.querySelector('.ui-glyph')).color; })()") == "error/" + err)
             call(page, "window.miniview.setTime(3.1)")
             insp = page.evaluate("document.querySelector('#inspBody .anomaly')?.innerText || ''")
             check(f"[{lib}] a margin in another unit says it (radians), and the unit key is not listed as a value", "0.700" in insp and "rad" in insp and "margin_unit" not in insp and "speed_mps" in insp, insp)
@@ -154,7 +155,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 cols = [rgb(q["hex"]) for q in a["pins"]]
             else:
                 cols = [f"rgb({q['color'][0]}, {q['color'][1]}, {q['color'][2]})" for q in a["pins"]]
-            check(f"[{lib}] must fail: the pins are coloured by severity, as the lane's marks are", cols == [err, err, warn, dim], (cols, err, warn, dim))
+            check(f"[{lib}] must fail: the pins are coloured by severity, as the lane's marks are", cols == [err, err, warn, pin_dim], (cols, err, warn, pin_dim))
             call(page, "window.miniview.setFrame('map')")
             a = page.evaluate(pins)
             by_t = {round(q["t"], 3): q for q in a["pins"]}

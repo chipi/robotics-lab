@@ -26,6 +26,8 @@ import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { chainsOf } from '/lib/body/robot.js';
 import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
+import { statusOf, glyph, label } from '/lib/status.js';
+import { mountTopBar } from '/lib/brand.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -76,16 +78,20 @@ const SIZE_KIND = {
 };
 const SIZE_DEFAULT = { 'world.obstacles': 5, 'world.drops': 6 };
 
-// event kinds: [colour, stop-like (drawn as a triangle)]
+// event kinds: [colour token, stop-like (drawn as a triangle)]. The stops and the refusal take their status's colour (status.js, kind 'event');
+// the three neutral kinds are told apart by the categorical ramp, a status never being colour alone
 const KINDS = {
-  cliff_stop: ['#e05a4f', 1], reflex_stop: ['#ff9600', 1], refused: ['#c8a040', 1], trapped: ['#ff4d6d', 1],
-  reached: ['#3cc85a', 0], tight_pivot: ['#a070e0', 0], leg: ['#8a8d96', 0], no_survey_turn: ['#3cb4b4', 0],
+  cliff_stop: ['--status-error', 1], reflex_stop: ['--status-alert', 1], refused: ['--status-warn', 1], trapped: ['--status-alert', 1],
+  reached: ['--status-ok', 0], tight_pivot: ['--ramp-cat-8', 0], leg: ['--status-neutral', 0], no_survey_turn: ['--ramp-cat-5', 0],
 };
-const kindColor = (k) => KINDS[k]?.[0] || `hsl(${[...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 360} 50% 55%)`;
+const kindColor = (k) => (KINDS[k] ? `var(${KINDS[k][0]})` : `hsl(${[...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 360} 50% 55%)`);
 const isStop = (k) => (k in KINDS ? !!KINDS[k][1] : /stop|refus|trap/.test(k));
-// anomalies (RFC-0019): a severity's colour token (the theme's), and the severities in order of how much they matter
-const SEVERITY = { critical: 'error', major: 'error', minor: 'warn', info: 'text-dim' };
-const sevColor = (s) => `var(--${SEVERITY[s] || 'text-dim'})`;
+// anomalies (RFC-0019): the severities, in order of how much they matter; each one shows as a status badge (status.js, kind 'severity')
+const SEVERITY = ['critical', 'major', 'minor', 'info'];
+// A status as the kit's badge: its glyph, a word (the value itself, or the status's word when there is none) and its colour. Colour is for a problem:
+// statusOf makes a correct end neutral.
+const badge = (kind, value, status = statusOf(kind, value), title = '') => `<span class="ui-badge" data-status="${status}"${title ? ` title="${esc(title)}"` : ''}>`
+  + `<span class="ui-glyph" aria-hidden="true">${glyph(status)}</span><span class="ui-word">${esc(value ?? label(status))}</span></span>`;
 const MODES = [['at', 'At t'], ['window', 'Window'], ['upto', 'Up to t']];
 const MODE_WORD = { at: 'at t', window: 'window', upto: 'up to t' };
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
@@ -206,6 +212,9 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   let busy = 0, laidOut = false;
 
   document.body.innerHTML = TEMPLATE;
+  mountTopBar($('topbar'), { app: 'observatory', nav: [{ label: 'Scenes', href: '#scenes' }], themeControl: $('themeBtn') });
+  const scenesLink = $('topbar').querySelector('[data-slot="nav"] a');
+  scenesLink.id = 'scenes-link'; scenesLink.title = 'All scenes and runs';
   paintIcons();
   const stage = $('stage'), app = $('app');
   const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t) });
@@ -325,17 +334,19 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // for scripts: the frame at the playhead, or null while it is still being asked for (the inspector keeps showing the last one meanwhile)
   const rawSummary = () => { const f = rawFrame(true); return f ? { i: f.index, n: f.n, t: f.t, frame_t_ns: f.frame_t_ns, state_t_ns: f.state_t_ns ?? null, pair_dt_ms: f.pair_dt_ms ?? null } : null; };
   // the 8 x 8 distances as an image, coloured by distance (near warm, far cool) with the mm in each zone; a zone whose status is not valid is hatched and says its status
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const rawInk = () => ({ on: cssVar('--text-on-solid'), off: cssVar('--surface-section'), hatch: cssVar('--line-strong'), note: cssVar('--status-warn-on') });
   function paintRaw(cv, f) {
-    const cell = cv.width / f.cols, g = cv.getContext('2d');
+    const cell = cv.width / f.cols, g = cv.getContext('2d'), ink = rawInk();
     g.font = `${Math.round(cell * 0.3)}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (let r = 0; r < f.rows; r++) for (let c = 0; c < f.cols; c++) {
       const k = r * f.cols + c, x = c * cell, y = r * cell, d = f.distance_mm[k], ok = RAW_VALID.includes(f.status[k]);
-      if (ok) { g.fillStyle = `hsl(${Math.round(240 * Math.min(Math.max(d, 0) / 4000, 1))} 65% 38%)`; g.fillRect(x, y, cell, cell); g.fillStyle = '#fff'; g.fillText(String(d), x + cell / 2, y + cell / 2); }
+      if (ok) { g.fillStyle = `hsl(${Math.round(240 * Math.min(Math.max(d, 0) / 4000, 1))} 65% 38%)`; g.fillRect(x, y, cell, cell); g.fillStyle = ink.on; g.fillText(String(d), x + cell / 2, y + cell / 2); }
       else {
-        g.fillStyle = '#2c2e34'; g.fillRect(x, y, cell, cell);
-        g.strokeStyle = '#6b6f78'; g.lineWidth = 1; g.beginPath();
+        g.fillStyle = ink.off; g.fillRect(x, y, cell, cell);
+        g.strokeStyle = ink.hatch; g.lineWidth = 1; g.beginPath();
         for (let o = -cell; o < cell; o += 6) { g.moveTo(x + Math.max(o, 0), y + Math.max(-o, 0)); g.lineTo(x + Math.min(o + cell, cell), y + Math.min(cell - o, cell)); }
-        g.stroke(); g.fillStyle = '#e8c070'; g.fillText('s' + f.status[k], x + cell / 2, y + cell / 2);
+        g.stroke(); g.fillStyle = ink.note; g.fillText('s' + f.status[k], x + cell / 2, y + cell / 2);
       }
       g.strokeStyle = 'rgba(0,0,0,.45)'; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
     }
@@ -424,10 +435,10 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     if (f && cv.dataset.i !== String(f.index)) {
       cv.dataset.i = String(f.index);
       cv.width = f.cols; cv.height = f.rows;
-      const g = cv.getContext('2d');
+      const g = cv.getContext('2d'), off = rawInk().off;
       for (let k = 0; k < f.distance_mm.length; k++) {
         const ok = RAW_VALID.includes(f.status[k]);
-        g.fillStyle = ok ? `hsl(${Math.round(240 * Math.min(Math.max(f.distance_mm[k], 0) / 4000, 1))} 65% 45%)` : '#2c2e34';
+        g.fillStyle = ok ? `hsl(${Math.round(240 * Math.min(Math.max(f.distance_mm[k], 0) / 4000, 1))} 65% 45%)` : off;
         g.fillRect(k % f.cols, (k / f.cols) | 0, 1, 1);
       }
     }
@@ -554,13 +565,14 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     writeHash();
     $('scenespage').innerHTML = M.index.scenes.map((s) => `<div class="sc"><h2>${esc(s.name)}</h2><span class="dim">${esc(s.id === s.kind ? s.kind : s.id + ' · ' + s.kind)} · ${s.runs.length} runs</span>`
       + '<table><thead><tr><th>run</th><th>kind</th><th>robot</th><th>length</th><th>verdict</th><th>events</th></tr></thead><tbody>'
-      + s.runs.map((r) => `<tr data-scene="${esc(s.id)}" data-run="${esc(r.key)}"><td><b>${esc(r.id)}</b></td><td>${esc(r.kind)}</td><td>${esc(r.robot)}</td><td class="mono">${r.length_s} s</td>`
-        + `<td><span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>${r.status === 'live' ? ' <span class="live-dot"></span>' : ''}${r.status === 'broken' ? ` <span class="verdict" title="${esc(r.error || '')}">broken</span>` : ''}</td><td class="mono">${r.events}</td></tr>`).join('')
+      + s.runs.map((r) => `<tr data-scene="${esc(s.id)}" data-run="${esc(r.key)}"><td><b>${esc(r.id)}</b></td><td>${esc(r.kind)}</td><td>${esc(r.robot)}</td><td class="num">${r.length_s} s</td>`
+        + `<td>${runBadge(r)}</td><td class="num">${r.events}</td></tr>`).join('')
       + '</tbody></table></div>').join('');
     renderChrome();
     return null;
   }
-  const verdictClass = (v) => (['reached', 'evaluated'].includes(v) ? 'verdict ok' : 'verdict');
+  // a run's end as a badge: live is its own status (yellow, never the error colour), a file that would not read is an error, the rest is statusOf's
+  const runBadge = (r) => (r.status === 'live' ? badge('conn', 'live') : r.status === 'broken' ? badge('verdict', 'broken', 'error', r.error || '') : badge('verdict', r.verdict));
 
   // ---- live (ADR-0005, ADR-0011): the store applies the records; the page follows what it gained, at most 4 times a second ----
   let growTimer = 0, presAt = 0;
@@ -1085,7 +1097,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     + Object.entries(d.values).map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(String(v)), '', v == null ? 'na' : '')).join('') + '</div>';
   // the robot's record of an anomaly (RFC-0019): what, how bad, who said so, the summary, how far past its limit and for how long, the values compared
   const anomalyRows = (a) => `<div class="anomaly" data-anomaly="${esc(a.anomaly ?? '')}" data-severity="${esc(a.severity ?? '')}"><div class="why">${esc(a.summary ?? '')}</div>`
-    + kv('Anomaly', esc(a.anomaly ?? '—')) + kv('Severity', `<span style="color:${sevColor(a.severity)}">${esc(a.severity ?? '—')}</span>`)
+    + kv('Anomaly', esc(a.anomaly ?? '—')) + kv('Severity', a.severity ? badge('severity', a.severity) : '—')
     + kv('Source', esc([a.source, a.module, a.detector].filter(Boolean).join(' · ') || '—'))
     + (a.margin != null ? kv('Margin', fx(a.margin, 3), esc(a.values?.margin_unit || 'm')) : '') + (a.duration_s ? kv('Duration', fx(a.duration_s, 2), 's') : '')
     + Object.entries(a.values || {}).filter(([k]) => k !== 'margin_unit').map(([k, v]) => kv(esc(k), v == null ? 'none' : typeof v === 'number' ? fx(v, Number.isInteger(v) ? 0 : 3) : esc(typeof v === 'object' ? JSON.stringify(v) : String(v)))).join('') + '</div>';
@@ -1161,11 +1173,12 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const r = M.runId ? M.run : null, sc = r && M.index?.scenes.find((s) => s.id === M.sceneId), live = r?.status === 'live';
     $('sceneName').textContent = sc ? sc.id : '—';
     $('runName').textContent = r ? r.id : 'choose a run';
-    $('runVerdict').textContent = r ? (live ? 'live' : r.verdict) : '';
-    $('runVerdict').className = r ? (live ? 'verdict live' : verdictClass(r.verdict)) : '';
+    $('runVerdict').innerHTML = r ? runBadge(r) : '';
+    if (app.classList.contains('scenes')) $('scenes-link').setAttribute('aria-current', 'page'); else $('scenes-link').removeAttribute('aria-current');
     $('layoutSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === M.view));
     $('frameSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.frame === M.frame));
-    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${live ? '<span class="live-dot"></span> <span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · <span class="mono">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="mono">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="mono">${r.samples}</span> samples` : ''}` : 'no run open';
+    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${runBadge(r)} · <span class="num">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="num">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="num">${r.samples}</span> samples` : ''}` : 'no run open';
+    $('runinfo').title = $('runinfo').textContent;      // the chip shortens with an ellipsis in a narrow bar; the whole text stays in the tooltip
     app.classList.toggle('signals-only', signalsOnly());
     $('vt').innerHTML = signalsOnly() ? '<b>Signals</b> · time series, click or drag to seek' : `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';
@@ -1247,7 +1260,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('kindsN').textContent = n;
     const al = anomalyEvents();
     $('alane').hidden = $('alabel').hidden = !al.length;
-    $('alane').innerHTML = al.map(([e, i]) => { const a = e.anomaly; return `<span class="mk al ${SEVERITY[a.severity] ? a.severity : 'info'} ${a.source === 'harness' ? 'harness' : 'robot'}" style="left:${pct(e.t)}%" data-ev="${i}"><i></i></span>`; }).join('');
+    $('alane').innerHTML = al.map(([e, i]) => { const a = e.anomaly; return `<span class="mk al ${SEVERITY.includes(a.severity) ? a.severity : 'info'} ${a.source === 'harness' ? 'harness' : 'robot'}" style="left:${pct(e.t)}%" data-ev="${i}"><i></i></span>`; }).join('');
     $('alarmsN').textContent = al.length;
   }
   // the events that are anomalies (RFC-0019), with their place in the run's events
@@ -1345,11 +1358,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
 
   // ---- theme (D1): dark by default, follows the system, a switch overrides and is remembered -------------
   const mq = matchMedia('(prefers-color-scheme: light)');
-  const stored = () => { try { return localStorage.getItem('miniview.theme'); } catch (_) { return null; } };
+  const stored = () => { try { return localStorage.getItem('rl.theme') || localStorage.getItem('miniview.theme'); } catch (_) { return null; } };
   function applyTheme(name, remember) {
     M.theme = name === 'light' ? 'light' : 'dark';
     document.documentElement.dataset.theme = M.theme;
-    if (remember) { try { localStorage.setItem('miniview.theme', M.theme); } catch (_) { /* private mode */ } }
+    if (remember) { try { localStorage.setItem('rl.theme', M.theme); localStorage.setItem('miniview.theme', M.theme); } catch (_) { /* private mode */ } }
     adapter.theme(palette());
     renderChrome();
     if (hasTicks()) adapter.draw();
@@ -1425,7 +1438,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     drawn: () => paintHud(),
   };
 
-  $('scenes-link').onclick = () => window.miniview.scenes();
+  $('scenes-link').onclick = (e) => { e.preventDefault(); window.miniview.scenes(); };
   $('scenespage').onclick = (e) => { const tr = e.target.closest('tr[data-run]'); if (tr) window.miniview.load(tr.dataset.scene, tr.dataset.run); };
   $('layoutSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setView(b.dataset.view); };
   $('frameSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setFrame(b.dataset.frame); };
@@ -1437,7 +1450,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const sc = M.index.scenes.find((s) => s.id === M.sceneId) || M.index.scenes[0];
     if (!sc) return;
     popover(e.currentTarget, `<h6>Runs in ${esc(sc.id)}</h6>` + sc.runs.map((r) => `<button class="item ${r.key === M.runId ? 'cur' : ''}" data-run="${esc(r.key)}"><span>${esc(r.id)}</span><span class="mono dim">${r.length_s} s</span>`
-      + `<small>${esc(r.kind)} · ${r.status === 'live' ? '<span class="verdict live">live</span>' : `<span class="${verdictClass(r.verdict)}">${esc(r.verdict)}</span>`} · ${r.events} events</small></button>`).join(''),
+      + `<small>${esc(r.kind)} · ${runBadge(r)} · ${r.events} events</small></button>`).join(''),
     (p) => p.querySelectorAll('[data-run]').forEach((b) => (b.onclick = () => { closePop(); window.miniview.load(sc.id, b.dataset.run); })));
   });
   $('ovBtn').onclick = (e) => popover(e.currentTarget, `<h6>Overlays</h6>
@@ -1513,7 +1526,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const m = e.target.closest('.mk');
     if (!m) { tip.hidden = true; return; }
     const ev = M.run.events[m.dataset.ev], a = ev.anomaly;
-    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${sevColor(a.severity)}">${esc(a.anomaly ?? ev.kind)}</span> · ${esc(a.severity ?? '')}<br><span class="dim">${esc(a.summary ?? ev.text)}</span>`;
+    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · ${esc(a.anomaly ?? ev.kind)} · ${a.severity ? badge('severity', a.severity) : ''}<br><span class="dim">${esc(a.summary ?? ev.text)}</span>`;
     tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
   });
   $('alane').addEventListener('mouseleave', () => { tip.hidden = true; });
@@ -1630,8 +1643,9 @@ async function fontsReady() {
 
 const TEMPLATE = `
 <div class="app" id="app">
-  <header class="top">
-    <button class="mark" id="scenes-link" title="All scenes and runs"><i></i>miniview</button>
+  <header class="top ui-topbar" id="topbar">
+    <span data-slot="brand"></span>
+    <nav data-slot="nav" aria-label="Pages"></nav>
     <button class="pick-btn" id="sceneBtn" aria-haspopup="listbox"><span class="k">Scene</span><span id="sceneName">—</span><svg class="i" data-i="down"></svg></button>
     <button class="pick-btn" id="runBtn" aria-haspopup="listbox"><span class="k">Run</span><span id="runName">—</span><span id="runVerdict" class="verdict"></span><svg class="i" data-i="down"></svg></button>
     <span class="sep"></span>
@@ -1650,8 +1664,8 @@ const TEMPLATE = `
     <label id="follow" class="follow" hidden><input type="checkbox" id="follow-on" checked> Follow live</label>
     <span class="chip" id="runinfo"></span>
     <button class="pick-btn" id="exportBtn" disabled aria-haspopup="dialog">Export video</button>
-    <button class="icon-btn" id="themeBtn" title="Theme"></button>
     <button class="icon-btn" id="helpBtn" title="Keyboard shortcuts (?)"><svg class="i" data-i="key"></svg></button>
+    <span data-slot="theme"><button class="icon-btn" id="themeBtn" title="Theme"></button></span>
   </header>
 
   <aside class="left" id="left">
@@ -1702,8 +1716,8 @@ const TEMPLATE = `
       <button class="play" id="playBtn" title="Play (Space)"></button>
       <button class="icon-btn" id="tNext" title="Next tick (→)"><svg class="i" data-i="right"></svg></button>
       <button class="icon-btn" id="tLast" title="End (End)"><svg class="i" data-i="last"></svg></button>
-      <span class="tfield" id="tfT" title="Drag to scrub, click to type"><input id="tin" aria-label="Time in seconds" value="0.00"><span class="u">s</span></span>
-      <span class="tfield tick" id="tfK" title="Tick: drag to scrub, click to type"><span class="u">tick</span><input id="kin" aria-label="Tick (1-based)" value="1"><span class="u" id="kn">of 0</span></span>
+      <span class="tfield num" id="tfT" title="Drag to scrub, click to type"><input id="tin" aria-label="Time in seconds" value="0.00"><span class="u">s</span></span>
+      <span class="tfield tick num" id="tfK" title="Tick: drag to scrub, click to type"><span class="u">tick</span><input id="kin" aria-label="Tick (1-based)" value="1"><span class="u" id="kn">of 0</span></span>
     </div>
     <div class="tlopts">
       <button class="mini" id="speedBtn" title="Playback speed (Shift+↑/↓)">1×<svg class="i" data-i="down" style="width:11px;height:11px"></svg></button>

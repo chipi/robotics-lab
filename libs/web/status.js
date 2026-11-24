@@ -3,7 +3,7 @@
 //
 // Glyphs (aria-hidden next to the word; every shape differs, so a colour-blind reader and a grey screenshot still tell them apart):
 //   ok      check mark       info    letter i       warn    triangle     alert   diamond      error   cross
-//   unknown question mark    stale   quarter clock  neutral dash         live    filled dot (ui.css pulses it; still under reduced motion)
+//   unknown question mark    stale   quarter clock  neutral dash         live    filled dot (ui.css pulses it; it stops under reduced motion)
 export const STATUS = ['ok', 'info', 'warn', 'alert', 'error', 'unknown', 'stale', 'neutral', 'live'];
 
 const GLYPH = { ok: '✓', info: 'ℹ', warn: '▲', alert: '◆', error: '✕', unknown: '?', stale: '◔', neutral: '–', live: '●' };
