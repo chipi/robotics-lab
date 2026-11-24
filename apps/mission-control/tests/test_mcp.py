@@ -7,6 +7,7 @@ Run: cd apps/mission-control && uv run python tests/test_mcp.py"""
 import asyncio
 import copy
 import json
+import os
 import sys
 import atexit
 import shutil
@@ -14,8 +15,9 @@ import tempfile
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
-from common import FAKE_FILE, check, finish, robot_file
+from common import FAKE_FILE, check, finish, installation_file, robot_file
 
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
@@ -23,12 +25,32 @@ from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.mcp_server import ALLOWED, Api, Refused, build_server
 from mission_control.robots import RobotConfig
+from runfile import installation
+from runfile.profilestore import Store
 
 fs = copy.deepcopy(FAKE_FILE["factsheet"])
 fs["physicalParameters"] = {"maximumSpeed": 2.0, "maximumAngularSpeed": 6.0}
 STATE = tempfile.mkdtemp(prefix="mc-mcp-")
 atexit.register(shutil.rmtree, STATE, True)
-mc = MissionControl([RobotConfig(robot_file("fake-1", factsheet=fs, rates={"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0}))],
+# the duck's profile behind the fake adapter (as test_calibration_api): one robot per environment, the installation's variant read as each
+# RobotConfig is built, and a store the installation names so a calibration can be kept and a version chosen
+REPO_PROFILE = Path(__file__).resolve().parents[3] / "robots" / "duck" / "profile.json"
+INST_STATE = Path(STATE) / "inst-state"
+PROFILES = INST_STATE / "profiles" / "duck"
+INST = Path(STATE) / "installation.json"
+Store(INST_STATE / "profiles").seed("duck", REPO_PROFILE)
+os.environ[installation.ENV] = str(INST)
+
+
+def write_installation(variant):
+    installation_file(INST, {"duck": {"variant": variant, "profile": str(PROFILES)}}, state=str(INST_STATE))
+
+
+write_installation("real")
+duck_real = RobotConfig({"id": "duck-real", "robot": "duck", "variant": "real", "adapter": {"type": "fake", "allow_real_runs": True}})
+write_installation("sim")
+duck_sim = RobotConfig({"id": "duck-1", "robot": "duck", "variant": "sim", "adapter": {"type": "fake"}})
+mc = MissionControl([RobotConfig(robot_file("fake-1", factsheet=fs, rates={"state_hz": 5.0, "map_hz": 2.0, "max_state_hz": 10.0})), duck_sim, duck_real],
                     state_dir=STATE)
 srv = serve(mc, "127.0.0.1", 0)
 URL = f"http://127.0.0.1:{srv.server_address[1]}"
@@ -75,6 +97,11 @@ async def main():
             "list_robots", "get_robot", "get_robot_map", "get_sighting", "acquire_lock", "drive", "stop_robot", "stop_all", "list_goals",
             "get_goal", "create_goal", "run_goal", "run_adhoc_goal", "list_runs", "get_run", "cancel_run", "save_run", "list_sites",
             "get_site", "list_areas", "area_at", "list_objects", "get_inventory", "get_site_guardrails", "export_site", "label_object"} <= names, sorted(names))
+        check("and for the robot's page, its alarms, profile versions and calibration (the wrap-up's step 3)", {
+            "get_health", "get_robot_description", "get_alarms", "get_area", "get_profile", "get_profile_version", "diff_profile_versions",
+            "use_profile_version", "get_calibration", "start_calibration", "cancel_calibration", "keep_calibration"} <= names, sorted(names))
+        check("there is no tool that saves or imports a profile, gives a calibration its tape, discards one, edits a goal, plans or touches a token",
+              not any(re.search(r"save_profile|import_profile|reference|discard|update_goal|delete_goal|retire|token|stream|events|mesh", n) for n in names), sorted(names))
         check("every tool says what it does", all(t.description for t in listed))
         check("there is no tool that fires, takes over, draws or deletes an area, makes a site or imports one (O21, RFC-0017 §3.5.7, §3.5.3)",
               not any(re.search(r"fire|shoot|takeover|take_over|create_area|update_area|delete_area|merge|split|import|create_site|delete_site", n) for n in names), sorted(names))
@@ -207,6 +234,131 @@ async def main():
         run = await run_done(c, run_id, 10)
         check("stop_all: the run is cancelled, every robot reported", not err and j["stop"]["all_confirmed"] is True and run["state"] == "cancelled" and "stopped by mcp-agent" in run["reason"], (run["state"], run["reason"]))
 
+        await wrap_up(c)
+
+
+async def wrap_up(c):
+    """The tools of the MVP 1 wrap-up, step 3: the robot page's reads, alarms, profile versions, calibration, a placed start, the simulator-first state."""
+    repo = json.loads(REPO_PROFILE.read_text())
+
+    # --- the robot page's reads --------------------------------------------------------------------------------
+    err, j = await tool(c, "get_health")
+    check("get_health: the service and its robots", not err and j["service"] == "mission-control" and j["robots"] == 3, j)
+    err, j = await tool(c, "get_robot_description", robot_id="fake-1")
+    check("get_robot_description: null for a robot whose file holds the robot itself (an answer, not an error)", not err and j["description"] is None, j)
+    err, j = await tool(c, "get_robot_description", robot_id="duck-1")
+    check("get_robot_description of the duck: its links and joints, for the page's body", not err and j["description"]["links"] and j["description"]["joints"], str(j)[:200])
+    err, j = await tool(c, "get_alarms", robot_id="fake-1")
+    check("get_alarms: the last minute's alarm feed, the same the robot carries", not err and j["alarms"]["window_s"] == 60
+          and j["alarms"] == http("GET", "/robots/fake-1")["robot"]["alarms"], j)
+    err, j = await tool(c, "get_area", site="home", area="kitchen")
+    check("get_area: one area of the operator's", not err and j["area"]["name"] == "Kitchen", j)
+    err, j = await tool(c, "get_area", site="home", area="attic")
+    check("get_area of none is not_found", err and "not_found" in j, j)
+
+    # --- profile versions ------------------------------------------------------------------------------------------
+    err, j = await tool(c, "get_profile", robot_id="duck-1")
+    check("get_profile: the store's versions, version 1 current, writable", not err and j["profile"]["current"] == 1
+          and [v["version"] for v in j["profile"]["versions"]] == [1] and j["profile"]["writable"] is True, str(j)[:200])
+    err, j = await tool(c, "get_profile", robot_id="fake-1")
+    check("must fail: a robot whose file holds the robot itself has no profile", err and "no_profile" in j, j)
+    changed = copy.deepcopy(repo)
+    changed["locomotion"]["cruise_mps"] = 0.25
+    check("(the operator saves version 2 by the API: there is no tool to write a profile)", http("POST", "/robots/duck-1/profile", {"profile": changed})["ok"])
+    err, j = await tool(c, "get_profile_version", robot_id="duck-1", version=1)
+    check("get_profile_version: version 1 whole, with its checksum", not err and j["export"]["version"] == 1 and j["export"]["profile"] == repo, str(j)[:200])
+    err, j = await tool(c, "get_profile_version", robot_id="duck-1")
+    check("get_profile_version with none: the current one (2)", not err and j["export"]["version"] == 2, str(j)[:200])
+    err, j = await tool(c, "diff_profile_versions", robot_id="duck-1", a=1, b=2)
+    check("diff_profile_versions: the one number that changed", not err and j["diff"]["changes"] == [{"path": "locomotion.cruise_mps", "a": repo["locomotion"]["cruise_mps"], "b": 0.25}], j)
+    err, j = await tool(c, "use_profile_version", robot_id="duck-1", version=1)
+    check("use_profile_version: going back to version 1 on a simulated robot", not err and http("GET", "/robots/duck-1/profile")["profile"]["current"] == 1, j)
+    err, j = await tool(c, "use_profile_version", robot_id="duck-1", version=7)
+    check("must fail: a version there is not is an error and nothing changes", err and http("GET", "/robots/duck-1/profile")["profile"]["current"] == 1, j)
+    err, j = await tool(c, "use_profile_version", robot_id="duck-real", version=2)
+    check("must fail: choosing the profile a real robot runs is refused without MC_MCP_ALLOW_REAL, before it leaves the process",
+          err and "refused" in j and "real" in j and http("GET", "/robots/duck-real/profile")["profile"]["current"] == 1, j)
+    for bad in ("save_profile", "import_profile", "update_profile"):
+        err, msg = await tool(c, bad)
+        check(f"must fail: '{bad}' is not a tool (a profile carries the robot's limits: the operator writes it)", err and "Unknown tool" in str(msg), msg)
+
+    # --- calibration ------------------------------------------------------------------------------------------------
+    err, j = await tool(c, "get_calibration", robot_id="duck-1")
+    check("get_calibration: odometry_scale, the navigator drives it, no run yet", not err and j["calibration"]["procedures"][0]["id"] == "odometry_scale"
+          and j["calibration"]["procedures"][0]["available"] is True and j["calibration"]["run"] is None, str(j)[:200])
+    err, j = await tool(c, "start_calibration", robot_id="duck-1", procedure="odometry_scale", params={"seconds": 2})
+    check("start_calibration on a simulated robot: a run, running", not err and j["run"]["phase"] == "running", j)
+    err, j = await tool(c, "cancel_calibration", robot_id="duck-1")
+    check("cancel_calibration: the robot stands and the run ends cancelled", not err and j["run"]["phase"] == "cancelled", j)
+    err, j = await tool(c, "keep_calibration", robot_id="duck-1")
+    check("must fail: keeping a run that measured nothing is refused by the API, nothing written", err and "no_value" in j and not (PROFILES / "3.json").exists(), j)
+    await tool(c, "start_calibration", robot_id="duck-1", procedure="odometry_scale", params={"seconds": 2})
+    time.sleep(2.8)
+    err, j = await tool(c, "get_calibration", robot_id="duck-1")
+    check("get_calibration follows it: measured, with the value it would write", not err and j["calibration"]["run"]["phase"] == "measured"
+          and j["calibration"]["run"]["plausible"] is True and j["calibration"]["run"]["writes"], str(j["calibration"]["run"])[:300])
+    err, j = await tool(c, "keep_calibration", robot_id="duck-1")
+    check("keep_calibration: the measured value as the next profile version, current from the next goal", not err and j["run"]["kept"]["version"] == 3
+          and http("GET", "/robots/duck-1/profile")["profile"]["current"] == 3, str(j)[:200])
+    err, j = await tool(c, "start_calibration", robot_id="duck-real", procedure="odometry_scale", params={"seconds": 2})
+    check("must fail: a calibration walks the robot blind: on a real robot it is refused without MC_MCP_ALLOW_REAL, and no run is made",
+          err and "refused" in j and mc.robot("duck-real").calibration is None, j)
+    err, j = await tool(c, "keep_calibration", robot_id="duck-real")
+    check("must fail: nor may it keep one for a real robot", err and "refused" in j, j)
+    err, j = await tool(c, "start_calibration", robot_id="fake-1", procedure="odometry_scale")
+    check("must fail: a robot that does not calibrate says so", err and ("no_profile" in j or "no_calibration" in j), j)
+    async with Client(build_server(URL, allow_real=True)) as real:
+        err, j = await tool(real, "start_calibration", robot_id="duck-real", procedure="odometry_scale", params={"seconds": 2})
+        check("when the operator allows real runs the guard lets the calibration through (the robot file's own allow_real_runs still decides)",
+              not err and j["run"]["phase"] == "running", j)
+        await tool(real, "cancel_calibration", robot_id="duck-real")
+
+    # --- a placed start, and the dock it sets -------------------------------------------------------------------------
+    http("POST", "/sites", {"name": "Annex", "kind": "garage"})
+    http("PUT", "/robots/fake-1/site", {"site": "annex"})
+    sp = {"x": -2.0, "y": 0.5, "yaw": 0.0}
+    err, j = await tool(c, "run_adhoc_goal", goal={"kind": "point", "params": {"x": -3.0, "y": 0.5}}, robot_id="fake-1", start_pose=sp)
+    check("run_adhoc_goal with a start pose: the run keeps it in its conditions", not err and j["run"]["conditions"]["start_pose"] == sp, j)
+    run = await run_done(c, j["run"]["id"], 30)
+    check("the run says it was placed, and reaches its point from there", run["state"] == "reached" and any(d["rule"] == "placed" for d in run["decisions"]),
+          (run["state"], run["reason"], run["decisions"][:2]))
+    err, j = await tool(c, "get_site", site="annex")
+    check("get_site shows the dock the first placed start made", not err and j["site"]["dock_pose"]["set_from"] == "placed_start"
+          and j["site"]["dock_pose"]["x"] == -2.0, j)
+    err, gj = await tool(c, "create_goal", goal={"name": "to the corner", "folder": "agent", "kind": "point", "params": {"x": -3.0, "y": 0.5}})
+    err, j = await tool(c, "run_goal", goal_id=gj["goal"]["id"], robot_id="fake-1", start_pose=sp)
+    check("run_goal takes a start pose too", not err and j["run"]["conditions"]["start_pose"] == sp, j)
+    await run_done(c, j["run"]["id"], 30)
+    before = len(http("GET", "/goal-runs")["runs"])
+    err, j = await tool(c, "run_goal", goal_id=gj["goal"]["id"], robot_id="fake-1", start_pose={"x": 1.0, "y": 2.0, "yaw": 0.0, "frame": "map"})
+    check("must fail: a start pose in another frame is a 422 bad_start_pose and makes no run", err and "bad_start_pose" in j
+          and len(http("GET", "/goal-runs")["runs"]) == before, j)
+    err, j = await tool(c, "run_goal", goal_id=gj["goal"]["id"], robot_id="fake-1", start_pose={"x": 1.0, "y": 2.0, "yaw": 0.0}, target="real")
+    check("must fail: a placed start does not get round the real-robot rule", err and "simulator only" in j, j)
+
+    # --- simulator-first --------------------------------------------------------------------------------------------
+    err, j = await tool(c, "create_goal", goal={"name": "no rehearsal", "kind": "point", "params": {"x": 1.0, "y": 0.0}, "sim_first": False})
+    check("must fail: an agent cannot opt a goal out of the rehearsal (sim_first false), and nothing is saved", err and "refused" in j
+          and not [g for g in http("GET", "/goals")["goals"] if g["name"] == "no rehearsal"], j)
+    err, j = await tool(c, "run_adhoc_goal", goal={"kind": "point", "params": {"x": 1.0, "y": 0.0}, "sim_first": False}, robot_id="fake-1")
+    check("must fail: nor on a run that saves nothing", err and "refused" in j, j)
+    err, j = await tool(c, "create_goal", goal={"name": "rehearse me", "folder": "agent", "kind": "point", "params": {"x": 0.5, "y": 0.0}, "sim_first": True})
+    gid = j["goal"]["id"]
+    check("sim_first true (the default) is fine", not err and j["goal"]["sim_first"] is True, j)
+    async with Client(build_server(URL, allow_real=True)) as real:
+        err, j = await tool(real, "run_goal", goal_id=gid, robot_id="duck-real", target="real")
+        check("the simulator-first state of a goal: a real run of one never rehearsed is refused, and says which robot to rehearse on",
+              not err and j["run"]["state"] == "refused" and j["run"]["conditions"]["rehearsal"]["state"] == "not_rehearsed"
+              and "duck-1" in j["run"]["reason"], j)
+        err, j = await tool(c, "run_goal", goal_id=gid, robot_id="duck-1")
+        rehearsal = await run_done(c, j["run"]["id"], 60)
+        err, j = await tool(c, "list_runs", goal_id=gid, state=rehearsal["state"])
+        check("the rehearsal is a simulator run of the goal, found by list_runs", not err and rehearsal["id"] in [r["id"] for r in j["runs"]], (rehearsal["state"], rehearsal["reason"]))
+        err, j = await tool(real, "run_goal", goal_id=gid, robot_id="duck-real", target="real")
+        check("after it ended as expected, get_run on the real run names the rehearsal that cleared it",
+              not err and j["run"]["conditions"]["rehearsal"]["state"] == "rehearsed" and j["run"]["conditions"]["rehearsal"]["run"] == rehearsal["id"], str(j)[:300])
+        await tool(real, "stop_robot", robot_id="duck-real")
+
 
 async def over_stdio():
     params = StdioServerParameters(command=sys.executable, args=["-m", "mission_control.cli", "mcp", "--url", URL])
@@ -231,14 +383,16 @@ api = Api(URL)
 for method, path in (("POST", "/robots/fake-1/fire"), ("POST", "/robots/fake-1/lock/takeover"), ("POST", "/sites/home/areas"), ("PUT", "/sites/home/areas/kitchen"),
                      ("DELETE", "/sites/home/areas/kitchen"), ("POST", "/sites/home/areas/kitchen/merge"), ("POST", "/sites/home/import"), ("POST", "/sites"),
                      ("DELETE", "/sites/home"), ("PUT", "/sites/home/guardrails"), ("PUT", "/robots/fake-1/site"), ("POST", "/plan"), ("GET", "/robots/fake-1/skills/fire"),
-                     ("POST", "/robots/a/b/stop"), ("GET", "/events")):
+                     ("POST", "/robots/a/b/stop"), ("GET", "/events"), ("POST", "/robots/fake-1/profile"), ("POST", "/robots/fake-1/profile/import"),
+                     ("POST", "/robots/fake-1/calibration/reference"), ("DELETE", "/robots/fake-1/calibration"), ("PUT", "/goals/1"), ("DELETE", "/goals/1"),
+                     ("GET", "/tokens"), ("POST", "/tokens"), ("DELETE", "/tokens/1"), ("GET", "/robots/fake-1/meshes/a.stl"), ("GET", "/robots/fake-1/profile/x")):
     try:
         api.call(method, path, {})
         check(f"the guard refuses {method} {path}", False)
     except Refused as exc:
         check(f"the guard refuses {method} {path}", "refused" in str(exc))
-check("every allowed route is one a tool uses: 29 routes, none a write on areas, sites, imports, takeovers or fire", len(ALLOWED) == 29
-      and not any(("area" in rx.pattern and m != "GET") or "takeover" in rx.pattern or "fire" in rx.pattern or "import" in rx.pattern for m, rx in ALLOWED), len(ALLOWED))
+check("every allowed route is one a tool uses: 39 routes, none a write on areas, sites, imports, takeovers, fire, tokens or a profile save", len(ALLOWED) == 39
+      and not any(("area" in rx.pattern and m != "GET") or "takeover" in rx.pattern or "fire" in rx.pattern or "import" in rx.pattern or "tokens" in rx.pattern for m, rx in ALLOWED) and not any(m == "POST" and re.search(r"profile$|profile/import|reference", rx.pattern) for m, rx in ALLOWED), len(ALLOWED))
 
 srv.shutdown()
 srv.server_close()

@@ -1,18 +1,33 @@
 """The MCP server (RFC-0014 §3.2, §3.8, §3.9): an outside agent's way in. It is a client of the HTTP API, like the page,
 and has no path of its own; it speaks MCP over stdio (`mission-control mcp`).
 
-What an agent may do is what the RFC gives it: watch (robots, status, map, runs, sites, areas, objects), set and run
-goals, drive under the exclusive lock, name an object, and STOP, with the same limits as the operator. What it may
-not do is not a tool here, and cannot be reached by one that is added carelessly: every call goes through `Api`, whose
-allow-list is the only set of routes this process will call.
+What an agent may do is what the RFC gives it: watch (robots, status, map, alarms, the robot's description, runs, sites,
+areas, objects, profile versions, calibration), set and run goals (from a placed start, simulator first), drive under the
+exclusive lock, calibrate and choose among the profile versions of a simulated robot, name an object, and STOP, with the
+same limits as the operator. What it may not do is not a tool here, and cannot be reached by one that is added
+carelessly: every call goes through `Api`, whose allow-list is the only set of routes this process will call. The tools:
+robots (list_robots, get_robot, get_robot_map, get_sighting, get_robot_description, get_alarms, get_health), the lock and
+driving (acquire_lock, renew_lock, release_lock, drive, stop_robot, stop_all), goals and runs (list_goals, get_goal,
+create_goal, run_goal, run_adhoc_goal, list_runs, get_run, cancel_run, save_run), sites (list_sites, get_site, list_areas,
+get_area, area_at, list_objects, get_inventory, get_site_guardrails, export_site, label_object), profile versions
+(get_profile, get_profile_version, diff_profile_versions, use_profile_version) and calibration (get_calibration,
+start_calibration, cancel_calibration, keep_calibration).
 
 - **No firing** (O21, §3.8): there is no fire tool, and no allowed route could fire.
 - **No takeover** (RFC-0017 §3.5.7): an agent is on no takeover list; no tool and no allowed route takes a robot another
   client holds. It has one client name (`mcp-agent`, or MC_MCP_CLIENT) and cannot choose another.
 - **No areas, no sites, no import** (§3.5.3: only the operator draws and deletes areas): read-only, plus naming an object,
-  which §3.5.2 gives the MCP tool.
+  which §3.5.2 gives the MCP tool. Nor assigning a robot to a site, editing or retiring a goal, planning in words, or
+  tokens.
+- **No profile writes** (a profile carries the robot's limits, which a goal may only add to): an agent reads versions and
+  diffs them, and chooses among the ones the operator saved; it saves and imports none. A calibration's keep writes only
+  the value its procedure measured, inside the procedure's bounds; the operator's tape (`reference`) is not a tool.
 - **No real robots by default** (§3.8, RFC-0002 §3.5: a real run needs the operator in the room): `target` is `sim`
-  unless the operator started this server with MC_MCP_ALLOW_REAL=1.
+  unless the operator started this server with MC_MCP_ALLOW_REAL=1. A calibration (it walks with no wall or cliff
+  check) and the choice of a profile version are real runs and real changes in the same way: refused for a robot whose
+  environment is `real` unless MC_MCP_ALLOW_REAL=1.
+- **No opting out of the rehearsal**: a goal with `sim_first: false` is refused here; the real run of a goal waits for a
+  simulator run of it, whatever the agent says.
 - **STOP is never refused and never needs the lock.**"""
 
 import json
@@ -37,7 +52,11 @@ TIMEOUT_S = 15.0
 _ID = r"[^/]+"
 # (method, path) of every call this server may make. Nothing else is called, whatever a tool asks.
 ALLOWED = [(m, re.compile("^" + p + "$")) for m, p in [
-    ("GET", "/robots"), ("GET", f"/robots/{_ID}"), ("GET", f"/robots/{_ID}/map"), ("GET", f"/robots/{_ID}/sighting"),
+    ("GET", "/health"), ("GET", "/robots"), ("GET", f"/robots/{_ID}"), ("GET", f"/robots/{_ID}/map"), ("GET", f"/robots/{_ID}/sighting"),
+    ("GET", f"/robots/{_ID}/description"), ("GET", f"/robots/{_ID}/profile"), ("GET", f"/robots/{_ID}/profile/export"),
+    ("GET", f"/robots/{_ID}/profile/diff"), ("PUT", f"/robots/{_ID}/profile/current"),
+    ("GET", f"/robots/{_ID}/calibration"), ("POST", f"/robots/{_ID}/calibration"), ("POST", f"/robots/{_ID}/calibration/cancel"),
+    ("POST", f"/robots/{_ID}/calibration/keep"),
     ("POST", f"/robots/{_ID}/lock"), ("POST", f"/robots/{_ID}/lock/renew"), ("DELETE", f"/robots/{_ID}/lock"),
     ("POST", f"/robots/{_ID}/drive"), ("POST", f"/robots/{_ID}/stop"), ("POST", "/stop"),
     ("GET", "/goals"), ("POST", "/goals"), ("GET", f"/goals/{_ID}"), ("POST", f"/goals/{_ID}/runs"),
@@ -82,6 +101,16 @@ class Api:
                           "(start this server with MC_MCP_ALLOW_REAL=1 to allow it)")
         return target
 
+    def sim_robot(self, robot_id: str) -> None:
+        """For what moves or reconfigures a robot with no `target` to say so: refused when the robot's environment is `real`, unless
+        the operator allowed real runs. A robot whose file holds the robot itself has no environment and is not one."""
+        if self.allow_real:
+            return
+        profile = self.call("GET", f"/robots/{q(robot_id)}")["robot"].get("profile")
+        if profile and profile.get("variant") == "real":
+            raise Refused(f"refused: {robot_id} is a real robot; an agent may not do this to one (start this server with "
+                          "MC_MCP_ALLOW_REAL=1 to allow it)")
+
 
 def build_server(base_url: str | None = None, client: str | None = None, allow_real: bool | None = None, token: str | None = None) -> MCPServer:
     api = Api(base_url or os.environ.get("MC_URL", DEFAULT_URL), client or os.environ.get("MC_MCP_CLIENT", DEFAULT_CLIENT),
@@ -89,7 +118,13 @@ def build_server(base_url: str | None = None, client: str | None = None, allow_r
     mcp = MCPServer("mission-control", instructions=(
         "Mission Control: the operator's robots, goals, sites and areas. Read first (list_robots, get_robot, list_sites), "
         "then set a goal with run_goal or run_adhoc_goal and follow it with get_run. stop_robot and stop_all are always allowed. "
-        "You cannot fire, take a robot from another client, draw areas, or run on a real robot."))
+        "You cannot fire, take a robot from another client, draw areas, write a profile, opt a goal out of its rehearsal, or run on a real robot."))
+
+    def no_opt_out(goal: dict) -> dict:
+        if isinstance(goal, dict) and goal.get("sim_first") is False:
+            raise Refused("refused: an agent may not opt a goal out of the simulator-first rehearsal (sim_first: false); "
+                          "run it on the simulator first")
+        return goal
 
     # --- robots ----------------------------------------------------------------------------------------
     @mcp.tool()
@@ -111,6 +146,75 @@ def build_server(base_url: str | None = None, client: str | None = None, allow_r
     def get_sighting(robot_id: str) -> dict:
         """The robot's latest camera record: what it recognised, ahead and left of it, if it has a recogniser."""
         return api.call("GET", f"/robots/{q(robot_id)}/sighting")
+
+    @mcp.tool()
+    def get_robot_description(robot_id: str) -> dict:
+        """The robot's body as the page draws it: links with their visuals, joints from the root out. `description` is null
+        for a robot that has none. Meshes are binary files and are not served here."""
+        return api.call("GET", f"/robots/{q(robot_id)}/description")
+
+    @mcp.tool()
+    def get_alarms(robot_id: str) -> dict:
+        """The robot's alarm feed for the last minute: the worst alarm, and the worst naming each joint. Read only; an alarm
+        is not acknowledged, it ages out."""
+        return {"ok": True, "alarms": api.call("GET", f"/robots/{q(robot_id)}")["robot"]["alarms"]}
+
+    @mcp.tool()
+    def get_health() -> dict:
+        """Whether Mission Control answers, and how many robots it knows."""
+        return api.call("GET", "/health")
+
+    # --- profile versions: read, and choose among the operator's ------------------------------------------
+    @mcp.tool()
+    def get_profile(robot_id: str) -> dict:
+        """The robot's profile on this machine: the version that runs, the store's versions (version, checksum, current),
+        whether it can be changed, and the running profile whole. Not for a robot whose file holds the robot itself."""
+        return api.call("GET", f"/robots/{q(robot_id)}/profile")
+
+    @mcp.tool()
+    def get_profile_version(robot_id: str, version: int | None = None) -> dict:
+        """One profile version whole (default the current), with its checksum."""
+        return api.call("GET", f"/robots/{q(robot_id)}/profile/export", query={"version": version})
+
+    @mcp.tool()
+    def diff_profile_versions(robot_id: str, a: int, b: int, notes: bool = False) -> dict:
+        """What differs between two versions, leaf by leaf. `notes` adds the notes (`measured`, `why`)."""
+        return api.call("GET", f"/robots/{q(robot_id)}/profile/diff", query={"a": a, "b": b, "notes": "1" if notes else None})
+
+    @mcp.tool()
+    def use_profile_version(robot_id: str, version: int) -> dict:
+        """Make a version the operator or a calibration saved the current one again; it runs from the next goal. Not for a real
+        robot unless the operator allowed real runs. An agent cannot write a profile."""
+        api.sim_robot(robot_id)
+        return api.call("PUT", f"/robots/{q(robot_id)}/profile/current", {"version": version})
+
+    # --- calibration ---------------------------------------------------------------------------------------------
+    @mcp.tool()
+    def get_calibration(robot_id: str) -> dict:
+        """The robot's calibration procedures (what each sets, its value now, whether the navigator drives it) and the
+        latest run: its phase, measurement, the value it would write and whether that is plausible."""
+        return api.call("GET", f"/robots/{q(robot_id)}/calibration")
+
+    @mcp.tool()
+    def start_calibration(robot_id: str, procedure: str, params: dict | None = None) -> dict:
+        """Start a calibration procedure (odometry_scale): the robot walks, holding the robot like a goal run, and STOP ends
+        it. Not for a real robot unless the operator allowed real runs: it walks with no wall or cliff check. Follow it with
+        get_calibration."""
+        api.sim_robot(robot_id)
+        return api.call("POST", f"/robots/{q(robot_id)}/calibration", {"procedure": procedure, "params": params or {}})
+
+    @mcp.tool()
+    def cancel_calibration(robot_id: str) -> dict:
+        """End the run: the robot stands. Always allowed."""
+        return api.call("POST", f"/robots/{q(robot_id)}/calibration/cancel")
+
+    @mcp.tool()
+    def keep_calibration(robot_id: str) -> dict:
+        """Keep the measured value as the next profile version, current from the next goal. Refused by Mission Control when
+        nothing is measured, the value is outside the procedure's bounds, or it was kept already. Not for a real robot unless
+        the operator allowed real runs."""
+        api.sim_robot(robot_id)
+        return api.call("POST", f"/robots/{q(robot_id)}/calibration/keep", {})
 
     # --- the lock and driving --------------------------------------------------------------------------
     @mcp.tool()
@@ -163,23 +267,30 @@ def build_server(base_url: str | None = None, client: str | None = None, allow_r
         {x, y}; go_to_object {kind | label | id, area?}; go_to_area {area}; explore {area} or {site: true}; inventory {areas?}.
         must_not lists guardrails (contact, fall, stuck, time_limit {seconds}, max_speed {mps}, drop_clearance {m}); a goal
         adds to the robot's and the site's and never loosens them."""
-        return api.call("POST", "/goals", goal)
+        return api.call("POST", "/goals", no_opt_out(goal))
 
     @mcp.tool()
-    def run_goal(goal_id: int, robot_id: str, site: str | None = None, target: str = "sim") -> dict:
+    def run_goal(goal_id: int, robot_id: str, site: str | None = None, target: str = "sim", start_pose: dict | None = None) -> dict:
         """Run a library goal on one robot. A goal the robot cannot take comes back as a run in the state `refused`, with
-        the reason. Follow it with get_run."""
+        the reason. Follow it with get_run. `start_pose` {x, y, yaw} (site frame, metres, radians) says where the robot stands
+        when it starts; the first one a site sees is its dock (get_site). A real run waits for a simulator run of the same goal:
+        its `conditions.rehearsal` says rehearsed or not_rehearsed, and which robot to rehearse on."""
         body = {"robots": [robot_id], "target": api.target(target)}
         if site:
             body["site"] = site
+        if start_pose:
+            body["start_pose"] = start_pose
         return api.call("POST", f"/goals/{goal_id}/runs", body)
 
     @mcp.tool()
-    def run_adhoc_goal(goal: dict, robot_id: str, site: str | None = None, target: str = "sim") -> dict:
-        """Run a goal that is not in the library (same shape as create_goal's); nothing is saved. Follow it with get_run."""
-        body = {"goal": goal, "robots": [robot_id], "target": api.target(target)}
+    def run_adhoc_goal(goal: dict, robot_id: str, site: str | None = None, target: str = "sim", start_pose: dict | None = None) -> dict:
+        """Run a goal that is not in the library (same shape as create_goal's); nothing is saved. Follow it with get_run.
+        `start_pose` as in run_goal."""
+        body = {"goal": no_opt_out(goal), "robots": [robot_id], "target": api.target(target)}
         if site:
             body["site"] = site
+        if start_pose:
+            body["start_pose"] = start_pose
         return api.call("POST", "/goal-runs", body)
 
     @mcp.tool()
@@ -210,13 +321,18 @@ def build_server(base_url: str | None = None, client: str | None = None, allow_r
 
     @mcp.tool()
     def get_site(site: str) -> dict:
-        """One site: name, kind, frame, counts."""
+        """One site: name, kind, frame, counts, and its dock pose (the first placed start it saw, or the robot's own pose)."""
         return api.call("GET", f"/sites/{q(site)}")
 
     @mcp.tool()
     def list_areas(site: str) -> dict:
         """The operator's areas of a site, each with its outline and the ids of the objects in it. Only the operator draws them."""
         return api.call("GET", f"/sites/{q(site)}/areas")
+
+    @mcp.tool()
+    def get_area(site: str, area: str) -> dict:
+        """One area of a site by id: its outline and the objects in it."""
+        return api.call("GET", f"/sites/{q(site)}/areas/{q(area)}")
 
     @mcp.tool()
     def area_at(site: str, x: float, y: float) -> dict:

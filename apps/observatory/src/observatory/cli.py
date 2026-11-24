@@ -14,6 +14,7 @@ Every OBSERVATORY_* variable also reads as MINIVIEW_* (the names before the rena
     uv run observatory index                  # rebuild index.sqlite from the run files
     uv run observatory archive [--days 30] [--archive P] [--robot R]   # what would leave the data folder (a dry run); --apply moves it
     uv run observatory serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
+    uv run observatory mcp [--url U]          # the read-only MCP server over stdio, a client of a running serve (OBSERVATORY_URL)
     uv run observatory render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by OBSERVATORY_RENDER
 
 The agent's face (UXS-001 "The commands"): answers from the data, pictures from the real page.
@@ -414,6 +415,12 @@ def cmd_sensor(args) -> None:
         print("   " + " ".join(f"{st[r * cols + c]:3d}" for c in range(cols)))
 
 
+def cmd_mcp(args) -> None:
+    from observatory.mcp_server import build_server  # the MCP SDK is only needed here
+
+    build_server(args.url).run("stdio")
+
+
 def cmd_serve(args) -> None:
     from observatory.server import make_server
 
@@ -532,6 +539,9 @@ def main() -> None:
     p.add_argument("--at", type=float, required=True)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_sensor)
+    p = sub.add_parser("mcp", help="the read-only MCP server for an agent, over stdio, a client of a running Observatory")
+    p.add_argument("--url", default=os.environ.get("OBSERVATORY_URL", "http://127.0.0.1:8070"), help="the Observatory's address (OBSERVATORY_URL)")
+    p.set_defaults(fn=cmd_mcp)
     p = sub.add_parser("serve", help="the pages and the API (ADR-0005)")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8070)

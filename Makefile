@@ -130,7 +130,7 @@ DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recover
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
-                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py tests/test_archive.py
+                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py tests/test_archive.py tests/test_mcp.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
 

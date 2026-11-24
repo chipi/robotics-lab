@@ -320,6 +320,32 @@ own. `/control` is a 301 to `/control/`. A Mission Control that does not answer 
 With no `OBSERVATORY_CONTROL` the path is a 404. The Observatory's own routes keep their rules:
 `GET` and `HEAD`, and the one video `POST`.
 
+### MCP: `observatory mcp` (read only)
+
+`observatory mcp [--url U]` (or `OBSERVATORY_URL`, default `http://127.0.0.1:8070`) is
+an MCP server over stdio for an agent. It is a client of this API and has no path of its
+own: every call goes through an allow-list of `GET` routes (`/health`, `/scenes[/{id}]`,
+`/runs`, `/runs/{robot}/{scene}/{run}` and its `events`, `state`, `semantic`, `presence`,
+`/robots[/{robot}]`), so a `POST`, a video, the index, `/control/...` (Mission Control has
+its own MCP) and the heavy windows are not reachable by any tool. The names in a path are
+`[a-z0-9_-]+`; anything else is refused before a request is made. Results are objects
+(`{"runs": [...]}`, `{"events": [...]}`, `{"robots": [...]}`); errors carry the API's status and
+message.
+
+| Tool | Route |
+| --- | --- |
+| `get_health` | `GET /health` |
+| `list_runs(robot?, scene?, status?, kind?, started_after_ns?, started_before_ns?)` | `GET /runs`; robot, scene, status are the API's, kind and start time are filtered by the server |
+| `get_run(robot, scene, run)` | `GET /runs/{robot}/{scene}/{run}` |
+| `get_run_events(…, kinds?)`, `get_run_state(…, t?)`, `get_run_presence(…)`, `get_run_semantic(…, t_from?, t_to?)` | `.../events`, `.../state`, `.../presence`, `.../semantic` |
+| `compare_runs(a, b)` | two `GET /runs/...`: both summaries side by side, with a note that the API has no compare route |
+| `list_scenes`, `get_scene(scene)` | `GET /scenes`, `GET /scenes/{id}` |
+| `list_robots`, `get_robot(robot)` | `GET /robots`, `GET /robots/{robot}` |
+
+Not covered: anomaly findings and detectors (`observatory anomalies`) and the archive's dry run
+(`observatory archive`) are CLI only, with no HTTP route, and the server does not shell out; a diff
+of two runs; `frames`, `signals`, `sensor` and `live`.
+
 ## The pages (ADR-0011)
 
 The pages share a web library with Mission Control, `libs/web` (RFC-0024), served at `/lib/` like `/web/`:
@@ -559,7 +585,7 @@ again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`
 
 `observatory scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
 <run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
-frame | film | import | repair <key> | compact <key> | index | serve | scene <id> [--file F]`
+frame | film | import | repair <key> | compact <key> | index | serve | mcp | scene <id> [--file F]`
 (`scene`: the repository's `scenes/<id>/scene.json`, or F, copied into the data folder).
 `import --robot nxt <run>.csv [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M]
 [--config PATH]` imports an nxt-web recording (ADR-0013); `state` of a run with signals prints

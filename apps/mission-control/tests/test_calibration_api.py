@@ -84,6 +84,9 @@ check("the view lists odometry_scale: what it sets, the value now (the sim varia
 check("with no run: none, and why a save cannot be made yet (the installation names no store for the duck)",
       v["run"] is None and v["writable"] is False and "robots.duck.profile" in v["why_not"], (v["run"], v["why_not"]))
 check("a robot file that holds the robot itself has no profile to calibrate", call("GET", "/robots/fake-1/calibration")["error"]["code"] == "no_profile")
+nope = call("POST", "/robots/fake-1/calibration", {"procedure": "odometry_scale", "params": {"seconds": 2}})
+check("must fail: nor can one start there: no_profile, and the robot's navigator is not left running one (a later goal is not refused for it)",
+      nope["error"]["code"] == "no_profile" and mc.robot("fake-1").navigator.cal is None, (nope, mc.robot("fake-1").navigator.cal))
 
 # --- refusals at the start ----------------------------------------------------------------------------------------------------
 check("a speed above the robot's maximum is refused as bad_params, saying so", call("POST", "/robots/duck-1/calibration", {"procedure": "odometry_scale", "params": {"speed_mps": 0.9}})

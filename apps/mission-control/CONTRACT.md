@@ -300,18 +300,24 @@ A comment line `: keepalive` comes every 15 s.
 
 `mission-control mcp [--url http://127.0.0.1:8060]` (stdio; env `MC_URL`) is the way in for an outside
 agent. It is a client of this API: every tool is one allowed call, and the server calls nothing else
-(`ALLOWED` in `mcp_server.py`, 29 routes, checked by `tests/test_mcp.py`). It needs the `mcp` package,
-which only this command imports.
+(`ALLOWED` in `mcp_server.py`, 39 routes, checked by `tests/test_mcp.py`). It needs the `mcp` package,
+which only this command imports. [MCP-COVERAGE](../../docs/wip/MCP-COVERAGE.md) lists every route
+of this API against the tools, with the reason for each one that is not a tool.
 
 | Tools | Calls |
 | --- | --- |
-| `list_robots`, `get_robot`, `get_robot_map`, `get_sighting` | the robot reads |
+| `list_robots`, `get_robot`, `get_robot_map`, `get_sighting`, `get_robot_description`, `get_health` | the robot reads (the description is the body the page draws; its meshes are binary and not served) |
+| `get_alarms` | the robot's alarm feed of the last minute (`alarms` of `GET /robots/{id}`); there is no acknowledge: an alarm ages out |
 | `acquire_lock`, `renew_lock`, `release_lock`, `drive` | the lock and manual driving, as the client `mcp-agent` |
 | `stop_robot`, `stop_all` | STOP: always accepted, never needs the lock |
-| `list_goals`, `get_goal`, `create_goal`, `run_goal`, `run_adhoc_goal` | the library and runs |
-| `list_runs`, `get_run`, `cancel_run`, `save_run` | goal runs |
-| `list_sites`, `get_site`, `list_areas`, `area_at`, `list_objects`, `get_inventory`, `get_site_guardrails`, `export_site` | the sites, read only |
+| `list_goals`, `get_goal`, `create_goal`, `run_goal`, `run_adhoc_goal` | the library and runs; `run_goal` and `run_adhoc_goal` take `start_pose` (a placed start; the first one a site sees is its dock, in `get_site`) |
+| `list_runs`, `get_run`, `cancel_run`, `save_run` | goal runs; a real run's `conditions.rehearsal` is the simulator-first state |
+| `list_sites`, `get_site`, `list_areas`, `get_area`, `area_at`, `list_objects`, `get_inventory`, `get_site_guardrails`, `export_site` | the sites, read only |
 | `label_object` | name an object (RFC-0014 §3.5.2) |
+| `get_profile`, `get_profile_version`, `diff_profile_versions` | the robot's profile versions, read |
+| `use_profile_version` | make a saved version current again (`PUT .../profile/current`); a real robot only with the operator's switch |
+| `get_calibration` | the procedures and the latest run, read |
+| `start_calibration`, `cancel_calibration`, `keep_calibration` | start, end and keep a run (`odometry_scale`); start and keep a real robot's only with the operator's switch |
 
 An API error is a tool error whose text is `code: message`, so an agent can read why. What an agent
 may not do, and how:
@@ -322,9 +328,17 @@ may not do, and how:
   A held robot is refused to the agent, naming the holder.
 - **Draw, change or delete areas, make or delete sites, import a site, set a site's guardrails,
   assign a robot to a site** (RFC-0014 §3.5.3: the operator's): not tools, not allowed routes.
+- **Write a profile** (save, import): a profile carries the robot's limits, which a goal may only add
+  to. Not tools, not allowed routes; an agent reads versions, diffs them, chooses among the saved ones
+  and keeps what a calibration measured (the procedure's bounds still apply). Nor give a calibration
+  the operator's tape (`reference`), discard a run, edit or retire a goal, plan in words (`/plan`),
+  or touch tokens.
 - **Run on a real robot** (RFC-0014 §3.8, RFC-0002 §3.5): `target` is `sim` unless the operator
   started the server with `--allow-real` or `MC_MCP_ALLOW_REAL=1`; anything else is refused before the
-  call leaves the process.
+  call leaves the process. A calibration start or keep and `use_profile_version` name no target, so
+  they are refused the same way for a robot whose profile variant is `real`.
+- **Opt a goal out of its rehearsal**: `sim_first: false` in `create_goal` or `run_adhoc_goal` is
+  refused before the call leaves the process.
 - **Refuse a STOP** or be refused one: not possible; the tools have no limit.
 
 ## Per-client tokens

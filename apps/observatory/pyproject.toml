@@ -5,6 +5,7 @@ description = "Seeing what a robot believed, against what happened — for peopl
 requires-python = ">=3.10"
 dependencies = [
     "runfile",
+    "mcp>=2.3.0",
 ]
 
 # the run format is a library beside the apps (RFC-0018): a path source, so there is one copy

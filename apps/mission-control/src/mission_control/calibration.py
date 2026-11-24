@@ -175,6 +175,7 @@ def start(rt, body) -> dict:
         raise invalid("params: an object")
     with _lock:
         _navigator(rt)
+        profiles._robot(rt)        # before the navigator is asked: with no profile there is nowhere to keep a value, and it must not be left walking
         refusal = rt.cfg.real_run_refusal()        # a calibration walks blind: no wall, cliff or contact check, so it is a real run in the strictest sense
         if refusal:
             raise conflict("real_runs_not_allowed", refusal)
