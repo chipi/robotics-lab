@@ -19,8 +19,7 @@ Cleared items are struck from the list when settled.
 | D1 | NXT hardware check at the brick: `hw_*` scripts, K15, K16, sprocket and track width, the 15 cm stop | checklist and scripts, when written |
 | D9 | One real and one simulated NXT run of the same command list | after D1 |
 | D10 | NXT over Bluetooth; first check that the brick stops by itself when the link drops | after D1 |
-| B6 | The real duck's safety review before a real run | the adapter is built; [the checklist](REAL-DUCK-SAFETY-REVIEW.md) is written, none of it done |
-| B9 | Measurement scripts run on the real duck | scripts only |
+| B6, B9 and the rest | Everything that needs the real duck is in [REAL-DUCK-BACKLOG.md](REAL-DUCK-BACKLOG.md). The duck arrives in one to two months; the operator says when, and it is not raised before | the adapter, the checklist and the scripts |
 
 ## Needs a decision or a review
 
@@ -37,6 +36,18 @@ Cleared items are struck from the list when settled.
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
 ## Asked after the answers (2026-11-24)
+
+**Answered the same day:**
+
+- **Official runs:** an explicit `official: true` in the record from now on, the rule for runs
+  before it; the dry run on the real data is shown before the first `--apply`.
+- **Backups:** state age-encrypted nightly (as the mini), data and archive with restic off-site
+  (an account to open); the homelab plans it.
+- **Telemetry:** on now, environment `staging`, by your edit of the installation file.
+- **Access:** tokens and `tailscale serve` at the cut-over to the staging engine.
+- **Look and feel:** the last unit before the close-out, after every fix.
+- **Names:** the X3's separate engine is **staging** (not prod); dev is the worktrees and the
+  shared engine; prod comes later.
 
 | Item | What | Done meanwhile |
 | --- | --- | --- |
