@@ -473,16 +473,16 @@ The operator decided the parked items on 2026-11-24 ([PARKED-FOR-OPERATOR.md](PA
 
 | Unit | What | Size |
 | --- | --- | --- |
-| E1 | Simulator-first on by default for goals on a real robot, opt out per goal (B8) | S |
+| E1 | Simulator-first on by default for goals on a real robot, opt out per goal (B8). **Done 2026-11-24** (a goal with no `sim_first` is held on a real robot; `sim_first: false` is kept and opts out; the page's box is ticked and always sends it; `core._rehearsal`, `goals.validate`; `tests/test_sim_first.py`, `test_page.py`, `test_duck_real.py`; CONTRACT.md) | S |
 | E2 | Robot-side guardrails also run with a truth, recording only; a critical `robot_guard` alarm on a robot-side stop (B3) | M |
-| E3 | The site page says when the dock was set from the first placed start (B7) | S |
+| E3 | The site page says when the dock was set from the first placed start (B7). **Done 2026-11-24** (the site's `dock_pose` records `set_from`, `placed_start` or `robot_pose`; the map card's dock line says which; `tests/test_core.py`, `test_page.py`; CONTRACT.md) | S |
 | E4 | The profile's `sensors` block generalised for both robots; the NXT's sensors move out of `capabilities.sensors` (D0) | M |
-| E5 | Hand drive on a real robot behind `allow_real_runs`; STOP never (B6) | S |
+| E5 | Hand drive on a real robot behind `allow_real_runs`; STOP never (B6). **Done 2026-11-24** (`RobotRuntime.drive` refuses a robot whose file lacks `allow_real_runs`: 409 `real_runs_not_allowed`; STOP is never refused; also, K48: 422 `stand_turn_below_floor` for vx 0 and a turn under the profile's `locomotion.stand_turn.min_rad_s`; `tests/test_duck_real.py`, `test_api.py`; CONTRACT.md) | S |
 | E6 | `lab-link up --gate` restarts the gate once the forwards are back (B5). **Done 2026-11-24** (`--restart-gate`, or `--gate-cmd` for another command: the gate starts once the forwards answer, again after each reconnect, never while the link is down, ended with the session; the lease goes with the old gate; `libs/runner/tests/test_link.py`; [REAL-DUCK-LINK.md](REAL-DUCK-LINK.md)) | S |
 | E7 | A `takeover_names` key in the NXT host file; `make sim-nxt` drops its own nxt-web (D7). **Done 2026-11-24** (`NxtHost.takeover_names`, passed to nxt-web as `--takeover-names`; `sim_nxt.py`'s takeover scenario runs on simhost's nxt-web; `libs/simhost/tests/test_simhost.py`; [NXT-SIM.md](NXT-SIM.md)) | S |
 | E8 | A `sim-lock` helper in the repo that every simulator job takes the same way. **Done 2026-11-24** (`scripts/sim-lock`, `fcntl.flock` on `$ROBOTICS_LAB_SIM_LOCK` or `${XDG_RUNTIME_DIR:-/tmp}/robotics-lab-sim.lock`, 7200 s wait; `make sim-duck`, `sim-nxt`, `sim-gate-scenarios` and `sim-deployed` run under it; `make test-sim-lock`; [DUCK-SIM-FOR-AGENTS.md](DUCK-SIM-FOR-AGENTS.md)) | S |
-| E9 | The socket check moved into `libs/runfile`, used by `lab-link` and Mission Control (B6) | S |
-| E10 | Investigate the duck's motion in the simulator: turning in place, the two speed figures (0.36 and 0.55 of commanded), the placed-start stall; fix what is ours | M |
+| E9 | The socket check moved into `libs/runfile`, used by `lab-link` and Mission Control (B6). **Done 2026-11-24** (`runfile.linkcheck.check_socket`, one function with the forward and gate wordings; `labrunner.link.check_socket` wraps it, Mission Control's copy in `duck_real.py` is deleted; `libs/runfile/tests/test_linkcheck.py`, `test_link.py`, `test_duck_real.py`) | S |
+| E10 | Investigate the duck's motion in the simulator: turning in place, the two speed figures (0.36 and 0.55 of commanded), the placed-start stall; fix what is ours. **Done 2026-11-24** (turning: the walking network starts no turn below ~1.0-1.1 rad/s from a stand, not ours; the profile's `locomotion.stand_turn.min_rad_s` and a refusal of a kick under it; Mission Control's drive refusal is left to an owner of `robots.py`, K48. Speed: B9's 0.36 was a wall 0.55 m ahead in the default scene, the sheet's 0.55 summed sway, the walk is ~0.47 over the ground; `lab-measure-walk` marks a blocked leg, `lab-score-sheet` takes net displacement, K49. Placed-start: the test told the duck faced 0, K50; fixed) | M |
 
 ### 5. Step 6 (telemetry): needs the operator before it starts
 

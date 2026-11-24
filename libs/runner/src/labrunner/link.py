@@ -18,16 +18,13 @@ upstream when the forward dies and exits (it does not reconnect), so with `--res
 once the forwards answer and again after each reconnect, never while the link is down; without either option it does not touch the gate.
 The gate's lease dies with the old gate: after a reconnect the robot stays stopped until a client acquires again.
 
-Standard library only; `ssh` is an external command, run only by `up`, never by a test."""
+Standard library and runfile only; `ssh` is an external command, run only by `up`, never by a test."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import shlex
 import signal
-import socket
-import stat
 import subprocess
 import sys
 import threading
@@ -35,7 +32,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-CHECK_TIMEOUT_S = 2.0        # one question to one socket
+from runfile import linkcheck
+from runfile.linkcheck import CHECK_TIMEOUT_S
+
 POLL_S = 2.0                 # between checks of a link that is up
 FAILS_TO_DROP = 3            # consecutive failed checks before an up link is torn down (one lost answer is not a dead tunnel)
 UP_TIMEOUT_S = 20.0          # a started ssh has this long to bring every forward up
@@ -73,42 +72,9 @@ class Check:
 
 
 def check_socket(name: str, path: Path, method: str, timeout_s: float = CHECK_TIMEOUT_S) -> Check:
-    """Ask one socket one question. Any JSON line back (a result or an error) is a live end; each way to be dead names itself."""
-    p = Path(path)
-    try:
-        mode = p.stat().st_mode
-    except FileNotFoundError:
-        return Check(name, False, f"no socket file {p} (the forward is not up)")
-    except OSError as exc:
-        return Check(name, False, f"{p}: {exc}")
-    if not stat.S_ISSOCK(mode):
-        return Check(name, False, f"{p} is not a socket")
-    t0 = time.monotonic()
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(timeout_s)
-    try:
-        s.connect(str(p))
-        s.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": method}) + "\n").encode())
-        line = s.makefile("r").readline()
-    except (ConnectionRefusedError, FileNotFoundError):
-        return Check(name, False, "nothing listens (a stale socket file: ssh is gone)")
-    except (ConnectionResetError, BrokenPipeError):         # the hang-up can land before or after the request: both are the same dead end
-        return Check(name, False, f"closed on {method} (the forward is up but the robot's end is gone)")
-    except (socket.timeout, TimeoutError):
-        return Check(name, False, f"no answer to {method} in {timeout_s:g} s (the link is silent)")
-    except OSError as exc:
-        return Check(name, False, f"{type(exc).__name__}: {exc}")
-    finally:
-        s.close()
-    if not line:
-        return Check(name, False, f"closed on {method} (the forward is up but the robot's end is gone)")
-    try:
-        msg = json.loads(line)
-    except ValueError:
-        return Check(name, False, f"answered {method} with something that is not JSON")
-    if not isinstance(msg, dict):
-        return Check(name, False, f"answered {method} with something that is not JSON-RPC")
-    return Check(name, True, ms=(time.monotonic() - t0) * 1000)
+    """Ask one socket one question (runfile.linkcheck, the one Mission Control asks too)."""
+    ok, why, ms = linkcheck.check_socket(path, method, timeout_s)
+    return Check(name, ok, why, ms)
 
 
 def check_all(forwards, local_only=()) -> list:

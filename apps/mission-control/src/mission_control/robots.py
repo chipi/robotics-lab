@@ -164,8 +164,8 @@ class RobotConfig:
         if not self.runs_real or self.allow_real_runs:
             return None
         return (f"{self.id} runs the real robot and its robot file does not allow real runs: set \"allow_real_runs\": true in the file's "
-                f"adapter block only after the first-run safety review ({REAL_REVIEW}); a calibration walk is a real run too, and walks "
-                f"with no wall or cliff check")
+                f"adapter block only after the first-run safety review ({REAL_REVIEW}); a calibration walk and a hand drive are real "
+                f"runs too (a calibration walks with no wall or cliff check); STOP is never refused")
 
     def reload(self) -> None:
         """A pointer file's robot read again from the version this machine runs now (after Mission Control saved or chose one):
@@ -414,6 +414,13 @@ class RobotRuntime:
             self.gate.close(s.cid)
 
     def drive(self, token, vx: float, vyaw: float) -> dict:
+        refusal = self.cfg.real_run_refusal()        # a hand drive moves the real robot as a goal does; STOP (below) is never held to the key
+        if refusal:
+            raise conflict("real_runs_not_allowed", refusal)
+        floor = self.cfg.profile.get("locomotion.stand_turn.min_rad_s") if self.cfg.profile is not None else None
+        if floor and vx == 0 and 0 < abs(vyaw) < floor:        # the walking network starts no turn on the spot from a stand below this rate (profile)
+            raise invalid(f"a turn on the spot below {floor:g} rad/s does not start from a stand: ask {floor:g} rad/s or more, or walk while turning",
+                          "stand_turn_below_floor", min_rad_s=floor)
         s = self._session(token)
         try:
             return self.gate.handle(s.cid, "robot.move", {"vx": vx, "vy": 0.0, "vyaw": vyaw})

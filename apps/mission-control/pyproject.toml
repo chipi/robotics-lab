@@ -7,6 +7,8 @@ dependencies = [
     "robotgate",
     "runfile",
     "mcp>=2.3.0",
+    "opentelemetry-sdk>=1.45,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45,<2",
 ]
 
 # No robot's package (phase 5 step 1, the operator's decision a): a robot is found by its registration file, named in the installation

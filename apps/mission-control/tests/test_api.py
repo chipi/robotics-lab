@@ -117,6 +117,8 @@ st, b = call("POST", "/robots/fake-1/drive", {"vx": 0.3, "vyaw": 0.0, "session":
 check("drive with the session", st == 200 and b["drive"]["ok"])
 ticks(0.6)
 check("and the robot moved", call("GET", "/robots/fake-1")[1]["robot"]["status"]["pose"]["x"] > 0.02)
+st, b = call("POST", "/robots/fake-1/drive", {"vx": 0.0, "vyaw": 0.5, "session": sess})
+check("a robot with no profile has no stand-turn floor: a slow turn on the spot is driven (E5)", st == 200 and b["drive"]["ok"], b)
 st, b = call("POST", "/robots/fake-1/drive", {"vx": 0.3})
 check("drive with no session is refused: no lease, no motion", st == 409 and b["error"]["code"] == "no_lease")
 st, b = call("POST", "/robots/fake-1/drive", {"vx": "fast", "session": sess})

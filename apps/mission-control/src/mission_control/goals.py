@@ -37,8 +37,8 @@ DEFAULT_BUDGET_MIN = 5.0
 # the navigator gave it and no verdict (`as_expected` null, the run's `no_verdict` says why). The runner raises it (navigator contract 1.6).
 NO_VERDICT_ANOMALIES = ("rtf_low",)
 
-# The simulator-first flag (RFC-0014 §3.4.2, phase 5 item 4b unit B8): a goal that has it runs on a real robot only after a passing simulator run
-# of the same goal, within this long. A day: the room, the site's areas and the robot's profile are what they were when it was rehearsed,
+# The simulator-first flag (RFC-0014 §3.4.2, phase 5 item 4b unit B8; on by default since 4e E1, `sim_first: false` opts a goal out): a goal
+# runs on a real robot only after a passing simulator run of the same goal, within this long. A day: the room, the site's areas and the robot's profile are what they were when it was rehearsed,
 # more or less; longer than that the rehearsal says too little about today.
 REHEARSAL_MAX_AGE_S = 24 * 3600.0
 BUDGET_KINDS = ("explore", "inventory", "go_to_object")
@@ -149,8 +149,7 @@ def validate(spec, *, require_name: bool = True) -> dict:
     if "sim_first" in spec:
         if not isinstance(spec["sim_first"], bool):
             raise invalid("sim_first is true or false", "bad_goal")
-        if spec["sim_first"]:
-            out["sim_first"] = True        # kept only when set, as `scene` is: a goal that never heard of it reads the same
+        out["sim_first"] = spec["sim_first"]        # false is kept: on a real robot absent means on, so false is the opt-out
     return out
 
 

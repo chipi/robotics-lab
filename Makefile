@@ -79,7 +79,7 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 # need a robot (its simulator files, its profile) stay in the duck's.
 LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               runfile:tests/test_profilestore.py runfile:tests/test_observatory_paths.py gate:tests/test_gate.py runner:tests/test_gate_proxy.py \
-              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py
+              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py runfile:tests/test_linkcheck.py runfile:tests/test_retention.py
 libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
 	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
 
@@ -130,11 +130,11 @@ DUCK_TESTS          := tests/test_nav.py tests/test_frames.py tests/test_recover
 OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/test_query.py tests/test_mcapio.py tests/test_reading.py \
                        tests/test_index.py tests/test_review2.py tests/test_server.py tests/test_nxt.py tests/test_depth_frames.py \
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
-                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py
+                       tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py tests/test_archive.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
 
-CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py
 
 .PHONY: test-control test-duck test-observatory test-observatory-pages
 test-control: control-sync nxt-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)

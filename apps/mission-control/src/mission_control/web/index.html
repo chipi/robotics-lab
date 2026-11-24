@@ -54,6 +54,7 @@
       <label class="inline"><input type="checkbox" id="layer-objects" checked>Objects</label>
       <label class="inline"><input type="checkbox" id="layer-areas" checked>Areas</label>
     </div>
+    <div id="site-dock" class="dim" style="font-size:12px"></div>
     <div class="mapwrap"><canvas id="map" tabindex="0" aria-label="The map: tap to set a point goal"></canvas></div>
     <div id="maphint" class="hint"></div>
     <details>
@@ -83,7 +84,7 @@
           <option value="inventory">Inventory</option>
         </select>
         <select id="g-expect" aria-label="Expect"><option value="reach">expect reach</option><option value="refuse">expect refuse</option></select>
-        <label class="inline" title="A goal with this runs on the real robot only after a passing run in the simulator"><input type="checkbox" id="g-simfirst">Simulator first</label>
+        <label class="inline" title="On: the goal runs on the real robot only after a passing run in the simulator. Off: it runs unrehearsed"><input type="checkbox" id="g-simfirst" checked>Simulator first</label>
       </div>
       <div id="g-fields"></div>
       <div>

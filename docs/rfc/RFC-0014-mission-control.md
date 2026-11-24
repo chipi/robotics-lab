@@ -389,10 +389,11 @@ goal   { id, name, folder, kind: "go_to_object",
   library. A goal run whose goal was saved keeps the link.
 - **Defined once, run anywhere.** A goal does not name a robot. A goal run binds a goal to robots
   and a target, simulator or real. Per RFC-0005 §2.1, a goal that has not run in the simulator is
-  flagged on a real run (its `conditions.rehearsal`); Mission Control does not forbid it unless the
-  goal says `sim_first`, since the operator is in the room (RFC-0002 §3.5). A `sim_first` goal runs
-  on the real robot only after a passing simulator run of the same goal (phase 5 item 4b unit B8;
-  [the contract][mc-contract], Goals).
+  flagged on a real run (its `conditions.rehearsal`). Simulator-first is on by default for a goal
+  on a real robot (the operator, 2026-11-24; unit E1): it runs there only after a passing
+  simulator run of the same goal (phase 5 item 4b unit B8; [the contract][mc-contract], Goals). A
+  goal that says `sim_first: false` opts out and is only flagged, since the operator is in the
+  room (RFC-0002 §3.5).
 
 [mc-contract]: https://github.com/chipi/robotics-lab/blob/main/apps/mission-control/CONTRACT.md
 

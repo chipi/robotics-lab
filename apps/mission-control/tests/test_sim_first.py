@@ -68,8 +68,11 @@ st, b = call("POST", "/goals", POINT)
 gid = b["goal"]["id"]
 check("a goal takes sim_first and answers it", st == 201 and b["goal"]["sim_first"] is True, b)
 st, b2 = call("POST", "/goals", {**POINT, "name": "plain", "sim_first": False})
-check("a goal without it (or with false) reads as before: no field", "sim_first" not in b2["goal"], b2)
+check("a goal that opts out keeps the field as false (absent now means on, for a real robot)", b2["goal"].get("sim_first") is False, b2)
 plain = b2["goal"]["id"]
+st, b3 = call("POST", "/goals", {k: v for k, v in POINT.items() if k != "sim_first"} | {"name": "unsaid"})
+check("a goal that never heard of it has no field", st == 201 and "sim_first" not in b3["goal"], b3)
+unsaid = b3["goal"]["id"]
 v = goals.version(goals.validate(POINT))
 check("a goal's version is its content: not its name, folder or the flag; any other edit changes it",
       v == goals.version(goals.validate({**POINT, "name": "other", "folder": "x", "sim_first": False}))
@@ -84,8 +87,11 @@ check("... and the refusal records the rehearsal it lacked: flagged, not rehears
       r["conditions"]["rehearsal"] == {"flagged": True, "state": "not_rehearsed", "run": None, "robot": None, "goal_version": v,
                                        "rehearse_on": "duck-sim"} and r["as_expected"] is False, r["conditions"])
 check("the robot was not moved or held: no goal runs on it", mc.get_robot("duck-real")["goal_run"] is None)
+r = run(unsaid, "duck-real", "real")
+check("must fail: a goal that says nothing is simulator-first by default on a real robot: refused, the rehearsal records flagged",
+      r["state"] == "refused" and "simulator-first" in r["reason"] and r["conditions"]["rehearsal"]["flagged"] is True, r["conditions"])
 r = done(run(plain, "duck-real", "real"))
-check("a goal without the flag runs on the real robot as ever, and its run says it was not rehearsed (the RFC's flag, not a refusal)",
+check("a goal with sim_first false runs on the real robot unrehearsed, and its run says so (the opt-out, not a refusal)",
       r["state"] == "reached" and r["conditions"]["rehearsal"]["flagged"] is False and r["conditions"]["rehearsal"]["state"] == "not_rehearsed", r["conditions"])
 r = done(run(gid, "duck-sim", "sim"))
 check("a sim run of the flagged goal is not held to the flag, and records no rehearsal (it is the rehearsal)",

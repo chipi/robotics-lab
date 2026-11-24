@@ -2,7 +2,7 @@
 a folder of the test's own (the folder lab-link forwards into, on the real duck), the real gate proxy (labrunner.gate) in front of the
 robotd, and a navigator API. No ssh, no simulator, no robot. What is tested: the robot offline with the link's reason (never an error) while
 sockets are missing, online when they answer, offline again when one drops and when the gate goes, with STOP still reaching the robot;
-the link check the same words as lab-link's (labrunner.link.check_socket) on the same dead ends; a real run refused unless the robot file
+the link check (runfile.linkcheck, one function for lab-link and Mission Control) on the same dead ends; a real run refused unless the robot file
 says allow_real_runs, a goal and a calibration both, the navigator never asked; simulator-first still on top of it; and that the
 addresses are the real duck's and never the simulator's.
 Run: cd apps/mission-control && uv run python tests/test_duck_real.py"""
@@ -27,6 +27,7 @@ from mission_control import duck_real
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import ConfigError, RobotConfig, make_adapter
+from runfile import linkcheck
 from runfile import installation
 
 
@@ -195,13 +196,13 @@ hang, silent, talks, garbage = Hangup(par / "hang.sock"), Silent(par / "silent.s
 cases.update({"a hang-up": hang.path, "silent": silent.path, "answering": talks.path, "garbage": garbage.path})
 for name, path in cases.items():
     theirs = lab_link.check_socket("x", path, "robot.health", 0.4)
-    mine = duck_real.check_socket(path, "robot.health", 0.4)
-    check(f"the link check on {name}: the same verdict and words as lab-link's: {mine[1][:70]}", mine == (theirs.ok, theirs.why), (mine, theirs))
-check("the answering one is alive and each dead end is dead", [duck_real.check_socket(p, "robot.health", 0.4)[0] for p in cases.values()]
+    mine = linkcheck.check_socket(path, "robot.health", 0.4)
+    check(f"the link check on {name}: lab-link's wrapper says the same verdict and words: {mine[1][:70]}", mine[:2] == (theirs.ok, theirs.why), (mine, theirs))
+check("the answering one is alive and each dead end is dead", [linkcheck.check_socket(p, "robot.health", 0.4)[0] for p in cases.values()]
       == [False, False, False, False, False, True, False])
 check("the gate's dead ends say gate, not ssh (a gate is a process here)",
-      "the gate is not running" in duck_real.check_socket(cases["missing"], "gate.who", gate=True)[1]
-      and "ssh" not in duck_real.check_socket(cases["stale"], "gate.who", gate=True)[1])
+      "the gate is not running" in linkcheck.check_socket(cases["missing"], "gate.who", gate=True)[1]
+      and "ssh" not in linkcheck.check_socket(cases["stale"], "gate.who", gate=True)[1])
 check("the probes are lab-link's own: the names, the files and the questions of the duck's three forwards",
       [(n, f.format(robot="duck"), m) for n, f, m in duck_real.FORWARDS]
       == [(f.name, f.local.name, f.method) for f in lab_link.duck_forwards(Path("/x"))])
@@ -329,10 +330,30 @@ check("must fail: a calibration walk is refused the same way (it walks blind): 4
 check("... and the navigator was never asked to calibrate", not [c for c in nav.cal_calls if c[0] == "calibration.start"], nav.cal_calls)
 check("the refusal is a recorded refused run, as a goal not as expected is (the page lists it)",
       call("GET", "/goal-runs")[1]["runs"][0]["state"] == "refused")
+st, b = call("POST", "/robots/duck-real/drive", {"session": "any", "vx": 0.1, "vyaw": 0.0})
+check("must fail: hand drive on a real robot whose file does not allow real runs is refused too: 409 real_runs_not_allowed naming the key (E5)",
+      st == 409 and b["error"]["code"] == "real_runs_not_allowed" and "allow_real_runs" in b["error"]["message"], (st, b))
+check("... and no robot.move reached robotd", not [c for c in robotd.calls if c[0] == "robot.move"])
+st, b = call("POST", "/robots/duck-real-go/drive", {"session": "any", "vx": 0.1, "vyaw": 0.0})
+check("a robot whose file allows real runs is not refused for the key: its drive gets as far as the lease (409 no_lease for an unknown session)",
+      st == 409 and b["error"]["code"] == "no_lease", (st, b))
+floor = mc.robots["duck-real-go"].cfg.profile.get("locomotion.stand_turn.min_rad_s")
+check("the duck's profile has a stand-turn floor (E10: the walking network starts no turn from a stand below it)", isinstance(floor, float) and floor > 0, floor)
+for label, body in (("a left turn", {"vx": 0.0, "vyaw": floor / 2}), ("a right turn", {"vx": 0.0, "vyaw": -floor / 2}), ("a turn just under it", {"vx": 0.0, "vyaw": floor - 0.01})):
+    st, b = call("POST", "/robots/duck-real-go/drive", {"session": "any", **body})
+    check(f"must fail: {label} on the spot below the floor does not start from a stand: 422 naming the floor", st == 422 and b["error"]["code"] == "stand_turn_below_floor"
+          and f"{floor:g} rad/s" in b["error"]["message"] and "does not start from a stand" in b["error"]["message"], (st, b))
+for label, body in (("at the floor", {"vx": 0.0, "vyaw": floor}), ("above it", {"vx": 0.0, "vyaw": 2 * floor}), ("walking while turning slowly", {"vx": 0.2, "vyaw": 0.5}),
+                    ("no turn at all", {"vx": 0.0, "vyaw": 0.0}), ("a plain walk", {"vx": 0.1})):
+    st, b = call("POST", "/robots/duck-real-go/drive", {"session": "any", **body})
+    check(f"{label} is not held to the floor: it gets as far as the lease (409 no_lease)", st == 409 and b["error"]["code"] == "no_lease", (st, b))
+st, b = call("POST", "/robots/duck-real/stop", {"client": "page"})
+check("STOP is never refused for the key: the held robot's STOP goes through the gate to robotd and is confirmed",
+      st == 200 and b["stop"]["confirmed"] is True and ("robot.stop", {}) in robotd.calls, (st, b))
 
 # the robot file that allows it: the run goes to the navigator
 nav.state = "running"
-st, b = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-real-go"], "target": "real"})
+st, b = call("POST", "/goal-runs", {"goal": {**POINT, "sim_first": False}, "robots": ["duck-real-go"], "target": "real"})
 r = b["run"]
 check("a robot whose file allows real runs starts the goal: the navigator got it, the run is running with its run key and Watch link",
       r["state"] == "running" and len(nav.started) == 1 and r["run_key"] == "duck/apartment/mc-real-1"
@@ -386,8 +407,9 @@ proxy.start()
 check("started again, the robot is online and Mission Control's own connection to it is made again",
       wait_for(lambda: robot()["online"], 20) and wait_for(lambda: mc.robots["duck-real-go"].gate._wires.get(mc.robots["duck-real-go"].gate._own) is not None
                                                           and mc.robots["duck-real-go"].gate._wires[mc.robots["duck-real-go"].gate._own].alive), robot())
+wait_for(lambda: robot("duck-real")["online"], 20)        # the held robot's link check follows the gate's return on its own beat: offline is a 503, not a refusal
 st, b = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-real"], "target": "sim"})
-check("a refusal still holds after all that", b["run"]["state"] == "refused" and "allow_real_runs" in b["run"]["reason"], b["run"])
+check("a refusal still holds after all that", "run" in b and b["run"]["state"] == "refused" and "allow_real_runs" in b["run"]["reason"], b)
 
 mc._stopping.set()
 proxy.stop()

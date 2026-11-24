@@ -228,6 +228,19 @@ finish_run(mc, clock, run["id"])
 run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}})
 check("a run with none has none among its conditions", "start_pose" not in run["conditions"], run["conditions"])
 finish_run(mc, clock, run["id"])
+check("the dock the first run set says it came from the robot's own pose (no start pose was sent)",
+      mc.sites.get("home")["dock_pose"]["set_from"] == "robot_pose", mc.sites.get("home")["dock_pose"])
+mc.sites.create("Annex", "garage")
+mc.assign_site("fake-1", "annex")
+run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}}, start_pose=SP)
+finish_run(mc, clock, run["id"])
+dock = mc.sites.get("annex")["dock_pose"]
+check("the first placed start a site sees is its dock, and the dock says so (set_from placed_start, the pose and the robot)",
+      dock["set_from"] == "placed_start" and (dock["x"], dock["y"], dock["yaw"]) == (SP["x"], SP["y"], SP["yaw"]) and dock["robot"] == "fake-1", dock)
+run = start(mc, {"kind": "point", "params": {"x": -3.0, "y": 0.5}}, start_pose={"x": -1.0, "y": 0.0, "yaw": 0.0})
+finish_run(mc, clock, run["id"])
+check("a later placed start does not move the dock or its record", mc.sites.get("annex")["dock_pose"] == dock, mc.sites.get("annex")["dock_pose"])
+mc.assign_site("fake-1", "home")
 mc.sites.set_guardrails("home", [{"name": "no_go_area", "area": "Stairwell"}])
 for label, pose, why in (("inside the site's no-go area", {"x": 1.2, "y": 1.0, "yaw": 0.0}, "no-go area stairwell"),
                          ("outside the world", {"x": 9.0, "y": 0.0, "yaw": 0.0}, "outside the world"),

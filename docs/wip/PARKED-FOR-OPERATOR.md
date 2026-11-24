@@ -103,6 +103,10 @@ that needed a decision. The work each answer creates is the "follow-ups" unit se
   reproduces the race.
 - **A page-test flake under load** (`test_page`, "event stream is live"): seen once at a load of
   60 to 70 during B8, passed on re-run. Not diagnosed.
+- **A `test_duck_real` flake** (E5): once in about nine runs the last check found no `run` in the
+  answer. Unverified guess: the held robot was still offline after the gate restart. The test
+  now waits for it to be online and prints the whole answer; 3 of 3 passed since, which does not
+  prove it gone.
 - **The NXT's battery percent is a guess:** a linear span from 6000 mV (0 %) to 8400 mV (100 %),
   low below 20 % (D5); D1 can calibrate it. A robot file overrides the span.
 

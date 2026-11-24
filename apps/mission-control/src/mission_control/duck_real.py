@@ -17,23 +17,19 @@ differs is that the robot is a long way away and can go away:
 - It needs no truth: the odometry scale is the profile's (the real variant's), the map is mapd's through the navigator API, and a
   calibration reference is the operator's tape.
 
-The question the link check asks is lab-link's (`labrunner.link.check_socket`); Mission Control does not depend on the runner, so the
-check is written again here, with the same words, and `tests/test_duck_real.py` runs both against the same stand-ins."""
+The question the link check asks is lab-link's, one function in `runfile.linkcheck` that both use."""
 
-import json
-import socket
-import stat
 import threading
 import time
 from pathlib import Path
 
 from robotgate import GateError, ProtocolError
+from runfile.linkcheck import CHECK_TIMEOUT_S as LINK_TIMEOUT_S, check_socket as _ask
 
 from .duck import DuckAdapter, RemoteGate, _Wire
 
 LINK_DIR = "~/.cache/duck-real"     # lab-link's default folder: apart from the simulator's, so one never answers for the other
 NAVIGATOR = "127.0.0.1:8062"        # the simulator's navigator is 8061 (lab-nav-server's default)
-LINK_TIMEOUT_S = 2.0                # one question to one socket
 LINK_EVERY_S = 5.0                  # between the checks: lab-link asks robotd every 2 s already, and a second asker is a cost on the robot
 RECIPE = "docs/wip/REAL-DUCK-LINK.md"
 OWN_RETRY_S = 2.0
@@ -41,52 +37,6 @@ OWN_RETRY_S = 2.0
 # (name, file under the link folder, the read-only question). The names, files and questions are labrunner.link.duck_forwards'
 FORWARDS = (("robot", "{robot}.sock", "robot.health"), ("depth", "{robot}-tof.sock", "tof.stream"), ("map", "{robot}-map.sock", "map.status"))
 GATE = ("gate", "{robot}-gate.sock", "gate.who")
-
-# what a dead end means for a forward (ssh) and for the gate (a process on this machine)
-WORDS = {False: {"missing": "the forward is not up", "refused": "a stale socket file: ssh is gone",
-                 "closed": "the forward is up but the robot's end is gone", "silent": "the link is silent"},
-         True: {"missing": "the gate is not running", "refused": "a stale socket file: the gate has exited",
-                "closed": "the gate hung up", "silent": "the gate is silent"}}
-
-
-def check_socket(path: Path, method: str, timeout_s: float = LINK_TIMEOUT_S, gate: bool = False) -> tuple:
-    """Ask one socket one question: (True, "answered") if any JSON line comes back (a result or an error is a live end), else (False,
-    why). Each way to be dead names itself; a file left by a dead ssh still connects, and only an answer or an end of stream tells."""
-    words = WORDS[gate]
-    p = Path(path)
-    try:
-        mode = p.stat().st_mode
-    except FileNotFoundError:
-        return False, f"no socket file {p} ({words['missing']})"
-    except OSError as exc:
-        return False, f"{p}: {exc}"
-    if not stat.S_ISSOCK(mode):
-        return False, f"{p} is not a socket"
-    s = socket.socket(socket.AF_UNIX)
-    s.settimeout(timeout_s)
-    try:
-        s.connect(str(p))
-        s.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": method}) + "\n").encode())
-        line = s.makefile("r").readline()
-    except (ConnectionRefusedError, FileNotFoundError):
-        return False, f"nothing listens ({words['refused']})"
-    except (ConnectionResetError, BrokenPipeError):         # the hang-up can land before or after the request: both are the same dead end
-        return False, f"closed on {method} ({words['closed']})"
-    except (socket.timeout, TimeoutError):
-        return False, f"no answer to {method} in {timeout_s:g} s ({words['silent']})"
-    except OSError as exc:
-        return False, f"{type(exc).__name__}: {exc}"
-    finally:
-        s.close()
-    if not line:
-        return False, f"closed on {method} ({words['closed']})"
-    try:
-        msg = json.loads(line)
-    except ValueError:
-        return False, f"answered {method} with something that is not JSON"
-    if not isinstance(msg, dict):
-        return False, f"answered {method} with something that is not JSON-RPC"
-    return True, "answered"
 
 
 class LinkWatch:
@@ -101,7 +51,7 @@ class LinkWatch:
         self._lock = threading.Lock()
 
     def once(self) -> None:
-        results = [(n, *check_socket(p, m, self.timeout_s, g)) for n, p, m, g in self.probes]
+        results = [(n, *_ask(p, m, self.timeout_s, g)[:2]) for n, p, m, g in self.probes]
         self._latest = (time.monotonic(), results)
         self._first.set()
 

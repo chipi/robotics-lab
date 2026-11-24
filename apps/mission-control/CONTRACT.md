@@ -53,7 +53,7 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | `POST /api/v1/robots/{id}/calibration/reference` | `{distance_m}`: the operator's tape, for a run the runner had no truth for (`409 reference_by_truth` when it had; `409 not_done`); `{run}` |
 | `POST /api/v1/robots/{id}/calibration/keep` | the measured value as the next profile version, `201 {run}` with `kept {version, applies, writes}`. `409`: `no_value` (nothing measured, or no reference yet), `implausible` (outside the procedure's `bounds`: nothing written), `already_kept`, `profile_not_writable` (as the profile save) |
 | `DELETE /api/v1/robots/{id}/calibration` | forgets the run (`409 calibration_running` while it runs): `{discarded}` |
-| `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; a command lasts the robot's deadman time, so a driver repeats it |
+| `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; `409 real_runs_not_allowed` on a real robot whose file lacks `allow_real_runs` (STOP is never refused); `422 stand_turn_below_floor` for `vx` 0 and a `vyaw` under the profile's `locomotion.stand_turn.min_rad_s` (the walking network starts no turn from a stand below it; a robot whose profile has none is not held to it); a command lasts the robot's deadman time, so a driver repeats it |
 | `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is true when the robot answered `robot.stop` |
 | `POST /api/v1/stop` | every robot at once, each reported, a silent one after 3 s: `{robots: [...], all_confirmed}` |
 
@@ -131,7 +131,9 @@ the run says so in a decision (`placed`), the robot's pose and map on the page a
 until a run without one, and a navigator that does not speak 1.5 refuses the run (the reason says
 so) rather than run it in the wrong frame. The fake robot is set down at the pose. Refused, as the
 run's reason: inside a no-go area, and for the fake outside its world or inside an object. The
-robot's dock is the first start pose a site sees, when it has none.
+robot's dock is the first start pose a site sees, when it has none: the site's `dock_pose` is
+`{x, y, yaw, frame, robot, set_from}`, `set_from` `placed_start` for that and `robot_pose` for a dock
+taken from the robot's own pose when no start pose was sent; the site page says which.
 
 ### One goal on several robots
 
@@ -194,17 +196,19 @@ States: `queued`, `running`, then one of the navigator contract's ends
   `rtf_low` (its runner measured the simulator under real time: [libs/runner/CONTRACT.md](../../libs/runner/CONTRACT.md),
   1.6), so the run's timing and truth pairing are not what they say. The run keeps the state the
   navigator gave it, and `no_verdict` says why (`rtf_low: ...`); it is null for every other run.
-- **The simulator-first flag.** A goal with `sim_first: true` (absent is false) runs on the real
-  robot only after a rehearsal: a run of the same goal in the simulator that ended as expected,
-  within 24 h. A run is *real* when its `target` is `real`, or its robot is a registered robot whose
-  variant is `real`; a goal run on any other is a simulator run and is not held to the flag. A run
-  *rehearses* when it ran the same goal content (its `version`: everything but `name`, `folder` and
-  `sim_first`: an edit drops it, a rename keeps it), `target` `sim`, on a robot of the same registered
-  kind in the `sim` variant, for the same site, ended with `as_expected` true and a verdict, within
-  24 h; the newest is named. Without one the run is `refused`, `reason` saying which robot to
-  rehearse on. Every run on a real robot records `conditions.rehearsal`: `{flagged, state:
-  "rehearsed" | "not_rehearsed", run (the simulator run that rehearsed it), robot, goal_version,
-  rehearse_on}`; for an unflagged goal it is information, never a refusal. A rehearsal is not used
+- **The simulator-first flag.** A goal runs on the real robot only after a rehearsal, unless it says
+  `sim_first: false` (on by default since 4e E1: absent is true for a real robot; false is kept, as
+  the opt-out; the page's box is ticked and always sends it). The rehearsal is a run of the same goal
+  in the simulator that ended as expected, within 24 h. A run is *real* when its `target` is `real`,
+  or its robot is a registered robot whose variant is `real`; a goal run on any other is a simulator
+  run and is not held to the flag. A run *rehearses* when it ran the same goal content (its
+  `version`: everything but `name`, `folder` and `sim_first`: an edit drops it, a rename keeps it),
+  `target` `sim`, on a robot of the same registered kind in the `sim` variant, for the same site,
+  ended with `as_expected` true and a verdict, within 24 h; the newest is named. Without one the run
+  is `refused`, `reason` saying which robot to rehearse on. Every run on a real robot records
+  `conditions.rehearsal`: `{flagged, state: "rehearsed" | "not_rehearsed", run (the simulator run
+  that rehearsed it), robot, goal_version, rehearse_on}`; for a goal with `sim_first: false` it is
+  information, never a refusal. A rehearsal is not used
   up. A group's robots are held one by one (a child run refused).
 - `progress`: `elapsed_s`, `pose`, `area` (the area it believes it is in, by the operator's outlines,
   or null), `guardrails_ok`, `distance_left_m`, and for exploring `waypoints_visited`,

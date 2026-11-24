@@ -215,6 +215,7 @@ with sync_playwright() as p:
     page.select_option("#site-sel", "home")
     wait(page, "window.__mc.S.site === 'home'")
     check("the robot is at the site the operator made and picked", get("/robots/fake-1")["robot"]["site"] == "home")
+    check("a site with no run has no dock, and the page says so", "No dock yet" in page.locator("#site-dock").inner_text(), page.locator("#site-dock").inner_text())
 
     # --- an area drawn by the operator -------------------------------------------------------------
     wait(page, "document.getElementById('area-list').textContent.includes('none defined')")  # the list is drawn after the site is loaded
@@ -244,6 +245,10 @@ with sync_playwright() as p:
     run = get("/goal-runs")["runs"][0]
     check("go_to_object by form: it explored, found the fridge and went to it", run["state"] == "reached" and run["result"]["object"]["kind"] == "fridge", (run["state"], run["reason"]))
     check("the run's guardrails are listed: contact", "contact" in page.locator("#run-detail").inner_text())
+    dock = get("/sites")["sites"][0]["dock_pose"] or {}
+    wait(page, "document.getElementById('site-dock').textContent.startsWith('Dock set')")
+    check("the site's dock line says where the dock came from: the first run sent no start pose, so the robot's own pose (the API's set_from)",
+          dock.get("set_from") == "robot_pose" and "from the robot's own pose" in page.locator("#site-dock").inner_text(), (dock, page.locator("#site-dock").inner_text()))
     wait(page, "window.__mc.S.objects.length >= 1")
     check("the objects layer holds what the run found, with the site's stable ids", page.evaluate("window.__mc.S.objects.some((o) => o.kind === 'fridge' && o.id.startsWith('obj-'))"))
     check("the fridge is in the operator's Kitchen, by geometry", "1 object" in page.locator("#area-list").inner_text())
@@ -294,15 +299,14 @@ with sync_playwright() as p:
     wait_state(page, ["reached", "failed", "timeout"], 30000)
     check("Run on a library goal: a run linked to it", get("/goal-runs")["runs"][0]["goal_id"] == get("/goals")["goals"][0]["id"])
     # --- the simulator-first flag (phase 5 item 4b unit B8): a box on the goal form, saved with the goal ---------------------
-    check("the form's Simulator first box is off, and a goal saved with it off has no flag",
-          not page.is_checked("#g-simfirst") and "sim_first" not in get("/goals")["goals"][0], get("/goals")["goals"][0])
-    page.check("#g-simfirst")
+    check("the form's Simulator first box is on, and a goal saved with it on has sim_first true (on by default, 4e E1)",
+          page.is_checked("#g-simfirst") and get("/goals")["goals"][0].get("sim_first") is True, get("/goals")["goals"][0])
+    page.uncheck("#g-simfirst")
     page.fill("#g-name", "to the desk, rehearsed")
     page.click("#g-save")
     wait(page, "document.querySelectorAll('#goal-list li').length === 2")
     flagged = [g for g in get("/goals")["goals"] if g["name"] == "to the desk, rehearsed"]
-    check("ticked, the goal is saved with sim_first true", len(flagged) == 1 and flagged[0].get("sim_first") is True, flagged)
-    page.uncheck("#g-simfirst")
+    check("unticked, the goal is saved with sim_first false: the opt-out", len(flagged) == 1 and flagged[0].get("sim_first") is False, flagged)
     page.select_option("#g-kind", "point")
     tap(page, 2.5, -2.0)
     page.click("#g-run")

@@ -417,6 +417,10 @@ function renderSites() {
   const sel = $("site-sel");
   sel.replaceChildren(h("option", { value: "" }, "(no site)"), ...S.sites.map((s) => h("option", { value: s.id }, `${s.name} (${s.kind})`)));
   sel.value = S.site || "";
+  const site = S.sites.find((s) => s.id === S.site), d = site && site.dock_pose;
+  $("site-dock").textContent = !site ? "" : !d ? "No dock yet: the first run sets it."
+    : `Dock set ${d.set_from === "placed_start" ? "from the first placed start" : d.set_from === "robot_pose" ? "from the robot's own pose at its first run" : "at"}`
+      + ` (${d.x.toFixed(2)}, ${d.y.toFixed(2)}${d.yaw != null ? ", " + Math.round(d.yaw * 180 / Math.PI) + " deg" : ""})${d.robot ? " by " + d.robot : ""}.`;
 }
 
 $("site-sel").addEventListener("change", guard(async (ev) => {
@@ -587,7 +591,7 @@ function formGoal() {
   if (ms > 0) must.push({ name: "max_speed", mps: ms });
   if (tl > 0) must.push({ name: "time_limit", seconds: tl });
   const goal = { kind, params, must_not: must, expect: $("g-expect").value };
-  if ($("g-simfirst").checked) goal.sim_first = true;
+  goal.sim_first = $("g-simfirst").checked;
   if ($("g-name").value.trim()) goal.name = $("g-name").value.trim();
   if ($("g-folder").value.trim()) goal.folder = $("g-folder").value.trim();
   return goal;
@@ -990,7 +994,7 @@ function onEvent(e) {
       later("robots", loadRobots, 150);
       break;
     case "goal-run":
-      later("runs", async () => { await loadRuns(); if (TERMINAL.includes(e.state)) await loadRobots(); }, 120);
+      later("runs", async () => { await loadRuns(); if (TERMINAL.includes(e.state)) await loadRobots(); if (S.site && !((S.sites.find((s) => s.id === S.site) || {}).dock_pose)) await loadSites(); }, 120);
       break;
     case "decision":
       if (detail && e.goal_run === detail.id) {

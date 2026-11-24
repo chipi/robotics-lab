@@ -79,10 +79,32 @@ check("a missing file is an error naming it and how to write one", missing and "
       missing)
 check("not required: a missing file is None", I.load(tmp / "nope.json", required=False) is None)
 
+# the telemetry and runs blocks (docs/wip/TELEMETRY-RETENTION-DESIGN.md)
+TRACES = "https://vtraces.example.ts.net/insert/opentelemetry/v1/traces"
+METRICS = "https://vm.example.ts.net/opentelemetry/v1/metrics"
+LOGS = "http://127.0.0.1:9428/insert/opentelemetry/v1/logs"
+check("no telemetry block: off, and runs archive after 30 days", inst.telemetry is None and inst.archive_after_days == 30, inst)
+tel = I.load(write({**GOOD, "telemetry": {"environment": "dev", "traces": TRACES, "metrics": METRICS, "logs": LOGS,
+                                          "metrics_interval_s": 60}, "runs": {"archive_after_days": 7}}, "tel.json"))
+check("a full telemetry block: the environment, the three URLs as given, the interval",
+      tel.telemetry == I.Telemetry("dev", TRACES, METRICS, LOGS, 60) and tel.archive_after_days == 7, tel.telemetry)
+one = I.load(write({"installation": 1, "telemetry": {"environment": "check_1-x", "metrics": METRICS}}, "one.json"))
+check("one signal URL is enough; the others None, the interval 15", one.telemetry == I.Telemetry("check_1-x", None, METRICS, None, 15), one.telemetry)
+edge = [I.load(write({"installation": 1, "telemetry": {"environment": "dev", "logs": LOGS, "metrics_interval_s": n}}, f"e{n}.json")).telemetry
+        .metrics_interval_s for n in (5, 300)]
+check("the interval's bounds 5 and 300 are accepted", edge == [5, 300], edge)
+check("an empty runs block keeps the default of 30", I.load(write({"installation": 1, "runs": {}}, "runs0.json")).archive_after_days == 30)
+try:
+    tel.telemetry.environment = "x"
+    frozen = False
+except Exception:
+    frozen = True
+check("the telemetry block is frozen", frozen)
+
 # wrong shapes
 CASES = [
     ("not an object", [1, 2], "not a JSON object"),
-    ("an unknown key", {**GOOD, "telemetry": {}}, "unknown keys ['telemetry']"),
+    ("an unknown key", {**GOOD, "metrics": {}}, "unknown keys ['metrics']"),
     ("another version", {**GOOD, "installation": 2}, "this reader knows version 1"),
     ("no version", {k: v for k, v in GOOD.items() if k != "installation"}, "'installation' is None"),
     ("an empty data folder", {**GOOD, "data": ""}, "'data' must be a non-empty string"),
@@ -102,6 +124,29 @@ CASES = [
     ("an empty variant", {**GOOD, "robots": {"duck": {"variant": ""}}}, "robots.duck.variant must be the name of a profile variant"),
     ("a registration that is not a path", {**GOOD, "robots": {"duck": {"registration": 7}}},
      "robots.duck.registration must be the path of the robot's registration file"),
+    ("an empty telemetry block", {**GOOD, "telemetry": {}}, "telemetry: needs 'environment'"),
+    ("telemetry not an object", {**GOOD, "telemetry": "on"}, "'telemetry' must be an object"),
+    ("telemetry without an environment", {**GOOD, "telemetry": {"traces": TRACES}}, "telemetry: needs 'environment'"),
+    ("telemetry with an environment and no signal URL", {**GOOD, "telemetry": {"environment": "dev"}}, "at least one of 'traces', 'metrics', 'logs'"),
+    ("an environment with a capital", {**GOOD, "telemetry": {"environment": "Dev", "traces": TRACES}}, "telemetry.environment must match"),
+    ("an environment with a space", {**GOOD, "telemetry": {"environment": "my env", "traces": TRACES}}, "telemetry.environment must match"),
+    ("an empty environment", {**GOOD, "telemetry": {"environment": "", "traces": TRACES}}, "telemetry.environment must match"),
+    ("an environment that is not a string", {**GOOD, "telemetry": {"environment": 3, "traces": TRACES}}, "telemetry.environment must match"),
+    ("a signal URL that is not http(s)", {**GOOD, "telemetry": {"environment": "dev", "logs": "ftp://x/y"}}, "telemetry.logs must be an http(s) URL"),
+    ("a signal URL with no host", {**GOOD, "telemetry": {"environment": "dev", "metrics": "vm.example/v1/metrics"}}, "telemetry.metrics must be an http(s) URL"),
+    ("a signal URL that is not a string", {**GOOD, "telemetry": {"environment": "dev", "traces": 7}}, "telemetry.traces must be an http(s) URL"),
+    ("an interval below 5", {**GOOD, "telemetry": {"environment": "dev", "metrics": METRICS, "metrics_interval_s": 4}}, "metrics_interval_s must be an integer from 5 to 300"),
+    ("an interval above 300", {**GOOD, "telemetry": {"environment": "dev", "metrics": METRICS, "metrics_interval_s": 301}}, "metrics_interval_s must be an integer from 5 to 300"),
+    ("an interval that is a bool", {**GOOD, "telemetry": {"environment": "dev", "metrics": METRICS, "metrics_interval_s": True}}, "metrics_interval_s must be an integer from 5 to 300"),
+    ("an interval that is a float", {**GOOD, "telemetry": {"environment": "dev", "metrics": METRICS, "metrics_interval_s": 15.5}}, "metrics_interval_s must be an integer from 5 to 300"),
+    ("an unknown key in telemetry", {**GOOD, "telemetry": {"environment": "dev", "traces": TRACES, "token": "x"}}, "telemetry: unknown keys ['token']"),
+    ("runs not an object", {**GOOD, "runs": 30}, "'runs' must be an object"),
+    ("an unknown key in runs", {**GOOD, "runs": {"keep_days": 3}}, "runs: unknown keys ['keep_days']"),
+    ("archive_after_days of 0", {**GOOD, "runs": {"archive_after_days": 0}}, "runs.archive_after_days must be an integer of 1 or more"),
+    ("archive_after_days negative", {**GOOD, "runs": {"archive_after_days": -5}}, "runs.archive_after_days must be an integer of 1 or more"),
+    ("archive_after_days a bool", {**GOOD, "runs": {"archive_after_days": True}}, "runs.archive_after_days must be an integer of 1 or more"),
+    ("archive_after_days a string", {**GOOD, "runs": {"archive_after_days": "30"}}, "runs.archive_after_days must be an integer of 1 or more"),
+    ("archive_after_days a float", {**GOOD, "runs": {"archive_after_days": 30.0}}, "runs.archive_after_days must be an integer of 1 or more"),
 ]
 for i, (name, d, why) in enumerate(CASES):
     p = write(d, f"bad{i}.json")

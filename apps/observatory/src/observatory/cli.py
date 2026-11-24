@@ -12,6 +12,7 @@ Every OBSERVATORY_* variable also reads as MINIVIEW_* (the names before the rena
     uv run observatory repair duck/apartment/explore13   # close a run whose writer died (verdict stopped)
     uv run observatory compact duck/apartment/explore13  # close a finished run whose live file was not compacted
     uv run observatory index                  # rebuild index.sqlite from the run files
+    uv run observatory archive [--days 30] [--archive P] [--robot R]   # what would leave the data folder (a dry run); --apply moves it
     uv run observatory serve                  # http://127.0.0.1:8070/  (the API under /api/v1)
     uv run observatory render-serve           # http://127.0.0.1:8071/  the render service (ADR-0017); serve finds it by OBSERVATORY_RENDER
 
@@ -37,7 +38,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from runfile import env, installation, keys, mcapio, scenefile
+from runfile import env, installation, keys, mcapio, retention, scenefile
 from observatory import query
 from runfile.catalog import Catalog, default_data
 from runfile.validate import BrokenRun
@@ -136,6 +137,51 @@ def cmd_index(args) -> None:
     cat.scan()
     idx = cat.scenes_with_runs()
     print(f"index: {len(idx['scenes'])} scenes, {sum(len(s['runs']) for s in idx['scenes'])} runs -> {cat.index.path}")
+
+
+def _human(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def cmd_archive(args) -> None:
+    """Old runs out of the data folder (runfile.retention): a dry run unless --apply; whole folders renamed, nothing deleted, never the
+    index (the Observatory drops a key whose folder is gone). Official runs, young runs, live runs and unreadable ones stay."""
+    if not args.data:
+        raise SystemExit("observatory archive: no data folder: give --data, set OBSERVATORY_DATA, or name `data` in the installation file")
+    data = Path(args.data)
+    days = args.days
+    if days is None:
+        inst = installation.load(required=False)
+        days = inst.archive_after_days if inst else installation.ARCHIVE_AFTER_DAYS
+    if days < 1:
+        raise SystemExit("observatory archive: --days must be 1 or more")
+    archive = Path(args.archive) if args.archive else retention.default_archive(data)
+    why = retention.refusal(data, archive)
+    if why:
+        raise SystemExit(f"observatory archive: refused: {why}")
+    items = retention.plan(data, archive, days, args.robot)
+    print(f"{'key':<44} {'age':>8} {'official':>8} {'size':>10}  decision")
+    for it in items:
+        age = "?" if it.age_days is None else f"{it.age_days:.1f} d"
+        off = "?" if it.official is None else ("yes" if it.official else "no")
+        print(f"{it.key:<44} {age:>8} {off:>8} {_human(it.size):>10}  {it.action}: {it.reason}")
+    go = [i for i in items if i.action == "archive"]
+    refused = [i for i in items if i.action == "refuse"]
+    print(f"{len(go)} of {len(items)} runs to archive ({_human(sum(i.size for i in go))}) after {days} days, into {archive}")
+    print("left behind: rendered videos and screenshots (in the state folder) are not moved")
+    if not args.apply:
+        print("dry run: nothing moved; add --apply to move them")
+        raise SystemExit(1 if refused else 0)
+    moved, failed = retention.apply(items, data, archive, days)
+    for m in moved:
+        print(f"moved {m['key']} -> {m['to']}")
+    for key, why in failed:
+        print(f"not moved {key}: {why}", file=sys.stderr)
+    print(f"archived {len(moved)} runs; log: {archive / retention.LOG}")
+    raise SystemExit(1 if failed or refused else 0)
 
 
 def cmd_scenes(args) -> None:
@@ -427,6 +473,13 @@ def main() -> None:
     p.set_defaults(fn=cmd_compact)
     p = sub.add_parser("index", help="rebuild index.sqlite from the run files")
     p.set_defaults(fn=cmd_index)
+    p = sub.add_parser("archive", help="move old runs out of the data folder, whole (a dry run unless --apply); official, young and live runs stay")
+    p.add_argument("--days", type=int, help="runs younger than this stay (default: the installation file's runs.archive_after_days, else 30)")
+    p.add_argument("--data", default=argparse.SUPPRESS, help="the data folder (default: the global --data)")
+    p.add_argument("--archive", help="where the runs go (default: <data>-archive, beside the data folder)")
+    p.add_argument("--robot", help="only this robot's runs")
+    p.add_argument("--apply", action="store_true", help="do it; without it nothing is moved")
+    p.set_defaults(fn=cmd_archive)
     p = sub.add_parser("scenes", help="the scenes and their runs")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_scenes)

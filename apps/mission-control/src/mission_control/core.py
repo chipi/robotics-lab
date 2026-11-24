@@ -486,7 +486,8 @@ class MissionControl:
             return self.get_run(run_id)
         seed = self.sites.seed(site_id) if site_id is not None else {"objects": [], "areas": []}
         if site_id is not None and (rt.status or {}).get("pose") and caps.get("localisation", {}).get("how") == "dock":
-            self.sites.set_dock_if_unset(site_id, {**(start_pose and {**start_pose, "frame": "site"} or rt.status["pose"]), "robot": rt.cfg.id})
+            dock = {**start_pose, "frame": "site", "set_from": "placed_start"} if start_pose else {**rt.status["pose"], "set_from": "robot_pose"}
+            self.sites.set_dock_if_unset(site_id, {**dock, "robot": rt.cfg.id})
         rt.active = ActiveRun(run_id, goal, site_id)
         spec = {"kind": goal["kind"], "params": params, "budget": goal.get("budget"),
                 "conditions": {"done_when": goal["done_when"], "guardrails": merged}, "seed": seed,
@@ -538,7 +539,7 @@ class MissionControl:
                 " AND site_id IS ? AND ended_at >= ? AND share IS NULL ORDER BY ended_at DESC, id DESC",
                 (*twins, site_id, self.wall() - goals.REHEARSAL_MAX_AGE_S))
             found = next((r for r in rows if goals.version(loads(r["goal"])) == version), None)
-        return {"flagged": bool(goal.get("sim_first")), "state": "rehearsed" if found else "not_rehearsed",
+        return {"flagged": goal.get("sim_first", True), "state": "rehearsed" if found else "not_rehearsed",
                 "run": found["id"] if found else None, "robot": found["robot"] if found else None, "goal_version": version,
                 "rehearse_on": twins[0] if twins else None}
 

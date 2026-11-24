@@ -13,6 +13,9 @@ A robot whose software runs beside a connector over its own link (the NXT behind
 runs it: one of its registration's `placements`) and `connections`, the address of each connector ("nxt-web": a URL), so Mission
 Control never assumes a localhost; a sensor in the robot's profile names the connection it comes from.
 
+`telemetry` (absent: off) names the `environment` and the OTLP/HTTP URL of each signal; `runs.archive_after_days` (default 30) is
+`observatory archive`'s age (docs/wip/TELEMETRY-RETENTION-DESIGN.md).
+
 Robots are keyed by their registered name: a `registration` file named here (runfile.registry; the operator's decision a), else
 the entry point `robotics_lab.robots` of a package installed beside the reader. Every key but `installation` is
 optional; a machine running no robot has `robots: {}`. Read from `--installation` where a command takes one, else
@@ -23,13 +26,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 VERSION = 1
 ENV = "ROBOTICS_LAB_INSTALLATION"
 DEFAULT = Path("~/.config/robotics-lab/installation.json")
-KEYS = {"installation", "data", "index", "observatory", "state", "robots"}
+KEYS = {"installation", "data", "index", "observatory", "state", "robots", "telemetry", "runs"}
+TELEMETRY_KEYS = {"environment", "traces", "metrics", "logs", "metrics_interval_s"}
+SIGNALS = ("traces", "metrics", "logs")
+RUNS_KEYS = {"archive_after_days"}
+ARCHIVE_AFTER_DAYS = 30
+METRICS_INTERVAL_S = 15
 ROBOT_KEYS = {"navigator", "gate", "profile", "registration", "variant", "placement", "connections"}
 
 
@@ -59,6 +68,15 @@ class Robot:
 
 
 @dataclass(frozen=True)
+class Telemetry:
+    environment: str                      # deployment.environment.name: dev, prod, check
+    traces: str | None = None             # each signal's OTLP/HTTP (protobuf) URL, used as given; None: that signal is off
+    metrics: str | None = None
+    logs: str | None = None
+    metrics_interval_s: int = METRICS_INTERVAL_S
+
+
+@dataclass(frozen=True)
 class Installation:
     source: Path
     data: Path | None = None
@@ -66,6 +84,8 @@ class Installation:
     observatory: str | None = None
     state: Path | None = None
     robots: dict = field(default_factory=dict)          # name -> Robot
+    telemetry: Telemetry | None = None                  # None: telemetry is off
+    archive_after_days: int = ARCHIVE_AFTER_DAYS        # `observatory archive`: runs younger than this stay
 
     def robot(self, name: str) -> Robot | None:
         return self.robots.get(name)
@@ -132,8 +152,42 @@ def parse(d, source: Path) -> Installation:
                 raise bad(f"robots.{name}.connections.{cname} must be an http(s) URL, not {url!r}")
         robots[name] = Robot(name, nav, _path(gate) if gate else None, _path(prof) if prof else None,
                              _path(reg) if reg else None, variant, placement, dict(conns))
+    telemetry = _telemetry(d["telemetry"], bad) if "telemetry" in d else None
+    after = ARCHIVE_AFTER_DAYS
+    if "runs" in d:
+        runs = d["runs"]
+        if not isinstance(runs, dict):
+            raise bad("'runs' must be an object")
+        extra = set(runs) - RUNS_KEYS
+        if extra:
+            raise bad(f"runs: unknown keys {sorted(extra)} (known: {sorted(RUNS_KEYS)})")
+        after = runs.get("archive_after_days", after)
+        if not (isinstance(after, int) and not isinstance(after, bool) and after >= 1):
+            raise bad(f"runs.archive_after_days must be an integer of 1 or more, not {after!r}")
     return Installation(source, _path(d["data"]) if "data" in d else None, _path(d["index"]) if "index" in d else None,
-                        d.get("observatory"), _path(d["state"]) if "state" in d else None, robots)
+                        d.get("observatory"), _path(d["state"]) if "state" in d else None, robots, telemetry, after)
+
+
+def _telemetry(t, bad) -> Telemetry:
+    if not isinstance(t, dict):
+        raise bad("'telemetry' must be an object")
+    extra = set(t) - TELEMETRY_KEYS
+    if extra:
+        raise bad(f"telemetry: unknown keys {sorted(extra)} (known: {sorted(TELEMETRY_KEYS)})")
+    if "environment" not in t:
+        raise bad("telemetry: needs 'environment' (like dev) and at least one of 'traces', 'metrics', 'logs'; leave the block out to keep telemetry off")
+    env = t["environment"]
+    if not (isinstance(env, str) and re.fullmatch(r"[a-z0-9_-]+", env)):
+        raise bad(f"telemetry.environment must match ^[a-z0-9_-]+$, not {env!r}")
+    for k in SIGNALS:
+        if k in t and not (isinstance(t[k], str) and re.match(r"https?://[^/\s]+", t[k])):
+            raise bad(f"telemetry.{k} must be an http(s) URL, not {t[k]!r}")
+    if not any(k in t for k in SIGNALS):
+        raise bad("telemetry: needs at least one of 'traces', 'metrics', 'logs'")
+    n = t.get("metrics_interval_s", METRICS_INTERVAL_S)
+    if not (isinstance(n, int) and not isinstance(n, bool) and 5 <= n <= 300):
+        raise bad(f"telemetry.metrics_interval_s must be an integer from 5 to 300, not {n!r}")
+    return Telemetry(env, t.get("traces"), t.get("metrics"), t.get("logs"), n)
 
 
 def load(path: str | Path | None = None, required: bool = True) -> Installation | None:
