@@ -90,8 +90,8 @@ test-libs: libs-sync ## The libraries' own tests, each in its own environment (n
 	done; [ $$fail = 0 ] && echo "test-libs PASS" || { echo "test-libs FAIL"; exit 1; }
 
 test-web: ## The shared web library (libs/web, RFC-0024): one token file no app declares again, one three.js (standard library only; its pages' tests are the two apps')
-	@$(PYTHON) libs/web/tests/test_tokens.py >/tmp/robotics-lab-test_web.log 2>&1 && echo "PASS libs/web/tests/test_tokens.py" \
-	  || { cat /tmp/robotics-lab-test_web.log; echo "test-web FAIL"; exit 1; }
+	@for t in libs/web/tests/test_*.py; do $(PYTHON) $$t >/tmp/robotics-lab-test_web.log 2>&1 && echo "PASS $$t" \
+	  || { cat /tmp/robotics-lab-test_web.log; echo "test-web FAIL $$t"; exit 1; }; done
 	@echo "test-web PASS"
 
 observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, with Playwright)
@@ -132,7 +132,7 @@ OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/te
                        tests/test_kinematics.py tests/test_render_service.py tests/test_robots.py tests/test_ldraw.py \
                        tests/test_semantic.py tests/test_video_semantic.py tests/test_anomalies.py tests/test_control_proxy.py tests/test_archive.py tests/test_mcp.py
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
-                       tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py
+                       tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py tests/test_look_ui_pages.py
 
 CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py tests/test_telemetry_hook.py
 
@@ -258,7 +258,7 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/tokens.css | grep -q -- '--warn' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/vendor/three.module.js >/dev/null \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/body/body.js >/dev/null \
-	    && curl -fs -m 5 http://127.0.0.1:$$port/web/fonts/fonts.css | grep -q 'woff2' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/fonts/fonts.css | grep -q 'woff2' \
 	    && docker exec $$cid test -f /index/index.sqlite \
 	    && mounts=$$(docker inspect -f '{{range .Mounts}}{{.Destination}}={{.RW}} {{end}}' $$cid) \
 	    && echo "$$mounts" | grep -q '/data/runs=false' && echo "$$mounts" | grep -q '/data/scenes=false' && echo "$$mounts" | grep -q '/index=true' \

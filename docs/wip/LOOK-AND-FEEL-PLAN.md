@@ -17,6 +17,10 @@ Each unit's first step is to check the facts it rests on.
   back to the operator.
 - **The contact shadow under the robot ships** with the floor, no separate review.
 - **The large items are in 4.5:** panels, palette, layouts, readiness.
+- **One design system for both apps:** the same tokens, type scale, colours and components,
+  from `libs/web`, for full consistency. The one difference kept on purpose is density:
+  the Observatory compact (12 px base, 24 px controls), Mission Control regular (14 px base,
+  36 px controls, 44 to 56 px touch targets on a phone).
 
 ## Before and after, reviewed by the operator
 
@@ -69,7 +73,8 @@ uv run --frozen python ../../scripts/look_shots.py \
   Mission Control has no replay.
 - The 3D palette is copied: `build.js`'s `C` table and `setPalette`, lights in `three/app.js`,
   `views.js` and Mission Control's `bodyview.js`. `libs/web/body/body.js` owns no scene.
-- The fonts are in `apps/observatory/web/fonts/`; Mission Control cannot load them.
+- The fonts were in `apps/observatory/web/fonts/` and Mission Control could not load them;
+  U2 moved them to `libs/web/fonts/`.
 - No JS test runner: JS is tested through the Python Playwright page tests
   (`page.evaluate("import('/lib/...')")`, as `test_eye_pages.py` does). `make lint` covers no JS.
 - `/lib/` is served by both apps with no allow-list; both images copy `libs/web`.

@@ -1620,7 +1620,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   return shell;
 }
 
-// The pages link Inter and JetBrains Mono from the service (web/fonts, no CDN). A font file is fetched only when
+// The pages link Inter and JetBrains Mono from the service (libs/web/fonts at /lib/fonts, no CDN). A font file is fetched only when
 // text first uses it, so a screenshot taken at once used to show the system fallbacks; ready waits for them,
 // but never longer than 3 s (offline, the system fonts in the --ui and --mono stacks stay).
 async function fontsReady() {

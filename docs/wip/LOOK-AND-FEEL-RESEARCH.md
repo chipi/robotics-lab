@@ -34,7 +34,8 @@ staging stack (Observatory on 127.0.0.1:8070, Mission Control on 127.0.0.1:8060)
   media-query block drift apart, or if an app declares a token itself.
 - Observatory pages: `apps/observatory/web/three/index.html` (viewer, scenes, runs),
   `three/watch.html` (watch page), `web/deck/` and `web/proto/`. Styles in
-  `apps/observatory/web/shell/shell.css` (460 lines). Fonts in `web/fonts/fonts.css`.
+  `apps/observatory/web/shell/shell.css` (460 lines). Fonts in `libs/web/fonts/fonts.css`
+  (were `web/fonts/` before U2).
 - Mission Control: `apps/mission-control/src/mission_control/web/` with `index.html`, `style.css`
   (321 lines), `app.js`, `bodyview.js`, `settings.js`.
 - Shared 3D body: `libs/web/body/body.js` and `robot.js`. Three.js is vendored in `libs/web/vendor`.
@@ -72,7 +73,8 @@ staging stack (Observatory on 127.0.0.1:8070, Mission Control on 127.0.0.1:8060)
 1. Base type size: Observatory body is 12 px / 1.35 (`shell.css` line 8); Mission Control body is
    14 px / 1.4 (`style.css` line 8). Same operator, same origin (the Observatory proxies
    `/control/`), two densities.
-2. Fonts: Observatory loads `../fonts/fonts.css` (Inter and JetBrains Mono as woff2).
+2. Fonts: Observatory loads `/lib/fonts/fonts.css` (was `../fonts/fonts.css` before U2)
+   (Inter and JetBrains Mono as woff2).
    Mission Control's `index.html` loads only `/lib/tokens.css` and `web/style.css`. Its `--ui`
    stack therefore falls back to the system font unless Inter is installed on the viewer's
    machine. Same tokens, different faces. (From the HTML; not confirmed in a browser.)

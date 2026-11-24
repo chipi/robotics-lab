@@ -136,6 +136,12 @@ with sync_playwright() as p:
                 check_stop(name, view)
                 close_drawer()
 
+    open_page()
+    loaded = page.evaluate("document.fonts.load('400 14px Inter').then(l => l.length)")
+    check("the page loads Inter from the shared /lib/fonts, not a system fallback", loaded > 0, loaded)
+    family = page.evaluate("getComputedStyle(document.body).fontFamily")
+    check("the body font-family starts with Inter", family.startswith("Inter"), family)
+
     check("no script error and no console error in the whole session (a 4xx the page was told about is not one)", [e for e in errors if "status of 4" not in e] == [], errors)
     browser.close()
 

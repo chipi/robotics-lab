@@ -330,7 +330,7 @@ def smoke(s: dict, browser: bool = True, extra: list | None = None, one_origin: 
           st == 200 and isinstance(t, dict) and "required" in t and (expect_scope is None or seen == expect_scope),
           t if st != 200 else ("" if seen == expect_scope or expect_scope is None else f"asked {expect_scope}, the server says {seen}"))
     for base, who in ((viewer, "the Observatory"), (control, "Mission Control")):
-        for path, what in (("tokens.css", "the tokens"), ("vendor/three.module.js", "three.js"), ("body/body.js", "the robot body")):
+        for path, what in (("tokens.css", "the tokens"), ("fonts/fonts.css", "the fonts"), ("vendor/three.module.js", "three.js"), ("body/body.js", "the robot body")):
             st, _ = _get(f"{base}/lib/{path}")
             check(f"/lib/{path} ({what}) is served by {who}", st == 200, st)
     if browser:

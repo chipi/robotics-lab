@@ -362,7 +362,7 @@ only while the run is
 live. `#exportBtn` ("Export video") is enabled when the render service lists an available engine
 for the run's robot (its title says why when not); it opens a panel (engine, from, to, size, Start;
 then the job's status, a `<video>` and a download link). Fonts (Inter, JetBrains Mono; OFL, licences
-in `web/fonts/`) are served by the service: no request leaves the machine.
+in `libs/web/fonts/`) are served by the service: no request leaves the machine.
 
 **The run store** (`web/shell/runstore.js`, shared by both renderers): the run's summary; then the
 window of ticks

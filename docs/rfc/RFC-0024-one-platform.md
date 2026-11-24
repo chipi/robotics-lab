@@ -90,7 +90,7 @@ the runs: `/api/v1/scenes`, `/runs`, `/robots` (descriptions and mesh URLs), `/r
 | --- | --- | --- |
 | Run format, keys, paths | `libs/runfile` | |
 | Design tokens (colours, light and dark, fonts) | the same names and values | copied: Mission Control's `style.css` says it takes them from `shell.css`; nothing checks they agree |
-| Fonts (Inter, JetBrains Mono) | | the files are the Observatory's; Mission Control names them in CSS |
+| Fonts (Inter, JetBrains Mono) | | one folder, `libs/web/fonts/`, served at `/lib/fonts/`; both apps link it |
 | three.js, the body, the kinematics | | only the Observatory |
 | Web shell, theme switch, icons | | two shells, two sets of components |
 | Test harness | Playwright, headless Chromium | Mission Control's page tests borrow the Observatory's venv (`test-control-page`) |

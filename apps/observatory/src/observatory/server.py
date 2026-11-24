@@ -19,7 +19,7 @@
     GET /api/v1/robots                                the robots with a description, and what each has (RFC-0011 §3.4)
     GET /api/v1/robots/{robot}                        its description: links, visuals (mesh URLs), joints from the root out
         .../meshes/{file}.stl                         a mesh of the description
-    GET /web/...                                      the pages (three.js, deck.gl), the shell, the fonts
+    GET /web/...                                      the pages (three.js, deck.gl), the shell
     GET /lib/...                                      the shared web library (libs/web): the design tokens, three.js, the robot body
     GET /watch/{robot}/{scene}/{run|latest}           the watch page (RFC-0013): one run, the robot's eye, live while written
     GET /api/v1/render                                the render service's engines (OBSERVATORY_RENDER), or {"available": false, "why"}
