@@ -18,7 +18,8 @@ const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
 
-let S, M, renderer, scene, views, marker, canvas, stg, floorBtn, floorSaved = true;
+let S, M, renderer, scene, views, marker, canvas, stg, camBar, floorSaved = true, camPending = false;
+let camRun = null;
 let sceneG = null, scn = null, run = null, fr = null, RW = null, RM = null, rebuilding = false;
 const R = () => (M.frame === 'world' ? RW : RM);
 const bounds = () => scn?.bounds ?? [-4, 4, -3, 3];
@@ -59,19 +60,18 @@ function buildRunObjects() {
 }
 
 // ---- the Robot layer (RFC-0011): the robot's body from its description, its joints at the playhead, where it was --------
-let body = null, bodyFor = null, shadow = null, shadowMesh = null;
+let body = null, bodyFor = null, shadow = null;
 async function buildBody() {
   const desc = S.robot();
   if (!desc || bodyFor === desc) return;
   bodyFor = desc;
-  if (body) { scene.remove(body.root); shadow?.dispose(); shadow = shadowMesh = null; body = null; }
+  if (body) { scene.remove(body.root); shadow?.dispose(); shadow = null; body = null; }
   const b = await createBody(THREE, desc, S.api);
   if (bodyFor !== desc) return;                                   // another run's robot came meanwhile
   body = b;
   setLayers(body.root, 'body.model');
   scene.add(body.root);
   shadow = stg.contactShadow(body.root);                            // the stage's lights (made at init) shade the body; everything else is drawn flat
-  shadowMesh = scene.children.findLast((o) => o.name === 'stage.contactShadow');
   if (fr) adapter.draw();
 }
 // the trunk where the truth had it (the whole pose, ADR-0016) in the world frame of a simulated run; else at the belief's
@@ -80,7 +80,7 @@ function placeBody() {
   if (!body) return;
   const on = !!fr && !!RW && S.shown('body.model');
   body.root.visible = on;
-  shadowMesh.visible = on;
+  shadow.visible = on;
   const i = M.i, t3 = on && M.frame === 'world' ? fr.truth_3d?.[i] : null;
   // with the body shown no marker fills its cylinder (the body would sit inside a coloured haze: belief and truth are often
   // where it is); the marker it stands in for drops the outline too, keeping its heading line and dot. Hidden parts stay
@@ -125,7 +125,6 @@ const FLOOR_VIEWS = new Set(['3d', 'chase']);
 function setFloor(on) {
   M.ov.floor = !!on;
   stg.floor.visible = M.ov.floor;
-  if (floorBtn) floorBtn.setAttribute('aria-pressed', String(M.ov.floor));
 }
 function applyVis() {
   if (M.ov.floor !== floorSaved) { floorSaved = M.ov.floor; savePref({ floor: floorSaved }); }
@@ -187,6 +186,115 @@ function labelPx() {
   });
 }
 
+// ---- the 3D camera (U12): where the robot is, what to frame, the corner controls and the gizmo's clicks ------------------------------------
+// the least width (m) of the frame round the robot: a small robot is shown with its surroundings, not filling the pane
+const CONTEXT_MIN = 1.2;
+const SCENE_TOP = 1.5;                                          // m: the height the scene's frame covers (the grid's z labels end there)
+const hashTime = () => { const t = new URLSearchParams(location.hash.slice(1)).get('t'); return t !== null && Number.isFinite(+t) ? +t : null; };
+// the tick the opening camera frames: a `#t=` link opens on the moment it names
+const camTick = () => (camPending && hashTime() !== null ? S.tickAt(hashTime()) : M.i);
+
+// the robot as the 3D view draws it at tick i: its trunk's position (mid height) and heading; the body's whole orientation when the body is shown
+function robotAt(i = M.i, full = false) {
+  if (!fr || !RW) return null;
+  const h2 = (run.robot.height || 0.3) / 2;
+  // the body is where placeBody put it (the truth's pose, else the belief's), which is the one the viewer sees at the playhead
+  if (body?.root.visible && i === M.i) {
+    const p = body.root.position, q = body.root.quaternion;
+    const out = { position: [p.x, p.y, p.z + h2], yaw: new THREE.Euler().setFromQuaternion(q, 'ZYX').z };
+    if (full) out.quaternion = q.toArray();
+    return out;
+  }
+  const P = M.frame === 'world' && RW.tpose && fr.truth_3d?.[i] ? RW.tpose : R().pose;                  // the rule placeBody follows
+  if (!P) return null;
+  return { position: [P[i * 3], P[i * 3 + 1], h2], yaw: P[i * 3 + 2] };
+}
+// the robot's own box: its footprint and height, and the body's when it is drawn
+function robotBox(i = M.i) {
+  const r = robotAt(i);
+  if (!r) return null;
+  const [x, y] = r.position, rad = run.robot.radius || 0.15, h = run.robot.height || 0.3;
+  const min = [x - rad, y - rad, 0], max = [x + rad, y + rad, h];
+  if (body?.root.visible) {
+    const b = new THREE.Box3().setFromObject(body.root);
+    if (!b.isEmpty()) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], b.min.getComponent(k)); max[k] = Math.max(max[k], b.max.getComponent(k)); }
+  }
+  return { min, max };
+}
+// what Fit robot and the opening camera put in view: the robot's box with room round it (twice its width, never under CONTEXT_MIN across)
+function robotFrame(i = M.i) {
+  const b = robotBox(i);
+  if (!b) return null;
+  const half = Math.max(CONTEXT_MIN / 2, 2 * Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]));
+  const cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+  return { min: [cx - half, cy - half, 0], max: [cx + half, cy + half, Math.max(b.max[2], 0.01)] };
+}
+const sceneFrame = () => { const b = bounds(); return { min: [b[0], b[2], 0], max: [b[1], b[3], SCENE_TOP] }; };
+
+// the robot's box in the 3D camera's normalised device coordinates: the corners' extent, and how much of the view's height and area it covers
+function robotNdc() {
+  const s = views.slot3(), b = robotBox();
+  if (!s || !b) return null;
+  s.camera.updateMatrixWorld(true);
+  const lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+  for (const x of [b.min[0], b.max[0]]) for (const y of [b.min[1], b.max[1]]) for (const z of [b.min[2], b.max[2]]) {
+    const p = new THREE.Vector3(x, y, z).project(s.camera);
+    lo[0] = Math.min(lo[0], p.x); hi[0] = Math.max(hi[0], p.x); lo[1] = Math.min(lo[1], p.y); hi[1] = Math.max(hi[1], p.y);
+  }
+  const w = (hi[0] - lo[0]) / 2, h = (hi[1] - lo[1]) / 2;
+  return { min: lo, max: hi, inside: lo.every((v) => v >= -1) && hi.every((v) => v <= 1), heightFrac: h, widthFrac: w, areaFrac: w * h };
+}
+
+const CAM_VIEWS = [['iso', 'Iso'], ['top', 'Top'], ['front', 'Front'], ['side', 'Side']];
+const CAM_FOLLOW = [['off', 'Off'], ['position', 'Position'], ['heading', 'Heading'], ['pose', 'Pose']];
+const btns = (attr, list, tip) => list.map(([k, t]) => `<button type="button" data-${attr}="${k}" title="${tip(k, t)}">${t}</button>`).join('');
+const FOLLOW_TIP = { off: 'The camera stays where you put it', position: 'The camera slides with the robot, keeping your view', heading: 'Behind the robot, turning with its heading, the horizon level', pose: 'Behind the robot, tipping with it' };
+
+function syncCamBar() {
+  for (const b of camBar.querySelectorAll('[data-follow]')) b.setAttribute('aria-pressed', String(b.dataset.follow === views.follow));
+}
+// every camera action ends here: the page draws the new place, the gizmo and the buttons follow
+function camAct(fn) {
+  fn();
+  syncCamBar();
+  if (fr) adapter.draw();
+  S.viewChanged();
+}
+
+function buildCamBar(stage) {
+  camBar = document.createElement('div');
+  camBar.id = 'camCtl'; camBar.className = 'camctl'; camBar.hidden = true;
+  camBar.setAttribute('role', 'toolbar'); camBar.setAttribute('aria-label', 'Camera');
+  camBar.innerHTML = `<div class="seg sm" role="group" aria-label="View">${btns('cam', CAM_VIEWS, (k, t) => `${t} view`)}</div>
+    <div class="seg sm" role="group" aria-label="Fit"><button type="button" data-cam="fit-scene" title="Fit the whole scene">Fit scene</button><button type="button" data-cam="fit-robot" title="Fit the robot with its surroundings">Fit robot</button></div>
+    <div class="camfol"><span class="lab" id="camFolLab">Follow</span><div class="seg sm" role="group" aria-labelledby="camFolLab">${btns('follow', CAM_FOLLOW, (k) => FOLLOW_TIP[k])}</div></div>`;
+  camBar.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const v = b.dataset.cam, f = b.dataset.follow;
+    if (f) camAct(() => views.setFollow(f, robotAt(M.i, true)));
+    else if (v === 'fit-scene') camAct(() => views.fitBox(sceneFrame()));
+    else if (v === 'fit-robot') camAct(() => { const f0 = robotFrame(); if (f0) views.fitBox(f0, { keepFollow: true }); });
+    else camAct(() => views.preset(v));
+  };
+  stage.append(camBar);
+  syncCamBar();
+}
+
+// the gizmo's six axis ends (the +x, +y, +z dots it draws and the -x, -y, -z ends opposite them) are buttons: the nearest to the click, within
+// 9 of the gizmo's 56 units, wins; where two ends overlap (an axis pointing at or away from the viewer) the one facing the viewer does
+function gizmoSnap(e, el) {
+  const a = M.view === '3d' ? views.axes3d() : null;
+  if (!a) return;
+  const r = el.getBoundingClientRect(), px = ((e.clientX - r.left) / r.width) * 56, py = ((e.clientY - r.top) / r.height) * 56;
+  let best = null;
+  for (const k of ['x', 'y', 'z']) for (const sg of [1, -1]) {
+    const v = a[k], d = Math.hypot(px - (28 + sg * v[0] * 20), py - (28 - sg * v[1] * 20)), depth = sg * v[2];
+    if (d <= 9 && (!best || d < best.d - 1 || (Math.abs(d - best.d) <= 1 && depth > best.depth))) best = { name: (sg > 0 ? '+' : '-') + k, d, depth };
+  }
+  if (best) camAct(() => views.snap(best.name));
+}
+
 const adapter = {
   init(stage, shell) {
     S = shell; M = shell.M;
@@ -198,15 +306,16 @@ const adapter = {
     stg = createStage(THREE, scene, renderer, { bounds: bounds() });
     floorSaved = prefs().floor !== false;
     M.ov.floor = floorSaved;                                          // an overlay like the others: miniview.setOverlay('floor', false), the overlays menu
-    floorBtn = document.createElement('button');
-    floorBtn.id = 'floorBtn'; floorBtn.className = 'ui-btn'; floorBtn.type = 'button'; floorBtn.textContent = 'Floor'; floorBtn.title = 'Show the floor (3D and chase views)';
-    Object.assign(floorBtn.style, { position: 'absolute', top: '8px', right: '12px', zIndex: 3 });
-    floorBtn.onclick = () => { M.ov.floor = !M.ov.floor; setFloor(M.ov.floor); if (fr) adapter.draw(); };
-    floorBtn.style.display = 'none';
-    stage.append(floorBtn);
     setFloor(M.ov.floor);
     views = new Views(stage, renderer, scene, () => { if (fr && !rebuilding) adapter.draw(); S.viewChanged(); });
     marker = makeMarker(); scene.add(marker);
+    views.home3d = () => (run && fr && RW ? robotFrame(camTick()) : null);
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = new URL('../shell/camera.css', import.meta.url).href;
+    document.head.append(css);
+    buildCamBar(stage);
+    const gz = stage.querySelector('#gizmo');
+    if (gz) gz.addEventListener('click', (e) => gizmoSnap(e, gz));
     views.layerMask = (view) => {
       let m = 1;
       if (FLOOR_VIEWS.has(view)) m |= 1 << STAGE_LAYER;
@@ -234,7 +343,10 @@ const adapter = {
   },
 
   setScene(sc) { scn = sc; stg.setBounds(bounds()); buildSceneObjects(); },
-  setRun(r, f) { run = r; fr = f; buildRunObjects(); buildBody(); },
+  setRun(r, f) {
+    if (M.runId !== camRun) { camRun = M.runId; camPending = true; }           // a run opened: the camera frames its robot at the first draw; a rebuild of the same run leaves it
+    run = r; fr = f; buildRunObjects(); buildBody();
+  },
   // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
   append(range) {
     if (!RW) return;
@@ -242,12 +354,14 @@ const adapter = {
     for (const Rn of [RW, RM]) for (const [id, o] of Object.entries(Rn.obj)) setLayers(o, id);       // a new stretch of depth points joins its stream's layer
   },
   // the shell draws after a layout, so the draw views.setup() would trigger is skipped
-  setLayout(view, frame) { floorBtn.style.display = FLOOR_VIEWS.has(view) ? '' : 'none'; rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
+  setLayout(view, frame) { if (camBar) camBar.hidden = view !== '3d'; rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
 
   draw(sync = false) {
     if (!fr || !RW) return;
     RW.update(M.i, M.t, S.cfg, S.size); RM.update(M.i, M.t, S.cfg, S.size);
     applyVis(); placeMarker(); placeBody(); placeCams();
+    if (views.applyFollow(robotAt(M.i, true))) S.viewChanged();
+    camPending = false;
     views.coords = M.ov.coords;
     views.render();
     S.drawn?.();
@@ -271,7 +385,7 @@ const adapter = {
     scene.traverse((o) => { if (o.isLight) lights.push([o.type, o.intensity, '#' + o.color.getHexString()]); });
     return { floor: stg.floor.visible, grid: stg.grid.visible, lights, tokens: stg.tokens, toneMapping: renderer.toneMapping,
       views: Object.fromEntries(['top', 'front', 'back', 'left', 'right', '3d', 'eye', 'chase'].map((v) => [v, !!((views.layerMask(v) >> STAGE_LAYER) & 1)])),
-      shadow: shadowMesh ? { visible: shadowMesh.visible, pos: shadowMesh.position.toArray(), opacity: shadowMesh.material.opacity } : null };
+      shadow: shadow ? { visible: shadow.visible, pos: shadow.mesh.position.toArray(), opacity: shadow.mesh.material.opacity } : null };
   },
   // the colour the canvas has at a screen point (client pixels), read straight after a draw (before the page is composited)
   pixelAt: (cx, cy) => {
@@ -310,6 +424,21 @@ const adapter = {
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,
   project: (p) => views.project(p),
   gizmo: () => views.axes3d(),
+  // the fixed iso that sees the whole scene, which the deck page keeps as its only camera (for this repository's tests: the two pages' cameras are compared there)
+  iso: () => {
+    const home = views.home3d;
+    views.home3d = () => null;
+    views.fit();
+    views.home3d = home;
+  },
+  // the 3D camera as drawn (for this repository's tests): where it is, what it looks at, its up, the follow mode, whether a move is under way, the robot's box in NDC
+  camera: () => {
+    const s = views.slot3();
+    if (!s) return null;
+    const c = s.camera, t = s.controls.target, r = robotAt(M.i);
+    return { position: c.position.toArray(), target: t.toArray(), up: c.up.toArray(), fov: c.fov, aspect: c.aspect, follow: views.follow, moving: s.moving,
+      robot: r ? r.position : null, ndc: robotNdc(), bar: camBar ? !camBar.hidden : false };
+  },
 };
 
 createShell(adapter, { title: 'miniview - three.js', eye: true, watch: location.pathname.startsWith('/watch/') });

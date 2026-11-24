@@ -135,8 +135,11 @@ with tempfile.TemporaryDirectory() as tmp:
         shot(page, "3d")
 
         # ---- labels are readable at the default zoom: a fixed size on the screen, not in metres ---------------------------
-        px = s["labelPx"]
-        check("at the default view (11 m away) the labels, the confirmed fridge's and the detection's, are about 20 px tall", len(px) == 2 and all(18 <= v <= 22 for v in px), px)
+        # the 3D page opens on its robot (U12), with the fridge's label above the frame: a label off the screen is not drawn, so not sized; the fixed iso sees both
+        page.evaluate("window.miniview.internals.adapter.iso()")
+        page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        px = page.evaluate(sem)["labelPx"]
+        check("at the whole-scene iso (11 m away) the labels, the confirmed fridge's and the detection's, are about 20 px tall", len(px) == 2 and all(18 <= v <= 22 for v in px), px)
         call(page, "window.miniview.setView('top')")
         px_top = page.evaluate(sem)["labelPx"]
         check("in the top view (another zoom, a parallel projection) they are the same size on the screen", len(px_top) == 2 and all(18 <= v <= 22 for v in px_top), px_top)

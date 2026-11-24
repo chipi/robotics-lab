@@ -533,6 +533,9 @@ def run_page(b, base, rid, other):
     grid_clear_of_bottom("at 960 px")
     page.set_viewport_size({"width": 1600, "height": 1000})
     settle()
+    if lib == "three":                     # the three.js page opens on its robot (U12); the deck page's fixed iso is what the two are compared at
+        ev("window.miniview.internals.adapter.iso()")
+        settle()
     CAM[lib] = ev("[[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [3, 2, 0], [-3, -2, 0]].map((p) => window.miniview.internals.adapter.project(p))")
     scene = json.loads(urllib.request.urlopen(f"{base}/api/v1/scenes/apartment").read())
     big = max((b for b in scene["boxes"] if b["z0"] < 0.5), key=lambda b: b["hx"] * b["hy"])

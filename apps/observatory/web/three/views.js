@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { C, RES } from './build.js';
+import { presetPose, fitPose, followPose, snapFromGizmo, moveTo } from '/lib/stage/camera.js';
+
+// after the top (or bottom) view the camera keeps z up, tipped this far (rad) off the vertical so the orbit has a defined azimuth: 0.03 degrees, far
+// below what the eye sees, far above OrbitControls' own pole guard (1e-6)
+const POLE_TILT = 5e-4;
+const Z_UP = [0, 0, 1];
 
 const ZR = [-0.7, 1.8];
 // dir: where the camera sits (looking at the origin); hAxis/vAxis: what runs right / up on the screen
@@ -75,13 +81,14 @@ function buildFrame(name, bounds) {
 
 export class Views {
   constructor(host, renderer, scene, onChange) {
+    // home3d() -> a box { min, max } the 3D view opens on (null: the fixed iso), set by the page once it knows the robot; follow: off|position|heading|pose
     Object.assign(this, { host, renderer, scene, onChange, slots: [], bounds: [-4, 4, -3, 3], frameName: 'world', coords: true,
-      layerMask: () => ~0, onPick: () => {} });
+      layerMask: () => ~0, onPick: () => {}, home3d: () => null, follow: 'off' });
   }
 
   setup(layout, bounds, frameName) {
     this.bounds = bounds; this.frameName = frameName; this.layout = layout;
-    for (const s of this.slots) { s.controls.dispose(); s.el.remove(); this.scene.remove(s.frame); }
+    for (const s of this.slots) { s.cancel?.(); s.controls.dispose(); s.el.remove(); this.scene.remove(s.frame); }
     const list = LAYOUTS[layout] || [[layout, [0, 0, 1, 1]]];
     this.slots = list.map(([name, rect]) => this.makeSlot(name, rect));
     this.resize();
@@ -104,14 +111,20 @@ export class Views {
     const camera = is3 ? new THREE.PerspectiveCamera(PERSP[name], 1, name === '3d' ? 0.1 : 0.02, 100) : new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
     camera.up.set(...(is3 ? [0, 0, 1] : VIEWS[name].up));
     const controls = new OrbitControls(camera, el);
-    controls.addEventListener('change', () => this.quiet || this.onChange());
+    let slot = null;
+    controls.addEventListener('change', () => {
+      if (this.quiet) return;
+      if (slot && !slot.moving) slot.offset = camera.position.clone().sub(controls.target).toArray();       // the orbit the viewer chose: position-follow keeps it
+      this.onChange();
+    });
     if (name === 'eye' || name === 'chase') controls.enabled = false;
+    if (name === '3d') controls.enabled = this.follow === 'off' || this.follow === 'position';
     if (!is3) {
       controls.enableRotate = false; controls.screenSpacePanning = true; controls.zoomToCursor = true;
       controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     }
     let down = null;
-    el.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+    el.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; slot?.cancel?.(); });     // a hand on the view stops a camera move
     el.addEventListener('pointerup', (e) => {
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
       const r = el.getBoundingClientRect();
@@ -119,7 +132,106 @@ export class Views {
     });
     const frame = buildFrame(name, this.bounds);
     this.scene.add(frame);
-    return { name, rect, el, lr, camera, controls, frame, is3 };
+    slot = { name, rect, el, lr, camera, controls, frame, is3, moving: false, cancel: null, offset: null };
+    return slot;
+  }
+
+  slot3() { return this.slots.find((q) => q.name === '3d') ?? null; }
+
+  // ---- the 3D camera (U12): presets, fit, follow. Poses come from /lib/stage/camera.js; this is the only place that moves the camera ----
+  // move the 3D camera to a pose: tweened over --dur-base (at once under reduced motion). A pose that is not z-up (the top view) ends z-up, see level()
+  go(s, pose) {
+    s.cancel?.();
+    s.moving = true;
+    const done = () => {
+      s.moving = false; s.cancel = null;
+      if (pose.up && pose.up[2] < 0.999) this.level(s);
+      s.offset = s.camera.position.clone().sub(s.controls.target).toArray();
+      this.onChange();
+    };
+    const stop = moveTo(s.camera, s.controls, pose, { onDone: done });
+    if (s.moving) s.cancel = () => { stop(); s.moving = false; s.cancel = null; };       // under reduced motion done() has run already
+  }
+
+  // a horizon tipped by the 'heading' and 'pose' follow ends when the viewer asks for a view of their own
+  levelTipped() { if (this.follow === 'heading' || this.follow === 'pose') this.setFollow('off'); }
+
+  // z up again, from where the camera is: a view straight down (or up) is tipped POLE_TILT off the vertical toward the side its screen-up needs, so
+  // it looks the same and orbiting continues around z (drag turns the view about the vertical, tips it up and down) instead of about the page's y
+  level(s) {
+    const t = s.controls.target.toArray(), p = s.camera.position.toArray(), off = p.map((v, i) => v - t[i]), d = Math.hypot(...off);
+    if (Math.abs(off[2]) / d > 1 - 1e-6) {
+      const sgn = Math.sign(off[2]);
+      const o = [0, -sgn * Math.sin(POLE_TILT) * d, sgn * Math.cos(POLE_TILT) * d];
+      this.place3(s, { position: t.map((v, i) => v + o[i]), target: t, up: Z_UP });
+    } else this.place3(s, { position: p, target: t, up: Z_UP });
+  }
+
+  // a pose now, without the page redrawing for it
+  place3(s, pose) {
+    const q = this.quiet;
+    this.quiet = true;
+    moveTo(s.camera, s.controls, pose, { ms: 0 });
+    this.quiet = q;
+  }
+
+  look(s) {
+    const off = s.camera.position.clone().sub(s.controls.target);
+    return off.length() > 1e-9 ? off.normalize().toArray() : [-5.5, -7.5, 6.5].map((v) => v / Math.hypot(-5.5, -7.5, 6.5));
+  }
+
+  // the 3D camera on a preset's axis, from where the target and the distance are now
+  preset(name) {
+    const s = this.slot3();
+    if (!s) return false;
+    this.levelTipped();
+    this.go(s, presetPose(name, { target: s.controls.target.toArray(), distance: s.camera.position.distanceTo(s.controls.target) }));
+    return true;
+  }
+
+  // a click on the axes gizmo: '+x', '-y', '+z', ...
+  snap(axis) {
+    const s = this.slot3();
+    if (!s) return false;
+    this.levelTipped();
+    this.go(s, snapFromGizmo(axis, { target: s.controls.target.toArray(), distance: s.camera.position.distanceTo(s.controls.target) }));
+    return true;
+  }
+
+  // the whole box in view, looking the way the camera looks now
+  fitBox(box, { keepFollow = false } = {}) {
+    const s = this.slot3();
+    if (!s) return false;
+    if (keepFollow) this.levelTipped(); else this.setFollow('off');
+    this.go(s, fitPose(s.camera, box, { dir: this.look(s) }));
+    return true;
+  }
+
+  // follow: 'off', or 'position' (the camera slides with the robot, keeping its offset and its orientation), 'heading' (behind it, horizon level),
+  // 'pose' (behind it, tipping with it). robot: { position, yaw, quaternion? } now. Orbiting works for off and position only
+  setFollow(mode, robot) {
+    const prev = this.follow, s = this.slot3();
+    this.follow = mode;
+    if (!s) return;
+    s.controls.enabled = mode === 'off' || mode === 'position';
+    if (mode === prev) return;
+    if (mode === 'off') { if (prev === 'heading' || prev === 'pose') { s.cancel?.(); this.level(s); } return; }
+    if (!robot) return;
+    s.cancel?.();
+    if (mode === 'position') {
+      const target = robot.position;
+      s.offset = s.camera.position.toArray().map((v, i) => v - target[i]);
+      this.go(s, followPose('position', robot, { offset: s.offset }));
+    } else this.go(s, followPose(mode, robot));
+  }
+
+  // each draw: the camera goes where the follow mode says (not while it is moving to its first place)
+  applyFollow(robot) {
+    const s = this.slot3();
+    if (!s || this.follow === 'off' || s.moving || !robot) return false;
+    if (!s.offset) s.offset = s.camera.position.clone().sub(s.controls.target).toArray();
+    this.place3(s, followPose(this.follow, robot, { offset: s.offset }));
+    return true;
   }
 
   resetCamera(s) {
@@ -129,10 +241,18 @@ export class Views {
       return;
     }
     if (s.is3) {
+      cam.aspect = s.w / s.h; cam.updateProjectionMatrix();
+      s.cancel?.();
+      const home = this.home3d();
+      if (home) {                                                               // the page knows the robot: open on it, with its surroundings
+        this.place3(s, fitPose(cam, home, { preset: 'iso' }));
+        s.offset = cam.position.clone().sub(s.controls.target).toArray();
+        return;
+      }
       // 9.4 m of height fill the pane from 11.35 m away; 11 m leave the grid numbers clear of the legend and the readout
       const k = 11 / 9.4;
-      cam.position.set(-5.5 * k, -7.5 * k, 6.5 * k); s.controls.target.set(0, 0, 0);
-      cam.aspect = s.w / s.h; cam.updateProjectionMatrix();
+      this.place3(s, { position: [-5.5 * k, -7.5 * k, 6.5 * k], target: [0, 0, 0], up: Z_UP });
+      s.offset = null;
     } else {
       const [h0, h1] = rng(b, v.h), [v0, v1] = rng(b, v.v), m = 0.7;
       const cx = (h0 + h1) / 2, cy = (v0 + v1) / 2;

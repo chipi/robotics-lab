@@ -11,6 +11,7 @@ colour literal (the one allowed: the white of the anomaly pins' texture mask). N
 Run: cd apps/observatory && uv run python tests/test_look_3d_pages.py"""
 
 import atexit
+import math
 import os
 import re
 import shutil
@@ -162,17 +163,31 @@ MOVE = """async () => {
   C.moveTo(cam, ctl, pose, { ms: 400, onDone: () => done++ });
   out.reduced = { pos: cam.position.toArray(), target: ctl.target.toArray(), done, want: pose.position };
   M.setMotion('full');
+  // a clock the test drives: requestAnimationFrame queues and performance.now answers `clock`, so the tween's progress depends on the frames
+  // the test delivers and not on how long the machine took to deliver them
+  const realRaf = window.requestAnimationFrame, realCancel = window.cancelAnimationFrame;
+  let clock = 0, nextId = 1; const queue = new Map();
+  window.requestAnimationFrame = (fn) => { queue.set(nextId, fn); return nextId++; };
+  window.cancelAnimationFrame = (id) => { queue.delete(id); };
+  performance.now = () => clock;
+  const frame = (at) => { clock = at; const run = [...queue.values()]; queue.clear(); for (const fn of run) fn(at); };
+  const want = new THREE.Vector3(...pose.position);
   [cam, ctl] = mk(); done = 0;
-  const t0 = performance.now();
   const cancel = C.moveTo(cam, ctl, pose, { ms: 120, onDone: () => done++ });
   out.fullSync = { done, moved: cam.position.distanceTo(new THREE.Vector3(5, 5, 5)) };
-  await new Promise((r) => setTimeout(r, 400));
-  out.full = { done, pos: cam.position.toArray(), want: pose.position, took: performance.now() - t0 };
+  const dist = [cam.position.distanceTo(want)], doneAt = [done];
+  for (const at of [30, 60, 90, 119]) { frame(at); dist.push(cam.position.distanceTo(want)); doneAt.push(done); }
+  frame(120); dist.push(cam.position.distanceTo(want)); doneAt.push(done);
+  frame(500);                                                       // nothing is queued any more: no second onDone, no move
+  out.full = { done, pos: cam.position.toArray(), want: pose.position, dist, doneAt, queued: queue.size };
   [cam, ctl] = mk(); done = 0;
   const stop = C.moveTo(cam, ctl, pose, { ms: 120, onDone: () => done++ });
+  frame(530); frame(560);                                           // started at 500: under way, half of it done
+  const mid = cam.position.toArray();
   stop();
-  await new Promise((r) => setTimeout(r, 300));
-  out.cancelled = { done, pos: cam.position.toArray() };
+  frame(900); frame(1200);
+  out.cancelled = { done, pos: cam.position.toArray(), mid };
+  window.requestAnimationFrame = realRaf; window.cancelAnimationFrame = realCancel; delete performance.now;
   // the default duration is the --dur-base token: 0 under reduced motion, so a move to a pose with no ms is immediate
   M.setMotion('reduce'); [cam, ctl] = mk(); done = 0;
   C.moveTo(cam, ctl, pose, { onDone: () => done++ });
@@ -358,9 +373,14 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         m = page.evaluate(MOVE)
         check("moveTo under reduced motion completes immediately: camera and controls at the pose and onDone called once, in the same tick",
               near(m["reduced"]["pos"], m["reduced"]["want"], 1e-9) and m["reduced"]["target"] == [1, 1, 0] and m["reduced"]["done"] == 1, m["reduced"])
-        check("moveTo with motion tweens: not there yet in the same tick, there when it ends, onDone once, in about the time asked",
-              m["fullSync"]["done"] == 0 and m["fullSync"]["moved"] < 1 and m["full"]["done"] == 1 and near(m["full"]["pos"], m["full"]["want"], 1e-6), m)
-        check("moveTo's cancel stops it: no onDone, the camera has not arrived", m["cancelled"]["done"] == 0 and not near(m["cancelled"]["pos"], m["full"]["want"], 1e-3), m["cancelled"])
+        d = m["full"]["dist"]
+        check("moveTo with motion tweens (on a clock the test drives): not there in the same tick, closer at each frame, onDone only at the frame that reaches 120 ms and then once, "
+              "at the pose, with no frame left queued",
+              m["fullSync"]["done"] == 0 and m["fullSync"]["moved"] < 1 and all(a > b for a, b in zip(d, d[1:])) and d[1] > 0.1 and d[-1] < 1e-6
+              and m["full"]["doneAt"] == [0, 0, 0, 0, 0, 1] and m["full"]["done"] == 1 and m["full"]["queued"] == 0 and near(m["full"]["pos"], m["full"]["want"], 1e-6), m["full"])
+        check("moveTo's cancel stops it where it is: no onDone, the camera is under way (it moved) and has not arrived, and stays put",
+              m["cancelled"]["done"] == 0 and not near(m["cancelled"]["mid"], [5, 5, 5], 1e-3) and not near(m["cancelled"]["pos"], m["full"]["want"], 1e-3)
+              and near(m["cancelled"]["pos"], m["cancelled"]["mid"], 1e-9), m["cancelled"])
         check("moveTo with no ms takes --dur-base, which reduced motion makes 0 (immediate)", m["token"] == {"done": 1, "dur": 0} and m["tokenFull"] == 160, m)
 
         # stage
@@ -430,8 +450,8 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         A = "window.miniview.internals.adapter"
         tok = lambda n: pg.evaluate(f"getComputedStyle(document.documentElement).getPropertyValue('--scene-{n}').trim()")  # noqa: E731
         rgb = lambda h: [int(h[i:i + 2], 16) for i in (1, 3, 5)]  # noqa: E731
-        # a point of the floor away from the robot, the grid's lines and the axis numbers; its pixel in the first pane
-        floor_px = lambda: pg.evaluate(f"(() => {{ const q = window.miniview.internals.adapter.project([1.6, -1.6, 0]); return {A}.pixelAt(q[0], q[1]); }})()")  # noqa: E731
+        # a point of the floor 0.4 m from the robot (the opening camera frames the robot closely), off the grid lines; its pixel in the first pane
+        floor_px = lambda: pg.evaluate(f"(() => {{ const q = window.miniview.internals.adapter.project([0.3, -0.3, 0]); return {A}.pixelAt(q[0], q[1]); }})()")  # noqa: E731
 
         open_run("bare/room/r2", "3d")
         st = pg.evaluate(f"{A}.stage()")
@@ -465,16 +485,23 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         pg.wait_for_function("document.documentElement.dataset.theme === 'dark'")
 
         # the floor overlay: on by default, off hides the floor in the 3D view, remembered across a reload
-        check("page: the floor overlay is on by default and the toggle is in the 3D corner (not in the top layout)",
-              pg.evaluate("window.miniview.config().overlays.floor") is True and pg.evaluate("getComputedStyle(document.getElementById('floorBtn')).display") != "none")
-        pg.click("#floorBtn")
+        def floor_row():
+            pg.click("#ovBtn")
+            pg.click("input[data-ov=floor]")
+
+        pg.click("#ovBtn")
+        check("page: the floor overlay is on by default; its row is in the Overlays popover, checked, and the 3D corner no longer has a Floor button",
+              pg.evaluate("window.miniview.config().overlays.floor") is True and pg.evaluate("document.querySelector('input[data-ov=floor]')?.checked") is True
+              and pg.evaluate("document.getElementById('floorBtn')") is None)
+        pg.click("input[data-ov=floor]")
         off_px = floor_px()
-        check("page: the floor toggle hides the floor (the pixel is --scene-bg), the grid and the rest stay", pg.evaluate(f"{A}.stage()")["floor"] is False and close(off_px, rgb(tok("bg")))
+        check("page: unticking the Floor row hides the floor (the pixel is --scene-bg), the grid and the rest stay", pg.evaluate(f"{A}.stage()")["floor"] is False and close(off_px, rgb(tok("bg")))
               and pg.evaluate("window.miniview.config().overlays.floor") is False, off_px)
         pg.reload()
         pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
-        check("page: the choice is remembered after a reload", pg.evaluate("window.miniview.config().overlays.floor") is False)
-        pg.click("#floorBtn")
+        check("page: the choice is remembered after a reload, and the row is unticked", pg.evaluate("window.miniview.config().overlays.floor") is False
+              and pg.evaluate("(document.getElementById('ovBtn').click(), document.querySelector('input[data-ov=floor]').checked)") is False)
+        floor_row()
         check("page: setOverlay('floor', ...) and the toggle are the same switch", pg.evaluate("window.miniview.config().overlays.floor") is True
               and pg.evaluate("window.miniview.setOverlay('floor', false)") is False and pg.evaluate(f"{A}.stage()")["floor"] is False)
         pg.evaluate("window.miniview.setOverlay('floor', true)")
@@ -496,6 +523,143 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
           for (const [dx, dy] of [[0.075, 0], [-0.075, 0], [0, 0.075], [0, -0.075]]) {{ const q = window.miniview.internals.adapter.project([b[0] + dx, b[1] + dy, 0]); out.push({A}.pixelAt(q[0], q[1])); }}
           return out; }})()""")
         check("page: the shadow darkens the floor around the robot (a pixel beside the body is darker than the floor)", min(sum(q) for q in px) < sum(rgb(tok("floor"))) - 6, (px, tok("floor")))
+
+        # the camera (U12). The arm has a body; the run is 3 s long and the robot goes along +x, 0.2 m a second
+        def cam():
+            return pg.evaluate(f"{A}.camera()")
+
+        def settle():
+            pg.wait_for_function(f"{A}.camera().moving === false")
+
+        def look(c):
+            o = [p - t for p, t in zip(c["position"], c["target"])]
+            n = math.hypot(*o)
+            return [v / n for v in o]
+
+        def at_time(t):
+            pg.evaluate("window.__ready = false")
+            pg.evaluate(f"window.miniview.setTime({t})")
+            pg.wait_for_function("window.__ready === true")
+            return cam()
+
+        near3 = lambda a, b, e: all(abs(x - y) <= e for x, y in zip(a, b))  # noqa: E731
+        AXIS = {"iso": [-5.5, -7.5, 6.5], "top": [0, 0, 1], "front": [1, 0, 0], "side": [0, -1, 0]}
+        AXIS["iso"] = [v / math.hypot(*AXIS["iso"]) for v in AXIS["iso"]]
+        # the robot's box (0.16 x 0.16 x 0.27 m here) must cover at least this much of the view's height when a run opens: 6 % (the fixed iso gave 1.5 %)
+        MIN_HEIGHT = 0.06
+
+        pg.evaluate("import('/lib/motion.js').then((m) => m.setMotion('auto'))")
+        open_run("arm/room/r1", "3d")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        c = cam()
+        check("camera: the corner has the controls (Iso, Top, Front, Side, Fit scene, Fit robot, Follow Off, Position, Heading, Pose) and the follow control starts on Off",
+              c["bar"] and pg.evaluate("[...document.querySelectorAll('#camCtl button')].map((b) => b.textContent)")
+              == ["Iso", "Top", "Front", "Side", "Fit scene", "Fit robot", "Off", "Position", "Heading", "Pose"] and c["follow"] == "off"
+              and pg.evaluate("document.querySelector('#camCtl [data-follow=off]').getAttribute('aria-pressed')") == "true", c)
+        n0 = c["ndc"]
+        check("camera: on opening a run the robot's box is inside the view and covers at least %.0f %% of its height (here %.0f %%, %.1f %% of the area)" % (MIN_HEIGHT * 100, n0["heightFrac"] * 100, n0["areaFrac"] * 100),
+              n0["inside"] and n0["heightFrac"] >= MIN_HEIGHT, n0)
+
+        # a link to a moment opens on the robot there (t = 2 s: x about 0.4), and the playhead is that moment
+        pg.goto(f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2")
+        pg.reload()
+        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        pg.wait_for_function("window.miniview.state().t > 1.9")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        c = cam()
+        check("camera: #t=2 opens at 2 s and the camera frames the robot where it is then (target within 0.05 m of it, box inside the view, same minimum size)",
+              abs(pg.evaluate("window.miniview.state().t") - 2.0) < 0.11 and near3(c["target"][:2], c["robot"][:2], 0.05) and c["robot"][0] > 0.3 and c["ndc"]["inside"] and c["ndc"]["heightFrac"] >= MIN_HEIGHT,
+              (c["target"], c["robot"], c["ndc"], pg.evaluate("window.miniview.state().t")))
+
+        for name, axis in AXIS.items():
+            pg.click(f"#camCtl [data-cam={name}]")
+            settle()
+            c = cam()
+            check(f"camera: the {name} button puts the camera on its axis (within 1e-3) and the orbit's up is z afterwards", near3(look(c), axis, 1e-3) and c["up"] == [0, 0, 1], (look(c), axis, c["up"]))
+        pg.click("#camCtl [data-cam=top]")
+        settle()
+        top = cam()
+        box = pg.evaluate("(() => { const r = document.getElementById('stage').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height * 0.6]; })()")
+        pg.mouse.move(*box)
+        pg.mouse.down()
+        pg.mouse.move(box[0], box[1] - 120, steps=6)
+        pg.mouse.up()
+        o = cam()
+        tilt = math.acos(max(-1, min(1, look(o)[2])))
+        check("camera: after Top, orbiting is z-up: a vertical drag tips the camera off the vertical (%.0f degrees), up stays z, the target stays" % math.degrees(tilt),
+              tilt > 0.15 and o["up"] == [0, 0, 1] and near3(o["target"], top["target"], 1e-6), (tilt, o["up"]))
+
+        pg.click("#camCtl [data-cam=fit-scene]")
+        settle()
+        scene_c = cam()
+        pg.click("#camCtl [data-cam=fit-robot]")
+        settle()
+        c = cam()
+        d_scene = math.dist(scene_c["position"], scene_c["target"])
+        d_robot = math.dist(c["position"], c["target"])
+        check("camera: Fit robot puts the robot's box inside the view (NDC within -1..1) at its minimum size, close in (%.1f m) where Fit scene (%.1f m) is far; the view direction stays"
+              % (d_robot, d_scene), c["ndc"]["inside"] and c["ndc"]["heightFrac"] >= MIN_HEIGHT and d_robot < d_scene / 2 and near3(look(c), look(scene_c), 1e-6)
+              and near3(c["target"][:2], c["robot"][:2], 0.2), (c["ndc"], d_robot, d_scene))
+
+        # the axes gizmo is a button: a click on an axis end snaps to that preset
+        def gizmo_click(end):
+            a = pg.evaluate(f"{A}.gizmo()")
+            k, s = end[1], 1 if end[0] == "+" else -1
+            x, y = 28 + s * a[k][0] * 20, 28 - s * a[k][1] * 20
+            r = pg.evaluate("(() => { const r = document.getElementById('gizmo').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
+            pg.mouse.click(r[0] + x * r[2] / 56, r[1] + y * r[3] / 56)
+            settle()
+            return cam()
+        pg.click("#camCtl [data-cam=iso]")
+        settle()
+        g = gizmo_click("+x")
+        check("camera: a click on the gizmo's +x end snaps to the +x axis (the front view), within 1e-3", near3(look(g), [1, 0, 0], 1e-3), look(g))
+        g = gizmo_click("+z")
+        check("camera: a click on the +z end snaps to the top view", near3(look(g), [0, 0, 1], 1e-3) and g["up"] == [0, 0, 1], (look(g), g["up"]))
+        pg.click("#camCtl [data-cam=iso]")
+        settle()
+        g = gizmo_click("-y")
+        check("camera: a click on the opposite end (-y) snaps to the -y side (the side view looks from -y, so +y is the end seen from behind)", near3(look(g), [0, -1, 0], 1e-3) or near3(look(g), [0, 1, 0], 1e-3), look(g))
+
+        # follow: Position keeps the camera's offset from the robot while the playhead moves
+        pg.click("#camCtl [data-cam=iso]")
+        settle()
+        pg.click("#camCtl [data-follow=position]")
+        settle()
+        c0 = at_time(0.5)
+        off0 = [p - t for p, t in zip(c0["position"], c0["target"])]
+        c1 = at_time(2.5)
+        off1 = [p - t for p, t in zip(c1["position"], c1["target"])]
+        moved = math.dist(c0["robot"], c1["robot"])
+        check("camera: follow Position keeps the offset (within 1e-6) while the playhead moves the robot %.2f m, the target is the robot, the camera moved with it, and the button is pressed" % moved,
+              c1["follow"] == "position" and near3(off0, off1, 1e-6) and moved > 0.3 and near3(c1["target"], c1["robot"], 1e-6) and abs(math.dist(c0["position"], c1["position"]) - moved) < 1e-6
+              and pg.evaluate("document.querySelector('#camCtl [data-follow=position]').getAttribute('aria-pressed')") == "true", (off0, off1, moved))
+        pg.click("#camCtl [data-follow=heading]")
+        settle()
+        h0 = at_time(0.5)
+        h1 = at_time(2.5)
+        check("camera: follow Heading goes behind the robot (2.5 m back along its heading, +x here) and the horizon stays level",
+              h1["follow"] == "heading" and abs((h1["position"][0] - h1["robot"][0]) + 2.5) < 1e-6 and abs(h1["position"][1] - h1["robot"][1]) < 1e-6 and h1["up"] == [0, 0, 1]
+              and abs(h1["position"][0] - h0["position"][0] - moved) < 1e-6, (h0["position"], h1["position"], h1["robot"]))
+        pg.click("#camCtl [data-follow=pose]")
+        settle()
+        p1 = at_time(1.0)
+        check("camera: follow Pose is behind the robot too, the button shows it", p1["follow"] == "pose" and p1["position"][0] < p1["robot"][0] - 1, p1)
+        pg.click("#camCtl [data-follow=off]")
+        settle()
+        f0 = at_time(0.5)
+        f1 = at_time(2.5)
+        check("camera: follow Off leaves the camera where it is as the playhead moves, with the horizon level", f1["follow"] == "off" and near3(f0["position"], f1["position"], 1e-9) and f1["up"] == [0, 0, 1], (f0["position"], f1["position"]))
+
+        # reduced motion: the move is done in the same tick as the click
+        pg.evaluate("import('/lib/motion.js').then((m) => m.setMotion('reduce'))")
+        c = pg.evaluate(f"(() => {{ document.querySelector('#camCtl [data-cam=side]').click(); return {A}.camera(); }})()")
+        check("camera: under reduced motion a preset click has the camera at its target in the same tick (not moving, on the -y axis within 1e-3)", not c["moving"] and near3(look(c), [0, -1, 0], 1e-3), (c["moving"], look(c)))
+        c = pg.evaluate(f"(() => {{ document.querySelector('#camCtl [data-cam=fit-robot]').click(); return {A}.camera(); }})()")
+        check("camera: under reduced motion Fit robot is also at once (not moving, the robot inside the view)", not c["moving"] and c["ndc"]["inside"], (c["moving"], c["ndc"]))
+        pg.evaluate("import('/lib/motion.js').then((m) => m.setMotion('auto'))")
+        check("camera: the controls are in the 3D layout only (the top layout has none)", (go("top"), not cam())[1] and pg.evaluate("document.getElementById('camCtl').hidden") is True, "")
+        go("3d")
         check("page: no console error or warning, no failed request on the page", not console and not missing, (console[:5], missing))
 
         # no colour literal in the page's scene code: the tokens are read, not copied (the allowed: the white of the pins' texture mask)

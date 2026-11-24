@@ -183,6 +183,9 @@ export function createStage(THREE, scene, renderer, { bounds = [-4, 4, -3, 3], l
     update();
     return {
       update,
+      mesh,
+      get visible() { return mesh.visible; },
+      set visible(on) { mesh.visible = !!on; },
       dispose() { shadows.delete(entry); scene.remove(mesh); mesh.geometry.dispose(); mat.dispose(); tex.dispose(); },
     };
   }

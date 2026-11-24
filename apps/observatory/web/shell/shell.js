@@ -1458,6 +1458,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     <label class="cb"><input type="checkbox" data-ov="rel" ${M.rel.belief_truth ? 'checked' : ''}>Belief ↔ truth line</label>
     <label class="cb"><input type="checkbox" data-ov="hazards_top" ${M.ov.hazards_top ? 'checked' : ''}>Real hazards over the model</label>
     <label class="cb"><input type="checkbox" data-ov="gizmo" ${M.ov.gizmo ? 'checked' : ''}>Axis gizmo</label>
+    <label class="cb"><input type="checkbox" data-ov="floor" ${M.ov.floor ? 'checked' : ''}>Floor (3D and chase)</label>
     <label class="cb"><input type="checkbox" data-ov="legend" ${M.ov.legend ? 'checked' : ''}>Legend</label>${legendHidden() && M.run ? `<h6>Legend</h6><div class="lg" id="lgpop">${legendHtml()}</div>` : ''}`,
   (p) => p.querySelectorAll('[data-ov]').forEach((c) => (c.onchange = () => {
     if (c.dataset.ov === 'rel') setRelation('belief_truth', c.checked); else { M.ov[c.dataset.ov] = c.checked; renderChrome(); if (hasTicks()) adapter.draw(); }

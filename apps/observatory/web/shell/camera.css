@@ -1,0 +1,16 @@
+/* The 3D view's camera controls (U12): view presets, fit, follow, in the corner under the view's title bar; and the axis gizmo as a button.
+   Loaded by three/app.js beside shell.css, which it builds on (.seg is the shell's segmented control). */
+.camctl { position: absolute; left: var(--sp-3); top: 34px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  max-width: calc(100% - 92px); }
+.camctl[hidden] { display: none; }
+.camctl .camfol { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.camctl .lab { font: var(--fs-1) var(--font-mono); color: var(--text-2); }
+.camctl .seg { background: var(--veil-2); }
+.camctl .seg button:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+
+.view > svg.gizmo { pointer-events: auto; cursor: pointer; }
+
+@media (max-width: 960px) {
+  .camctl { max-width: calc(100% - 2 * var(--sp-3)); }
+  .camctl .lab { display: none; }
+}
