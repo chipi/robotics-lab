@@ -1,0 +1,9 @@
+/* The model inspector's panel (U13), in the 3D view's corner under the axis gizmo. Loaded by three/app.js beside camera.css; the list inside is
+   libs/web/body/inspector.css's. */
+.inspector { position: absolute; right: var(--sp-3); top: 100px; z-index: 4; width: 340px; max-width: calc(100% - 2 * var(--sp-3)); max-height: calc(100% - 140px);
+  display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-3); box-shadow: var(--elev-shadow); }
+.inspector[hidden] { display: none; }
+.inspector > header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--line-subtle); font: var(--fs-1) var(--font-mono); color: var(--text-2); }
+.inspector > header .icon-btn { font-size: var(--fs-3); line-height: 1; }
+.inspector .insp-host { overflow: auto; min-height: 0; }

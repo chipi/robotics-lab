@@ -2,9 +2,11 @@
 import * as THREE from 'three';
 import { createShell } from '../shell/shell.js';
 import { Views } from './views.js';
-import { buildScene, buildRun, readPalette } from './build.js';
+import { buildScene, buildRun, readPalette, C } from './build.js';
 import { createStage, STAGE_LAYER } from '/lib/stage/stage.js';
+import { createTrail } from '/lib/stage/trail.js';
 import { createBody, jointStates, tokenColors } from '/lib/body/body.js';
+import { mountInspector } from '/lib/body/inspector.js';
 import { axes as sensorAxes } from '../shell/eye.js';
 
 // One three.js layer bit per drawable stream: a camera shows a stream only when its layer is on,
@@ -60,19 +62,35 @@ function buildRunObjects() {
 }
 
 // ---- the Robot layer (RFC-0011): the robot's body from its description, its joints at the playhead, where it was --------
-let body = null, bodyFor = null, shadow = null;
+let body = null, bodyFor = null, shadow = null, ghost = null, trail = null, trailFor = null, insp = null, inspPanel = null, inspHost = null, inspOpen = false;
+const TRAIL_MAX = 600, TRAIL_Z = 0.04;                              // points kept (the newest), and the trail's height above the floor (clear of the flat tracks)
 async function buildBody() {
   const desc = S.robot();
   if (!desc || bodyFor === desc) return;
   bodyFor = desc;
-  if (body) { scene.remove(body.root); shadow?.dispose(); shadow = null; body = null; }
+  if (body) {
+    scene.remove(body.root, ghost.root); shadow?.dispose(); shadow = null; ghost.dispose(); body.dispose(); body = ghost = null;
+    insp?.dispose(); insp = null;
+  }
   const b = await createBody(THREE, desc, S.api);
   if (bodyFor !== desc) return;                                   // another run's robot came meanwhile
   body = b;
   setLayers(body.root, 'body.model');
   scene.add(body.root);
+  ghost = body.clone({ style: { mode: 'ghost', color: C.belief } });       // the belief's second opinion; on the belief's layer so a view that hides the belief hides it
+  setLayers(ghost.root, 'belief.pose');
+  ghost.root.visible = false;
+  scene.add(ghost.root);
+  insp = mountInspector(inspHost, body, { onSelect: (link) => body.highlight(link) });
   shadow = stg.contactShadow(body.root);                            // the stage's lights (made at init) shade the body; everything else is drawn flat
   if (fr) adapter.draw();
+}
+// where the belief puts the trunk at tick i (pose P: its x, y and yaw), tilted by the IMU, at the robot's standing height: [position, quaternion wxyz]
+function beliefPlace(P, i) {
+  const tl = fr.tilt?.[i];
+  const yaw = P[i * 3 + 2], pitch = tl ? (tl[0] * Math.PI) / 180 : 0, roll = tl ? (tl[1] * Math.PI) / 180 : 0;
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(roll, pitch, yaw, 'ZYX'));
+  return [[P[i * 3], P[i * 3 + 1], S.robot()?.stand_z ?? 0], [q.w, q.x, q.y, q.z]];
 }
 // the trunk where the truth had it (the whole pose, ADR-0016) in the world frame of a simulated run; else at the belief's
 // x, y and yaw (the frame being looked at), tilted by the IMU, at the robot's standing height
@@ -93,15 +111,74 @@ function placeBody() {
   }
   if (!on) return;
   if (t3 && RW.tpose) body.place([RW.tpose[i * 3], RW.tpose[i * 3 + 1], t3.z], t3.quat);
-  else {
-    const P = R().pose, tl = fr.tilt?.[i];
-    const yaw = P[i * 3 + 2], pitch = tl ? (tl[0] * Math.PI) / 180 : 0, roll = tl ? (tl[1] * Math.PI) / 180 : 0;
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(roll, pitch, yaw, 'ZYX'));
-    body.place([P[i * 3], P[i * 3 + 1], S.robot()?.stand_z ?? 0], [q.w, q.x, q.y, q.z]);
-  }
+  else body.place(...beliefPlace(R().pose, i));
   body.pose(S.joints());
   shadow.update();
   body.health(jointStates(S.anomalies(), M.t), tokenColors());       // each joint by the worst anomaly naming it at or before the playhead
+}
+
+// The body stands at the truth (world frame, a whole truth pose at this tick): only then is the belief a second opinion beside it. Without
+// the truth's whole pose the body is drawn at the belief, so a ghost would sit exactly in it.
+const bodyAtTruth = () => !!body?.root.visible && M.frame === 'world' && !!RW?.tpose && !!fr?.truth_3d?.[M.i];
+
+// the belief ghost: the same body in the belief's pose, translucent, in the belief's colour; shown while the truth body is, belief or not near it (no
+// tolerance below which it hides: the offset between them is the thing it shows, and zero is an answer)
+function placeGhost() {
+  if (!ghost) return;
+  const on = bodyAtTruth() && M.ov.ghost && S.shown('belief.pose');
+  ghost.root.visible = on;
+  if (!on) return;
+  ghost.place(...beliefPlace(RW.pose, M.i));
+  ghost.pose(S.joints());
+}
+
+// the trail: where the robot the body stands for has been, up to the playhead, the newest `TRAIL_MAX` ticks of the stretch of the run that is loaded
+function placeTrail() {
+  trail.object.visible = !!body?.root.visible && M.ov.trail;
+  if (!trail.object.visible) return;
+  const atTruth = bodyAtTruth(), P = atTruth ? RW.tpose : R().pose, i = M.i;
+  const key = atTruth ? 'truth' : 'belief';
+  if (trailFor !== key) { trail.setColors({ head: C[key], fadeTo: stg.tokens.bg }); trailFor = key; }
+  const [a] = fr.ranges.find(([x, y]) => x <= i && i < y) ?? [i];
+  const pts = [];
+  for (let k = Math.max(a, i - TRAIL_MAX + 1); k <= i; k++) pts.push([P[k * 3], P[k * 3 + 1], TRAIL_Z]);
+  trail.set(pts);
+}
+
+// x-ray: the truth body see-through, to look inside it
+function placeStyle() {
+  if (!body) return;
+  const mode = M.ov.xray ? 'xray' : 'solid';
+  if (body.style().mode !== mode) body.setStyle({ mode });
+}
+
+// ---- the model inspector (row 25): the body's parts, their joints and values, on `i`, closed by Esc or the Overlays row --------------------
+const typing = (e) => !!e.target?.matches?.('input, textarea, select');
+function buildInspector(stage) {
+  inspPanel = document.createElement('aside');
+  inspPanel.id = 'inspector'; inspPanel.className = 'inspector'; inspPanel.hidden = true;
+  inspPanel.setAttribute('aria-label', 'Model inspector');
+  inspPanel.innerHTML = '<header><span>Model inspector</span><button type="button" class="icon-btn" aria-label="Close the model inspector" title="Close (Esc)">&times;</button></header><div class="insp-host"></div>';
+  inspHost = inspPanel.querySelector('.insp-host');
+  inspPanel.querySelector('button').onclick = () => setInspector(false);
+  stage.append(inspPanel);
+  addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || typing(e)) return;
+    if (e.key === 'i' || e.key === 'I') { if (insp) { e.preventDefault(); setInspector(!M.ov.inspector, true); } }
+    else if (e.key === 'Escape' && M.ov.inspector) setInspector(false);
+  });
+}
+// every way in (the key, the Overlays row, a script) is the overlay `inspector`; this is the key's and the button's
+function setInspector(on, focus = false) {
+  window.miniview.setOverlay('inspector', on);
+  if (on && focus) inspHost.querySelector('.insp-list')?.focus();
+}
+function syncInspector() {
+  const open = !!M.ov.inspector && !!insp;
+  inspPanel.hidden = !open;
+  if (inspOpen && !open) body?.highlight(null);                       // the part picked in the list is lit only while the list is open
+  inspOpen = open;
+  if (open) insp.update(S.joints());
 }
 
 // ---- the placed cameras (RFC-0013): the eye at the sensor's pose at the playhead, the chase camera behind the robot -------------------
@@ -309,10 +386,19 @@ const adapter = {
     setFloor(M.ov.floor);
     views = new Views(stage, renderer, scene, () => { if (fr && !rebuilding) adapter.draw(); S.viewChanged(); });
     marker = makeMarker(); scene.add(marker);
+    trail = createTrail(THREE, { max: TRAIL_MAX, head: C.belief, fadeTo: stg.tokens.bg });
+    setLayers(trail.object, 'body.model');
+    trail.object.visible = false;
+    scene.add(trail.object);
+    Object.assign(M.ov, { ghost: true, trail: true, xray: false, inspector: false });       // overlays like the floor: the Overlays menu and setOverlay
+    buildInspector(stage);
     views.home3d = () => (run && fr && RW ? robotFrame(camTick()) : null);
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = new URL('../shell/camera.css', import.meta.url).href;
     document.head.append(css);
+    const css2 = document.createElement('link');
+    css2.rel = 'stylesheet'; css2.href = new URL('../shell/bodies.css', import.meta.url).href;
+    document.head.append(css2);
     buildCamBar(stage);
     const gz = stage.querySelector('#gizmo');
     if (gz) gz.addEventListener('click', (e) => gizmoSnap(e, gz));
@@ -359,7 +445,7 @@ const adapter = {
   draw(sync = false) {
     if (!fr || !RW) return;
     RW.update(M.i, M.t, S.cfg, S.size); RM.update(M.i, M.t, S.cfg, S.size);
-    applyVis(); placeMarker(); placeBody(); placeCams();
+    applyVis(); placeMarker(); placeStyle(); placeBody(); placeGhost(); placeTrail(); syncInspector(); placeCams();
     if (views.applyFollow(robotAt(M.i, true))) S.viewChanged();
     camPending = false;
     views.coords = M.ov.coords;
@@ -374,6 +460,8 @@ const adapter = {
     readPalette();
     stg.setTheme();                                                  // the clear colour, the floor, the grid, the lights and the shadows
     marker.material.map = markerTexture(stg.tokens.select, stg.tokens.bg); marker.material.needsUpdate = true;
+    ghost?.setStyle({ mode: 'ghost', color: C.belief });
+    trailFor = null;                                                 // the trail takes its colours again at the next draw
     if (scn) buildSceneObjects();
     if (run && fr) buildRunObjects();
     if (views.layout) { rebuilding = true; views.setup(views.layout, bounds(), views.frameName); rebuilding = false; }
@@ -393,6 +481,20 @@ const adapter = {
     const gl = renderer.getContext(), r = canvas.getBoundingClientRect(), out = new Uint8Array(4);
     gl.readPixels(Math.round(cx - r.left), canvas.height - 1 - Math.round(cy - r.top), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
     return [...out.slice(0, 3)];
+  },
+  // the belief ghost, the trail, the x-ray and the inspector as drawn (for this repository's tests)
+  bodies: () => {
+    const mesh = ghost?.root.getObjectByProperty('isMesh', true), g = trail.object.geometry, n = g.drawRange.count, p = g.attributes.position.array;
+    const hex = (c) => '#' + c.getHexString();
+    return {
+      ghost: ghost ? { visible: ghost.root.visible, pos: ghost.root.position.toArray().map((v) => +v.toFixed(5)), style: ghost.style().mode,
+        color: mesh ? hex(mesh.material.color) : null, opacity: mesh?.material.opacity ?? null, transparent: mesh?.material.transparent ?? null, layer: ghost.root.layers.mask } : null,
+      body: body ? { style: body.style().mode, opacity: body.root.getObjectByProperty('isMesh', true)?.material.opacity ?? null } : null,
+      trail: { visible: trail.object.visible, count: n, first: n ? [...p.slice(0, 3)] : null, last: n ? [...p.slice((n - 1) * 3, n * 3)] : null,
+        headColour: n ? hex(new THREE.Color(...g.attributes.color.array.slice((n - 1) * 3, n * 3))) : null, layer: trail.object.layers.mask },
+      inspector: { open: !inspPanel.hidden, rows: inspPanel.querySelectorAll('.insp-row').length, focused: inspHost.contains(document.activeElement), selected: insp?.selected() ?? null },
+      truthPose: RW?.tpose ? [...RW.tpose.slice(M.i * 3, M.i * 3 + 3)] : null, beliefPose: RW ? [...RW.pose.slice(M.i * 3, M.i * 3 + 3)] : null,
+    };
   },
   // the Robot layer as drawn: shown, where its root is, how many parts (for this repository's tests)
   body: () => (body ? { visible: body.root.visible, pos: body.root.position.toArray().map((v) => +v.toFixed(5)),
@@ -421,6 +523,8 @@ const adapter = {
   returns: (i) => RW?.returnsAt(i) ?? null,
   cursor: (x, y) => views.cursorAt(x, y),
   scale: () => views.scale(),
+  layerOf: (id) => 1 << LAYER[id],
+  layerBits: (view) => views.layerMask(view),
   fillsDrawn: (pane) => (views.layerMask(pane) & (1 << LAYER['fill.boxes'])) !== 0,
   project: (p) => views.project(p),
   gizmo: () => views.axes3d(),

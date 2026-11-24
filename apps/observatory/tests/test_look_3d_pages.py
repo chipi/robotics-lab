@@ -300,6 +300,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     cat.put_scene(scene("room"))
     for key in ("arm/room/r1", "bare/room/r2"):            # arm has a body (a mesh); bare has no description: no body ever loads
         make_run(Path(tmp) / "data", key, [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})] + [tick(round(0.1 * k, 3), 0.02 * k) for k in range(30)])
+    # arm/room/r3: the truth's whole pose each tick (ADR-0016), 1 m ahead of the belief, so the body stands at the truth and the belief ghost beside it
+    make_run(Path(tmp) / "data", "arm/room/r3", [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})]
+             + [tick(round(0.1 * k, 3), 0.02 * k, truth_3d={"z": 0.05, "quat": [1.0, 0.0, 0.0, 0.0]}) for k in range(30)])
     cat.scan()
     httpd, base = serve(cat, follow=False)
     b = launch(p)
@@ -660,6 +663,100 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         pg.evaluate("import('/lib/motion.js').then((m) => m.setMotion('auto'))")
         check("camera: the controls are in the 3D layout only (the top layout has none)", (go("top"), not cam())[1] and pg.evaluate("document.getElementById('camCtl').hidden") is True, "")
         go("3d")
+
+        # the bodies (U13): the belief ghost beside the truth body, the trail, the x-ray, the inspector on `i`
+        def bodies():
+            return pg.evaluate(f"{A}.bodies()")
+
+        def at(t):
+            pg.evaluate("window.__ready = false")
+            pg.evaluate(f"window.miniview.setTime({t})")
+            pg.wait_for_function("window.__ready === true")
+            return bodies()
+
+        hexof = lambda n: pg.evaluate(f"getComputedStyle(document.documentElement).getPropertyValue('--data-{n}').trim()").lower()  # noqa: E731
+        open_run("arm/room/r3", "3d")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        bd = at(2.0)
+        body_pos = pg.evaluate(f"{A}.body().pos")
+        check("ghost: the truth body stands at the truth (x %.2f) and the belief ghost at the belief (x %.2f), a metre apart, both on screen" % (bd["truthPose"][0], bd["beliefPose"][0]),
+              bd["ghost"]["visible"] and near3(body_pos[:2], bd["truthPose"][:2], 1e-4) and near3(bd["ghost"]["pos"][:2], bd["beliefPose"][:2], 1e-4)
+              and abs(bd["truthPose"][0] - bd["beliefPose"][0] - 1.0) < 1e-3, (bd, body_pos))
+        check("ghost: styled as a ghost (translucent, depth not written: opacity 0.4, transparent) in the --data-belief colour; the truth body stays solid and opaque",
+              bd["ghost"]["style"] == "ghost" and bd["ghost"]["transparent"] is True and abs(bd["ghost"]["opacity"] - 0.4) < 1e-6 and bd["ghost"]["color"] == hexof("belief")
+              and bd["body"]["style"] == "solid" and bd["body"]["opacity"] == 1, (bd["ghost"], bd["body"], hexof("belief")))
+        check("ghost: it is on the belief pose's layer, so the eye (which leaves the belief marker out) does not draw it",
+              bd["ghost"]["layer"] == pg.evaluate(f"{A}.layerOf('belief.pose')") and pg.evaluate(f"({A}.layerBits('eye') & {bd['ghost']['layer']}) === 0"), bd["ghost"])
+        g1 = at(1.0)
+        check("ghost: it follows the playhead (belief x %.2f at 1 s, %.2f at 2 s)" % (g1["beliefPose"][0], bd["beliefPose"][0]),
+              near3(g1["ghost"]["pos"][:2], g1["beliefPose"][:2], 1e-4) and abs(g1["ghost"]["pos"][0] - bd["ghost"]["pos"][0]) > 0.15, (g1["ghost"], bd["ghost"]))
+        pg.evaluate("window.miniview.setOverlay('ghost', false)")
+        check("ghost: the Overlays row (setOverlay 'ghost') hides it", bodies()["ghost"]["visible"] is False and pg.evaluate("window.miniview.config().overlays.ghost") is False)
+        pg.evaluate("window.miniview.setOverlay('ghost', true)")
+        pg.evaluate("window.miniview.setFrame('map')")
+        pg.wait_for_function(f"{A}.bodies().ghost.visible === false")
+        check("ghost: in the map frame the body is the belief itself, so no ghost", bodies()["ghost"]["visible"] is False)
+        pg.evaluate("window.miniview.setFrame('world')")
+        pg.wait_for_function(f"{A}.bodies().ghost.visible === true")
+        open_run("arm/room/r1", "3d")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        check("ghost: a run without the truth's whole pose draws the body at the belief, so there is no ghost beside it", at(2.0)["ghost"]["visible"] is False)
+
+        open_run("arm/room/r3", "3d")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        tr = at(2.0)
+        i2 = pg.evaluate("window.miniview.internals.M.i")
+        check("trail: through trail.js, drawn up to the playhead: %d points (ticks 0 to %d), the first the truth's tick 0 and the last the truth's pose now, at the floor" % (tr["trail"]["count"], i2),
+              tr["trail"]["visible"] and tr["trail"]["count"] == i2 + 1 and abs(tr["trail"]["first"][0] - 1.0) < 1e-4 and near3(tr["trail"]["last"][:2], tr["truthPose"][:2], 1e-4)
+              and 0 < tr["trail"]["last"][2] < 0.1, tr["trail"])
+        check("trail: the head is in the truth's --data-truth token colour (the body stands at the truth)", tr["trail"]["headColour"] == hexof("truth"), (tr["trail"]["headColour"], hexof("truth")))
+        t1 = at(1.0)
+        i1 = pg.evaluate("window.miniview.internals.M.i")
+        check("trail: moves with the playhead: at 1 s it has %d points (was %d) and ends at the truth then, not the truth at 2 s" % (t1["trail"]["count"], tr["trail"]["count"]),
+              t1["trail"]["count"] == i1 + 1 < tr["trail"]["count"] and near3(t1["trail"]["last"][:2], t1["truthPose"][:2], 1e-4) and t1["trail"]["last"][0] < tr["trail"]["last"][0] - 0.15, (t1["trail"], tr["trail"]))
+        pg.evaluate("window.miniview.setOverlay('trail', false)")
+        check("trail: the Overlays row (setOverlay 'trail') hides it", bodies()["trail"]["visible"] is False)
+        pg.evaluate("window.miniview.setOverlay('trail', true)")
+        check("trail: shown again with the row, and on the body's layer so the eye leaves it out", bodies()["trail"]["visible"] is True
+              and pg.evaluate(f"({A}.layerBits('eye') & {bodies()['trail']['layer']}) === 0"))
+
+        bd = bodies()
+        pg.evaluate("window.miniview.setOverlay('xray', true)")
+        xr = bodies()
+        check("x-ray: the Overlays row turns the truth body see-through (style xray, opacity 0.25); the belief ghost is unchanged",
+              bd["body"]["style"] == "solid" and xr["body"]["style"] == "xray" and abs(xr["body"]["opacity"] - 0.25) < 1e-6 and xr["ghost"]["style"] == "ghost" and abs(xr["ghost"]["opacity"] - 0.4) < 1e-6, (bd["body"], xr["body"]))
+        pg.evaluate("window.miniview.setOverlay('xray', false)")
+        check("x-ray: off gives the solid, opaque body back", bodies()["body"] == {"style": "solid", "opacity": 1}, bodies()["body"])
+
+        # the inspector: `i` opens it, Esc closes it, a letter typed in an input does not open it
+        pg.evaluate("document.activeElement?.blur()")
+        check("inspector: closed at first", bodies()["inspector"]["open"] is False and pg.evaluate("document.getElementById('inspector').hidden") is True)
+        pg.keyboard.press("i")
+        pg.wait_for_function(f"{A}.bodies().inspector.open === true")
+        ib = bodies()["inspector"]
+        check("inspector: `i` opens it with a row for each part of the model (1) and the list focused, for the keyboard", ib["rows"] == 1 and ib["focused"], ib)
+        pg.keyboard.press("Enter")
+        check("inspector: Enter on the list's cursor picks the part (base)", bodies()["inspector"]["selected"] == "base")
+        pg.keyboard.press("Escape")
+        pg.wait_for_function(f"{A}.bodies().inspector.open === false")
+        check("inspector: Esc closes it, and the overlay flag with it", pg.evaluate("window.miniview.config().overlays.inspector") is False)
+        pg.keyboard.press("i")
+        pg.wait_for_function(f"{A}.bodies().inspector.open === true")
+        pg.keyboard.press("i")
+        pg.wait_for_function(f"{A}.bodies().inspector.open === false")
+        check("inspector: `i` again closes it (a toggle)", pg.evaluate("window.miniview.config().overlays.inspector") is False)
+        pg.focus("#q")
+        pg.keyboard.type("i")
+        check("inspector: an `i` typed into the stream search input goes to the input and does not open it", pg.input_value("#q") == "i" and bodies()["inspector"]["open"] is False, pg.input_value("#q"))
+        pg.fill("#q", "")
+        pg.evaluate("document.activeElement?.blur()")
+        pg.click("#ovBtn")
+        pg.click("input[data-ov=inspector]")
+        pg.wait_for_function(f"{A}.bodies().inspector.open === true")
+        check("inspector: the Overlays popover has a Model inspector row that opens it", bodies()["inspector"]["open"] is True)
+        pg.evaluate("document.querySelector('#inspector button[aria-label^=Close]').click()")      # the popover is open over the panel
+        pg.wait_for_function(f"{A}.bodies().inspector.open === false")
+        check("inspector: the panel's close button closes it", pg.evaluate("window.miniview.config().overlays.inspector") is False)
         check("page: no console error or warning, no failed request on the page", not console and not missing, (console[:5], missing))
 
         # no colour literal in the page's scene code: the tokens are read, not copied (the allowed: the white of the pins' texture mask)
