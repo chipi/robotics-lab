@@ -89,30 +89,15 @@ Steps 6 and 7 and every 4e unit are built, and so are the known loose ends (the 
 Reordered by the operator the same day: 3, 4, 4.5, 4.9 and 5 come first, then the NXT, then the
 staging cut-over once everything else is done.
 
-3. **MCP for every surface:**
-   1. Check every HTTP route of Mission Control and the Observatory against the MCP tools, in a
-      gap table.
-   2. Close Mission Control's gaps: calibration, profile versions, simulator-first, placed start
-      and dock, alarms, the robot page.
-   3. Add a small read-only Observatory MCP: runs, anomalies, compare, the archive's dry run.
-
-   The same safety rules as today: no firing, no takeover, no real robot without the operator's
-   switch, STOP never refused.
-4. **Look and feel, the research:** independent research across industries (the parked item, the
-   brief Recce shared), done before reading Recce's own.
-
-   4.5. **Look and feel, the build:** the findings the operator picks, put into the tokens, the
-   design system and the 3D presentation.
-
-   4.9. **Ready for MVP 2?** Review the repository's structure and how the two apps are combined
-   (RFC-0024), check that the repository is ready for MVP 2, and ask whether anything else
-   belongs here before the close-out.
-5. **The close-out:** docs, the README and the screenshots (taken after 4.5), the rename and
-   branding, the RFC-0024 review with the advisor.
-6. **The NXT at the brick** (D1, D9, D10), with the operator; before it, staging is redeployed with
-   the NXT's robot file.
-7. **The staging cut-over** ([STAGING-CUTOVER.md](STAGING-CUTOVER.md)), once everything else is
-   done and after the X3's maintenance window. Tokens and `tailscale serve` come with it.
+| Step | What |
+| --- | --- |
+| 3 | **MCP for every surface:** a gap table of every HTTP route of Mission Control and the Observatory against the MCP tools; Mission Control's gaps closed (calibration, profile versions, simulator-first, placed start and dock, alarms, the robot page); a small read-only Observatory MCP. The same safety rules: no firing, no takeover, no real robot without the operator's switch, STOP never refused |
+| 4 | **Look and feel, the research:** independent research across industries (the parked item, the brief Recce shared), done before reading Recce's own |
+| 4.5 | **Look and feel, the build:** the findings the operator picks, in the tokens, the design system and the 3D presentation |
+| 4.9 | **Ready for MVP 2?** The repository's structure and how the two apps are combined (RFC-0024); is the repository ready for MVP 2, and does anything else belong here before the close-out |
+| 5 | **The close-out:** docs, the README and the screenshots (taken after 4.5), the rename and branding, the RFC-0024 review with the advisor |
+| 6 | **The NXT at the brick** (D1, D9, D10), with the operator; before it, staging is redeployed with the NXT's robot file |
+| 7 | **The staging cut-over** ([STAGING-CUTOVER.md](STAGING-CUTOVER.md)), once everything else is done and after the X3's maintenance window; tokens and `tailscale serve` come with it |
 
 The real duck (B6, B9 and the rest, [REAL-DUCK-BACKLOG.md](REAL-DUCK-BACKLOG.md)) waits for the
 duck itself and is not part of this list. The deployment direction (dev, staging, a later prod) is
