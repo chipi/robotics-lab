@@ -20,8 +20,9 @@
 .ui-btn:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--line-hover); }
 .ui-btn:active:not(:disabled) { background: var(--surface-press); }
 .ui-btn:disabled { opacity: .5; cursor: not-allowed; }
-.ui-btn--primary { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
-.ui-btn--primary:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--line-focus); }
+/* the primary action is a solid fill; .btn.primary is Mission Control's own name for the same button until its buttons move to .ui-btn */
+.ui-btn--primary, .btn.primary { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+.ui-btn--primary:hover:not(:disabled), .btn.primary:hover:not(:disabled), .ui-btn--primary:active:not(:disabled), .btn.primary:active:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 .ui-btn--danger { background: var(--status-error-soft); color: var(--status-error-on); border-color: var(--status-error); }
 .ui-btn--danger:hover:not(:disabled) { background: var(--status-error-soft); border-color: var(--status-error-on); }
 .ui-btn--touch { height: var(--ctl-h-touch); min-width: var(--tap-min); }
@@ -47,6 +48,7 @@
 .ui-badge[data-status="alert"] { --c: var(--status-alert); --soft: var(--status-alert-soft); --on: var(--status-alert-on); }
 .ui-badge[data-status="error"] { --c: var(--status-error); --soft: var(--status-error-soft); --on: var(--status-error-on); }
 .ui-badge[data-status="stale"] { --c: var(--status-stale); --soft: var(--status-stale-soft); --on: var(--status-stale-on); }
+.ui-badge[data-status="offline"] { --c: var(--status-offline); --soft: var(--status-offline-soft); --on: var(--status-offline-on); }
 .ui-badge[data-status="neutral"] { --c: var(--status-neutral); --soft: var(--status-neutral-soft); --on: var(--status-neutral-on); }
 .ui-badge[data-status="live"] { --c: var(--status-live); --soft: var(--status-live-soft); --on: var(--status-live-on); }
 .ui-badge[data-status="live"] .ui-glyph { animation: ui-pulse calc(var(--dur-slow) * 5) var(--ease) infinite; }
@@ -56,6 +58,7 @@
 .ui-stale { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
 .ui-stale .ui-stale-value { opacity: .55; }
 .ui-stale .ui-stale-age { color: var(--status-stale-on); font-size: var(--fs-1); white-space: nowrap; }
+.ui-stale .ui-stale-age[data-status="offline"] { color: var(--status-offline-on); }
 
 /* top bar: the brand, the nav and the theme control sit in slots (brand.js fills the first two); anything else in the bar, STOP included, is the app's */
 .ui-topbar {
@@ -64,7 +67,8 @@
 }
 .ui-topbar [data-slot="nav"] { display: flex; align-items: center; gap: var(--sp-1); flex: 1; min-width: 0; }
 .ui-topbar [data-slot="theme"] { display: flex; align-items: center; margin-left: auto; }
-.ui-brand { color: var(--text-1); font-weight: 600; text-decoration: none; border-radius: var(--radius-2); }
+.ui-brand { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-1); font-weight: 600; text-decoration: none; border-radius: var(--radius-2); }
+.ui-brand-mark { flex: none; width: 12px; height: 12px; border-radius: var(--radius-2); background: linear-gradient(135deg, var(--data-belief), var(--data-truth)); }
 .ui-topbar [data-slot="nav"] a {
   display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 var(--pad); border-radius: var(--radius-2);
   color: var(--text-2); text-decoration: none; transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);

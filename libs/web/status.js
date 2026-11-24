@@ -4,10 +4,11 @@
 // Glyphs (aria-hidden next to the word; every shape differs, so a colour-blind reader and a grey screenshot still tell them apart):
 //   ok      check mark       info    letter i       warn    triangle     alert   diamond      error   cross
 //   unknown question mark    stale   quarter clock  neutral dash         live    filled dot (ui.css pulses it; it stops under reduced motion)
-export const STATUS = ['ok', 'info', 'warn', 'alert', 'error', 'unknown', 'stale', 'neutral', 'live'];
+//   offline circle with a slash (grey: it does not answer at all, which is not stale, a value that is old)
+export const STATUS = ['ok', 'info', 'warn', 'alert', 'error', 'unknown', 'stale', 'neutral', 'live', 'offline'];
 
-const GLYPH = { ok: '✓', info: 'ℹ', warn: '▲', alert: '◆', error: '✕', unknown: '?', stale: '◔', neutral: '–', live: '●' };
-const LABEL = { ok: 'ok', info: 'info', warn: 'warning', alert: 'alert', error: 'error', unknown: 'unknown', stale: 'stale', neutral: 'neutral', live: 'live' };
+const GLYPH = { ok: '✓', info: 'ℹ', warn: '▲', alert: '◆', error: '✕', unknown: '?', stale: '◔', neutral: '–', live: '●', offline: '⊘' };
+const LABEL = { ok: 'ok', info: 'info', warn: 'warning', alert: 'alert', error: 'error', unknown: 'unknown', stale: 'stale', neutral: 'neutral', live: 'live', offline: 'offline' };
 
 const table = (o) => {
   const m = new Map();
@@ -21,7 +22,7 @@ const table = (o) => {
 const VERDICT = table({
   ok: 'reached done evaluated',
   info: 'running queued',
-  neutral: 'ended no_frontier_left cancelled refused not_found',
+  neutral: 'ended no_frontier_left cancelled refused not_found stopped',
   warn: 'timeout stalled',
   alert: 'stopped_by_guardrail trapped',
   error: 'failed interrupted',
@@ -32,13 +33,14 @@ const VERDICT = table({
 //   event      cliff_stop -> error; reflex_stop, trapped -> alert; refused -> warn; reached -> ok;
 //              tight_pivot, leg, no_survey_turn -> neutral                        shell.js KINDS (red, orange/pink-red, amber, green, the rest)
 //              the other event kinds are unknown; an anomaly event takes its severity (kind 'severity'), not a status of its own
-//   conn       live -> live; reconnecting, lost, offline -> error; online -> ok  app.js connect() (live is the green chip, reconnecting the red one)
+//   conn       live -> live; reconnecting -> error; lost, offline -> offline; online -> ok   app.js connect() (live is the yellow chip, reconnecting the red one;
+//              a stream that is gone for good, or a robot that does not answer, is offline: grey, its own glyph)
 const KINDS = {
   verdict: VERDICT,
   goal_state: VERDICT,
   severity: table({ error: 'critical major', warn: 'minor', neutral: 'info' }),
   event: table({ error: 'cliff_stop', alert: 'reflex_stop trapped', warn: 'refused', ok: 'reached', neutral: 'tight_pivot leg no_survey_turn' }),
-  conn: table({ live: 'live', error: 'reconnecting lost offline', ok: 'online' }),
+  conn: table({ live: 'live', error: 'reconnecting', offline: 'lost offline', ok: 'online' }),
 };
 
 export function statusOf(kind, value) {

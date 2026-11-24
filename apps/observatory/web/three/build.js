@@ -1,32 +1,26 @@
 import * as THREE from 'three';
 import { gapCells } from '../shell/gaps.js';
 import { SEMANTIC, LANDMARK_MIN } from '../shell/semantic.js';
+import { readStageTokens, parseColor } from '/lib/stage/stage.js';
 
-export const C = {
-  belief: 0x4682ff, truth: 0x28b45a, plan: 0xe6b400, obst: 0xff9600, hazard: 0xe600e6,
-  depth: { f: 0x3cc85a, o: 0xe63228, v: 0x3c78e6, b: 0xe600e6 },
-  occ: 0x505050, free: 0xcdeccd, x: 0xe03030, y: 0x30b030, z: 0x3060e0, box: 0x8a8a96, grid: 0xdadae0, rel: 0x222222,
-  boxFill: [0x8a8a96, 0.16], gap: 0xff8c1a, fog: 0x9aa3b0, error: 0xe05a4f, warn: 0xe0a030, dim: 0x9a9da6,
-  ...SEMANTIC,                                 // the semantic map's (RFC-0016): not themed, the legend uses the same
-};
-
-// the page's theme tokens (shell palette, CSS hex strings) -> the colours the objects are built with
-export function setPalette(p) {
-  const h = (k) => new THREE.Color(p[k]).getHex();
-  const bf = p['box-fill'];                                    // #rrggbbaa
-  C.boxFill = [new THREE.Color('#' + bf.slice(1, 7)).getHex(), parseInt(bf.slice(7, 9) || 'ff', 16) / 255];
+// The scene's colours, read from the tokens (--data-*, --axis-*, --scene-*, --hud-*, --status-*) by readPalette: CSS text (THREE.Color takes
+// it), read again on a theme change. The semantic map's are not themed (RFC-0016): the legend uses the same.
+export const C = { ...SEMANTIC, depth: {} };
+export function readPalette(el = document.documentElement) {
+  const cs = getComputedStyle(el), v = (n) => cs.getPropertyValue('--' + n).trim(), t = readStageTokens(el), fill = parseColor(THREE, t.boxFill);
   Object.assign(C, {
-    belief: h('c-belief'), truth: h('c-truth'), plan: h('c-plan'), obst: h('c-obst'), hazard: h('c-drop'), occ: h('c-occ'), free: h('c-free'),
-    x: h('c-x'), y: h('c-y'), z: h('c-z'), box: h('c-box'), grid: h('draw-grid'), rel: h('draw-rel'),
-    depth: { f: h('c-floor'), o: h('c-ob'), v: h('c-over'), b: h('c-drop') },
-    error: h('error'), warn: h('warn'), dim: h('text-dim'),
+    belief: v('data-belief'), truth: v('data-truth'), plan: v('data-plan'), obst: v('data-obstacle'), hazard: v('data-drop'), occ: v('data-occupied'),
+    free: v('data-free'), x: v('axis-x'), y: v('axis-y'), z: v('axis-z'), box: v('data-box'), grid: t.grid, rel: t.rel, gap: v('data-gap'), fog: t.label,
+    boxFill: [fill.color, fill.alpha], depth: { f: v('data-floor'), o: v('data-depth-obstacle'), v: v('data-depth-overhead'), b: v('data-drop') },
+    error: v('status-error'), warn: v('status-warn'), dim: v('text-2'), label: t.label, pill: v('hud-bg'), pillText: v('hud-strong'),
   });
+  return t;
 }
 const col = (hex) => new THREE.Color(hex);
 // everything but the faint fills is transparent, so it is drawn after them (renderOrder) and never tinted by them
-const lineMat = (hex) => new THREE.LineBasicMaterial({ color: hex, transparent: true });
-const dashMat = (hex) => new THREE.LineDashedMaterial({ color: hex, dashSize: 0.06, gapSize: 0.04, transparent: true });
-const fillMat = (hex, opacity) => new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity, side: THREE.DoubleSide, depthTest: false, depthWrite: false });
+const lineMat = (hex) => new THREE.LineBasicMaterial({ color: hex, transparent: true, toneMapped: false });
+const dashMat = (hex) => new THREE.LineDashedMaterial({ color: hex, dashSize: 0.06, gapSize: 0.04, transparent: true, toneMapped: false });
+const fillMat = (hex, opacity) => new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity, side: THREE.DoubleSide, depthTest: false, depthWrite: false, toneMapped: false });
 const fillMesh = (tri, hex, opacity) => {
   const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(tri, 3));
   const m = new THREE.Mesh(g, fillMat(hex, opacity));
@@ -220,7 +214,7 @@ export function buildScene(sc, cut = 0.5) {
   return g;
 }
 
-// a text label as a sprite that faces the camera: a dark pill with the text in white, which reads on either theme. Its size is fixed on the
+// a text label as a sprite that faces the camera: the HUD's pill (--hud-bg, --hud-strong: the same in both themes, so it reads on either). Its size is fixed on the
 // screen (LABEL_PX tall, whatever the zoom or the distance), set at each draw for the pane being drawn: sized in metres it was a few pixels
 // high at the default view's 11 m.
 const LABEL_PX = 20, _lp = new THREE.Vector3();
@@ -230,10 +224,10 @@ function labelSprite(text, hex) {
   const w = Math.ceil(g.measureText(text).width) + 20;
   c.width = w; c.height = px + 14;
   g.font = `600 ${px}px ui-monospace, monospace`;
-  g.fillStyle = 'rgba(10,14,20,0.78)'; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 8); g.fill();
+  g.fillStyle = C.pill; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 8); g.fill();
   g.strokeStyle = '#' + col(hex).getHexString(); g.lineWidth = 3; g.stroke();
-  g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(text, 10, c.height / 2 + 1);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false }));
+  g.fillStyle = C.pillText; g.textBaseline = 'middle'; g.fillText(text, 10, c.height / 2 + 1);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
   s.scale.set((0.15 * c.width) / c.height, 0.15, 1);
   s.renderOrder = 9; s.userData.text = text;
   const aspect = c.width / c.height;
@@ -256,12 +250,12 @@ const disposeAll = (group) => {
 function robotMesh(r, h, hex) {
   const g = new THREE.Group();
   const cyl = new THREE.CylinderGeometry(r, r, h, 24).rotateX(Math.PI / 2).translate(0, 0, h / 2);
-  g.add(new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.25, depthWrite: false })));
+  g.add(new THREE.Mesh(cyl, new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.25, depthWrite: false, toneMapped: false })));
   g.add(new THREE.LineSegments(new THREE.EdgesGeometry(cyl, 30), lineMat(hex)));
   const head = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, h, r * 1.8, 0, h], 3));
   g.add(new THREE.Line(head, lineMat(hex)));
   const dot = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, h], 3));
-  g.add(new THREE.Points(dot, new THREE.PointsMaterial({ color: hex, size: 7, sizeAttenuation: false })));
+  g.add(new THREE.Points(dot, new THREE.PointsMaterial({ color: hex, size: 7, sizeAttenuation: false, toneMapped: false })));
   return g;
 }
 
@@ -274,7 +268,7 @@ function lineObj(pos, hex) {
 
 function pointsObj(pos, colors, size) {
   const g = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const m = { size, sizeAttenuation: false, transparent: true };
+  const m = { size, sizeAttenuation: false, transparent: true, toneMapped: false };
   if (colors) { g.setAttribute('color', new THREE.BufferAttribute(colors, 3)); m.vertexColors = true; }
   const p = new THREE.Points(g, new THREE.PointsMaterial(m));
   p.frustumCulled = false;
@@ -494,7 +488,7 @@ export function buildRun(run, fr, world) {
   const cg = new THREE.BufferGeometry();
   cg.setAttribute('position', new THREE.BufferAttribute(qP.a, 3)); cg.setAttribute('color', new THREE.BufferAttribute(qC.a, 3));
   cg.setDrawRange(0, 0);
-  const cells = add('world.grid', new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+  const cells = add('world.grid', new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false })));
   cells.frustumCulled = false;
   cells.userData.pick = (hit) => { const q = hit.faceIndex >> 1; return { kind: 'cell', index: quadK[q], world: quadWorld[q] }; };
   const obst = add('world.obstacles', pointsObj(oG.a, null, 5)), drops = add('world.drops', pointsObj(dG.a, null, 6));

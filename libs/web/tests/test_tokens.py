@@ -64,14 +64,14 @@ MOTION = {"--dur-fast", "--dur-base", "--dur-slow", "--ease"}
 aliases = {k for k, v in first.items() if ALIAS.fullmatch(v) and k in OLD["dark"]}
 invariants = {k for k in first if INVARIANT.fullmatch(k)}
 
-# the frozen contract (docs/wip/LOOK-AND-FEEL-PLAN.md, "Frozen contracts > Tokens"); neutral is the ninth status of status.js
-STATUSES = ["ok", "info", "warn", "alert", "error", "unknown", "stale", "neutral", "live"]
+# the frozen contract (docs/wip/LOOK-AND-FEEL-PLAN.md, "Frozen contracts > Tokens"); neutral is the ninth status of status.js, offline the tenth (review round 1)
+STATUSES = ["ok", "info", "warn", "alert", "error", "unknown", "stale", "neutral", "live", "offline"]
 THEMED = (
     ["surface-" + n for n in ("0", "1", "2", "3", "field", "hover", "press", "selected", "section", "section-hover", "tip")]
     + ["line-" + n for n in ("subtle", "strong", "hover", "focus")] + ["line"]
     + [f"hairline-{i}" for i in range(1, 6)] + ["veil-1", "veil-2", "veil-scrim", "elev-shadow"]
     + ["text-1", "text-2", "text-3", "text-on-solid"]
-    + ["accent", "accent-soft", "accent-ring", "accent-text", "danger-solid"]
+    + ["accent", "accent-soft", "accent-ring", "accent-text", "accent-on", "accent-hover", "danger-solid"]
     + [f"status-{s}{x}" for s in STATUSES for x in ("", "-soft", "-on")]
     + ["data-" + n for n in ("belief", "truth", "plan", "obstacle", "drop", "floor", "depth-obstacle", "depth-overhead", "box", "occupied", "free", "gap")]
     + ["axis-x", "axis-y", "axis-z"] + ["hud-" + n for n in ("bg", "line", "text", "key", "value", "warn")]
@@ -165,6 +165,12 @@ for th in ("dark", "light"):
         if soft[1] != 1 or r < 4.5:
             low.append((s, round(r, 2)))
     check(f"{th}: every status -on reaches 4.5:1 on its opaque -soft", not low, low)
+    for fg, bg in (("--accent-on", "--accent"), ("--accent-on", "--accent-hover")):
+        c = contrast(rgb_of(th, fg)[0], rgb_of(th, bg)[0])
+        check(f"{th}: the text of a solid primary button ({fg} on {bg}) reaches 4.5:1", c >= 4.5, f"{c:.2f}")
+    off = rgb_of(th, "--status-offline")[0]
+    near = {s: round(delta_e(off, rgb_of(th, f"--status-{s}")[0]), 3) for s in ("unknown", "neutral")}
+    check(f"{th}: offline is grey like unknown and neutral, at least 0.05 from both in OKLab (the glyph and the word do the rest)", min(near.values()) >= 0.05, near)
     check(f"{th}: any two status colours are at least 0.03 apart in OKLab (the rest is the glyph and the word)",
           all(delta_e(rgb_of(th, f"--status-{a}")[0], rgb_of(th, f"--status-{b}")[0]) >= 0.03
               for a, b in itertools.combinations(STATUSES, 2)), "")

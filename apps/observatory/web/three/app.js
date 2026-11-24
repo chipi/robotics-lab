@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { createShell } from '../shell/shell.js';
 import { Views } from './views.js';
-import { buildScene, buildRun, setPalette } from './build.js';
+import { buildScene, buildRun, readPalette } from './build.js';
+import { createStage, STAGE_LAYER } from '/lib/stage/stage.js';
 import { createBody, jointStates, tokenColors } from '/lib/body/body.js';
 import { axes as sensorAxes } from '../shell/eye.js';
 
@@ -17,14 +18,17 @@ const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
 
-let S, M, renderer, scene, views, marker, canvas;
+let S, M, renderer, scene, views, marker, canvas, stg, floorBtn, floorSaved = true;
 let sceneG = null, scn = null, run = null, fr = null, RW = null, RM = null, rebuilding = false;
 const R = () => (M.frame === 'world' ? RW : RM);
 const bounds = () => scn?.bounds ?? [-4, 4, -3, 3];
+// the shell's own preferences (miniview.left), where the layer toggles that persist live
+const prefs = () => { try { return JSON.parse(localStorage.getItem('miniview.left') || '{}'); } catch (_) { return {}; } };
+const savePref = (p) => { try { localStorage.setItem('miniview.left', JSON.stringify({ ...prefs(), ...p })); } catch (_) { /* no storage */ } };
 const setLayers = (obj, id) => obj.traverse((o) => o.layers.set(LAYER[id]));
 
 // the selection marker: a ring that stays the same size on screen
-// a ring in the theme's selection colour with a halo in the viewport's, so it reads on either background
+// a ring in --scene-select with a halo in --scene-bg, so it reads on either background
 function markerTexture(ring, halo) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d');
@@ -34,7 +38,7 @@ function markerTexture(ring, halo) {
 }
 function makeMarker() {
   const m = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3)),
-    new THREE.PointsMaterial({ map: markerTexture('#fff', '#000'), size: 26, sizeAttenuation: false, transparent: true, depthTest: false }));
+    new THREE.PointsMaterial({ map: markerTexture(stg.tokens.select, stg.tokens.bg), size: 26, sizeAttenuation: false, transparent: true, depthTest: false, toneMapped: false }));
   m.frustumCulled = false; m.renderOrder = 10; m.visible = false;
   return m;
 }
@@ -55,24 +59,19 @@ function buildRunObjects() {
 }
 
 // ---- the Robot layer (RFC-0011): the robot's body from its description, its joints at the playhead, where it was --------
-let body = null, bodyFor = null, lit = false;
+let body = null, bodyFor = null, shadow = null, shadowMesh = null;
 async function buildBody() {
   const desc = S.robot();
   if (!desc || bodyFor === desc) return;
   bodyFor = desc;
-  if (body) { scene.remove(body.root); body = null; }
+  if (body) { scene.remove(body.root); shadow?.dispose(); shadow = shadowMesh = null; body = null; }
   const b = await createBody(THREE, desc, S.api);
   if (bodyFor !== desc) return;                                   // another run's robot came meanwhile
   body = b;
   setLayers(body.root, 'body.model');
-  if (!lit) {                                                      // the body is shaded; everything else is drawn flat and ignores lights
-    lit = true;
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.6));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(1, -1, 2);
-    scene.add(sun);
-  }
   scene.add(body.root);
+  shadow = stg.contactShadow(body.root);                            // the stage's lights (made at init) shade the body; everything else is drawn flat
+  shadowMesh = scene.children.findLast((o) => o.name === 'stage.contactShadow');
   if (fr) adapter.draw();
 }
 // the trunk where the truth had it (the whole pose, ADR-0016) in the world frame of a simulated run; else at the belief's
@@ -81,6 +80,7 @@ function placeBody() {
   if (!body) return;
   const on = !!fr && !!RW && S.shown('body.model');
   body.root.visible = on;
+  shadowMesh.visible = on;
   const i = M.i, t3 = on && M.frame === 'world' ? fr.truth_3d?.[i] : null;
   // with the body shown no marker fills its cylinder (the body would sit inside a coloured haze: belief and truth are often
   // where it is); the marker it stands in for drops the outline too, keeping its heading line and dot. Hidden parts stay
@@ -100,6 +100,7 @@ function placeBody() {
     body.place([P[i * 3], P[i * 3 + 1], S.robot()?.stand_z ?? 0], [q.w, q.x, q.y, q.z]);
   }
   body.pose(S.joints());
+  shadow.update();
   body.health(jointStates(S.anomalies(), M.t), tokenColors());       // each joint by the worst anomaly naming it at or before the playhead
 }
 
@@ -118,7 +119,18 @@ function placeCams() {
   views.place('chase', { pos: [x - 0.9 * c, y - 0.9 * s, 0.55], target: [x + 0.35 * c, y + 0.35 * s, 0.08] });
 }
 
+// the floor and the shadow are on the stage layer, which only the 3D and chase cameras draw (layerMask): top and the side views stay as flat
+// drawings so the map's cells and the numbered grid read as before, and the eye is the sensor's view, not a room
+const FLOOR_VIEWS = new Set(['3d', 'chase']);
+function setFloor(on) {
+  M.ov.floor = !!on;
+  stg.floor.visible = M.ov.floor;
+  if (floorBtn) floorBtn.setAttribute('aria-pressed', String(M.ov.floor));
+}
 function applyVis() {
+  if (M.ov.floor !== floorSaved) { floorSaved = M.ov.floor; savePref({ floor: floorSaved }); }
+  setFloor(M.ov.floor);
+  stg.grid.visible = M.ov.coords;                                   // the grid is the coordinate system's, as the flat views' is
   const w = M.frame === 'world';
   if (sceneG) {
     sceneG.visible = w;
@@ -182,10 +194,22 @@ const adapter = {
     stage.prepend(canvas);
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     scene = new THREE.Scene();
+    readPalette();
+    stg = createStage(THREE, scene, renderer, { bounds: bounds() });
+    floorSaved = prefs().floor !== false;
+    M.ov.floor = floorSaved;                                          // an overlay like the others: miniview.setOverlay('floor', false), the overlays menu
+    floorBtn = document.createElement('button');
+    floorBtn.id = 'floorBtn'; floorBtn.className = 'ui-btn'; floorBtn.type = 'button'; floorBtn.textContent = 'Floor'; floorBtn.title = 'Show the floor (3D and chase views)';
+    Object.assign(floorBtn.style, { position: 'absolute', top: '8px', right: '12px', zIndex: 3 });
+    floorBtn.onclick = () => { M.ov.floor = !M.ov.floor; setFloor(M.ov.floor); if (fr) adapter.draw(); };
+    floorBtn.style.display = 'none';
+    stage.append(floorBtn);
+    setFloor(M.ov.floor);
     views = new Views(stage, renderer, scene, () => { if (fr && !rebuilding) adapter.draw(); S.viewChanged(); });
     marker = makeMarker(); scene.add(marker);
     views.layerMask = (view) => {
       let m = 1;
+      if (FLOOR_VIEWS.has(view)) m |= 1 << STAGE_LAYER;
       for (const id of DRAWN) {
         if (view === 'eye' && NOT_IN_EYE.has(id)) continue;
         const fill = id.startsWith('fill.');     // the faint faces of boxes and pits: from above and in 3D, outlines only in a side view
@@ -209,7 +233,7 @@ const adapter = {
     };
   },
 
-  setScene(sc) { scn = sc; buildSceneObjects(); },
+  setScene(sc) { scn = sc; stg.setBounds(bounds()); buildSceneObjects(); },
   setRun(r, f) { run = r; fr = f; buildRunObjects(); buildBody(); },
   // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
   append(range) {
@@ -218,7 +242,7 @@ const adapter = {
     for (const Rn of [RW, RM]) for (const [id, o] of Object.entries(Rn.obj)) setLayers(o, id);       // a new stretch of depth points joins its stream's layer
   },
   // the shell draws after a layout, so the draw views.setup() would trigger is skipped
-  setLayout(view, frame) { rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
+  setLayout(view, frame) { floorBtn.style.display = FLOOR_VIEWS.has(view) ? '' : 'none'; rebuilding = true; views.setup(view, bounds(), frame); rebuilding = false; },
 
   draw(sync = false) {
     if (!fr || !RW) return;
@@ -232,15 +256,30 @@ const adapter = {
   settled: () => new Promise((res) => requestAnimationFrame(() => res())),
   resize() { views.resize(); },
   fit() { views.fit(); },
-  theme(p) {
-    setPalette(p);
-    renderer.setClearColor(p['bg-viewport']);
-    marker.material.map = markerTexture(p['draw-sel'], p['bg-viewport']); marker.material.needsUpdate = true;
+  theme() {
+    readPalette();
+    stg.setTheme();                                                  // the clear colour, the floor, the grid, the lights and the shadows
+    marker.material.map = markerTexture(stg.tokens.select, stg.tokens.bg); marker.material.needsUpdate = true;
     if (scn) buildSceneObjects();
     if (run && fr) buildRunObjects();
     if (views.layout) { rebuilding = true; views.setup(views.layout, bounds(), views.frameName); rebuilding = false; }
   },
   describe,
+  // the stage as drawn (for this repository's tests): the floor and grid shown, the lights in the scene, which views draw the stage layer, the contact shadow
+  stage: () => {
+    const lights = [];
+    scene.traverse((o) => { if (o.isLight) lights.push([o.type, o.intensity, '#' + o.color.getHexString()]); });
+    return { floor: stg.floor.visible, grid: stg.grid.visible, lights, tokens: stg.tokens, toneMapping: renderer.toneMapping,
+      views: Object.fromEntries(['top', 'front', 'back', 'left', 'right', '3d', 'eye', 'chase'].map((v) => [v, !!((views.layerMask(v) >> STAGE_LAYER) & 1)])),
+      shadow: shadowMesh ? { visible: shadowMesh.visible, pos: shadowMesh.position.toArray(), opacity: shadowMesh.material.opacity } : null };
+  },
+  // the colour the canvas has at a screen point (client pixels), read straight after a draw (before the page is composited)
+  pixelAt: (cx, cy) => {
+    adapter.draw();
+    const gl = renderer.getContext(), r = canvas.getBoundingClientRect(), out = new Uint8Array(4);
+    gl.readPixels(Math.round(cx - r.left), canvas.height - 1 - Math.round(cy - r.top), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    return [...out.slice(0, 3)];
+  },
   // the Robot layer as drawn: shown, where its root is, how many parts (for this repository's tests)
   body: () => (body ? { visible: body.root.visible, pos: body.root.position.toArray().map((v) => +v.toFixed(5)),
     quat: [body.root.quaternion.w, body.root.quaternion.x, body.root.quaternion.y, body.root.quaternion.z].map((v) => +v.toFixed(5)), drawn: body.drawn(),

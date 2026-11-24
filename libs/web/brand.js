@@ -1,5 +1,13 @@
 // The apps' names and addresses: step 5 renames the products by editing this one file.
+// href is where the app lives behind the Observatory's one origin; on its own port Mission Control is at '/' (see hrefOf).
 export const APPS = { control: { name: 'Mission Control', href: '/control/' }, observatory: { name: 'miniview', href: '/' } };
+
+// The address of an app from the page it is shown on: a page under /control/ is Mission Control behind the Observatory, so Mission Control is at '/control/'
+// and the Observatory at '/'. Any other page is an app on its own origin, where Mission Control is at '/'; a link to the other app is only meaningful behind the proxy.
+export function hrefOf(key, path = location.pathname) {
+  const behind = path === '/control' || path.startsWith('/control/');
+  return key === 'control' ? (behind ? APPS.control.href : '/') : APPS.observatory.href;
+}
 
 // The top bar's two content slots. Mission Control keeps STOP as static HTML in the same bar, so this fills the brand and nav slots only and
 // refuses (throws) a slot that is, holds or sits in a STOP element: it never renders, moves or hides STOP.
@@ -27,7 +35,11 @@ export function mountTopBar(el, { app, nav = [], themeControl = null } = {}) {
     if (cls) x.className = cls;
     return x;
   };
-  brand.replaceChildren(link(a.name, a.href, 'ui-brand'));
+  const home = link('', hrefOf(app), 'ui-brand');
+  const mark = document.createElement('span');
+  mark.className = 'ui-brand-mark'; mark.setAttribute('aria-hidden', 'true');
+  home.append(mark, a.name);
+  brand.replaceChildren(home);
   navSlot.replaceChildren(...nav.map((n) => {
     const x = link(n.label, n.href);
     if (n.current) x.setAttribute('aria-current', 'page');

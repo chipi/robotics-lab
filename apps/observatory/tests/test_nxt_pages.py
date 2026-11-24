@@ -114,7 +114,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               and page.evaluate("getComputedStyle(document.getElementById('sigview')).display !== 'none'")
               and page.evaluate("getComputedStyle(document.getElementById('layoutSeg')).display === 'none' && getComputedStyle(document.getElementById('frameSeg')).display === 'none'"))
         chip = page.evaluate("document.getElementById('runinfo').textContent").replace("\xa0", " ")
-        check("the status chip says robot, kind, verdict, length and the samples", "nxt" in chip and "recording" in chip and "recorded" in chip and f"{run['samples']} samples" in chip, chip)
+        verdict = page.evaluate("document.getElementById('runVerdict').textContent")      # the Run button shows it, not the chip (round 1)
+        check("the status chip says robot, kind, length and the samples; the Run button the verdict", "nxt" in chip and "recording" in chip
+              and f"{run['samples']} samples" in chip and "recorded" in verdict, (chip, verdict))
 
         # the outliner: the section Other values, a row per signal with an eye
         grp = page.evaluate("document.querySelector('#tree .row[data-id=\"sec.other\"]') !== null")

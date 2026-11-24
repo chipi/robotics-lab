@@ -49,7 +49,16 @@ def records(with_anomalies=True):
 
 
 RGB = "(name) => { const e = document.createElement('i'); e.style.color = `var(--${name})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; }"
-rgb = lambda h: f"rgb({(h >> 16) & 255}, {(h >> 8) & 255}, {h & 255})"  # noqa: E731
+def rgb(h):
+    """A pin's colour as getComputedStyle gives it. The three page's pins carry their token's CSS colour since U11 (a number before)."""
+    if isinstance(h, str):
+        h = h.strip()
+        if h.startswith("rgb"):
+            return h.replace("rgba", "rgb").rsplit(",", 1)[0] + ")" if h.count(",") == 3 else h
+        h = h.lstrip("#")
+        h = "".join(c + c for c in h) if len(h) in (3, 4) else h
+        h = int(h[:6], 16)
+    return f"rgb({(h >> 16) & 255}, {(h >> 8) & 255}, {h & 255})"
 close = lambda a, b, tol=1e-3: a is not None and b is not None and all(abs(x - y) < tol for x, y in zip(a, b))  # noqa: E731
 
 with tempfile.TemporaryDirectory() as tmp:

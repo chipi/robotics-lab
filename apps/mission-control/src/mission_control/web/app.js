@@ -101,13 +101,13 @@ const stamp = (r, prev) => { r.state_at = Math.max(prev || 0, r.last_seen_age_s 
 const ageS = (r) => (r.state_at == null ? null : Math.max(0, (Date.now() - r.state_at) / 1000));
 const freshOf = (r) => (r.online === false ? "offline" : freshness(ageS(r)));
 function ageText(r) {
-  const a = ageS(r), g = KIT.status ? KIT.status.glyph("stale") : "";
+  const a = ageS(r), st = freshOf(r) === "offline" ? "offline" : "stale", g = KIT.status ? KIT.status.glyph(st) : "";
   const how = a == null ? "no state yet" : a < 90 ? `${Math.round(a)} s old` : `${Math.round(a / 60)} min old`;
-  return `${g} ${freshOf(r) === "offline" ? "offline" : "stale"}, ${how}`.trim();
+  return `${g} ${st}, ${how}`.trim();
 }
 // the dimmed values of a robot whose state is old, and the one age that says how old
 const dimOf = (r) => (freshOf(r) === "fresh" ? "" : "ui-stale-value");
-const ageEl = (r) => (freshOf(r) === "fresh" ? null : h("span", { class: "ui-stale-age", "data-age": r.id }, ageText(r)));
+const ageEl = (r) => (freshOf(r) === "fresh" ? null : h("span", { class: "ui-stale-age", "data-age": r.id, "data-status": freshOf(r) }, ageText(r)));
 
 // Actions that need a fresh state of the robot are disabled with the reason beside them. STOP, STOP ALL and the alarm panel's stop are never
 // among them: nothing here touches them (they are static HTML, and a stale or silent robot is exactly when STOP is needed).

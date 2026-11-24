@@ -20,7 +20,6 @@ h3 { margin: 10px 0 var(--sp-1); font-size: var(--fs-3); font-weight: 600; }
 
 .top { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding: var(--sp-2) var(--sp-4); min-height: 52px; }   /* the bar itself is .ui-topbar (libs/web/ui.css); this only wraps it on a phone, where STOP sits in it */
 .mark { font-weight: 600; display: flex; align-items: center; gap: var(--sp-2); }
-.mark i { width: 12px; height: 12px; border-radius: var(--radius-2); background: linear-gradient(135deg, var(--data-belief), var(--data-truth)); display: block; }
 .mark [data-slot="brand"] { display: inline-flex; }
 .grow { flex: 1; }
 .chip { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
@@ -42,7 +41,6 @@ h3 { margin: 10px 0 var(--sp-1); font-size: var(--fs-3); font-weight: 600; }
 
 .btn { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 36px; padding: 0 var(--sp-3); border-radius: var(--radius-2); background: var(--surface-field); border: 1px solid var(--line-strong); }
 .btn:hover:not(:disabled) { border-color: var(--line-hover); background: var(--surface-hover); }
-.btn.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
 .btn.danger { color: var(--status-error-on); border-color: var(--status-error); }
 .btn.sm { min-height: 30px; padding: 0 9px; }
 .btn.ghost { background: transparent; }
@@ -64,7 +62,7 @@ input.w { width: 100%; }
 .robot { display: block; width: 100%; text-align: left; padding: var(--sp-2); border-radius: var(--radius-2); background: var(--surface-field); border: 1px solid var(--line); margin-bottom: 6px; }
 .robot[aria-pressed="true"] { border-color: var(--accent-ring); background: var(--accent-soft); color: var(--text-1); }
 .robot .name { font-weight: 600; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--status-error); margin-right: 6px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--status-offline); margin-right: 6px; }
 .dot.on { background: var(--status-ok); }
 .kv { display: flex; flex-wrap: wrap; gap: 2px var(--sp-3); font-size: var(--fs-2); color: var(--text-2); }
 .kv b { color: var(--text-1); font-weight: 500; }
@@ -130,7 +128,6 @@ a.watch[aria-disabled="true"] { color: var(--text-3); pointer-events: none; text
 .crumbs { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .crumb { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 32px; padding: 0 6px; border: 0; background: transparent; color: var(--text-2); }
 .crumb:hover { color: var(--text-1); }
-.crumb-sep { color: var(--text-3); }
 .picker { display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; padding: 0 0 0 10px; border: 1px solid var(--line); border-radius: var(--radius-3); background: var(--surface-field); }
 .picker .lbl { color: var(--text-2); font-size: var(--fs-2); }
 .picker select { border: 0; background: transparent; min-height: 30px; padding: 0 6px; }
@@ -292,7 +289,7 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--font-mono); font-si
 @media (max-width: 700px) {
   body { padding-bottom: 96px; }
   body.on-robot .mark { display: none; }
-  .crumb-t, .picker .lbl { display: none; }
+  .picker .lbl { display: none; }
   .crumbs { flex: 1; }
   .picker { flex: 1; min-width: 0; padding: 0; }
   .picker select { width: 100%; }

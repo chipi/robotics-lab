@@ -17,6 +17,11 @@ Each unit's first step is to check the facts it rests on.
   back to the operator.
 - **The contact shadow under the robot ships** with the floor, no separate review.
 - **The large items are in 4.5:** panels, palette, layouts, readiness.
+- **Review round 1** ([the page](https://claude.ai/artifact/V7JjkVFPdAmLxd6TCNdtpw)): the
+  verdict `stopped` is neutral; the primary button is solid again, one shared style in
+  `ui.css` for both apps; offline is its own status (`--status-offline`, grey, its own glyph,
+  not stale's); alert against warn under deuteranopia in the light theme is accepted (the glyph
+  and word tell them apart).
 - **One design system for both apps:** the same tokens, type scale, colours and components,
   from `libs/web`, for full consistency. The one difference kept on purpose is density:
   the Observatory compact (12 px base, 24 px controls), Mission Control regular (14 px base,
@@ -145,11 +150,13 @@ block. Old names stay as aliases in the first block until U26.
   `--line-focus`. Hairlines `--hairline-1..5` (from `--hair-2`, `--hair`, `--hair-5`, `--hair-3`,
   `--hair-4`). Veils `--veil-1`, `--veil-2`, `--veil-scrim`; `--elev-shadow`.
 - Text: `--text-1` value, `--text-2` label, `--text-3` hint, `--text-on-solid`.
-- Action: `--accent`, `--accent-soft`, `--accent-ring`, `--accent-text`, `--danger-solid` (STOP
+- Action: `--accent`, `--accent-soft`, `--accent-ring`, `--accent-text` (on soft tints),
+  `--accent-on` and `--accent-hover` (the solid primary, round 1), `--danger-solid` (STOP
   only).
 - Status, each with `-soft` and `-on`: `--status-ok`, `-info`, `-warn`, `-alert` (orange),
-  `-error`, `-unknown`, `-stale`, `-live` (yellow, with its own glyph). `--ok`, `--warn`,
-  `--error` stay as aliases. A status is never colour alone: a glyph and a word.
+  `-error`, `-unknown`, `-stale`, `-live` (yellow, with its own glyph), `-offline` (grey, its
+  own glyph; round 1). `--ok`, `--warn`, `--error` stay as aliases. A status is never colour
+  alone: a glyph and a word.
 - Data (never a status): `--data-belief`, `-truth`, `-plan`, `-obstacle`, `-drop`, `-floor`,
   `-depth-obstacle`, `-depth-overhead`, `-box`, `-occupied`, `-free`, `-gap`.
 - Axes `--axis-x/y/z`. HUD `--hud-bg`, `-line`, `-text`, `-key`, `-value`, `-warn`.
@@ -169,11 +176,12 @@ block. Old names stay as aliases in the first block until U26.
 
 ### Modules (`libs/web/`)
 
-- `status.js`: `STATUS = ['ok','info','warn','alert','error','unknown','stale','neutral','live']`;
-  `statusOf(kind, value)` for `verdict`, `severity`, `event`, `conn`, `goal_state`;
-  `statusVar`, `glyph`, `label`. Verdicts: ok = reached, done, evaluated; info = running,
-  queued; neutral = ended, no_frontier_left, cancelled, refused, not_found; warn = timeout,
-  stalled; alert = stopped_by_guardrail, trapped; error = failed, interrupted.
+- `status.js`: `STATUS = ['ok', 'info', 'warn', 'alert', 'error', 'unknown', 'stale',
+  'neutral', 'live', 'offline']`; `statusOf(kind, value)` for `verdict`, `severity`, `event`,
+  `conn`, `goal_state`; `statusVar`, `glyph`, `label`. Verdicts: ok = reached, done,
+  evaluated; info = running, queued; neutral = ended, stopped, no_frontier_left, cancelled,
+  refused, not_found; warn = timeout, stalled; alert = stopped_by_guardrail, trapped; error =
+  failed, interrupted.
 - `motion.js`: `reducedMotion()`, `ms(token)`, `setMotion('auto'|'reduce'|'full')`, `onChange`;
   writes `data-motion` and `rl.motion`.
 - `brand.js`: `APPS = {control: {name: 'Mission Control', href: '/control/'}, observatory:

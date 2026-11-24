@@ -120,6 +120,9 @@ with sync_playwright() as p:
         check("its style and scripts came from /control/web/ and the library from /lib/ of the same origin",
               BASE + "/control/web/app.js" in requests and BASE + "/control/web/style.css" in requests and BASE + "/lib/tokens.css" in requests
               and BASE + "/control/api/v1/events" in "".join(u.split("?")[0] for u in requests), [u for u in requests if "control" in u][:6])
+        links = page.evaluate("""() => ({brand: document.querySelector('header [data-slot=brand] a.ui-brand')?.getAttribute('href'),
+            nav: [...document.querySelectorAll('header [data-slot=nav] a')].map((a) => [a.textContent, a.getAttribute('href')])})""")
+        check("behind the Observatory the brand link goes to /control/ and the nav's Observatory link to /", links["brand"] == "/control/" and ["miniview", "/"] in links["nav"], links)
         check("the tokens of the one library reached the page (a coloured background, not the browser's white)",
               page.evaluate("getComputedStyle(document.body).backgroundColor") != "rgba(0, 0, 0, 0)")
         page.click("#stop-all")

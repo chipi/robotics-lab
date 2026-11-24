@@ -1177,8 +1177,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     if (app.classList.contains('scenes')) $('scenes-link').setAttribute('aria-current', 'page'); else $('scenes-link').removeAttribute('aria-current');
     $('layoutSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === M.view));
     $('frameSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.frame === M.frame));
-    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · ${runBadge(r)} · <span class="num">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="num">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="num">${r.samples}</span> samples` : ''}` : 'no run open';
-    $('runinfo').title = $('runinfo').textContent;      // the chip shortens with an ellipsis in a narrow bar; the whole text stays in the tooltip
+    $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · <span class="num">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="num">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="num">${r.samples}</span> samples` : ''}` : 'no run open';
+    $('runinfo').title = $('runinfo').textContent;      // the chip shortens with an ellipsis in a narrow bar; the whole text stays in the tooltip. The verdict is not in it: the Run button beside it shows it
     app.classList.toggle('signals-only', signalsOnly());
     $('vt').innerHTML = signalsOnly() ? '<b>Signals</b> · time series, click or drag to seek' : `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';

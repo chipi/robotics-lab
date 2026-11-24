@@ -4,16 +4,38 @@ and y up); fitPose puts all 8 corners of a box inside the view with the margin; 
 follow roll and pitch; moveTo is immediate under reduced motion and tweens otherwise; the floor is the --scene-floor colour on screen (read
 back from the canvas, within 2/255 per channel: the floor is not tone mapped, so the only difference is rounding through linear light), differs in
 dark and light, and the clear colour is --scene-bg; lights exist with no body; the grid fades by vertex colour; the contact shadow darkens
-the floor around a body; the trail's head and tail colours differ. Needs the system Chromium and Playwright.
+the floor around a body; the trail's head and tail colours differ. Then the Observatory's three.js page (U11): in the 3D and chase layouts the floor
+is on screen in the --scene-floor colour (light and dark differ), in the eye and the top layouts it is not drawn; the stage's lights exist before a body
+loads; the contact shadow follows the body; the floor overlay turns it off and the choice is remembered; and build.js, views.js and app.js hold no
+colour literal (the one allowed: the white of the anomaly pins' texture mask). Needs the system Chromium and Playwright.
 Run: cd apps/observatory && uv run python tests/test_look_3d_pages.py"""
 
+import atexit
+import os
+import re
+import shutil
+import struct
 import tempfile
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+ROBOTS = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, ROBOTS, True)
+os.environ["MINIVIEW_ROBOTS"] = str(ROBOTS)
 
-from helpers import Checks, catalog, scene, serve
-from observatory.shots import launch
+from playwright.sync_api import sync_playwright  # noqa: E402
+
+from helpers import Checks, catalog, make_run, scene, serve, tick  # noqa: E402
+from observatory.shots import launch  # noqa: E402
+
+# a one-link robot with a box mesh, for the page section: the body the contact shadow goes under
+_v = [(x, y, z) for x in (-0.06, 0.06) for y in (-0.06, 0.06) for z in (0.0, 0.1)]
+_f = [(0, 1, 3), (0, 3, 2), (4, 6, 7), (4, 7, 5), (0, 4, 5), (0, 5, 1), (2, 3, 7), (2, 7, 6), (0, 2, 6), (0, 6, 4), (1, 5, 7), (1, 7, 3)]
+(ROBOTS / "arm" / "meshes").mkdir(parents=True)
+(ROBOTS / "arm" / "robot.urdf").write_text('<robot name="arm"><link name="base"><visual><geometry><mesh filename="meshes/base.stl"/></geometry>'
+                                           '<material name="b"><color rgba="0.8 0.6 0.3 1"/></material></visual></link></robot>')
+(ROBOTS / "arm" / "robot.json").write_text('{"label": "Test arm", "stand_z": 0.0}')
+(ROBOTS / "arm" / "meshes" / "base.stl").write_bytes(bytes(80) + struct.pack("<I", len(_f)) + b"".join(
+    struct.pack("<3f", 0, 0, 0) + b"".join(struct.pack("<3f", *_v[i]) for i in f) + struct.pack("<H", 0) for f in _f))
 
 _checks = Checks("LOOK 3D PAGES")
 
@@ -261,6 +283,8 @@ TRAIL = """() => {
 with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     cat = catalog(Path(tmp) / "data")
     cat.put_scene(scene("room"))
+    for key in ("arm/room/r1", "bare/room/r2"):            # arm has a body (a mesh); bare has no description: no body ever loads
+        make_run(Path(tmp) / "data", key, [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})] + [tick(round(0.1 * k, 3), 0.02 * k) for k in range(30)])
     cat.scan()
     httpd, base = serve(cat, follow=False)
     b = launch(p)
@@ -381,6 +405,105 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("trail.setColors re-paints the head and keeps the fade colour", near(t["recolour"]["head"], t["recolour"]["want"], 1e-5) and near(t["recolour"]["tail"], t["recolour"]["wantTail"], 1e-5), t["recolour"])
         check("trail on screen: the head end is drawn (red) and the tail end has faded into the background", t["screen"]["head"][0] > 150 and sum(t["screen"]["tail"]) < sum(t["screen"]["head"]) - 100
               and max(t["screen"]["tail"]) < 80, t["screen"])
+
+        # the Observatory's three.js page
+        pg = b.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark").new_page()
+        pg.set_default_timeout(30000)
+        pg.on("console", lambda m: console.append(m.text) if m.type in ("error", "warning") and "GL Driver Message" not in m.text and "Failed to load resource" not in m.text else None)
+        pg.on("pageerror", lambda e: console.append(str(e)))
+        pg.on("response", lambda r: missing.append(r.url) if r.status >= 400 and "favicon" not in r.url else None)
+
+        def open_run(key, view):
+            fresh = "/web/three/" not in pg.url
+            pg.goto(f"{base}/web/three/#scene=room&run={key}&view={view}")
+            if not fresh:
+                pg.reload()                      # only the hash changed: a reload makes the page read it
+            pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+            pg.wait_for_function("window.miniview.state().run !== null")
+            pg.evaluate("window.miniview.whenLoaded()")
+
+        def go(view):
+            pg.evaluate("window.__ready = false")
+            pg.evaluate(f"window.miniview.setView('{view}')")
+            pg.wait_for_function("window.__ready === true")
+
+        A = "window.miniview.internals.adapter"
+        tok = lambda n: pg.evaluate(f"getComputedStyle(document.documentElement).getPropertyValue('--scene-{n}').trim()")  # noqa: E731
+        rgb = lambda h: [int(h[i:i + 2], 16) for i in (1, 3, 5)]  # noqa: E731
+        # a point of the floor away from the robot, the grid's lines and the axis numbers; its pixel in the first pane
+        floor_px = lambda: pg.evaluate(f"(() => {{ const q = window.miniview.internals.adapter.project([1.6, -1.6, 0]); return {A}.pixelAt(q[0], q[1]); }})()")  # noqa: E731
+
+        open_run("bare/room/r2", "3d")
+        st = pg.evaluate(f"{A}.stage()")
+        check("page: the stage's lights exist with no body loaded (the robot has no description): a hemisphere light and a sun, at --scene-sky-k and --scene-sun-k",
+              pg.evaluate(f"{A}.body()") is None and [(x[0], x[1]) for x in st["lights"]] == [("HemisphereLight", 0.35), ("DirectionalLight", 0.6)], (st["lights"], pg.evaluate(f"{A}.body()")))
+        check("page: the renderer tone maps (Neutral) and the stage layer is drawn by the 3D and chase cameras only, not the eye, the top or the side views",
+              st["toneMapping"] == 7 and [v for v, on in st["views"].items() if on] == ["3d", "chase"], st)
+        close = lambda a, b, e=2: all(abs(x - y) <= e for x, y in zip(a, b))  # noqa: E731
+        dark_floor, dark_want = floor_px(), rgb(tok("floor"))
+        check("page 3D, dark: the floor on screen is the --scene-floor colour", st["floor"] and close(dark_floor, dark_want), (dark_floor, dark_want))
+        go("eye")
+        pg.evaluate("window.miniview.setOverlay('coords', false)")          # the coordinate frame's axes would be in the way
+        eye_px = pg.evaluate(f"(() => {{ const r = document.getElementById('stage').getBoundingClientRect(); return {A}.pixelAt(r.left + r.width / 2, r.top + r.height * 0.9); }})()")
+        check("page eye layout: the floor is absent (the eye camera does not enable the stage layer): the lower part of the view is the clear colour --scene-bg",
+              close(eye_px, rgb(tok("bg"))), (eye_px, tok("bg")))
+        pg.evaluate("window.miniview.setOverlay('coords', true)")
+        go("top")
+        pg.evaluate("window.miniview.setOverlay('coords', false)")
+        top_px = floor_px()
+        pg.evaluate("window.miniview.setOverlay('coords', true)")
+        check("page top layout: no floor, so the map stays as drawn (the pixel is the clear colour, not --scene-floor)", close(top_px, rgb(tok("bg"))) and not close(top_px, dark_want, 1), (top_px, tok("bg")))
+        go("3d")
+        pg.click("#themeBtn")
+        pg.wait_for_function("document.documentElement.dataset.theme === 'light'")
+        light_floor, light_want = floor_px(), rgb(tok("floor"))
+        check("page 3D, light: the floor is the light --scene-floor colour and differs from dark (the theme re-reads the tokens)",
+              close(light_floor, light_want) and not close(light_floor, dark_floor, 10), (light_floor, light_want, dark_floor))
+        lt = pg.evaluate(f"{A}.stage()")
+        check("page 3D, light: the lights take the light theme's intensities (0.7, 1.1)", [x[1] for x in lt["lights"]] == [0.7, 1.1], lt["lights"])
+        pg.click("#themeBtn")
+        pg.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+
+        # the floor overlay: on by default, off hides the floor in the 3D view, remembered across a reload
+        check("page: the floor overlay is on by default and the toggle is in the 3D corner (not in the top layout)",
+              pg.evaluate("window.miniview.config().overlays.floor") is True and pg.evaluate("getComputedStyle(document.getElementById('floorBtn')).display") != "none")
+        pg.click("#floorBtn")
+        off_px = floor_px()
+        check("page: the floor toggle hides the floor (the pixel is --scene-bg), the grid and the rest stay", pg.evaluate(f"{A}.stage()")["floor"] is False and close(off_px, rgb(tok("bg")))
+              and pg.evaluate("window.miniview.config().overlays.floor") is False, off_px)
+        pg.reload()
+        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        check("page: the choice is remembered after a reload", pg.evaluate("window.miniview.config().overlays.floor") is False)
+        pg.click("#floorBtn")
+        check("page: setOverlay('floor', ...) and the toggle are the same switch", pg.evaluate("window.miniview.config().overlays.floor") is True
+              and pg.evaluate("window.miniview.setOverlay('floor', false)") is False and pg.evaluate(f"{A}.stage()")["floor"] is False)
+        pg.evaluate("window.miniview.setOverlay('floor', true)")
+
+        # the contact shadow follows the body (the arm has one)
+        open_run("arm/room/r1", "3d")
+        pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
+        def shadow_at(t):
+            pg.evaluate("window.__ready = false")
+            pg.evaluate(f"window.miniview.setTime({t})")
+            pg.wait_for_function("window.__ready === true")
+            return pg.evaluate(f"({{ shadow: {A}.stage().shadow, body: {A}.body() }})")
+        a, c = shadow_at(0.2), shadow_at(2.5)
+        check("page: the contact shadow is under the body, shown with it, and moves as the robot moves (it was at x %.2f, then %.2f)" % (a["shadow"]["pos"][0], c["shadow"]["pos"][0]),
+              a["shadow"]["visible"] and c["shadow"]["visible"] and abs(c["shadow"]["pos"][0] - a["shadow"]["pos"][0]) > 0.3
+              and abs(c["shadow"]["pos"][0] - c["body"]["pos"][0]) < 0.3 and abs(c["shadow"]["pos"][2] - 0.001) < 1e-6, (a, c))
+        # the 0.12 m body's shadow reaches 0.1 m from its middle: the ground 0.075 m to each side, one of which the body does not cover on screen
+        px = pg.evaluate(f"""(() => {{ const b = {A}.body().pos, out = [];
+          for (const [dx, dy] of [[0.075, 0], [-0.075, 0], [0, 0.075], [0, -0.075]]) {{ const q = window.miniview.internals.adapter.project([b[0] + dx, b[1] + dy, 0]); out.push({A}.pixelAt(q[0], q[1])); }}
+          return out; }})()""")
+        check("page: the shadow darkens the floor around the robot (a pixel beside the body is darker than the floor)", min(sum(q) for q in px) < sum(rgb(tok("floor"))) - 6, (px, tok("floor")))
+        check("page: no console error or warning, no failed request on the page", not console and not missing, (console[:5], missing))
+
+        # no colour literal in the page's scene code: the tokens are read, not copied (the allowed: the white of the pins' texture mask)
+        src = {n: (Path(__file__).resolve().parents[1] / "web" / "three" / n).read_text() for n in ("build.js", "views.js", "app.js")}
+        lit = {n: re.findall(r"#[0-9a-fA-F]{3,8}\b|\b0x[0-9a-fA-F]+\b|rgba?\(", t) for n, t in src.items()}
+        check("no hex, 0x or rgb() colour literal in build.js, views.js or app.js, except the one '#fff' of the anomaly pins' texture mask",
+              lit["views.js"] == [] and lit["app.js"] == [] and lit["build.js"] == ["#fff"] and "g.fillStyle = g.strokeStyle = '#fff'" in src["build.js"], lit)
+        check("build.js reads the tokens: no fog fallback 0x9aa3b0, no setPalette", "9aa3b0" not in src["build.js"] and "setPalette" not in src["build.js"] + src["app.js"], "")
 
         check("no console error or warning, no failed request", not console and not missing, (console[:5], missing))
     finally:

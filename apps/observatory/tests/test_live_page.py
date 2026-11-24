@@ -197,12 +197,12 @@ with tempfile.TemporaryDirectory() as tmp:
             fh.write(json.dumps({"event": "trapped", "t": 5.0}) + "\n")
         imp.join(30)
         for lib, q in pages.items():
-            q.wait_for_function("document.getElementById('runinfo').textContent.includes('trapped')", timeout=20000)
+            q.wait_for_function("document.getElementById('runVerdict').textContent.includes('trapped')", timeout=20000)      # the verdict is the Run button's, not the chip's (round 1)
             q.wait_for_function("document.getElementById('follow').hidden", timeout=20000)
-            info = q.evaluate("document.getElementById('runinfo').textContent")
+            info = q.evaluate("document.getElementById('runVerdict').textContent")
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
-        wp.wait_for_function("document.getElementById('runinfo').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
+        wp.wait_for_function("document.getElementById('runVerdict').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
         check("the watch page shows the run end: the room event, the anomaly, the event and the verdict in the decisions, status ended",
               wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["room", "anomaly", "trapped", "verdict"],
               wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)"))

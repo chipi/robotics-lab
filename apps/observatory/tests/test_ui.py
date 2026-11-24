@@ -179,7 +179,8 @@ def run_page(b, base, rid, other):
     call(f"window.miniview.setTime({TA})")
     check("the workbench shows after load()", ev("!document.getElementById('app').classList.contains('scenes')"))
     chip = ev("document.getElementById('runinfo').textContent").replace("\xa0", " ")
-    check("status chip: robot, kind, verdict, length, ticks", "trapped" in chip and f"{nt} ticks" in chip, chip)
+    verdict = ev("document.getElementById('runVerdict').textContent")      # the chip no longer repeats it: the Run button beside it shows it
+    check("status chip: robot, kind, length, ticks; the verdict on the Run button beside it", "trapped" in verdict and "trapped" not in chip and f"{nt} ticks" in chip, [chip, verdict])
     st = state()
     last = [e for e in run["events"] if e["t"] <= max(TA, fr["t"][st["tick"]]) + 1e-9][-1]
     check("state(): t, belief, truth, distance, last_event", st["t"] == TA and len(st["belief"]) == 3 and len(st["truth"]) == 3
@@ -631,14 +632,17 @@ def run_page(b, base, rid, other):
     call(f"window.miniview.setTime({TA})")
 
     # theme
-    tok_dark = ev("getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim()")
+    # the three.js page clears to the stage's --scene-bg (U11), the deck.gl page to --bg-viewport
+    tkn = "--scene-bg" if lib == "three" else "--bg-viewport"
+    tok_dark = ev(f"getComputedStyle(document.documentElement).getPropertyValue('{tkn}').trim()")
     px_dark = pixel(page.locator("#stage").screenshot(), 3, 500)
     page.click("#themeBtn")
     settle()
-    tok_light = ev("getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim()")
+    tok_light = ev(f"getComputedStyle(document.documentElement).getPropertyValue('{tkn}').trim()")
     px_light = pixel(page.locator("#stage").screenshot(), 3, 500)
-    check("theme switch flips the tokens; the renderer's clear colour follows (pixel in the viewport)", tok_dark == "#202125" and tok_light == "#f6f7f9"
-          and px_dark[:3] == [0x20, 0x21, 0x25] and px_light[:3] == [0xf6, 0xf7, 0xf9], (tok_dark, tok_light, px_dark, px_light))
+    rgb = lambda h: [int(h[i:i + 2], 16) for i in (1, 3, 5)]  # noqa: E731
+    check("theme switch flips the tokens; the renderer's clear colour follows (pixel in the viewport)", tok_dark != tok_light
+          and px_dark[:3] == rgb(tok_dark) and px_light[:3] == rgb(tok_light), (tok_dark, tok_light, px_dark, px_light))
     check("the choice is remembered (localStorage)", ev("localStorage.getItem('miniview.theme')") == "light")
     page.reload()
     page.wait_for_function("window.__ready === true", timeout=30000)

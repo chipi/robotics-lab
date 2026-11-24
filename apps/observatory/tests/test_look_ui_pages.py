@@ -31,17 +31,17 @@ OLD_NAMES = ["--bg-app", "--bg-viewport", "--bg-panel", "--bg-header", "--bg-fie
 # the plan's verdict mapping (docs/wip/LOOK-AND-FEEL-PLAN.md, "Frozen contracts"), written out value by value
 VERDICTS = {
     "ok": ["reached", "done", "evaluated"], "info": ["running", "queued"],
-    "neutral": ["ended", "no_frontier_left", "cancelled", "refused", "not_found"],
+    "neutral": ["ended", "no_frontier_left", "cancelled", "refused", "not_found", "stopped"],
     "warn": ["timeout", "stalled"], "alert": ["stopped_by_guardrail", "trapped"], "error": ["failed", "interrupted"],
 }
-STATUSES = ["ok", "info", "warn", "alert", "error", "unknown", "stale", "neutral", "live"]
+STATUSES = ["ok", "info", "warn", "alert", "error", "unknown", "stale", "neutral", "live", "offline"]
 
 PAGE = """<!doctype html><html data-theme="dark"><head>
 <link rel="stylesheet" href="/lib/tokens.css"><link rel="stylesheet" href="/lib/fonts/fonts.css"><link rel="stylesheet" href="/lib/ui.css">
 </head><body>
 <span id="badge" class="ui-badge" data-status="warn"><span class="ui-glyph" aria-hidden="true">G</span><span class="ui-word">W</span></span>
 <span id="num" class="num">0123</span>
-<button id="btn" class="ui-btn">Go</button><input id="inp" class="ui-input">
+<button id="btn" class="ui-btn">Go</button><button id="btnp" class="ui-btn ui-btn--primary">Run</button><input id="inp" class="ui-input">
 <span id="stale" class="ui-stale"><span class="ui-stale-value num">12.4</span><span class="ui-stale-age">5 s ago</span></span>
 <div id="probe" style="transition-duration: var(--dur-base)"></div>
 <header id="bar" class="ui-topbar"><span data-slot="brand"></span><nav data-slot="nav"></nav><span data-slot="theme"></span>
@@ -101,7 +101,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     gs = page.evaluate(f"{st}.then(m => Object.fromEntries({values!r}.map(v => [v, m.statusOf('goal_state', v)])))")
     check("goal_state uses the verdict mapping", gs == want)
     info = page.evaluate(f"{st}.then(m => ({{all: m.STATUS, glyphs: m.STATUS.map(s => m.glyph(s)), words: m.STATUS.map(s => m.label(s)), vars: m.STATUS.map(s => m.statusVar(s))}}))")
-    check("STATUS is the contract's nine, in order", info["all"] == STATUSES, info["all"])
+    check("STATUS is the contract's ten, in order", info["all"] == STATUSES, info["all"])
     check("every status has a glyph, and the glyphs differ", all(info["glyphs"]) and len(set(info["glyphs"])) == len(STATUSES), info["glyphs"])
     check("every status has a word, and the words differ", all(info["words"]) and len(set(info["words"])) == len(STATUSES), info["words"])
     check("statusVar names the status token", info["vars"] == [f"var(--status-{s})" for s in STATUSES], info["vars"])
@@ -110,8 +110,8 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("an unknown value, kind or status maps to unknown", odd[:6] == ["unknown"] * 6 and odd[6:] == ["?", "unknown"], odd)
     others = page.evaluate(f"{st}.then(m => [m.statusOf('severity', 'critical'), m.statusOf('severity', 'major'), m.statusOf('severity', 'minor'), m.statusOf('severity', 'info'),"
                            " m.statusOf('event', 'cliff_stop'), m.statusOf('event', 'reflex_stop'), m.statusOf('event', 'reached'), m.statusOf('event', 'leg'),"
-                           " m.statusOf('conn', 'live'), m.statusOf('conn', 'reconnecting')])")
-    check("severity, event and conn map as the apps show them today", others == ["error", "error", "warn", "neutral", "error", "alert", "ok", "neutral", "live", "error"], others)
+                           " m.statusOf('conn', 'live'), m.statusOf('conn', 'reconnecting'), m.statusOf('conn', 'lost'), m.statusOf('conn', 'offline'), m.statusOf('conn', 'online')])")
+    check("severity, event and conn map as the apps show them today (reconnecting is an error; lost and offline are the offline status)", others == ["error", "error", "warn", "neutral", "error", "alert", "ok", "neutral", "live", "error", "offline", "offline", "ok"], others)
 
     # the badge: glyph, word, and the colours of the status token
     for theme in ("dark", "light"):
@@ -166,6 +166,19 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("setMotion refuses a mode that is not one of the three", page.evaluate(f"{mo}.then(m => {{ try {{ m.setMotion('fast'); return false; }} catch (e) {{ return e instanceof RangeError; }} }})") is True)
     page.evaluate(f"{mo}.then(m => m.setMotion('auto'))")
 
+    # a solid primary button: --accent fill, --accent-on text, --accent-hover under the pointer
+    prim = lambda: page.evaluate("""(() => { const probe = (v) => { const d = document.createElement('i'); d.style.color = v; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+      const s = getComputedStyle(document.getElementById('btnp'));
+      return {bg: s.backgroundColor, fg: s.color, accent: probe('var(--accent)'), on: probe('var(--accent-on)'), hover: probe('var(--accent-hover)')}; })()""")
+    page.evaluate(settle)
+    pr = prim()
+    check("a primary button is a solid --accent fill with --accent-on text", pr["bg"] == pr["accent"] and pr["fg"] == pr["on"], pr)
+    page.hover("#btnp")
+    page.evaluate(settle)
+    pr = prim()
+    check("... and --accent-hover under the pointer", pr["bg"] == pr["hover"] and pr["hover"] != pr["accent"], pr)
+    page.mouse.move(0, 0)
+
     # a stale value: the value dimmed, the age said
     sv = page.evaluate("""(() => { const v = getComputedStyle(document.querySelector('#stale .ui-stale-value')), a = document.querySelector('#stale .ui-stale-age');
       return {opacity: +v.opacity, age: a.textContent, shown: a.getBoundingClientRect().width > 0}; })()""")
@@ -187,6 +200,19 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("... and the nav slot, the current page marked", res["nav"] == ["Runs:page", "Robots:"], res["nav"])
     check("... and leaves the [data-stop] node as it was: the same node, same markup, same place, not hidden",
           res["same"] and res["html"] == before[0] and res["index"] == before[1] and res["visible"], [res["same"], res["index"], before[1], res["visible"]])
+    mark = page.evaluate("""(() => { const m = document.querySelector('#bar [data-slot=brand] a.ui-brand .ui-brand-mark'); if (!m) return null; const c = getComputedStyle(m);
+      const p = document.createElement('i'); p.style.background = 'linear-gradient(135deg, var(--data-belief), var(--data-truth))'; p.style.width = p.style.height = '12px'; document.body.append(p);
+      const want = getComputedStyle(p).backgroundImage; p.remove();
+      return {w: c.width, h: c.height, bg: c.backgroundImage, want, hidden: m.getAttribute('aria-hidden')}; })()""")
+    check("the brand link carries the kit's mark: 12 px, the belief-to-truth gradient, hidden from a screen reader",
+          mark is not None and mark["w"] == "12px" and mark["h"] == "12px" and mark["bg"] == mark["want"] and "gradient" in mark["bg"] and mark["hidden"] == "true", mark)
+    hrefs = page.evaluate("""import('/lib/brand.js').then((m) => {
+      const run = (app, path) => { history.replaceState(null, '', path); const d = document.createElement('div'); d.innerHTML = '<span data-slot="brand"></span><nav data-slot="nav"></nav>';
+        m.mountTopBar(d, {app}); return d.querySelector('[data-slot=brand] a').getAttribute('href'); };
+      const out = [run('control', '/'), run('control', '/control/'), run('control', '/control'), run('observatory', '/web/three/'), run('observatory', '/control/')];
+      history.replaceState(null, '', '/web/three/'); return out; })""")
+    check("the brand link resolves in both deployments: Mission Control is '/' on its own port and '/control/' behind the Observatory; the Observatory is '/'",
+          hrefs == ["/", "/control/", "/control/", "/", "/"], hrefs)
     check("APPS is the contract's", res["apps"] == ["control:Mission Control:/control/", "observatory:miniview:/"], res["apps"])
     guard = page.evaluate("""import('/lib/brand.js').then((m) => {
       const mk = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d; };
@@ -223,6 +249,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         for rid, v in VERDICT_RUNS:
             make_run(Path(tmp2) / "data", f"duck/room/{rid}", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": v})])
         live = make_run(Path(tmp2) / "data", "duck/room/livenow", HEAD + [tick(1.0, 0.0)], close=False)
+        # the screenshots' fixture in short: 30 ticks and 30 samples, the run info's longest text
+        RICH = HEAD + [r for k in range(30) for r in (tick(round(1.0 + 0.1 * k, 3), 0.01 * k), (round(1.05 + 0.1 * k, 3), "signals", {"values": {"joint_a": 0.1 * k}, "t_src": round(1.05 + 0.1 * k, 3)}))] + [(4.5, "end", {"verdict": "reached"})]
+        make_run(Path(tmp2) / "data", "duck/room/rich", RICH, signals=[{"name": "joint_a", "kind": "number", "unit": "rad"}])
         cat2.scan()
         httpd2, base2 = serve(cat2, follow=False)
         pg = b.new_page(viewport={"width": 1440, "height": 900})
@@ -282,6 +311,11 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
           if (link.getBoundingClientRect().right > nav.getBoundingClientRect().right + 0.5) bad.push(['nav', 'its link overflows']);
           return bad; })()""")
         check("... and no two top-bar items overlap, the Scenes link stays inside its slot", not lap, lap)
+        pg.evaluate("window.miniview.load('room', 'duck/room/rich')")
+        pg.wait_for_function("window.__ready === true && document.getElementById('runinfo').textContent.includes('samples')", timeout=30000)
+        info = pg.evaluate("(() => { const e = document.getElementById('runinfo'); return {text: e.textContent, scroll: e.scrollWidth, client: e.clientWidth}; })()")
+        check("at 1440 px the run info shows in full (ticks and samples, no ellipsis) for a run of 30 ticks and 30 samples",
+              "30 samples" in info["text"] and info["scroll"] <= info["client"], info)
         probe_tn = pg.evaluate("""(() => ['tin', 'kin'].map((id) => getComputedStyle(document.getElementById(id)).fontVariantNumeric.includes('tabular-nums')))()""")
         check("the time and tick readouts use tabular figures", all(probe_tn), probe_tn)
         shell_btn = pg.evaluate("document.getElementById('exportBtn').getBoundingClientRect().height")

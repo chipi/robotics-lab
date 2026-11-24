@@ -149,6 +149,8 @@ with sync_playwright() as p:
     check("the page loads Inter from the shared /lib/fonts, not a system fallback", loaded > 0, loaded)
     family = page.evaluate("getComputedStyle(document.body).fontFamily")
     check("the body font-family starts with Inter", family.startswith("Inter"), family)
+    robots_words = page.evaluate("[...document.querySelectorAll('header.top *')].filter((e) => e.children.length === 0 && e.offsetParent && e.textContent.trim() === 'Robots').length")
+    check("on the robot page the word Robots is in the top bar once (the nav item; the crumb is the way back and the robot's name)", robots_words == 1, robots_words)
 
     # --- U19: the restyle ----------------------------------------------------------------------------------------------------
     css = re.sub(r"/\*.*?\*/", "", (WEB / "style.css").read_text(), flags=re.S)
@@ -164,6 +166,13 @@ with sync_playwright() as p:
     check("the page is density regular, 14 px base", page.evaluate("document.documentElement.dataset.density === 'regular' && getComputedStyle(document.body).fontSize === '14px'"))
     wait(page, "!!document.querySelector('header .ui-brand')")
     check("the top bar's brand is brand.js's link", page.evaluate("(() => { const a = document.querySelector('header [data-slot=brand] a.ui-brand'); return !!a && a.textContent === 'Mission Control'; })()"))
+    brand = page.evaluate("""() => { const a = document.querySelector('header [data-slot=brand] a.ui-brand'), m = a && a.querySelector('.ui-brand-mark');
+        const p = document.createElement('i'); p.style.background = 'linear-gradient(135deg, var(--data-belief), var(--data-truth))'; document.body.append(p);
+        const want = getComputedStyle(p).backgroundImage; p.remove(); const c = m && getComputedStyle(m);
+        return {href: a && a.getAttribute('href'), mark: !!m, w: c && c.width, h: c && c.height, bg: c && c.backgroundImage, want}; }""")
+    check("on its own port the brand link goes to '/' (not /control/, which does not exist there)", brand["href"] == "/", brand)
+    check("the brand carries the kit's mark: 12 px, the belief-to-truth gradient (the same as the Observatory's)",
+          brand["mark"] and brand["w"] == "12px" and brand["h"] == "12px" and brand["bg"] == brand["want"] and "gradient" in brand["bg"], brand)
     check("the theme control sits in the theme slot and STOP stays outside every slot", page.evaluate(
         "!!document.querySelector('[data-slot=theme] #theme') && !document.querySelector('[data-slot] .stops, [data-slot] .stop') && !!document.querySelector('header > .stops #stop-robot')"))
     same = page.evaluate("""() => { const s = document.getElementById('stop-robot'), p = document.createElement('i'); p.style.background = 'var(--danger-solid)'; p.style.color = 'var(--text-on-solid)';
@@ -183,6 +192,18 @@ with sync_playwright() as p:
     check("a run's state is a badge: the word is its text, the status is statusOf's, the glyph is aria-hidden", want is not None and got[1] == want and got[2] != "" and got[3] == "true", got)
     wait(page, "document.getElementById('run-state').textContent === 'reached'", 20000)
     check("a correct end (reached) is the ok status", page.evaluate("document.getElementById('run-state').parentElement.dataset.status") == "ok")
+
+    # the primary button is the kit's solid style: --accent fill, --accent-on text, --accent-hover under the pointer
+    prim = lambda: page.evaluate("""() => { const probe = (v) => { const d = document.createElement('i'); d.style.color = v; document.body.append(d); const c = getComputedStyle(d).color; d.remove(); return c; };
+        const s = getComputedStyle(document.getElementById('g-run'));
+        return {bg: s.backgroundColor, fg: s.color, accent: probe('var(--accent)'), on: probe('var(--accent-on)'), hover: probe('var(--accent-hover)')}; }""")
+    pr = prim()
+    check("Run now is a solid primary button: --accent fill, --accent-on text", pr["bg"] == pr["accent"] and pr["fg"] == pr["on"], pr)
+    page.hover("#g-run")
+    page.wait_for_timeout(300)
+    pr = prim()
+    check("... and --accent-hover under the pointer", pr["bg"] == pr["hover"], pr)
+    page.mouse.move(0, 0)
 
     # a goal in the library, so there is a library Run to disable
     page.fill("#g-name", "stale-check")
@@ -211,6 +232,10 @@ with sync_playwright() as p:
             check(f"stale: the first click on {sid} posts {route}", True)
     page.evaluate("window.__mc.S.robots[0].state_at = Date.now() - 40000; window.__mc.tickFreshness();")
     wait(page, "document.querySelector('#robot-duck-1 [data-age]')?.textContent.includes('offline')")
+    off = page.evaluate("(() => { const e = document.querySelector('#robot-duck-1 [data-age]'); return {status: e.dataset.status, text: e.textContent}; })()")
+    glyphs = page.evaluate("import('/lib/status.js').then((m) => [m.glyph('offline'), m.glyph('stale')])")
+    check("an offline robot's age is the offline status: its own glyph (not stale's clock) and word", off["status"] == "offline" and off["text"].startswith(glyphs[0]) and glyphs[0] != glyphs[1]
+          and "stale" not in off["text"], [off, glyphs])
     check("a robot silent for 30 s or more is offline, its Run disabled", page.evaluate("window.__mc.freshOf(window.__mc.S.robots[0]) === 'offline' && document.getElementById('g-run').disabled"))
     with soft("offline: a click on stop-robot"):
         with page.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/v1/robots/duck-1/stop"), timeout=4000):

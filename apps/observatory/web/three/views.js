@@ -35,8 +35,8 @@ function label(text, pos, cls = '') {
 
 function arrow(axis, hex) {
   const g = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.85, 8).translate(0, 0.425, 0), new THREE.MeshBasicMaterial({ color: hex }));
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.15, 12).translate(0, 0.925, 0), new THREE.MeshBasicMaterial({ color: hex }));
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.85, 8).translate(0, 0.425, 0), new THREE.MeshBasicMaterial({ color: hex, toneMapped: false }));
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.15, 12).translate(0, 0.925, 0), new THREE.MeshBasicMaterial({ color: hex, toneMapped: false }));
   g.add(shaft, head);
   g.rotation.set(...{ x: [0, 0, -Math.PI / 2], y: [0, 0, 0], z: [Math.PI / 2, 0, 0] }[axis]);
   return g;
@@ -52,10 +52,13 @@ function buildFrame(name, bounds) {
   const pos = [];
   for (let a = Math.ceil(h0); a <= h1; a++) pos.push(...at(a, v0), ...at(a, v1));
   for (let b = Math.ceil(v0); b <= v1; b++) pos.push(...at(h0, b), ...at(h1, b));
-  const grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)),
-    new THREE.LineBasicMaterial({ color: C.grid }));
-  grid.position.z = is3 || va !== 'z' ? 0.003 : 0;
-  g.add(grid);
+  // the 3D and chase views have the stage's grid (it fades out, on the stage layer); the eye and the flat views keep this one
+  if (!is3 || name === 'eye') {
+    const grid = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)),
+      new THREE.LineBasicMaterial({ color: C.grid, toneMapped: false }));
+    grid.position.z = is3 || va !== 'z' ? 0.003 : 0;
+    g.add(grid);
+  }
   const hEdge = hs > 0 ? h0 - 0.3 : h1 + 0.3, vEdge = v0 - 0.3;
   for (let a = Math.ceil(h0); a <= h1; a++) g.add(label(String(a), at(a, vEdge)));
   for (let b = Math.ceil(v0); b <= v1; b++) g.add(label(String(b), at(hEdge, b)));
@@ -73,7 +76,7 @@ function buildFrame(name, bounds) {
 export class Views {
   constructor(host, renderer, scene, onChange) {
     Object.assign(this, { host, renderer, scene, onChange, slots: [], bounds: [-4, 4, -3, 3], frameName: 'world', coords: true,
-      layerMask: () => 0xffffffff, onPick: () => {} });
+      layerMask: () => ~0, onPick: () => {} });
   }
 
   setup(layout, bounds, frameName) {
