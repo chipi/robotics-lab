@@ -1,0 +1,22 @@
+/* The command palette (palette.js). Tokens only: --z-palette sits under --z-stop, so STOP is never covered. */
+.pal { position: fixed; inset: 0; z-index: var(--z-palette); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.pal[hidden] { display: none; }
+.pal-scrim { position: absolute; inset: 0; background: var(--veil-scrim); }
+.pal-box {
+  position: relative; width: min(36rem, calc(100vw - var(--sp-5))); max-height: 70vh; display: flex; flex-direction: column;
+  background: var(--surface-2); color: var(--text-1); border: 1px solid var(--line-strong); border-radius: var(--radius-3);
+  box-shadow: var(--elev-3); font-family: var(--font-ui); font-size: var(--fs-3);
+  animation: pal-in var(--dur-base) var(--ease);
+}
+@keyframes pal-in { from { opacity: 0; transform: translateY(calc(-1 * var(--sp-2))); } to { opacity: 1; transform: none; } }
+.pal-input { width: 100%; box-sizing: border-box; border-radius: var(--radius-3) var(--radius-3) 0 0; border-width: 0 0 1px; height: var(--ctl-h-touch); padding: 0 var(--sp-4); font-size: var(--fs-4); }
+.pal-list { list-style: none; margin: 0; padding: var(--sp-1); overflow-y: auto; }
+.pal-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--tap-min); padding: 0 var(--sp-3); border-radius: var(--radius-2); cursor: pointer; }
+.pal-row:hover { background: var(--surface-hover); }
+.pal-row.is-active { background: var(--surface-selected); outline: 2px solid var(--line-focus); outline-offset: -2px; }
+.pal-row[data-danger="stop"] .pal-title { color: var(--status-error-on); font-weight: 600; }
+.pal-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-section { color: var(--text-2); font-size: var(--fs-2); }
+.pal-key { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--text-2); border: 1px solid var(--line); border-radius: var(--radius-2); padding: 0 var(--sp-1); }
+.pal-confirm { font: inherit; font-size: var(--fs-1); color: var(--status-alert-on); background: transparent; border: 1px solid var(--status-alert); border-radius: var(--radius-2); padding: var(--sp-1) var(--sp-2); cursor: pointer; }
+.pal-status { padding: var(--sp-2) var(--sp-4); color: var(--text-2); font-size: var(--fs-1); border-top: 1px solid var(--line-subtle); }
