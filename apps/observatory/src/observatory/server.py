@@ -238,6 +238,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
+        if self.close_connection:
+            self.send_header("Connection", "close")                 # a body left unread: the client must not reuse this connection
         for k, v in headers.items():
             self.send_header(k, v)
         self.end_headers()

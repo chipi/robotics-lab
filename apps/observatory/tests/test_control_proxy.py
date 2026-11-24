@@ -122,8 +122,18 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a 304 comes back with no body", st == 304 and body == b"" and SEEN[-1]["headers"].get("if-none-match") == '"abc"', (st, body))
     st, body, h = call(base, "HEAD", "/control/")
     check("HEAD: the headers, no body", st == 200 and body == b"" and h["content-type"].startswith("text/html"), (st, body))
-    st, body, _ = call(base, "POST", "/control/api/v1/plan", b"x" * 1_000_001, {"Content-Type": "application/json"})
-    check("a body over Mission Control's limit is a 413 here, not sent", st == 413, st)
+    # the headers alone: the proxy answers from Content-Length and closes, so a client still writing the body may get EPIPE
+    # instead of the answer (CI, c793353)
+    c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
+    c.putrequest("POST", "/control/api/v1/plan")
+    c.putheader("Content-Type", "application/json")
+    c.putheader("Content-Length", "1000001")
+    c.endheaders()
+    r = c.getresponse()
+    st, closes = r.status, (r.getheader("Connection") or "").lower() == "close" or r.will_close
+    c.close()
+    check("a body over Mission Control's limit is a 413 here from its length, before any of it is read, and the connection closes",
+          st == 413 and closes and SEEN[-1]["path"] != "/api/v1/plan", (st, closes))
 
     # a stream is passed a chunk at a time: the first event is here while the upstream still holds the second back
     c = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1], timeout=10)
