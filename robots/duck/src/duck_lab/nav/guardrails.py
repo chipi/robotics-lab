@@ -19,7 +19,9 @@ Mission Control merges the robot's, the site's and the goal's guardrails into on
 - Without a truth (its runner told the navigator `not_enforced`, phase 5 B3) the robot's own sensors stand in for those three
   (`RobotSide`): a fall is the IMU's tilt held past `robot_guards.fall_tilt_deg` (or mapd lost as `fell`), a contact is mapd
   newly lost as `bumped` or `carried`, a drop_clearance is the belief's distance to the drops the forward sensor has seen. They
-  are weaker than the truth: each says what it cannot see (`RobotSide`), and where a runner has the truth they are not armed.
+  are weaker than the truth: each says what it cannot see (`RobotSide`). Where a runner has the truth they are not enforced but still
+  run, record only (E2): `Guard`'s `shadow` says what each would have done (`on_record`, once per name) and stops nothing, so a
+  run shows where the robot's own sensors and the referee agree and where they do not.
 
 A broken guardrail stops the run: the guard calls `on_break(name, detail)` (the runner, through the API's `goal.break`), the
 run sets `nav.abort` (every loop of the navigator and the explorer ends at its next tick, the robot is stopped) and ends
@@ -104,8 +106,10 @@ class Guard:
     """The navigator's side: the speed cap and the keep-out armed, the clock watched, and the robot-side replacements for the truth
     guardrails when a `robot` is given. It reads no truth."""
 
-    def __init__(self, nav, guardrails: list, on_break, t0: float | None = None, robot: RobotSide | None = None):
+    def __init__(self, nav, guardrails: list, on_break, t0: float | None = None, robot: RobotSide | None = None,
+                 shadow: RobotSide | None = None, on_record=None):
         self.nav, self.guardrails, self.on_break, self.robot = nav, guardrails, on_break, robot
+        self.shadow, self.on_record = shadow, on_record
         self.t0 = time.monotonic() if t0 is None else t0
         self.by_name: dict = {}
         for g in guardrails:
@@ -143,7 +147,21 @@ class Guard:
         for g in self.by_name.get("time_limit", []):
             if elapsed > g["seconds"]:
                 return "time_limit", f"the time limit of {g['seconds']:g} s is spent"
-        return self.robot.check(now, self.nav._tilt(), self.nav.localisation.seen, self._drop_m()) if self.robot else None
+        if not (self.robot or self.shadow):
+            return None
+        tilt, seen, drop_m = self.nav._tilt(), self.nav.localisation.seen, self._drop_m()
+        if self.shadow and self.shadow.names:
+            self._record_only(now, tilt, seen, drop_m)
+        return self.robot.check(now, tilt, seen, drop_m) if self.robot else None
+
+    def _record_only(self, now: float, tilt, seen, drop_m) -> None:
+        """Beside a truth the robot's own checks only say what they would have done (E2): once per name (dropped from the shadow after,
+        so a held fall does not hide a contact behind it), and the run goes on: the runner's referee judges."""
+        hit = self.shadow.check(now, tilt, seen, drop_m)
+        if hit:
+            self.shadow.names.remove(hit[0])
+            if self.on_record:
+                self.on_record(*hit)
 
     def _drop_m(self) -> float | None:
         """The belief's distance to the nearest drop the forward sensor has seen, in map metres: the cliff stops' points (nav.drops) and

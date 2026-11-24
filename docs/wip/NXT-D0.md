@@ -185,7 +185,7 @@ Nothing built; what the three decisions above leave open so it fits (RFC-0025 §
 | 3 | Reset is a restart of `nxt-web --sim`; no reset endpoint | an endpoint would need an answer to who may reset a robot someone holds the lease on |
 | 4 | Truth is `GET /api/sim/truth` on nxt-web's own port, read-only, no lock, 404 outside `--sim` | D3's reader |
 | 5 | Truth fills `z = 0`, a yaw quaternion, `sim_time = None` | `Sample` fields |
-| 6 | The NXT's sensors live in `capabilities.sensors`, not the profile's `sensors` block | the schema generalisation RFC-0025 §3.5 forbids until a stub draws it |
+| 6 | The NXT's sensors live in `capabilities.sensors`, not the profile's `sensors` block. **Changed 2026-11-24 (E4, the operator's answer):** they are the profile's `sensors` block, generalised for both robots; Mission Control still lists them as `capabilities.sensors` | the schema generalisation RFC-0025 §3.5 forbids until a stub draws it |
 | 7 | A range entry is `{id, kind, port, source, range_m}`; cone and mount are sim parameters until D1 | what moves to profile v2 |
 | 8 | Colour is declared and not simulated; the sim variant omits it | a `simulated` field |
 | 9 | Stand-in `plugins: {"locomotion": "nxt-tracks@1"}`, a label only | D4's profile |

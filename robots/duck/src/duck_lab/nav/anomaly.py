@@ -47,6 +47,10 @@ KINDS = {
     "guardrail_broken": ("runner", "truth_guard", "critical"),
     # a guardrail the goal asked for and its runner has no truth to check (a real robot): said once at the goal's start (`not_enforced`)
     "guardrail_unenforced": ("runner", "truth_guard", "minor"),
+    # the robot's own sensors broke a guardrail (guardrails.RobotSide): critical when it stops the goal (no truth, the robot is the only
+    # judge), minor when a truth exists and the robot only records what it would have done (the runner's referee judges, and its own
+    # guardrail_broken is the critical one); contract 1.7. `values.enforced` says which
+    "robot_guard": ("navigator", "robot_side_guard", "critical"),
     # the simulator ran slower than the wall clock (the runner's sampler: simhost.truth RTF_LOW): timing, timeouts and the truth pairing
     # of the run are not what they say, so the run has no verdict; minor, not major: the robot is not unfit (Mission Control makes a robot
     # unfit for a major one), the simulator is slow; told to the navigator by `goal.anomaly` (contract 1.6)

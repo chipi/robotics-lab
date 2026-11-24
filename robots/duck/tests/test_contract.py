@@ -358,6 +358,35 @@ check("must fail: a robot-side break is a guardrail event of the run saying side
       any(r.get("event") == "guardrail" and r["name"] == "fall" and r["decision"]["values"].get("side") == "robot" for r in broken.run.nav.records),
       broken.run.nav.records[-2:])
 
+# --- robot_guard (phase 5 E2, contract 1.7): the robot's own guard stops raise it critical; beside a truth it records at minor and stops nothing ---
+check("this is contract 1.7 or later (robot_guard)", tuple(map(int, CONTRACT.split("."))) >= (1, 7), CONTRACT)
+
+
+def guard_anoms(nav):
+    return [r for r in nav.run.nav.records if r.get("event") == "anomaly" and r["anomaly"] == "robot_guard"]
+
+
+stopped = api()
+run_goal(stopped, "wait", poke("navigator API", tilt_over), BLIND)
+a = guard_anoms(stopped)
+check("must fail: a robot-side stop (no truth) raises one critical robot_guard anomaly, source robot, naming the guardrail, enforced",
+      len(a) == 1 and a[0]["severity"] == "critical" and a[0]["source"] == "robot" and a[0]["values"]["guardrail"] == "fall" and a[0]["values"]["enforced"] is True, a)
+seen_only = api()
+st = run_goal(seen_only, "wait", lambda m: (poke("navigator API", tilt_over)(m), time.sleep(0.8), m.call("goal.cancel", {"reason": "done"})), SEEN)
+a = guard_anoms(seen_only)
+check("must fail: with a truth the robot's check records only: one minor robot_guard, enforced false, and the goal runs on to the cancel",
+      len(a) == 1 and a[0]["severity"] == "minor" and a[0]["values"]["guardrail"] == "fall" and a[0]["values"]["enforced"] is False
+      and st["state"] == "cancelled" and st.get("broken") is None, (a, st["state"], st.get("broken")))
+check("... and the anomaly reaches goal.status for Mission Control",
+      [x["anomaly"] for x in seen_only.call("goal.status", {})["anomalies"] if x["anomaly"] == "robot_guard"] == ["robot_guard"])
+broken_by_runner = api()
+run_goal(broken_by_runner, "wait", lambda m: m.call("goal.break", {"name": "fall", "detail": "the trunk is down"}), SEEN)
+check("a stop by the runner's truth is guardrail_broken, never robot_guard", not guard_anoms(broken_by_runner) and any(
+      r.get("anomaly") == "guardrail_broken" for r in broken_by_runner.run.nav.records))
+timed = api()
+run_goal(timed, "wait", lambda m: m.call("goal.break", {"name": "time_limit", "detail": "spent"}), BLIND)
+check("the navigator's own rules (a time limit) are not robot_guard", not guard_anoms(timed))
+
 # --- a start pose without a truth (phase 5 B7, contract 1.5): the navigator API takes the operator's word for where the robot stands -------
 START = {"x": 2.0, "y": 1.5, "yaw": 0.5}
 check("this is contract 1.5 or later (the start pose)", tuple(map(int, CONTRACT.split("."))) >= (1, 5), CONTRACT)

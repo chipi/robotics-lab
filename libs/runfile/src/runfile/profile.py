@@ -168,6 +168,45 @@ NEEDS = {"locomotion": "locomotion", "sensors": "range_sensing", "localisation":
 PLUGIN = re.compile(r"^[a-z][a-z0-9_-]*@[1-9][0-9]*$")
 META = ("measured", "why")
 
+# The sensors block (phase 5 E4) is a table of sensors by id, whatever the robot: {"<id>": {"kind": ..., ...}}. A sensor's kind says its
+# fields; an entry with no `kind` is of the kind its id names, which is how the duck's two named sensors (the navigator reads
+# `sensors.tof8x8` and `sensors.camera`) stay as they were. A declared sensor says where it comes from (`source`: the installation's
+# connection, or a topic), its `frame`, `mount` (extrinsics), `rate_hz`, `range_m`, `fov_deg` and `noise`, so the NXT's ultrasonic and
+# a TurtleBot's lidar, IMU, odometry and cameras (RFC-0025 section 3.9) fit under ids of the robot's own. A variant gives a sensor
+# `null` for "not in this environment" (the NXT sim has no colour sensor). Adding a kind or a field is additive: no new profile version.
+SENSOR_ID = {"kind": "str", "source": "str", "frame": "str"}
+SENSOR_COMMON = {**SENSOR_ID, "port": "str", "rate_hz": "pos", "range_m": "pos", "fov_deg": "pos", "noise": "num_map",
+                 "mount": {"x_m": "num", "y_m": "num", "z_m": "num", "roll_deg": "num", "pitch_deg": "num", "yaw_deg": "num"}}
+SENSOR_IMAGE = {"width_px": "int", "height_px": "int", "hfov_deg": "pos"}
+SENSOR_KINDS = {
+    # the duck's: the 8x8 depth grid and the camera stand-in, with the navigator's numbers
+    "tof8x8": {**SENSOR_ID, "fov_deg": "pos", "rows": "int", "cols": "int", "valid_status": "ints", "no_target_status": "int", "range_m": "pos",
+               "look_m": "pos", "extra_m": "pos", "min_zones": "int", "floor_margin_m": "pos", "floor_margin_per_m": "nonneg",
+               "low_margin_m": "pos", "low_margin_per_m": "nonneg", "emergency_mm": "pos", "reflex_ahead_m": "pos",
+               "reflex_margin_m": "nonneg",
+               "mount": {"pitch_offset_deg": "num", "range_kind": "str"},
+               "floor_view": {"from_m": "pos", "to_m": "pos", "half_width_m": "pos"},
+               "side_drops": {"below_slope": "nonneg", "suspect_frames": "int", "suspect_ratio": "pos", "clear_m": "pos"}},
+    "camera": {**SENSOR_ID, "hfov_deg": "pos", "range_m": "pos", "p_detect": "pos", "range_noise": "nonneg", "bearing_noise_deg": "nonneg",
+               "period_s": "pos"},
+    # declared: one distance (an ultrasonic), a colour, a 2D scan, an IMU, odometry, an image, a depth image
+    "range": SENSOR_COMMON, "colour": SENSOR_COMMON, "imu": SENSOR_COMMON, "odometry": SENSOR_COMMON,
+    "scan2d": {**SENSOR_COMMON, "samples": "int", "range_min_m": "pos"},
+    "image": {**SENSOR_COMMON, **SENSOR_IMAGE}, "depth_image": {**SENSOR_COMMON, **SENSOR_IMAGE},
+}
+
+
+class Sensors(dict):
+    """The sensors block's schema: any id, each checked by its kind's fields (`entry`)."""
+
+    def entry(self, key: str, value, where: str = "sensors") -> dict:
+        kind = value.get("kind", key) if isinstance(value, dict) else key
+        if kind not in SENSOR_KINDS:
+            raise FormatError(f"{where}.{key}: {kind!r} is not a sensor kind (the kinds are {sorted(SENSOR_KINDS)}); an id that is not a "
+                              f"kind needs `kind`")
+        return SENSOR_KINDS[kind]
+
+
 # A field's kind: "pos" (a number above 0), "opt_pos" (a number above 0, or null: not checked, and said so), "num" (any number),
 # "nonneg", "int" (an integer above 0), "str", "bool", "strs", "ints",
 # "pos_map" (an object of numbers above 0: a leaf, as a table of values), "num_map", or a nested dict. Every dict may also carry
@@ -188,18 +227,7 @@ SCHEMA = {
         "stuck": {"window_s": "pos", "moved_max_m": "pos"},
         "stand_turn": {"min_rad_s": "pos"},
     },
-    "sensors": {
-        "tof8x8": {"fov_deg": "pos", "rows": "int", "cols": "int", "valid_status": "ints", "no_target_status": "int", "range_m": "pos",
-                   "look_m": "pos", "extra_m": "pos", "min_zones": "int", "floor_margin_m": "pos", "floor_margin_per_m": "nonneg",
-                   "low_margin_m": "pos", "low_margin_per_m": "nonneg", "emergency_mm": "pos", "reflex_ahead_m": "pos",
-                   "reflex_margin_m": "nonneg",
-                   "mount": {"pitch_offset_deg": "num", "range_kind": "str"},
-                   "floor_view": {"from_m": "pos", "to_m": "pos", "half_width_m": "pos"},
-                   "side_drops": {"below_slope": "nonneg", "suspect_frames": "int", "suspect_ratio": "pos",
-                                  "clear_m": "pos"}},
-        "camera": {"hfov_deg": "pos", "range_m": "pos", "p_detect": "pos", "range_noise": "nonneg", "bearing_noise_deg": "nonneg",
-                   "period_s": "pos"},
-    },
+    "sensors": Sensors(),
     "looking": {"head_joints": "strs", "walk_command": "num_map", "floor_z_m": "num", "settle_frames": "int", "yaw_tol_deg": "pos",
                 "max_s": "pos", "collect_s": "pos", "back_s": "pos", "along_m": "pos", "continue_m": "pos", "survey_steps": "int",
                 "survey_step_deg": "pos"},
@@ -284,7 +312,7 @@ def _check(raw, schema, where: str) -> None:
         return
     if not isinstance(raw, dict):
         raise FormatError(f"{where} must be an object")
-    extra = set(raw) - set(schema) - set(META)
+    extra = set() if isinstance(schema, Sensors) else set(raw) - set(schema) - set(META)
     if extra:
         raise FormatError(f"{where}: unknown fields {sorted(extra)} (the fields are {sorted(schema)})")
     for k in META:
@@ -293,7 +321,7 @@ def _check(raw, schema, where: str) -> None:
     for k, v in raw.items():
         if k in META:
             continue
-        kind = schema[k]
+        kind = schema.entry(k, v, where) if isinstance(schema, Sensors) else schema[k]
         if isinstance(kind, dict):
             _check(v, kind, f"{where}.{k}")
         else:
@@ -311,7 +339,10 @@ def _merge(base, over, schema, where: str, report: list) -> dict:
     out = copy.deepcopy(base)
     changed = False
     for k, v in over.items():
-        sub = schema.get(k) if isinstance(schema, dict) else None
+        if isinstance(schema, Sensors):
+            sub = schema.entry(k, {**(out.get(k) or {}), **v}) if isinstance(v, dict) else None
+        else:
+            sub = schema.get(k) if isinstance(schema, dict) else None
         if k in META:
             out[k] = v
         elif isinstance(sub, dict):
@@ -339,6 +370,8 @@ def merge_variant(raw: dict, variant: str) -> dict:
             out = {**out, k: _merge(out.get(k, {}), v, sub, f"variants.{variant}.{k}", unmeasured)}
         else:
             out = {**out, k: v}
+        if k == "sensors" and isinstance(out[k], dict):
+            out[k] = {i: e for i, e in out[k].items() if e is not None}      # null: the sensor is not in this environment
     if unmeasured:
         raise FormatError(f"{unmeasured[0]}: a number that differs between variants needs `measured` and `why` in its block "
                           f"(how it was measured, and what it fixed)")

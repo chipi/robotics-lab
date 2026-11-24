@@ -160,6 +160,17 @@ check("the guard with no robot side checks the clock only: the same nav, the sam
 g = Guard(RobotNav(mapd={"lost": None}), [{"name": "time_limit", "seconds": 30.0}, *ALL], lambda *_: None, t0=100.0, robot=RobotSide(ALL, ASKED, CFG))
 check("the clock is said before the robot's checks", g.check(now=131.0)[0] == "time_limit")
 
+# --- the robot-side checks beside a truth (phase 5 E2): recorded, never a break --------------------------------------------------
+noted = []
+shadow = RobotSide(ALL, ["fall", "contact", "drop_clearance"], CFG)
+g = Guard(RobotNav(drops=[(0.3, 0.0)], mapd={"lost": None}, tilt=[60.0, 0.0]), ALL, lambda *_: None, t0=100.0, shadow=shadow, on_record=lambda n, d: noted.append(n))
+check("must fail: a shadow guard returns no break (the referee judges) and says what it would have done, once per name",
+      g.check(now=101.0) is None and g.check(now=101.7) is None and g.check(now=102.0) is None and sorted(noted) == ["drop_clearance", "fall"], noted)
+quiet_said = []
+Guard(RobotNav(mapd={"lost": None}, tilt=[3.0, 0.0]), ALL, lambda *_: None, t0=0.0, shadow=RobotSide(ALL, ASKED, CFG),
+      on_record=lambda a, b: quiet_said.append(a)).check(now=1.0)
+check("a shadow with nothing to say says nothing", quiet_said == [], quiet_said)
+
 # --- the navigator's watchdog thread --------------------------------------------------------------------------
 broke, seen = threading.Event(), []
 

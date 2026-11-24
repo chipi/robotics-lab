@@ -192,11 +192,12 @@ with sync_playwright() as p:
                       [j[0] for j in joints] == [j["name"] for j in desc["joints"]] and all(j[1] == "ok" and j[2] == "-" for j in joints), joints)
                 page.screenshot(path=str(SHOTS / f"d4-body-phone-dark-{variant}.png"), full_page=True)
 
-                # --- Modules: the one plugin, a label, with the two numbers ------------------------------------------------------------
+                # --- Modules: the two plugins, labels (the sensors block needs range_sensing, E4), locomotion's two numbers --------------
                 tab("modules")
-                wait("document.querySelectorAll('#rp-modules-body [data-plugin]').length > 0")
+                wait("document.querySelectorAll('#rp-modules-body [data-plugin]').length > 1")
                 mods = page.eval_on_selector_all("#rp-modules-body [data-plugin]", "(els) => els.map((e) => [e.dataset.plugin, e.innerText])")
-                check(f"[{variant}] Modules lists the one plugin, nxt-tracks@1, for locomotion", [m[0] for m in mods] == ["locomotion"] and "nxt-tracks@1" in mods[0][1], mods)
+                check(f"[{variant}] Modules lists nxt-tracks@1 for locomotion and nxt-ultrasonic@1 for range sensing",
+                      [m[0] for m in mods] == ["locomotion", "range_sensing"] and "nxt-tracks@1" in mods[0][1] and "nxt-ultrasonic@1" in mods[1][1], mods)
                 check(f"[{variant}] it shows the two speeds from the profile", all(s in mods[0][1] for s in ("cruise_mps", "0.3", "yaw_max_rad_s", "1.5")), mods[0][1])
                 page.screenshot(path=str(SHOTS / f"d4-modules-phone-dark-{variant}.png"), full_page=True)
 

@@ -108,6 +108,11 @@ class RobotConfig:
             d = self.profile.data
             raw = {**raw, "kind": d["kind"], "label": raw.get("label", d.get("label")),
                    **{k: d[k] for k in FROM_PROFILE[1:] if d.get(k) is not None}}
+            # the sensors a profile declares (its `sensors` block, E4) are the robot's `capabilities.sensors` as clients read them: a list
+            # with the id inside. The duck's two named blocks carry no `kind`: they are the navigator's numbers, not declarations
+            declared = [{"id": i, **e} for i, e in (d.get("sensors") or {}).items() if isinstance(e, dict) and "kind" in e]
+            if declared:
+                raw["capabilities"] = {**(raw.get("capabilities") or {}), "sensors": declared}
         self.id = raw.get("id")
         if not isinstance(self.id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.id):
             raise ConfigError(f"id must be lower case letters, digits and dashes, got {self.id!r}")

@@ -505,7 +505,7 @@ the field went.
 | `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |
 | `factsheet.protocolFeatures.mobileRobotActions[]` | VDA: `actionType`, `actionScopes` (`INSTANT`, `NODE`, `EDGE`), `blockingTypes` (`NONE`, `SOFT`, `HARD`), `pauseAllowed`, `cancelAllowed`; **`irreversible` is ours** (RFC-0003 §2.3) |
 | `control {deadman_s, lease_s, takeover}` | ours: the deadman (default 0.5 s), the lease (10 to 30 s, default 20), the client names that may take a robot over (default none). VDA has no control lock |
-| `capabilities {sensors, recognisers, localisation, map, navigator, guardrails, skills, description}` | ours: VDA has no field for them |
+| `capabilities {sensors, recognisers, localisation, map, navigator, guardrails, skills, description}` | ours: VDA has no field for them. For a robot file that points at a profile, `sensors` is the profile's `sensors` block as a list, `[{id, kind, ...}]`: the entries that carry a `kind` (the duck's two named blocks, `tof8x8` and `camera`, are the navigator's numbers and are not listed) |
 | `guardrails` | the robot's own, each of them in `capabilities.guardrails`. A `max_speed` of them may not be above `factsheet.physicalParameters.maximumSpeed`: the file does not load |
 | `rates {state_hz, map_hz, max_state_hz}`, `online_after_s`, `teams [names]` | ours |
 

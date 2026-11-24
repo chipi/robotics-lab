@@ -52,7 +52,7 @@ from duck_lab.nav.calibration import Calibration
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
 from duck_lab.nav.frames import move_grid
-from duck_lab.nav.guardrails import Guard, RobotSide
+from duck_lab.nav.guardrails import ROBOT_SIDE, Guard, RobotSide
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
@@ -251,8 +251,22 @@ class GoalRun:
             self.nav.record(event="guardrails_robot_side", names=self.robot_side,
                             decision=decision("guardrail", "the runner has no truth: the robot's own sensors check " + ", ".join(self.robot_side),
                                               guardrails=self.robot_side))
-        self.guard = Guard(self.nav, self.guardrails, self._break, self.t0, robot)
+        left = [n for n in ROBOT_SIDE if n not in set(self.spec.get("not_enforced") or [])]      # the runner's truth judges these (E2)
+        shadow = RobotSide(self.guardrails, left, cfg) if cfg else None
+        shadow = shadow if shadow and shadow.names else None
+        if shadow:
+            self.nav.record(event="guardrails_robot_record", names=list(shadow.names),
+                            decision=decision("guardrail", "the runner's truth judges " + ", ".join(shadow.names) + "; the robot's own sensors only record what they would have done",
+                                              guardrails=list(shadow.names)))
+        self.guard = Guard(self.nav, self.guardrails, self._break, self.t0, robot, shadow, self._would_break)
         self.guard.arm()
+
+    def _would_break(self, name: str, detail: str) -> None:
+        """The robot's own check of a guardrail its runner judges by the truth (E2) says it would have stopped the goal: a minor
+        `robot_guard`, nothing else changes. Minor, not critical: the truth is the referee, and where it agrees its `guardrail_broken`
+        is the critical one; this record is for the run's reader to see where the robot's sensors and the truth part."""
+        self.nav.anomaly("robot_guard", f"the robot's own sensors would have stopped the goal ({name}); the runner's truth judges it: {detail}",
+                         "minor", values={"guardrail": name, "detail": detail, "enforced": False})
 
     def _break(self, name: str, detail: str, by_runner: bool = False) -> None:
         """A guardrail broke: the run stops, with which one, and the decision says why (it is in the Observatory run too). `by_runner`:
@@ -264,6 +278,9 @@ class GoalRun:
             self.broken = {"name": name, "detail": detail}
         self.nav.record(event="guardrail", name=name, decision=decision("guardrail", f"guardrail broken: {detail}", guardrail=name,
                                                                         **({"side": "robot"} if name in self.robot_side else {})))
+        if name in self.robot_side and not by_runner:
+            self.nav.anomaly("robot_guard", f"the robot's own sensors stopped the goal ({name}): {detail}",
+                             values={"guardrail": name, "detail": detail, "enforced": True})
         if by_runner:
             self.nav.anomaly("guardrail_broken", f"the runner's truth guard: {name}: {detail}", values={"guardrail": name, "detail": detail})
         self.nav.stop_goal("stopped_by_guardrail", f"guardrail {name}: {detail}")

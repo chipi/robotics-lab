@@ -43,7 +43,7 @@ check("the record has RFC-0019 section 2.1's fields, source robot, as an event r
 check("where: the belief and mapd's place in the map frame, rounded; no truth (the run's own row has it)",
       row["where"] == {"frame": "map", "belief": [1.94, -1.012], "mapd": [2.5, 0.1]} and "decision" not in row, row["where"])
 check("every kind has a module, a detector and a severity the format knows", all(m and d and s in anom.SEVERITIES for m, d, s in anom.KINDS.values())
-      and len(anom.KINDS) == 20 and anom.SOURCE.get("guardrail_unenforced") == "harness" and anom.SOURCE.get("rtf_low") == "harness", sorted(anom.KINDS))
+      and len(anom.KINDS) == 21 and anom.KINDS["robot_guard"][2] == "critical" and anom.SOURCE.get("robot_guard") is None and anom.SOURCE.get("guardrail_unenforced") == "harness" and anom.SOURCE.get("rtf_low") == "harness", sorted(anom.KINDS))
 try:
     anom.record("stuck", "x", "dire")
     check("a severity the format does not know is refused", False)

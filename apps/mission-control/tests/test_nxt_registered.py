@@ -41,7 +41,11 @@ raw = validate_profile(json.loads((FOLDER / "profile.json").read_text()))
 check("the stand-in profile validates, with a sim and a real variant", sorted(raw["variants"]) == ["real", "sim"])
 check("the two numbers are the profile's: 0.3 m/s forward and 1.5 rad/s turning, said to be assumed",
       raw["locomotion"]["cruise_mps"] == 0.3 and raw["locomotion"]["yaw_max_rad_s"] == 1.5 and raw["locomotion"]["measured"].startswith("assumed"))
-check("its one plugin is a label: nxt-tracks@1", raw["plugins"] == {"locomotion": "nxt-tracks@1"})
+check("its sensors are the profile's sensors block (E4), none left in capabilities, each with its source connection",
+      "sensors" not in raw["capabilities"] and sorted(raw["sensors"]) == ["colour", "ultrasonic"] and raw["sensors"]["ultrasonic"]["kind"] == "range"
+      and raw["sensors"]["ultrasonic"]["source"] == "nxt-web" and raw["variants"]["sim"]["sensors"]["colour"] is None, raw.get("sensors"))
+check("its plugins are labels: nxt-tracks@1 and the ultrasonic's nxt-ultrasonic@1 for the sensors block",
+      raw["plugins"] == {"locomotion": "nxt-tracks@1", "range_sensing": "nxt-ultrasonic@1"}, raw["plugins"])
 
 # --- a robot file that points at it ------------------------------------------------------------------------------------------------
 install(variant="sim", placement="workstation", connections={"nxt-web": URL})

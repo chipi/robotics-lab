@@ -129,4 +129,49 @@ check("rates and capabilities within the rules validate", validate_profile({**co
                                                                             "guardrails": [{"name": "max_speed", "mps": 0.2}],
                                                                             "rates": {"state_hz": 5.0}}) is not None)
 
+# --- the sensors block describes every robot (phase 5 E4): an id per sensor, a kind, a source; the duck's two named blocks unchanged ---
+TOF = {"fov_deg": 45.0, "rows": 8, "cols": 8, "range_m": 3.0, "mount": {"pitch_offset_deg": 0.0, "range_kind": "perpendicular"}}
+NXT = {"ultrasonic": {"kind": "range", "port": "4", "source": "nxt-web", "range_m": 2.55}, "colour": {"kind": "colour", "port": "3", "source": "nxt-web"}}
+TURTLE = {"lidar": {"kind": "scan2d", "source": "ros:/scan", "frame": "base_scan", "rate_hz": 5.0, "range_m": 3.5, "fov_deg": 360.0, "samples": 360,
+                    "mount": {"x_m": -0.032, "y_m": 0.0, "z_m": 0.172, "yaw_deg": 0.0}, "noise": {"range_m": 0.01}},
+          "imu": {"kind": "imu", "source": "ros:/imu", "frame": "imu_link", "rate_hz": 200.0, "noise": {"gyro_rad_s": 0.001, "accel_mps2": 0.02}},
+          "odom": {"kind": "odometry", "source": "ros:/odom", "rate_hz": 30.0},
+          "camera": {"kind": "image", "source": "ros:/camera/image_raw", "rate_hz": 15.0, "width_px": 640, "height_px": 480, "hfov_deg": 62.0,
+                     "mount": {"x_m": 0.07, "z_m": 0.1, "pitch_deg": 0.0}}}
+
+
+def with_sensors(sensors, plugin="range@1", variants=None):
+    p = copy.deepcopy(BASE)
+    p.update(sensors=copy.deepcopy(sensors), plugins={**p["plugins"], "range_sensing": plugin})
+    if variants is not None:
+        p["variants"] = variants
+    return p
+
+
+check("the duck's shape is unchanged: tof8x8 by its own name, no kind, validates", validate_profile(with_sensors({"tof8x8": TOF})) is not None)
+check("must fail: the NXT's two sensors (a range, a colour) are a sensors block, each with its id, kind, port and source",
+      validate_profile(with_sensors(NXT, "nxt-ultrasonic@1"))["sensors"]["ultrasonic"]["range_m"] == 2.55)
+check("must fail: a TurtleBot's lidar, IMU, odometry and camera fit with no rename: ids of the robot's own, kinds the schema names",
+      sorted(validate_profile(with_sensors(TURTLE, "scan2d@1"))["sensors"]) == ["camera", "imu", "lidar", "odom"])
+check("one block holds the duck's named sensor beside declared ones", validate_profile(with_sensors({"tof8x8": TOF, **NXT})) is not None)
+check("must fail: a kind the schema does not know is refused, naming it", refused(with_sensors({"x": {"kind": "sonar9"}}), "sonar9")[0])
+check("must fail: a field the kind does not have is refused (a scan has no `rows`)", refused(with_sensors({"lidar": {"kind": "scan2d", "rows": 8}}), "unknown fields")[0])
+check("must fail: a sensor with no kind whose id is not a kind is refused", refused(with_sensors({"lidar": {"source": "ros:/scan"}}), "kind")[0])
+check("must fail: a number of a sensor must be a number above 0", refused(with_sensors({"lidar": {"kind": "scan2d", "range_m": -1}}), "range_m")[0])
+check("must fail: the block still needs a range_sensing plugin", refused({**with_sensors(NXT), "plugins": {"locomotion": "wheels@1"}}, "range_sensing")[0])
+check("must fail: a sensor's mount is checked", refused(with_sensors({"lidar": {"kind": "scan2d", "mount": {"x_m": "left"}}}), "mount")[0])
+noisy = {"sim": {"sensors": {"lidar": {"noise": {"range_m": 0.0}}}}, "real": {}}
+check("must fail: a noise that differs between variants needs measured and why in the sensor's block",
+      refused(with_sensors(TURTLE, "scan2d@1", noisy), "measured")[0])
+noisy["sim"]["sensors"]["lidar"].update(measured="spike 2026-11", why="the Gazebo plugin's own noise is off")
+check("... and with them it validates, and the merged sim lidar has the variant's noise",
+      P.merge_variant(validate_profile(with_sensors(TURTLE, "scan2d@1", noisy)), "sim")["sensors"]["lidar"]["noise"] == {"range_m": 0.0})
+gone = {"sim": {"sensors": {"colour": None}}, "real": {}}
+v = validate_profile(with_sensors(NXT, "nxt-ultrasonic@1", gone))
+check("must fail: a variant says a sensor does not exist there with null: the sim has no colour sensor, the real one has both",
+      sorted(P.merge_variant(v, "sim")["sensors"]) == ["ultrasonic"] and sorted(P.merge_variant(v, "real")["sensors"]) == ["colour", "ultrasonic"])
+check("must fail: null is for a variant only: the base cannot say a sensor is null", refused(with_sensors({"colour": None}), "colour")[0])
+check("the sensors read by attribute as ever: profile.sensors.tof8x8.fov_deg, and a declared one by its id",
+      P.Profile(P.merge_variant(validate_profile(with_sensors({"tof8x8": TOF, **NXT})), "real")).sensors.ultrasonic.port == "4")
+
 check.done()

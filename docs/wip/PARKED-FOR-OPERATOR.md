@@ -28,7 +28,7 @@ Cleared items are struck from the list when settled.
 | --- | --- | --- |
 | D0 | Review the NXT design note (second host kind, sensor declaration, stand-in profile) | D2 onwards built on its defaults |
 | ~~Telemetry (5)~~ | Settled 2026-11-23: you approved the `robotics-lab` Grafana folder in the homelab session; service account `robotics-lab-sync` (Edit on that folder only), token in `~/grafana/robotics-lab-sync.env` on the mini, read over ssh, never printed | sending needs no token: OTLP over protobuf to the tailnet nodes (agent-access.md §5) |
-| D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sit in `capabilities.sensors`, not the profile's `sensors` block (6); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
+| D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sat in `capabilities.sensors`, not the profile's `sensors` block (6; moved into the block 2026-11-24, E4); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
 | B3 second opinion | Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built: only without truth |
 | B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
 | B7 frame | A start pose you place on the map lasts one goal. Keep it until the robot is carried again instead? (Needs a clear control and a rule for stale placements.) | built: per goal |
@@ -41,6 +41,8 @@ Cleared items are struck from the list when settled.
 | Item | What | Done meanwhile |
 | --- | --- | --- |
 | Retention: official | A run record has no "official" marker. Proposal: official = the record has `judge_truth` or `judge_profile` (the runner's truth copy writes them). Explore runs, NXT recordings and imported runs are not verified under it ([the design](TELEMETRY-RETENTION-DESIGN.md)) | `observatory archive` built on the proposal, a dry run by default; not run on the real data folder |
+| Prod on the X3 | A Docker engine of its own for prod; [the proposal](PROD-ON-X3.md) recommends a second rootful `dockerd` (host network only, iptables off), set up by your one sudo step; the homelab session is reviewing it | the real redeploy held; the stack still runs `36670fb` from `/work` |
+| Backups (homelab's plan) | State (97 MB, holds tokens): age-encrypted nightly to `chipi/homelab-backup`, as the mini's, no new cost. Data (1.9 GB, growing): B1 restic to an off-site store (a new account, a few euros a month), or B2 rsync to the mini (same house). Data and archive together; the archive move after the night's backup | nothing set up |
 | Retention: first apply | Run `observatory archive` on the real data folder (moves whole run folders to `<data>-archive/`, deletes nothing) | the dry run only |
 
 ## The operator's answers (2026-11-24)

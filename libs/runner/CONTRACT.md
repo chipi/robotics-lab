@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.6.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.7.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -78,6 +78,26 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.7
+
+The **navigator API** records a `robot_guard` anomaly (source `robot`, in `goal.status`'s
+`anomalies` as any other; phase 5 item 4e E2) when its robot's own sensors (`guardrails.RobotSide`:
+`fall`, `contact`, `drop_clearance`) break a guardrail, with `values {guardrail, detail,
+enforced}`:
+
+- **`enforced` true, severity `critical`:** the runner has no truth for that name (`not_enforced`,
+  1.4), so the robot's sensors are the only judge: the goal ends `stopped_by_guardrail` and Mission
+  Control's alarm feed shows the stop as critical.
+- **`enforced` false, severity `minor`:** the runner has the truth for that name. The robot's check
+  runs beside it and only records what it would have done (once per name per goal); the goal is not
+  stopped by it, the runner's referee judges, and where the truth agrees its `guardrail_broken`
+  is the critical alarm. Minor, so a run where the robot's sensors and the truth part is visible
+  without raising a second critical alarm for one event.
+
+The navigator's own rules (`time_limit`, `stuck`, `max_speed`, `no_go_area`) are not `robot_guard`.
+A goal also records a `guardrails_robot_record` event naming the names it records only. No new
+method and no new field: a runner that does not know the kind reads it as any anomaly.
 
 ## 1.6
 

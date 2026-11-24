@@ -638,7 +638,7 @@ DETECTORS = {d.id: d for d in (
 TAGGED_SOURCES = ("robot", "harness")
 ROBOT_KINDS = ("fix_jump_held", "mapd_lost", "reloc_refused", "stuck", "frames_parted", "refusal_burst", "room_disagrees", "head_off_walk",
                "refused_unexplained", "camera_failed", "thread_failed", "stop_latched", "lease_lost", "joint_overload", "joint_tracking",
-               "motor_hot", "loop_slow", "robot_unhealthy", "guardrail_broken", "guardrail_unenforced", "rtf_low")
+               "motor_hot", "loop_slow", "robot_unhealthy", "guardrail_broken", "guardrail_unenforced", "rtf_low", "robot_guard")
 
 
 def robot_records(run: Run) -> list:
