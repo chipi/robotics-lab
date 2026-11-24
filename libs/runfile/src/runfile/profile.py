@@ -177,7 +177,7 @@ META = ("measured", "why")
 SENSOR_ID = {"kind": "str", "source": "str", "frame": "str"}
 SENSOR_COMMON = {**SENSOR_ID, "port": "str", "rate_hz": "pos", "range_m": "pos", "fov_deg": "pos", "noise": "num_map",
                  "mount": {"x_m": "num", "y_m": "num", "z_m": "num", "roll_deg": "num", "pitch_deg": "num", "yaw_deg": "num"}}
-SENSOR_IMAGE = {"width_px": "int", "height_px": "int", "hfov_deg": "pos"}
+SENSOR_IMAGE = {"width_px": "int", "height_px": "int", "hfov_deg": "pos", "encoding": "str"}
 SENSOR_KINDS = {
     # the duck's: the 8x8 depth grid and the camera stand-in, with the navigator's numbers
     "tof8x8": {**SENSOR_ID, "fov_deg": "pos", "rows": "int", "cols": "int", "valid_status": "ints", "no_target_status": "int", "range_m": "pos",
@@ -189,10 +189,15 @@ SENSOR_KINDS = {
                "side_drops": {"below_slope": "nonneg", "suspect_frames": "int", "suspect_ratio": "pos", "clear_m": "pos"}},
     "camera": {**SENSOR_ID, "hfov_deg": "pos", "range_m": "pos", "p_detect": "pos", "range_noise": "nonneg", "bearing_noise_deg": "nonneg",
                "period_s": "pos"},
-    # declared: one distance (an ultrasonic), a colour, a 2D scan, an IMU, odometry, an image, a depth image
-    "range": SENSOR_COMMON, "colour": SENSOR_COMMON, "imu": SENSOR_COMMON, "odometry": SENSOR_COMMON,
-    "scan2d": {**SENSOR_COMMON, "samples": "int", "range_min_m": "pos"},
-    "image": {**SENSOR_COMMON, **SENSOR_IMAGE}, "depth_image": {**SENSOR_COMMON, **SENSOR_IMAGE},
+    # declared: one distance (an ultrasonic), a colour, a 2D scan, an IMU, odometry, an image, a depth image. The fields follow ROS's
+    # messages (Range, LaserScan, Imu, Odometry, Image; docs/wip/SENSORS-VS-ROS.md): angles in degrees where ROS has radians, `noise`
+    # a standard deviation in the message's units (ROS's covariance is its square), `frame` the message's frame_id, `mount` the
+    # sensor's frame in the body's base_link (REP-103: x forward, y left, z up, roll/pitch/yaw about fixed axes).
+    "range": {**SENSOR_COMMON, "range_min_m": "pos"}, "colour": SENSOR_COMMON, "imu": {**SENSOR_COMMON, "orientation": "bool"},
+    "odometry": {**SENSOR_COMMON, "child_frame": "str"},
+    "scan2d": {**SENSOR_COMMON, "samples": "int", "range_min_m": "pos", "angle_min_deg": "num", "angle_max_deg": "num",
+               "angle_increment_deg": "pos"},
+    "image": {**SENSOR_COMMON, **SENSOR_IMAGE}, "depth_image": {**SENSOR_COMMON, **SENSOR_IMAGE, "range_min_m": "pos"},
 }
 
 

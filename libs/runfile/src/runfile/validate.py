@@ -38,6 +38,8 @@ def _run(p):
         err = signals.check_decl(p["signals"])
         if err:
             return err
+    if p.get("official") is not None and not isinstance(p["official"], bool):
+        return "official is not true or false"
     if p.get("no_pose") is not None and not isinstance(p["no_pose"], str):
         return "no_pose is not text"
     if p.get("odometry") is not None and not isinstance(p["odometry"], dict):

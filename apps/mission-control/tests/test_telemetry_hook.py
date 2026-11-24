@@ -22,6 +22,7 @@ from mission_control import telemetry as H
 from mission_control.core import MissionControl
 from mission_control.events import EventBus
 from mission_control.robots import RobotConfig
+from robotgate import Gate, GateError
 from runfile import telemetry as T
 from runfile.installation import Telemetry
 
@@ -263,6 +264,79 @@ with tempfile.TemporaryDirectory() as tmp:
     finally:
         del os.environ["ROBOTICS_LAB_INSTALLATION"]
     check("the default path is $ROBOTICS_LAB_INSTALLATION (a missing file there: off)", type(env_) is T.Sink)
+
+# 5. the lock_held gauge against the gate's own event vocabulary: real robotgate.Gate sequences, a recording sink
+class Rec:
+    def __init__(self):
+        self.series, self.logs = [], []
+
+    def gauge(self, name, value, **lab):
+        if name == "robotics_lab.robot.lock_held":
+            self.series.append(value)
+
+    def log(self, level, msg, **attrs):
+        self.logs.append(attrs.get("event"))
+
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+
+
+rec = Rec()
+lbus = EventBus(Clock())
+lbus.listen(H.make(rec, ADAPTERS.get).listener)
+gclock = Clock(100.0)
+gate = Gate(lambda method, params: {}, clock=gclock, wall=gclock, lease_s=10.0, takeover_names={"boss"},
+            log=lambda entry: lbus.emit("lock", robot="duck-a", **entry), own_sources={"mc"})
+ca, cb, cboss = gate.open("page"), gate.open("other"), gate.open("boss")
+
+
+def after(step, expect):
+    """The gauge writes `step` made, against the ones expected: [] is a step that leaves the gauge alone."""
+    got, rec.series[:] = list(rec.series), []
+    check(f"lock_held, {step}: {expect or 'no write'}", got == expect, got)
+
+
+gate.handle(ca, "gate.acquire"); after("acquire", [1])
+gclock.advance(3); gate.handle(ca, "gate.keepalive"); after("keepalive (renew)", [])
+gate.handle(ca, "gate.acquire"); after("acquire again by the holder (renew)", [])
+try:
+    gate.handle(cb, "gate.acquire")
+except GateError:
+    pass
+after("another client refused: the holder still holds", [])
+try:
+    gate.handle(cb, "gate.takeover")
+except GateError:
+    pass
+after("a takeover by a client not on the list is refused", [])
+try:
+    gate.handle(cb, "gate.release")
+except GateError:
+    pass
+after("a release by a client that is not the holder", [])
+gate.handle(ca, "gate.release"); after("release", [0])
+gate.handle(ca, "gate.acquire"); gate.handle(ca, "robot.move", {}); rec.series[:] = []
+gclock.advance(11); gate.tick(); after("expiry: no command for lease_s", [0])
+gate.handle(ca, "gate.acquire"); rec.series[:] = []
+gate.handle(cboss, "gate.takeover"); after("takeover: the old lease ends, the taker's begins", [0, 1])
+gate.handle(cboss, "gate.takeover"); after("takeover by the holder (renew)", [])
+gate.close(cb); after("a client that holds nothing disconnects (the proxy's own `disconnected`, no lease)", [])
+lbus.emit("lock", robot="duck-a", event="disconnected", client="other"); after("the labrunner proxy's `disconnected` for a client with no lease", [])
+lbus.emit("lock", robot="duck-a", event="connected", client="other"); after("the labrunner proxy's `connected`", [])
+lbus.emit("lock", robot="duck-a", event="watch_failed", error="x"); lbus.emit("lock", robot="duck-a", event="tick_failed", error="x")
+after("the labrunner proxy's watch_failed and tick_failed", [])
+gate.handle(ca, "robot.stop"); after("STOP by a client that is not the holder: the lease ends (lease_ended)", [0])
+gate.handle(ca, "gate.acquire"); rec.series[:] = []
+gate.observe_state({"autonomous": True, "move": {"source": "mc", "applied": {}}}); after("someone else drives: the lease ends", [0])
+gate.handle(ca, "gate.acquire"); gate.handle(ca, "gate.acquire"); rec.series[:] = []
+gate.observe_state({"autonomous": False, "move": {"source": "mc", "applied": {}}}); after("a clean state frame, a lease held", [])
+gate.close(ca); after("the holder's connection drops (the gate's `disconnected`, with its lease)", [0])
+lbus.emit("lock", robot="duck-a", event="disconnected", client="page"); after("and the proxy's `disconnected` after it changes nothing", [])
+lbus.emit("lock", robot="duck-a", event="holder", holder="a-client"); after("a remote gate's holder poll: someone holds", [1])
+lbus.emit("lock", robot="duck-a", event="holder", holder=None); after("a remote gate's holder poll: nobody (also what an unreachable gate answers)", [0])
+lbus.emit("lock", robot="duck-a", event="holder", holder="a-client"); rec.series[:] = []
+lbus.emit("robot-offline", robot="duck-a", error="no answer"); after("the robot goes offline: the gate's answer is what counts, not the link", [])
+lbus.emit("lock", robot="duck-a", event="an_event_the_gate_may_add_later"); after("an event the mapping does not know: the gauge is not guessed", [])
 
 # 6. core wires the hook beside the alarms listener
 stub = OtlpStub("ok")

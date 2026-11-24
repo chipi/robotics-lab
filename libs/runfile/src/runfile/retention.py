@@ -3,7 +3,7 @@ moving them out whole. A run folder data/runs/<robot>/<scene>/<run> is renamed (
 <data>-archive/runs/<robot>/<scene>/<run>; nothing is deleted, one line per move is appended to <archive>/archive-log.jsonl, and
 restoring is a `mv` back. `plan` only looks; `apply` moves. The index is never opened: the Observatory drops a key whose folder is gone.
 
-It keeps: an official run (its record has judge_truth or judge_profile, the fields the runner's truth copy writes), a run younger than
+It keeps: an official run (its record says `official: true`, the marker the runner's truth copy writes; an older record without the field: it has judge_truth or judge_profile; else its kind is challenge, go-to evaluation or goal-run; `official: false` wins), a run younger than
 the age (by the mtime of run.mcap), a run still being written (run.live.mcap, writer.lock), anything it cannot read. It refuses when the
 archive is the data folder or inside it (or holds it), when a run's target exists, and when the two are on different filesystems.
 Standard library at import; reading a run's record imports the run format's MCAP reader."""
@@ -20,7 +20,8 @@ from runfile import keys
 
 RUN_TOPIC = "/miniview/run"
 LOG = "archive-log.jsonl"
-OFFICIAL_FIELDS = ("judge_truth", "judge_profile")
+OFFICIAL_FIELDS = ("judge_truth", "judge_profile")      # the rule for runs written before the marker `official: true`
+OFFICIAL_KINDS = ("challenge", "go-to evaluation", "goal-run")      # the run record's kinds the runner judges; same rule, by kind
 FINAL, LIVE, LOCK = "run.mcap", "run.live.mcap", "writer.lock"      # mcapio's names; not imported, so this stays light
 DAY_S = 86400.0
 
@@ -52,6 +53,18 @@ def read_record(run_dir: Path) -> dict:
                 raise ValueError("the run record is not an object")
             return rec
     raise ValueError("no run record")
+
+
+def is_official(rec: dict) -> tuple[bool, str]:
+    """(official, how): the record's own `official` wins when it is a bool; else the rule for runs older than the marker."""
+    mark = rec.get("official")
+    if isinstance(mark, bool):
+        return mark, "marker"
+    if any(f in rec for f in OFFICIAL_FIELDS):
+        return True, "rule"
+    if rec.get("kind") in OFFICIAL_KINDS:
+        return True, f"kind {rec['kind']}"
+    return False, "rule"
 
 
 def refusal(data: Path, archive: Path) -> str | None:
@@ -113,12 +126,12 @@ def plan(data: Path, archive: Path, days: float, robot: str | None = None, now: 
             continue
         try:
             rec = record(p)
-            official = any(f in rec for f in OFFICIAL_FIELDS)
+            official, basis = is_official(rec)
         except Exception as e:
             out.append(item("keep", f"cannot read the run record: {type(e).__name__}", age))
             continue
         if official:
-            out.append(item("keep", "official run", age, True))
+            out.append(item("keep", f"official run ({basis})", age, True))
         elif age < days:
             out.append(item("keep", f"younger than {days:g} days", age, False))
         elif (archive / "runs" / key).exists():

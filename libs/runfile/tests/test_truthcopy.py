@@ -89,11 +89,11 @@ def write(data: Path, name: str, rows: list, evaluation: bool) -> Path:
 
 
 def comparable(run_dir: Path) -> list:
-    """The run's records, the run record's own identity (key, uuid) aside."""
+    """The run's records, the run record's own identity (key, uuid, the marker) aside."""
     out = []
     for t, kind, p in mcapio.read(run_dir, keep_raw=True):
         if kind == "run":
-            p = {k: v for k, v in p.items() if k not in ("key", "uuid")}
+            p = {k: v for k, v in p.items() if k not in ("key", "uuid", "official")}
         out.append((round(t, 6), kind, p))
     return out
 
@@ -169,6 +169,8 @@ recs = comparable(keys.run_dir(data / "official", key))
 check("the runner's event is written at the run's last time, not back in time",
       [k for _, k, _ in recs][-2:] == ["event", "end"] and recs[-2][0] == recs[-3][0], recs[-3:])
 check("the end is the runner's verdict", recs[-1][2]["verdict"] == "passed", recs[-1])
+official = [p for _, k, p in mcapio.read(keys.run_dir(data / "official", key), keep_raw=True) if k == "run"][0]
+check("the official run's record carries the marker official: true", official.get("official") is True, official)
 
 # Offline: the truth log written while sampling, read back, gives the same run.
 rows = rows_of(1)

@@ -407,7 +407,8 @@ proxy.start()
 check("started again, the robot is online and Mission Control's own connection to it is made again",
       wait_for(lambda: robot()["online"], 20) and wait_for(lambda: mc.robots["duck-real-go"].gate._wires.get(mc.robots["duck-real-go"].gate._own) is not None
                                                           and mc.robots["duck-real-go"].gate._wires[mc.robots["duck-real-go"].gate._own].alive), robot())
-wait_for(lambda: robot("duck-real")["online"], 20)        # the held robot's link check follows the gate's return on its own beat: offline is a 503, not a refusal
+check("the held robot's link check follows the gate's return on its own beat: online again (offline is a 503, not a refusal)",
+      wait_for(lambda: robot("duck-real")["online"], 20), robot("duck-real"))
 st, b = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-real"], "target": "sim"})
 check("a refusal still holds after all that", "run" in b and b["run"]["state"] == "refused" and "allow_real_runs" in b["run"]["reason"], b)
 

@@ -10,7 +10,7 @@ marked.
 | Name | Where | What | Status |
 | --- | --- | --- | --- |
 | dev | the worktrees on the X3, the shared Docker engine | development, test stacks, simulator jobs | exists |
-| staging | the X3's separate engine (homelab ADR-0013), from a root-owned main checkout through a sudoers script | the stable stack the operator uses with the robots | engine installed 2026-11-24; the cut-over is [PROD-CUTOVER.md](PROD-CUTOVER.md) (to be renamed) |
+| staging | the X3's separate engine (homelab ADR-0013), from a root-owned main checkout through a sudoers script | the stable stack the operator uses with the robots | engine installed 2026-11-24; the cut-over is [STAGING-CUTOVER.md](STAGING-CUTOVER.md) |
 | prod | a remote machine, for example a Hetzner VPS of its own, separate from the podcast VPS | what does not need to be near a robot | an idea for later (the operator, 2026-11-24) |
 
 **Decided (2026-11-24):** the X3 is staging, dev is the worktrees and the shared engine, and prod

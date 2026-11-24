@@ -93,6 +93,7 @@ with sync_playwright() as p:
     # --- the first screen, at phone width ----------------------------------------------------------
     check("the robot list shows the robot, online, its lock free", page.locator("#robot-fake-1").get_attribute("data-online") == "true"
           and page.locator("#robot-fake-1 .lock").inner_text() == "free" and page.locator("#robot-fake-1 .online").inner_text() == "online")
+    wait(page, "document.getElementById('conn').textContent === 'live'")     # `ready` is set when the EventSource is made, before it is open
     check("the event stream is live", page.locator("#conn").inner_text() == "live")
     check("no sideways scrolling at 390 px", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
 
@@ -131,6 +132,7 @@ with sync_playwright() as p:
           and page.locator("#run-progress").inner_text().startswith("elapsed"))
     check("Watch is there and disabled while run_key is null: nothing to open", page.locator("#watch").get_attribute("aria-disabled") == "true"
           and page.locator("#watch").get_attribute("href") == "#")
+    wait(page, "document.querySelector('#robot-fake-1 .lock').textContent === 'free'")     # the card follows the run's end by a debounced reload of the robots
     check("the robot card follows: free again, the robot's pose moved", page.locator("#robot-fake-1 .lock").inner_text() == "free")
 
     # --- a start pose: the operator places the robot on the map (navigator contract 1.5, phase 5 item 4b unit B7) ------
@@ -215,6 +217,7 @@ with sync_playwright() as p:
     page.select_option("#site-sel", "home")
     wait(page, "window.__mc.S.site === 'home'")
     check("the robot is at the site the operator made and picked", get("/robots/fake-1")["robot"]["site"] == "home")
+    wait(page, "document.getElementById('site-dock').textContent !== ''")     # S.site flips before the change handler's loadSite has drawn the site
     check("a site with no run has no dock, and the page says so", "No dock yet" in page.locator("#site-dock").inner_text(), page.locator("#site-dock").inner_text())
 
     # --- an area drawn by the operator -------------------------------------------------------------

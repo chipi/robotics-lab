@@ -132,12 +132,19 @@ check("rates and capabilities within the rules validate", validate_profile({**co
 # --- the sensors block describes every robot (phase 5 E4): an id per sensor, a kind, a source; the duck's two named blocks unchanged ---
 TOF = {"fov_deg": 45.0, "rows": 8, "cols": 8, "range_m": 3.0, "mount": {"pitch_offset_deg": 0.0, "range_kind": "perpendicular"}}
 NXT = {"ultrasonic": {"kind": "range", "port": "4", "source": "nxt-web", "range_m": 2.55}, "colour": {"kind": "colour", "port": "3", "source": "nxt-web"}}
-TURTLE = {"lidar": {"kind": "scan2d", "source": "ros:/scan", "frame": "base_scan", "rate_hz": 5.0, "range_m": 3.5, "fov_deg": 360.0, "samples": 360,
+# A TurtleBot3 Burger as ROBOTIS ships it (see docs/wip/SENSORS-VS-ROS.md for each number's source): the LDS-01 as turtlebot3_gazebo's
+# model.sdf and hls_lfcd_lds_driver publish it (range 0.12 to 3.5 m, 360 rays of 1 degree from 0 to 359, 5 Hz); mounts are the
+# URDF's base_link joints (rpy 0); the IMU noise is the Gazebo model's stddev (the real driver publishes no covariance); the
+# OpenCR's IMU and the joint-state-driven odometry both run at 20 Hz (turtlebot3_node's 50 ms timer); odom -> base_footprint.
+TURTLE = {"lidar": {"kind": "scan2d", "source": "ros:/scan", "frame": "base_scan", "rate_hz": 5.0, "range_min_m": 0.12, "range_m": 3.5,
+                    "fov_deg": 360.0, "samples": 360, "angle_min_deg": 0.0, "angle_max_deg": 359.0, "angle_increment_deg": 1.0,
                     "mount": {"x_m": -0.032, "y_m": 0.0, "z_m": 0.172, "yaw_deg": 0.0}, "noise": {"range_m": 0.01}},
-          "imu": {"kind": "imu", "source": "ros:/imu", "frame": "imu_link", "rate_hz": 200.0, "noise": {"gyro_rad_s": 0.001, "accel_mps2": 0.02}},
-          "odom": {"kind": "odometry", "source": "ros:/odom", "rate_hz": 30.0},
-          "camera": {"kind": "image", "source": "ros:/camera/image_raw", "rate_hz": 15.0, "width_px": 640, "height_px": 480, "hfov_deg": 62.0,
-                     "mount": {"x_m": 0.07, "z_m": 0.1, "pitch_deg": 0.0}}}
+          "imu": {"kind": "imu", "source": "ros:/imu", "frame": "imu_link", "rate_hz": 20.0, "orientation": True,
+                  "mount": {"x_m": -0.032, "y_m": 0.0, "z_m": 0.068}, "noise": {"gyro_rad_s": 2e-4, "accel_mps2": 1.7e-2}},
+          "odom": {"kind": "odometry", "source": "ros:/odom", "frame": "odom", "child_frame": "base_footprint", "rate_hz": 20.0}}
+# The Waffle Pi's camera (the Burger has none): turtlebot3_gazebo's model 640x480 R8G8B8 at 30 Hz, horizontal fov 1.085595 rad
+CAMERA = {"kind": "image", "source": "ros:/camera/image_raw", "frame": "camera_rgb_optical_frame", "rate_hz": 30.0, "width_px": 640,
+          "height_px": 480, "hfov_deg": 62.2, "encoding": "rgb8"}
 
 
 def with_sensors(sensors, plugin="range@1", variants=None):
@@ -151,8 +158,22 @@ def with_sensors(sensors, plugin="range@1", variants=None):
 check("the duck's shape is unchanged: tof8x8 by its own name, no kind, validates", validate_profile(with_sensors({"tof8x8": TOF})) is not None)
 check("must fail: the NXT's two sensors (a range, a colour) are a sensors block, each with its id, kind, port and source",
       validate_profile(with_sensors(NXT, "nxt-ultrasonic@1"))["sensors"]["ultrasonic"]["range_m"] == 2.55)
-check("must fail: a TurtleBot's lidar, IMU, odometry and camera fit with no rename: ids of the robot's own, kinds the schema names",
-      sorted(validate_profile(with_sensors(TURTLE, "scan2d@1"))["sensors"]) == ["camera", "imu", "lidar", "odom"])
+check("must fail: a TurtleBot3 Burger's lidar, IMU and odometry fit with no rename: ids of the robot's own, kinds the schema names",
+      sorted(validate_profile(with_sensors(TURTLE, "scan2d@1"))["sensors"]) == ["imu", "lidar", "odom"])
+check("must fail: a scan carries ROS's angle_min, angle_max, angle_increment and range_min, so a 0..359 degree scan is not a 360 fov",
+      validate_profile(with_sensors(TURTLE, "scan2d@1"))["sensors"]["lidar"]["angle_max_deg"] == 359.0)
+check("must fail: odometry names its child frame (odom -> base_footprint), the IMU says it gives an orientation",
+      validate_profile(with_sensors(TURTLE, "scan2d@1"))["sensors"]["odom"]["child_frame"] == "base_footprint")
+check("must fail: a camera (the Waffle Pi's) names its optical frame and its encoding",
+      validate_profile(with_sensors({"camera": CAMERA}, "scan2d@1"))["sensors"]["camera"]["encoding"] == "rgb8")
+check("must fail: a range and a depth image have a minimum range as ROS's Range and depth cameras do",
+      validate_profile(with_sensors({"sonar": {"kind": "range", "range_min_m": 0.02, "range_m": 2.55},
+                                     "depth": {"kind": "depth_image", "range_min_m": 0.3, "range_m": 5.0}}))["sensors"]["depth"]["range_min_m"] == 0.3)
+check("must fail: an angle of a scan is a number (a negative start angle is fine), an increment is above 0",
+      refused(with_sensors({"lidar": {"kind": "scan2d", "angle_increment_deg": -1.0}}), "angle_increment_deg")[0]
+      and validate_profile(with_sensors({"lidar": {"kind": "scan2d", "angle_min_deg": -180.0, "angle_max_deg": 179.0}})) is not None)
+check("must fail: odometry's child frame belongs to odometry only (an IMU has no child frame)",
+      refused(with_sensors({"imu": {"kind": "imu", "child_frame": "x"}}), "unknown fields")[0])
 check("one block holds the duck's named sensor beside declared ones", validate_profile(with_sensors({"tof8x8": TOF, **NXT})) is not None)
 check("must fail: a kind the schema does not know is refused, naming it", refused(with_sensors({"x": {"kind": "sonar9"}}), "sonar9")[0])
 check("must fail: a field the kind does not have is refused (a scan has no `rows`)", refused(with_sensors({"lidar": {"kind": "scan2d", "rows": 8}}), "unknown fields")[0])

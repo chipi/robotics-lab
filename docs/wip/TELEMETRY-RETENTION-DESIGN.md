@@ -147,10 +147,23 @@ target exists, or when the two are on different filesystems.
 - runs still being written (`run.live.mcap`, `writer.lock`);
 - anything it cannot read.
 
-**Official runs (to confirm with the operator before any apply):** the run record carries no
-marker. The proposal is that a run is official when its record has `judge_truth` or
-`judge_profile`, the fields the runner's truth copy writes. How explore runs, NXT recordings and
-imported runs fall under this is not verified; the dry run's table shows it.
+**Official runs (decided by the operator, 2026-11-24: an explicit marker plus the rule):** from
+now on the runner's truth copy writes `official: true` into the run record of every run it judges
+(part of the run record format; a boolean, checked by `validate`; the format number stays 2, since
+a reader ignores a field it does not know). Retention treats a run as official when:
+
+1. its record has an `official` boolean: that value decides, so an explicit `official: false` is
+   not official even when the record has judge fields; else
+2. (the rule, for runs written before the marker) the record has `judge_truth` or `judge_profile`;
+   else
+3. (also before the marker; operator, 2026-11-24, since no run on disk has the judge fields) its
+   `kind` is `challenge`, `go-to evaluation` or `goal-run`, the kinds the runner judges.
+
+The table says which applied: `official run (marker)`, `official run (rule)` or
+`official run (kind <k>)`. Explore runs (`exploration`) and NXT recordings (`recording`) are not
+official and stay archivable once old. On the real data folder (1617 readable runs of 1629,
+2026-11-24; 12 are live) the kinds
+are: 1542 `challenge`, 8 `go-to evaluation`, 1 `goal-run`, 64 `exploration`, 2 `recording`.
 
 **The index:** the tool never opens it. The Observatory's follower drops a key whose folder is gone
 (`catalog.py:360`, rescan every 2 s), or the next `observatory index` does.

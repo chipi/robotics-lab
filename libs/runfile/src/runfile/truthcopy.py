@@ -117,7 +117,7 @@ class TruthCopy:
         for t, kind, p in self.follower.poll():
             if kind == "run":
                 if self.rec is None:
-                    self.rec = Recorder(self.dst, {**p, **self.run_fields, "key": self.key, "uuid": str(uuid.uuid4())})
+                    self.rec = Recorder(self.dst, {**p, **self.run_fields, "official": True, "key": self.key, "uuid": str(uuid.uuid4())})
                 elif self.sources == 1:
                     raise ValueError(f"{self.src}: a second run record")
                 continue                 # a later source's own run record: the official run has its own

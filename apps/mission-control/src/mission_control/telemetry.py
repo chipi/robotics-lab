@@ -29,6 +29,10 @@ ROBOT_TABLE = {
 UNKNOWN = ("unknown", "unknown")
 ERROR_ENDS = frozenset(goals.TERMINAL) - set(goals.SUCCESS) - {"refused", "cancelled"}
 OPEN_GOALS = 1000
+# The gate's log entries (libs/gate robotgate.Gate._log, libs/runner labrunner.gate.Proxy.log) by what they say about the lease.
+# Anything not named here leaves the gauge alone: an event the gate adds later is not guessed to be a release.
+LEASE_BEGINS = frozenset({"acquired"})
+LEASE_ENDS = frozenset({"released", "expired", "taken_over", "lease_ended"})        # lease_ended: STOP by a client, someone else drives
 LEASE_KEEPS = {"refused", "not_watched", "stop", "stop_failed"}       # gate log entries that say nothing about who holds the lease
 
 
@@ -90,16 +94,20 @@ class Hook:
 
     def _on_lock(self, robot, d) -> None:
         event = d.get("event")
-        if event == "holder":
+        held = None
+        if event == "holder":               # a remote gate's poll (duck-gate, nxt-web): nobody, also when the gate does not answer
             held = bool(d.get("holder"))
-        elif event == "acquired":
+        elif event in LEASE_BEGINS:
             held = True
+        elif event in LEASE_ENDS:
+            held = False
+        elif event == "disconnected" and "lease_id" in d:       # the gate's, for a holder that dropped; the proxy's own has no lease_id
+            held = False
         elif event in LEASE_KEEPS or not event:
             return
-        else:
-            held = False                # lease_ended, released, expired, takeover's end: the lease is gone
         lab = self._robot(robot)
-        self.sink.gauge("robotics_lab.robot.lock_held", int(held), **lab)
+        if held is not None:
+            self.sink.gauge("robotics_lab.robot.lock_held", int(held), **lab)
         self.sink.log("info", f"{robot} lock {event}" + (f" ({d['client']})" if d.get("client") else ""), kind="lock", event=event, **lab)
 
     # --- goals ----------------------------------------------------------------------------------------
