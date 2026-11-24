@@ -5,6 +5,7 @@
 // (exploredepth.js) and the world grid at the playhead (exploremap.js), both read from `data()`, the shell's account of the run now.
 import { chainsOf, linkPoses } from '/lib/body/robot.js';
 import { createBody } from '/lib/body/body.js';
+import { parseColor, readStageTokens } from '/lib/stage/stage.js';
 import { createDepthView } from './exploredepth.js';
 import { createMapView } from './exploremap.js';
 
@@ -100,11 +101,19 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t, data })
       // the viewport's colour, from the theme's tokens (followed when the theme changes)
       const bg = () => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim() || '#202125');
       scene.background = bg();
-      new MutationObserver(() => { scene.background = bg(); if (view) view.dirty = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 1.6));
-      const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+      // the stage's lights and tone mapping (libs/web/stage), so the body here looks as it does in the 3D pane beside it
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.NeutralToneMapping;
+      const hemi = new THREE.HemisphereLight(), sun = new THREE.DirectionalLight();
       sun.position.set(1, -1, 2);
-      scene.add(sun);
+      scene.add(hemi, sun);
+      const light = () => {
+        const t = readStageTokens();
+        hemi.color.copy(parseColor(THREE, t.sky).color); hemi.groundColor.copy(parseColor(THREE, t.ground).color); hemi.intensity = t.skyK;
+        sun.color.copy(parseColor(THREE, t.sun).color); sun.intensity = t.sunK;
+      };
+      light();
+      new MutationObserver(() => { scene.background = bg(); light(); if (view) view.dirty = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
       view = { renderer, camera, controls, scene, links: {}, root: new THREE.Group(), ray: new THREE.Raycaster(), hover: null, dirty: true };
       scene.add(view.root);
       controls.addEventListener('change', () => (view.dirty = true));

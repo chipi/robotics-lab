@@ -62,9 +62,9 @@
   --hud-bg: rgba(8, 20, 18, .82); --hud-line: #2c8a66; --hud-text: #9fd9c4; --hud-key: #6aa898; --hud-value: #e8fff6; --hud-warn: #e0a030;
   --hud-head: #5fe0a8; --hud-warn-text: #ffe2a8; --hud-error: #e05a4f; --hud-error-text: #ffd0cb; --hud-strong: #ffffff;
   /* the 3D scene: --scene-sky-k and --scene-sun-k are light intensities (numbers) */
-  --scene-bg: #1d1e22; --scene-floor: #25272c; --scene-grid: #33353b; --scene-grid-major: #4a4d55;
+  --scene-bg: #1d1e22; --scene-floor: #25272c; --scene-grid: #3a3d45; --scene-grid-major: #575b66;
   --scene-label: #8d90a0; --scene-rel: #d8dadf; --scene-select: #ffffff; --scene-box-fill: #8a8a9629; --scene-gap-hatch: #ffffff0f;
-  --scene-sky: #2a3550; --scene-ground: #1a1c1f; --scene-sun: #ffe9c2; --scene-shadow: #000000b3; --scene-sky-k: .35; --scene-sun-k: .6;
+  --scene-sky: #c4cee0; --scene-ground: #2a2c31; --scene-sun: #fff4e2; --scene-shadow: #000000b3; --scene-sky-k: 1; --scene-sun-k: 1.4;
   /* ramps, uniform in OKLab and colour-blind-safe (the test measures them): seq low to high, div (blue, neutral, orange), cat (8 categories) */
   --ramp-seq-1: #282e38; --ramp-seq-2: #203f67; --ramp-seq-3: #055690; --ramp-seq-4: #0073a9; --ramp-seq-5: #0091c1;
   --ramp-seq-6: #00b0d9; --ramp-seq-7: #4bcce7; --ramp-seq-8: #93e2ec; --ramp-seq-9: #d9eced;

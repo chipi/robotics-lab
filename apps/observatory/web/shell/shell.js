@@ -1563,7 +1563,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const d = document.createElement('div'); d.className = 'help';
     d.innerHTML = '<div><h3>Keyboard</h3>' + [['Space', 'Play / pause'], ['← →', 'Step a tick'], ['Shift ← →', 'Step 1 s'], [', .', 'Previous / next event'], ['Home End', 'Start / end'],
       ['Shift ↑ ↓', 'Speed'], ['H', 'Hide selected'], ['Alt H', 'Show all'], ['Shift H', 'Isolate selected'], ['/', 'Search streams'],
-      ['1 2 3', 'Top / Three / 3D'], ['W', 'World / map'], ['F', 'Fit the run'], ['?', 'This list'], ['Esc', 'Close']]
+      ['1 2 3', 'Top / Three / 3D'], ['W', 'World / map'], ['F', 'Fit the run'], ...('inspector' in M.ov ? [['I', 'Model inspector']] : []), ['?', 'This list'], ['Esc', 'Close']]
       .map(([k, v]) => `<span class="kbd" style="font-size:11px;padding:1px 5px">${k}</span><span>${v}</span>`).join('') + '</div>';
     d.onclick = () => d.remove(); document.body.appendChild(d);
   }

@@ -1,0 +1,110 @@
+<title>Look and Feel Round 1</title>
+<style>
+/* layout: a sticky filter bar over one column of before/after pairs; each pair has a number to quote back */
+:root {
+  --bg: #f3f4f6; --panel: #ffffff; --line: #d5d8de; --text: #1c1e22; --dim: #5b606b;
+  --accent: #2f6fd6; --live: #c9a800; --warn: #b06a00;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; --live: #f5df2e; --warn: #e0a030; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; --live: #f5df2e; --warn: #e0a030; color-scheme: dark }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--ui); }
+.wrap { max-width: 1500px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 60px; }
+h1 { font-size: 24px; margin: 0 0 4px; text-wrap: balance; }
+h2 { font-size: 17px; margin: 28px 0 8px; }
+p.lead { color: var(--dim); margin: 0 0 16px; max-width: 70ch; }
+.qs { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.qs li { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; max-width: 110ch; }
+.qs b { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding-block: 10px; margin-top: 20px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: var(--panel); color: var(--text); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lbl { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.pairs { display: grid; gap: 28px; margin-top: 16px; }
+.pair { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.pair header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.pair .n { font: 600 15px var(--mono); color: var(--accent); }
+.pair .name { font-family: var(--mono); font-size: 13px; color: var(--dim); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cols.narrow { grid-template-columns: repeat(2, minmax(0, 400px)); justify-content: start; }
+figure { margin: 0; min-width: 0; }
+figcaption { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+@media (max-width: 760px) { .cols, .cols.narrow { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <h1>Look and feel, round 1: colour, type, density, top bar</h1>
+  <p class="lead">Before is main before step 4.5; after is b71ab93 (tokens, fonts, the shared kit, both restyles). Same fixtures, same views, dark and light, desktop 1440 px and phone 390 px. Quote a pair number with your feedback. 3D (floor, light, camera) is round 2.</p>
+
+  <h2>Questions for you</h2>
+  <ol class="qs">
+    <li><b>Q1</b>A run that ends with <code>stopped</code> (STOP pressed) is not in the verdict table you approved, so it shows "unknown". Neutral (a deliberate end) or alert?</li>
+    <li><b>Q2</b>Mission Control's primary buttons lost their solid dark fill; every primary button now uses the same soft accent. Keep the soft one, or bring a solid primary back as one shared style for both apps?</li>
+    <li><b>Q3</b>"Offline" borrows the stale glyph (a clock), because the status set has no offline status. Add a distinct offline status (its own glyph, grey), or keep it as a kind of stale?</li>
+    <li><b>Q4</b>Under deuteranopia, in the light theme, the orange "alert" and the amber "warning" look nearly the same; the glyph and the word still differ. Acceptable, or should alert move further toward red?</li>
+    <li><b>Q5</b>Anything else on these pages: say the pair number and what you would change.</li>
+  </ol>
+
+  <h2>Already on my list to fix</h2>
+  <ol class="qs">
+    <li>The Observatory's brand lost its coloured mark; Mission Control's has it. Both get the same mark.</li>
+    <li>The brand link points at <code>/control/</code>, wrong when Mission Control runs alone on its own port.</li>
+    <li>On the robot page, "Robots" shows twice (the nav item and the crumb).</li>
+    <li>The run chip in the Observatory top bar is cut short at 1440 px (its full text is in the tooltip).</li>
+  </ol>
+
+  <div class="bar" role="toolbar" aria-label="Filter the screenshots">
+    <span class="lbl">App</span>
+    <div class="seg" data-key="app"><button data-v="all" aria-pressed="true">Both</button><button data-v="observatory" aria-pressed="false">Observatory</button><button data-v="control" aria-pressed="false">Mission Control</button></div>
+    <span class="lbl">Theme</span>
+    <div class="seg" data-key="theme"><button data-v="all" aria-pressed="true">Both</button><button data-v="dark" aria-pressed="false">Dark</button><button data-v="light" aria-pressed="false">Light</button></div>
+    <span class="lbl">Width</span>
+    <div class="seg" data-key="width"><button data-v="all" aria-pressed="true">Both</button><button data-v="1440" aria-pressed="false">Desktop</button><button data-v="390" aria-pressed="false">Phone</button></div>
+  </div>
+
+  <div class="pairs" id="pairs"></div>
+</div>
+
+<script>
+const VIEWS = {
+  observatory: [["runs", "Runs list"], ["3d", "Run, 3D"], ["map", "Run, map"], ["eye", "Run, eye (sensor)"], ["chase", "Run, chase"], ["watch", "Watch page"], ["explore", "Explore, body"]],
+  control: [["overview", "Overview"], ["robot", "Robot page"], ["body", "Robot body"], ["drawer", "Drawer open"]],
+};
+const APPNAME = { observatory: "Observatory", control: "Mission Control" };
+const shots = [];
+for (const app of ["observatory", "control"]) for (const [v, label] of VIEWS[app]) for (const theme of ["dark", "light"]) for (const width of ["1440", "390"]) {
+  if (v === "drawer" && width === "1440") continue;
+  shots.push({ app, theme, width, label, name: `${app}-${v}-${theme}-${width}` });
+}
+shots.forEach((s, i) => { s.n = i + 1; });
+const host = document.getElementById("pairs");
+for (const s of shots) {
+  const el = document.createElement("section");
+  el.className = "pair"; el.dataset.app = s.app; el.dataset.theme = s.theme; el.dataset.width = s.width; el.id = "p" + s.n;
+  el.innerHTML = `<header><span class="n">#${s.n}</span><strong>${APPNAME[s.app]}: ${s.label}</strong><span class="name">${s.theme} · ${s.width === "390" ? "phone 390" : "desktop 1440"}</span></header>
+    <div class="cols ${s.width === "390" ? "narrow" : ""}">
+      <figure><figcaption>Before</figcaption><img loading="lazy" src="before/${s.name}.png" alt="${APPNAME[s.app]} ${s.label}, ${s.theme}, ${s.width} px, before"></figure>
+      <figure><figcaption>After</figcaption><img loading="lazy" src="after/${s.name}.png" alt="${APPNAME[s.app]} ${s.label}, ${s.theme}, ${s.width} px, after"></figure>
+    </div>`;
+  host.appendChild(el);
+}
+const sel = { app: "all", theme: "all", width: "all" };
+function apply() {
+  for (const el of host.children) el.hidden = !Object.entries(sel).every(([k, v]) => v === "all" || el.dataset[k] === v);
+}
+for (const seg of document.querySelectorAll(".seg")) seg.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  for (const x of seg.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+  sel[seg.dataset.key] = b.dataset.v; apply();
+});
+</script>

@@ -390,10 +390,10 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         s = page.evaluate(STAGE)
         tkn = s["tokensDark"]
         check("readStageTokens: the --scene-* tokens (colours as text) and --scene-sky-k / --scene-sun-k as numbers", tkn["floor"].startswith("#") and tkn["bg"].startswith("#")
-              and s["tokenKinds"] == ["number", "number"] and tkn["skyK"] == 0.35 and tkn["sunK"] == 0.6 and s["tokensLight"]["skyK"] == 0.7, (tkn, s["tokenKinds"]))
+              and s["tokenKinds"] == ["number", "number"] and tkn["skyK"] == 1 and tkn["sunK"] == 1.4 and s["tokensLight"]["skyK"] == 0.7, (tkn, s["tokenKinds"]))
         check("renderer: output colour space sRGB and Neutral tone mapping are set", s["renderer"] == {"cs": True, "tm": True}, s["renderer"])
-        check("lights exist with no body: a hemisphere and a directional light, intensities --scene-sky-k and --scene-sun-k (0.35, 0.6 in dark)",
-              s["noBody"]["lights"] == [["HemisphereLight", 0.35], ["DirectionalLight", 0.6]], s["noBody"])
+        check("lights exist with no body: a hemisphere and a directional light, intensities --scene-sky-k and --scene-sun-k (1, 1.4 in dark)",
+              s["noBody"]["lights"] == [["HemisphereLight", 1], ["DirectionalLight", 1.4]], s["noBody"])
         check("the floor and grid are on their own layer (30); the lights stay on layer 0; no fog", s["layer"]["floor"] and s["layer"]["gridL"] and s["layer"]["n"] == 30
               and s["layer"]["lights"] and s["layer"]["fog"] is None and s["fog"] is None, s["layer"])
         close = lambda a, b, e=2: all(abs(x - y) <= e for x, y in zip(a, b))  # noqa: E731
@@ -459,7 +459,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         open_run("bare/room/r2", "3d")
         st = pg.evaluate(f"{A}.stage()")
         check("page: the stage's lights exist with no body loaded (the robot has no description): a hemisphere light and a sun, at --scene-sky-k and --scene-sun-k",
-              pg.evaluate(f"{A}.body()") is None and [(x[0], x[1]) for x in st["lights"]] == [("HemisphereLight", 0.35), ("DirectionalLight", 0.6)], (st["lights"], pg.evaluate(f"{A}.body()")))
+              pg.evaluate(f"{A}.body()") is None and [(x[0], x[1]) for x in st["lights"]] == [("HemisphereLight", 1), ("DirectionalLight", 1.4)], (st["lights"], pg.evaluate(f"{A}.body()")))
         check("page: the renderer tone maps (Neutral) and the stage layer is drawn by the 3D and chase cameras only, not the eye, the top or the side views",
               st["toneMapping"] == 7 and [v for v, on in st["views"].items() if on] == ["3d", "chase"], st)
         close = lambda a, b, e=2: all(abs(x - y) <= e for x, y in zip(a, b))  # noqa: E731

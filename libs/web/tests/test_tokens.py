@@ -133,8 +133,11 @@ def resolve(theme: str) -> dict:
 R = {"dark": resolve("dark"), "light": resolve("light")}
 check("every alias resolves (its target exists, no cycle)", not (R["dark"]["__bad__"] or R["light"]["__bad__"]), R["dark"]["__bad__"] + R["light"]["__bad__"])
 check("every old name is still declared (as an alias, or the values themselves of the contract's unchanged names)", all(k in first for k in OLD["dark"]), [k for k in OLD["dark"] if k not in first])
+# changes made on purpose after tokens v2, each from a review round (docs/wip/LOOK-AND-FEEL-PLAN.md, "Decisions"); everything else stays as it was
+AMENDED = {"dark": {"--draw-grid": "#3a3d45"},           # round 2: the dark floor grid was hard to see; the 2D views share the token
+           "light": {}}
 for th in ("dark", "light"):
-    diff = {k: (v, R[th].get(k)) for k, v in OLD[th].items() if re.sub(r"\s+", "", str(R[th].get(k)).lower()) != re.sub(r"\s+", "", v.lower())}
+    diff = {k: (v, R[th].get(k)) for k, v in {**OLD[th], **AMENDED[th]}.items() if re.sub(r"\s+", "", str(R[th].get(k)).lower()) != re.sub(r"\s+", "", v.lower())}
     check(f"{th}: every old name resolves to the value it had before tokens v2 (the pages look the same)", not diff, dict(list(diff.items())[:4]))
 check("an alias points at a token that exists in the light set too (or an invariant)", all(ALIAS.fullmatch(first[a]).group(1) in light or ALIAS.fullmatch(first[a]).group(1) in invariants for a in aliases))
 

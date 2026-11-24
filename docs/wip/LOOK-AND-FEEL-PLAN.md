@@ -22,6 +22,13 @@ Each unit's first step is to check the facts it rests on.
   `ui.css` for both apps; offline is its own status (`--status-offline`, grey, its own glyph,
   not stale's); alert against warn under deuteranopia in the light theme is accepted (the glyph
   and word tell them apart).
+- **Review round 2** ([the page](https://claude.ai/artifact/KmLQUpUhykST6cYDHXbqDX)): the 3D
+  view opens on the robot, with the whole scene as a setting; the belief ghost is on by
+  default, with a setting; the camera toolbar collapses on a phone; Mission Control's body
+  view has no follow modes and no gizmo (the robot stands still there). Accepted fixes: one
+  light rig (the `--scene-*` lights) for the 3D pane, the Explore body and Mission Control,
+  dark lights brighter and neutral (sky 1, sun 1.4); the dark grid one step brighter
+  (`--draw-grid` follows it, an amendment in `test_tokens.py`); `I` in the keyboard help.
 - **One design system for both apps:** the same tokens, type scale, colours and components,
   from `libs/web`, for full consistency. The one difference kept on purpose is density:
   the Observatory compact (12 px base, 24 px controls), Mission Control regular (14 px base,
