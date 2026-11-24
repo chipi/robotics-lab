@@ -264,6 +264,8 @@ with sync_playwright() as p:
         check("the saved version is marked as from the next goal, and says current",
               "from the next goal" in page.locator("#st-versions li[data-version='2']").inner_text() and page.locator("#st-versions li[data-version='2']").get_attribute("data-current") == "true")
         check("the API holds the edited number", get("/robots/duck-1/profile")["profile"]["profile"]["locomotion"]["cruise_mps"] == 0.25)
+        # the strip is drawn from the robot's next state, not from the save's answer: CI read it before that came (4121cd7)
+        wait(page, "document.querySelector('#rp-facts').innerText.includes('version 2')")
         check("must fail: the strip and the Settings tab follow: version 2", "version 2" in page.locator("#rp-facts").inner_text() and page.locator("#tab-settings-badge").inner_text() == "v2",
               page.locator("#rp-facts").inner_text())
         check("and the table behind shows the new number", page.locator("#st-pane tr[data-path='cruise_mps'] [data-col=base]").inner_text() == "0.25")

@@ -26,11 +26,19 @@ export function jointStates(anomalies, at = Infinity, within = Infinity) {
   return out;
 }
 
-// the warn and error colours of the page's theme (libs/web/tokens.css), as CSS colours
+// the status colours of the page's theme (libs/web/tokens.css, --status-*), as CSS colours; warn and error are what health() takes
 export function tokenColors(el = document.documentElement) {
   const css = getComputedStyle(el);
-  return { warn: css.getPropertyValue('--warn').trim(), error: css.getPropertyValue('--error').trim() };
+  const out = {};
+  for (const n of ['ok', 'info', 'warn', 'alert', 'error', 'unknown', 'stale', 'neutral', 'live']) out[n] = css.getPropertyValue('--status-' + n).trim();
+  return out;
 }
+
+// the material of the solid style: what every body was drawn with before the styles existed
+const SURFACE = { roughness: 0.6, metalness: 0.05 };
+// opacity a style gets when the caller names none: the x-ray shows what is inside, the ghost is the second opinion beside the body
+const OPACITY = { xray: 0.25, ghost: 0.4 };
+const HIGHLIGHT_EMISSIVE = 0.35;       // share of the highlight colour a highlighted link also glows with
 
 // `init`: fetch's options for the meshes (Mission Control's token)
 export async function createBody(THREE, desc, api, init) {
@@ -48,6 +56,11 @@ export async function createBody(THREE, desc, api, init) {
     })();
   }));
   const geoms = Object.fromEntries(await Promise.all(urls.map(async (u) => [u, await geometries[u]])));
+  return build(THREE, desc, geoms);
+}
+
+// The body from geometries already loaded; clone() calls it again, so a second body costs no request and no second copy of a mesh.
+function build(THREE, desc, geoms) {
   const root = new THREE.Group(), links = {};
   const q4 = (q) => new THREE.Quaternion(q[1], q[2], q[3], q[0]);           // ours are [w, x, y, z]
   for (const l of desc.links) {
@@ -55,9 +68,10 @@ export async function createBody(THREE, desc, api, init) {
     grp.userData.link = l.name;
     for (const v of l.visuals) {
       if (!geoms[v.url]) continue;
-      const m = new THREE.Mesh(geoms[v.url], new THREE.MeshStandardMaterial({ color: new THREE.Color(v.rgba[0], v.rgba[1], v.rgba[2]), roughness: 0.6, metalness: 0.05 }));
+      const m = new THREE.Mesh(geoms[v.url], new THREE.MeshStandardMaterial({ color: new THREE.Color(v.rgba[0], v.rgba[1], v.rgba[2]), ...SURFACE }));
       m.position.set(...v.origin.pos); m.quaternion.copy(q4(v.origin.quat)); m.userData.link = l.name;
       m.userData.own = m.material.color.clone();
+      m.userData.tint = null;           // the health colour, null while ok
       grp.add(m);
     }
     root.add(grp);
@@ -65,12 +79,33 @@ export async function createBody(THREE, desc, api, init) {
   }
   // the link each moving joint turns: its child (the fixed joints below it ride along)
   const turns = Object.fromEntries(desc.joints.filter((j) => j.type !== 'fixed').map((j) => [j.name, j.child]));
-  let healthy = {};
-  return {
+  const hangs = Object.fromEntries(desc.joints.map((j) => [j.child, j]));
+  let healthy = {}, style = { mode: 'solid', color: null, opacity: null }, lit = null, only = null, last = {};
+  const meshesOf = (link) => links[link]?.children ?? [];
+  const allMeshes = () => Object.values(links).flatMap((g) => g.children);
+
+  // one place decides what a mesh looks like: a highlight beats the style's colour, which beats the health colour, which beats its own
+  function paint(m) {
+    const { mode } = style;
+    const mat = m.material, on = lit && m.userData.link === lit.link;
+    mat.color.copy(on ? new THREE.Color(lit.color) : style.color ? new THREE.Color(style.color) : m.userData.tint ?? m.userData.own);
+    mat.emissive.copy(on ? new THREE.Color(lit.color).multiplyScalar(HIGHLIGHT_EMISSIVE) : new THREE.Color(0, 0, 0));
+    const see = mode !== 'solid';
+    mat.opacity = see ? style.opacity ?? OPACITY[mode] : 1;
+    mat.transparent = see;
+    mat.depthWrite = !see;
+    mat.needsUpdate = true;
+  }
+  const repaint = () => allMeshes().forEach(paint);
+  const hexOf = (m) => m ? '#' + m.material.color.getHexString() : null;
+  const shown = () => { for (const [n, g] of Object.entries(links)) g.visible = only == null || n === only; };
+
+  const body = {
     root, links,
     drawn: () => Object.values(links).filter((g) => g.children.length).length,
     // the links where the joint values put them, relative to the root (the root group carries the robot's pose)
     pose(values) {
+      last = { ...values };
       const poses = linkPoses(desc, values);
       for (const [n, g] of Object.entries(links)) {
         const p = poses[n];
@@ -85,12 +120,61 @@ export async function createBody(THREE, desc, api, init) {
     health(states = {}, colors) {
       healthy = {};
       for (const [joint, link] of Object.entries(turns)) {
-        const state = states[joint]?.state ?? 'ok', meshes = links[link]?.children ?? [];
-        for (const m of meshes) m.material.color.copy(state === 'ok' ? m.userData.own : new THREE.Color(colors[state]));
-        healthy[joint] = { state, color: meshes[0] ? '#' + meshes[0].material.color.getHexString() : null };
+        const state = states[joint]?.state ?? 'ok', meshes = meshesOf(link);
+        for (const m of meshes) { m.userData.tint = state === 'ok' ? null : new THREE.Color(colors[state]); paint(m); }
+        healthy[joint] = { state, color: hexOf(meshes[0]) };
       }
       return healthy;
     },
     healthOf: () => healthy,
+    // how the body is drawn: 'solid' (opaque, as always), 'xray' (see-through, to look inside, depth not written) or 'ghost' (the same
+    // body as a second opinion beside the first, the belief beside the truth); `color` paints every mesh one colour (a CSS colour, null
+    // gives the own and the health colours back), `opacity` replaces the mode's default.
+    setStyle({ mode = 'solid', color = null, opacity = null } = {}) {
+      if (!(mode === 'solid' || mode in OPACITY)) throw new Error(`unknown body style ${mode}`);
+      style = { mode, color, opacity };
+      repaint();
+      return body;
+    },
+    style: () => ({ ...style }),
+    // another body of the same robot on the same geometries (no request); `style` is setStyle's argument. It starts at this one's pose
+    // and in no health colour, a highlight or an isolation.
+    clone({ style: s } = {}) {
+      const twin = build(THREE, desc, geoms);
+      twin.pose(last);
+      if (s) twin.setStyle(s);
+      return twin;
+    },
+    // every link, the root first: { link, parent, joint (the one it hangs from, null for the root), type (that joint's, 'root' for the root),
+    // meshes, triangles, size [x, y, z] in metres in the link's own frame, colour (as drawn, null without a mesh), state (the joint's) }
+    parts() {
+      const box = new THREE.Box3(), one = new THREE.Box3();
+      return desc.links.map((l) => {
+        const j = hangs[l.name], meshes = meshesOf(l.name);
+        let triangles = 0;
+        box.makeEmpty();
+        for (const m of meshes) {
+          triangles += m.geometry.getAttribute('position').count / 3;
+          m.updateMatrix();
+          if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+          box.union(one.copy(m.geometry.boundingBox).applyMatrix4(m.matrix));
+        }
+        const size = meshes.length ? box.getSize(new THREE.Vector3()).toArray() : [0, 0, 0];
+        return {
+          link: l.name, parent: j?.parent ?? null, joint: j?.name ?? null, type: j?.type ?? 'root',
+          meshes: meshes.length, triangles, size, colour: hexOf(meshes[0]), state: healthy[j?.name]?.state ?? 'ok',
+        };
+      });
+    },
+    // one link in a colour (CSS; the info colour of the theme when none), the rest as they were; null puts it back
+    highlight(link, { color } = {}) {
+      lit = link == null || !links[link] ? null : { link, color: color ?? tokenColors().info };
+      repaint();
+    },
+    // one link and nothing else (the bodies on the page stay); null shows them all again
+    isolate(link) { only = link == null || !links[link] ? null : link; shown(); },
+    // the materials, not the geometries: those are shared with every other body on the page
+    dispose() { for (const m of allMeshes()) m.material.dispose(); },
   };
+  return body;
 }
