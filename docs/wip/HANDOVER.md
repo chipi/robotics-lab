@@ -1,9 +1,9 @@
 # Handover: the MVP 1 wrap-up, for the next session
 
-Started 2026-11-24. The operator's cut point: the session is cleared **after step 5 (the
-close-out)**, and a new agent continues from here with steps 6 and 7. Until then this is the
-living status, updated as work lands; it is finalized at the end of step 5. A fresh session
-reads this first, then the documents it names.
+Started 2026-11-24. The operator moved the cut point: the session was cleared **on
+2026-11-24 evening, in the middle of step 4.5**, and a new agent continues the next day from
+here. A fresh session reads this first ("Last state" at the end is the pick-up point), then
+the documents it names. Keep this file the living status; finalize it at the end of step 5.
 
 ## Where the work happens
 
@@ -34,17 +34,37 @@ in order".
 
 | Unit | Status |
 | --- | --- |
-| U-STOP: STOP never under a drawer or the toast (it was, on phone and desktop) | done: 9ef2d59 |
-| U0: ADR-0021, the contracts | done: 9ef2d59 |
-| U-SHOTS: `scripts/look_shots.py` and the "before" set in `docs/wip/look-and-feel/before/` | see "Last state" below |
-| U1 to U26 | not started; the order and waves are in the plan |
+| U-STOP, U0 (ADR-0021), U-SHOTS | done: 9ef2d59, de549d2 |
+| U1 tokens, U2 fonts, U3 UI kit | done: 8869f21, c05f66f, 4121cd7 |
+| U4 stage, U5 body, U6 time, U7 layout store, U8 confirm | done: ef8bdad, 3705020 |
+| U9 the palette library (`libs/web/palette`, not wired yet) | done: fc46a9f |
+| U10 Observatory restyle, U19 Mission Control restyle | done: b71ab93, 2e51865 |
+| Review round 1 and its tuning, U11 Observatory on the stage | done: ea2dcf7 |
+| U12 Observatory camera | done: 6f7e7f7 |
+| U13 Observatory bodies (ghost, trail, x-ray, inspector on `i`) | done: 85de15f |
+| U20 Mission Control two-press confirm | done: d6fa1ca |
+| U21 Mission Control body view on the stage | done: 61aca43 |
+| Review round 2 (3D) and its fixes | done: 5b68eb6; the answers' settings: see "Last state" |
+| U22 Mission Control panels and layouts | done: c565d96 |
+| U14 to U18, U23 to U25, U26 | not started |
 
-Next, in order: U1 (tokens) and U2 (fonts) in parallel, then U3, then wave 3, then **review
-round 1 with the operator** (a before/after page from `look_shots.py --compare`). Do not start
-U1 or U2 before the "before" set exists, or it is not a before.
+Next, in order (the plan's lanes): the Observatory U14 (time), U15 (signals), U16 (panels and
+layouts), U17 (evidence links), U18 (palette verbs); Mission Control U23 (readiness card), U24
+(evidence link), U25 (palette verbs). Then **review round 3** (time, panels, palette,
+readiness), U26 (the sweep), **review round 4** (final).
 
-The operator wants before/after screenshots at four review rounds (the plan, "Before and
-after") and time to give feedback; tune on it before the next wave.
+How a unit runs (it worked this session): an `implementer` subagent on sonnet per unit with
+the brief in [look-and-feel/UNIT-BRIEF](look-and-feel/UNIT-BRIEF.md) and the plan row; units
+on disjoint files run in parallel. The agent does not commit; the main session reads its
+report, runs the full page suite of the app it touched through long-job, looks at the shots
+itself (`scripts/look_shots.py --only <view>`), commits, pushes, and watches CI to `VERDICT`.
+
+Review rounds: `look_shots.py --out docs/wip/look-and-feel/roundN --slim`, then a before/after
+page as an Artifact ([round 1](https://claude.ai/artifact/V7JjkVFPdAmLxd6TCNdtpw),
+[round 2](https://claude.ai/artifact/KmLQUpUhykST6cYDHXbqDX); their sources are
+`look-and-feel/review1.html` and `review2.html`), numbered pairs, four or five questions, and
+"already on my list". The operator answers by number; record the answers in the plan's
+decisions list.
 
 ## Decisions to keep
 
@@ -52,7 +72,8 @@ after") and time to give feedback; tune on it before the next wave.
   (`staging`); tokens and `tailscale serve` at the cut-over; X3 = staging, dev = worktrees, prod
   later. Step 4.5: everything picked; verdicts neutral for a correct end; live is yellow with its
   own glyph (back to the operator if the token test finds it too close to warn); the contact
-  shadow ships.
+  shadow ships. One design system for both apps; density is the only deliberate difference.
+  Review rounds 1 and 2: the answers are in the plan's decisions list.
 - MVP 2: RFC-0025 section 9 (Q16 depth camera and mapd on the NXT's Pi; Q21 Recce models feed
   Gazebo, the import designed in MVP 2) and section 5.1 "The gap list" (seven decisions);
   [DEPLOYMENT-NOTES](DEPLOYMENT-NOTES.md) "Decided for MVP 2" (five decisions).
@@ -100,4 +121,43 @@ after") and time to give feedback; tune on it before the next wave.
 
 ## Last state
 
-Filled in at the end of step 5, before the session is cleared.
+2026-11-24 evening, at the operator's pause ("finish all work in progress, write the
+handover, pause until tomorrow"). Nothing is in flight: no subagent, no long-job, no
+uncommitted work in the worktree.
+
+- **Main:** 4975be6 (the round 2 answers) plus this handover. Every 4.5 commit up to fc46a9f
+  has `VERDICT GREEN`; c565d96 (U22) and 4975be6 were pushed at the pause: check their CI
+  first (`ci_watch.py <sha>`), and fix red before anything else.
+- **Round 2 answers, done in 4975be6:** the 3D view opens on the robot, with "Whole scene" as
+  a remembered setting in the Overlays popover; the ghost is on by default and remembered;
+  the camera toolbar is one "Camera" button up to 960 px. Mission Control's body view keeps
+  no follow modes and no gizmo (the operator agreed).
+- **Next:** U14 (Observatory time) and U23 (Mission Control readiness card) can start in
+  parallel; then the rest of the lanes, review round 3, U26, review round 4; then steps 4.9,
+  5, 6, 7.
+- **For review round 3, look at these by eye** (tests cover them, nobody has seen them):
+  Mission Control's open Layout menu (U22) on phone and desktop; the Observatory's open
+  "Camera" panel on a phone; the inspector panels in both apps.
+- **Known gaps, for U26 or a later unit:** U22 has no panel reordering (the store's frozen
+  shape has no order key), no layouts on the overview, no layout export or import; the
+  palette is not wired into either app (U18, U25) and a verb's error only reaches the
+  console; K51 (one unstable eye shot).
+- **The review records:** `docs/wip/look-and-feel/round1/`, `round2/` and the review pages
+  are committed; the pages link their images as `before/` and `after/`, so on the docs site
+  they show no images. The Artifacts above are the readable copies.
+
+Lessons from this session (each cost a red CI or a debug round):
+
+- **A repaint that rebuilds a button drops its arm.** A list or drawer holding a two-press
+  (`dangerous()`) button must skip a repaint whose data is unchanged (settings.js `calPaint`,
+  `stVersions`; app.js `renderAreas`). Found as a CI timeout on "the tape", d6fa1ca.
+- **Back-date, tick and read in one synchronous `page.evaluate`** when the page receives
+  live events: a state event between the steps re-renders the element (ea2dcf7's red CI).
+- **An off-screen three.js sprite is not drawn, so `onBeforeRender` never sizes it.** A test
+  measuring on-screen size must put the object in view (`adapter.iso()`, test-only).
+- **A page test for `libs/web` runs with an app's page tests** (Playwright, Chromium), never in
+  `test-web` (standard library only), or it skips silently.
+- **A deliberate change to an old token's value** goes in `AMENDED` in `test_tokens.py` with
+  the round that decided it, not by editing the pre-v2 snapshot.
+- Two suites running at once on this machine slow each other enough to expose races. That
+  is useful: treat each such failure as real until its cause is found.
