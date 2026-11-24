@@ -81,6 +81,33 @@ The operator agreed the order on 2026-11-23: A3 first, then two streams side by 
 8. **B6:** a real run refused unless the robot file allows it covers a calibration walk too: A3's
    `odometry_scale` walks blind, with no wall, cliff or contact check.
 
+## The MVP 1 wrap-up, in order (the operator, 2026-11-24)
+
+Steps 6 and 7 and every 4e unit are built, and so are the known loose ends (the flakes, the
+`lock_held` mapping, K48 measured, the sensors against ROS). What is left, in this order:
+
+1. **The NXT at the brick** (D1, D9, D10), with the operator, today.
+2. **The staging cut-over** ([STAGING-CUTOVER.md](STAGING-CUTOVER.md)), after the X3's
+   maintenance window: the first image build on the staging engine waits for it. Tokens and
+   `tailscale serve` come at the cut-over.
+3. **MCP for every surface:**
+   1. Check every HTTP route of Mission Control and the Observatory against the MCP tools, in a
+      gap table.
+   2. Close Mission Control's gaps: calibration, profile versions, simulator-first, placed start
+      and dock, alarms, the robot page.
+   3. Add a small read-only Observatory MCP: runs, anomalies, compare, the archive's dry run.
+
+   The same safety rules as today: no firing, no takeover, no real robot without the operator's
+   switch, STOP never refused.
+4. **Look and feel:** tokens, the design system and the 3D presentation, from independent research
+   (the parked item), as the last unit before the close-out.
+5. **The close-out:** docs, the README and screenshots, the rename and branding, and the RFC-0024
+   review with the advisor.
+
+The real duck (B6, B9 and the rest, [REAL-DUCK-BACKLOG.md](REAL-DUCK-BACKLOG.md)) waits for the
+duck itself and is not part of this list. The deployment direction (dev, staging, a later prod) is
+in [DEPLOYMENT-NOTES.md](DEPLOYMENT-NOTES.md), as an input to MVP 2.
+
 ## The order
 
 ### 1. One navigator contract (first: the smallest, and it unblocks 2 and 3)
