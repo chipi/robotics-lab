@@ -1,0 +1,13 @@
+/* The armed state of a confirm button (confirm.js). --status-alert, not --danger-solid: that fill is STOP's alone. */
+button[data-armed], button[data-armed]:hover:not(:disabled), button[data-armed]:active:not(:disabled) {
+  background: var(--status-alert-soft);
+  color: var(--status-alert-on);
+  outline: 2px solid var(--status-alert);
+  outline-offset: 1px;
+  transition: background-color var(--dur-base) var(--ease), outline-color var(--dur-base) var(--ease);
+}
+
+.ui-confirm-live {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}

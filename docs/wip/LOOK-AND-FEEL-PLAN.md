@@ -196,7 +196,8 @@ block. Old names stay as aliases in the first block until U26.
 - `time/timemodel.js`: `createTimeModel({mode, t0, t1, playing, speed, loop})`; `state` ->
   `{mode, t, t0, t1, playing, speed, loop, atEdge, behind_s}`; `seek(t, {source})`, `tick`,
   `play`, `pause`, `setSpeed` from `[.25, .5, 1, 2, 4, 8]`, `setLoop`, `setRange`, `goLive`,
-  `jump(marks, dir, kind)`, `on('change', fn)`. `time/freshness.js`: `freshness(ageS,
+  `jump(marks, dir, kind)`, `on('change', fn)`; added in U6: `finish()` (a live run
+  ends) and `state.canLive`. `time/freshness.js`: `freshness(ageS,
   {staleAfterS: 5, offlineAfterS: 30})` -> `fresh|stale|offline`. The Observatory shell owns
   one time model; `setTime` and `window.miniview.setTime` keep their signatures. Mission Control
   uses only `freshness`. URL: `#t=<s>` stays; `&focus=robot` is added.
@@ -206,7 +207,7 @@ block. Old names stay as aliases in the first block until U26.
   `rl.palette.recent`; legacy `miniview.theme`, `mc-theme`, `miniview.left` read once and
   migrated; `mc-token` untouched. Browser storage only, never the server.
 - `confirm.js`: `arm(button, {ms: 6000, armedLabel, onConfirm})` -> `disarm`; throws inside
-  `[data-stop]`.
+  `[data-stop]` or `.stops`; `disarm` is a full teardown (U8): the button stops confirming.
 - `palette/`: `registry.register({id, title, section, keywords, when, hotkey, run, danger:
   'none'|'confirm'|'stop', api, mcp})`, `unregister`, `list(ctx)`; `createPalette({host,
   registry, storage})` -> `open`, `close`, `toggle`. Ctrl/Cmd+K and a top-bar button, never
