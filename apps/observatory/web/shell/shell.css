@@ -48,6 +48,13 @@ svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-widt
 .chip .ui-badge, .dec .ui-badge, .scenespage .ui-badge, .evrow .ui-badge { padding: 0 var(--sp-2); vertical-align: middle; }
 .follow { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); cursor: pointer; }
 .follow[hidden], [hidden] { display: none !important; }
+/* the time mode (U14): the named mode, how far behind the edge, the way back; no motion of its own (the live glyph's pulse is the kit's, and goes with the motion tokens) */
+.timemode { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.timemode .ui-badge { padding: 0 var(--sp-1); }
+.timemode .behind { color: var(--text-2); }
+.timemode .mini { height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-2); background: var(--surface-field); border: 1px solid var(--line); color: var(--text-1); }
+.timemode .mini:hover { background: var(--surface-hover); }
+.app.scenes #timemode, .app.scenes #jumps { display: none; }
 .app.scenes #layoutSeg, .app.scenes #frameSeg, .app.scenes #runinfo, .app.scenes #follow, .app.scenes .sep { display: none; }
 .icon-btn { width: var(--ctl-h); height: var(--ctl-h); display: inline-grid; place-items: center; border-radius: var(--radius-2); color: var(--text-2); }
 .icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
@@ -460,3 +467,5 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 
 /* numeric readouts (time, tick, distances, values): tabular figures in the kit's number face, so a changing value does not shift its neighbours */
 .tfield, .kv .v, .readout, .ruler .lb, .ph .head, .dec .dt, .sg-c .val, .sg-r, .sg-tk, .row .meta.angle, .field, .ro, .xsl .mono, .scale, .xrow { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+#jkind { min-width: 3.5ch; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; line-height: 20px; }
+.timemode .behind:empty { display: none; }

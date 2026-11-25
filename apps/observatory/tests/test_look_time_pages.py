@@ -1,6 +1,6 @@
 """The pure time modules of the shared UI kit (step 4.5, unit U6) in headless Chromium: libs/web/time/timemodel.js (live following, seek away
 to replay with behind_s, goLive, a growing range, jumps by mark and kind, speeds, loop, tick, one change event per change) and freshness.js
-(its thresholds at the boundaries).
+(its thresholds at the boundaries). Then (U14) the Observatory's time on a page: Live and Replay named, the marks by kind, jumps by kind, the linked cursor.
 Run: cd apps/observatory && uv run python tests/test_look_time_pages.py"""
 
 import tempfile
@@ -8,7 +8,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, scene, serve
+from helpers import Checks, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("LOOK TIME PAGES")
@@ -106,6 +106,152 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("freshness at the boundaries: <5 fresh, [5,30) stale, >=30 offline; none/NaN offline", r == ["fresh", "fresh", "stale", "stale", "offline", "offline", "offline", "offline", "offline", "offline", "fresh"], r)
     r = run(page, """(M, S, F) => [F(2, {staleAfterS: 2}), F(1.9, {staleAfterS: 2}), F(9, {offlineAfterS: 9}), F(8.9, {offlineAfterS: 9})]""")
     check("freshness thresholds are options", r == ["stale", "fresh", "offline", "stale"], r)
+
+    # ---- U14: Observatory time: Live and Replay named, marks by kind, jumps by kind, the linked cursor --------------------------------------
+    HEAD = [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})]
+
+    def ev(t, kind):
+        return (t, "event", {"kind": kind, "text": f"{kind} at {t}"})
+
+    def inorder(rows):
+        return sorted(rows, key=lambda r: r[0])
+
+    def ticks_between(a, b):
+        return [tick(round(1.0 + 0.1 * i, 3), 0.05 * i) for i in range(a, b)]
+
+    data2 = Path(tmp) / "data2"
+    cat2 = catalog(data2)
+    cat2.put_scene(scene("room"))
+    marks = [ev(1.5, "cliff_stop"), ev(2.0, "reached"), ev(2.5, "tight_pivot"), ev(3.0, "cliff_stop"), ev(3.5, "reached")]
+    make_run(data2, "duck/room/replay1", HEAD + inorder(ticks_between(0, 40) + marks) + [(5.0, "end", {"verdict": "ended"})])
+    rec = make_run(data2, "duck/room/live1", HEAD + inorder(ticks_between(0, 20) + marks[:2]), close=False)
+    httpd2, base2 = serve(cat2)
+    pg = b.new_page(viewport={"width": 1400, "height": 900})
+    pg.set_default_timeout(15000)
+    errs2 = []
+    pg.on("pageerror", lambda e: errs2.append(str(e)))
+    pg.goto(base2 + "/web/three/")
+    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+
+    def load(key):
+        pg.evaluate(f"window.miniview.load('room', '{key}')")
+        pg.wait_for_function("window.__ready === true")
+
+    TM = """(() => { const e = document.getElementById('timemode'); return e && { mode: e.dataset.mode, text: e.textContent.replace(/\\s+/g, ' ').trim(),
+      go: !document.getElementById('tm-golive').hidden, behind: document.getElementById('tm-behind').textContent }; })()"""
+    KINDS = "[...document.querySelectorAll('#mlane .mk')].reduce((o, m) => { o[m.dataset.kind] = (o[m.dataset.kind] || 0) + 1; return o; }, {})"
+    T = "window.miniview.state().t"
+
+    load("duck/room/replay1")
+    r = pg.evaluate(TM)
+    check("a finished run is named Replay: the mode says so, there is no way back to live", r and r["mode"] == "replay" and "Replay" in r["text"] and not r["go"], r)
+    check("the time mode is in the script's state: replay, cannot go live", pg.evaluate("window.miniview.state().time") == {"mode": "replay", "can_live": False, "behind_s": 0},
+          pg.evaluate("window.miniview.state().time"))
+
+    r = pg.evaluate(KINDS)
+    check("every event is a mark on the scrubber, carrying its kind", r == {"cliff_stop": 2, "reached": 2, "tight_pivot": 1}, r)
+    r = pg.evaluate("[...document.querySelectorAll('#mlane .mk')].map((m) => [m.dataset.kind, m.getAttribute('aria-label') || '', m.classList.contains('stop')])")
+    check("a mark says its kind to a screen reader, and a stop-like kind has its own shape",
+          all(k and k in a and " s" in a for k, a, _ in r) and {k: s for k, _, s in r} == {"cliff_stop": True, "reached": False, "tight_pivot": False}, r)
+
+    seq = [pg.evaluate("(a) => window.miniview.jump(...a)", a) for a in ([1, "cliff_stop"], [1, "cliff_stop"], [1, "cliff_stop"], [-1, "cliff_stop"])]
+    check("jump to the next mark of a kind and back, staying at the last one", [round(x, 2) for x in seq] == [1.5, 3.0, 3.0, 1.5], seq)
+    seq = [pg.evaluate("(a) => window.miniview.jump(...a)", a) for a in ([1], [1], [-1, "reached"], [-1, "reached"])]
+    check("jump with no kind steps every kind; a kind with nothing before stays put", [round(x, 2) for x in seq] == [2.0, 2.5, 2.0, 2.0], seq)
+    check("a jump moves the playhead", abs(pg.evaluate(T) - 2.0) < 1e-6)
+
+    pg.evaluate("window.miniview.setTime(1.0)")
+    pg.click("#kindsBtn")
+    pg.click('[data-k="cliff_stop"]')
+    pg.keyboard.press("Escape")
+    check("a kind hidden in the Events list is skipped by a jump", round(pg.evaluate("window.miniview.jump(1)"), 2) == 2.0)
+    pg.click("#kindsBtn")
+    pg.click('[data-k="cliff_stop"]')
+    pg.keyboard.press("Escape")
+
+    pg.evaluate("window.miniview.setTime(1.0)")
+    pg.click("#jkind")
+    pg.click('[data-jkind="reached"]')
+    check("the kind button shows the kind chosen", pg.inner_text("#jkind").strip().startswith("reached"), pg.inner_text("#jkind"))
+    pg.click("#jnext")
+    t_a = pg.evaluate(T)
+    pg.keyboard.press(".")
+    t_b = pg.evaluate(T)
+    pg.click("#jprev")
+    t_c = pg.evaluate(T)
+    check("the next and previous buttons and the . key jump by the chosen kind", [round(t_a, 2), round(t_b, 2), round(t_c, 2)] == [2.0, 3.5, 2.0], [t_a, t_b, t_c])
+    pg.click("#jkind")
+    pg.click('[data-jkind=""]')
+
+    # the linked cursor: a click on the scrubber moves what the 3D view draws (the trail runs up to the playhead), not only the number
+    def scrub_to(t):
+        x = pg.evaluate("""(t) => { const r = document.getElementById('overlay').getBoundingClientRect(), run = window.miniview.internals.M.run,
+          pad = Math.max(0.05, 0.012 * (run.t1 - run.t0)), a = run.t0 - pad, b = run.t1 + pad; return [r.left + ((t - a) / (b - a)) * r.width, r.top + r.height / 2]; }""", t)
+        pg.mouse.move(*x)
+        pg.mouse.down()
+        pg.mouse.up()
+
+    trail = "window.miniview.internals.adapter.bodies().trail.count"
+    scrub_to(1.5)
+    s1, n1 = pg.evaluate("window.miniview.state()"), pg.evaluate(trail)
+    scrub_to(4.0)
+    s2, n2 = pg.evaluate("window.miniview.state()"), pg.evaluate(trail)
+    check("scrubbing moves the playhead and the robot with it", abs(s1["t"] - 1.5) < 0.1 and abs(s2["t"] - 4.0) < 0.1 and s2["belief"][0] > s1["belief"][0] + 0.5,
+          (s1["t"], s2["t"], s1["belief"], s2["belief"]))
+    check("scrubbing moves what the 3D view draws: the trail grows with the playhead", n2 > n1 > 0, (n1, n2))
+
+    # a run opened after the viewer has moved the playhead by hand opens where Follow live left it: Replay, with the way back
+    load("duck/room/live1")
+    r = pg.evaluate(TM)
+    check("a live run opened with Follow live off is Replay at its start, and offers the way back", r["mode"] == "replay" and r["go"] and not pg.evaluate("window.miniview.state().follow"), r)
+
+    # a live run on a fresh page: named Live; a seek away is Replay, with how far behind and the way back
+    pg.close()
+    pg = b.new_page(viewport={"width": 1400, "height": 900})
+    pg.set_default_timeout(15000)
+    pg.on("pageerror", lambda e: errs2.append(str(e)))
+    pg.goto(base2 + "/web/three/")
+    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    load("duck/room/live1")
+    pg.wait_for_function("document.getElementById('timemode')?.dataset.mode === 'live'")
+    r = pg.evaluate(TM)
+    check("a run being written is named Live, at the edge, with no way back to offer", r["mode"] == "live" and "Live" in r["text"] and not r["go"], r)
+    check("Live is its own status badge (the live glyph, never the error colour)", pg.evaluate("document.querySelector('#timemode .ui-badge')?.dataset.status") == "live")
+    pg.evaluate("window.miniview.setTime(1.2)")
+    r = pg.evaluate(TM)
+    check("a seek away from the edge leaves Live for Replay and offers the way back, with how far behind", r["mode"] == "replay" and r["go"] and "behind" in r["behind"], r)
+    b0 = float(r["behind"].split()[0])
+    for rr in ticks_between(20, 30):
+        rec.add(*rr)
+    pg.wait_for_function(f"parseFloat(document.getElementById('tm-behind').textContent) > {b0 + 0.5}")
+    r = pg.evaluate(TM)
+    check("the run grows while the viewer is behind: the gap grows", float(r["behind"].split()[0]) > b0 + 0.5, (b0, r))
+    pg.click("#tm-golive")
+    pg.wait_for_function("document.getElementById('timemode').dataset.mode === 'live'")
+    s = pg.evaluate("window.miniview.state()")
+    check("Return to live follows the edge again: Follow live on, the playhead at the end",
+          s["follow"] is True and abs(s["t"] - s["t_range"][1]) < 1e-6 and pg.evaluate("document.getElementById('follow-on').checked"), (s["follow"], s["t"], s["t_range"]))
+    pg.evaluate("window.miniview.jump(-1)")
+    check("a jump back from live leaves Live", pg.evaluate(TM)["mode"] == "replay")
+    pg.click("#follow-on")
+    check("the Follow live switch and the mode are one thing", pg.evaluate(TM)["mode"] == "live")
+
+    ANIMATED = "[...document.querySelectorAll('#timemode, #timemode *')].map((e) => getComputedStyle(e)).filter((c) => c.animationName !== 'none' && parseFloat(c.animationDuration) > 0).length"
+    pg.emulate_media(reduced_motion="no-preference")
+    check("(setup) Live pulses its glyph when motion is allowed", pg.evaluate(ANIMATED) > 0, pg.evaluate(ANIMATED))
+    pg.emulate_media(reduced_motion="reduce")
+    r = pg.evaluate(ANIMATED)
+    check("under reduced motion the time mode runs no animation", r == 0, r)
+    pg.emulate_media(reduced_motion="no-preference")
+
+    rec.add(4.0, "end", {"verdict": "ended"})
+    rec.close()
+    pg.wait_for_function("document.getElementById('timemode').dataset.mode === 'replay' && window.miniview.state().status !== 'live'")
+    r = pg.evaluate(TM)
+    check("when the run ends it can no longer go live: Replay, no way back", r["mode"] == "replay" and not r["go"] and pg.evaluate("window.miniview.state().time.can_live") is False, r)
+    check("no page error in the time section", not errs2, errs2)
+    pg.close()
+    httpd2.shutdown()
 
     check("no page error", not errs, errs)
     b.close()

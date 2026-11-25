@@ -28,6 +28,7 @@ import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 import { statusOf, glyph, label } from '/lib/status.js';
 import { mountTopBar } from '/lib/brand.js';
+import { createTimeMode } from './timemode.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -218,6 +219,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   paintIcons();
   const stage = $('stage'), app = $('app');
   const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t) });
+  // Live and Replay as a named mode, and the jumps between marks (timemode.js); marks = the events a viewer has not hidden
+  const TM = createTimeMode({ el: $('timemode'), jumps: $('jumps'), goLive: () => setFollow(true), marks: () => (M.run?.events || []).filter((e) => M.kinds[e.kind] !== false).map(({ t, kind }) => ({ t, kind })) });
 
   const stream = (id) => (M.run?.streams || []).find((s) => s.id === id);
   const cfg = (id) => M.modes[id] || { mode: 'at', n: 2 };
@@ -549,6 +552,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       $('follow').hidden = !live;
       M.t = M.follow && live ? run.t1 : run.t0;
       M.i = hasTicks() ? tickAt(M.t) : 0;
+      TM.open(run, M.t); TM.kind = ''; $('jkind').firstChild.textContent = 'any';
       app.classList.remove('scenes');
       M.loading = false;
       layout();
@@ -587,6 +591,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       if (hasTicks() && !laidOut) { M.t = M.follow && live ? M.run.t1 : M.run.t0; layout(); }
       if (M.follow && live && (hasTicks() || hasSignals())) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
       M.i = hasTicks() ? tickAt(M.t) : 0;
+      TM.range(M.run, M.t, M.follow && live);
       for (const sx of M.run.streams || []) M.modes[sx.id] ||= { mode: sx.default_mode || 'at', n: 2 };
       T = buildTree(M.run, M.robot);
       // a group new in this tree (a stream that arrived) opens as at load: a section as the viewer left it, a group open
@@ -613,6 +618,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     if (!M.run) return M.t;
     if (!following && M.follow) { M.follow = false; $('follow-on').checked = false; renderChrome(); }
     M.t = clamp(+t, M.run.t0, M.run.t1);
+    TM.seen(M.t, following);
     if (hasTicks()) { M.i = tickAt(M.t); adapter.draw(sync); }
     syncTime();
     if (signalsOnly()) sigView.update(M.t);
@@ -693,7 +699,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const panels = () => ({ tab: M.tab, angles: M.angles, robot: M.robot ? M.robot.name : null,
     sections: T.tree.filter((n) => n.section).map((n) => ({ id: n.id, name: n.name, open: !!M.open[n.id], streams: T.leaves(n.id) })) });
   const identity = () => ({ ...panels(), run: M.runId ? M.run?.key ?? null : null, scene: M.runId ? M.sceneId : null, status: M.runId ? M.run?.status ?? null : null,
-    seq: M.runId ? store.seq : null, follow: M.follow, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]), samples: sampleN() } : null });
+    seq: M.runId ? store.seq : null, follow: M.follow, time: M.runId ? TM.out() : null, loaded: M.runId ? { ticks: store.ticks, of: M.run?.ticks ?? 0, complete: store.complete, ranges: store.ranges.map((r) => [...r]), samples: sampleN() } : null });
   function state() {
     if (!M.run || !hasTicks()) {
       return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: M.run ? lastEvent() : null, selection: null,
@@ -748,11 +754,18 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const i = M.i, at = M.fr.t[i];
     gotoTick(d < 0 ? (M.t > at + 1e-6 ? i : i - 1) : i + 1);
   }
-  function stepEvent(d) {
+  // the next (d > 0) or previous event mark, of kind k (default: the kind chosen on the jump control, '' any); the playhead stays when there is none
+  function stepEvent(d, k) {
     if (!M.run) return;
-    const ts = [...new Set(M.run.events.filter((e) => M.kinds[e.kind] !== false).map((e) => e.t))].sort((a, b) => a - b);
-    const t = d > 0 ? ts.find((x) => x > M.t + 1e-6) : [...ts].reverse().find((x) => x < M.t - 1e-6);
-    if (t !== undefined) setTime(t);
+    const t = TM.jump(M.t, d, k);
+    if (Math.abs(t - M.t) > 1e-6) setTime(t);
+  }
+  // Follow live as one switch: the top bar's, the timeline's Return to live, a script's
+  function setFollow(on) {
+    M.follow = !!on; $('follow-on').checked = M.follow;
+    TM.follow(M.follow);
+    renderChrome();
+    if (M.follow && M.run?.status === 'live') setTime(M.run.t1, false, true);
   }
 
   // ---- popovers ---------------------------------------------------------------------------------
@@ -1171,6 +1184,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function renderChrome() {
     // the chrome follows the run that is open: on the scenes page (M.runId null) M.run is only the last one opened
     const r = M.runId ? M.run : null, sc = r && M.index?.scenes.find((s) => s.id === M.sceneId), live = r?.status === 'live';
+    if (!r) TM.close();
     $('sceneName').textContent = sc ? sc.id : '—';
     $('runName').textContent = r ? r.id : 'choose a run';
     $('runVerdict').innerHTML = r ? runBadge(r) : '';
@@ -1255,7 +1269,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   function renderMarkers() {
     if (!M.run) return;
-    $('mlane').innerHTML = M.run.events.map((e, i) => (M.kinds[e.kind] === false ? '' : `<span class="mk ${isStop(e.kind) ? 'stop' : ''}" style="left:${pct(e.t)}%;color:${kindColor(e.kind)}" data-ev="${i}"><i style="background:${isStop(e.kind) ? 'none' : kindColor(e.kind)}"></i></span>`)).join('');
+    $('mlane').innerHTML = M.run.events.map((e, i) => (M.kinds[e.kind] === false ? '' : `<span class="mk ${isStop(e.kind) ? 'stop' : ''}" style="left:${pct(e.t)}%;color:${kindColor(e.kind)}" data-ev="${i}" data-kind="${esc(e.kind)}" aria-label="${esc(e.kind)} at ${e.t.toFixed(2)} s"><i style="background:${isStop(e.kind) ? 'none' : kindColor(e.kind)}"></i></span>`)).join('');
     const n = M.run.events.filter((e) => M.kinds[e.kind] !== false).length;
     $('kindsN').textContent = n;
     const al = anomalyEvents();
@@ -1387,6 +1401,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     load: (scene, run) => openRun(scene, run),
     scenes: () => scenesPage(),
     setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
+    // the next (dir > 0) or previous event mark, of one kind or any; resolves with the time after the jump (it stays when there is no mark)
+    jump: async (dir, kind) => { if (M.run) stepEvent(dir, kind); return M.t; },
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
     // an overlay on or off: coords, gizmo, legend, hazards_top (the scene's real hazards drawn over the robot's model)
     setOverlay: (name, on) => { if (!(name in M.ov)) return false; M.ov[name] = !!on; renderChrome(); if (hasTicks()) adapter.draw(); adapter.persist?.(); return !!on; },
@@ -1443,7 +1459,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('layoutSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setView(b.dataset.view); };
   $('frameSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setFrame(b.dataset.frame); };
   $('themeBtn').onclick = () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true);
-  $('follow-on').onchange = () => { M.follow = $('follow-on').checked; renderChrome(); if (M.follow && M.run?.status === 'live') setTime(M.run.t1, false, true); };
+  $('follow-on').onchange = () => setFollow($('follow-on').checked);
   $('sceneBtn').onclick = (e) => ensureIndex().then(() => popover(e.currentTarget, '<h6>Scenes</h6>' + M.index.scenes.map((s) => `<button class="item ${s.id === M.sceneId ? 'cur' : ''}" data-scene="${esc(s.id)}"><span>${esc(s.id)}</span><span class="mono dim">${s.runs.length} runs</span><small>${esc(s.name)}</small></button>`).join(''),
     (p) => p.querySelectorAll('[data-scene]').forEach((b) => (b.onclick = () => { closePop(); window.miniview.load(b.dataset.scene); }))));
   $('runBtn').onclick = (e) => ensureIndex().then(() => {
@@ -1505,6 +1521,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('kindsBtn').onclick = (e) => M.run && popover(e.currentTarget, '<h6>Event kinds</h6>' + Object.keys(M.kinds).map((k) =>
     `<label class="cb"><input type="checkbox" data-k="${esc(k)}" ${M.kinds[k] ? 'checked' : ''}><span style="width:8px;height:8px;background:${kindColor(k)};border-radius:1px;display:inline-block"></span>${esc(k)}<span class="mono faint" style="margin-left:auto">${M.run.events.filter((x) => x.kind === k).length}</span></label>`).join(''),
   (p) => p.querySelectorAll('[data-k]').forEach((c) => (c.onchange = () => { M.kinds[c.dataset.k] = c.checked; renderMarkers(); renderInsp(); })));
+  $('jprev').onclick = () => stepEvent(-1);
+  $('jnext').onclick = () => stepEvent(1);
+  $('jkind').onclick = (e) => M.run && popover(e.currentTarget, '<h6>Jump to</h6>' + [['', 'any kind', M.run.events.length], ...Object.keys(M.kinds).map((k) => [k, k, M.run.events.filter((x) => x.kind === k).length])].map(([k, name, n]) =>
+    `<button class="item ${k === TM.kind ? 'cur' : ''}" data-jkind="${esc(k)}"><span>${k ? `<span style="width:8px;height:8px;background:${kindColor(k)};border-radius:1px;display:inline-block;margin-right:6px"></span>` : ''}${esc(name)}</span><span class="mono dim">${n}</span></button>`).join(''),
+  (p) => p.querySelectorAll('[data-jkind]').forEach((b) => (b.onclick = () => { TM.kind = b.dataset.jkind; $('jkind').firstChild.textContent = TM.kind || 'any'; closePop(); })));
   $('tFirst').onclick = () => setTime(M.run?.t0 ?? 0);
   $('tPrev').onclick = () => stepTick(-1);
   $('playBtn').onclick = () => play(!M.play.on);
@@ -1569,7 +1590,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function help() {
     if (document.querySelector('.help')) return;
     const d = document.createElement('div'); d.className = 'help';
-    d.innerHTML = '<div><h3>Keyboard</h3>' + [['Space', 'Play / pause'], ['← →', 'Step a tick'], ['Shift ← →', 'Step 1 s'], [', .', 'Previous / next event'], ['Home End', 'Start / end'],
+    d.innerHTML = '<div><h3>Keyboard</h3>' + [['Space', 'Play / pause'], ['← →', 'Step a tick'], ['Shift ← →', 'Step 1 s'], [', .', 'Previous / next event (of the chosen kind)'], ['Home End', 'Start / end'],
       ['Shift ↑ ↓', 'Speed'], ['H', 'Hide selected'], ['Alt H', 'Show all'], ['Shift H', 'Isolate selected'], ['/', 'Search streams'],
       ['1 2 3', 'Top / Three / 3D'], ['W', 'World / map'], ['F', 'Fit the run'], ...('inspector' in M.ov ? [['I', 'Model inspector']] : []), ['?', 'This list'], ['Esc', 'Close']]
       .map(([k, v]) => `<span class="kbd" style="font-size:11px;padding:1px 5px">${k}</span><span>${v}</span>`).join('') + '</div>';
@@ -1671,6 +1692,7 @@ const TEMPLATE = `
     <span class="grow"></span>
     <a class="tlink" id="watchLink" href="#" hidden title="Watch this run, at this moment (the eye, live)">Watch</a>
     <a class="tlink" id="exploreLink" href="#" hidden title="Open this run, at this moment, in the explorer">Explorer</a>
+    <span class="timemode" id="timemode" data-mode="replay" hidden role="group" aria-label="Time mode"><span id="tm-badge"></span><span class="num behind" id="tm-behind" aria-live="polite"></span><button class="mini" id="tm-golive" hidden title="Follow the run's edge again">Return to live</button></span>
     <label id="follow" class="follow" hidden><input type="checkbox" id="follow-on" checked> Follow live</label>
     <span class="chip" id="runinfo"></span>
     <button class="pick-btn" id="exportBtn" disabled aria-haspopup="dialog">Export video</button>
@@ -1696,6 +1718,7 @@ const TEMPLATE = `
     <div class="vhead">
       <span class="vt" id="vt"></span>
       <span class="grow"></span>
+      <span class="timemode jumps" id="jumps" hidden role="group" aria-label="Jump between events"><button class="mini" id="jprev" title="Previous event of the chosen kind (,)" aria-label="Previous event"><svg class="i" data-i="left" style="width:12px;height:12px"></svg></button><button class="mini" id="jkind" title="The kind of event , and . jump to" aria-haspopup="true">any</button><button class="mini" id="jnext" title="Next event of the chosen kind (.)" aria-label="Next event"><svg class="i" data-i="right" style="width:12px;height:12px"></svg></button></span>
       <button class="icon-btn" id="ovBtn" title="Overlays"><svg class="i" data-i="layers"></svg></button>
       <button class="icon-btn" id="fitBtn" title="Fit the run (F)"><svg class="i" data-i="fit"></svg></button>
     </div>

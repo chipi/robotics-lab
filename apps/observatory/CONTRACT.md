@@ -387,7 +387,7 @@ load(scene, run)            setTime(t)                  setView("top|front|back|
 setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "at|window|upto", seconds)
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
 setOverlay("coords|gizmo|legend|hazards_top", bool)
-select({kind, index})       scenes()
+select({kind, index})       scenes()                    jump(dir, kind?)   next (1) or previous (-1) event mark, of one kind or any; resolves with t
 setSection(id, open)        setAngles(bool)
 explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
