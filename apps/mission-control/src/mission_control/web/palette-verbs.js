@@ -9,7 +9,7 @@ import { createPalette } from '/lib/palette/palette.js';
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-// app: {robots(), route(), tabs, hashOf(id, tab), stopRobotId(), layout() -> layout.js's `act` or null, pathname(), observatoryHref(), go(hash), visit(href),
+// app: {robots(), route(), tabs, hashOf(id, tab), stopRobotId(), layout() -> layout.js's `act` or null, behindObservatory(), observatoryHref(), go(hash), visit(href),
 //       stop(), stopAll(), theme(), themeNow(), toast(msg, isError)}
 export function verbSpecs(app) {
   const out = [];
@@ -27,7 +27,7 @@ export function verbSpecs(app) {
       add({ id: `nav.tab.${r.id}.${tab}`, title: `${r.id}: ${cap(tab)} tab`, section: 'Go to', keywords: [r.label ?? '', 'robot'].filter(Boolean) }, () => app.go(app.hashOf(r.id, tab)));
     }
   }
-  if (app.pathname().startsWith('/control/')) {
+  if (app.behindObservatory()) {
     add({ id: 'nav.observatory', title: 'Open the Observatory', section: 'Go to', keywords: ['miniview', 'runs', 'replay'] }, () => app.visit(app.observatoryHref()));
   }
 
@@ -61,5 +61,6 @@ export function mount(app) {
     list(ctx) { const r = createRegistry(); for (const s of verbSpecs(app)) r.register(s); return r.list(ctx); },
     onChange: () => () => {},
   };
-  return createPalette({ registry });
+  // preselect false: STOP is the first row, but an Enter on open runs nothing until a key or the arrows choose a row
+  return createPalette({ registry, preselect: false });
 }

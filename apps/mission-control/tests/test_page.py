@@ -383,6 +383,7 @@ with sync_playwright() as p:
     check("light follows the system, with the Observatory's tokens", token() == "#e4e6ea", token())
     page.click("#theme")
     check("the switch overrides the system", token() == "#1b1c1f" and page.evaluate("document.documentElement.dataset.theme") == "dark")
+    check("and is kept under rl.theme, the key both apps share, not under the old mc-theme", page.evaluate("[localStorage.getItem('rl.theme'), localStorage.getItem('mc-theme')]") == ["dark", None])
     page.click("#theme")
     check("and back", token() == "#e4e6ea")
     check("no sideways scrolling in light either", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
@@ -414,7 +415,7 @@ with sync_playwright() as p:
     # --- desktop width -------------------------------------------------------------------------------
     page.set_viewport_size({"width": 1500, "height": 900})
     page.emulate_media(color_scheme="dark")
-    page.evaluate("delete document.documentElement.dataset.theme; localStorage.removeItem('mc-theme')")
+    page.evaluate("delete document.documentElement.dataset.theme; localStorage.removeItem('rl.theme')")
     wait(page, "window.__mc.toScreen(0, 0)[0] > 0")
     boxes = page.evaluate("""() => Object.fromEntries(['robots', 'mapcard', 'runs'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, [r.left, r.right]]; }))""")
     check("at 1500 px three columns: robots left, the map in the middle, runs right", boxes["robots"][1] <= boxes["mapcard"][0] + 1 and boxes["mapcard"][1] <= boxes["runs"][0] + 1, boxes)

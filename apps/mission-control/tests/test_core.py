@@ -57,6 +57,30 @@ check("one robot: capabilities, status (pose, battery, mode), rates, robot-level
       and view["rates"]["state_hz"] == 2.0 and view["guardrails"] == [] and view["goal_run"] is None)
 check("an unknown robot is a 404", refusal(mc.get_robot, "nope").status == 404)
 
+# --- the battery rule applies to every robot that reports a percent: one view field, one alarm ----------------------------------------------
+check("a full battery: the view says not low, with the rule's two numbers", view["battery"] == {"pct": 100.0, "low": False, "low_pct": 20, "clear_pct": 25}, view.get("battery"))
+mc_b, clock_b = boot()
+lows = lambda: [e["anomaly"] for e in kinds(mc_b, "anomaly") if e["anomaly"]["anomaly"] == "low_battery"]
+fake(mc_b)._moved_m = 170.0                      # 100 - 0.5 * 170 = 15 %
+run_for(mc_b, clock_b, 1.0)
+v = mc_b.get_robot("fake-1")
+check("a fake robot at 15 %: the view says low, and one low_battery alarm (major, source robot) was raised",
+      v["battery"] == {"pct": 15.0, "low": True, "low_pct": 20, "clear_pct": 25} and len(lows()) == 1 and lows()[0]["severity"] == "major" and lows()[0]["source"] == "robot", (v["battery"], lows()))
+check("the page's alarm view carries it", v["alarms"]["worst"] is not None and v["alarms"]["worst"]["anomaly"]["anomaly"] == "low_battery", v["alarms"])
+n = len(lows())
+run_for(mc_b, clock_b, 5.0)
+check("held low, it is not raised on every poll (a 30 s gap)", len(lows()) == n, (n, len(lows())))
+run_for(mc_b, clock_b, 30.0)
+check("and again after 30 s while it stays low", len(lows()) == n + 1, (n, len(lows())))
+fake(mc_b)._moved_m = 156.0                      # 22 %
+run_for(mc_b, clock_b, 1.0)
+check("at 22 % it is still low (hysteresis)", mc_b.get_robot("fake-1")["battery"]["low"] is True)
+fake(mc_b)._moved_m = 148.0                      # 26 %
+run_for(mc_b, clock_b, 1.0)
+n = len(lows())
+run_for(mc_b, clock_b, 40.0)
+check("over 25 % it clears: not low, and nothing more is raised", mc_b.get_robot("fake-1")["battery"]["low"] is False and len(lows()) == n, (mc_b.get_robot("fake-1")["battery"], n, len(lows())))
+
 fake(mc).set_offline(True)
 run_for(mc, clock, 3.0)
 check("a robot that stops answering is offline once its last answer is older than the bound", mc.get_robot("fake-1")["online"] is False)

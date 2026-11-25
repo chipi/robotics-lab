@@ -136,9 +136,6 @@ a.watch[aria-disabled="true"] { color: var(--text-3); pointer-events: none; text
 .strip { position: relative; display: flex; align-items: center; gap: var(--sp-2) var(--sp-6); padding: var(--sp-4) var(--sp-6) 0; flex-wrap: wrap; }
 .strip h1 { margin: 0; font-size: var(--fs-5); font-weight: 600; overflow-wrap: anywhere; }
 .verdict { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: 28px; padding: 0 var(--sp-3); border-radius: var(--radius-pill); font-weight: 600; white-space: nowrap; }
-.verdict .pip { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.verdict.ok { background: var(--status-ok-soft); color: var(--status-ok-on); }
-.verdict.bad { background: var(--status-error-soft); color: var(--status-error-on); }
 .facts { display: flex; gap: var(--sp-1) var(--sp-5); flex-wrap: wrap; color: var(--text-2); min-width: 0; }
 .facts b { color: var(--text-1); font-weight: 500; overflow-wrap: anywhere; }
 .tabs { display: flex; gap: var(--sp-1); padding: var(--sp-3) var(--sp-6) 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -345,7 +342,7 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--font-mono); font-si
   .tx textarea { min-height: 64px; }
 }
 
-/* the readiness card (readiness.js): the check list is the fit card's .checks; each row leads with a status badge of the shared kit */
+/* the readiness card (readiness.js): the check list is .checks; each row leads with a status badge of the shared kit */
 .readyhead { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-2); }
 .checks .ready-badge { flex: none; min-width: 6.5em; justify-content: flex-start; }
 li[data-status="error"] .val { color: var(--status-error-on); }

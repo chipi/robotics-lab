@@ -82,6 +82,9 @@ function toast(msg, err) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.hidden = true; }, err ? 7000 : 3500);
 }
+// The one answer to "is the Observatory this page's own origin" (Mission Control is served at /control/ there): the top bar, the evidence links and the
+// palette's Observatory verb all ask it.
+const behindObservatory = () => location.pathname === "/control" || location.pathname.startsWith("/control/");
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
 
 // A dangerous action that is not STOP needs a second press (libs/web/confirm.js, U8). The module and its style load on the first press, so the
@@ -160,7 +163,7 @@ function paintConn() {
 function paintBar() {
   if (!KIT.brand) return;
   const nav = [{ label: "Robots", href: "#", current: !route() }];
-  if (location.pathname.startsWith("/control/")) nav.unshift({ label: KIT.brand.APPS.observatory.name, href: KIT.brand.APPS.observatory.href });
+  if (behindObservatory()) nav.unshift({ label: KIT.brand.APPS.observatory.name, href: KIT.brand.APPS.observatory.href });
   try { KIT.brand.mountTopBar(document.querySelector("header.top"), { app: "control", nav }); } catch (e) { KIT.brandError = e.message; }   // the static bar stays
 }
 function paintKit() { paintBar(); paintConn(); renderRuns(); renderRunDetail(); renderRobots(); }
@@ -169,12 +172,16 @@ function paintKit() { paintBar(); paintConn(); renderRuns(); renderRunDetail(); 
 function effectiveTheme() {
   return document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
 }
-try { const t = localStorage.getItem("mc-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage may be off */ }
+// rl.theme is the key both apps share; mc-theme is the old one, read once when rl.theme is not there yet and not written again
+try {
+  const t = localStorage.getItem("rl.theme") || localStorage.getItem("mc-theme");
+  if (t) { document.documentElement.dataset.theme = t; if (!localStorage.getItem("rl.theme")) localStorage.setItem("rl.theme", t); }
+} catch (e) { /* storage may be off */ }
 try { S.token = localStorage.getItem("mc-token") || null; } catch (e) { /* storage may be off */ }
 $("theme").addEventListener("click", () => {
   const next = effectiveTheme() === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
-  try { localStorage.setItem("mc-theme", next); } catch (e) { /* ignore */ }
+  try { localStorage.setItem("rl.theme", next); } catch (e) { /* ignore */ }
   requestDraw();
 });
 
@@ -292,30 +299,20 @@ const routeTab = () => (route() || {}).tab ?? null;
 const hashOf = (id, tab) => "#robot/" + encodeURIComponent(id) + (tab && tab !== "overview" ? "/" + tab : "");
 const goTab = (tab) => { if (routeId() != null) location.hash = hashOf(routeId(), tab); };
 
-// Each way the robot can be not fit to go, as one check; ok is true, false, or null when it cannot be told (the gate does not answer).
-// A minor alarm is not a reason, a major or critical one in the last minute is.
-function fitChecks(r) {
-  const l = r.lock || {}, now = Date.now() / 1000;
-  const flags = Object.entries((r.status || {}).flags || {}).filter(([, v]) => v).map(([k]) => `${k}: its status says so`);
+// The alarm check the readiness card counts: a minor alarm is not a reason, a major or critical one in the last minute is. ok is true or false; the other
+// checks are readiness.js's own, from the robot view.
+function alarmChecks(r) {
+  const now = Date.now() / 1000;
   const bad = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S && SEV.indexOf(x.a.severity) >= SEV.indexOf("major"));
   let alarm = null, w = null;
   if (bad.length) {
     w = bad.reduce((a, x) => (SEV.indexOf(x.a.severity) >= SEV.indexOf(a.a.severity) ? x : a));
     alarm = `${w.a.severity} alarm ${w.a.anomaly}: ${w.a.summary || ""} (${ago(w.at)}${bad.length > 1 ? `, ${bad.length} in the last minute` : ""})`;
   }
-  return [
-    { id: "online", ok: !!r.online, what: "Online",
-      val: r.online ? "answering" : r.last_seen_age_s != null ? `offline: it has not answered for ${r.last_seen_age_s} s` : "offline: it has not answered yet" },
-    { id: "gate", ok: !l.unreachable, what: "Its gate answers", val: l.unreachable ? "its gate does not answer" : "answers" },
-    { id: "free", ok: l.unreachable ? null : !l.holder, what: "Nobody holds it",
-      val: l.unreachable ? "not known" : l.holder ? `held by ${l.holder}${r.goal_run != null ? `: goal run #${r.goal_run}` : ""}` : "free" },
-    { id: "flags", ok: !flags.length, what: "No status flag set", val: flags.length ? flags.join("; ") : "none" },
-    { id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none", alarm: w },
-  ];
+  return [{ id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none", alarm: w }];
 }
 // A sensor's reading for the facts line: a range in cm (or that nothing is in range), else the colour's name or the value.
 const sensorText = (v) => ("range_m" in v ? (v.range_m == null ? "nothing in range" : Math.round(v.range_m * 100) + " cm") : v.label ?? v.value ?? "-");
-const fitReasons = (r) => fitChecks(r).filter((c) => c.ok === false).map((c) => c.val);
 
 function applyTab(tab) {
   for (const b of document.querySelectorAll(".tabs .tab")) {
@@ -363,39 +360,27 @@ function renderRobotPage() {
   applyTab(rt.tab);
   loadLayout();
   paintPicker();
-  const fit = $("fit");
+  const chip = $("verdict");
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
   if (!r) {
-    fit.hidden = true; fit.removeAttribute("data-fit");
-    for (const k of ["facts", "fit-body", "fit-sum", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "readiness-body", "readiness-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
+    chip.hidden = true; chip.removeAttribute("data-status");
+    for (const k of ["facts", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "readiness-body", "readiness-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
     stForget();
     closeBody();
     return;
   }
-  const checks = fitChecks(r), why = fitReasons(r), st = r.status || {}, pr = r.profile, now = Date.now() / 1000;
-  fit.hidden = false; fit.dataset.fit = String(!why.length); fit.className = "verdict " + (why.length ? "bad" : "ok");
-  setKids(fit, h("span", { class: "pip" }), why.length ? "Not fit" : "Fit to go");
+  const pr = r.profile, now = Date.now() / 1000;
   paintFacts(r);
   const badge = $("tab-settings-badge");
   badge.hidden = !(pr && pr.version != null);
   badge.textContent = pr && pr.version != null ? "v" + pr.version : "";
-
-  const passed = checks.filter((c) => c.ok === true).length;
-  setKids($("rp-fit-sum"), `${passed} of ${checks.length}`);
-  $("rp-fit-sum").className = "sum " + (why.length ? "bad" : "ok");
-  setKids($("rp-fit-body"), h("ul", { id: "fit-checks", class: "checks" },
-    checks.map((c) => h("li", { "data-check": c.id, "data-ok": String(c.ok) },
-      icon(c.ok === true ? "check" : c.ok === false ? "x" : "dot", c.ok === true ? "ok" : c.ok === false ? "bad" : "na"),
-      h("span", { class: "sr" }, c.ok === true ? "passes: " : c.ok === false ? "fails: " : "not known: "),
-      h("span", { class: "what" }, c.what), h("span", { class: "val" }, c.val))),
-    h("li", { class: "na" }, icon("dot", "na"), h("span", { class: "what" }, "Battery is not a reason yet"), h("span", { class: "val" }, "its threshold comes with B2"))));
 
   const recent = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S).reverse();
   setKids($("rp-alarms-sum"), recent.length ? plural(recent.length, "alarm") : "none");
   setKids($("rp-alarms-body"), recent.length
     ? h("ul", { class: "alarmrows" }, recent.map((x) => h("li", {}, h("span", { class: "sev sev-" + x.a.severity }, x.a.severity),
       h("span", { class: "what" }, `${x.a.anomaly}: ${x.a.summary || ""}`), h("span", { class: "faint" }, ago(x.at)), momentLink(runKeyOf(x.watch), x.a.t))))
-    : h("div", { class: "empty" }, "No alarms in the last minute. A major or critical one makes the robot unfit for 60 s."));
+    : h("div", { class: "empty" }, "No alarms in the last minute. A major or critical one makes the robot not ready for 60 s."));
 
   const parts = pr ? pr.subsystems : null;
   setKids($("rp-parts-sum"), parts ? plural(parts.length, "subsystem") : "");
@@ -519,8 +504,8 @@ function loadReadiness() {
 }
 function paintReadiness(r) {
   if (!readyMod) { loadReadiness(); return; }
-  const fit = fitChecks(r);
-  readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), list: readyMod.checks(r, fit), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) });
+  const fit = alarmChecks(r);
+  readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), chip: $("verdict"), list: readyMod.checks(r, fit), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) });
   const w = fit.find((c) => c.id === "alarms").alarm, held = r.lock && r.lock.holder && r.goal_run != null ? runKeyOfRun(r.goal_run) : null;
   const into = (check, link) => { const li = link && document.querySelector(`#readiness-checks [data-check="${check}"]`); if (li) li.append(link); };
   into("alarms", w && momentLink(runKeyOf(w.watch), w.a.t));
@@ -530,22 +515,42 @@ function paintReadiness(r) {
 // --- evidence links (look-and-feel U24): "open in the Observatory at this moment", in the one format both apps share (libs/web/evidence.js) ----------
 // Mission Control stands at /control/ behind the Observatory on one origin, so the Observatory is this page's own origin there; on a port of its own it is
 // somewhere the page cannot know, and no link is shown (the alarm keeps its watch link, which points at the address the adapter was configured with).
-// evidence.js loads the first time a link is to be drawn and the page repaints then: the phone overview, with no run or alarm in view, never fetches it.
-const behindObservatory = () => location.pathname === "/control" || location.pathname.startsWith("/control/");
-let evidenceMod = null, evidenceBusy = null;
+// evidence.js loads the first time a link is to be drawn, and the empty slots drawn meanwhile fill in place: the phone overview, with no run or alarm in view, never fetches it.
+let evidenceMod = null, evidenceBusy = null, evidenceWarned = false, evidenceTries = 0;
+const slots = new WeakMap();      // an evidence slot -> what it stands for while evidence.js loads
 function loadEvidence() {
-  evidenceBusy ||= import("/lib/evidence.js").then((m) => { evidenceMod = m; renderAlarms(); renderRunDetail(); renderRobotPage(); }).catch(() => {});
+  // a failed import is kept by the browser for its address, so a retry asks for a new one (the module has no state of its own to duplicate)
+  evidenceBusy ||= import(evidenceTries++ ? `/lib/evidence.js?retry=${evidenceTries}` : "/lib/evidence.js").then((m) => { evidenceMod = m; }).catch((e) => {
+    // reset so the next repaint tries again; the slots stop waiting (the alarm's own watch link, else nothing) and the failure is said once
+    evidenceBusy = null;
+    if (!evidenceWarned) { evidenceWarned = true; toast("The Observatory links could not be loaded: " + e.message, true); }
+  }).then(fillSlots);
+}
+// a loaded module turns each waiting slot into its link in place: only the slots change, so nothing else in the repainted box (a half-typed name) is rebuilt
+function fillSlots() {
+  for (const s of document.querySelectorAll(".evidence-slot")) {
+    const o = slots.get(s), link = o && ((evidenceMod && evidenceLink(o.runKey, o.t)) || o.fallback);
+    if (link) s.replaceWith(link); else s.remove();
+  }
 }
 // an alarm's watch address is `<observatory>/watch/<run_key>#t=<s>`: the run key is robot/scene/run
 const runKeyOf = (watch) => (typeof watch === "string" ? (/\/watch\/([^#?]+)/.exec(watch) || [])[1] || null : null);
 // the run key of a goal run this page has listed (the robot view carries only the run's number)
 const runKeyOfRun = (id) => (S.runs.find((x) => x.id === id) || {}).run_key || null;
-// t: seconds into the run; a missing time is the run's start
-function momentLink(runKey, t) {
-  if (!runKey || !behindObservatory()) return null;
-  if (!evidenceMod) { loadEvidence(); return null; }
+function evidenceLink(runKey, t) {
   const href = evidenceMod.evidenceHref({ origin: location.origin, runKey, t });
   return href ? h("a", { class: "btn sm evidence", href, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null;
+}
+// t: seconds into the run; a missing time is the run's start. fallback: what stands in when there is no evidence link (null: nothing)
+function momentLink(runKey, t, fallback = null) {
+  if (!runKey || !behindObservatory()) return fallback;
+  if (!evidenceMod) {
+    loadEvidence();
+    const slot = h("span", { class: "evidence-slot" });
+    slots.set(slot, { runKey, t, fallback });
+    return slot;
+  }
+  return evidenceLink(runKey, t) || fallback;
 }
 
 // The command palette (palette-verbs.js, with libs/web/palette): loaded the first time it is asked for, by Ctrl/Cmd+K or the top-bar button, never by the
@@ -555,8 +560,8 @@ function loadPalette() {
   paletteBusy ||= import("./palette-verbs.js").then((m) => {
     palette = m.mount({
       robots: () => S.robots, route, tabs: TABS, hashOf, stopRobotId: () => (robot() || {}).id ?? null,
-      layout: () => (layoutMod ? layoutMod.act : null), pathname: () => location.pathname,
-      observatoryHref: () => (KIT.brand ? KIT.brand.APPS.observatory.href : "/"),
+      layout: () => (layoutMod ? layoutMod.act : null),
+      observatoryHref: () => (KIT.brand ? KIT.brand.APPS.observatory.href : "/"), behindObservatory,
       go: (hash) => { location.hash = hash; }, visit: (href) => location.assign(href),
       stop: () => $("stop-robot").click(), stopAll: () => $("stop-all").click(),
       theme: () => $("theme").click(), themeNow: effectiveTheme, toast,
@@ -572,9 +577,11 @@ async function openPalette() {
   } catch (e) { toast("The command palette could not be loaded: " + e.message, true); }
 }
 $("palette-btn").addEventListener("click", openPalette);
+// libs/web/palette/palette.js's TYPING, verbatim: this guard runs before that module is loaded, so it cannot import it (a test keeps the two equal)
+const TYPING = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
 document.addEventListener("keydown", (ev) => {
   if (palette || !(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey || ev.key.toLowerCase() !== "k") return;
-  if (ev.target instanceof Element && ev.target.closest("input, textarea, select, [contenteditable='']")) return;
+  if (ev.target instanceof Element && ev.target.closest(TYPING)) return;
   ev.preventDefault();
   openPalette();
 });
@@ -1121,7 +1128,7 @@ function renderAlarmInspector() {
         toast(j.stop.confirmed ? `${x.robot} stopped.` : `${x.robot}: STOP sent, but the robot did not answer, so it cannot be confirmed.`, !j.stop.confirmed);
       }) }, `STOP ${x.robot}`),
       x.goal_run != null ? h("button", { class: "btn", type: "button", onclick: guard(() => loadRunDetail(x.goal_run)) }, "Show the run") : null,
-      momentLink(runKeyOf(x.watch), a.t) || (x.watch ? h("a", { class: "btn", href: x.watch, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null)));
+      momentLink(runKeyOf(x.watch), a.t, x.watch ? h("a", { class: "btn", href: x.watch, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null)));
 }
 
 $("alarm").addEventListener("click", () => {

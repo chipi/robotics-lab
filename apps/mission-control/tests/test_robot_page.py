@@ -1,6 +1,6 @@
 """Mission Control's robot page (RFC-0023 D3, phase 5 item 4a unit A1) in headless Chromium, as test_page.py does it: the real server,
 the page driven by what a person does and checked against the API. A pointer robot to the duck's profile behind the fake adapter
-(its Parts come from the profile) beside the fake robot that holds itself (no profile). Five tabs in the address, collapsible cards, the fit checklist,
+(its Parts come from the profile) beside the fake robot that holds itself (no profile). Five tabs in the address, collapsible cards, the Readiness card and the header verdict that follows it,
 Calibration. Phone width, desktop, dark and light.
 
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
@@ -73,12 +73,19 @@ with sync_playwright() as p:
     wait(page, "window.__mc && window.__mc.ready")
     no_scroll = lambda: page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
-    def fit():
-        wait(page, "!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#fit-checks')")
-        return page.locator("#fit").get_attribute("data-fit"), page.locator("#fit-checks li[data-ok=false]").all_inner_texts()
+    # One verdict: the header chip follows the Readiness card's overall status (ok, warn, error, unknown). duck-1's profile declares no guardrail (a warning), so its idle
+    # baseline is "warn" with exactly the guardrails row as its reason; its battery is ok (the server's rule, 100 %).
+    IDLE = "warn"
+    NO_GUARDRAIL = "none declared"
 
-    def fit_is(want, timeout=8000):
-        wait(page, "([w]) => document.querySelector('#fit')?.dataset.fit === w", timeout, [want])
+    def fit(pg=None):
+        pg = pg or page
+        wait(pg, "!!document.querySelector('#verdict[data-status]') && !!document.querySelector('#readiness-checks')")
+        rows_ = pg.locator("#readiness-checks li[data-status=error], #readiness-checks li[data-status=warn]").all_inner_texts()
+        return pg.locator("#verdict").get_attribute("data-status"), [t for t in rows_ if NO_GUARDRAIL not in t]
+
+    def fit_is(want, timeout=8000, pg=None):
+        wait(pg or page, "([w]) => document.querySelector('#verdict')?.dataset.status === w", timeout, [want])
 
     # --- the robot page opens from the robot's card, and goes back -----------------------------------------------
     with soft("the page opens from the card"):
@@ -100,7 +107,7 @@ with sync_playwright() as p:
             const a = document.getElementById('stop-robot').getBoundingClientRect(), b = document.getElementById('stop-all').getBoundingClientRect();
             return a.height === 56 && b.height === 56 && a.bottom <= window.innerHeight && b.bottom <= window.innerHeight && a.left < b.left && a.top > window.innerHeight - 100; }"""))
         check("touch targets are at least 44 px on the phone: the tabs, the section heads, the back button, the picker", page.evaluate(
-            "() => ['.tab', '#rp-fit-head', '#rp-back', '#rp-picker', '#theme'].every((s) => [...document.querySelectorAll(s)].every((e) => e.getBoundingClientRect().height >= 44 || !e.offsetParent))"))
+            "() => ['.tab', '#rp-readiness-head', '#rp-back', '#rp-picker', '#theme'].every((s) => [...document.querySelectorAll(s)].every((e) => e.getBoundingClientRect().height >= 44 || !e.offsetParent))"))
         check("no sideways scrolling on the robot page at 390 px", no_scroll())
 
     # --- tabs: the selected one is in the address, so reload and back keep it ------------------------------------------
@@ -133,16 +140,17 @@ with sync_playwright() as p:
 
     # --- a card opens and closes ------------------------------------------------------------------------------------------
     with soft("collapsible cards"):
-        head = page.locator("#rp-fit-head")
+        wait(page, "!!document.querySelector('#readiness-checks li')")
+        head = page.locator("#rp-readiness-head")
         check("a card's head is a button that says it is open, and names what it controls", head.get_attribute("aria-expanded") == "true"
-              and head.get_attribute("aria-controls") == "rp-fit-body" and page.locator("#rp-fit-body").is_visible())
+              and head.get_attribute("aria-controls") == "rp-readiness-body" and page.locator("#rp-readiness-body").is_visible())
         head.click()
-        check("must fail: one press closes it: aria-expanded false and its body hidden", head.get_attribute("aria-expanded") == "false" and page.locator("#rp-fit-body").is_hidden())
+        check("must fail: one press closes it: aria-expanded false and its body hidden", head.get_attribute("aria-expanded") == "false" and page.locator("#rp-readiness-body").is_hidden())
         page.keyboard.press("Enter")
-        check("must fail: it works from the keyboard, and opens again", head.get_attribute("aria-expanded") == "true" and page.locator("#rp-fit-body").is_visible())
+        check("must fail: it works from the keyboard, and opens again", head.get_attribute("aria-expanded") == "true" and page.locator("#rp-readiness-body").is_visible())
         head.click()
         page.evaluate("() => window.__mc.renderRobotPage()")
-        check("a repaint of the page does not reopen what was closed, nor take the focus", head.get_attribute("aria-expanded") == "false" and page.evaluate("document.activeElement.id") == "rp-fit-head")
+        check("a repaint of the page does not reopen what was closed, nor take the focus", head.get_attribute("aria-expanded") == "false" and page.evaluate("document.activeElement.id") == "rp-readiness-head")
         head.click()
 
     # --- Calibration -------------------------------------------------------------------------------------------------------------
@@ -159,35 +167,40 @@ with sync_playwright() as p:
         check("no sideways scrolling on Calibration at 390 px", no_scroll())
         page.click("#tab-overview")
 
-    # --- Overview: fit to go, and why not -------------------------------------------------------------------------
+    # --- Overview: the one verdict, and why --------------------------------------------------------------------------
     with soft("Overview"):
         f, reasons = fit()
-        check("must fail: online and free: fit to go, with no reason against", f == "true" and reasons == [] and "fit to go" in page.locator("#fit").inner_text().lower(), (f, reasons))
-        check("and the variant it runs and the settings version are on the page, in the strip", "sim" in page.locator("#rp-facts").inner_text() and "settings" in page.locator("#rp-facts").inner_text() and page.locator("#fit").is_visible())
+        reasons_rows = page.locator("#readiness-checks li[data-status=unknown]").evaluate_all("(els) => els.map((e) => e.dataset.check)")
+        check("must fail: online and free: no error, the guardrails warning, the battery ok from the server's rule, and the header says check first in words", f == IDLE and reasons == []
+              and reasons_rows == [] and page.locator("#readiness-checks li[data-check=battery]").get_attribute("data-status") == "ok" and "check first" in page.locator("#verdict").inner_text().lower() and page.locator("#readiness-checks li[data-check=guardrails]").get_attribute("data-status") == "warn", (f, reasons, reasons_rows))
+        check("the header verdict is the card's own: the same status and the same word", page.locator("#verdict").get_attribute("data-status") == page.locator("#readiness-overall").get_attribute("data-status")
+              and page.locator("#verdict").inner_text().strip() == page.locator("#readiness-overall").inner_text().strip(), (page.locator("#verdict").inner_text(), page.locator("#readiness-overall").inner_text()))
+        check("there is one verdict list: the old 'Why it is fit to go' card and its checks are gone", page.locator("[data-panel=fit]").count() == 0 and page.locator("#fit-checks").count() == 0 and page.locator("#fit").count() == 0)
+        check("and the variant it runs and the settings version are on the page, in the strip", "sim" in page.locator("#rp-facts").inner_text() and "settings" in page.locator("#rp-facts").inner_text() and page.locator("#verdict").is_visible())
 
         duck.set_offline(True)
-        fit_is("false")
+        fit_is("error")
         f, reasons = fit()
-        check("must fail: offline: not fit, and the reason is offline", f == "false" and any("offline" in r for r in reasons) and "not fit" in page.locator("#fit").inner_text().lower(), reasons)
+        check("must fail: offline: not ready, and the reason is offline", f == "error" and any("offline" in r for r in reasons) and "not ready" in page.locator("#verdict").inner_text().lower(), reasons)
         duck.set_offline(False)
-        fit_is("true")
+        fit_is(IDLE)
 
         a = send("POST", "/robots/duck-1/lock", {"client": "operator-a"})["lock"]
-        fit_is("false")
+        wait(page, "document.querySelector('#readiness-checks [data-check=free]')?.dataset.status === 'warn'")      # the baseline is warn too: wait for the holder row itself
         f, reasons = fit()
-        check("must fail: held by someone else: the reason names who", any("operator-a" in r and "held" in r for r in reasons), reasons)
+        check("must fail: held by someone else: check first (a warning, not an error), and the reason names who", f == "warn" and any("operator-a" in r and "held" in r for r in reasons), (f, reasons))
         check("must fail: the strip shows the holder line: who, since, the lease, what is left", all(s in page.locator("#rp-holder").inner_text() for s in
               ("operator-a", "since", f"lease {a['lease_id']}", "expires in")), page.locator("#rp-holder").inner_text())
         send("DELETE", "/robots/duck-1/lock", {"session": a["session"]})
-        fit_is("true")
-        check("released: fit again and the holder line says nobody", page.locator("#rp-holder").inner_text() == "nobody", page.locator("#rp-holder").inner_text())
+        wait(page, "document.querySelector('#readiness-checks [data-check=free]')?.dataset.status === 'ok'")
+        check("released: back to the baseline and the holder line says nobody", page.locator("#rp-holder").inner_text() == "nobody", page.locator("#rp-holder").inner_text())
 
         duck.inject("fall", True)
-        fit_is("false")
+        fit_is("error")
         f, reasons = fit()
         check("must fail: a fall flag on the robot's status is a reason", any("fall" in r for r in reasons), reasons)
         duck.inject("fall", False)
-        fit_is("true")
+        fit_is(IDLE)
 
         def anomaly(sev, name):
             mc.bus.emit("anomaly", robot="duck-1", goal_run=1, watch=None, anomaly={"n": 1, "t": 1.0, "anomaly": name, "source": "robot", "module": "body",
@@ -195,29 +208,29 @@ with sync_playwright() as p:
 
         anomaly("minor", "joint_tracking")
         wait(page, "window.__mc.S.alarms.length === 1")
-        check("a minor alarm alone does not make the robot unfit", fit()[0] == "true")
+        check("a minor alarm alone does not make the robot not ready", fit()[0] == IDLE)
         anomaly("critical", "joint_overload")
-        fit_is("false")
+        fit_is("error")
         f, reasons = fit()
         check("must fail: a critical alarm in the last minute: the reason names it", any("critical" in r and "joint_overload" in r for r in reasons), reasons)
         al = page.locator("#rp-alarms-body").inner_text().lower()
         check("must fail: the Alarms card lists the last minute's alarms of this robot by their word, and counts them", "critical" in al and "minor" in al and "joint_overload" in al
               and page.locator("#rp-alarms-sum").inner_text() == "2 alarms", (al, page.locator("#rp-alarms-sum").inner_text()))
-        check("must fail: a failed check says so in words, not only in colour, and the summary counts the passes", "fails" in page.locator("#fit-checks li[data-check=alarms]").inner_text()
-              and page.locator("#rp-fit-sum").inner_text() == "4 of 5" and "not fit" in page.locator("#fit").inner_text().lower())
+        check("must fail: a failed check says so in words, not only in colour, and the summary counts the passes", "error" in page.locator("#readiness-checks li[data-check=alarms]").inner_text().lower()
+              and page.locator("#rp-readiness-sum").inner_text() == "7 of 9" and "not ready" in page.locator("#verdict").inner_text().lower())
         page.evaluate("() => { for (const x of window.__mc.S.alarms) x.at -= 61; window.__mc.renderRobotPage(); }")
-        fit_is("true")
-        check("must fail: an alarm older than a minute is no longer a reason", fit() == ("true", []))
+        fit_is(IDLE)
+        check("must fail: an alarm older than a minute is no longer a reason", fit() == (IDLE, []))
         duck.set_offline(True)
         anomaly("major", "motor_hot")
         wait(page, "window.__mc.S.alarms.length === 3")
-        wait(page, "document.querySelectorAll('#fit-checks li[data-ok=false]').length === 2")
+        wait(page, "document.querySelectorAll('#readiness-checks li[data-status=error]').length === 2")
         f, reasons = fit()
         check("must fail: every reason is listed, not only the first: offline and the alarm", len(reasons) == 2 and any("offline" in r for r in reasons)
               and any("motor_hot" in r for r in reasons), reasons)
         duck.set_offline(False)
         page.evaluate("() => { for (const x of window.__mc.S.alarms) x.at -= 61; window.__mc.renderRobotPage(); }")
-        fit_is("true")
+        fit_is(IDLE)
 
     # --- a page opened after the alarm: the server's last minute (shortened to 3 s here) is in the verdict at once ----------------
     with soft("Overview, opened after an alarm"):
@@ -228,16 +241,15 @@ with sync_playwright() as p:
         late = ctx.new_page()
         late.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
         late.goto(BASE + "/#robot/duck-1")
-        wait(late, "!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#fit-checks')")
-        wait(late, "document.querySelector('#fit')?.dataset.fit === 'false'")
-        reasons = late.locator("#fit-checks li[data-ok=false]").all_inner_texts()
-        check("must fail: opened after a major alarm: Overview says Not fit, with the alarm as the reason", "not fit" in late.locator("#fit").inner_text().lower()
+        fit_is("error", pg=late)
+        reasons = late.locator("#readiness-checks li[data-status=error]").all_inner_texts()
+        check("must fail: opened after a major alarm: Overview says not ready, with the alarm as the reason", "not ready" in late.locator("#verdict").inner_text().lower()
               and len(reasons) == 1 and "major" in reasons[0] and "joint_overload" in reasons[0] and "overload before the page opened" in reasons[0], reasons)
         wait(late, "[...document.querySelectorAll('#rp-body-joints li')].some((e) => e.textContent.includes('left_knee'))")     # the joint list waits for body.js and the description: two requests after the verdict
         check("and the Alarms card lists it, and the joint is named under the Body card", "joint_overload" in late.locator("#rp-alarms-body").inner_text()
               and any("left_knee" in t and "error" in t for t in late.locator("#rp-body-joints li").all_inner_texts()), late.locator("#rp-alarms-body").inner_text())
-        wait(late, "document.querySelector('#fit')?.dataset.fit === 'true'", 12000)
-        check("must fail: after the window it is fit again", late.locator("#fit-checks li[data-ok=false]").count() == 0 and late.locator("#rp-alarms-sum").inner_text() == "none")
+        fit_is(IDLE, 12000, pg=late)
+        check("must fail: after the window it is back to the baseline", late.locator("#readiness-checks li[data-status=error]").count() == 0 and late.locator("#rp-alarms-sum").inner_text() == "none")
         late.close()
         # the window stays 3 s: restored to 60 it would take the alarm back into the later tests
 
@@ -257,7 +269,8 @@ with sync_playwright() as p:
         wait(page, "document.getElementById('rp-title').textContent.includes('Fake robot')")
         check("must fail: a robot with no profile: Parts says so instead of listing parts", "no profile" in page.locator("#rp-parts").inner_text().lower()
               and page.locator("#rp-parts [data-part]").count() == 0, page.locator("#rp-parts").inner_text())
-        check("must fail: and Overview is fit with the profile line saying none", page.locator("#fit").get_attribute("data-fit") == "true")
+        wait(page, "document.querySelector('#readiness-checks [data-check=profile]')?.dataset.status === 'neutral'")      # this robot's own file: neutral, not ok
+        check("must fail: and Overview has no error and nothing but the baseline (no guardrail declared), with the profile line saying none", fit() == (IDLE, []))
         page.evaluate("location.hash = '#robot/nope'")
         wait(page, "document.getElementById('rp-title').textContent.includes('nope')")
         check("must fail: an id that is no robot says so, and still goes back", "no robot" in page.locator("#rp-title").inner_text().lower() and page.locator("#rp-back").count() == 1)
@@ -275,7 +288,7 @@ with sync_playwright() as p:
         page.goto(BASE + "/?visit=1#robot/duck-1")
         wait(page, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
         wait(page, "document.querySelectorAll('#rp-parts [data-part]').length === 3")
-        check("must fail: opening #robot/<id> directly lands on the robot page, loaded", fit()[0] == "true")
+        check("must fail: opening #robot/<id> directly lands on the robot page, loaded", fit()[0] == IDLE)
 
     # --- light, and desktop -----------------------------------------------------------------------------------------------
     with soft("light and desktop"):
@@ -287,7 +300,7 @@ with sync_playwright() as p:
         page.set_viewport_size({"width": 1500, "height": 900})
         page.emulate_media(color_scheme="dark")
         check("desktop: no sideways scrolling, and Overview and Parts sit side by side", no_scroll() and page.evaluate(
-            "() => { const a = document.getElementById('rp-fit-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return a.right <= b.left + 1; }"))
+            "() => { const a = document.getElementById('rp-readiness-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return a.right <= b.left + 1; }"))
         page.screenshot(path=str(SHOTS / "mc-robot-page-desktop-dark.png"), full_page=True)
         check("desktop: STOP ALL (outlined) and STOP duck-1 (solid) are in the top bar, always visible, with the picker and the live chip", page.evaluate(
             "() => { const t = document.querySelector('header.top').getBoundingClientRect(), ids = ['stop-all', 'stop-robot', 'rp-picker', 'conn']; return ids.every((i) => { const r = document.getElementById(i).getBoundingClientRect(); return r.top >= t.top - 1 && r.bottom <= t.bottom + 1; }); }")
@@ -301,7 +314,7 @@ with sync_playwright() as p:
         page.screenshot(path=str(SHOTS / "rp-overview-phone-dark.png"))
         page.set_viewport_size({"width": 390, "height": 800})
         check("and at 390 px again, the sections are one column", page.evaluate(
-            "() => { const a = document.getElementById('rp-fit-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return b.top >= a.bottom - 1; }"))
+            "() => { const a = document.getElementById('rp-readiness-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return b.top >= a.bottom - 1; }"))
 
     check("no script error and no console error in the whole session", errors == [], errors)
     browser.close()

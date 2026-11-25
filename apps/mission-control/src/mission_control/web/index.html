@@ -167,7 +167,7 @@
 <main id="robot-page" class="rp" hidden aria-label="Robot">
   <div class="strip">
     <h1 id="rp-title"></h1>
-    <span id="fit" class="verdict" hidden></span>
+    <span id="verdict" class="verdict" hidden></span>
     <div id="rp-facts" class="facts"></div>
     <button id="rp-layout" class="btn sm layoutbtn" type="button" aria-expanded="false" aria-controls="rp-layout-menu">Layout</button>
   </div>
@@ -180,9 +180,9 @@
   </div>
   <div class="content">
     <section id="rp-overview" class="grid2" role="tabpanel" aria-labelledby="tab-overview">
-      <section class="card" data-panel="fit" aria-label="Why it is fit to go">
-        <button id="rp-fit-head" class="shead" type="button" data-collapse="fit" aria-expanded="true" aria-controls="rp-fit-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Why it is fit to go<span class="sp"></span><span id="rp-fit-sum" class="sum"></span></button>
-        <div id="rp-fit-body" class="cbody"></div>
+      <section id="rp-readiness" class="card" data-panel="readiness" aria-label="Readiness">
+        <button id="rp-readiness-head" class="shead" type="button" data-collapse="readiness" aria-expanded="true" aria-controls="rp-readiness-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Readiness<span class="sp"></span><span id="rp-readiness-sum" class="sum"></span></button>
+        <div id="rp-readiness-body" class="cbody"></div>
       </section>
       <section class="card" data-panel="alarms" aria-label="Alarms, last 60 s">
         <button id="rp-alarms-head" class="shead" type="button" data-collapse="alarms" aria-expanded="true" aria-controls="rp-alarms-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Alarms, last 60 s<span class="sp"></span><span id="rp-alarms-sum" class="sum"></span></button>
@@ -195,10 +195,6 @@
       <section id="rp-body-card" class="card" data-panel="body" aria-label="Body">
         <button id="rp-body-head" class="shead" type="button" data-goto-tab="body"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Body<span class="sp"></span><span class="sum">open the Body tab</span></button>
         <div id="rp-body-sum" class="cbody"></div>
-      </section>
-      <section id="rp-readiness" class="card" data-panel="readiness" aria-label="Readiness">
-        <button id="rp-readiness-head" class="shead" type="button" data-collapse="readiness" aria-expanded="true" aria-controls="rp-readiness-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Readiness<span class="sp"></span><span id="rp-readiness-sum" class="sum"></span></button>
-        <div id="rp-readiness-body" class="cbody"></div>
       </section>
       <div id="rp-layout-empty" class="empty" hidden>Every panel on this tab is hidden. Open Layout above to show them again or reset the layout.</div>
     </section>

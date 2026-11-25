@@ -37,6 +37,7 @@ from runfile.profile import FormatError, Profile, checksum, merge_variant, valid
 from runfile.profilestore import StoreError
 
 from . import guardrails, robotfile
+from .battery import BatteryRule
 from .errors import ApiError, conflict, invalid
 
 MOVED = {"lease_s": "control.lease_s", "takeover": "control.takeover"}   # fields of the first format, with where they went
@@ -288,6 +289,11 @@ class RobotRuntime:
                              own_sources=(self.OWN_SOURCE,))
         self._holder = None
         self.watcher = adapter.make_watcher() if hasattr(adapter, "make_watcher") else None     # an adapter's own alarms (the NXT has no navigator to raise them)
+        # one battery rule for every robot: the NXT's watcher already runs it inside its own update, the others get it from the runtime
+        self.battery_rule = getattr(self.watcher, "battery_rule", None)
+        self._runs_battery = self.battery_rule is None
+        if self._runs_battery:
+            self.battery_rule = BatteryRule(cfg.adapter["type"])
         self.navigator = adapter.make_navigator(self.gate, clock) if cfg.capabilities.get("navigator") else None
         self.mutex = threading.RLock()
         self.sessions: OrderedDict = OrderedDict()
@@ -359,6 +365,9 @@ class RobotRuntime:
                           error=None if online else self.link.last_error)
         if self.watcher is not None and (answered is not None or not online):
             for anomaly in self.watcher.update(answered, online, self.wall()):
+                self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly=anomaly)
+        if self._runs_battery and answered is not None:
+            for anomaly in self.battery_rule.update(answered, self.wall()):
                 self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly=anomaly)
 
     # --- the lock: sessions over the gate ---------------------------------------------------------

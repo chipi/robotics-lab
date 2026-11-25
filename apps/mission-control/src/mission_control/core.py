@@ -142,7 +142,7 @@ class MissionControl:
                 "capabilities": rt.cfg.capabilities, "status": rt.status,
                 "guardrails": rt.cfg.guardrails, "rates": rt.cfg.rates, "site": self.sites.robot_site(rt.cfg.id),
                 "goal_run": rt.active.id if rt.active else None, "profile": self._profile_brief(rt.cfg),
-                "alarms": self.alarms.view(rt.cfg.id)}
+                "alarms": self.alarms.view(rt.cfg.id), "battery": rt.battery_rule.view(rt.status)}
 
     def list_robots(self) -> list:
         return [self.robot_brief(rt) for rt in self.robots.values()]

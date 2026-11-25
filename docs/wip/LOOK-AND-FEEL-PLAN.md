@@ -241,6 +241,18 @@ block. Old names stay as aliases in the first block until U26.
   from a key typed in an input; `/` keeps its Observatory job. A `stop` verb runs on the first
   Enter. The palette starts no goal and takes no robot.
 
+### Amendments
+
+Changes to a frozen contract after its unit shipped. Each is backward compatible and says what the
+other app sees.
+
+- `palette/palette.js` (review round 3, Q3): `createPalette({..., preselect = true})`. With the
+  default the palette is as before (the first row is selected on open and on a query). With
+  `preselect: false` nothing is selected on open or on an empty query, so an Enter on open runs
+  nothing; ArrowDown selects the first row, ArrowUp the last, and a typed query selects its first
+  match as usual. STOP and STOP ALL stay the first rows and still run on one Enter once selected.
+  Mission Control passes `false`; the Observatory passes nothing and is unchanged.
+
 ## Risks
 
 - RFC-0023 D1: Mission Control is now, the Observatory is a run. Live and Replay live in the

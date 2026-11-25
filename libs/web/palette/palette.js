@@ -43,9 +43,11 @@ const match = (q, v) => {
   return k < 0 ? -1 : k;
 };
 
-// createPalette({host, registry, storage, context}) -> {open, close, toggle, isOpen, dispose}
+// createPalette({host, registry, storage, context, preselect}) -> {open, close, toggle, isOpen, dispose}
 // `context()` is what each verb's when(ctx) and run(ctx) get; `storage` keeps the recent verbs under rl.palette.recent.
-export function createPalette({ host = document.body, registry = defaultRegistry, storage, context = () => ({}) } = {}) {
+// `preselect` (default true) selects the first row when the palette opens or the query is empty; false leaves nothing selected until a key, an arrow or a typed
+// query chooses a row, so an Enter on open runs nothing (Mission Control, whose first row is STOP).
+export function createPalette({ host = document.body, registry = defaultRegistry, storage, context = () => ({}), preselect = true } = {}) {
   const store = storage ?? (() => { try { return localStorage; } catch { return null; } })();
   const uid = 'pal' + Math.random().toString(36).slice(2, 7);
   let root = null, input = null, listbox = null, status = null;
@@ -109,10 +111,8 @@ export function createPalette({ host = document.body, registry = defaultRegistry
     if (!root) return;
     disarmAll();
     shown = ordered(input.value);
-    if (resetCursor || cursor >= shown.length) cursor = 0;
+    if (resetCursor || cursor >= shown.length) cursor = preselect || input.value.trim() ? 0 : -1;
     listbox.replaceChildren(...shown.map((v, i) => row(v, i)));
-    input.setAttribute('aria-activedescendant', shown.length ? `${uid}-${cursor}` : '');
-    if (!shown.length) input.removeAttribute('aria-activedescendant');
     status.textContent = shown.length ? `${shown.length} command${shown.length === 1 ? '' : 's'}` : 'No matching command';
     mark();
   }
@@ -146,6 +146,7 @@ export function createPalette({ host = document.body, registry = defaultRegistry
     });
     const li = listbox.children[cursor];
     if (li) { input.setAttribute('aria-activedescendant', li.id); li.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' }); }
+    else input.removeAttribute('aria-activedescendant');
   }
 
   function move(i, keep) {
@@ -173,7 +174,7 @@ export function createPalette({ host = document.body, registry = defaultRegistry
 
   function onBoxKey(e) {
     if (e.key === 'ArrowDown') { e.preventDefault(); move(cursor + 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); move(cursor - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(cursor < 0 ? shown.length - 1 : cursor - 1); }
     else if (e.key === 'Home' && !input.value) { e.preventDefault(); move(0); }
     else if (e.key === 'End' && !input.value) { e.preventDefault(); move(shown.length - 1); }
     else if (e.key === 'Enter') { e.preventDefault(); activate(); }
@@ -189,7 +190,7 @@ export function createPalette({ host = document.body, registry = defaultRegistry
     if (!root) build();
     if (!root.hidden) return;
     opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
-    input.value = ''; cursor = 0;
+    input.value = ''; cursor = preselect ? 0 : -1;
     root.hidden = false;
     render(true);
     input.focus();

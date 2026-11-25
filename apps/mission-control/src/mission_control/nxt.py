@@ -18,6 +18,7 @@ import urllib.request
 from robotgate import PROTOCOL, GateError
 from runfile import installation
 
+from .battery import BatteryRule
 from .errors import ApiError
 
 CALL_TIMEOUT_S = 5.0
@@ -194,16 +195,15 @@ class NxtWatcher:
     the robot's `alarms` read them like the duck's. The NXT has no navigator, which is where the duck's alarms come from.
 
     One alarm of a name is not raised twice inside its gap: a held drive meets the same wall every 200 ms, and the battery sags under
-    load. Only the low battery is raised again while it holds (every 30 s, so a major alarm stays inside the page's 60 s window);
+    load. The low battery is battery.py's rule, raised again while it holds;
     the others fire on the change."""
 
-    LOW_PCT, CLEAR_PCT = 20, 25         # low below 20 %, until it is over 25 % (a hysteresis: a sag under load is not a recovery)
-    GAP_S = {"obstacle_stop": 10.0, "deadman_stop": 10.0, "link_lost": 10.0, "low_battery": 30.0}
+    GAP_S = {"obstacle_stop": 10.0, "deadman_stop": 10.0, "link_lost": 10.0}
 
     def __init__(self):
         self._last: dict = {}
         self._flags = {"obstacle_stop": False, "deadman_stop": False}
-        self._low = False
+        self.battery_rule = BatteryRule("nxt-web", "; the brick will stop driving soon")      # the one rule every robot gets (battery.py); the runtime reads its view
         self._was_online = False
 
     def _raise(self, name: str, severity: str, module: str, summary: str, now: float, **values) -> list:
@@ -228,12 +228,7 @@ class NxtWatcher:
         if flags.get("deadman_stop") and not self._flags["deadman_stop"]:
             out += self._raise("deadman_stop", "major", "robotd-lite", "the tracks stopped because no drive command arrived for 0.5 s", now)
         self._flags = {k: bool(flags.get(k)) for k in self._flags}
-        pct = status.get("battery_pct")
-        if pct is not None:
-            self._low = pct < self.LOW_PCT or (self._low and pct < self.CLEAR_PCT)
-            if self._low:
-                out += self._raise("low_battery", "major", "nxt-web", f"the battery is at {pct} %; the brick will stop driving soon", now,
-                                   battery_pct=pct, battery_mv=status.get("battery_mv"))
+        out += self.battery_rule.update(status, now)
         return out
 
 

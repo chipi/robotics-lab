@@ -4,9 +4,9 @@ real brick: --fake, a scratch data folder, a free loopback port). The sim varian
 north wall 2 m ahead of the start), the real variant against --fake. Parts, Body (the built Shooterbot description: every mesh loaded, none
 failed), Modules and Settings open for it, in the sim variant and in the real one, and the page logs no error.
 
-Unit D5 (the NXT's sensors and stops): an idle, online NXT is "Fit to go" (it was "Not fit": nxt-web's running program was a status flag); the
+Unit D5 (the NXT's sensors and stops): an idle, online NXT has no error in its Readiness card and its battery reads ok from the server's rule (it was "Not fit": nxt-web's running program was a status flag); the
 facts line reads the ultrasonic (and, for the variant that has it, the colour); in the sim the robot is driven at the wall through Mission
-Control's API, and the page shows the obstacle stop as a status flag that fails the fit verdict, as a minor alarm in the alarm list, the range
+Control's API, and the page shows the obstacle stop as a status flag that makes the verdict not ready, as a minor alarm in the alarm list, the range
 at 15 cm or less, and who holds it; STOP clears the flag.
 
 The built meshes are not in git (`make robots-lego` writes them; it needs the LDraw library in ~/opt/ldraw). The folder is MC_ROBOT_FOLDER,
@@ -225,9 +225,11 @@ with sync_playwright() as p:
 
                 # --- D5: an idle, online NXT is fit; the facts line reads its sensors --------------------------------------------------
                 page.goto(BASE + "/#robot/nxt-1")
-                wait("!!document.querySelector('#fit[data-fit]') && !!document.querySelector('#rp-facts [data-sensor]')")
-                check(f"[{variant}] online and idle, the NXT is Fit to go (no flag, no alarm)", page.locator("#fit").get_attribute("data-fit") == "true",
-                      (page.locator("#fit").inner_text(), page.locator("#fit-checks li[data-ok=false]").all_inner_texts()))
+                wait("!!document.querySelector('#verdict[data-status]') && !!document.querySelector('#rp-facts [data-sensor]')")
+                wait("document.querySelector('#readiness-checks [data-check=battery]')?.dataset.status === 'ok'")
+                errs = page.locator("#readiness-checks li[data-status=error]").all_inner_texts()
+                check(f"[{variant}] online and idle, the NXT has no error (no flag, no alarm), and its battery is ok from the server's rule: 75 %", errs == []
+                      and page.locator("#verdict").get_attribute("data-status") != "error" and "75 %" in page.locator("#readiness-checks [data-check=battery]").inner_text(), (page.locator("#verdict").inner_text(), errs))
                 sensors = page.eval_on_selector_all("#rp-facts [data-sensor]", "(els) => els.map((e) => [e.dataset.sensor, e.innerText])")
                 check(f"[{variant}] the facts line names the declared sensors, the ultrasonic in cm", [x[0] for x in sensors] == SENSORS[variant] and " cm" in sensors[0][1], sensors)
                 check(f"[{variant}] the battery is a percent, not a dash", "75%" in page.locator("#rp-facts").inner_text(), page.locator("#rp-facts").inner_text())
@@ -249,11 +251,11 @@ with sync_playwright() as p:
                         time.sleep(0.2)
                         stopped = ((mcall("GET", "/robots/nxt-1")["robot"]["status"] or {}).get("flags") or {}).get("obstacle_stop")
                     check("[sim] driving at the wall, the brick stops the tracks: the obstacle flag is in Mission Control's state", stopped)
-                    wait("document.querySelector('#fit')?.dataset.fit === 'false'")
-                    reasons = page.locator("#fit-checks li[data-ok=false]").all_inner_texts()
+                    wait("document.querySelector('#verdict')?.dataset.status === 'error'")
+                    reasons = page.locator("#readiness-checks li[data-status=error]").all_inner_texts()
                     check("[sim] the facts line says the robot is stopped, not moving", "mode stopped" in page.locator("#rp-facts").inner_text().replace("\n", " "),
                           page.locator("#rp-facts").inner_text())
-                    check("[sim] the page says Not fit, and the flags check names the obstacle stop", page.locator("#fit").inner_text() == "Not fit"
+                    check("[sim] the page says not ready, and the flags check names the obstacle stop", "not ready" in page.locator("#verdict").inner_text().lower()
                           and any("obstacle_stop" in t for t in reasons), reasons)
                     wait("!!document.querySelector('#rp-alarms-body .alarmrows')")
                     alarm = page.locator("#rp-alarms-body").inner_text()
@@ -262,9 +264,9 @@ with sync_playwright() as p:
                     check("[sim] the facts line reads the ultrasonic at the wall, 15 cm or less", True, page.locator("#rp-facts [data-sensor=ultrasonic]").inner_text())
                     page.screenshot(path=str(SHOTS / "d5-obstacle-phone-dark.png"), full_page=True)
                     page.click("#stop-robot")
-                    wait("document.querySelector('#fit')?.dataset.fit === 'true'")
-                    check("[sim] STOP clears the flag: Fit to go again, and the holder is nobody", page.locator("#fit").inner_text() == "Fit to go"
-                          and page.locator("#rp-holder").inner_text() == "nobody", (page.locator("#fit").inner_text(), page.locator("#rp-holder").inner_text()))
+                    wait("document.querySelector('#verdict')?.dataset.status !== 'error'")
+                    check("[sim] STOP clears the flag: no longer not ready, and the holder is nobody", "not ready" not in page.locator("#verdict").inner_text().lower()
+                          and page.locator("#rp-holder").inner_text() == "nobody", (page.locator("#verdict").inner_text(), page.locator("#rp-holder").inner_text()))
             finally:
                 ctx.close()
                 srv.shutdown()

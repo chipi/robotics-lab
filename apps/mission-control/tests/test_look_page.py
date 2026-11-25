@@ -394,9 +394,29 @@ with sync_playwright() as p:
     check("a drawer open: STOP posts on one press, and confirm.js is not fetched", not [u for u in drawer_reqs if "/lib/confirm." in u])
     dp.close()
 
+    # --- the theme key: rl.theme, with the old mc-theme read once and migrated -----------------------------------------------------------------------
+    with soft("theme key"):
+        tctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
+        tp = tctx.new_page()
+        tp.set_default_timeout(5000)
+        tp.goto(BASE + "/")
+        wait(tp, "window.__mc && window.__mc.ready")
+        tp.evaluate("localStorage.removeItem('rl.theme'); localStorage.setItem('mc-theme', 'light')")
+        tp.reload()
+        wait(tp, "window.__mc && window.__mc.ready")
+        got = tp.evaluate("[document.documentElement.dataset.theme, localStorage.getItem('rl.theme'), localStorage.getItem('mc-theme')]")
+        check("an old mc-theme is read once: the page takes it and copies it to rl.theme", got[0] == "light" and got[1] == "light", got)
+        tp.click("#theme")
+        got = tp.evaluate("[document.documentElement.dataset.theme, localStorage.getItem('rl.theme'), localStorage.getItem('mc-theme')]")
+        check("the switch writes rl.theme only: mc-theme is not written again", got == ["dark", "dark", "light"], got)
+        tp.reload()
+        wait(tp, "window.__mc && window.__mc.ready")
+        check("and rl.theme wins over a stale mc-theme on the next load", tp.evaluate("document.documentElement.dataset.theme") == "dark")
+        tctx.close()
+
     # --- U22: panels and layouts: saved in this browser (libs/web/layout/store.js), restored on a reload, reset to the default ---------------------
     LS = "JSON.parse(localStorage.getItem('rl.layouts.control') || 'null')"
-    PANEL_IDS = ("fit", "alarms", "parts", "body", "readiness", "joints")
+    PANEL_IDS = ("readiness", "alarms", "parts", "body", "joints")
     ALL = list(PANEL_IDS)
 
     def setrange(page_, rid, px):
@@ -435,7 +455,7 @@ with sync_playwright() as p:
             lp.click("#rp-layout")
             check(f"{view}: the Layout button opens the menu and says so", lp.locator("#rp-layout-menu").is_visible() and lp.get_attribute("#rp-layout", "aria-expanded") == "true")
             stops_clear("menu open")
-            check(f"{view}: the default layout: overview cards all shown, joints column 340 px, cards 420 px", lp.evaluate("""() => ['fit', 'alarms', 'parts', 'body', 'readiness'].every((i) => !document.querySelector(`[data-panel=${i}]`).hidden)
+            check(f"{view}: the default layout: overview cards all shown, joints column 340 px, cards 420 px", lp.evaluate("""() => ['readiness', 'alarms', 'parts', 'body'].every((i) => !document.querySelector(`[data-panel=${i}]`).hidden)
                 && document.getElementById('robot-page').style.getPropertyValue('--rp-joints-w') === '340px' && document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'"""))
 
             # hide two panels, fold a third, size the cards: it persists across a reload
@@ -443,22 +463,22 @@ with sync_playwright() as p:
             lp.uncheck("#lay-show-parts")
             setrange(lp, "lay-w-cards", 560)
             lp.click("#lay-close")
-            lp.click("#rp-fit-head")
-            check(f"{view}: hiding panels hides them now", shown() == ["fit", "body", "readiness", "joints"], shown())
+            lp.click("#rp-readiness-head")
+            check(f"{view}: hiding panels hides them now", shown() == ["readiness", "body", "joints"], shown())
             saved = lp.evaluate(LS)
             check(f"{view}: the change is in rl.layouts.control under the name default, and the layout in use is default",
-                  saved and saved["layouts"]["default"]["panels"]["open"].get("hidden:alarms") is True and saved["layouts"]["default"]["panels"]["open"].get("fit") is False
+                  saved and saved["layouts"]["default"]["panels"]["open"].get("hidden:alarms") is True and saved["layouts"]["default"]["panels"]["open"].get("readiness") is False
                   and saved["layouts"]["default"]["widths"].get("cards") == 560 and lp.evaluate("localStorage.getItem('rl.layout.current.control')") == "default", saved)
             lp.reload()
             wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
-            check(f"{view}: after a reload the hidden panels are still hidden", shown() == ["fit", "body", "readiness", "joints"], shown())
-            got = lp.evaluate("[document.getElementById('rp-fit-head').getAttribute('aria-expanded'), document.getElementById('robot-page').style.getPropertyValue('--rp-card-min')]")
+            check(f"{view}: after a reload the hidden panels are still hidden", shown() == ["readiness", "body", "joints"], shown())
+            got = lp.evaluate("[document.getElementById('rp-readiness-head').getAttribute('aria-expanded'), document.getElementById('robot-page').style.getPropertyValue('--rp-card-min')]")
             check(f"{view}: after a reload the folded card is still folded, the size is kept", got == ["false", "560px"], got)
             stops_clear("two panels hidden, after a reload")
 
             # every panel hidden: the page says so, the menu brings them back, and STOP is clear throughout
             lp.click("#rp-layout")
-            for pid in ("fit", "body", "readiness"):
+            for pid in ("readiness", "body"):
                 lp.uncheck(f"#lay-show-{pid}")
             check(f"{view}: every overview panel hidden: the page says so", lp.locator("#rp-layout-empty").is_visible() and shown() == ["joints"], shown())
             stops_clear("every overview panel hidden, menu open")
@@ -472,7 +492,7 @@ with sync_playwright() as p:
             check(f"{view}: Save as keeps it under its name and puts it in use", lp.evaluate("[localStorage.getItem('rl.layout.current.control'), Object.keys(" + LS + ".layouts).sort()]") == ["bare", ["bare", "default"]])
             lp.click("#lay-reset")
             check(f"{view}: Reset to default shows every panel and the default sizes", shown() == ALL and lp.evaluate("""document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'
-                && document.getElementById('rp-fit-head').getAttribute('aria-expanded') === 'true'"""), shown())
+                && document.getElementById('rp-readiness-head').getAttribute('aria-expanded') === 'true'"""), shown())
             lp.reload()
             wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
             check(f"{view}: the reset survives a reload", shown() == ALL and lp.evaluate("document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'"), shown())
@@ -495,13 +515,25 @@ with sync_playwright() as p:
             stops_clear("the Body tab, joints hidden, menu open")
             lp.reload()
             wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
-            check(f"{view}: the hidden joints card stays hidden after a reload", shown() == ["fit", "alarms", "parts", "body", "readiness"] and lp.evaluate("document.querySelector('[data-panel=joints]').hidden"), shown())
+            check(f"{view}: the hidden joints card stays hidden after a reload", shown() == ["readiness", "alarms", "parts", "body"] and lp.evaluate("document.querySelector('[data-panel=joints]').hidden"), shown())
             stops_clear("the Body tab, joints hidden, after a reload")
             lp.click("#rp-layout")
             lp.click("#lay-reset")
             check(f"{view}: reset shows the joints card again", lp.evaluate("!document.querySelector('[data-panel=joints]').hidden && !document.querySelector('.bodygrid').classList.contains('solo')"))
             lp.keyboard.press("Escape")
             check(f"{view}: Escape closes the menu and the focus goes back to the Layout button", lp.locator("#rp-layout-menu").is_hidden() and lp.evaluate("document.activeElement.id") == "rp-layout")
+
+        # a layout saved while the "Why it is fit to go" card existed names `fit` (folded, hidden): it loads, the card is simply not there, and nothing is hidden by it
+        with soft(f"{view}: a saved layout naming the removed fit panel"):
+            lopen()
+            lp.evaluate("""() => { localStorage.setItem('rl.layouts.control', JSON.stringify({version: 1, layouts: {default: {panels: {open: {fit: false, 'hidden:fit': true, parts: false}}, widths: {cards: 480}}}}));
+                localStorage.setItem('rl.layout.current.control', 'default'); }""")
+            n_err = len(errors)
+            lp.reload()
+            wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
+            check(f"{view}: it loads without an error, the other panels' keys still apply, and no fit panel is in the menu", errors[n_err:] == [] and shown() == ["readiness", "alarms", "parts", "body", "joints"]
+                  and lp.get_attribute("#rp-parts-head", "aria-expanded") == "false" and lp.locator("#lay-show-fit").count() == 0 and lp.locator("[data-panel=fit]").count() == 0, (errors[n_err:], shown()))
+            lp.evaluate("localStorage.removeItem('rl.layouts.control'); localStorage.removeItem('rl.layout.current.control')")
 
         # STOP with a panel arrangement saved, on a freshly loaded page: still one press, and the menu code has not been asked to confirm anything
         with soft(f"{view}: STOP with the layout menu open"):
@@ -526,22 +558,34 @@ with sync_playwright() as p:
             })""")
             check(f"{view}: each check shows a glyph and a word beside its colour, the word the status's own", rows and all(r[1] == r[2] and r[3] and r[4] and r[4] != r[3] for r in rows), rows)
             by = {r[0]: r for r in rows}
-            check(f"{view}: the simulated robot is online, its gate answers, nobody holds it, its battery and flags are fine", all(by[k][1] == "ok" for k in ("online", "gate", "free", "battery", "flags")), rows)
+            check(f"{view}: the simulated robot is online, its gate answers, nobody holds it, its flags, link and battery are fine", all(by[k][1] == "ok" for k in ("online", "gate", "free", "link", "battery", "flags")), rows)
+            check(f"{view}: the battery is ok from the server's rule (the fake at 100 %), with its percent", "100" in by["battery"][4] or by["battery"][1] == "ok", by["battery"])
+            vc = lp.evaluate("[document.getElementById('verdict').dataset.status, document.getElementById('verdict').innerText, document.getElementById('readiness-overall').dataset.status, document.getElementById('readiness-overall').innerText]")
+            check(f"{view}: the header verdict is the card's: the same status and the same word and glyph", vc[0] == vc[2] and vc[1].strip() == vc[3].strip() and vc[0] in ("ok", "warn", "error", "unknown"), vc)
             ov = lp.evaluate("[document.getElementById('readiness-overall').dataset.status, document.getElementById('rp-readiness-sum').innerText]")
             check(f"{view}: the card says its verdict in one badge and counts the passes in its head", ov[0] in ("ok", "warn", "error", "unknown") and "of 9" in ov[1], ov)
             # a flag set, a low battery, a holder: each shows as its own status, in words; the verdict follows the worst
             got = lp.evaluate("""() => {
                 const mc = window.__mc, r = mc.S.robots.find((x) => x.id === 'duck-1'), keep = JSON.stringify([r.status, r.lock]);
+                const all = (b) => { r.battery = b; mc.renderRobotPage(); return document.querySelector('#readiness-checks [data-check=battery]').dataset.status + ' | ' + document.querySelector('#readiness-checks [data-check=battery]').innerText; };
+                // the page holds no threshold: the server's `low` decides, whatever the percent and whatever numbers come with it
+                const rule = {lowAt30: all({pct: 30, low: true, low_pct: 40, clear_pct: 50}), okAt5: all({pct: 5, low: false, low_pct: 20, clear_pct: 25}), none: all(null), noRule: all({pct: 12})};
                 r.status = {...r.status, flags: {...r.status.flags, near_drop: true}, battery_pct: 12};
+                r.battery = {pct: 12, low: true, low_pct: 20, clear_pct: 25};
                 r.lock = {...r.lock, holder: 'someone', unreachable: false};
                 mc.renderRobotPage();
                 const out = Object.fromEntries([...document.querySelectorAll('#readiness-checks li')].map((l) => [l.dataset.check, l.dataset.status + ' | ' + l.innerText]));
                 out.overall = document.getElementById('readiness-overall').dataset.status + ' | ' + document.getElementById('readiness-overall').innerText;
-                [r.status, r.lock] = JSON.parse(keep); mc.renderRobotPage();
+                out.chip = document.getElementById('verdict').dataset.status + ' | ' + document.getElementById('verdict').innerText;
+                out.rule = rule;
+                [r.status, r.lock] = JSON.parse(keep); delete r.battery; mc.renderRobotPage();
                 return out;
             }""")
             check(f"{view}: a set flag is an error that names the flag", got["flags"].startswith("error") and "near_drop" in got["flags"], got["flags"])
-            check(f"{view}: a low battery is an error with its value", got["battery"].startswith("error") and "12" in got["battery"], got["battery"])
+            check(f"{view}: a low battery is an error with its value and the server's two numbers", got["battery"].startswith("error") and "12" in got["battery"] and "20" in got["battery"] and "25" in got["battery"], got["battery"])
+            check(f"{view}: the page holds no threshold: the server's `low` decides (30 % is an error when it says low, 5 % is ok when it says not low), and no rule reads unknown",
+                  got["rule"]["lowAt30"].startswith("error") and "40" in got["rule"]["lowAt30"] and got["rule"]["okAt5"].startswith("ok") and got["rule"]["none"].startswith("unknown") and got["rule"]["noRule"].startswith("unknown"), got["rule"])
+            check(f"{view}: the header verdict follows the card to not ready, in words", got["chip"].startswith("error") and "not ready" in got["chip"].lower() and got["chip"].split(" | ")[0] == got["overall"].split(" | ")[0], (got["chip"], got["overall"]))
             check(f"{view}: a holder is a warning that names the holder", got["free"].startswith("warn") and "someone" in got["free"], got["free"])
             check(f"{view}: the verdict follows the worst check, in words", got["overall"].startswith("error") and "not ready" in got["overall"].lower(), got["overall"])
             # a field the view does not carry: unknown, in words, and never counted as a pass
@@ -549,7 +593,8 @@ with sync_playwright() as p:
                 const m = await import(new URL('web/readiness.js', location.href).href), fit = [];
                 const names = (r) => Object.fromEntries(m.checks(r, fit).map((c) => [c.id, c.status]));
                 return {empty: names({id: 'x'}),
-                    held: names({id: 'x', online: true, lock: {holder: null}, status: {battery_pct: 40, link: 'usb', flags: {}}, alarms: {worst: null}, guardrails: [{name: 'g'}], profile: null}),
+                    held: names({id: 'x', online: true, lock: {holder: null}, status: {battery_pct: 40, link: 'usb', flags: {}}, battery: {pct: 40, low: false, low_pct: 20, clear_pct: 25}, alarms: {worst: null}, guardrails: [{name: 'g'}], profile: null}),
+                    links: Object.fromEntries(['fake', 'duck-gate', 'usb', 'bluetooth', 'sim', 'carrier-pigeon', '', 0].map((l) => [String(l), m.checks({id: 'x', status: {link: l}}, fit).find((c) => c.id === 'link').status])),
                     bare: names({id: 'x', guardrails: []}),
                     nolock: names({id: 'x', online: false, lock: {unreachable: true}}),
                     over: m.overall(m.checks({id: 'x'}, fit))};
@@ -558,8 +603,12 @@ with sync_playwright() as p:
             check(f"{view}: and the verdict is unknown, not ok", miss["over"]["status"] == "unknown", miss["over"])
             check(f"{view}: fields present read as themselves: an own-file profile is neutral, no declared guardrail a warning", miss["held"]["online"] == "ok" and miss["held"]["free"] == "ok"
                   and miss["held"]["link"] == "ok" and miss["held"]["profile"] == "neutral" and miss["held"]["guardrails"] == "ok" and miss["bare"]["guardrails"] == "warn", (miss["held"], miss["bare"]))
+            check(f"{view}: the link check knows the adapters' values (fake, duck-gate, usb, bluetooth, sim) and reads any other unknown, never ok", all(miss["links"][k] == "ok" for k in ("fake", "duck-gate", "usb", "bluetooth", "sim"))
+                  and all(miss["links"][k] == "unknown" for k in ("carrier-pigeon", "", "0")), miss["links"])
             check(f"{view}: an unreachable gate is an error and says nothing about who holds it", miss["nolock"]["gate"] == "error" and miss["nolock"]["free"] == "unknown" and miss["nolock"]["online"] == "error", miss["nolock"])
             stops_clear("readiness card shown")
+            if lp.locator("#rp-layout-menu").is_visible():      # lopen() does not reload: the menu from the block above would cover the first card
+                lp.click("#lay-close")
             lp.click("#rp-readiness-head")
             check(f"{view}: the card folds on one press and the fold is part of the layout", lp.get_attribute("#rp-readiness-head", "aria-expanded") == "false" and lp.locator("#rp-readiness-body").is_hidden()
                   and lp.evaluate(LS)["layouts"]["default"]["panels"]["open"].get("readiness") is False)
@@ -648,16 +697,65 @@ with sync_playwright() as p:
             palette_close()
             check(f"{view}: closed, focus returns to the palette button", pp.evaluate("document.activeElement.id") == "palette-btn")
 
+        with soft(f"{view}: palette, Meta+K and the typing guard"):
+            popen_page()
+            pp.keyboard.press("Meta+k")
+            wait(pp, "!!document.querySelector('.pal') && !document.querySelector('.pal').hidden && document.querySelectorAll('.pal-row').length > 0")
+            check(f"{view}: Cmd/Meta+K opens the palette", palette_open())
+            palette_close()
+            # the lib's own guard covers contenteditable="true" too: with the palette loaded, then before it is loaded (a fresh page)
+            for loaded in (True, False):
+                if not loaded:
+                    popen_page()
+                pp.evaluate("""() => { const d = document.createElement('div'); d.id = 'ce'; d.setAttribute('contenteditable', 'true'); d.tabIndex = 0; d.textContent = 'note'; document.body.append(d); d.focus(); }""")
+                n_pal = len([u for u in preqs if "palette-verbs" in u])
+                pp.keyboard.press("Control+k")
+                pp.wait_for_timeout(300)
+                check(f"{view}: Ctrl+K typed in a contenteditable=true element opens nothing{'' if loaded else ' and loads nothing'} (palette {'loaded' if loaded else 'not loaded'})",
+                      not palette_open() and (loaded or len([u for u in preqs if "palette-verbs" in u]) == n_pal), (palette_open(), n_pal))
+                pp.evaluate("document.getElementById('ce').remove()")
+                if loaded:
+                    palette_via_key(); palette_close()
+
+        with soft(f"{view}: palette, a failed load shows the toast"):
+            fctx = browser.new_context(viewport=size, color_scheme="dark")
+            fp = fctx.new_page()
+            fp.set_default_timeout(5000)
+            fp.route(re.compile(r"/web/palette-verbs\.js"), lambda r: r.abort())
+            fp.goto(BASE + "/")
+            wait(fp, "window.__mc && window.__mc.ready")
+            fp.keyboard.press("Control+k")
+            wait(fp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
+            msg = fp.evaluate("document.getElementById('toast').textContent")
+            check(f"{view}: a palette module that does not load says so in the toast, and the page and STOP stay usable", "command palette could not be loaded" in msg and fp.locator("#stop-robot").is_enabled(), msg)
+            fctx.close()
+
         with soft(f"{view}: palette, STOP first and unconfirmed"):
             popen_page()
             palette_via_key()
             r = rows()
             check(f"{view}: STOP and STOP ALL are the first two verbs, danger stop", [x[:2] for x in r[:2]] == [["stop.robot", "stop"], ["stop.all", "stop"]], r[:3])
             check(f"{view}: the STOP rows have no confirm button", pp.locator(".pal-row[data-danger=stop] .pal-confirm").count() == 0)
+            sel = lambda: pp.evaluate("[...document.querySelectorAll('.pal-row[aria-selected=true]')].map((r) => r.dataset.verb)")
+            check(f"{view}: STOP is the first row but nothing is selected when the palette opens", sel() == [] and pp.evaluate("document.querySelector('.pal-input').hasAttribute('aria-activedescendant')") is False, sel())
             n = len(posts)
             pp.keyboard.press("Enter")
+            pp.wait_for_timeout(400)
+            check(f"{view}: an Enter on open, with nothing typed, runs nothing: no request, the palette is still open", posts[n:] == [] and palette_open() and pp.evaluate("document.getElementById('toast').hidden"), posts[n:])
+            pp.keyboard.press("ArrowDown")
+            check(f"{view}: an arrow key selects the first row, STOP", sel() == ["stop.robot"], sel())
+            pp.keyboard.press("Enter")
             wait(pp, "!document.getElementById('toast').hidden")
-            check(f"{view}: one Enter on the first row posts the robot's stop, once", posts[n:] == ["/robots/duck-1/stop"], posts[n:])
+            check(f"{view}: then one Enter posts the robot's stop, once, unconfirmed", posts[n:] == ["/robots/duck-1/stop"], posts[n:])
+            palette_via_key()
+            pp.keyboard.press("ArrowUp")
+            check(f"{view}: an up arrow from nothing selected goes to the last row", sel() == [rows()[-1][0]], (sel(), rows()[-1][0]))
+            ask("stop")
+            check(f"{view}: typing selects as usual: the first match is selected", sel() == [rows()[0][0]] and rows()[0][1] == "stop", (sel(), rows()[:2]))
+            pp.keyboard.press("Backspace"); pp.keyboard.press("Backspace"); pp.keyboard.press("Backspace"); pp.keyboard.press("Backspace")
+            pp.wait_for_timeout(60)
+            check(f"{view}: and an emptied query goes back to nothing selected", sel() == [], sel())
+            palette_close()
             palette_via_key()
             ask("stop all")
             check(f"{view}: typed 'stop all', STOP ALL is first", rows()[0][0] == "stop.all", rows()[:2])
@@ -679,7 +777,7 @@ with sync_playwright() as p:
             pp.wait_for_timeout(100)
             after = pp.evaluate("document.documentElement.dataset.theme")
             check(f"{view}: the theme verb switches the theme", after in ("light", "dark") and after != before, (before, after))
-            pp.evaluate("localStorage.removeItem('mc-theme'); delete document.documentElement.dataset.theme")
+            pp.evaluate("localStorage.removeItem('rl.theme'); delete document.documentElement.dataset.theme")
             palette_via_key()
             ask("duck-1 body")
             check(f"{view}: 'duck-1 body' finds the robot's Body tab first", rows()[0][0] == "nav.tab.duck-1.body", rows()[:3])
@@ -766,8 +864,8 @@ with sync_playwright() as p:
             spec = pp.evaluate("""async () => {
                 const m = await import(new URL('web/palette-verbs.js', location.href).href);
                 const app = { robots: () => [{id: 'a', label: 'A'}, {id: 'b', label: 'B'}], route: () => ({id: 'a', tab: 'overview'}), tabs: ['overview', 'body', 'modules', 'settings', 'calibration'],
-                    hashOf: (id, t) => '#robot/' + id + (t ? '/' + t : ''), stopRobotId: () => 'a', layout: () => null, pathname: () => '/control/', observatoryHref: () => '/', go() {}, visit() {}, stop() {}, stopAll() {}, theme() {}, themeNow: () => 'dark', toast() {} };
-                const off = { ...app, pathname: () => '/' };
+                    hashOf: (id, t) => '#robot/' + id + (t ? '/' + t : ''), stopRobotId: () => 'a', layout: () => null, behindObservatory: () => true, observatoryHref: () => '/', go() {}, visit() {}, stop() {}, stopAll() {}, theme() {}, themeNow: () => 'dark', toast() {} };
+                const off = { ...app, behindObservatory: () => false };
                 return {on: m.verbSpecs(app).map((v) => [v.id, v.title, v.danger, v.api ?? null, v.mcp ?? null]), off: m.verbSpecs(off).map((v) => v.id)};
             }""")
             ids = [v[0] for v in spec["on"]]
@@ -898,6 +996,81 @@ with sync_playwright() as p:
                     ep.wait_for_timeout(300)
                     check(f"{view}, {where}: a goal run shows no evidence link, only its Watch link", ep.locator("a.evidence").count() == 0 and ep.locator("#watch").get_attribute("href") == WATCH and evidence_fetched() == [])
             ectx.close()
+
+    # --- U24, late and failed loads: evidence.js arrives after the box is drawn, or never --------------------------------------------------------
+    UNDER = re.compile(r"/control/")
+    with soft("evidence: a late load repaints only the link slots"):
+        dctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
+        dp2 = dctx.new_page()
+        dp2.set_default_timeout(5000)
+        dp2.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+        dp2.route(UNDER, lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
+        dp2.route(re.compile(r"/api/v1/goal-runs(\?|/)"), lambda r: r.fulfill(json={"ok": True, "runs": [SYNTH_RUN]} if "?" in r.request.url else {"ok": True, "run": SYNTH_RUN}))
+        held = []
+        dp2.route(re.compile(r"/lib/evidence\.js"), lambda r: held.append(r))
+        dp2.goto(BASE + "/control/")
+        wait(dp2, "window.__mc && window.__mc.ready && !!document.querySelector('#run-detail[data-run=\"7\"] #save-name')")
+        for _ in range(40):
+            if held:
+                break
+            dp2.wait_for_timeout(100)
+        dp2.fill("#save-name", "my goal")
+        dp2.evaluate("window.__typed = document.getElementById('save-name')")
+        check("a run's box with its link still loading holds an empty slot, not a link, and evidence.js is asked for once", len(held) == 1 and dp2.locator("#run-detail .evidence-slot").count() == 1 and dp2.locator("#run-detail a.evidence").count() == 0, len(held))
+        held[0].continue_()
+        wait(dp2, "!!document.querySelector('#run-detail a.evidence')")
+        check("the late link fills its slot only: the box is not rebuilt, so the name typed meanwhile is still there in the same input",
+              dp2.evaluate("document.getElementById('save-name') === window.__typed && window.__typed.value === 'my goal'") and dp2.locator("#run-detail .evidence-slot").count() == 0, dp2.input_value("#save-name"))
+        dctx.close()
+
+    with soft("evidence: a failed load is said once, shows no link, and is tried again"):
+        mc.bus.emit("anomaly", robot="duck-1", goal_run=7, watch=WATCH + "#t=3.5", anomaly=ANOMALY)
+        fctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
+        fp = fctx.new_page()
+        fp.set_default_timeout(5000)
+        fp.route(UNDER, lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
+        bad = re.compile(r"/lib/evidence\.js")
+        fp.route(bad, lambda r: r.abort())
+        fp.goto(BASE + "/control/#robot/duck-1")
+        wait(fp, "!document.getElementById('robot-page').hidden && !!document.querySelector('#rp-alarms-body .alarmrows li')")
+        wait(fp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
+        msg = fp.evaluate("document.getElementById('toast').textContent")
+        fp.wait_for_timeout(300)
+        check("the page says the Observatory links could not be loaded, leaves no empty slot and no link, and keeps the alarm row", "Observatory links could not be loaded" in msg
+              and fp.locator(".evidence-slot").count() == 0 and fp.locator("a.evidence").count() == 0 and fp.locator("#rp-alarms-body .alarmrows li").count() >= 1, msg)
+        fp.unroute(bad)
+        fp.evaluate("window.__mc.renderRobotPage()")
+        wait(fp, "!!document.querySelector('#rp-alarms-body a.evidence')")
+        check("the failure was not remembered: the next repaint asks again and the link is there", fp.locator("#rp-alarms-body a.evidence").count() == 1)
+        fctx.close()
+
+    # --- U25: the Observatory verb under /control/ goes to the brand's Observatory address ----------------------------------------------------
+    with soft("palette: the Observatory verb navigates"):
+        octx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
+        op = octx.new_page()
+        op.set_default_timeout(5000)
+        op.route(UNDER, lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
+        op.goto(BASE + "/control/")
+        wait(op, "window.__mc && window.__mc.ready && !!window.__mc.KIT.brand")
+        href = op.evaluate("window.__mc.KIT.brand.APPS.observatory.href")
+        op.keyboard.press("Control+k")
+        wait(op, "!!document.querySelector('.pal') && !document.querySelector('.pal').hidden && document.querySelectorAll('.pal-row').length > 0")
+        op.keyboard.type("observatory")
+        op.wait_for_timeout(60)
+        first = op.evaluate("document.querySelector('.pal-row').dataset.verb")
+        with op.expect_navigation(timeout=5000):
+            op.keyboard.press("Enter")
+        check("typed 'observatory', the first verb is the Observatory's, and Enter goes to the brand's address", first == "nav.observatory" and op.url == BASE + href, (first, op.url, href))
+        octx.close()
+
+    # --- the one predicate and the one typing guard -------------------------------------------------------------------------------------------------
+    app_js = (WEB / "app.js").read_text()
+    verbs_js = (WEB / "palette-verbs.js").read_text()
+    lib_typing = re.search(r"const TYPING = ('[^\n]*');", (Path(__file__).resolve().parents[3] / "libs" / "web" / "palette" / "palette.js").read_text())
+    app_typing = re.search(r"const TYPING = ('[^\n]*');", app_js)
+    check("the page's Ctrl+K typing guard is the palette lib's selector, character for character", lib_typing and app_typing and lib_typing.group(1) == app_typing.group(1), (lib_typing and lib_typing.group(1), app_typing and app_typing.group(1)))
+    check("'is this page behind the Observatory' is asked in one place: the only /control path literals in the page's code are behindObservatory's own", len(re.findall(r'"/control/?"', app_js)) == 2
+          and re.search(r'const behindObservatory = .*"/control".*"/control/"', app_js) is not None and "/control" not in verbs_js, re.findall(r".*/control.*", app_js))
 
     # reduced motion: the chevron's transition is gone
     def chevron_ms(reduced):
