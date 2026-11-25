@@ -79,6 +79,12 @@ with sync_playwright() as p:
     def SG(name):
         return f"document.querySelector('#sigview .sg[data-sig=\"signals.{name}\"]')"
 
+    def overlaps(page, plot):
+        return page.evaluate(f"""(() => {{ const b = [...{plot}.querySelectorAll('.tbl')].map((t) => [t.textContent, t.getBoundingClientRect()]), out = [];
+          for (let i = 0; i < b.length; i++) for (let j = i + 1; j < b.length; j++) {{ const p = b[i][1], q = b[j][1];
+            if (p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom) out.push([b[i][0], b[j][0]]); }}
+          return out; }})()""")
+
     if SHOTS:
         SHOTS.mkdir(parents=True, exist_ok=True)
         pg.screenshot(path=str(SHOTS / "observatory-signals-dark-1440.png"))
@@ -95,6 +101,7 @@ with sync_playwright() as p:
           {s for s, _ in lab} >= {"warn", "error"} and all(re.search(r"[▲✕]", tx) and re.search(r"near|beyond", tx) for _, tx in lab), lab)
     lims = pg.evaluate(f"[...{SG('joint_shoulder')}.querySelectorAll('line.tlim')].map((l) => l.dataset.limit)")
     check("the limit lines say the limit", lims == ["1.5", "-1.5"], lims)
+    check("no two limit labels of a plot overlap (the four at the right edge once piled up)", not overlaps(pg, SG('joint_shoulder')), overlaps(pg, SG('joint_shoulder')))
     rng = pg.evaluate(f"[...{SG('joint_shoulder')}.querySelectorAll('.sg-r span')].map((s) => parseFloat(s.textContent.replace('−', '-')))")
     check("the plot's range reaches past both limits, so the error bands can be seen", len(rng) == 2 and rng[0] > 1.5 and rng[1] < -1.5, rng)
     check("the band is the status colour from the tokens, not a hand-made one",
@@ -171,6 +178,7 @@ with sync_playwright() as p:
     check("... and has a Signals switch in the viewport header, not pressed", pg.evaluate("(() => { const b = document.getElementById('sigBtn'); return !!b && !b.hidden && b.getAttribute('aria-pressed') === 'false'; })()"))
     pg.click("#sigBtn")
     pg.wait_for_function("document.querySelectorAll('#sigview .sg').length === 2")
+    check("state() of a run with a pose says the Signals view is shown (signals_view)", pg.evaluate("window.miniview.state().signals_view") is True)
     check("the switch opens the Signals view over the viewport and says so",
           pg.evaluate("!document.getElementById('sigview').hidden && document.getElementById('sigBtn').getAttribute('aria-pressed') === 'true'"))
     check("the top bar's view buttons (Top, Three, 3D) stay, to get back", pg.evaluate("document.querySelectorAll('#layoutSeg button[data-view]').length >= 3 && getComputedStyle(document.getElementById('layoutSeg')).display !== 'none'"))
@@ -178,11 +186,14 @@ with sync_playwright() as p:
           and pg.evaluate(f"{SG('joint_shoulder')}.querySelectorAll('line.tlim').length") == 2)
     el = pg.evaluate(f"({SG('joint_elbow')}.dataset.form) + '|' + {SG('joint_elbow')}.querySelectorAll('rect.tband').length + '|' + {SG('joint_elbow')}.querySelectorAll('path.line').length")
     check("a joint with no unit that only reads 0 and 1 is an angle: a line with its bands, not state spans", el == "line|4|1", el)
+    check("the same four limit labels do not overlap in the pose run's view either", not overlaps(pg, SG('joint_shoulder')) and not overlaps(pg, SG('joint_elbow')),
+          (overlaps(pg, SG('joint_shoulder')), overlaps(pg, SG('joint_elbow'))))
     if SHOTS:
         pg.screenshot(path=str(SHOTS / "observatory-signals-pose-dark-1440.png"))
     pg.evaluate("window.miniview.setTime(1.0)")
     check("the playhead moves the plots' readout as it does in a run with no pose", pg.evaluate("document.getElementById('sigview').dataset.t") == "1")
     pg.click("#sigBtn")
+    check("... and that it is not, after the second press", pg.evaluate("window.miniview.state().signals_view") is False)
     check("a second press closes the view and gives the viewport back",
           pg.evaluate("document.getElementById('sigview').hidden && document.getElementById('sigBtn').getAttribute('aria-pressed') === 'false'"))
     HEAD_FIT = """(() => { const h = document.querySelector('.vhead'), hr = h.getBoundingClientRect(), bad = [];

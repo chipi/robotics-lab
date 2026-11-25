@@ -40,6 +40,7 @@ N = 45                                   # ticks and samples, every 0.1 s: t = 0
 DEPTH_GAP = (1.6, 2.4)                   # no depth return in these ticks
 LOAD_GAP = (1.5, 2.5)                    # the `load` signal has no value in these samples
 LO_T, HI_T = 0.5, 3.5                    # the shoulder's lowest and highest samples
+DATA = 70                                # alpha (of 255) above which a pixel is data; the hatch of a gap is fainter
 
 
 def shoulder(k):
@@ -91,11 +92,36 @@ PIX = """(a) => {
   const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height;     // a copy made for reading: the page's own context stays quiet
   const g = c2.getContext('2d', { willReadFrequently: true }); g.drawImage(cv, 0, 0);
   const d = g.getImageData(Math.max(0, x - 1), y0, 3, h).data;
-  let a_ = 0, top = -1;
-  for (let y = 0; y < h; y++) { let m = 0; for (let c = 0; c < 3; c++) m = Math.max(m, d[(y * 3 + c) * 4 + 3]); if (m > thr) { a_ = Math.max(a_, m); if (top < 0) top = y; } }
-  return { a: a_, top: top < 0 ? null : top / k, h: rr.height };
+  let a_ = 0, top = -1, bot = -1;
+  for (let y = 0; y < h; y++) { let m = 0; for (let c = 0; c < 3; c++) m = Math.max(m, d[(y * 3 + c) * 4 + 3]); if (m > thr) { a_ = Math.max(a_, m); bot = y; if (top < 0) top = y; } }
+  return { a: a_, top: top < 0 ? null : top / k, bot: bot < 0 ? null : bot / k, h: rr.height };
 }"""
 ST = "window.miniview.state()"
+# the contrast of lane text against the lane's own background (WCAG: (L1 + .05) / (L2 + .05)); a colour is read through a canvas pixel, so color-mix() and rgb() both resolve
+CONTRAST = """(() => {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const rgb = (c) => { g.clearRect(0, 0, 1, 1); g.fillStyle = '#000'; g.fillStyle = c; g.fillRect(0, 0, 1, 1); return [...g.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+  const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  const bgOf = (e) => { for (; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'transparent' && !/, 0\\)$|\\/ 0\\)$/.test(c)) return rgb(c); } return [0, 0, 0]; };
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  const out = {};
+  const probe = (name, sel) => { out[name] = [...document.querySelectorAll(sel)].map((e) => +ratio(rgb(getComputedStyle(e).color), bgOf(e)).toFixed(2)); };
+  probe('section name', '#lanesL .lane-s .nm');
+  probe('section count', '#lanesL .lane-s .n');
+  probe('stream name', '#lanesL .lane-l:not(.hid):not(.rec):not(.missing) .nm');
+  probe('selected stream name', '#lanesL .lane-l.sel .nm');
+  probe('not-in-run line', '#lanesL .lane-m');
+  probe('missing stream', '#lanesL .lane-l.missing .nm');
+  const sec = [...document.querySelectorAll('#lanesL .lane-s')].map((e) => bgOf(e)), str = [...document.querySelectorAll('#lanesL .lane-l:not(.sel)')].map((e) => bgOf(e));
+  const page = rgb(getComputedStyle(document.body).backgroundColor);
+  let apart = 1e9;
+  for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) apart = Math.min(apart, dist(sec[i], sec[j]));
+  out.tones = { sectionsApart: +apart.toFixed(1), sectionVsStream: +Math.min(...sec.slice(0, 4).map((c) => Math.min(...str.map((x) => dist(c, x))))).toFixed(1), sectionVsPage: +Math.min(...sec.slice(0, 4).map((c) => dist(c, page))).toFixed(1) };
+  return out;
+})()"""
 
 
 def px(pg, row, t, thr=40):
@@ -196,15 +222,23 @@ with sync_playwright() as p:
     hi, mid, lo = px(pg, row, HI_T, 90), px(pg, row, 2.0, 90), px(pg, row, LO_T, 90)
     check("a signal's lane draws its values: the line is high where the value is high and low where it is low",
           hi and lo and mid and hi["top"] is not None and lo["top"] is not None and hi["top"] < mid["top"] < lo["top"] and lo["top"] - hi["top"] > 6, (hi, mid, lo))
+    fl = px(pg, "#dlanes .dl[data-lane='signals.joint_shoulder']", HI_T, 5)
+    check("a signal's sparkline is filled: under the high end of the line the area runs down to the foot of the lane (token colour, low alpha)",
+          fl and fl["bot"] is not None and fl["bot"] >= fl["h"] - 6 and fl["top"] < 0.4 * fl["h"], fl)
     fold(pg, "sec.other", True)
     row = "#dlanes .dl[data-lane='signals.load']"
-    inside, hole, after = px(pg, row, 1.0), px(pg, row, 2.0), px(pg, row, 3.0)
-    check("a signal that has no value for a while is a hole in its lane, not a bar across it",
+    inside, hole, after = px(pg, row, 1.0, DATA), px(pg, row, 2.0, DATA), px(pg, row, 3.0, DATA)
+    check("a signal that has no value for a while is a hole in its lane, not a bar across it (no line, no fill: only the gap mark is there)",
           inside and inside["a"] > 0 and after["a"] > 0 and hole["a"] == 0, (inside, hole, after))
+    mark, whole = px(pg, row, 2.0, 5), px(pg, row, 1.0, 5)
+    check("... and the hole is marked: a hatched gap (faint, below a data mark's strength) stands where the samples are missing",
+          0 < mark["a"] <= DATA and mark["top"] is not None and mark["bot"] - mark["top"] > 0.6 * mark["h"] - 8, (mark, whole))
     row = "#dlanes .dl[data-lane='sensors.depth.floor']"
-    a, g_, c = px(pg, row, 1.0), px(pg, row, 2.0), px(pg, row, 3.2)
+    a, g_, c = px(pg, row, 1.0, DATA), px(pg, row, 2.0, DATA), px(pg, row, 3.2, DATA)
     check("a sensor lane draws its sample density: a dropout in the returns is a hole in it", a and a["a"] > 0 and c["a"] > 0 and g_["a"] == 0, (a, g_, c))
-    hgt = px(pg, row, 1.0)["top"], px(pg, row, 1.0)["h"]
+    gm = px(pg, row, 2.0, 5)
+    check("... marked as a gap (hatched), not just missing bars", 0 < gm["a"] <= DATA, gm)
+    hgt = px(pg, row, 1.0, DATA)["top"], px(pg, row, 1.0)["h"]
     check("... as bars that stand on the lane (their top is inside it, not a full-height band)", hgt[0] is not None and 0 <= hgt[0] < hgt[1], hgt)
     # the summary lane of Senses is the union of its streams: present where either has data, a hole where neither does
     pg.evaluate("document.querySelector('#lanesL .lane-s[data-fold=\"sec.senses\"]').click()")
@@ -284,6 +318,23 @@ with sync_playwright() as p:
     lit = re.compile(r"#[0-9a-fA-F]{3,8}\b|\bhsla?\(|\boklch\(|\blab\(")
     check("no hex, hsl, oklch or lab literal in lanes.js or in its stylesheet block", not lit.findall(src) and not lit.findall(block), (lit.findall(src)[:3], lit.findall(block)[:3]))
 
+    # ---- the lanes are tall enough to read, a section is a header over its streams, the text reads (WCAG AA 4.5) on the lane's own background
+    fold(pg, "sec.body", True)
+    pg.evaluate("window.miniview.setTime(0.8)")
+    hs = pg.evaluate("""(() => { const h = (s) => [...document.querySelectorAll(s)].map((e) => e.offsetHeight);
+      const L = document.getElementById('lanes'), R = [...document.querySelectorAll('#lanesL > *')], D = [...document.querySelectorAll('#dlanes .dl')];
+      return { sec: h('#lanesL .lane-s'), secR: h('#dlanes .dl.sec'), str: h('#lanesL .lane-l:not(.spark):not(.missing)'), spark: h('#lanesL .lane-l.spark'), sparkR: h('#dlanes .dl.spark'),
+               all: R.length === D.length && R.every((e, i) => e.offsetHeight === D[i].offsetHeight), box: L.getBoundingClientRect().height, view: innerHeight }; })()""")
+    check("a section lane is a header: at least 32 px, taller than any stream lane under it (30 px; a sparkline 44 px), and the label column and the canvas column agree row by row",
+          min(hs["sec"]) >= 32 and hs["sec"] == hs["secR"] and min(hs["str"]) >= 30 and max(hs["str"]) < min(hs["sec"]) + 1 and min(hs["spark"]) >= 44 and hs["spark"] == hs["sparkR"] and hs["all"], hs)
+    check("... and the whole lane block stays a share of the window (at most 46 % of it, it scrolls beyond that)", hs["box"] <= 0.46 * hs["view"], hs)
+    cd = pg.evaluate(CONTRAST)
+    low = {k: v for k, v in cd.items() if k != "tones" and ((not v and k != "missing stream") or (v and min(v) < 4.5))}
+    check("lane text is legible in the dark theme: section names and counts, stream names, the not-in-this-run line, all at 4.5:1 or more against their lane", not low and len(cd["section count"]) >= 4, cd)
+    check("the section tones differ from each other and from the stream lanes and the page (distinguishable, still quiet)",
+          cd["tones"]["sectionsApart"] >= 8 and cd["tones"]["sectionVsStream"] >= 8 and cd["tones"]["sectionVsPage"] >= 8, cd["tones"])
+    print("MEASURED dark:", {k: (min(v) if isinstance(v, list) and v else v) for k, v in cd.items()})
+
     if SHOTS:
         SHOTS.mkdir(parents=True, exist_ok=True)
         pg.evaluate("window.miniview.setTime(1.5)")
@@ -310,6 +361,13 @@ with sync_playwright() as p:
     row = "#dlanes .dl[data-lane='signals.joint_shoulder']"
     hi, lo = px(lp, row, HI_T, 90), px(lp, row, LO_T, 90)
     check("light theme: the same lanes draw, the sparkline still follows the data", hi["top"] is not None and lo["top"] is not None and hi["top"] < lo["top"], (hi, lo))
+    lp.evaluate("window.miniview.setTime(0.8)")
+    cl_ = lp.evaluate(CONTRAST)
+    low = {k: v for k, v in cl_.items() if k != "tones" and ((not v and k != "missing stream") or (v and min(v) < 4.5))}
+    check("light theme: lane text is legible, 4.5:1 or more against its lane", not low, cl_)
+    check("light theme: the section tones differ from each other, from the stream lanes and the page",
+          cl_["tones"]["sectionsApart"] >= 8 and cl_["tones"]["sectionVsStream"] >= 8 and cl_["tones"]["sectionVsPage"] >= 8, cl_["tones"])
+    print("MEASURED light:", {k: (min(v) if isinstance(v, list) and v else v) for k, v in cl_.items()})
     if SHOTS:
         lp.evaluate("window.miniview.setTime(1.5)")
         lp.screenshot(path=str(SHOTS / "lanes-light-1440.png"))
@@ -329,6 +387,10 @@ with sync_playwright() as p:
     pp.evaluate("document.querySelector('#dlanes .dl.sec[data-sec=\"sec.senses\"] .dl-name').click()")
     check("a tap on a section name on the lane opens it", pp.evaluate("document.querySelector('#dlanes .dl[data-lane=\"sensors.depth.floor\"] .dl-name')?.textContent.trim()") not in (None, ""))
     check("... and the page still does not scroll sideways", pp.evaluate("document.documentElement.scrollWidth") <= 390)
+    ph2 = pp.evaluate("""(() => ({ sec: [...document.querySelectorAll('#dlanes .dl.sec')].map((e) => e.offsetHeight), str: [...document.querySelectorAll('#dlanes .dl:not(.sec):not(.miss):not(.spark)')].map((e) => e.offsetHeight),
+      box: document.getElementById('lanes').getBoundingClientRect().height }))()""")
+    check("on a phone the lanes are taller still (a finger): sections 38 px, streams 34 px, the block no taller than 300 px",
+          min(ph2["sec"]) >= 38 and min(ph2["str"]) >= 34 and ph2["box"] <= 300.5, ph2)
     if SHOTS:
         pp.screenshot(path=str(SHOTS / "lanes-dark-390.png"), full_page=False)
     cp.close()

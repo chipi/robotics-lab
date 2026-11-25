@@ -248,36 +248,36 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .lanes { grid-column: 1 / -1; grid-row: 4; max-height: calc(46vh - 72px); display: grid; grid-template-columns: var(--left) minmax(0, 1fr); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .lanes[hidden] { display: none; }
 .lanes-l { border-right: 1px solid var(--line); }
-.lane-s, .lane-l, .lane-m { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 20px; margin: 0; border: 0; border-top: 1px solid var(--hairline-1); border-radius: 0; background: none;
+.lane-s, .lane-l, .lane-m { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 30px; margin: 0; border: 0; border-top: 1px solid var(--hairline-2); border-radius: 0; background: none;
   color: var(--text-2); font: inherit; font-size: var(--fs-1); text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; box-sizing: border-box;
   transition: opacity var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease); }
 .lane-s:hover, .lane-l:hover, .lane-m:hover { background: var(--surface-hover); }
 .lane-s:focus-visible, .lane-l:focus-visible, .lane-m:focus-visible, .dl-name:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
-.lane-s { height: 24px; padding: 0 var(--sp-2); color: var(--text-1); font-weight: 600; border-left: 3px solid color-mix(in srgb, var(--tone) 45%, var(--surface-2)); background: color-mix(in srgb, var(--tone) 9%, var(--surface-2)); }
+.lane-s { height: 32px; padding: 0 var(--sp-2); color: var(--text-1); font-size: var(--fs-2); font-weight: 600; border-left: 4px solid color-mix(in srgb, var(--tone) 80%, var(--surface-2)); background: color-mix(in srgb, var(--tone) 15%, var(--surface-2)); border-top-color: var(--hairline-4); }
 .lane-s .nm { overflow: hidden; text-overflow: ellipsis; }
-.lane-s .n { margin-left: auto; color: var(--text-3); font: 400 var(--fs-1) var(--font-num); }
+.lane-s .n { margin-left: auto; color: var(--text-1); font: 400 var(--fs-1) var(--font-num); }
 .lane-s .flag { margin-left: 0; }
 .lane-s .caret svg, .lane-m .caret svg { display: block; transition: transform var(--dur-base) var(--ease); }
 .lane-s[aria-expanded="true"] .caret svg, .lane-m[aria-expanded="true"] .caret svg { transform: rotate(90deg); }
 .lane-s.has-sel[aria-expanded="false"], .dl.sec.has-sel:not(.open) { box-shadow: inset 0 -2px 0 var(--accent); }
-.lane-l { padding: 0 var(--sp-2) 0 var(--sp-6); background: color-mix(in srgb, var(--tone) 3%, var(--surface-2)); }
+.lane-l { padding: 0 var(--sp-2) 0 var(--sp-6); border-left: 4px solid color-mix(in srgb, var(--tone) 30%, var(--surface-2)); background: color-mix(in srgb, var(--tone) 5%, var(--surface-1)); color: var(--text-1); }
 .lane-l .nm { overflow: hidden; text-overflow: ellipsis; }
-.lane-l.sel { background: var(--surface-selected); color: var(--text-1); }
+.lane-l.sel { background: var(--surface-selected); color: var(--text-1); border-left-color: var(--accent); }
 .dl.sel { background: var(--accent-soft); }
 .lane-l.sel .nm { font-weight: 600; }
-.lane-l.missing { color: var(--text-3); font-style: italic; }
+.lane-l.missing { color: var(--text-2); font-style: italic; }
 .lane-l.missing em { margin-left: auto; font-size: var(--fs-1); opacity: .8; }
 .lane-l.hid { opacity: .55; }
-.lane-l.spark, .dl.spark { height: 28px; }
-.lane-m { height: 18px; padding: 0 var(--sp-2) 0 var(--sp-4); color: var(--text-3); font-style: italic; }
+.lane-l.spark, .dl.spark { height: 44px; }
+.lane-m { height: 22px; padding: 0 var(--sp-2) 0 var(--sp-4); color: var(--text-1); font-style: italic; }
 .flag { margin-left: auto; flex: none; font-size: 10px; line-height: 1; font-style: normal; font-weight: 700; color: var(--text-2); }
 .flag[data-status="warn"] { color: var(--status-warn); } .flag[data-status="alert"] { color: var(--status-alert); } .flag[data-status="error"] { color: var(--status-error); }
 .lane-s.hl, .lane-l.hl, .dl.hl { background: var(--accent-soft); color: var(--text-1); }
 .lane-s.rec, .lane-l.rec { opacity: .5; }
 .dlanes { position: relative; user-select: none; cursor: pointer; touch-action: none; isolation: isolate; }
-.dl { position: relative; box-sizing: border-box; height: 20px; border-top: 1px solid var(--hairline-1); background: color-mix(in srgb, var(--tone) 3%, var(--surface-2)); transition: background-color var(--dur-base) var(--ease); }
-.dl.sec { height: 24px; background: color-mix(in srgb, var(--tone) 9%, var(--surface-2)); }
-.dl.miss { height: 18px; background: none; }
+.dl { position: relative; box-sizing: border-box; height: 30px; border-top: 1px solid var(--hairline-2); background: color-mix(in srgb, var(--tone) 5%, var(--surface-1)); transition: background-color var(--dur-base) var(--ease); }
+.dl.sec { height: 32px; background: color-mix(in srgb, var(--tone) 15%, var(--surface-2)); border-top-color: var(--hairline-4); }
+.dl.miss { height: 22px; background: none; }
 .dl.missing { background: none; }
 .dl.hid { opacity: .6; }
 .dl::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: color-mix(in srgb, var(--surface-2) 62%, transparent); transition: opacity var(--dur-base) var(--ease); }
@@ -358,9 +358,9 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
   .transport { grid-column: 1; grid-row: 1; border-right: 0; flex-wrap: wrap; height: auto; min-height: 34px; }
   .tlopts { grid-column: 1; grid-row: 2; border-right: 0; }
   .ruler { grid-column: 1; grid-row: 3; } .mlane { grid-column: 1; grid-row: 4; } .alane { grid-column: 1; grid-row: 5; } .alabel { display: none; }
-  .lanes { grid-column: 1; grid-row: 6; grid-template-columns: minmax(0, 1fr); max-height: 260px; } .lanes-l, .tlfill-l { display: none; }
+  .lanes { grid-column: 1; grid-row: 6; grid-template-columns: minmax(0, 1fr); max-height: 300px; } .lanes-l, .tlfill-l { display: none; }
   /* no label column on a phone: the names sit on the lanes, and are what a tap folds or selects */
-  .dl { height: 26px; } .dl.sec { height: 30px; } .dl.miss { display: none; }
+  .dl { height: 34px; } .dl.sec { height: 38px; } .dl.spark { height: 48px; } .dl.miss { display: none; }
   .dl-name { display: flex; position: absolute; left: var(--sp-2); top: 50%; transform: translateY(-50%); z-index: 4; align-items: center; max-width: 60%; padding: 1px var(--sp-1); border-radius: var(--radius-1);
     background: color-mix(in srgb, var(--surface-2) 75%, transparent); color: var(--text-1); font-size: var(--fs-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dl.sec .dl-name { font-weight: 600; }

@@ -199,7 +199,7 @@ export function createLanes(ctx) {
     const col = { text3: rgbOf(cssVar('--text-3')), accent: rgbOf(cssVar('--accent')), st: {}, soft: {} };
     for (const s of ['warn', 'alert', 'error']) { col.st[s] = rgbOf(cssVar(`--status-${s}`)); col.soft[s] = rgbOf(cssVar(`--status-${s}-soft`)); }
     const tones = {};
-    const toneRgb = (v) => (tones[v] ||= (() => { const n = tokenName(v); return mix(rgbOf(n ? cssVar(n) : cssVar('--text-3')), col.text3, 0.5); })());
+    const toneRgb = (v) => (tones[v] ||= (() => { const n = tokenName(v); return mix(rgbOf(n ? cssVar(n) : cssVar('--text-3')), col.text3, 0.3); })());
     const els = new Map([...right.querySelectorAll('.dl')].map((e) => [e, rowOf(e)]));
     for (const [el, r] of els) {
       const secId = el.dataset.sec, s = model.find((m) => m.id === secId), tone = toneRgb(s ? s.tone : 'var(--text-3)');
@@ -215,9 +215,30 @@ export function createLanes(ctx) {
   // one stream's data in the band of a row: a numeric signal as a sparkline, anything else as the density of its samples
   function drawStream(g, id, smp, r, W, xOf, secPx, c, dim, col, flag) {
     if (smp.type === 'signal' && smp.v.length) sparkline(g, id, smp, r, W, xOf, secPx, c, dim, col, flag);
-    else density(g, smp, r, W, xOf, secPx, c, dim);
+    else density(g, smp, r, W, xOf, secPx, c, dim, col);
   }
-  const inner = (r) => ({ y0: r.top + 3, y1: r.top + r.h - 3 });
+  const inner = (r) => ({ y0: r.top + 4, y1: r.top + r.h - 4 });
+  // a stretch where a regular stream has no samples: hatched and edged, so a gap is a mark and not just fewer ticks
+  const gapsOf = (s, secPx) => {
+    const out = [];
+    if (!s.regular || !s.med) return out;
+    const min = Math.max(2.5 * s.med, 6 * secPx);
+    for (let i = 1; i < s.t.length; i++) if (s.t[i] - s.t[i - 1] > min) out.push([s.t[i - 1] + 0.5 * s.med, s.t[i] - 0.5 * s.med]);
+    return out;
+  };
+  function hatch(g, x0, x1, y0, y1, col, dim) {
+    if (x1 - x0 < 3) return;
+    g.save(); g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip();
+    g.strokeStyle = rgba(col.text3, 0.24 * dim); g.lineWidth = 1; g.beginPath();
+    for (let x = x0 - (y1 - y0); x < x1; x += 6) { g.moveTo(x, y1); g.lineTo(x + (y1 - y0), y0); }
+    g.stroke();
+    g.fillStyle = rgba(col.text3, 0.24 * dim); g.fillRect(x0, y0, 1, y1 - y0); g.fillRect(x1 - 1, y0, 1, y1 - y0);
+    g.restore();
+  }
+  function gaps(g, s, r, xOf, secPx, col, dim) {
+    const { y0, y1 } = inner(r);
+    for (const [a, b] of gapsOf(s, secPx)) hatch(g, xOf(a), xOf(b), y0, y1, col, dim);
+  }
 
   // a section's summary lane: the union of its streams' presence, the events that are a problem as ticks, the worst one as its status chip
   function summary(g, s, open, r, xOf, tone, col, secPx) {
@@ -242,8 +263,13 @@ export function createLanes(ctx) {
     // the union is the band; when the section has several streams, each of up to six is a hairline over it (a signal as a heat strip of its values), so a stream
     // that drops out, or a joint that moves, shows on the folded lane
     const h = many ? y1 - y0 : Math.min(8, y1 - y0 - 4), y = many ? y0 : y0 + (y1 - y0 - h) / 2;
-    g.fillStyle = rgba(tone, open ? 0.22 : many ? 0.3 : 0.7);
-    for (const [a, b] of merged) { const x = xOf(a), w = Math.max(2, xOf(b) - x); g.beginPath(); g.roundRect(x, y, w, h, 2); g.fill(); }
+    const top = rgba(tone, open ? 0.34 : many ? 0.5 : 0.8), bot = rgba(tone, open ? 0.16 : many ? 0.28 : 0.5), grad = g.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, top); grad.addColorStop(1, bot);
+    for (const [a, b] of merged) {
+      const x = xOf(a), w = Math.max(2, xOf(b) - x);
+      g.fillStyle = grad; g.beginPath(); g.roundRect(x, y, w, h, 3); g.fill();
+      g.fillStyle = rgba(tone, 0.95); g.fillRect(x, y, w, 1.5);
+    }
     if (many && !open) strips.forEach((id, i) => strip(g, id, y0 + 1 + (i * (y1 - y0 - 2)) / strips.length, Math.max(1.5, (y1 - y0 - 2) / strips.length - 1), xOf, secPx, tone));
     for (const x of s.events) { g.fillStyle = rgba(col.st[x.status], 0.9); g.fillRect(Math.round(xOf(x.e.t)) - 1, y0 + 1, 2, y1 - y0 - 2); }
     const w = s.worst;
@@ -270,12 +296,14 @@ export function createLanes(ctx) {
     g.fillText(glyph(status), x, y + 0.5);
   }
   // the density of a stream's samples, per bucket of about three samples: the height is the share of the samples that should be there; none is a hole
-  function density(g, s, r, W, xOf, secPx, c, dim) {
+  function density(g, s, r, W, xOf, secPx, c, dim, col) {
     const { y0, y1 } = inner(r), hMax = y1 - y0;
-    g.fillStyle = rgba(c, 0.35 * dim);
-    const cap = (x, y, w) => { g.fillStyle = rgba(c, 0.95 * dim); g.fillRect(x, y, w, 1.5); g.fillStyle = rgba(c, 0.35 * dim); };
+    g.fillStyle = rgba(c, 0.45 * dim);
+    const cap = (x, y, w) => { g.fillStyle = rgba(c, 0.95 * dim); g.fillRect(x, y, w, 1.5); g.fillStyle = rgba(c, 0.45 * dim); };
     if (s.solid?.length) for (const [a, b] of s.solid) { const x = xOf(a), w = Math.max(2, xOf(b) - x); g.fillRect(x, y1 - hMax * 0.5, w, hMax * 0.5); cap(x, y1 - hMax * 0.5, w); }
     if (!s.t.length) return;
+    gaps(g, s, r, xOf, secPx, col, dim);
+    g.fillStyle = rgba(c, 0.45 * dim);
     if (!s.regular) {                                   // a few irregular records (a plan, a map): one tick each
       let last = -9;
       g.fillStyle = rgba(c, 0.9 * dim);
@@ -310,13 +338,16 @@ export function createLanes(ctx) {
     }
     if (!Number.isFinite(lo)) return;
     const span = hi - lo || 1, yOf = (v) => y1 - ((v - lo) / span) * (y1 - y0), breakPx = Math.max(4, ((s.med || 0) * 3) / secPx);
+    gaps(g, s, r, xOf, secPx, col, dim);
     let seg = [];
     const flush = () => {
       if (!seg.length) return;
       g.beginPath(); g.moveTo(seg[0][0], y1); for (const [x, y] of seg) g.lineTo(x, y); g.lineTo(seg[seg.length - 1][0], y1); g.closePath();
-      g.fillStyle = rgba(c, 0.16 * dim); g.fill();
+      const fill = g.createLinearGradient(0, y0, 0, y1);
+      fill.addColorStop(0, rgba(c, 0.45 * dim)); fill.addColorStop(1, rgba(c, 0.06 * dim));
+      g.fillStyle = fill; g.fill();
       g.beginPath(); seg.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-      g.strokeStyle = rgba(c, 0.95 * dim); g.lineWidth = 1.25; g.lineJoin = 'round'; g.stroke();
+      g.strokeStyle = rgba(c, 0.95 * dim); g.lineWidth = 1.5; g.lineJoin = 'round'; g.stroke();
       seg = [];
     };
     let prev = -1e9;

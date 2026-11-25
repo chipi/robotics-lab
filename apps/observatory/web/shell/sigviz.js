@@ -103,13 +103,15 @@ export function drawLimits(svg, lim, { yOf, W, H }) {
   for (const [side, v] of [['upper', lim.upper], ['lower', lim.lower]]) {
     const y = yOf(v);
     svg.appendChild(svgEl('line', { class: 'tlim', x1: 0, x2: W, y1: y.toFixed(1), y2: y.toFixed(1), 'data-limit': num(v), 'data-side': side }));
-    const up = side === 'upper', gap = 3;
-    for (const [status, word, dy] of [['error', 'beyond', up ? -gap : 10], ['warn', 'near', up ? 10 : -gap]]) {
-      const ty = y + dy;
-      if (ty < 9 || ty > H - 2) continue;
-      const tx = svgEl('text', { class: 'tbl', x: W - 4, y: ty.toFixed(1), 'data-status': status });
+    // one line of labels per limit, on the plot side of its line, the two statuses side by side and not stacked: at the right edge four stacked labels collided
+    const ty = side === 'upper' ? y + 11 : y - 3;
+    if (ty < 9 || ty > H - 2) continue;
+    let right = W - 4;
+    for (const [status, word] of [['error', 'beyond'], ['warn', 'near']]) {
+      const tx = svgEl('text', { class: 'tbl', x: right.toFixed(1), y: ty.toFixed(1), 'data-status': status });
       tx.textContent = `${glyph(status)} ${word} ${num(v)}`;
       svg.appendChild(tx);
+      right -= (tx.getComputedTextLength?.() || tx.textContent.length * 6.2) + 14;
     }
   }
 }
