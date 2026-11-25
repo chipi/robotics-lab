@@ -353,6 +353,8 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .sg-p .dot { stroke: var(--surface-1); stroke-width: 1.5; }
 .sg-p .band { fill-opacity: .5; stroke: var(--hairline-4); stroke-width: 1; }
 .sg-p .bandl { fill: var(--text-1); font: var(--fs-1) var(--font-ui); pointer-events: none; }
+.sg-p .tlim { stroke: var(--status-error); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.sg-p .tbl { fill: var(--text-2); font: var(--fs-1) var(--font-ui); text-anchor: end; paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
 .sg-r { position: absolute; left: 4px; top: 2px; bottom: 2px; display: flex; flex-direction: column; justify-content: space-between; font: var(--fs-1) var(--font-mono); color: var(--text-3); pointer-events: none; }
 
 /* the left panel's sections (World, Body, Senses, Mind, Other values) and the Body's rows (UXS-001, 2026-11-16) */

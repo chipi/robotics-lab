@@ -67,14 +67,11 @@ def api(base, path):
     return json.loads(urllib.request.urlopen(base + path).read())
 
 
-def hsl_rgb(h, s, l_):
-    """What canvas makes of hsl(h s% l%): rgb 0-255."""
-    s, l_ = s / 100, l_ / 100
-    c = (1 - abs(2 * l_ - 1)) * s
-    x = c * (1 - abs((h / 60) % 2 - 1))
-    m = l_ - c / 2
-    r, g, b = [(c, x, 0), (x, c, 0), (0, c, x), (0, x, c), (x, 0, c), (c, 0, x)][int(h // 60) % 6]
-    return [round((v + m) * 255) for v in (r, g, b)]
+def ramp_rgb(stops, f):
+    """What the shell makes of the sequential ramp at f in [0, 1]: a straight mix between the two neighbouring stops of the nine."""
+    x = min(max(f, 0), 1) * 8
+    i = min(7, int(x))
+    return [round(a_ + (b_ - a_) * (x - i)) for a_, b_ in zip(stops[i], stops[i + 1])]
 
 
 def run_page(b, base, theme="dark"):
@@ -182,11 +179,12 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
                   abs(st["t"] - want["t"]) < 1e-9 and st["pair_dt_ms"] == want["pair_dt_ms"]
                   and f"Raw frame {want['index'] + 1} of {want['n']}" in insp and "Valid zones 62 of 64" in insp
                   and f"State minus frame {signed(want['pair_dt_ms'])} ms" in insp and f"Nearest valid {min(want['distance_mm'][:62])} mm" in insp, (insp[-260:], st))
-            # the image: zone z of frame k reads 400 + 10 k + 30 z mm, coloured hsl(240 d/4000 65% 38%); zones 62, 63 are hatched
+            # the image: zone z of frame k reads 400 + 10 k + 30 z mm, coloured by the sequential ramp (near is its strong end); zones 62, 63 are hatched
             cell = 30
             zones = (0, 9, 37, 61)
             got = pixels(page, [[z % 8 * cell + 2, z // 8 * cell + 2] for z in zones] + [[z % 8 * cell + 2, z // 8 * cell + 2] for z in (62, 63)])
-            want_rgb = [hsl_rgb(round(240 * min(want["distance_mm"][z] / 4000, 1)), 65, 38) for z in zones]
+            stops = page.evaluate("Array.from({length: 9}, (_, i) => { const e = document.createElement('i'); e.style.color = `var(--ramp-seq-${i + 1})`; document.body.append(e); const c = getComputedStyle(e).color.match(/\\d+/g).slice(0, 3).map(Number); e.remove(); return c; })")
+            want_rgb = [ramp_rgb(stops, 1 - min(want["distance_mm"][z] / 4000, 1)) for z in zones]
             check(f"... and the image is that frame: zones coloured by their distance (frame {want['index'] + 1}, read back from the canvas)",
                   all(abs(a_ - b_) <= 2 for g, w in zip(got, want_rgb) for a_, b_ in zip(g, w)), (got[:4], want_rgb))
             check("... the zones whose status is not valid are hatched dark, not coloured by their distance", all(max(px) < 140 for px in got[4:]), got[4:])

@@ -5,6 +5,8 @@
 // list (the tick's points are the frame's derived points, one per valid zone in the sensor's order, plus one for each no-target zone the
 // cliff check put a "below" point at).
 
+import { seqScale, inkOn as rampInk } from './sigviz.js';
+
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 export const RAW_VALID = [5, 9];            // the sensor's "range valid" statuses
 export const NO_TARGET = 255;               // "nothing out there" (duck_lab.nav.cliff)
@@ -37,7 +39,9 @@ export function createDepthView(host, { api, data }) {
     <div class="xs" data-x="note"></div>
     <div class="xpart" data-x="cell"></div>`;
   const $ = (k) => host.querySelector(`[data-x="${k}"]`), cv = $('cv'), css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const distColor = (mm) => `hsl(${Math.round(240 * Math.min(Math.max(mm, 0) / MAX_MM, 1))} 65% 38%)`;
+  // near is the ramp's strong end; the ramp is read from the tokens at each paint, so it follows the theme
+  let heat = seqScale();
+  const distColor = (mm) => heat(1 - Math.min(Math.max(mm, 0) / MAX_MM, 1));
   // the text on a cell: white on the dark distance colours, black or white on a kind colour by its brightness
   const inkOn = (hex) => { const m = /^#([0-9a-f]{6})/i.exec(hex); if (!m) return '#fff'; const v = parseInt(m[1], 16); return ((v >> 16) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114) > 150 ? '#000' : '#fff'; };
 
@@ -104,6 +108,7 @@ export function createDepthView(host, { api, data }) {
     g.clearRect(0, 0, w, h);
     g.font = `${Math.max(9, Math.round(cell * 0.28))}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
     const byKind = S.color === 'kind' && S.kinds.cells;
+    heat = seqScale();
     const field = css('--bg-field'), faint = css('--text-faint'), warn = css('--warn'), sel = css('--draw-sel');
     for (let r = 0; r < f.rows; r++) for (let c = 0; c < f.cols; c++) {
       const k = r * f.cols + c, x = c * cell, y = r * cell, mm = f.distance_mm[k], ok = RAW_VALID.includes(f.status[k]);
@@ -111,7 +116,7 @@ export function createDepthView(host, { api, data }) {
       if (byKind && pt) {
         const col = css(KINDS[pt[3]]?.[1] || '--text-dim'); g.fillStyle = col; g.fillRect(x, y, cell, cell); g.fillStyle = inkOn(col); g.fillText(String(mm), x + cell / 2, y + cell / 2);
       } else if (ok && !byKind) {
-        g.fillStyle = distColor(mm); g.fillRect(x, y, cell, cell); g.fillStyle = '#fff'; g.fillText(String(mm), x + cell / 2, y + cell / 2);
+        const fill = distColor(mm); g.fillStyle = fill; g.fillRect(x, y, cell, cell); g.fillStyle = rampInk(fill); g.fillText(String(mm), x + cell / 2, y + cell / 2);
       } else {
         g.fillStyle = field; g.fillRect(x, y, cell, cell);
         g.strokeStyle = faint; g.lineWidth = 1; g.beginPath();

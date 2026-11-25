@@ -23,6 +23,7 @@
 import { svgI, paintIcons } from './icons.js';
 import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
+import { seqScale, inkOn, jointLimits, catVar } from './sigviz.js';
 import { chainsOf } from '/lib/body/robot.js';
 import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
@@ -85,7 +86,7 @@ const KINDS = {
   cliff_stop: ['--status-error', 1], reflex_stop: ['--status-alert', 1], refused: ['--status-warn', 1], trapped: ['--status-alert', 1],
   reached: ['--status-ok', 0], tight_pivot: ['--ramp-cat-8', 0], leg: ['--status-neutral', 0], no_survey_turn: ['--ramp-cat-5', 0],
 };
-const kindColor = (k) => (KINDS[k] ? `var(${KINDS[k][0]})` : `hsl(${[...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 360} 50% 55%)`);
+const kindColor = (k) => (KINDS[k] ? `var(${KINDS[k][0]})` : catVar([...k].reduce((a, c) => a * 31 + c.charCodeAt(0), 7)));
 const isStop = (k) => (k in KINDS ? !!KINDS[k][1] : /stop|refus|trap/.test(k));
 // anomalies (RFC-0019): the severities, in order of how much they matter; each one shows as a status badge (status.js, kind 'severity')
 const SEVERITY = ['critical', 'major', 'minor', 'info'];
@@ -218,7 +219,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   scenesLink.id = 'scenes-link'; scenesLink.title = 'All scenes and runs';
   paintIcons();
   const stage = $('stage'), app = $('app');
-  const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t) });
+  const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t), limits: (name) => jointLimits(M.robot, name) });
   // Live and Replay as a named mode, and the jumps between marks (timemode.js); marks = the events a viewer has not hidden
   const TM = createTimeMode({ el: $('timemode'), jumps: $('jumps'), goLive: () => setFollow(true), marks: () => (M.run?.events || []).filter((e) => M.kinds[e.kind] !== false).map(({ t, kind }) => ({ t, kind })) });
 
@@ -340,11 +341,11 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const rawInk = () => ({ on: cssVar('--text-on-solid'), off: cssVar('--surface-section'), hatch: cssVar('--line-strong'), note: cssVar('--status-warn-on') });
   function paintRaw(cv, f) {
-    const cell = cv.width / f.cols, g = cv.getContext('2d'), ink = rawInk();
+    const cell = cv.width / f.cols, g = cv.getContext('2d'), ink = rawInk(), heat = seqScale();
     g.font = `${Math.round(cell * 0.3)}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (let r = 0; r < f.rows; r++) for (let c = 0; c < f.cols; c++) {
       const k = r * f.cols + c, x = c * cell, y = r * cell, d = f.distance_mm[k], ok = RAW_VALID.includes(f.status[k]);
-      if (ok) { g.fillStyle = `hsl(${Math.round(240 * Math.min(Math.max(d, 0) / 4000, 1))} 65% 38%)`; g.fillRect(x, y, cell, cell); g.fillStyle = ink.on; g.fillText(String(d), x + cell / 2, y + cell / 2); }
+      if (ok) { const fill = heat(1 - Math.min(Math.max(d, 0) / 4000, 1)); g.fillStyle = fill; g.fillRect(x, y, cell, cell); g.fillStyle = inkOn(fill); g.fillText(String(d), x + cell / 2, y + cell / 2); }
       else {
         g.fillStyle = ink.off; g.fillRect(x, y, cell, cell);
         g.strokeStyle = ink.hatch; g.lineWidth = 1; g.beginPath();
@@ -438,10 +439,10 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     if (f && cv.dataset.i !== String(f.index)) {
       cv.dataset.i = String(f.index);
       cv.width = f.cols; cv.height = f.rows;
-      const g = cv.getContext('2d'), off = rawInk().off;
+      const g = cv.getContext('2d'), off = rawInk().off, heat = seqScale();
       for (let k = 0; k < f.distance_mm.length; k++) {
         const ok = RAW_VALID.includes(f.status[k]);
-        g.fillStyle = ok ? `hsl(${Math.round(240 * Math.min(Math.max(f.distance_mm[k], 0) / 4000, 1))} 65% 45%)` : off;
+        g.fillStyle = ok ? heat(1 - Math.min(Math.max(f.distance_mm[k], 0) / 4000, 1)) : off;
         g.fillRect(k % f.cols, (k / f.cols) | 0, 1, 1);
       }
     }

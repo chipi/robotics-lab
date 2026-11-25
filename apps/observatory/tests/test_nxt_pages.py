@@ -8,6 +8,7 @@ Run: cd apps/observatory && uv run python tests/test_nxt_pages.py"""
 import json
 import math
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -137,7 +138,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         want_text = {s["id"] for s in shown if s.get("kind") == "text"}
         check("the Signals view has one chart (a line) per numeric signal and one band row per text signal, all drawn",
               sorted(c[0] for c in charts) == sorted(s["id"] for s in shown)
-              and all((c[3] >= 1) if c[0] in want_text else c[2] > 20 for c in charts), charts)
+              and all((c[3] >= 1) if c[0] in want_text else c[2] > 20 or (c[0] == "signals.s3_color" and c[3] >= 1) for c in charts), charts)
+        check("a unitless numeric signal with a few whole values (the colour index) is drawn as state spans (U15), the quantities keep their line",
+              [c[3] > 0 for c in charts if c[0] == "signals.s3_color"] == [True] and all(c[2] > 20 for c in charts if c[0] in ("signals.tacho_A", "signals.s4_ultrasonic", "signals.power_left")), charts)
         check("the colour-name band has a stretch for each colour in the run (yellow, then black)", [c[3] for c in charts if c[0] == "signals.s3_color_name"] == [2], charts)
 
         # the values at t, in the inspector and in the chart labels, are the API's (the sample at or before t)
@@ -224,11 +227,13 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         ctx, page, logs = run_page(b, base, "light")
         call(page, f"window.miniview.load('unmapped', '{A}')")
         call(page, "window.miniview.setTime(21.3)")
-        check("the light theme: the page says so, the lines are drawn in the theme's own lightness",
-              page.evaluate("document.documentElement.dataset.theme") == "light" and "40%" in page.evaluate("document.querySelector('#sigview path.line').getAttribute('stroke')"))
+        STROKE = "getComputedStyle(document.querySelector('#sigview path.line')).stroke"
+        light_stroke = page.evaluate(STROKE)
+        check("the light theme: the page says so, the lines are a categorical ramp colour of the theme (a token, not a literal)",
+              page.evaluate("document.documentElement.dataset.theme") == "light" and re.fullmatch(r"var\(--ramp-cat-[1-8]\)", page.evaluate("document.querySelector('#sigview path.line').getAttribute('stroke')") or ""))
         page.evaluate("document.getElementById('themeBtn').click()")
         page.wait_for_function("document.documentElement.dataset.theme === 'dark'")
-        check("switching to dark redraws the signals in the dark lightness", "62%" in page.evaluate("document.querySelector('#sigview path.line').getAttribute('stroke')"))
+        check("switching to dark draws the signals in the dark theme's ramp colour", page.evaluate(STROKE) != light_stroke, (light_stroke, page.evaluate(STROKE)))
         page.evaluate("document.getElementById('themeBtn').click()")
         page.wait_for_function("document.documentElement.dataset.theme === 'light'")
         shot(page, f"nxt-signals-{lib}-light")
