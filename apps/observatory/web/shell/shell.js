@@ -30,6 +30,7 @@ import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DE
 import { statusOf, glyph, label } from '/lib/status.js';
 import { mountTopBar } from '/lib/brand.js';
 import { createTimeMode } from './timemode.js';
+import { mountLayout, prefs, savePrefs } from './layout.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -186,9 +187,6 @@ function buildTree(run, desc = null) {
   return { tree, nodes, parents, order, leaves };
 }
 
-// the left panel's sections a viewer left open, and whether the joints show their angles: remembered in this browser only
-function prefs() { try { return JSON.parse(localStorage.getItem('miniview.left') || '{}'); } catch (_) { return {}; } }
-function savePrefs(p) { try { localStorage.setItem('miniview.left', JSON.stringify({ ...prefs(), ...p })); } catch (_) { /* no storage */ } }
 // a robot's description (RFC-0011), asked for only when the robots listing has it: a robot with none (the NXT) is no 404
 const robotCache = {};
 let robotList = null;
@@ -219,6 +217,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   scenesLink.id = 'scenes-link'; scenesLink.title = 'All scenes and runs';
   paintIcons();
   const stage = $('stage'), app = $('app');
+  // the left panel's sections, the joint-angle switch and the columns' widths are the layout in use (layout.js); a layout loaded or reset re-reads the first two
+  if (!watch) mountLayout({ host: app, button: $('layBtn'), left: $('left'), split: $('split'), onApply: () => fromLayout() });
   const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t), limits: (name) => jointLimits(M.robot, name) });
   // Live and Replay as a named mode, and the jumps between marks (timemode.js); marks = the events a viewer has not hidden
   const TM = createTimeMode({ el: $('timemode'), jumps: $('jumps'), goLive: () => setFollow(true), marks: () => (M.run?.events || []).filter((e) => M.kinds[e.kind] !== false).map(({ t, kind }) => ({ t, kind })) });
@@ -957,6 +957,17 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   function toggleOpen(id) { M.open[id] = !M.open[id]; if (T.nodes[id]?.section) saveOpen(); renderTree(); }
   function saveOpen() { savePrefs({ open: Object.fromEntries(T.order.filter((id) => T.nodes[id].section).map((id) => [id, !!M.open[id]])) }); }
+  function fromLayout() {
+    const p = prefs(), want = p.angles !== false;
+    let changed = M.angles !== want;
+    M.angles = want;
+    for (const id of T.order) {
+      if (!T.nodes[id].section) continue;
+      const o = !!p.open[id];
+      if (M.open[id] !== o) { M.open[id] = o; changed = true; }
+    }
+    if (changed) renderTree();
+  }
   function setAngles(on) { M.angles = !!on; savePrefs({ angles: M.angles }); renderTree(); return M.angles; }
   // a joint's angle at the playhead (its joint_* signal, radians), in degrees
   function angleText(joint) {
@@ -1720,6 +1731,7 @@ const TEMPLATE = `
       <span class="vt" id="vt"></span>
       <span class="grow"></span>
       <span class="timemode jumps" id="jumps" hidden role="group" aria-label="Jump between events"><button class="mini" id="jprev" title="Previous event of the chosen kind (,)" aria-label="Previous event"><svg class="i" data-i="left" style="width:12px;height:12px"></svg></button><button class="mini" id="jkind" title="The kind of event , and . jump to" aria-haspopup="true">any</button><button class="mini" id="jnext" title="Next event of the chosen kind (.)" aria-label="Next event"><svg class="i" data-i="right" style="width:12px;height:12px"></svg></button></span>
+      <button class="icon-btn" id="layBtn" title="Panels and layouts" aria-label="Layout" aria-haspopup="true" aria-expanded="false" aria-controls="lay-menu"><svg class="i" data-i="panels"></svg></button>
       <button class="icon-btn" id="ovBtn" title="Overlays"><svg class="i" data-i="layers"></svg></button>
       <button class="icon-btn" id="fitBtn" title="Fit the run (F)"><svg class="i" data-i="fit"></svg></button>
     </div>
