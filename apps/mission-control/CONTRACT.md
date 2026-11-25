@@ -381,11 +381,12 @@ objects and areas layers, a point goal by tapping the map and the other goal kin
 library, the goal runs with their progress and decisions, area drawing, renaming and deleting, site
 export and import, STOP for the selected robot and STOP ALL (always on screen), and a Watch link that
 is disabled while a run's `watch` is null. A robot's card links to its page, `#robot/<id>`
-(RFC-0023 D3): six sections, of which Overview (the Readiness card and the header verdict that follows it, one
-verdict: ready, check first, not ready or not known, each check with a glyph and a word: online, its gate,
-held, the link, the battery (the server's `battery` rule), a status flag, a major or critical alarm in the
-last minute, guardrails, settings; an absent field is unknown, never ok; from `GET /robots/{id}` and the
-alarm feed) and Parts (the profile's subsystems, and who holds the robot)
+(RFC-0023 D3): six sections, of which Overview (the Readiness card and the header verdict that
+follows it, one verdict: ready, check first, not ready or not known, each check with a glyph and a
+word: online, its gate, held, the link, the battery (the server's `battery` rule), a status flag, a
+major or critical alarm in the last minute, guardrails, settings; an absent field is unknown, never
+ok; from `GET /robots/{id}` and the alarm feed) and Parts (the profile's subsystems, and who holds
+the robot)
 work, Modules lists the profile's four plugins (`plugins`, each with the block it answers for and that
 block's numbers as the running variant has them; no source reports a plugin's own state to Mission
 Control, so each says "live state not reported"), Settings is the profile API as a page (no endpoint

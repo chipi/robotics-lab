@@ -52,6 +52,10 @@ in order".
 | Review round 3 | answered 2026-11-25 ([round 3](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM)); the decisions are in LOOK-AND-FEEL-PLAN; the fixes and the timeline redesign are in progress |
 | U26 | not started |
 
+The live plan to MVP 2 is the
+[Road to MVP 2](https://claude.ai/artifact/PaDG8VzAWASixHKoRgdGW9) tracker: one row per item
+in its database (collection `items`), updated with ArtifactData as each item changes status.
+
 Next: round 3's answers (in LOOK-AND-FEEL-PLAN) are being built: Mission Control (one readiness
 verdict, the server's battery rule, STOP not preselected, `rl.theme`), the timeline redesign,
 then the Observatory (Signals for runs with a pose, Follow live into the badge, the section-fold
