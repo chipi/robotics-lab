@@ -113,11 +113,12 @@ export function mount({ page, setOpen }) {
     try { const out = fn(); status.textContent = said ? said(out) : ''; } catch (e) { status.textContent = e.message; }
   }
   // a change to the current layout: written to the one in use, or to the first one when none is
-  function change(edit) {
+  function commit(edit) {
     const next = JSON.parse(JSON.stringify(state));
     edit(next);
-    run(() => store.save(store.current() || FIRST, next));
+    store.save(store.current() || FIRST, next);
   }
+  function change(edit) { run(() => commit(edit)); }
   store.onChange((cur, s) => { state = s; apply(s); sync(); });
 
   // a fold the viewer clicked is part of the layout
@@ -137,5 +138,17 @@ export function mount({ page, setOpen }) {
 
   apply(state);
   sync();
-  return { toggle, folded, get open() { return !menu.hidden; } };
+  // what the palette's verbs use (palette-verbs.js): the same writes as the menu, but an error reaches the caller instead of the menu's status line
+  const act = {
+    panels: PANELS.map((p) => ({ id: p.id, label: p.label, tab: p.tab, fold: !!p.fold })),
+    isHidden: (id) => isHidden(state, id),
+    isFolded: (id) => state.panels.open[id] === false,
+    setHidden: (id, hide) => commit((s) => { if (hide) s.panels.open[hiddenKey(id)] = true; else delete s.panels.open[hiddenKey(id)]; }),
+    setFolded: (id, fold) => commit((s) => { s.panels.open[id] = !fold; }),
+    saved: () => store.list().filter((n) => n !== FIRST),
+    saveAs: (n) => store.save(n, state),
+    load: (n) => store.load(n),
+    reset: resetNow,
+  };
+  return { toggle, folded, act, get open() { return !menu.hidden; } };
 }

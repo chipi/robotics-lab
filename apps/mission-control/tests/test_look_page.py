@@ -18,6 +18,11 @@ joints column at its widest, at phone and desktop width; the overview fetches ne
 U23 (the readiness card, readiness.js): named checks from the fields GET /robots/{id} carries, each a status badge (glyph and word); a field the view does not carry
 reads unknown and never ok; the verdict follows the worst check; the card is a layout panel (hide, fold); the overview fetches readiness.js not at all.
 
+U25 (the palette's verbs, palette-verbs.js on libs/web/palette): Ctrl/Cmd+K and a top-bar button open it, never from a key typed in an input, and the overview fetches
+no palette module until then; STOP and STOP ALL are listed first and run on the first Enter, unconfirmed; navigation (overview, each robot, each tab), panels
+and layouts (through layout.js and the store), the theme; a verb that fails shows its error in the toast; no verb starts a goal, takes over, takes a lease or
+moves a robot; with the palette open nothing covers STOP, on a phone and on the desktop.
+
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
 
 import atexit
@@ -29,6 +34,7 @@ import re
 import shutil
 import tempfile
 import threading
+import traceback
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -68,7 +74,8 @@ def soft(label):
     try:
         yield
     except Exception as exc:
-        check(f"{label}: completed", False, f"{type(exc).__name__}: {str(exc).splitlines()[0]}")
+        here = [f.lineno for f in traceback.extract_tb(exc.__traceback__) if f.filename == __file__]
+        check(f"{label}: completed", False, f"{type(exc).__name__}: {str(exc).splitlines()[0]} (test lines {here[-3:]})")
 
 
 WEB = Path(__file__).resolve().parents[1] / "src" / "mission_control" / "web"
@@ -567,6 +574,205 @@ with sync_playwright() as p:
     olay.wait_for_timeout(800)
     check("the phone overview fetches neither layout.js nor the layout store nor readiness.js", not [u for u in oreqs if "layout" in u or "readiness" in u], [u for u in oreqs if "layout" in u or "readiness" in u])
     olay.close()
+
+    # --- U25: the palette's verbs (libs/web/palette, loaded on first use) ----------------------------------------------------------------
+    for view, size in (("phone 390x844", {"width": 390, "height": 844}), ("desktop 1440x900", {"width": 1440, "height": 900})):
+        pctx = browser.new_context(viewport=size, color_scheme="dark")
+        pp = pctx.new_page()
+        pp.set_default_timeout(5000)
+        pp.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+        pp.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
+        preqs = []
+        pp.on("request", lambda r: preqs.append(r.url))
+        posts = []
+        pp.on("request", lambda r: posts.append(r.url.split("/api/v1")[-1]) if r.method == "POST" else None)
+
+        def phit(sid):
+            return pp.evaluate("""(id) => { const b = document.getElementById(id), r = b.getBoundingClientRect();
+                const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                return e && (e === b || b.contains(e)) ? 'button' : (e ? e.tagName + '#' + e.id + '.' + e.className : 'nothing'); }""", sid)
+
+        def popen_page(hash_=""):
+            pp.goto(BASE + "/" + hash_)
+            wait(pp, "window.__mc && window.__mc.ready")
+            wait(pp, "document.getElementById('stop-robot').textContent === 'STOP duck-1'")
+
+        def rows():
+            return pp.evaluate("[...document.querySelectorAll('.pal-row')].map((r) => [r.dataset.verb, r.dataset.danger, r.querySelector('.pal-title').textContent])")
+
+        def palette_open():
+            return pp.evaluate("!!document.querySelector('.pal') && !document.querySelector('.pal').hidden")
+
+        def ask(text):
+            pp.keyboard.type(text)
+            pp.wait_for_timeout(60)
+
+        def palette_via_key():
+            wait(pp, "document.activeElement.tagName !== 'INPUT'")      # a palette just closed leaves the focus on its hidden input until the next layout: a key then would count as typed
+            pp.keyboard.press("Control+k")
+            wait(pp, "!!document.querySelector('.pal') && !document.querySelector('.pal').hidden && document.querySelectorAll('.pal-row').length > 0")
+
+        def palette_close():
+            if palette_open():
+                pp.focus(".pal-input")        # a tap on STOP leaves the focus outside the box, where Escape does not reach it
+                pp.keyboard.press("Escape")
+                wait(pp, "document.querySelector('.pal').hidden")
+
+        with soft(f"{view}: palette, lazy load"):
+            popen_page()
+            pp.wait_for_timeout(600)
+            check(f"{view}: the overview fetches no palette module and no palette style before it is used", not [u for u in preqs if "palette" in u], [u for u in preqs if "palette" in u])
+            check(f"{view}: the top bar has a palette button, static HTML, outside the STOP bar",
+                  pp.evaluate("(() => { const b = document.getElementById('palette-btn'); return !!b && !b.closest('.stops') && b.getAttribute('aria-label') === 'Command palette' && /Control\\+K/.test(b.getAttribute('aria-keyshortcuts') || ''); })()"))
+            # a key typed in an input never opens it, and does not load it
+            pp.focus("#say")
+            pp.keyboard.press("Control+k")
+            pp.wait_for_timeout(400)
+            check(f"{view}: Ctrl+K typed in an input opens nothing and loads nothing", not [u for u in preqs if "palette" in u] and not palette_open(), [u for u in preqs if "palette" in u])
+            pp.evaluate("document.activeElement.blur()")
+            palette_via_key()
+            got = [u.rsplit("/", 1)[-1] for u in preqs if "palette" in u]
+            check(f"{view}: Ctrl+K loads palette-verbs.js, palette.js, registry.js and palette.css on first use, and opens", {"palette-verbs.js", "palette.js", "registry.js", "palette.css"} <= set(got) and palette_open(), got)
+            check(f"{view}: opening it on the overview fetches no layout store, layout.js or readiness.js", not [u for u in preqs if "layout" in u or "readiness" in u], [u for u in preqs if "layout" in u or "readiness" in u])
+            pp.keyboard.press("Escape")
+            wait(pp, "document.querySelector('.pal').hidden")
+            pp.click("#palette-btn")
+            wait(pp, "!document.querySelector('.pal').hidden")
+            check(f"{view}: the top-bar button opens it too", palette_open())
+            palette_close()
+            check(f"{view}: closed, focus returns to the palette button", pp.evaluate("document.activeElement.id") == "palette-btn")
+
+        with soft(f"{view}: palette, STOP first and unconfirmed"):
+            popen_page()
+            palette_via_key()
+            r = rows()
+            check(f"{view}: STOP and STOP ALL are the first two verbs, danger stop", [x[:2] for x in r[:2]] == [["stop.robot", "stop"], ["stop.all", "stop"]], r[:3])
+            check(f"{view}: the STOP rows have no confirm button", pp.locator(".pal-row[data-danger=stop] .pal-confirm").count() == 0)
+            n = len(posts)
+            pp.keyboard.press("Enter")
+            wait(pp, "!document.getElementById('toast').hidden")
+            check(f"{view}: one Enter on the first row posts the robot's stop, once", posts[n:] == ["/robots/duck-1/stop"], posts[n:])
+            palette_via_key()
+            ask("stop all")
+            check(f"{view}: typed 'stop all', STOP ALL is first", rows()[0][0] == "stop.all", rows()[:2])
+            n = len(posts)
+            pp.keyboard.press("Enter")
+            wait(pp, "document.getElementById('toast').textContent.includes('stopped')")
+            check(f"{view}: one Enter runs STOP ALL, posting /stop once", posts[n:] == ["/stop"], posts[n:])
+            check(f"{view}: and the palette is closed", not palette_open())
+
+        with soft(f"{view}: palette, verbs of the overview"):
+            popen_page()
+            palette_via_key()
+            ids = [x[0] for x in rows()]
+            check(f"{view}: the overview lists navigation and the theme, and no panel or layout verb", "nav.overview" in ids and "nav.robot.duck-1" in ids and "nav.tab.duck-1.body" in ids and "theme.toggle" in ids
+                  and not [i for i in ids if i.startswith(("panel.", "layout."))], ids)
+            before = pp.evaluate("document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')")
+            ask("theme")
+            pp.keyboard.press("Enter")
+            pp.wait_for_timeout(100)
+            after = pp.evaluate("document.documentElement.dataset.theme")
+            check(f"{view}: the theme verb switches the theme", after in ("light", "dark") and after != before, (before, after))
+            pp.evaluate("localStorage.removeItem('mc-theme'); delete document.documentElement.dataset.theme")
+            palette_via_key()
+            ask("duck-1 body")
+            check(f"{view}: 'duck-1 body' finds the robot's Body tab first", rows()[0][0] == "nav.tab.duck-1.body", rows()[:3])
+            pp.keyboard.press("Enter")
+            wait(pp, "location.hash === '#robot/duck-1/body' && !document.getElementById('rp-body').hidden")
+            check(f"{view}: and Enter opens it", True)
+            palette_via_key()
+            ask("overview")
+            check(f"{view}: 'overview' finds the way back to the robots", rows()[0][0] == "nav.overview", rows()[:3])
+            pp.keyboard.press("Enter")
+            wait(pp, "location.hash === '' && document.getElementById('robot-page').hidden")
+            check(f"{view}: and Enter goes there", True)
+            palette_via_key()
+            ask("open duck-1")
+            pp.keyboard.press("Enter")
+            wait(pp, "location.hash === '#robot/duck-1'")
+            check(f"{view}: 'open duck-1' opens the robot's page", True)
+
+        with soft(f"{view}: palette, panels and layouts"):
+            popen_page("#robot/duck-1")
+            pp.evaluate("localStorage.removeItem('rl.layouts.control'); localStorage.removeItem('rl.layout.current.control')")
+            pp.reload()
+            wait(pp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
+            palette_via_key()
+            ids = [x[0] for x in rows()]
+            check(f"{view}: on a robot page the palette lists hide, fold and layout verbs", {"panel.hide.readiness", "panel.fold.parts", "layout.save", "layout.reset"} <= set(ids)
+                  and "panel.show.readiness" not in ids and "panel.unfold.parts" not in ids, ids)
+            ask("hide readiness")
+            pp.keyboard.press("Enter")
+            wait(pp, "document.querySelector('[data-panel=readiness]').hidden")
+            check(f"{view}: 'Hide Readiness' hides the card, through the layout store", pp.evaluate("JSON.parse(localStorage.getItem('rl.layouts.control')).layouts.default.panels.open['hidden:readiness']") is True)
+            palette_via_key()
+            ids = [x[0] for x in rows()]
+            check(f"{view}: hidden, the palette offers Show and no longer Hide", "panel.show.readiness" in ids and "panel.hide.readiness" not in ids, ids)
+            ask("show readiness")
+            pp.keyboard.press("Enter")
+            wait(pp, "!document.querySelector('[data-panel=readiness]').hidden")
+            check(f"{view}: 'Show Readiness' shows it again", True)
+            palette_via_key()
+            ask("fold parts")
+            pp.keyboard.press("Enter")
+            wait(pp, "document.getElementById('rp-parts-head').getAttribute('aria-expanded') === 'false'")
+            check(f"{view}: 'Fold Parts' folds the card and the fold is part of the layout", pp.evaluate("JSON.parse(localStorage.getItem('rl.layouts.control')).layouts.default.panels.open.parts") is False)
+            palette_via_key()
+            ask("save layout")
+            pp.keyboard.press("Enter")
+            wait(pp, "!!JSON.parse(localStorage.getItem('rl.layouts.control')).layouts['Layout 1']")
+            check(f"{view}: 'Save layout' saves the arrangement under a new name and says so", pp.evaluate("document.getElementById('toast').textContent").startswith("Saved as Layout 1"))
+            palette_via_key()
+            ask("reset layout")
+            pp.keyboard.press("Enter")
+            wait(pp, "document.getElementById('rp-parts-head').getAttribute('aria-expanded') === 'true'")
+            check(f"{view}: 'Reset layout' returns the default arrangement", True)
+            palette_via_key()
+            ask("load layout 1")
+            check(f"{view}: the saved layout is a verb of its own", rows()[0][0] == "layout.load.Layout 1", rows()[:3])
+            pp.keyboard.press("Enter")
+            wait(pp, "document.getElementById('rp-parts-head').getAttribute('aria-expanded') === 'false'")
+            check(f"{view}: loading it brings the fold back", True)
+            # a verb that fails says so on the page, not only in the console: the layout is deleted behind the palette's back
+            palette_via_key()
+            ask("load layout 1")
+            pp.evaluate("""() => { const k = 'rl.layouts.control', b = JSON.parse(localStorage.getItem(k)); delete b.layouts['Layout 1']; localStorage.setItem(k, JSON.stringify(b)); }""")
+            pp.keyboard.press("Enter")
+            wait(pp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
+            msg = pp.evaluate("document.getElementById('toast').textContent")
+            check(f"{view}: a verb that fails shows its error in the toast", "Layout 1" in msg, msg)
+            pp.evaluate("localStorage.removeItem('rl.layouts.control'); localStorage.removeItem('rl.layout.current.control')")
+
+        with soft(f"{view}: palette over the STOP bar"):
+            popen_page("#robot/duck-1")
+            palette_via_key()
+            check(f"{view}: with the palette open nothing covers STOP or STOP ALL", all(phit(s) == "button" for s in STOPS), [phit(s) for s in STOPS])
+            z = pp.evaluate("[+getComputedStyle(document.querySelector('.pal')).zIndex, +getComputedStyle(document.querySelector('.stops')).zIndex]")
+            check(f"{view}: the palette sits below STOP in z-order", z[0] < z[1], z)
+            n = len(posts)
+            with pp.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/v1/stop"), timeout=4000):
+                pp.click("#stop-all", timeout=4000)
+            check(f"{view}: a tap on STOP ALL with the palette open posts /stop", posts[n:] == ["/stop"], posts[n:])
+            palette_close()
+
+        with soft(f"{view}: palette verbs, what they are"):
+            popen_page()
+            spec = pp.evaluate("""async () => {
+                const m = await import(new URL('web/palette-verbs.js', location.href).href);
+                const app = { robots: () => [{id: 'a', label: 'A'}, {id: 'b', label: 'B'}], route: () => ({id: 'a', tab: 'overview'}), tabs: ['overview', 'body', 'modules', 'settings', 'calibration'],
+                    hashOf: (id, t) => '#robot/' + id + (t ? '/' + t : ''), stopRobotId: () => 'a', layout: () => null, pathname: () => '/control/', observatoryHref: () => '/', go() {}, visit() {}, stop() {}, stopAll() {}, theme() {}, themeNow: () => 'dark', toast() {} };
+                const off = { ...app, pathname: () => '/' };
+                return {on: m.verbSpecs(app).map((v) => [v.id, v.title, v.danger, v.api ?? null, v.mcp ?? null]), off: m.verbSpecs(off).map((v) => v.id)};
+            }""")
+            ids = [v[0] for v in spec["on"]]
+            check(f"{view}: STOP and STOP ALL come first, as the only danger-stop verbs", [v[2] for v in spec["on"][:2]] == ["stop", "stop"] and [v[2] for v in spec["on"]].count("stop") == 2, spec["on"][:3])
+            check(f"{view}: no other verb is dangerous: none needs a confirm, none is a robot action", all(v[2] in ("none", "stop") for v in spec["on"]))
+            bad = [v[:2] for v in spec["on"] if re.search(r"goal|takeover|take over|lease|lock|run now|explore|inventory|drive|move|dock", v[0] + " " + v[1], re.I)]
+            check(f"{view}: no verb starts a goal, takes over, takes a lease or moves a robot", bad == [], bad)
+            check(f"{view}: no verb mirrors an API route or an MCP tool", all(v[3] is None and v[4] is None for v in spec["on"]))
+            check(f"{view}: each robot has an open verb and each tab a verb", {"nav.robot.a", "nav.robot.b", "nav.tab.a.body", "nav.tab.b.calibration", "nav.tab.a.settings", "nav.tab.b.modules"} <= set(ids), ids)
+            check(f"{view}: the Observatory link is a verb under /control/ and absent on a port of its own", "nav.observatory" in ids and "nav.observatory" not in spec["off"], (ids, spec["off"]))
+        pctx.close()
 
     # reduced motion: the chevron's transition is gone
     def chevron_ms(reduced):

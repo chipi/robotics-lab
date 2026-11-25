@@ -521,6 +521,37 @@ const paintReadiness = (r) => readyMod
   ? readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), list: readyMod.checks(r, fitChecks(r)), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) })
   : loadReadiness();
 
+// The command palette (palette-verbs.js, with libs/web/palette): loaded the first time it is asked for, by Ctrl/Cmd+K or the top-bar button, never by the
+// overview. Once loaded it binds its own Ctrl/Cmd+K. Its verbs press STOP's own buttons for STOP; none starts a goal or takes a robot.
+let palette = null, paletteBusy = null;
+function loadPalette() {
+  paletteBusy ||= import("./palette-verbs.js").then((m) => {
+    palette = m.mount({
+      robots: () => S.robots, route, tabs: TABS, hashOf, stopRobotId: () => (robot() || {}).id ?? null,
+      layout: () => (layoutMod ? layoutMod.act : null), pathname: () => location.pathname,
+      observatoryHref: () => (KIT.brand ? KIT.brand.APPS.observatory.href : "/"),
+      go: (hash) => { location.hash = hash; }, visit: (href) => location.assign(href),
+      stop: () => $("stop-robot").click(), stopAll: () => $("stop-all").click(),
+      theme: () => $("theme").click(), themeNow: effectiveTheme, toast,
+    });
+  }).catch((e) => { paletteBusy = null; throw e; });
+  return paletteBusy;
+}
+async function openPalette() {
+  try {
+    if (route()) await loadLayout();           // the panel and layout verbs need it, and a robot page loads it anyway
+    await loadPalette();
+    palette.open();
+  } catch (e) { toast("The command palette could not be loaded: " + e.message, true); }
+}
+$("palette-btn").addEventListener("click", openPalette);
+document.addEventListener("keydown", (ev) => {
+  if (palette || !(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey || ev.key.toLowerCase() !== "k") return;
+  if (ev.target instanceof Element && ev.target.closest("input, textarea, select, [contenteditable='']")) return;
+  ev.preventDefault();
+  openPalette();
+});
+
 function setOpen(head, open) {
   head.setAttribute("aria-expanded", String(open));
   const body = $(head.getAttribute("aria-controls"));
