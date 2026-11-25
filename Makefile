@@ -409,6 +409,9 @@ robots-lego: observatory-sync ## The LEGO robots' descriptions (RFC-0011): the E
 # $(LDRAW_DIR) exists. About 140 MB down, 620 MB unpacked, 30 s. Does nothing when the library is already there.
 LDRAW_ZIP_URL    ?= https://library.ldraw.org/library/updates/complete.zip
 LDRAW_ZIP_SHA256 ?= 023083918da2d3697c794fb4267975509584f3611b993095874206a803fa610f
+.PHONY: ldraw-sha
+ldraw-sha: ## Print the pinned sha256 of ldraw.org's complete.zip (CI keys its LDraw cache on it)
+	@echo $(LDRAW_ZIP_SHA256)
 .PHONY: ldraw-fetch
 ldraw-fetch: ## Download ldraw.org's complete.zip (sha256 checked) and unpack it as $(LDRAW_DIR), unless it is there; the library folder must be named ldraw
 	@if test -f $(LDRAW_DIR)/LDConfig.ldr; then echo "ldraw-fetch: $(LDRAW_DIR) is there"; else \
