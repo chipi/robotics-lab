@@ -5,12 +5,13 @@ Run: cd apps/observatory && uv run python tests/test_boot_helper.py"""
 import contextlib
 import io
 import tempfile
+import time
 from pathlib import Path
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, boot, catalog, scene, serve
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("BOOT HELPER")
@@ -18,6 +19,8 @@ check = Checks("BOOT HELPER")
 with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     cat = catalog(Path(tmp) / "data")
     cat.put_scene(scene("apartment"))
+    cat.put_scene(scene("room"))
+    make_run(Path(tmp) / "data", "arm/room/r1", [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})] + [tick(round(0.1 * k, 3), 0.02 * k) for k in range(30)])
     cat.scan()
     httpd, base = serve(cat, follow=False)
     b = launch(p)
@@ -60,6 +63,23 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     except PlaywrightTimeout:
         raised = True
     check("a failure that repeats on the retry raises", raised)
+    pg.close()
+
+    pg, first = b.new_page(), []
+
+    def slow_first_index(route):
+        if not first:
+            first.append(1)
+            time.sleep(1.5)
+        route.continue_()
+
+    pg.route("**/api/v1/scenes", slow_first_index)
+    pg.goto(url)
+    pg.evaluate("localStorage.setItem('miniview.left', JSON.stringify({open_scene: true}))")
+    boot(pg, f"{url}#scene=room&run=arm/room/r1&view=3d&t=2", reload=True)
+    pg.wait_for_function("window.miniview.state().run !== null", timeout=5000)
+    check("reload=True opens the link's run even when the page before it is still booting (its late #scenes no longer replaces the link's hash)",
+          pg.evaluate("window.miniview.state().run") is not None and "run=" in pg.evaluate("location.hash"), pg.evaluate("location.hash"))
     pg.close()
     b.close()
     httpd.shutdown()

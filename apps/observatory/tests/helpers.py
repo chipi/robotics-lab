@@ -101,7 +101,8 @@ LANE_PIXELS = """(() => { const cv = document.querySelector('#dlanes canvas.lane
 
 
 def boot(page, url, ready="window.miniview !== undefined && window.__ready === true", timeout=None, reload=False, _match="ERR_NETWORK_CHANGED"):
-    """goto `url` (reload=True: and reload, for a hash-only change) and wait for `ready`; one reload when the wait times out after a request failed with `_match`."""
+    """goto `url` (reload=True: as a new document, even when only the hash differs from the page's) and wait for `ready`; one reload when the wait times
+    out after a request failed with `_match`."""
     from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
     hits = []
@@ -109,9 +110,10 @@ def boot(page, url, ready="window.miniview !== undefined && window.__ready === t
     on_fail = lambda r: hits.append(r.url) if _match in (r.failure or "") else None  # noqa: E731
     page.on("requestfailed", on_fail)
     try:
-        page.goto(url)
         if reload:
-            page.reload()
+            # a hash change then a reload races the old document: a boot still running there writes #scenes over the new hash
+            page.goto("about:blank")
+        page.goto(url)
         try:
             page.wait_for_function(ready, timeout=timeout)
         except PlaywrightTimeout:
