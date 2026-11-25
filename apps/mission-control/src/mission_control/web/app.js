@@ -367,7 +367,7 @@ function renderRobotPage() {
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
   if (!r) {
     fit.hidden = true; fit.removeAttribute("data-fit");
-    for (const k of ["facts", "fit-body", "fit-sum", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
+    for (const k of ["facts", "fit-body", "fit-sum", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "readiness-body", "readiness-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
     stForget();
     closeBody();
     return;
@@ -408,6 +408,7 @@ function renderRobotPage() {
         h("td", { class: "v inh" }, s.check.kind + (s.check.socket ? " " + s.check.socket : ""),
           s.logs ? h("div", {}, "logs " + s.logs) : null, (s.conflicts || []).length ? h("div", {}, "conflicts with " + s.conflicts.join(", ")) : null),
         h("td", {}, h("span", { class: "tag" }, "not reported"))))))));
+  paintReadiness(r);
   paintProfile(r);
   paintBody(r);
 }
@@ -508,6 +509,17 @@ function loadLayout() {
   return layoutBusy;
 }
 $("rp-layout").addEventListener("click", async () => { await loadLayout(); if (layoutMod) layoutMod.toggle(); });
+
+// The readiness card (readiness.js): loaded the first time a robot page opens, never by the overview; a repaint of the page paints it once loaded.
+let readyMod = null, readyBusy = null;
+function loadReadiness() {
+  readyBusy ||= import("./readiness.js").then((m) => { readyMod = m; renderRobotPage(); })
+    .catch((e) => { setKids($("rp-readiness-body"), h("div", { class: "empty" }, "The readiness card could not be loaded: " + e.message)); });
+  return readyBusy;
+}
+const paintReadiness = (r) => readyMod
+  ? readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), list: readyMod.checks(r, fitChecks(r)), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) })
+  : loadReadiness();
 
 function setOpen(head, open) {
   head.setAttribute("aria-expanded", String(open));

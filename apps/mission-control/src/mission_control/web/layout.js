@@ -2,7 +2,7 @@
 // kept as named layouts in this browser (libs/web/layout/store.js: rl.layouts.control, never the server). A module, loaded by app.js the first time
 // a robot page opens, so the phone overview (the page's first load) fetches neither this nor the store.
 //
-// The store's control shape is {panels: {open: {}}, widths: {}}: both are free maps of scalars. `open` holds a card's fold (fit, alarms, parts:
+// The store's control shape is {panels: {open: {}}, widths: {}}: both are free maps of scalars. `open` holds a card's fold (fit, alarms, parts, readiness:
 // true or false) and `hidden:<id>` (true when the card is hidden); `widths` holds `joints` and `cards` in px. An absent key is the default, so the
 // default layout is the empty one and a reset is the store's own defaults.
 import { createLayoutStore, DEFAULTS } from '/lib/layout/store.js';
@@ -12,6 +12,7 @@ const PANELS = [
   { id: 'alarms', label: 'Alarms, last 60 s', tab: 'Overview', fold: true },
   { id: 'parts', label: 'Parts', tab: 'Overview', fold: true },
   { id: 'body', label: 'Body summary', tab: 'Overview' },
+  { id: 'readiness', label: 'Readiness', tab: 'Overview', fold: true },
   { id: 'joints', label: 'Joints', tab: 'Body' },
 ];
 const WIDTHS = [

@@ -15,6 +15,9 @@ U22 (panels and layouts on the robot page, libs/web/layout/store.js): a panel hi
 Reset returns the default, a saved layout loads and deletes, and STOP and STOP ALL stay uncovered and one press with the menu open, every panel hidden and the
 joints column at its widest, at phone and desktop width; the overview fetches neither layout.js nor the store.
 
+U23 (the readiness card, readiness.js): named checks from the fields GET /robots/{id} carries, each a status badge (glyph and word); a field the view does not carry
+reads unknown and never ok; the verdict follows the worst check; the card is a layout panel (hide, fold); the overview fetches readiness.js not at all.
+
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
 
 import atexit
@@ -380,7 +383,7 @@ with sync_playwright() as p:
 
     # --- U22: panels and layouts: saved in this browser (libs/web/layout/store.js), restored on a reload, reset to the default ---------------------
     LS = "JSON.parse(localStorage.getItem('rl.layouts.control') || 'null')"
-    PANEL_IDS = ("fit", "alarms", "parts", "body", "joints")
+    PANEL_IDS = ("fit", "alarms", "parts", "body", "readiness", "joints")
     ALL = list(PANEL_IDS)
 
     def setrange(page_, rid, px):
@@ -419,7 +422,7 @@ with sync_playwright() as p:
             lp.click("#rp-layout")
             check(f"{view}: the Layout button opens the menu and says so", lp.locator("#rp-layout-menu").is_visible() and lp.get_attribute("#rp-layout", "aria-expanded") == "true")
             stops_clear("menu open")
-            check(f"{view}: the default layout: overview cards all shown, joints column 340 px, cards 420 px", lp.evaluate("""() => ['fit', 'alarms', 'parts', 'body'].every((i) => !document.querySelector(`[data-panel=${i}]`).hidden)
+            check(f"{view}: the default layout: overview cards all shown, joints column 340 px, cards 420 px", lp.evaluate("""() => ['fit', 'alarms', 'parts', 'body', 'readiness'].every((i) => !document.querySelector(`[data-panel=${i}]`).hidden)
                 && document.getElementById('robot-page').style.getPropertyValue('--rp-joints-w') === '340px' && document.getElementById('robot-page').style.getPropertyValue('--rp-card-min') === '420px'"""))
 
             # hide two panels, fold a third, size the cards: it persists across a reload
@@ -428,21 +431,21 @@ with sync_playwright() as p:
             setrange(lp, "lay-w-cards", 560)
             lp.click("#lay-close")
             lp.click("#rp-fit-head")
-            check(f"{view}: hiding panels hides them now", shown() == ["fit", "body", "joints"], shown())
+            check(f"{view}: hiding panels hides them now", shown() == ["fit", "body", "readiness", "joints"], shown())
             saved = lp.evaluate(LS)
             check(f"{view}: the change is in rl.layouts.control under the name default, and the layout in use is default",
                   saved and saved["layouts"]["default"]["panels"]["open"].get("hidden:alarms") is True and saved["layouts"]["default"]["panels"]["open"].get("fit") is False
                   and saved["layouts"]["default"]["widths"].get("cards") == 560 and lp.evaluate("localStorage.getItem('rl.layout.current.control')") == "default", saved)
             lp.reload()
             wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
-            check(f"{view}: after a reload the hidden panels are still hidden", shown() == ["fit", "body", "joints"], shown())
+            check(f"{view}: after a reload the hidden panels are still hidden", shown() == ["fit", "body", "readiness", "joints"], shown())
             got = lp.evaluate("[document.getElementById('rp-fit-head').getAttribute('aria-expanded'), document.getElementById('robot-page').style.getPropertyValue('--rp-card-min')]")
             check(f"{view}: after a reload the folded card is still folded, the size is kept", got == ["false", "560px"], got)
             stops_clear("two panels hidden, after a reload")
 
             # every panel hidden: the page says so, the menu brings them back, and STOP is clear throughout
             lp.click("#rp-layout")
-            for pid in ("fit", "body"):
+            for pid in ("fit", "body", "readiness"):
                 lp.uncheck(f"#lay-show-{pid}")
             check(f"{view}: every overview panel hidden: the page says so", lp.locator("#rp-layout-empty").is_visible() and shown() == ["joints"], shown())
             stops_clear("every overview panel hidden, menu open")
@@ -479,7 +482,7 @@ with sync_playwright() as p:
             stops_clear("the Body tab, joints hidden, menu open")
             lp.reload()
             wait(lp, "window.__mc && window.__mc.ready && !!document.querySelector('#rp-layout-menu')")
-            check(f"{view}: the hidden joints card stays hidden after a reload", shown() == ["fit", "alarms", "parts", "body"] and lp.evaluate("document.querySelector('[data-panel=joints]').hidden"), shown())
+            check(f"{view}: the hidden joints card stays hidden after a reload", shown() == ["fit", "alarms", "parts", "body", "readiness"] and lp.evaluate("document.querySelector('[data-panel=joints]').hidden"), shown())
             stops_clear("the Body tab, joints hidden, after a reload")
             lp.click("#rp-layout")
             lp.click("#lay-reset")
@@ -495,6 +498,63 @@ with sync_playwright() as p:
                 with lp.expect_request(lambda r, route=route: r.method == "POST" and r.url.endswith("/api/v1" + route), timeout=4000):
                     lp.click("#" + sid, timeout=4000)
                 check(f"{view}, menu open: one press on {sid} posts {route}", True)
+
+        # --- U23: the readiness card: named checks from what GET /robots/{id} carries; a missing field reads unknown, never ok -------------------
+        with soft(f"{view}: readiness"):
+            lopen()
+            wait(lp, "!!document.querySelector('#readiness-checks li')")
+            check(f"{view}: the readiness card is a panel of the overview: shown, folds, and sits in the layout menu", lp.locator("[data-panel=readiness]").is_visible()
+                  and lp.get_attribute("#rp-readiness-head", "aria-controls") == "rp-readiness-body" and lp.locator("#lay-show-readiness").count() == 1)
+            ids = lp.evaluate("[...document.querySelectorAll('#readiness-checks li')].map((l) => l.dataset.check)")
+            check(f"{view}: it names its checks", ids == ["online", "gate", "free", "link", "battery", "flags", "alarms", "guardrails", "profile"], ids)
+            rows = lp.evaluate("""[...document.querySelectorAll('#readiness-checks li')].map((l) => {
+                const b = l.querySelector('.ui-badge'), g = b && b.querySelector('.ui-glyph');
+                return [l.dataset.check, l.dataset.status, b && b.dataset.status, g ? g.textContent.trim() : '', b ? b.innerText.replace(g ? g.textContent : '', '').trim() : ''];
+            })""")
+            check(f"{view}: each check shows a glyph and a word beside its colour, the word the status's own", rows and all(r[1] == r[2] and r[3] and r[4] and r[4] != r[3] for r in rows), rows)
+            by = {r[0]: r for r in rows}
+            check(f"{view}: the simulated robot is online, its gate answers, nobody holds it, its battery and flags are fine", all(by[k][1] == "ok" for k in ("online", "gate", "free", "battery", "flags")), rows)
+            ov = lp.evaluate("[document.getElementById('readiness-overall').dataset.status, document.getElementById('rp-readiness-sum').innerText]")
+            check(f"{view}: the card says its verdict in one badge and counts the passes in its head", ov[0] in ("ok", "warn", "error", "unknown") and "of 9" in ov[1], ov)
+            # a flag set, a low battery, a holder: each shows as its own status, in words; the verdict follows the worst
+            got = lp.evaluate("""() => {
+                const mc = window.__mc, r = mc.S.robots.find((x) => x.id === 'duck-1'), keep = JSON.stringify([r.status, r.lock]);
+                r.status = {...r.status, flags: {...r.status.flags, near_drop: true}, battery_pct: 12};
+                r.lock = {...r.lock, holder: 'someone', unreachable: false};
+                mc.renderRobotPage();
+                const out = Object.fromEntries([...document.querySelectorAll('#readiness-checks li')].map((l) => [l.dataset.check, l.dataset.status + ' | ' + l.innerText]));
+                out.overall = document.getElementById('readiness-overall').dataset.status + ' | ' + document.getElementById('readiness-overall').innerText;
+                [r.status, r.lock] = JSON.parse(keep); mc.renderRobotPage();
+                return out;
+            }""")
+            check(f"{view}: a set flag is an error that names the flag", got["flags"].startswith("error") and "near_drop" in got["flags"], got["flags"])
+            check(f"{view}: a low battery is an error with its value", got["battery"].startswith("error") and "12" in got["battery"], got["battery"])
+            check(f"{view}: a holder is a warning that names the holder", got["free"].startswith("warn") and "someone" in got["free"], got["free"])
+            check(f"{view}: the verdict follows the worst check, in words", got["overall"].startswith("error") and "not ready" in got["overall"].lower(), got["overall"])
+            # a field the view does not carry: unknown, in words, and never counted as a pass
+            miss = lp.evaluate("""async () => {
+                const m = await import(new URL('web/readiness.js', location.href).href), fit = [];
+                const names = (r) => Object.fromEntries(m.checks(r, fit).map((c) => [c.id, c.status]));
+                return {empty: names({id: 'x'}),
+                    held: names({id: 'x', online: true, lock: {holder: null}, status: {battery_pct: 40, link: 'usb', flags: {}}, alarms: {worst: null}, guardrails: [{name: 'g'}], profile: null}),
+                    bare: names({id: 'x', guardrails: []}),
+                    nolock: names({id: 'x', online: false, lock: {unreachable: true}}),
+                    over: m.overall(m.checks({id: 'x'}, fit))};
+            }""")
+            check(f"{view}: a robot view with none of the fields: every check reads unknown", set(miss["empty"].values()) == {"unknown"} and len(miss["empty"]) == 9, miss["empty"])
+            check(f"{view}: and the verdict is unknown, not ok", miss["over"]["status"] == "unknown", miss["over"])
+            check(f"{view}: fields present read as themselves: an own-file profile is neutral, no declared guardrail a warning", miss["held"]["online"] == "ok" and miss["held"]["free"] == "ok"
+                  and miss["held"]["link"] == "ok" and miss["held"]["profile"] == "neutral" and miss["held"]["guardrails"] == "ok" and miss["bare"]["guardrails"] == "warn", (miss["held"], miss["bare"]))
+            check(f"{view}: an unreachable gate is an error and says nothing about who holds it", miss["nolock"]["gate"] == "error" and miss["nolock"]["free"] == "unknown" and miss["nolock"]["online"] == "error", miss["nolock"])
+            stops_clear("readiness card shown")
+            lp.click("#rp-readiness-head")
+            check(f"{view}: the card folds on one press and the fold is part of the layout", lp.get_attribute("#rp-readiness-head", "aria-expanded") == "false" and lp.locator("#rp-readiness-body").is_hidden()
+                  and lp.evaluate(LS)["layouts"]["default"]["panels"]["open"].get("readiness") is False)
+            if lp.locator("#rp-layout-menu").is_hidden():      # lopen() did not reload: the menu may still be open from the block above
+                lp.click("#rp-layout")
+            lp.click("#lay-reset")
+            lp.click("#lay-close")
+            check(f"{view}: reset opens it again", lp.get_attribute("#rp-readiness-head", "aria-expanded") == "true")
         lctx.close()
 
     # the overview does not fetch the layout module or the store, and a stored layout does not change that
@@ -505,7 +565,7 @@ with sync_playwright() as p:
     olay.goto(BASE + "/")
     olay.wait_for_function("window.__mc && window.__mc.ready", timeout=8000)
     olay.wait_for_timeout(800)
-    check("the phone overview fetches neither layout.js nor the layout store", not [u for u in oreqs if "layout" in u], [u for u in oreqs if "layout" in u])
+    check("the phone overview fetches neither layout.js nor the layout store nor readiness.js", not [u for u in oreqs if "layout" in u or "readiness" in u], [u for u in oreqs if "layout" in u or "readiness" in u])
     olay.close()
 
     # reduced motion: the chevron's transition is gone

@@ -342,3 +342,8 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--font-mono); font-si
   .frow input { min-height: 44px; }
   .tx textarea { min-height: 64px; }
 }
+
+/* the readiness card (readiness.js): the check list is the fit card's .checks; each row leads with a status badge of the shared kit */
+.readyhead { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-2); }
+.checks .ready-badge { flex: none; min-width: 6.5em; justify-content: flex-start; }
+li[data-status="error"] .val { color: var(--status-error-on); }
