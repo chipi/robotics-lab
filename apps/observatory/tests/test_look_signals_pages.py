@@ -17,7 +17,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, catalog, make_run, scene, serve  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, scene, serve  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 check = Checks("LOOK SIGNALS PAGES")
@@ -59,8 +59,7 @@ with sync_playwright() as p:
     pg.set_default_timeout(15000)
     errs = []
     pg.on("pageerror", lambda e: errs.append(str(e)))
-    pg.goto(base + "/web/three/")
-    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg, base + "/web/three/")
     pg.evaluate("window.__ready = false; window.miniview.load('room', 'arm/room/r1')")
     pg.wait_for_function("window.__ready === true")
     pg.wait_for_function("document.querySelectorAll('#sigview .sg').length === 4")

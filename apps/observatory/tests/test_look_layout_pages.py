@@ -19,7 +19,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, catalog, make_run, scene, serve  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, scene, serve  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 check = Checks("LOOK LAYOUT PAGES")
@@ -56,8 +56,7 @@ def box(pg, sel):
 
 def opened(pg, w=1440, h=900, pre=None):
     pg.set_viewport_size({"width": w, "height": h})
-    pg.goto(base + "/web/three/")
-    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg, base + "/web/three/")
     if pre:
         pg.evaluate(pre)
         pg.reload()
@@ -241,8 +240,7 @@ with sync_playwright() as p:
     pg2 = ctx2.new_page()
     pg2.set_default_timeout(15000)
     pg2.on("pageerror", lambda e: errs.append(str(e)))
-    pg2.goto(base + "/web/three/")
-    pg2.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg2, base + "/web/three/")
     pg2.evaluate("localStorage.setItem('miniview.left', JSON.stringify({open: {'%s': true}, angles: false}))" % secs[0])
     pg2.reload()
     pg2.wait_for_function("window.miniview !== undefined && window.__ready === true")
@@ -258,8 +256,7 @@ with sync_playwright() as p:
     ctx3 = b.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
     pg3 = ctx3.new_page()
     pg3.set_default_timeout(15000)
-    pg3.goto(base + "/web/three/")
-    pg3.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg3, base + "/web/three/")
     pg3.evaluate("""localStorage.setItem('rl.layouts.observatory', JSON.stringify({version: 1, layouts: {old: {panels: {left: true, right: true, open: {}, angles: true}, widths: {left: 280, right: 320}}}}));
                     localStorage.setItem('rl.layout.current.observatory', 'old')""")
     pg3.reload()

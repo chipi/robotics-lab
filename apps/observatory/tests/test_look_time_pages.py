@@ -8,7 +8,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, make_run, scene, serve, tick
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("LOOK TIME PAGES")
@@ -130,8 +130,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     pg.set_default_timeout(15000)
     errs2 = []
     pg.on("pageerror", lambda e: errs2.append(str(e)))
-    pg.goto(base2 + "/web/three/")
-    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg, base2 + "/web/three/")
 
     def load(key):
         pg.evaluate(f"window.miniview.load('room', '{key}')")
@@ -210,8 +209,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     pg = b.new_page(viewport={"width": 1400, "height": 900})
     pg.set_default_timeout(15000)
     pg.on("pageerror", lambda e: errs2.append(str(e)))
-    pg.goto(base2 + "/web/three/")
-    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg, base2 + "/web/three/")
     load("duck/room/live1")
     pg.wait_for_function("document.getElementById('timemode')?.dataset.mode === 'live'")
     r = pg.evaluate(TM)

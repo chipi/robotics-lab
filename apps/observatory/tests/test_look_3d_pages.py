@@ -25,7 +25,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(ROBOTS)
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, catalog, make_run, scene, serve, tick  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, open_lanes, scene, serve, tick  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 # a one-link robot with a box mesh, for the page section: the body the contact shadow goes under
@@ -438,10 +438,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
 
         def open_run(key, view):
             fresh = "/web/three/" not in pg.url
-            pg.goto(f"{base}/web/three/#scene=room&run={key}&view={view}")
-            if not fresh:
-                pg.reload()                      # only the hash changed: a reload makes the page read it
-            pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+            boot(pg, f"{base}/web/three/#scene=room&run={key}&view={view}", timeout=30000, reload=not fresh)   # a hash-only change: a reload makes the page read it
             pg.wait_for_function("window.miniview.state().run !== null")
             pg.evaluate("window.miniview.whenLoaded()")
 
@@ -564,9 +561,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               n0["inside"] and n0["heightFrac"] >= MIN_HEIGHT, n0)
 
         # a link to a moment opens on the robot there (t = 2 s: x about 0.4), and the playhead is that moment
-        pg.goto(f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2")
-        pg.reload()
-        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        boot(pg, f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2", timeout=30000, reload=True)
         pg.wait_for_function("window.miniview.state().t > 1.9")
         pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
         c = cam()
@@ -592,6 +587,10 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("camera: after Top, orbiting is z-up: a vertical drag tips the camera off the vertical (%.0f degrees), up stays z, the target stays" % math.degrees(tilt),
               tilt > 0.15 and o["up"] == [0, 0, 1] and near3(o["target"], top["target"], 1e-6), (tilt, o["up"]))
 
+        # the two fit distances depend on the stage's aspect, which the timeline's height sets: with the lanes folded (the default) the stage is taller than the
+        # one this ratio was written for (all lanes open, the timeline at its cap), so the lanes are opened first, as a viewer reading the data would
+        open_lanes(pg)
+        settle()
         pg.click("#camCtl [data-cam=fit-scene]")
         settle()
         scene_c = cam()
@@ -763,10 +762,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
             return b.new_context(viewport={"width": width, "height": height}, color_scheme="dark").new_page()
 
         def open_on(p, key="arm/room/r1", view="3d", reload=False):
-            p.goto(f"{base}/web/three/#scene=room&run={key}&view={view}")
-            if reload:
-                p.reload()
-            p.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+            boot(p, f"{base}/web/three/#scene=room&run={key}&view={view}", timeout=30000, reload=reload)
             p.wait_for_function("window.miniview.state().run !== null")
             p.evaluate("window.miniview.whenLoaded()")
             p.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
@@ -795,9 +791,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         iso2 = p2.evaluate(f"{A}.camera()")
         check("open on: with Whole scene a reload opens on the whole-scene fit (the camera is the one iso() gives, within 1e-6) and not on the robot",
               near3(pose(scene_open), pose(iso2), 1e-6) and not near3(pose(scene_open), pose(robot_open), 0.05), (pose(scene_open), pose(iso2)))
-        p2.goto(f"{base}/web/three/#scene=room&run=arm/room/r3&view=3d&t=2")
-        p2.reload()
-        p2.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        boot(p2, f"{base}/web/three/#scene=room&run=arm/room/r3&view=3d&t=2", timeout=30000, reload=True)
         p2.wait_for_function("window.miniview.state().t > 1.9")
         p2.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
         p2.wait_for_function(f"{A}.camera().moving === false")
@@ -806,9 +800,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               and near3(pose(t_scene), pose(iso2), 1e-6), (pose(t_scene), pose(iso2)))
         p2.click("#ovBtn")
         p2.click(".pop [data-open=robot]")
-        p2.goto(f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2")
-        p2.reload()
-        p2.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        boot(p2, f"{base}/web/three/#scene=room&run=arm/room/r1&view=3d&t=2", timeout=30000, reload=True)
         p2.wait_for_function("window.miniview.state().t > 1.9")
         p2.wait_for_function(f"{A}.body() && {A}.body().drawn > 0", timeout=30000)
         p2.wait_for_function(f"{A}.camera().moving === false")

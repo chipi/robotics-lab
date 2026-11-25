@@ -11,7 +11,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, get, scene, serve, wait_until
+from helpers import Checks, boot, catalog, get, scene, serve, wait_until
 from observatory.importer import import_duck
 from observatory.shots import launch
 
@@ -70,18 +70,14 @@ with tempfile.TemporaryDirectory() as tmp:
             pg = b.new_page(viewport={"width": 1200, "height": 800})
             frames_requests[lib] = []
             pg.on("request", lambda r, lib=lib: frames_requests[lib].append(r.url) if "/frames" in r.url else None)
-            pg.goto(f"{base}/web/{lib}/index.html")
-            pg.wait_for_function("window.miniview !== undefined", timeout=30000)
-            pg.wait_for_function("window.__ready === true", timeout=30000)
+            boot(pg, f"{base}/web/{lib}/index.html", timeout=30000)
             pg.evaluate(f"window.miniview.load('room', '{KEY}')")
             pg.wait_for_function("window.__ready === true", timeout=30000)
             pages[lib] = pg
         ticks = lambda pg: pg.evaluate(TICKS_RE)  # noqa: E731
         # the watch page (RFC-0013), opened on `latest` while the run runs: the scene's newest run, followed
         wp = b.new_page(viewport={"width": 1200, "height": 800})
-        wp.goto(f"{base}/watch/duck/room/latest")
-        wp.wait_for_function("window.miniview !== undefined", timeout=30000)
-        wp.wait_for_function("window.miniview.state().run !== null && window.__ready === true", timeout=30000)
+        boot(wp, f"{base}/watch/duck/room/latest", "window.miniview !== undefined && window.miniview.state().run !== null && window.__ready === true", 30000)
         ws = wp.evaluate("window.miniview.state()")
         check("/watch/duck/room/latest opens the live run in the watch view, following it", ws["run"] == KEY and ws["status"] == "live" and ws["follow"] is True
               and ws["view"] == "watch" and wp.evaluate("!document.getElementById('follow').hidden"), (ws["run"], ws["status"], ws["follow"], ws["view"]))

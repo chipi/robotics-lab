@@ -72,7 +72,7 @@ export function drawStates(g, spans, { xOf, H, fmt }) {
 }
 
 // ---- threshold bands -------------------------------------------------------------------------------------------------------------------------
-const NEAR = 0.1;   // warn: inside a limit, within this share of the limits' span; error: beyond it. The data has no alert level, so none is drawn
+export const NEAR = 0.1;   // warn: inside a limit, within this share of the limits' span; error: beyond it. The data has no alert level, so none is drawn
 
 // a joint signal (`joint_<name>`) in a robot description's joints; limits are the description's own (RFC-0011), null for a joint with none
 export function jointLimits(robot, signal) {

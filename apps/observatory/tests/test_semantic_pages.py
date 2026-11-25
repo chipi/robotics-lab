@@ -12,7 +12,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, get, make_run, serve, tick
+from helpers import Checks, boot, catalog, get, make_run, serve, tick
 from observatory.shots import launch
 
 check = Checks("SEMANTIC PAGES")
@@ -87,8 +87,7 @@ with tempfile.TemporaryDirectory() as tmp:
         page.logs = []
         page.on("console", lambda m: page.logs.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") and "404" not in m.text else None)
         page.on("pageerror", lambda e: page.logs.append(f"pageerror: {e}"))
-        page.goto(url)
-        page.wait_for_function("window.miniview !== undefined", timeout=30000)
+        boot(page, url, "window.miniview !== undefined", 30000)
         ready(page)
         page.wait_for_function("window.miniview.state().run !== null", timeout=30000)
         page.evaluate("window.miniview.whenLoaded()")

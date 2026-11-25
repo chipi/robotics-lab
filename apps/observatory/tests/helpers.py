@@ -92,6 +92,49 @@ def make_run(data: Path, key: str, records, close: bool = True, **kw):
 OPEN_SECTIONS = "window.miniview.state().sections.forEach((s) => window.miniview.setSection(s.id, true))"
 
 
+# The lanes' data is one canvas (look-and-feel round 3). A page test counts the pixels drawn in each lane's band: [[stream id, pixels], ...]. It reads a copy made with
+# willReadFrequently, so the page's own canvas context does not log the "multiple readback" warning that the console checks would take for an error.
+LANE_PIXELS = """(() => { const cv = document.querySelector('#dlanes canvas.lanes-cv'), cr = cv.getBoundingClientRect(), k = cv.width / cr.width, c2 = document.createElement('canvas');
+  c2.width = cv.width; c2.height = cv.height; const g = c2.getContext('2d', { willReadFrequently: true }); g.drawImage(cv, 0, 0);
+  return [...document.querySelectorAll('#dlanes .dl[data-lane]:not(.missing)')].map((d) => { const r = d.getBoundingClientRect(), a = g.getImageData(0, Math.round((r.top - cr.top) * k), cv.width, Math.round(r.height * k)).data;
+    let n = 0; for (let i = 3; i < a.length; i += 4) if (a[i] > 40) n++; return [d.dataset.lane, n]; }); })()"""
+
+
+def boot(page, url, ready="window.miniview !== undefined && window.__ready === true", timeout=None, reload=False, _match="ERR_NETWORK_CHANGED"):
+    """goto `url` (reload=True: and reload, for a hash-only change) and wait for `ready`; one reload when the wait times out after a request failed with `_match`."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+
+    hits = []
+    # Docker veth churn on this host makes Chromium abort in-flight module loads with ERR_NETWORK_CHANGED, which leaves the page dead
+    on_fail = lambda r: hits.append(r.url) if _match in (r.failure or "") else None  # noqa: E731
+    page.on("requestfailed", on_fail)
+    try:
+        page.goto(url)
+        if reload:
+            page.reload()
+        try:
+            page.wait_for_function(ready, timeout=timeout)
+        except PlaywrightTimeout:
+            if not hits:
+                raise
+            print(f"boot: retry after net::{_match} on {hits[0]}", file=sys.stderr)
+            page.reload()
+            page.wait_for_function(ready, timeout=timeout)
+    finally:
+        page.remove_listener("requestfailed", on_fail)
+
+
+def open_lanes(page, missing=False, shut=False):
+    """Open (or, with shut, fold) every section of the timeline's lanes, which are folded until a viewer opens them (look-and-feel round 3); with `missing`
+    the line of streams a run lacks is opened too. One click at a time: a click rebuilds the lanes."""
+    sels = ['#lanesL .lane-s[aria-expanded="%s"]' % ("true" if shut else "false")]
+    if missing and not shut:
+        sels.append('#lanesL .lane-m[aria-expanded="false"]')
+    for sel in sels:
+        while page.evaluate(f"!!document.querySelector('{sel}')"):
+            page.evaluate(f"document.querySelector('{sel}').click()")
+
+
 def scene(room="room"):
     return {"id": room, "name": "A room", "kind": "test", "bounds": [-1, 1, -1, 1], "boxes": [], "hazards": []}
 

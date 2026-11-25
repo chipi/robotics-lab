@@ -18,7 +18,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(ROBOTS)
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, catalog, make_run, scene, serve, tick  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 _v = [(x, y, z) for x in (-0.06, 0.06) for y in (-0.06, 0.06) for z in (0.0, 0.1)]
@@ -55,9 +55,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         def open_link(pg, hash_, whole_scene=False):
             pg.goto(f"{base}/web/three/")
             pg.evaluate(f"localStorage.setItem('miniview.left', JSON.stringify({{open_scene: {str(whole_scene).lower()}}}))")
-            pg.goto(f"{base}/web/three/{hash_}")
-            pg.reload()
-            pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+            boot(pg, f"{base}/web/three/{hash_}", reload=True)
             pg.wait_for_function("window.miniview.state().run !== null")
             pg.evaluate("window.miniview.whenLoaded()")
             pg.wait_for_function(f"{A}.body() && {A}.body().drawn > 0")

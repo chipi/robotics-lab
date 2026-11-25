@@ -13,7 +13,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import catalog, import_fixture, scene, serve, stub_engine
+from helpers import boot, catalog, import_fixture, scene, serve, stub_engine
 from observatory.shots import launch
 from observatory.video import service
 
@@ -35,8 +35,7 @@ def run_page(b, base, key):
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
     page.on("request", lambda r: posts.append(json.loads(r.post_data)) if r.method == "POST" else None)
-    page.goto(f"{base}/web/{lib}/index.html")
-    page.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+    boot(page, f"{base}/web/{lib}/index.html", timeout=30000)
     page.evaluate("window.__ready = false")
     page.evaluate(f"window.miniview.load('apartment', '{key}')")
     page.wait_for_function("window.__ready === true", timeout=60000)

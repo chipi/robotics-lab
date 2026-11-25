@@ -23,7 +23,7 @@ os.environ.setdefault("MINIVIEW_INDEX", str(TMP / "index.sqlite"))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import T0_NS, catalog, make_run, scene, serve  # noqa: E402
+from helpers import T0_NS, boot, catalog, make_run, open_lanes, scene, serve  # noqa: E402
 from runfile import keys, mcapio
 from observatory import kinematics  # noqa: E402
 from observatory.shots import launch  # noqa: E402
@@ -160,8 +160,7 @@ def page_of(b, base, width=1600, height=1000, scheme="dark"):
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
     page.on("response", lambda r: logs.append(f"http {r.status}: {r.url}") if r.status >= 400 else None)
-    page.goto(f"{base}/web/{lib}/index.html")
-    page.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+    boot(page, f"{base}/web/{lib}/index.html", timeout=30000)
     return ctx, page, logs
 
 

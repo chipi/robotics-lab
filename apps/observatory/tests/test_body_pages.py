@@ -24,7 +24,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, catalog, make_run, scene, serve  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, scene, serve  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 check = Checks("BODY PAGES")
@@ -117,8 +117,7 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
     page.on("response", lambda r: logs.append(f"http {r.status}: {r.url}") if r.status >= 400 and "favicon" not in r.url else None)
     try:
-        page.goto(f"{base}/watch/arm/room/r1#t=1.0")
-        page.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        boot(page, f"{base}/watch/arm/room/r1#t=1.0", timeout=30000)
         page.wait_for_function(f"{BODY}?.drawn === 3", timeout=20000)
 
         def at(t):

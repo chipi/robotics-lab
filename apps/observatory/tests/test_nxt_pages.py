@@ -16,7 +16,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import FIXTURE, OPEN_SECTIONS, T0_NS, import_fixture, catalog, scene, serve, wait_until
+from helpers import FIXTURE, LANE_PIXELS, OPEN_SECTIONS, T0_NS, boot, catalog, import_fixture, open_lanes, scene, serve, wait_until
 from runfile import keys
 from runfile.adapters import nxt
 from runfile.mcapio import Recorder
@@ -41,8 +41,7 @@ def run_page(b, base, theme="dark", shots=None):
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-    page.goto(f"{base}/web/{lib}/index.html")
-    page.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+    boot(page, f"{base}/web/{lib}/index.html", timeout=30000)
     return ctx, page, logs
 
 
@@ -200,10 +199,11 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("and brings them all back", page.evaluate("document.querySelectorAll('#sigview .sg').length") == len(shown))
 
         # the timeline: a data row per signal, no row for the streams the run lacks
+        open_lanes(page)
         lanes = page.evaluate("[...document.querySelectorAll('#lanesL .lane-l')].map((l) => l.dataset.lane)")
-        spans = page.evaluate("[...document.querySelectorAll('#dlanes .dl')].map((d) => d.querySelectorAll('.sp').length)")
+        spans = [n for _, n in page.evaluate(LANE_PIXELS)]      # drawn pixels per lane
         check("the timeline has a data row for each signal with its presence, and none for a missing stream",
-              sorted(lanes) == sorted(s["id"] for s in shown) and all(n >= 1 for n in spans) and len(spans) == len(lanes), lanes)
+              sorted(lanes) == sorted(s["id"] for s in shown) and all(n >= 1 for n in spans) and len(spans) == len(lanes) and page.evaluate("document.querySelectorAll('#lanesL .lane-l.missing').length") == 0, lanes)
         check("the timeline's data bar spans the samples", page.evaluate("document.querySelector('#ruler .data') !== null"))
         # selecting a signal (the outliner, a timeline row) highlights its chart and describes it in the properties
         page.evaluate("document.querySelector('#tree .row[data-id=\"signals.tacho_C\"]').click()")
@@ -265,6 +265,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               and page.evaluate("document.getElementById('sigview').hidden") and st["loaded"]["ticks"] == 281, (oapi["ticks"], st["loaded"]))
         check("the pose on the page is the API's belief for that tick, in the world frame (identity map to world)",
               all(abs(a_ - b_) < 5e-4 for a_, b_ in zip(st["belief"], fr["belief"][i])) and st["truth"] is None, (st["belief"], fr["belief"][i]))
+        open_lanes(page)                    # the signals' lanes are under "Other values", folded while the selected stream (the pose) lives elsewhere
         check("the signals of a run with a pose are in the state(), the inspector and the timeline too",
               st["signals"]["values"]["tacho_B"] is not None and "Signals" in page.evaluate("document.getElementById('inspBody').innerText")
               and "tacho_B" in page.evaluate("document.getElementById('inspBody').innerText")

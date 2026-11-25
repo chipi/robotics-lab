@@ -17,7 +17,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import OPEN_SECTIONS, catalog
+from helpers import LANE_PIXELS, OPEN_SECTIONS, boot, catalog, open_lanes
 
 from observatory.importer import import_duck
 from runfile import scenefile
@@ -164,9 +164,7 @@ def run_page(b, base, rid, other):
     def stage_box():
         return ev("(() => { const r = document.getElementById('stage').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()")
 
-    page.goto(f"{base}/web/{lib}/index.html")
-    page.wait_for_function("window.miniview !== undefined", timeout=30000)
-    page.wait_for_function("window.__ready === true", timeout=30000)
+    boot(page, f"{base}/web/{lib}/index.html", timeout=30000)
     check("no run in the URL: the scenes page, with its runs", ev("document.getElementById('app').classList.contains('scenes') && document.querySelectorAll('#scenespage tr[data-run]').length >= 2"))
     call(f"window.miniview.load('apartment', '{rid}')")
     run = json.loads(urllib.request.urlopen(f"{base}/api/v1/runs/duck/apartment/{rid}").read())
@@ -385,11 +383,16 @@ def run_page(b, base, rid, other):
 
     # timeline: data rows, hatched gaps, markers, seeking
     call(f"window.miniview.setTime({TA})")
-    nrows_dl = ev("document.querySelectorAll('#dlanes .dl').length")
-    spans, pts = ev("document.querySelectorAll('#dlanes .sp').length"), ev("document.querySelectorAll('#dlanes .pt').length")
+    # the lanes are grouped by section and the sections are folded until opened (look-and-feel round 3): a viewer opens them, and the line of missing streams
+    open_lanes(page, missing=True)
+    nrows_dl = ev("document.querySelectorAll('#dlanes .dl[data-lane]').length")
+    # what /presence says is drawn: every lane with data has drawn pixels in its band of the one canvas (the spans and the point marks of before)
+    drawn = ev(LANE_PIXELS)
     miss_dl = ev("document.querySelectorAll('#dlanes .dl.missing').length")
-    labels = ev("[...document.querySelectorAll('#lanesL .lane-l')].map(l => l.textContent)")
-    check("data rows render from /presence (rows, spans, point marks, missing rows)", nrows_dl == len(labels) and nrows_dl >= 8 and spans >= 4 and pts > 10 and miss_dl == len([m for m in miss if m not in ("events", "anomalies")]), (nrows_dl, spans, pts, miss_dl, labels))
+    labels = ev("[...document.querySelectorAll('#lanesL .lane-l')].map(l => l.dataset.lane)")
+    check("data rows render from /presence (a lane per stream, data drawn in each, the missing ones listed)", nrows_dl == len(labels) and nrows_dl >= 8 and drawn and all(n > 20 for _, n in drawn)
+          and miss_dl == len([m for m in miss if m not in ("events", "anomalies")]), (nrows_dl, drawn, miss_dl, labels))
+    open_lanes(page, shut=True)             # the rest of the page's geometry (the stage the clicks below aim at) is the folded timeline's
     gaps = ev("[...document.querySelectorAll('#dlanes .gap')].map(g => g.title)")
     nums = [[float(x) for x in re.findall(r"\d+\.\d+", g)] for g in gaps]
     check("hatched bands mark where the run has no depth frames", len(gaps) == 1 and nums[0][0] <= GAP[0] + 0.3 and nums[0][1] >= GAP[1] - 0.3 and ev("getComputedStyle(document.querySelector('#dlanes .gap')).backgroundImage").startswith("repeating-linear-gradient"), gaps)
@@ -655,8 +658,7 @@ def run_page(b, base, rid, other):
     ctx.close()
     ctx2 = b.new_context(viewport={"width": 1600, "height": 1000}, color_scheme="light")
     p2 = ctx2.new_page()
-    p2.goto(f"{base}/web/{lib}/index.html")
-    p2.wait_for_function("window.__ready === true", timeout=30000)
+    boot(p2, f"{base}/web/{lib}/index.html", "window.__ready === true", 30000)
     check("follows prefers-color-scheme: light when nothing is stored", p2.evaluate("document.documentElement.dataset.theme") == "light")
     ctx2.close()
     bad = [log for log in logs if "favicon.ico" not in log and not ("fonts.g" in log and "net::ERR" in log)]

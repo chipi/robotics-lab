@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, T0_NS, catalog, make_run, scene, serve, tick
+from helpers import Checks, T0_NS, boot, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("LOOK UI PAGES")
@@ -256,8 +256,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         httpd2, base2 = serve(cat2, follow=False)
         pg = b.new_page(viewport={"width": 1440, "height": 900})
         pg.set_default_timeout(8000)
-        pg.goto(base2 + "/web/three/index.html")
-        pg.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+        boot(pg, base2 + "/web/three/index.html", timeout=30000)
         check("the page is compact: data-density=\"compact\" on <html>", pg.evaluate("document.documentElement.dataset.density") == "compact")
         check("the page links the kit's ui.css", pg.evaluate("[...document.styleSheets].some((s) => (s.href || '').endsWith('/lib/ui.css'))"))
 

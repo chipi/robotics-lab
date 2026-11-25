@@ -12,7 +12,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, make_run, scene, serve, tick
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick
 from observatory.shots import launch
 
 check = Checks("LOOK VERBS PAGES")
@@ -83,8 +83,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         if pg.evaluate(OPEN):
             pg.keyboard.press("Escape")
 
-    pg.goto(base + "/web/three/")
-    pg.wait_for_function("window.miniview !== undefined && window.__ready === true")
+    boot(pg, base + "/web/three/")
     load("duck/room/replay1")
 
     # ---- the opener, and loading only on first use

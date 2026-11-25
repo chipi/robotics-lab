@@ -11,7 +11,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import Checks, catalog, make_run, scene, serve, tick, wait_until
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick, wait_until
 from observatory.shots import launch
 
 check = Checks("STORE PAGE")
@@ -74,9 +74,7 @@ with tempfile.TemporaryDirectory() as tmp:
             errors, frames = [], []
             pg.on("pageerror", lambda e: errors.append(str(e)))
             pg.on("request", lambda r: frames.append(r.url) if "/frames" in r.url else None)
-            pg.goto(f"{base}/web/{lib}/index.html")
-            pg.wait_for_function("window.miniview !== undefined", timeout=30000)
-            pg.wait_for_function("window.__ready === true", timeout=30000)
+            boot(pg, f"{base}/web/{lib}/index.html", timeout=30000)
             S = lambda: pg.evaluate("window.miniview.state()")   # noqa: E731
             L = lambda name: f"[{lib}] {name}"                    # noqa: E731
 

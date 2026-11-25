@@ -235,15 +235,51 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .tlopts .mini { height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-2); display: inline-flex; align-items: center; gap: var(--sp-1); }
 .tlopts .mini:hover { background: var(--surface-hover); color: var(--text-1); }
 .tlopts .mini[aria-pressed="true"] { color: var(--text-1); background: var(--surface-press); }
-.lanes { grid-column: 1 / -1; grid-row: 4; max-height: calc(46vh - 72px); display: grid; grid-template-columns: var(--left) minmax(0, 1fr); overflow-y: auto; overflow-x: hidden; }
+/* lanes */
+/* the lanes under the scrubber (lanes.js): a header lane per section that folds to its summary lane, a lane per stream, the data drawn on one canvas. A tone per
+   section from the categorical ramp tokens, mixed into the surface so it stays quiet; full colour is for a status, the selected lane and the playhead. */
+.lanes { grid-column: 1 / -1; grid-row: 4; max-height: calc(46vh - 72px); display: grid; grid-template-columns: var(--left) minmax(0, 1fr); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
 .lanes[hidden] { display: none; }
 .lanes-l { border-right: 1px solid var(--line); }
-.lanes-l .lane-l { height: 18px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-6); color: var(--text-2); font-size: var(--fs-1); border-top: 1px solid var(--hairline-1); cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lanes-l .lane-l:hover { background: var(--surface-hover); }
-.lanes-l .lane-l.sel { background: var(--surface-selected); }
-.lanes-l .lane-l i { width: 8px; height: 8px; border-radius: var(--radius-1); flex: none; }
-.lanes-l .lane-l.missing { color: var(--text-3); font-style: italic; }
-.lanes-l .lane-l.hid { opacity: .5; }
+.lane-s, .lane-l, .lane-m { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 20px; margin: 0; border: 0; border-top: 1px solid var(--hairline-1); border-radius: 0; background: none;
+  color: var(--text-2); font: inherit; font-size: var(--fs-1); text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; box-sizing: border-box;
+  transition: opacity var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease); }
+.lane-s:hover, .lane-l:hover, .lane-m:hover { background: var(--surface-hover); }
+.lane-s:focus-visible, .lane-l:focus-visible, .lane-m:focus-visible, .dl-name:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.lane-s { height: 24px; padding: 0 var(--sp-2); color: var(--text-1); font-weight: 600; border-left: 3px solid color-mix(in srgb, var(--tone) 45%, var(--surface-2)); background: color-mix(in srgb, var(--tone) 9%, var(--surface-2)); }
+.lane-s .nm { overflow: hidden; text-overflow: ellipsis; }
+.lane-s .n { margin-left: auto; color: var(--text-3); font: 400 var(--fs-1) var(--font-num); }
+.lane-s .flag { margin-left: 0; }
+.lane-s .caret svg, .lane-m .caret svg { display: block; transition: transform var(--dur-base) var(--ease); }
+.lane-s[aria-expanded="true"] .caret svg, .lane-m[aria-expanded="true"] .caret svg { transform: rotate(90deg); }
+.lane-s.has-sel[aria-expanded="false"], .dl.sec.has-sel:not(.open) { box-shadow: inset 0 -2px 0 var(--accent); }
+.lane-l { padding: 0 var(--sp-2) 0 var(--sp-6); background: color-mix(in srgb, var(--tone) 3%, var(--surface-2)); }
+.lane-l .nm { overflow: hidden; text-overflow: ellipsis; }
+.lane-l.sel { background: var(--surface-selected); color: var(--text-1); }
+.dl.sel { background: var(--accent-soft); }
+.lane-l.sel .nm { font-weight: 600; }
+.lane-l.missing { color: var(--text-3); font-style: italic; }
+.lane-l.missing em { margin-left: auto; font-size: var(--fs-1); opacity: .8; }
+.lane-l.hid { opacity: .55; }
+.lane-l.spark, .dl.spark { height: 28px; }
+.lane-m { height: 18px; padding: 0 var(--sp-2) 0 var(--sp-4); color: var(--text-3); font-style: italic; }
+.flag { margin-left: auto; flex: none; font-size: 10px; line-height: 1; font-style: normal; font-weight: 700; color: var(--text-2); }
+.flag[data-status="warn"] { color: var(--status-warn); } .flag[data-status="alert"] { color: var(--status-alert); } .flag[data-status="error"] { color: var(--status-error); }
+.lane-s.hl, .lane-l.hl, .dl.hl { background: var(--accent-soft); color: var(--text-1); }
+.lane-s.rec, .lane-l.rec { opacity: .5; }
+.dlanes { position: relative; user-select: none; cursor: pointer; touch-action: none; isolation: isolate; }
+.dl { position: relative; box-sizing: border-box; height: 20px; border-top: 1px solid var(--hairline-1); background: color-mix(in srgb, var(--tone) 3%, var(--surface-2)); transition: background-color var(--dur-base) var(--ease); }
+.dl.sec { height: 24px; background: color-mix(in srgb, var(--tone) 9%, var(--surface-2)); }
+.dl.miss { height: 18px; background: none; }
+.dl.missing { background: none; }
+.dl.hid { opacity: .6; }
+.dl::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: color-mix(in srgb, var(--surface-2) 62%, transparent); transition: opacity var(--dur-base) var(--ease); }
+.dl.rec::after { opacity: 1; }
+.dl-name { display: none; }
+.lanes-cv { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; }
+.dlanes .gap { position: absolute; z-index: 1; background: repeating-linear-gradient(135deg, var(--scene-gap-hatch) 0 4px, transparent 4px 8px);
+  border-inline: 1px dashed var(--hairline-4); pointer-events: none; }
+/* end lanes */
 .ruler { grid-column: 2; grid-row: 1; position: relative; overflow: hidden; height: 34px; border-bottom: 1px solid var(--line); background: var(--surface-3); cursor: pointer; touch-action: none; user-select: none; }
 .ruler .t { position: absolute; bottom: 0; width: 1px; background: var(--hairline-4); }
 .ruler .t.maj { height: 10px; background: var(--hairline-5); } .ruler .t.min { height: 5px; }
@@ -258,18 +294,13 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .alabel { grid-column: 1; grid-row: 3; height: 26px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3); border-right: 1px solid var(--line); color: var(--text-2); font-size: var(--fs-1); }
 .alabel[hidden] { display: none; }
 .alane { grid-row: 3; }
-.mk.al { top: 7px; width: 12px; height: 12px; margin-left: -6px; }
-.mk.al i { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
-.mk.al.harness i { width: 8px; height: 8px; border-radius: 1px; transform: rotate(45deg); }
+.mk.al { top: 4px; width: 18px; height: 18px; margin-left: -9px; }
+.mk.al i { width: 14px; height: 14px; border-radius: 50%; background: currentColor; }
+.mk.al .g { position: absolute; inset: 0; display: grid; place-items: center; font: 700 9px/1 var(--font-ui); color: var(--text-on-solid); pointer-events: none; }
+.mk.al.harness i { width: 11px; height: 11px; border-radius: 1px; transform: rotate(45deg); }
+/* the event the playhead is on (lanes.js): a ring round its mark, on both lanes */
+.mk.near::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 16px; transform: translateX(-50%); border: 1.5px solid var(--accent); border-radius: var(--radius-2); pointer-events: none; }
 .mk.al.critical, .mk.al.major { color: var(--status-error); } .mk.al.minor { color: var(--status-warn); } .mk.al.info { color: var(--status-neutral); }
-.dlanes { position: relative; user-select: none; cursor: pointer; touch-action: none; }
-.dlanes .dl { position: relative; height: 18px; border-top: 1px solid var(--hairline-1); }
-.dl .sp { position: absolute; top: 5px; height: 8px; border-radius: 1px; background: currentColor; opacity: .7; }
-.dl .pt { position: absolute; top: 4px; width: 2px; height: 10px; background: currentColor; opacity: .85; }
-.dl.missing::after { content: "not in this run"; position: absolute; left: 8px; top: 2px; font-size: var(--fs-1); color: var(--text-3); font-style: italic; }
-.dl.hid { opacity: .4; }
-.dlanes .gap { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--scene-gap-hatch) 0 4px, transparent 4px 8px);
-  border-inline: 1px dashed var(--hairline-4); pointer-events: none; }
 .range { grid-column: 2; grid-row: 5; position: relative; height: 12px; border-top: 1px solid var(--line); background: var(--surface-0); cursor: pointer; touch-action: none; }
 .range .bar { position: absolute; top: 2px; height: 7px; border-radius: var(--radius-2); background: var(--control-track); }
 .range .bar::before, .range .bar::after { content: ""; position: absolute; top: -1px; width: 6px; height: 9px; border-radius: var(--radius-2); background: var(--control-knob); }
@@ -320,7 +351,12 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
   .transport { grid-column: 1; grid-row: 1; border-right: 0; flex-wrap: wrap; height: auto; min-height: 34px; }
   .tlopts { grid-column: 1; grid-row: 2; border-right: 0; }
   .ruler { grid-column: 1; grid-row: 3; } .mlane { grid-column: 1; grid-row: 4; } .alane { grid-column: 1; grid-row: 5; } .alabel { display: none; }
-  .lanes { grid-column: 1; grid-row: 6; grid-template-columns: minmax(0, 1fr); max-height: 220px; } .lanes-l, .tlfill-l { display: none; }
+  .lanes { grid-column: 1; grid-row: 6; grid-template-columns: minmax(0, 1fr); max-height: 260px; } .lanes-l, .tlfill-l { display: none; }
+  /* no label column on a phone: the names sit on the lanes, and are what a tap folds or selects */
+  .dl { height: 26px; } .dl.sec { height: 30px; } .dl.miss { display: none; }
+  .dl-name { display: flex; position: absolute; left: var(--sp-2); top: 50%; transform: translateY(-50%); z-index: 4; align-items: center; max-width: 60%; padding: 1px var(--sp-1); border-radius: var(--radius-1);
+    background: color-mix(in srgb, var(--surface-2) 75%, transparent); color: var(--text-1); font-size: var(--fs-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dl.sec .dl-name { font-weight: 600; }
   .range { grid-column: 1; grid-row: 7; }
   .overlay { left: 0; top: 60px; }
 }

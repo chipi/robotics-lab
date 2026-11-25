@@ -32,6 +32,7 @@ import { mountTopBar } from '/lib/brand.js';
 import { createTimeMode } from './timemode.js';
 import { parseMoment, momentLink as buildLink, copyText } from './evidence.js';
 import { mountLayout, prefs, savePrefs } from './layout.js';
+import { createLanes } from './lanes.js';
 
 const API = '/api/v1/';
 const json = (u, o) => fetch(u, o).then((r) => { if (!r.ok) throw new Error(u + ' ' + r.status); return r.json(); });
@@ -968,6 +969,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       if (M.open[id] !== o) { M.open[id] = o; changed = true; }
     }
     if (changed) renderTree();
+    if (M.run) renderLanes();
   }
   function setAngles(on) { M.angles = !!on; savePrefs({ angles: M.angles }); renderTree(); return M.angles; }
   // a joint's angle at the playhead (its joint_* signal, radians), in degrees
@@ -1290,28 +1292,24 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('kindsN').textContent = n;
     const al = anomalyEvents();
     $('alane').hidden = $('alabel').hidden = !al.length;
-    $('alane').innerHTML = al.map(([e, i]) => { const a = e.anomaly; return `<span class="mk al ${SEVERITY.includes(a.severity) ? a.severity : 'info'} ${a.source === 'harness' ? 'harness' : 'robot'}" style="left:${pct(e.t)}%" data-ev="${i}"><i></i></span>`; }).join('');
+    // an alarm carries its status glyph (never colour alone) and says its severity and its status to a screen reader
+    $('alane').innerHTML = al.map(([e, i]) => { const a = e.anomaly, st = statusOf('severity', a.severity); return `<span class="mk al ${SEVERITY.includes(a.severity) ? a.severity : 'info'} ${a.source === 'harness' ? 'harness' : 'robot'}" style="left:${pct(e.t)}%" data-ev="${i}" role="img" aria-label="${esc(`${a.severity ?? 'info'} alarm, ${label(st)}: ${a.anomaly ?? e.kind} at ${e.t.toFixed(2)} s`)}"><i></i><b class="g" aria-hidden="true">${glyph(st)}</b></span>`; }).join('');
     $('alarmsN').textContent = al.length;
   }
   // the events that are anomalies (RFC-0019), with their place in the run's events
   const anomalyEvents = () => M.run.events.flatMap((e, i) => (e.anomaly ? [[e, i]] : []));
+  // the lanes under the scrubber (lanes.js): sections that fold, the data inside the bars; the shell says what the run has and what is selected
+  const lanes = createLanes({
+    wrap: $('lanes'), left: $('lanesL'), right: $('dlanes'), marks: [$('mlane'), $('alane')],
+    run: () => M.run, pres: () => M.pres, tree: () => T, sel: () => M.selNode, stream, shown: (id) => shown(id), hasTicks, hasSignals, sig: () => store.sig, fr: () => M.fr, robot: () => M.robot,
+    version: () => `${store.ticks}:${store.sig.t.length}`, span, pct, time: () => M.t, events: () => M.run?.events || [], isStop, gaps: () => depthGaps(),
+    name: (id) => LANE_NAME[id] || T.nodes[id]?.label || cap(stream(id)?.name || id), icon: svgI, select: (id) => selectNode(id),
+  });
   function renderLanes() {
-    const wrap = $('lanes'); wrap.hidden = !M.rows;
+    $('lanes').hidden = !M.rows;
     $('lanesBtn').setAttribute('aria-pressed', M.rows);
-    if (!M.run || !M.rows) { $('lanesL').innerHTML = ''; $('dlanes').innerHTML = ''; return; }
-    // one row per stream the API reports presence for (the events have their own lane), in outliner order
-    // a run with no pose has nothing to show for the streams it lacks: only the rows it has
-    const ids = T.order.filter((id) => T.nodes[id].leaf && id !== 'events' && id !== 'anomalies' && (M.pres?.streams?.[id] || stream(id)?.missing)
-      && (hasTicks() || !hasSignals() || !stream(id)?.missing));
-    const quant = (t) => Math.round(pct(t) * 20) / 20;
-    $('lanesL').innerHTML = ids.map((id) => { const s = stream(id), m = s.missing || !(M.pres?.streams?.[id]); return `<div class="lane-l ${m ? 'missing' : ''} ${shown(id) ? '' : 'hid'} ${M.selNode === id ? 'sel' : ''}" data-lane="${esc(id)}" title="${esc(id)}${m ? ' — ' + esc(s.why || 'missing') : ''}"><i style="background:${styleOf(id).c}"></i>${esc(LANE_NAME[id] || T.nodes[id]?.label || cap(s.name))}</div>`; }).join('');
-    const gaps = depthGaps().map(([a, b]) => `<span class="gap" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%" title="No depth frames ${a.toFixed(2)} – ${b.toFixed(2)} s"></span>`).join('');
-    $('dlanes').innerHTML = gaps + ids.map((id) => {
-      const s = stream(id), p = M.pres?.streams?.[id], miss = s.missing || !p;
-      const sp = (p?.spans || []).map(([x, y]) => `<span class="sp" style="left:${pct(x)}%;width:calc(${pct(y) - pct(x)}% + 2px)"></span>`).join('');
-      const seen = new Set(), pt = (p?.times || []).filter((t) => { const q = quant(t); if (seen.has(q)) return false; seen.add(q); return true; }).map((t) => `<span class="pt" style="left:${pct(t)}%"></span>`).join('');
-      return `<div class="dl ${miss ? 'missing' : ''} ${shown(id) ? '' : 'hid'}" style="color:${styleOf(id).c}">${sp}${pt}</div>`;
-    }).join('');
+    if (!M.run || !M.rows) { lanes.clear(); return; }
+    lanes.render();
   }
   // where the run has ticks but no depth frames: between the depth spans (the presence of floor, obstacle and
   // overhead returns, merged), inside the span of the ticks
@@ -1322,7 +1320,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const [t0, t1] = tickSpan();
     return merged.slice(1).map((m, i) => [merged[i][1], m[0]]).filter(([a, b]) => a >= t0 && b <= t1 && b > a);
   }
-  function renderLanesSel() { document.querySelectorAll('#lanesL .lane-l').forEach((l) => l.classList.toggle('sel', l.dataset.lane === M.selNode)); renderBand(); renderSignals(); }
+  function renderLanesSel() { renderLanes(); renderBand(); renderSignals(); }
   function renderBand() {
     document.querySelectorAll('.wband').forEach((b) => b.remove());
     const id = M.selNode, s = stream(id);
@@ -1342,6 +1340,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function syncTime() {
     if (!M.run) return;
     const ph = $('ph'), at = pct(M.t); ph.style.left = at + '%'; ph.firstChild.textContent = M.t.toFixed(2) + ' s';
+    if (M.rows) lanes.syncTime();
     // the time label is centred on the playhead but kept inside the strip, by its measured width
     const head = ph.firstChild, hw = head.offsetWidth, sw = $('overlay').clientWidth, x = (at / 100) * sw;
     head.style.transform = 'none';
@@ -1544,7 +1543,6 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // a decision in the list: seek to it
   $('inspBody').addEventListener('click', (e) => { const r = e.target.closest('.dec'); if (r) setTime(+r.dataset.t); });
   $('inspBody').addEventListener('keydown', (e) => { const r = e.target.closest('.dec'); if (r && e.key === 'Enter') setTime(+r.dataset.t); });
-  $('lanesL').onclick = (e) => { const l = e.target.closest('[data-lane]'); if (l) selectNode(l.dataset.lane); };
   $('lanesBtn').onclick = () => { M.rows = !M.rows; renderLanes(); };
   $('loopBtn').onclick = () => { M.play.loop = !M.play.loop; renderTransport(); };
   $('speedBtn').onclick = (e) => popover(e.currentTarget, '<h6>Playback speed</h6>' + SPEEDS.map((s) => `<button class="item ${s === M.play.speed ? 'cur' : ''}" data-speed="${s}"><span>${s}×</span></button>`).join(''),
@@ -1568,7 +1566,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const el = $(id);
     el.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || !M.run) return;
-      if (e.target.closest('.mk')) return;
+      if (e.target.closest('.mk, .dl-name')) return;
       el.setPointerCapture(e.pointerId); setTime(tFromX(e.clientX));
     });
     el.addEventListener('pointermove', (e) => { if (M.run && el.hasPointerCapture(e.pointerId)) setTime(tFromX(e.clientX)); });
@@ -1598,7 +1596,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     set: (v) => { if (hasTicks()) gotoTick(Math.round(v) - 1); else if (signalsOnly() && sampleN()) setTime(store.sig.t[clamp(Math.round(v) - 1, 0, sampleN() - 1)]); },
     lo: 1, hi: 1e9, k: () => 0.3, fmt: (v) => String(Math.round(v)),
   });
-  new ResizeObserver(() => { if (M.run) { renderRuler(); renderMarkers(); renderLanes(); syncTime(); } }).observe($('overlay'));
+  new ResizeObserver(() => { if (M.run) { renderRuler(); renderMarkers(); if (M.rows) lanes.paint(); syncTime(); } }).observe($('overlay'));
 
   // the splitter between the outliner and the properties
   $('split').addEventListener('pointerdown', (e) => { e.preventDefault(); $('split').setPointerCapture(e.pointerId); $('split').classList.add('drag'); });
@@ -1630,6 +1628,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) return;
     if (e.target.matches?.('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
+    if (e.key === ' ' && e.target.matches?.('.lane-s, .lane-l, .lane-m, .dl-name')) return;       // Space on a focused lane folds or selects it, as on any button
     const k = e.key, lk = k.toLowerCase();
     if (k === '/') { e.preventDefault(); $('q').focus(); }
     else if (k === '?') help();

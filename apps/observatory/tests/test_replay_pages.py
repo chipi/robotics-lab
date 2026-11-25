@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from helpers import OPEN_SECTIONS, T0_NS, catalog, import_fixture, make_run, run_record, scene, serve, tick, wait_until
+from helpers import OPEN_SECTIONS, T0_NS, boot, catalog, import_fixture, make_run, open_lanes, run_record, scene, serve, tick, wait_until
 from runfile import keys
 from runfile.mcapio import Recorder
 from observatory.shots import launch
@@ -80,8 +80,7 @@ def run_page(b, base, theme="dark"):
     logs = []
     page.on("console", lambda m: logs.append(f"{m.type}: {m.text} {m.location.get('url')}") if m.type in ("error", "warning") else None)
     page.on("pageerror", lambda e: logs.append(f"pageerror: {e}"))
-    page.goto(f"{base}/web/{lib}/index.html")
-    page.wait_for_function("window.miniview !== undefined && window.__ready === true", timeout=30000)
+    boot(page, f"{base}/web/{lib}/index.html", timeout=30000)
     return ctx, page, logs
 
 
@@ -165,6 +164,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         call(page, OPEN_SECTIONS)
         row = page.evaluate("(() => { const r = document.querySelector('#tree .row[data-id=\"sensors.raw\"]'); return r ? [r.classList.contains('missing'), r.innerText] : null; })()")
         check("the outliner has the stream sensors.raw, not missing, with the run's frame count", row and not row[0] and str(n_frames) in row[1].replace(",", ""), row)
+        open_lanes(page)
         check("its row is in the timeline", eventually(page, "document.querySelector('#lanesL .lane-l[data-lane=\"sensors.raw\"]') !== null"))
 
         seen = []
@@ -199,6 +199,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         insp = page.evaluate("document.getElementById('inspBody').innerText").replace("−", "-").replace("\n", " ")
         check("the inspector's Signals give the IMU pitch, roll and pitch rate and the nearest return at the playhead, the API's values",
               f"pitch_deg {sg['values']['pitch_deg']:.2f}" in insp and f"pitch_rate_dps {sg['values']['pitch_rate_dps']:.2f}" in insp and f"nearest_mm {sg['values']['nearest_mm']:.0f}" in insp, insp[:400])
+        open_lanes(page)
         check("and a row each in the timeline", page.evaluate("document.querySelectorAll('#lanesL .lane-l[data-lane^=\"signals.\"]').length") == len(SIGNALS))
         shot(page, f"imu-signals-{lib}-dark")
 
