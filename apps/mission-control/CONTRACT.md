@@ -1,6 +1,7 @@
 # The contract: Mission Control's API (version 1, RFC-0014 §3.2)
 
-`mission-control serve` (or `make control-run`; the image of `control/Dockerfile`) serves the API on
+`mission-control serve` (or `make control-run`; the image of `apps/mission-control/Dockerfile`)
+serves the API on
 `--host`/`MC_HOST` (default `127.0.0.1`) and `--port`/`MC_PORT` (default 8060). The robot files are
 read from `--robots`/`MC_ROBOTS`, the SQLite store and the gates' logs are kept in
 `--state`/`MC_STATE`. By default there is no login: the tailnet is the authentication (RFC-0014 §3.9);
@@ -20,7 +21,7 @@ is `{"ok": false, "error": {"code", "message", ...data}}` with an honest status 
 | 401 | `unauthorized` (tokens are required and the call has none, or one that is not valid) |
 | 404 | `not_found` (`what`, `id`), `no_route`, `no_map`, `no_recogniser` |
 | 405 | `method_not_allowed` |
-| 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use` |
+| 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use`, `real_runs_not_allowed` (a drive or a calibration on a real robot whose file lacks `allow_real_runs`; a goal run is `refused` instead) |
 | 413 | `too_large` |
 | 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline`, `bad_bundle` |
 | 501 | `not_built` (`share: split`, RFC-0014 step 10) |
@@ -290,11 +291,34 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 | `stop`, `stop-all` | every STOP, with the client's name |
 | `goal-run` | a state change or progress, with `goal_run` |
 | `decision` | the navigator's decisions with their reasons, with `goal_run` |
-| `anomaly` | an anomaly the navigator raised (`anomaly`: RFC-0019's record, its `t` the run's clock), with `goal_run` and `watch` (the Observatory's page for the run at `#t=`) |
+| `anomaly` | an anomaly the navigator raised (`anomaly`: RFC-0019's record, its `t` the run's clock), with `goal_run` and `watch` (the Observatory's page for the run at `#t=`); the kinds the runner and the robot's own guards add are below |
 | `objects` | objects merged into a site (`changes`) |
 | `object-named` | an operator's label |
 
 A comment line `: keepalive` comes every 15 s.
+
+### Anomalies from a run: `robot_guard`, `rtf_low`
+
+Mission Control has no code of its own for any anomaly kind. Each one the navigator reports in
+`goal.status` is stored with the goal run (`anomalies` of `GET /goal-runs/{id}`), sent as an
+`anomaly` event and counted in the robot's `alarms` of the last minute, whatever its kind; the
+page's readiness card counts a major or critical one. Two kinds matter for what a run means:
+
+- **`robot_guard`** (navigator contract 1.7; source `robot`; `values {guardrail, detail,
+  enforced}`): the robot's own sensors broke a guardrail (`fall`, `contact`, `drop_clearance`).
+  `enforced: true` is **critical**: the runner has no truth for that name (a robot with no truth,
+  such as the real duck, lists it in `not_enforced`), so the robot's sensors are the only judge,
+  and the run ends `stopped_by_guardrail` with `broken {name, detail}`. The critical alarm makes
+  the robot not ready for 60 s. `enforced: false` is **minor**: a truth is present and judges;
+  the robot's check only records what it would have done (once per guardrail per goal), the run
+  is not stopped by it, and the readiness card does not count it. Where the truth agrees, its
+  `guardrail_broken` is the critical alarm.
+- **`rtf_low`** (contract 1.6; source `harness`, minor): the runner measured the simulator
+  under real time. The run goes on and has no verdict (`as_expected` null, `no_verdict`; see
+  A goal run).
+
+A navigator below 1.7 never raises `robot_guard`; a robot-side stop is then only the run's
+`stopped_by_guardrail`.
 
 ## The MCP server
 
@@ -374,8 +398,10 @@ call works and a client names itself in the body.
 
 ## The page
 
-`GET /` is the page: `web/index.html`, `web/app.js` and `web/style.css` under `/web/`, plain files with
-no build step, served by the same server. It is a client of this API and the event stream and has no
+`GET /` is the page: `index.html` at `/` and the files of `src/mission_control/web/` under `/web/`
+(`app.js`, `settings.js`, `bodyview.js`, `readiness.js`, `layout.js`, `palette-verbs.js` and
+`style.css`), plain files with no build step, served by the same server.
+It is a client of this API and the event stream and has no
 call of its own. It shows the robots (online, status, lock holder), the selected robot's map with the
 objects and areas layers, a point goal by tapping the map and the other goal kinds by form, the
 library, the goal runs with their progress and decisions, area drawing, renaming and deleting, site
@@ -404,10 +430,23 @@ the profile's measured lines under them, and the same side drawer as Settings fo
 guide, the parameters, the run polled while it walks (Cancel), what it measured beside the value now,
 the operator's tape where the runner had no truth, what keeping it changes, and Keep as the next
 settings version. three.js is loaded only when
-a robot with a description is opened. The shared web library, `libs/web` (the design tokens, the
-vendored three.js, the body component), is served at `/lib/`: `/lib/tokens.css` (the colour tokens,
-light and dark, one file with the Observatory), `/lib/vendor/` and `/lib/body/`. The page fits a
-390 px phone. `window.__mc` is a hook for the page test.
+a robot with a description is opened. The shared web library, `libs/web`, is served at `/lib/`
+(`/lib/tokens.css`, `/lib/ui.css`, `/lib/fonts/`, `/lib/vendor/`, `/lib/body/` and the other
+modules named below). The page fits a 390 px phone. `window.__mc` is a hook for the page test.
+
+**The shared UI.** The pages of Mission Control and of the Observatory are built from the same
+library: the design tokens and the one stylesheet of shared components (`tokens.css`, `ui.css`),
+the status vocabulary (`status.js`: one glyph, word and colour per status, so a verdict reads the
+same in both apps), the command palette (`palette/`), the layout store (`layout/store.js`: panels
+and saved layouts, in the browser's storage only), the time model and `freshness` (Mission
+Control uses only `freshness`, for how old a robot's state is), the 3D stage and body modules, the
+confirm guard (`confirm.js`) and the evidence links to an Observatory moment (`evidence.js`). For
+Mission Control that means: a colour or a status comes from the tokens and `status.js`, not from
+`web/style.css`; STOP is never behind a confirm and never disabled by staleness, and in the
+palette it is the first row but not selected when the palette opens (an Enter on open runs
+nothing); and a change to a shared module is a change to both apps. The contracts of each
+module and the amendments made after they shipped
+are in [LOOK-AND-FEEL-PLAN](../../docs/wip/LOOK-AND-FEEL-PLAN.md) (Frozen contracts, Amendments).
 
 **One origin** (RFC-0024 step 3): the page's addresses are relative (`api/v1/...`, `web/...`), so the
 same page works at `/` here and at `/control/` behind the Observatory, which forwards `/control/...`
@@ -462,8 +501,15 @@ the navigator runs another version (another checksum) than Mission Control read,
 a decision saying so, with both versions. `GET /robots/{id}/sighting` is `404 no_sighting` (the
 camera runs with a goal, and its sightings are in the Observatory run).
 
-The navigator API, as the server speaks it (the navigator contract, version 1.0, as a navigator
-API):
+The navigator API, as the server speaks it: navigator contract **1.7**
+(`runfile.navcontract.CONTRACT`; the version history is in
+[`libs/runner/CONTRACT.md`](../../libs/runner/CONTRACT.md)). What each minor version added, for
+what Mission Control does with it: 1.1 `anomalies` in `goal.status`; 1.2 `not_enforced` in
+`goal.start`; 1.3 the `calibration.*` methods (a navigator below it drives no calibration);
+1.4 the robot checks `contact`, `fall` and `drop_clearance` for a name the runner cannot judge;
+1.5 `start_pose` (a navigator below it refuses a run that has one); 1.6 `goal.anomaly` and the
+`rtf_low` no-verdict run; 1.7 the `robot_guard` anomaly. A minor version adds and never changes,
+so Mission Control accepts any navigator of major version 1 and refuses another major.
 
 | Method | Meaning |
 | --- | --- |
@@ -472,6 +518,7 @@ API):
 | `goal.status {decisions_since, objects_since, anomalies_since}` | `{state, reason, progress, result, broken, run_key, decisions, decisions_n, anomalies, anomalies_n, objects, objects_v}`; `anomalies` the run's since `anomalies_since` (RFC-0019's record, contract 1.1); `objects` is the navigator's whole map, only when it changed |
 | `goal.cancel {reason?}` | the navigator stops, ends the run `cancelled`, gives the lease back |
 | `goal.break {name, detail}` | the runner's: a guardrail it checks by the truth broke; the run ends `stopped_by_guardrail` |
+| `goal.anomaly {kind, summary, values?}` | contract 1.6, the runner's: an anomaly it measured and the navigator cannot see. The one kind is `rtf_low` (`values {sim_s, wall_s, rtf, below}`, minor, source `harness`), sent after 5 s of wall time when the simulator runs under the runner's threshold. It is recorded once per run and comes back in `goal.status`'s `anomalies`; another kind is `{error: {code: "bad_anomaly"}}`, and a goal that is not running ignores it. Mission Control never sends it: it sees the anomaly, and the run has no verdict |
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
 | `state`, `objects`, `inventory` | what the navigator sees now, while a run is active |
 | `map` | the robot's map (mapd's grid): the active run's, or, between runs, read by the navigator API from mapd |
@@ -480,11 +527,51 @@ API):
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as
 `seed`); `seed.areas` are the operator's outlines `{id, name, type, outline}`. A goal run's
 `run_key` is the Observatory run's key and `watch` is `<observatory>/watch/<run_key>`. The
-Observatory run carries `goal_run {id, name, kind, robot}` in its record (`viewer/CONTRACT.md`).
+Observatory run carries `goal_run {id, name, kind, robot}` in its record ([`apps/observatory/CONTRACT.md`](../observatory/CONTRACT.md)).
 
 The navigator takes a goal only where the robot's map knows a way: a point or an area in space the
 robot has not seen is `refused` ("no path on the map"), as the navigator has always refused it;
 exploring first is a goal of its own.
+
+## The real duck
+
+The adapter type `duck-real` (`duck_real.py`, `RealDuckAdapter`; example
+`robots.real/duck-real.json`) is `duck-sim` for the Microduck on its own board. The way to the
+robot is the same: every command passes the gate (`lab-gate` on this machine, upstream the
+robotd socket that `lab-link` forwards over ssh), the navigator API is `lab-nav-server` run from
+a host file with `truth_port: null` (so no truth, no truth guardrails and no camera: see above),
+and the state is the gate's subscription. The robot file is a pointer too; its adapter block
+takes the options of `duck-sim` and `link_dir` (default `~/.cache/duck-real`, where `lab-link`
+puts `<robot>.sock`, `<robot>-tof.sock` and `<robot>-map.sock`), and `allow_real_runs` (below).
+What differs is that the robot is far away and can go away:
+
+- **The link can be down and Mission Control starts without it.** The ssh window lasts 30
+  minutes and the gate exits when its upstream closes. The adapter asks the four sockets (the
+  robot's, its depth and map daemons and the gate's: the read-only questions of `lab-link check`,
+  every 5 s, on a thread of its own) and while any is dead the robot is **offline**, with the
+  failed ones named in the reason. That is a 503 `robot_offline` for a command, never an error
+  that stops Mission Control. The gate's socket may be missing at start; Mission Control's own
+  connection is made when the gate is there.
+- **It never reads the simulator's addresses.** The installation file's entry for the robot
+  (`robots.<robot>.gate`, `.navigator`) is used only when it names the variant `real`. The
+  defaults are the link folder's gate socket and the navigator `127.0.0.1:8062` (the simulator's
+  is 8061), so a gate or a navigator of the simulator cannot answer for the real duck. A
+  `duck-real` file on a machine whose installation runs the duck as `sim` does not load: the
+  error says to remove the variant from the installation or the robot file.
+- **A real run is refused unless the robot file allows it.** `adapter.allow_real_runs` (a
+  boolean, default `false`; any adapter may carry it, and it is the profile's variant `real`
+  that makes a run real) is the key a person writes after the first-run safety review
+  (`docs/wip/REAL-DUCK-SAFETY-REVIEW.md`). Without it a goal run is `refused` with the reason,
+  whatever its `target` (a `sim` target does not make it a simulator run), a drive is
+  `409 real_runs_not_allowed` and so is a calibration (it walks with no wall or cliff check).
+  STOP is never refused. With it, the goal still needs its rehearsal unless `sim_first` is false.
+- **It needs no truth:** the odometry scale is the profile's (the real variant's), the map is
+  mapd's through the navigator API, and a calibration's reference is the operator's tape
+  (`POST .../calibration/reference`).
+
+With no truth, a goal that names `contact`, `fall` or `drop_clearance` is judged by the robot's
+own sensors: a break ends the run `stopped_by_guardrail` with a critical `robot_guard` (see
+Anomalies from a run). The runner records the three as `not_enforced` in its own check.
 
 ## The NXT
 
@@ -518,7 +605,7 @@ the field went.
 | --- | --- |
 | `id`, `label`, `kind` | ours. `id` is lower case, digits and dashes (no `manufacturer` or `serialNumber` until a VDA robot is added); `kind` keys `robots/<kind>/` |
 | `robot`, `variant` | a pointer (phase 5 step 1): the robot's registered name (`robotics_lab.robots`). The profile's environment is not the file's: it is the installation's `robots.<robot>.variant`, else `sim` for the `duck-sim` adapter (it runs on a host with a truth; Mission Control does not read the host file) and `real` for any other adapter. A file that names a `variant` other than that is refused, saying which; one that names the same is accepted. `kind`, `factsheet`, `control`, `capabilities`, `guardrails` and `rates` are then the profile's, from the version this machine runs (the installation's `robots.<robot>.profile`, else the robot's own file), and the file may not repeat them; `label` defaults to the profile's |
-| `adapter {type, call_timeout_s?, ...}` | ours: `fake`, `duck-sim`, `nxt-web`, and each one's options |
+| `adapter {type, call_timeout_s?, allow_real_runs?, ...}` | ours: `fake`, `duck-sim`, `duck-real`, `nxt-web`, and each one's options; `allow_real_runs` is a boolean (default false) for a robot whose variant is `real` |
 | `factsheet.typeSpecification` | VDA: `seriesName`, `seriesDescription`, `mobileRobotKinematics` (`DIFFERENTIAL`, `OMNIDIRECTIONAL`, `THREE_WHEEL`, and **`LEGGED`, which is ours** and not in VDA), `localizationTypes` (VDA's list), `navigationTypes` (open) |
 | `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |
 | `factsheet.protocolFeatures.mobileRobotActions[]` | VDA: `actionType`, `actionScopes` (`INSTANT`, `NODE`, `EDGE`), `blockingTypes` (`NONE`, `SOFT`, `HARD`), `pauseAllowed`, `cancelAllowed`; **`irreversible` is ours** (RFC-0003 §2.3) |
