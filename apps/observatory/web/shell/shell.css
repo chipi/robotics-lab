@@ -509,3 +509,9 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .laymenu .btn.ghost { background: transparent; }
 .laymenu .btn:disabled { opacity: .5; }
 .laymenu input:not([type]), .laymenu select { height: var(--ctl-h); }
+
+/* what a palette verb says once the palette has closed (verbs.js); a message, never a target */
+.vmsg { position: fixed; left: 50%; transform: translateX(-50%); bottom: 36px; max-width: min(92vw, 520px); background: var(--surface-3); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-3); padding: var(--sp-2) var(--sp-3); z-index: var(--z-toast); box-shadow: var(--elev-2); pointer-events: none; overflow-wrap: anywhere; }
+.vmsg[hidden] { display: none; }
+.vmsg.err { border-color: var(--status-error); color: var(--status-error-on); }

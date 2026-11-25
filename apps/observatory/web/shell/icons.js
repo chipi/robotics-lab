@@ -30,6 +30,7 @@ export const ICONS = {
   crosshair: '<circle cx="12" cy="12" r="9"/><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  command: '<path d="M5 9l4 3-4 3M12 16h7"/><rect width="20" height="16" x="2" y="4" rx="2"/>',
 };
 
 export const svgI = (n, s = 14) => `<svg class="i" viewBox="0 0 24 24" style="width:${s}px;height:${s}px">${ICONS[n] || ''}</svg>`;

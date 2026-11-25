@@ -219,7 +219,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   paintIcons();
   const stage = $('stage'), app = $('app');
   // the left panel's sections, the joint-angle switch and the columns' widths are the layout in use (layout.js); a layout loaded or reset re-reads the first two
-  if (!watch) mountLayout({ host: app, button: $('layBtn'), left: $('left'), split: $('split'), onApply: () => fromLayout() });
+  const layoutApi = !watch ? mountLayout({ host: app, button: $('layBtn'), left: $('left'), split: $('split'), onApply: () => fromLayout() }) : null;
   const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t), limits: (name) => jointLimits(M.robot, name) });
   // Live and Replay as a named mode, and the jumps between marks (timemode.js); marks = the events a viewer has not hidden
   const TM = createTimeMode({ el: $('timemode'), jumps: $('jumps'), goLive: () => setFollow(true), marks: () => (M.run?.events || []).filter((e) => M.kinds[e.kind] !== false).map(({ t, kind }) => ({ t, kind })) });
@@ -1655,6 +1655,34 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     else if (lk === 'f') fit();
   });
 
+  // ---- the command palette (verbs.js, on libs/web/palette): loaded by the first Ctrl/Cmd+K or press of its button, never by the page's first paint ----
+  let cmdk = null, paletteBusy = null, flashTimer = 0;
+  function flash(text, err) {       // the palette closes before a verb runs, so a verb's result and its errors are told here
+    let m = $('verbmsg');
+    if (!m) { m = document.createElement('div'); m.id = 'verbmsg'; document.body.append(m); }
+    m.setAttribute('role', err ? 'alert' : 'status'); m.className = 'vmsg' + (err ? ' err' : ''); m.textContent = text; m.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { m.hidden = true; }, err ? 7000 : 3500);
+  }
+  const loadPalette = () => (paletteBusy ||= import('./verbs.js').then(async (m) => {
+    await ensureIndex().catch(() => {});       // the scenes and runs the verbs open come from the index the page already holds
+    cmdk = m.mount({
+      M, shown: (id) => shown(id), say: flash, play, fit, theme: () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true),
+      views: () => [...$('layoutSeg').querySelectorAll('button')].map((b) => [b.dataset.view, b.textContent.trim()]),
+      canLive: () => !$('tm-golive').hidden, goLive: () => setFollow(true), layout: layoutApi?.act ?? null,
+    });
+  }).catch((e) => { paletteBusy = null; throw e; }));
+  async function openPalette() {
+    try { await loadPalette(); cmdk.open(); } catch (e) { flash('The command palette could not be loaded: ' + e.message, true); }
+  }
+  $('paletteBtn').onclick = openPalette;
+  addEventListener('keydown', (e) => {
+    if (cmdk || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'k') return;
+    if (e.target.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+    e.preventDefault();
+    openPalette();
+  });
+
   // ---- boot ---------------------------------------------------------------------------------------------
   adapter.init(stage, shell);
   applyTheme(stored() || (mq.matches ? 'light' : 'dark'));
@@ -1750,6 +1778,7 @@ const TEMPLATE = `
       <span class="vt" id="vt"></span>
       <span class="grow"></span>
       <span class="timemode jumps" id="jumps" hidden role="group" aria-label="Jump between events"><button class="mini" id="jprev" title="Previous event of the chosen kind (,)" aria-label="Previous event"><svg class="i" data-i="left" style="width:12px;height:12px"></svg></button><button class="mini" id="jkind" title="The kind of event , and . jump to" aria-haspopup="true">any</button><button class="mini" id="jnext" title="Next event of the chosen kind (.)" aria-label="Next event"><svg class="i" data-i="right" style="width:12px;height:12px"></svg></button></span>
+      <button class="icon-btn" id="paletteBtn" title="Command palette (Ctrl+K)" aria-label="Command palette" aria-keyshortcuts="Control+K Meta+K"><svg class="i" data-i="command"></svg></button>
       <button class="icon-btn" id="layBtn" title="Panels and layouts" aria-label="Layout" aria-haspopup="true" aria-expanded="false" aria-controls="lay-menu"><svg class="i" data-i="panels"></svg></button>
       <button class="icon-btn" id="ovBtn" title="Overlays"><svg class="i" data-i="layers"></svg></button>
       <button class="icon-btn" id="fitBtn" title="Fit the run (F)"><svg class="i" data-i="fit"></svg></button>

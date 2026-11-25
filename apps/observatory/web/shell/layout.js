@@ -191,5 +191,20 @@ export function mountLayout({ host, button, left, split, onApply }) {
 
   apply(state);
   sync();
-  return { toggle, get open() { return !menu.hidden; } };
+  // what the palette's verbs use (verbs.js): the menu's writes, but an error reaches the caller instead of the menu's status line
+  const act = {
+    panels: PANELS.map((p) => ({ id: p.id, label: p.label, fold: !!p.fold })),
+    isHidden: (id) => !isShown(state, id),
+    isFolded: (id) => isFolded(state, id),
+    setHidden: (id, hide) => commit((s) => {
+      if (id === 'left' || id === 'right') s.panels[id] = !hide;
+      else if (hide) s.panels.open['hidden:' + id] = true; else delete s.panels.open['hidden:' + id];
+    }),
+    setFolded: (id, fold) => commit((s) => { if (fold) s.panels.open['fold:' + id] = true; else delete s.panels.open['fold:' + id]; }),
+    saved: () => S.list().filter((n) => n !== FIRST),
+    saveAs: (n) => S.save(n, state),
+    load: (n) => S.load(n),
+    reset: resetNow,
+  };
+  return { toggle, act, get open() { return !menu.hidden; } };
 }
