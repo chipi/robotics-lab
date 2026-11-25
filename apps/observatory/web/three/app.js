@@ -304,10 +304,13 @@ function robotBox(i = M.i) {
   return { min, max };
 }
 // what Fit robot and the opening camera put in view: the robot's box with room round it (twice its width, never under CONTEXT_MIN across)
-function robotFrame(i = M.i) {
+// an evidence link's `focus=robot` is about the robot, so it is framed tighter: a box two and a half times its width, never under FOCUS_MIN across
+const FOCUS_MIN = 0.6;
+function robotFrame(i = M.i, tight = false) {
   const b = robotBox(i);
   if (!b) return null;
-  const half = Math.max(CONTEXT_MIN / 2, 2 * Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]));
+  const span = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1]);
+  const half = tight ? Math.max(FOCUS_MIN / 2, 1.25 * span) : Math.max(CONTEXT_MIN / 2, 2 * span);
   const cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
   return { min: [cx - half, cy - half, 0], max: [cx + half, cy + half, Math.max(b.max[2], 0.01)] };
 }
@@ -406,7 +409,7 @@ const adapter = {
     ovSaved = { ghost: prefs().ghost !== false, open_scene: prefs().open_scene === true };     // the ghost is on and the view opens on the robot until a viewer chooses otherwise
     Object.assign(M.ov, { ghost: ovSaved.ghost, open_scene: ovSaved.open_scene, trail: true, xray: false, inspector: false });       // overlays like the floor: the Overlays menu and setOverlay
     buildInspector(stage);
-    views.home3d = () => (run && fr && RW && (camFocused || !M.ov.open_scene) ? robotFrame(camTick()) : null);       // null: the fixed iso that sees the whole scene
+    views.home3d = () => (run && fr && RW && (camFocused || !M.ov.open_scene) ? robotFrame(camTick(), camFocused) : null);       // null: the fixed iso that sees the whole scene
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = new URL('../shell/camera.css', import.meta.url).href;
     document.head.append(css);
@@ -472,7 +475,7 @@ const adapter = {
   fit() { views.fit(); },
   // an evidence link's `focus=robot`: the 3D camera on the robot at the playhead, whatever the opening-camera setting; false without a 3D camera
   focusRobot() {
-    const f0 = views.slot3() && robotFrame();
+    const f0 = views.slot3() && robotFrame(M.i, true);
     if (!f0) return false;
     camAct(() => views.fitBox(f0, { keepFollow: true }));
     camFocused = true;                                            // the stage resizes as the panels settle, which re-homes the camera: home stays the robot until a camera action

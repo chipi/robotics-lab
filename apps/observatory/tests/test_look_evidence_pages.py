@@ -76,8 +76,8 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         c = open_link(pg, L + "&focus=robot", whole_scene=True)
         st = pg.evaluate("window.miniview.state()")
         cfg = pg.evaluate("window.miniview.config()")
-        check("focus=robot: opens at 2 s, the camera frames the robot there even with the whole-scene setting (target within 0.05 m, box inside the view, at least 6 % of its height)",
-              abs(st["t"] - 2.0) < 0.11 and c["robot"][0] > 0.3 and near(c["target"][:2], c["robot"][:2], 0.05) and c["ndc"]["inside"] and c["ndc"]["heightFrac"] >= 0.06, (st["t"], c["target"], c["robot"], c["ndc"]))
+        check("focus=robot: opens at 2 s, the camera frames the robot there even with the whole-scene setting (target within 0.05 m, box inside the view, between 25 % and 60 % of its height: a robot framed on purpose, not a speck in a room)",
+              abs(st["t"] - 2.0) < 0.11 and c["robot"][0] > 0.3 and near(c["target"][:2], c["robot"][:2], 0.05) and c["ndc"]["inside"] and 0.25 <= c["ndc"]["heightFrac"] <= 0.6, (st["t"], c["target"], c["robot"], c["ndc"]))
         check("focus=robot: paused, in Replay (not playing, Follow live off, the mode badge says Replay)",
               cfg["play"]["on"] is False and cfg["follow"] is False and pg.evaluate("document.getElementById('timemode').dataset.mode") == "replay",
               (cfg["play"], cfg["follow"]))
@@ -86,6 +86,13 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         c = open_link(pg, L + "&focus=banana", whole_scene=True)
         check("an unknown focus value is ignored: the same camera as a link with no focus, no console error",
               near(pose(c), pose(iso), 1e-6) and abs(pg.evaluate("window.miniview.state().t") - 2.0) < 0.11 and not console, (pose(c), console[:3]))
+
+        pg = fresh()
+        open_link(pg, L)
+        pg.evaluate("window.miniview.scenes()")
+        pg.wait_for_function("window.__ready === true && window.miniview.state().run === null")
+        link = pg.evaluate("window.miniview.momentLink()")
+        check("on the scenes page (no run open) momentLink() makes no link, rather than one with scene=null or run=null", link is None or "null" not in link, link)
 
         pg = fresh()
         open_link(pg, L)

@@ -291,7 +291,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         call(page, f"window.miniview.load('unmapped', '{lkey}')")
         st = page.evaluate("window.miniview.state()")
         check("a live run opens in the Signals view following its newest sample", st["status"] == "live" and st["follow"] and st["signals"]["n"] == 4 and st["t"] == 1.5
-              and page.evaluate("document.getElementById('follow').hidden") is False, st["status"])
+              and page.evaluate("document.getElementById('tm-badge').disabled") is False, st["status"])
         for i in range(4, 8):
             nxt.write_sample(live_rec, 0.5 * i, {"power_left": 50, "tacho_B": 100 * i, "tacho_C": 100 * i, "s3_color_name": "red" if i > 5 else "blue"})
         page.wait_for_function("window.miniview.state().signals && window.miniview.state().signals.n === 8", timeout=15000)
@@ -302,7 +302,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         live_rec.add(live_rec.last_t, "end", {"verdict": "recorded"})
         live_rec.close()
         page.wait_for_function("window.miniview.state().status === 'ended'", timeout=15000)
-        check("when the run ends the page says so and the follow switch goes away", eventually(page, "document.getElementById('follow').hidden === true")
+        check("when the run ends the page says so and the follow switch goes away", eventually(page, "document.getElementById('tm-badge').disabled === true")
               and page.evaluate("document.getElementById('st-live').textContent").startswith("ended"), page.evaluate("document.getElementById('st-live').textContent"))
         check("the live page logged no error", not [m for m in logs if "favicon.ico" not in m], logs[:3])
         ctx.close()

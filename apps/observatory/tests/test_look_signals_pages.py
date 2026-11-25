@@ -17,7 +17,7 @@ os.environ["MINIVIEW_ROBOTS"] = str(TMP / "robots")
 
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from helpers import Checks, boot, catalog, make_run, scene, serve  # noqa: E402
+from helpers import Checks, boot, catalog, make_run, scene, serve, tick  # noqa: E402
 from observatory.shots import launch  # noqa: E402
 
 check = Checks("LOOK SIGNALS PAGES")
@@ -25,8 +25,10 @@ SHELL = Path(__file__).resolve().parents[1] / "web" / "shell"
 SHOTS = Path(os.environ["U15_SHOTS"]) if os.environ.get("U15_SHOTS") else None      # a folder to leave screenshots in
 
 ARM = """<robot name="arm">
-  <link name="base"/><link name="upper"/>
+  <link name="base"/><link name="upper"/><link name="fore"/>
   <joint name="shoulder" type="revolute"><parent link="base"/><child link="upper"/>
+    <origin xyz="0 0 0.1" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-1.5" upper="1.5"/></joint>
+  <joint name="elbow" type="revolute"><parent link="upper"/><child link="fore"/>
     <origin xyz="0 0 0.1" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-1.5" upper="1.5"/></joint>
 </robot>"""
 arm = TMP / "robots" / "arm"
@@ -45,10 +47,20 @@ for k in range(N):
                                               "lock": 1 if 10 <= k < 25 else 0, "mode": "idle" if k < 8 else "drive" if k < 30 else "idle"}, "t_src": t}))
 records.append((4.1, "end", {"verdict": "recorded"}))
 
+# a run with a pose as well (ticks beside the samples); the elbow has no unit and only ever reads 0 or 1 rad: an angle, not a state
+SIGS2 = [{"name": "joint_shoulder", "kind": "number", "unit": "rad"}, {"name": "joint_elbow", "kind": "number"}]
+records2 = [(0.0, "epoch", {"map_to_world": [0.0, 0.0, 0.0]})]
+for k in range(30):
+    t = round(0.1 * k, 3)
+    records2.append(tick(t, 0.02 * k))
+    records2.append((t, "signals", {"values": {"joint_shoulder": round(1.65 * k / 29, 4), "joint_elbow": float(k % 2)}, "t_src": t}))
+records2.append((3.1, "end", {"verdict": "recorded"}))
+
 data = TMP / "data"
 cat = catalog(data)
 cat.put_scene(scene("room"))
 make_run(data, "arm/room/r1", records, signals=SIGS)
+make_run(data, "arm/room/r2", records2, signals=SIGS2)
 cat.scan()
 httpd, base = serve(cat, follow=False)
 
@@ -150,6 +162,46 @@ with sync_playwright() as p:
         pg.screenshot(path=str(SHOTS / "observatory-signals-light-390.png"))
         pg.click("#themeBtn")
     check("on a phone width the bands are still drawn", n == 4, n)
+    pg.set_viewport_size({"width": 1440, "height": 900})
+
+    # ---- a run with a pose: the Signals view opens beside its other views, and the joints get their bands there too
+    pg.evaluate("window.__ready = false; window.miniview.load('room', 'arm/room/r2')")
+    pg.wait_for_function("window.__ready === true && window.miniview.state().run === 'arm/room/r2'")
+    check("a run with a pose opens on its 3D views, the Signals view closed", pg.evaluate("document.getElementById('sigview').hidden") is True)
+    check("... and has a Signals switch in the viewport header, not pressed", pg.evaluate("(() => { const b = document.getElementById('sigBtn'); return !!b && !b.hidden && b.getAttribute('aria-pressed') === 'false'; })()"))
+    pg.click("#sigBtn")
+    pg.wait_for_function("document.querySelectorAll('#sigview .sg').length === 2")
+    check("the switch opens the Signals view over the viewport and says so",
+          pg.evaluate("!document.getElementById('sigview').hidden && document.getElementById('sigBtn').getAttribute('aria-pressed') === 'true'"))
+    check("the top bar's view buttons (Top, Three, 3D) stay, to get back", pg.evaluate("document.querySelectorAll('#layoutSeg button[data-view]').length >= 3 && getComputedStyle(document.getElementById('layoutSeg')).display !== 'none'"))
+    check("the joint of a run with a pose has its four bands and limit lines", pg.evaluate(f"{SG('joint_shoulder')}.querySelectorAll('rect.tband').length") == 4
+          and pg.evaluate(f"{SG('joint_shoulder')}.querySelectorAll('line.tlim').length") == 2)
+    el = pg.evaluate(f"({SG('joint_elbow')}.dataset.form) + '|' + {SG('joint_elbow')}.querySelectorAll('rect.tband').length + '|' + {SG('joint_elbow')}.querySelectorAll('path.line').length")
+    check("a joint with no unit that only reads 0 and 1 is an angle: a line with its bands, not state spans", el == "line|4|1", el)
+    if SHOTS:
+        pg.screenshot(path=str(SHOTS / "observatory-signals-pose-dark-1440.png"))
+    pg.evaluate("window.miniview.setTime(1.0)")
+    check("the playhead moves the plots' readout as it does in a run with no pose", pg.evaluate("document.getElementById('sigview').dataset.t") == "1")
+    pg.click("#sigBtn")
+    check("a second press closes the view and gives the viewport back",
+          pg.evaluate("document.getElementById('sigview').hidden && document.getElementById('sigBtn').getAttribute('aria-pressed') === 'false'"))
+    HEAD_FIT = """(() => { const h = document.querySelector('.vhead'), hr = h.getBoundingClientRect(), bad = [];
+      for (const e of h.children) { const r = e.getBoundingClientRect(); if (!r.width || getComputedStyle(e).display === 'none') continue;
+        if (r.right > hr.right + 0.5 || r.left < hr.left - 0.5 || r.right > innerWidth + 0.5) bad.push([e.id || e.className, Math.round(r.left), Math.round(r.right)]);
+        if (e.tagName === 'BUTTON' && r.width < 24 - 0.5 && innerWidth < 600) bad.push([e.id, 'narrow', r.width]); }
+      const vt = document.getElementById('vt'), tr = vt.getBoundingClientRect();
+      return { bad, header: [hr.left, hr.right], title: tr.width, titleText: vt.textContent, overflow: document.documentElement.scrollWidth - innerWidth,
+               oneLine: tr.top >= hr.top - 0.5 && tr.bottom <= hr.bottom + 0.5 }; })()"""
+    for w in (1440, 390):
+        pg.set_viewport_size({"width": w, "height": 844})
+        pg.evaluate("window.miniview.state()")
+        r = pg.evaluate(HEAD_FIT)
+        check(f"at {w} px, with the Signals switch showing, every control of the viewport header lies inside it and the window, and the title is not squeezed out or wrapped out of the header",
+              pg.evaluate("!document.getElementById('sigBtn').hidden") and not r["bad"] and r["title"] >= 60 and r["oneLine"] and r["overflow"] <= 1, r)
+    pg.set_viewport_size({"width": 1440, "height": 900})
+    pg.evaluate("window.miniview.load('room', 'arm/room/r1')")
+    pg.wait_for_function("window.__ready === true && window.miniview.state().run === 'arm/room/r1'")
+    check("a run with samples and no pose has no switch: its Signals view is the viewport", pg.evaluate("document.getElementById('sigBtn').hidden") is True)
 
     check("no page error", not errs, errs)
     b.close()

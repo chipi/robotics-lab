@@ -357,6 +357,8 @@ with tempfile.TemporaryDirectory() as tmp:
               w.evaluate("document.querySelectorAll('#stage .slot').length") == 2 and w.evaluate("[...document.querySelectorAll('#stage .slot .cap')].map((c) => c.textContent)") == ["world · eye", "world · top"]
               and w.evaluate("!document.getElementById('eyehud').hidden") and w.evaluate("document.querySelector('.app').classList.contains('watch')")
               and w.evaluate("getComputedStyle(document.getElementById('left')).display") == "none" and w.evaluate("window.miniview.config().overlays.hazards_top") is True)
+        check("the watch page has no Layout button (it has no panels to arrange, so the button would do nothing)",
+              w.evaluate("(() => { const b = document.getElementById('layBtn'); return !b || getComputedStyle(b).display === 'none' || !b.offsetParent; })()"))
         check("the timeline marks the events", w.evaluate("document.querySelectorAll('#mlane .mk').length") == 3)
         w.wait_for_function("(() => { const e = window.miniview.state().eye; return e && e.source === 'recorded' && Math.abs(e.frame_t - 2.01) < 1e-6; })()", timeout=15000)
         check("the eye of the watch page is the recorded sensor pose too", near(w.evaluate("window.miniview.state().eye")["position"], expected_eye(10)[0], 2e-3))

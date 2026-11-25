@@ -190,6 +190,12 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
             check("... the zones whose status is not valid are hatched dark, not coloured by their distance", all(max(px) < 140 for px in got[4:]), got[4:])
         check("moving the playhead moves the frame: three times, three different frames, later ones later", seen[0] < seen[1] < seen[2], seen)
         shot(page, f"raw-frame-{lib}-dark", raw=True)
+        before = got[0]          # zone 0, read in the loop above: a second readback of one canvas draws a console warning
+        page.click("#themeBtn")
+        page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")       # the inspector repaints at most once a frame
+        after = pixels(page, [[2, 2]])[0]
+        check("a theme switch repaints the raw frame in the new theme's ramp (not the old theme's picture left in the inspector)", after != before, (before, after))
+        page.click("#themeBtn")
 
         # the IMU and the navigator's values are signals: outliner, inspector, rows
         grp = page.evaluate("[...document.querySelectorAll('#tree .row[data-id^=\"signals.\"]')].map((r) => r.dataset.id)")

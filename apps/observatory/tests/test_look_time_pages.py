@@ -228,11 +228,22 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     pg.wait_for_function("document.getElementById('timemode').dataset.mode === 'live'")
     s = pg.evaluate("window.miniview.state()")
     check("Return to live follows the edge again: Follow live on, the playhead at the end",
-          s["follow"] is True and abs(s["t"] - s["t_range"][1]) < 1e-6 and pg.evaluate("document.getElementById('follow-on').checked"), (s["follow"], s["t"], s["t_range"]))
+          s["follow"] is True and abs(s["t"] - s["t_range"][1]) < 1e-6 and pg.evaluate("document.getElementById('tm-badge').getAttribute('aria-pressed') === 'true'"), (s["follow"], s["t"], s["t_range"]))
     pg.evaluate("window.miniview.jump(-1)")
     check("a jump back from live leaves Live", pg.evaluate(TM)["mode"] == "replay")
-    pg.click("#follow-on")
-    check("the Follow live switch and the mode are one thing", pg.evaluate(TM)["mode"] == "live")
+    pg.click("#tm-badge")
+    check("the badge is the Follow live switch: a button that says Live and is pressed (the old checkbox is gone)",
+          pg.evaluate("(() => { const b = document.getElementById('tm-badge'); return b.tagName === 'BUTTON' && b.getAttribute('aria-pressed') === 'true' && b.textContent.includes('Live'); })()")
+          and pg.evaluate("!document.getElementById('follow-on') && !document.getElementById('follow')"))
+    check("the badge has an accessible name that says what a press does", "stop following" in pg.evaluate("document.getElementById('tm-badge').title").lower(), pg.evaluate("document.getElementById('tm-badge').title"))
+    pg.focus("#tm-badge")
+    pg.keyboard.press("Enter")
+    s = pg.evaluate("window.miniview.state()")
+    check("Enter on the focused badge stops following: Replay, the badge not pressed, the run not played", s["follow"] is False and pg.evaluate(TM)["mode"] == "replay"
+          and pg.evaluate("document.getElementById('tm-badge').getAttribute('aria-pressed')") == "false" and pg.evaluate("window.miniview.config().play.on") is False, s)
+    pg.keyboard.press("Space")
+    s = pg.evaluate("window.miniview.state()")
+    check("Space on the focused badge follows live again (and does not start playback)", s["follow"] is True and pg.evaluate(TM)["mode"] == "live" and pg.evaluate("window.miniview.config().play.on") is False, s)
 
     ANIMATED = "[...document.querySelectorAll('#timemode, #timemode *')].map((e) => getComputedStyle(e)).filter((c) => c.animationName !== 'none' && parseFloat(c.animationDuration) > 0).length"
     pg.emulate_media(reduced_motion="no-preference")

@@ -106,7 +106,15 @@ with sync_playwright() as p:
     saved = pg.evaluate(LAYOUTS)
     cur = pg.evaluate("localStorage.getItem('rl.layout.current.observatory')")
     check("the change is saved as the default layout, which is now the one in use", cur == "default" and saved["layouts"]["default"]["panels"]["left"] is False, [cur, saved])
+    body_open = "window.miniview.state().sections.find((s) => s.id === 'sec.body').open"
+    check("a layout change keeps the section that holds the selected stream open (the run opens on joint_shoulder, in sec.body)", pg.evaluate(body_open) is True,
+          pg.evaluate("window.miniview.state().sections.map((s) => [s.id, s.open])"))
+    pg.evaluate("window.miniview.setSection('sec.body', false)")
     pg.check("#lay-show-left")
+    pg.uncheck("#lay-show-left")
+    pg.check("#lay-show-left")
+    check("a viewer who closed that section keeps it closed through later layout changes", pg.evaluate(body_open) is False)
+    pg.evaluate("window.miniview.setSection('sec.body', true)")
     pg.uncheck("#lay-show-right")
     check("hiding the inspector removes it and the viewport takes its room", box(pg, "#insp")["display"] == "none" and box(pg, "#stage")["w"] > view0["w"] + 270, (box(pg, "#insp"), box(pg, "#stage")))
     pg.check("#lay-show-right")
@@ -272,8 +280,12 @@ with sync_playwright() as p:
     pg4.set_default_timeout(15000)
     pg4.on("pageerror", lambda e: errs.append(str(e)))
     opened(pg4, 390, 844)
+    tap = pg4.evaluate("['paletteBtn', 'layBtn'].map((id) => [id, document.getElementById(id).getBoundingClientRect().width])")
+    check("on a phone the palette and Layout buttons are at least 24 px wide (the tap minimum)", all(w >= 24 for _, w in tap), tap)
     pg4.click("#layBtn")
     mm = box(pg4, "#lay-menu")
+    check("on a phone the menu has no width sliders or Sizes heading (the columns stack, so they would do nothing)", pg4.evaluate("!document.getElementById('lay-w-left').offsetParent")
+          and pg4.evaluate("!document.getElementById('lay-w-right').offsetParent") and "SIZES" not in pg4.inner_text("#lay-menu").upper(), pg4.inner_text("#lay-menu")[:160])
     check("on a phone the menu fits the width and the height of the window", mm and mm["x"] >= 0 and mm["x"] + mm["w"] <= 390 and mm["y"] + mm["h"] <= 844, mm)
     if SHOTS:
         pg4.screenshot(path=str(SHOTS / "observatory-layout-menu-light-390.png"))

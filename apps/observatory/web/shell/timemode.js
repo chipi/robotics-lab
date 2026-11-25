@@ -1,5 +1,6 @@
 // The Observatory's time as a named mode (step 4.5, U14): Live (the viewer follows the edge of a run still being written) or Replay (anywhere
 // else, and every finished run), how far behind the edge the viewer is, the way back to live, and jumps between event marks by kind.
+// The badge is also the Follow live switch (a button, pressed while following; the shell wires its click).
 // The shell owns `M.t` and draws; this module mirrors M.t into libs/web/time/timemodel.js (the one time model), which says the mode and
 // the gap, and paints the mode control. Live and Replay are the Observatory's only (RFC-0023 D1: Mission Control is now, a run is replayed here).
 import { createTimeModel } from '/lib/time/timemodel.js';
@@ -19,7 +20,12 @@ export function createTimeMode({ el, jumps, goLive, marks }) {
     const s = tm.state, live = s.mode === 'live';
     el.hidden = false;
     el.dataset.mode = s.mode;
-    $('#tm-badge').innerHTML = live ? word('live', 'Live') : word('neutral', 'Replay');
+    const badge = $('#tm-badge');
+    badge.innerHTML = live ? word('live', 'Live') : word('neutral', 'Replay');
+    // the badge is the Follow live switch: pressed is following the run's edge; a finished run has nothing to follow, so the badge only says Replay
+    badge.disabled = !s.canLive;
+    badge.setAttribute('aria-pressed', String(live));
+    badge.title = !s.canLive ? 'A finished run is replayed' : live ? 'Live: following the run as it is written. Press to stop following' : 'Replay: press to follow the run live';
     const gap = s.canLive && !live ? s.behind_s : 0;
     $('#tm-behind').textContent = gap > 0.005 ? `${gap.toFixed(1)} s behind` : '';
     $('#tm-golive').hidden = !(s.canLive && !live);

@@ -80,9 +80,9 @@ with tempfile.TemporaryDirectory() as tmp:
         boot(wp, f"{base}/watch/duck/room/latest", "window.miniview !== undefined && window.miniview.state().run !== null && window.__ready === true", 30000)
         ws = wp.evaluate("window.miniview.state()")
         check("/watch/duck/room/latest opens the live run in the watch view, following it", ws["run"] == KEY and ws["status"] == "live" and ws["follow"] is True
-              and ws["view"] == "watch" and wp.evaluate("!document.getElementById('follow').hidden"), (ws["run"], ws["status"], ws["follow"], ws["view"]))
+              and ws["view"] == "watch" and wp.evaluate("!document.getElementById('tm-badge').disabled"), (ws["run"], ws["status"], ws["follow"], ws["view"]))
         check("both pages show the live run with its follow switch, following", all(
-            pg.evaluate("!document.getElementById('follow').hidden") and pg.evaluate("window.miniview.state().follow") for pg in pages.values()),
+            pg.evaluate("!document.getElementById('tm-badge').disabled") and pg.evaluate("window.miniview.state().follow") for pg in pages.values()),
               {lib: ticks(pg) for lib, pg in pages.items()})
         check("the page's state says which run, that it is live, its seq, and that it follows",
               all((lambda s: s["run"] == KEY and s["status"] == "live" and s["seq"] > 10 and s["follow"] is True)(pg.evaluate("window.miniview.state()")) for pg in pages.values()))
@@ -173,7 +173,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for lib, q in pages.items():
             q.evaluate("window.miniview.setTime(2.0)")
             check(f"{lib}: setTime by script turns Follow live off, and the switch shows it",
-                  q.evaluate("window.miniview.state().follow") is False and not q.evaluate("document.getElementById('follow-on').checked"))
+                  q.evaluate("window.miniview.state().follow") is False and q.evaluate("document.getElementById('tm-badge').getAttribute('aria-pressed')") == "false")
         write_ticks(log, 30, 36)
         for lib, q in pages.items():
             q.wait_for_function("(+document.getElementById('runinfo').textContent.match(/(\\d+) ticks/)[1]) >= 36", timeout=15000)
@@ -181,7 +181,7 @@ with tempfile.TemporaryDirectory() as tmp:
             check(f"{lib}: with Follow live off the script's time is not overridden by the run growing", abs(t - 2.0) < 1e-9, t)
         # a change by hand (a click on the first-tick button) does the same, and the switch turns it on again
         pg = pages["deck"]
-        pg.click("#follow-on")
+        pg.click("#tm-badge")
         pg.wait_for_function("window.miniview.state().t >= 1.0 + 0.1 * 35 - 0.01", timeout=15000)
         check("turning the switch on follows the newest tick again", pg.evaluate("window.miniview.state().follow") is True)
         pg.click("#tFirst")
@@ -194,11 +194,11 @@ with tempfile.TemporaryDirectory() as tmp:
         imp.join(30)
         for lib, q in pages.items():
             q.wait_for_function("document.getElementById('runVerdict').textContent.includes('trapped')", timeout=20000)      # the verdict is the Run button's, not the chip's (round 1)
-            q.wait_for_function("document.getElementById('follow').hidden", timeout=20000)
+            q.wait_for_function("document.getElementById('tm-badge').disabled", timeout=20000)
             info = q.evaluate("document.getElementById('runVerdict').textContent")
             check(f"{lib}: the run ends on the page (all 36 ticks, trapped, no follow switch), status ended", ticks(q) == 36 and "trapped" in info
                   and q.evaluate("window.miniview.state().status") == "ended", info)
-        wp.wait_for_function("document.getElementById('runVerdict').textContent.includes('trapped') && document.getElementById('follow').hidden", timeout=20000)
+        wp.wait_for_function("document.getElementById('runVerdict').textContent.includes('trapped') && document.getElementById('tm-badge').disabled", timeout=20000)
         check("the watch page shows the run end: the room event, the anomaly, the event and the verdict in the decisions, status ended",
               wp.evaluate("window.miniview.state().status") == "ended" and wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)") == ["room", "anomaly", "trapped", "verdict"],
               wp.evaluate("[...document.querySelectorAll('#inspBody .dec .dr')].map((e) => e.textContent)"))

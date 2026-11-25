@@ -119,7 +119,7 @@ export function createSignalsView(host, { seek, limits = () => null }) {
       return;
     }
     scroll.appendChild(axis());
-    const state = (s) => s.kind === 'text' || (!s.unit && isDiscrete(sig.v[s.name] || []));      // a unit says it is a quantity, whatever few values it took
+    const state = (s) => s.kind === 'text' || (!s.unit && !limits(s.name) && isDiscrete(sig.v[s.name] || []));      // a unit says it is a quantity, whatever few values it took; and so do a joint's limits (an angle that only read 0 and 1 is not a state)
     const texts = shown.filter(state).length, numeric = shown.length - texts;
     const TEXT_H = 40;
     const H = Math.max(54, Math.min(96, Math.floor((scroll.clientHeight - 22 - texts * (TEXT_H + 1) - numeric) / Math.max(1, numeric))));

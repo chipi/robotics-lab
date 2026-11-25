@@ -249,8 +249,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         for rid, v in VERDICT_RUNS:
             make_run(Path(tmp2) / "data", f"duck/room/{rid}", HEAD + [tick(1.0, 0.0), (2.0, "end", {"verdict": v})])
         live = make_run(Path(tmp2) / "data", "duck/room/livenow", HEAD + [tick(1.0, 0.0)], close=False)
-        # the screenshots' fixture in short: 30 ticks and 30 samples, the run info's longest text
-        RICH = HEAD + [r for k in range(30) for r in (tick(round(1.0 + 0.1 * k, 3), 0.01 * k), (round(1.05 + 0.1 * k, 3), "signals", {"values": {"joint_a": 0.1 * k}, "t_src": round(1.05 + 0.1 * k, 3)}))] + [(4.5, "end", {"verdict": "reached"})]
+        # the run info's longest text, longer than the screenshots' fixture (30 ticks): a real run has hundreds of ticks and a duration of minutes
+        RICH_N = 600
+        RICH = HEAD + [r for k in range(RICH_N) for r in (tick(round(1.0 + 0.1 * k, 3), 0.001 * k), (round(1.05 + 0.1 * k, 3), "signals", {"values": {"joint_a": 0.001 * k}, "t_src": round(1.05 + 0.1 * k, 3)}))] + [(round(1.5 + 0.1 * RICH_N, 3), "end", {"verdict": "reached"})]
         make_run(Path(tmp2) / "data", "duck/room/rich", RICH, signals=[{"name": "joint_a", "kind": "number", "unit": "rad"}])
         cat2.scan()
         httpd2, base2 = serve(cat2, follow=False)
@@ -312,9 +313,9 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         check("... and no two top-bar items overlap, the Scenes link stays inside its slot", not lap, lap)
         pg.evaluate("window.miniview.load('room', 'duck/room/rich')")
         pg.wait_for_function("window.__ready === true && document.getElementById('runinfo').textContent.includes('samples')", timeout=30000)
-        info = pg.evaluate("(() => { const e = document.getElementById('runinfo'); return {text: e.textContent, scroll: e.scrollWidth, client: e.clientWidth}; })()")
-        check("at 1440 px the run info shows in full (ticks and samples, no ellipsis) for a run of 30 ticks and 30 samples",
-              "30 samples" in info["text"] and info["scroll"] <= info["client"], info)
+        info = pg.evaluate("(() => { const e = document.getElementById('runinfo'), g = document.querySelector('.top > .grow'); return {text: e.textContent, scroll: e.scrollWidth, client: e.clientWidth, spare: g.getBoundingClientRect().width}; })()")
+        check("at 1440 px the run info shows in full (ticks and samples, no ellipsis) for a run of 600 ticks and 600 samples (a minute at 10 Hz), with 24 px or more to spare in the bar",
+              "600 samples" in info["text"] and info["scroll"] <= info["client"] and info["spare"] >= 24, info)
         probe_tn = pg.evaluate("""(() => ['tin', 'kin'].map((id) => getComputedStyle(document.getElementById(id)).fontVariantNumeric.includes('tabular-nums')))()""")
         check("the time and tick readouts use tabular figures", all(probe_tn), probe_tn)
         shell_btn = pg.evaluate("document.getElementById('exportBtn').getBoundingClientRect().height")

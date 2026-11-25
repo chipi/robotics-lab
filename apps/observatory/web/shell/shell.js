@@ -205,7 +205,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     index: null, sceneId: null, runId: null, scene: null, run: null, fr: null, pres: null, bw: [],
     t: 0, i: 0, view: 'top', frame: 'world', on: {}, vv: {}, modes: {}, rel: { belief_truth: true, depth_pose: false },
     size: {}, sel: null, selNode: null, ov: { coords: !watch, gizmo: true, legend: true, hazards_top: watch }, open: {}, query: '', hideMissing: false,
-    tab: watch ? 'decided' : 'moment', secOpen: {}, kinds: {}, rows: !watch, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true,
+    tab: watch ? 'decided' : 'moment', secOpen: {}, kinds: {}, rows: !watch, play: { on: false, speed: 1, loop: false }, loading: false, theme: 'dark', follow: true, sigs: false,
     angles: prefs().angles !== false, robot: null, watch,
   };
   const knownViews = () => (eye ? [...VIEWS, ...EYE_VIEWS] : VIEWS);
@@ -220,6 +220,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   paintIcons();
   const stage = $('stage'), app = $('app');
   // the left panel's sections, the joint-angle switch and the columns' widths are the layout in use (layout.js); a layout loaded or reset re-reads the first two
+  let lastOpen = {};                                    // the sections as the layout last said them: only a section the layout changes is touched
   const layoutApi = !watch ? mountLayout({ host: app, button: $('layBtn'), left: $('left'), split: $('split'), onApply: () => fromLayout() }) : null;
   const sigView = createSignalsView($('sigview'), { seek: (t) => setTime(t), limits: (name) => jointLimits(M.robot, name) });
   // Live and Replay as a named mode, and the jumps between marks (timemode.js); marks = the events a viewer has not hidden
@@ -238,6 +239,9 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // a robot's named values (ADR-0013): the run declares them; a run with them and no pose shows them as charts in the viewport
   const hasSignals = () => !!M.run?.signals?.length;
   const signalsOnly = () => !!M.runId && hasSignals() && !hasTicks();
+  // a run with a pose and signals keeps its 3D views; the viewer can lay the Signals view over them (so a joint shows its limit bands there too)
+  const signalsAlso = () => !!M.runId && hasSignals() && hasTicks();
+  const signalsShown = () => signalsOnly() || (signalsAlso() && M.sigs);
   const sampleN = () => store.sig.t.length;
   const sampleIdx = (t) => sampleAt(store.sig.t, t);
   // the span of the run's ticks (from the data rows), whatever is loaded
@@ -536,14 +540,15 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       if (scene.kind === 'no layout') for (const s of run.streams || []) if (s.id.startsWith('scene.')) Object.assign(s, { count: 0, missing: true, why: 'no scene' });
       if (M.sceneId !== sc.id || M.scene !== scene) { M.scene = scene; adapter.setScene(scene); }
       M.sceneId = sc.id; M.runId = r0.key;
-      M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {};
+      M.on = {}; M.vv = {}; M.size = {}; M.sel = null; M.kinds = {}; M.sigs = false;
       M.robot = run.robot?.name ? await robotDesc(run.robot.name) : null;
       T = buildTree(run, M.robot);
       const live0 = (id) => T.nodes[id]?.leaf && T.nodes[id].s && !T.nodes[id].s.missing;
       M.selNode = live0('belief.pose') || !run.signals?.length ? (T.nodes['belief.pose'] ? 'belief.pose' : T.order[0] || null) : T.order.find((id) => id.startsWith('signals.') && live0(id)) || 'sec.other';
       // sections closed until the viewer opens them (remembered); the groups inside open
       const open = prefs().open || {};
-      M.open = Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, T.nodes[id].section ? !!open[id] : true]));
+      lastOpen = Object.fromEntries(T.order.filter((id) => T.nodes[id].section).map((id) => [id, !!open[id]]));
+      M.open =Object.fromEntries(T.order.filter((id) => T.nodes[id].kids).map((id) => [id, T.nodes[id].section ? !!open[id] : true]));
       for (const p of T.parents[M.selNode] || []) M.open[p] = true;                // the selected stream is in view
       M.modes = Object.fromEntries((run.streams || []).map((s) => [s.id, { mode: s.default_mode || 'at', n: 2 }]));
       M.run = run; M.fr = store.fr; M.pres = pres;
@@ -552,7 +557,6 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       for (const e of run.events) if (!(e.kind in M.kinds)) M.kinds[e.kind] = e.kind !== 'leg';
       if (hasTicks()) { adapter.setRun(run, M.fr); built = true; }
       const live = run.status === 'live';
-      $('follow').hidden = !live;
       M.t = M.follow && live ? run.t1 : run.t0;
       M.i = hasTicks() ? tickAt(M.t) : 0;
       TM.open(run, M.t); TM.kind = ''; $('jkind').firstChild.textContent = 'any';
@@ -568,7 +572,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function scenesPage() {
     play(false);
     app.classList.add('scenes');
-    M.runId = null; store.close(); built = false; $('follow').hidden = true;
+    M.runId = null; store.close(); built = false;
     writeHash();
     $('scenespage').innerHTML = M.index.scenes.map((s) => `<div class="sc"><h2>${esc(s.name)}</h2><span class="dim">${esc(s.id === s.kind ? s.kind : s.id + ' · ' + s.kind)} · ${s.runs.length} runs</span>`
       + '<table><thead><tr><th>run</th><th>kind</th><th>robot</th><th>length</th><th>verdict</th><th>events</th></tr></thead><tbody>'
@@ -589,7 +593,6 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       growTimer = 0;
       if (!M.run || M.loading || !M.runId) return;
       const live = M.run.status === 'live';
-      $('follow').hidden = !live;
       if (hasTicks() && !built) { adapter.setRun(M.run, M.fr); built = true; }
       if (hasTicks() && !laidOut) { M.t = M.follow && live ? M.run.t1 : M.run.t0; layout(); }
       if (M.follow && live && (hasTicks() || hasSignals())) M.t = clamp(M.run.t1, M.run.t0, M.run.t1);
@@ -619,12 +622,12 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // `following` is the one caller that does not turn Follow live off: the follow itself
   function setTime(t, sync, following = false) {
     if (!M.run) return M.t;
-    if (!following && M.follow) { M.follow = false; $('follow-on').checked = false; renderChrome(); }
+    if (!following && M.follow) { M.follow = false; renderChrome(); }
     M.t = clamp(+t, M.run.t0, M.run.t1);
     TM.seen(M.t, following);
     if (hasTicks()) { M.i = tickAt(M.t); adapter.draw(sync); }
     syncTime();
-    if (signalsOnly()) sigView.update(M.t);
+    if (signalsShown()) sigView.update(M.t);
     if (!store.covers(M.t)) store.ensure(M.t).then(() => { if (M.run && hasTicks()) { M.i = tickAt(M.t); adapter.draw(); syncTime(); } });
     return M.t;
   }
@@ -706,7 +709,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function state() {
     if (!M.run || !hasTicks()) {
       return { ...identity(), t: M.t, tick: 0, frame: M.frame, view: M.view, belief: null, truth: null, distance: null, last_event: M.run ? lastEvent() : null, selection: null,
-        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsOnly() }), ...(M.run && semanticOut() && { semantic: semanticOut() }) };
+        t_range: M.run ? [M.run.t0, M.run.t1] : null, ...(M.run && hasSignals() && { signals: sigMoment(), signals_view: signalsShown() }), ...(M.run && semanticOut() && { semantic: semanticOut() }) };
     }
     const m = moment();
     return {
@@ -765,7 +768,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   // Follow live as one switch: the top bar's, the timeline's Return to live, a script's
   function setFollow(on) {
-    M.follow = !!on; $('follow-on').checked = M.follow;
+    M.follow = !!on;
     TM.follow(M.follow);
     renderChrome();
     if (M.follow && M.run?.status === 'live') setTime(M.run.t1, false, true);
@@ -963,10 +966,14 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const p = prefs(), want = p.angles !== false;
     let changed = M.angles !== want;
     M.angles = want;
+    const holdsSelection = new Set(T.parents[M.selNode] || []);
     for (const id of T.order) {
       if (!T.nodes[id].section) continue;
       const o = !!p.open[id];
-      if (M.open[id] !== o) { M.open[id] = o; changed = true; }
+      if (lastOpen[id] === o) continue;                  // this layout change is about something else: the section stays as the viewer (or the run's opening) left it
+      lastOpen[id] = o;
+      const now = o || holdsSelection.has(id);           // a layout never folds the section that holds the selected stream out of view
+      if (M.open[id] !== now) { M.open[id] = now; changed = true; }
     }
     if (changed) renderTree();
     if (M.run) renderLanes();
@@ -1212,7 +1219,10 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     $('runinfo').innerHTML = r ? `<b>${esc(r.robot.name)}</b> · ${esc(r.kind)} · <span class="num">${(r.t1 - r.t0).toFixed(1)} s</span> · ${r.ticks || !r.samples ? `<span class="num">${r.ticks}</span> ticks` : ''}${r.ticks && r.samples ? ' · ' : ''}${r.samples ? `<span class="num">${r.samples}</span> samples` : ''}` : 'no run open';
     $('runinfo').title = $('runinfo').textContent;      // the chip shortens with an ellipsis in a narrow bar; the whole text stays in the tooltip. The verdict is not in it: the Run button beside it shows it
     app.classList.toggle('signals-only', signalsOnly());
-    $('vt').innerHTML = signalsOnly() ? '<b>Signals</b> · time series, click or drag to seek' : `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
+    app.classList.toggle('signals-over', signalsAlso() && M.sigs);
+    $('sigBtn').hidden = !signalsAlso();
+    $('sigBtn').setAttribute('aria-pressed', String(signalsAlso() && M.sigs));
+    $('vt').innerHTML = signalsShown() ? '<b>Signals</b> · time series, click or drag to seek' : `<b>${frameName()}</b> · ${VIEW_NOTE[M.view] || M.view}`;
     $('st-run').textContent = r ? `${M.sceneId} / ${r.id}` : 'no run open';
     $('st-live').textContent = live ? (M.follow ? 'live · following' : 'live') : r ? `${r.status} · ${r.verdict}` : '';
     $('st-live').className = live ? 'live' : '';
@@ -1375,7 +1385,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   // the Signals view takes the viewport of a run that has signals and no pose (ADR-0013); a run with a pose keeps its views
   function renderSignals() {
-    const on = signalsOnly();
+    const on = signalsShown();
     $('sigview').hidden = !on;
     if (!on) return;
     const ids = T.order.filter((id) => id.startsWith('signals.') && T.nodes[id].leaf && shown(id));
@@ -1383,7 +1393,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
   // the evidence link (evidence.js) to the playhead; a run with a pose is linked on the 3D view, which is the camera `focus` moves
   function momentLink({ focus = 'robot' } = {}) {
-    if (!M.run) return null;
+    if (!M.run || !M.runId || !M.sceneId) return null;                // the scenes page keeps the last run in M.run, but no run is open
     const framed = hasTicks() && knownViews().includes('3d');
     return buildLink({ loc: location, scene: M.sceneId, run: M.runId, view: framed && focus === 'robot' ? '3d' : M.view, t: M.t, focus: framed ? focus : null });
   }
@@ -1407,7 +1417,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     adapter.theme(palette());
     renderChrome();
     if (hasTicks()) adapter.draw();
-    if (M.run) { renderTree(); renderProps(); renderLanes(); renderSignals(); }      // the signals' colours follow the theme
+    if (M.run) { renderTree(); renderProps(); renderLanes(); renderSignals(); scheduleInsp(); }      // the signals' colours and the inspector's raw depth frame (a canvas) follow the theme
   }
   mq.addEventListener?.('change', () => { if (!stored()) applyTheme(mq.matches ? 'light' : 'dark'); });
 
@@ -1489,7 +1499,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   $('layoutSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setView(b.dataset.view); };
   $('frameSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) window.miniview.setFrame(b.dataset.frame); };
   $('themeBtn').onclick = () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true);
-  $('follow-on').onchange = () => setFollow($('follow-on').checked);
+  $('tm-badge').onclick = () => setFollow(!M.follow);
+  $('sigBtn').onclick = () => { M.sigs = !M.sigs; renderChrome(); renderSignals(); };
   $('sceneBtn').onclick = (e) => ensureIndex().then(() => popover(e.currentTarget, '<h6>Scenes</h6>' + M.index.scenes.map((s) => `<button class="item ${s.id === M.sceneId ? 'cur' : ''}" data-scene="${esc(s.id)}"><span>${esc(s.id)}</span><span class="mono dim">${s.runs.length} runs</span><small>${esc(s.name)}</small></button>`).join(''),
     (p) => p.querySelectorAll('[data-scene]').forEach((b) => (b.onclick = () => { closePop(); window.miniview.load(b.dataset.scene); }))));
   $('runBtn').onclick = (e) => ensureIndex().then(() => {
@@ -1628,7 +1639,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) return;
     if (e.target.matches?.('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (e.key === ' ' && e.target.matches?.('.lane-s, .lane-l, .lane-m, .dl-name')) return;       // Space on a focused lane folds or selects it, as on any button
+    if (e.key === ' ' && e.target.matches?.('.lane-s, .lane-l, .lane-m, .dl-name, .tm-badge')) return;       // Space on a focused lane, or on the Live / Replay badge, folds, selects or toggles it, as on any button
     const k = e.key, lk = k.toLowerCase();
     if (k === '/') { e.preventDefault(); $('q').focus(); }
     else if (k === '?') help();
@@ -1739,9 +1750,9 @@ const TEMPLATE = `
     <button class="pick-btn" id="runBtn" aria-haspopup="listbox"><span class="k">Run</span><span id="runName">—</span><span id="runVerdict" class="verdict"></span><svg class="i" data-i="down"></svg></button>
     <span class="sep"></span>
     <div class="seg" role="group" aria-label="Layout" id="layoutSeg">
-      <button data-view="top" aria-pressed="true" title="One top view (1)"><svg class="i" data-i="square"></svg>Top</button>
-      <button data-view="three" aria-pressed="false" title="Top, front and side (2)"><svg class="i" data-i="cols"></svg>Three</button>
-      <button data-view="3d" aria-pressed="false" title="3D (3)"><svg class="i" data-i="box"></svg>3D</button>
+      <button data-view="top" aria-pressed="true" title="One top view (1)">Top</button>
+      <button data-view="three" aria-pressed="false" title="Top, front and side (2)">Three</button>
+      <button data-view="3d" aria-pressed="false" title="3D (3)">3D</button>
     </div>
     <div class="seg" role="group" aria-label="Frame" id="frameSeg">
       <button data-frame="world" aria-pressed="true" title="The scene's frame, where truth is (W)">World</button>
@@ -1750,8 +1761,7 @@ const TEMPLATE = `
     <span class="grow"></span>
     <a class="tlink" id="watchLink" href="#" hidden title="Watch this run, at this moment (the eye, live)">Watch</a>
     <a class="tlink" id="exploreLink" href="#" hidden title="Open this run, at this moment, in the explorer">Explorer</a>
-    <span class="timemode" id="timemode" data-mode="replay" hidden role="group" aria-label="Time mode"><span id="tm-badge"></span><span class="num behind" id="tm-behind" aria-live="polite"></span><button class="mini" id="tm-golive" hidden title="Follow the run's edge again">Return to live</button></span>
-    <label id="follow" class="follow" hidden><input type="checkbox" id="follow-on" checked> Follow live</label>
+    <span class="timemode" id="timemode" data-mode="replay" hidden role="group" aria-label="Time mode"><button type="button" class="tm-badge" id="tm-badge" aria-pressed="false"></button><span class="num behind" id="tm-behind" aria-live="polite"></span><button class="mini" id="tm-golive" hidden title="Follow the run's edge again">Return to live</button></span>
     <span class="chip" id="runinfo"></span>
     <button class="pick-btn" id="exportBtn" disabled aria-haspopup="dialog">Export video</button>
     <button class="icon-btn" id="helpBtn" title="Keyboard shortcuts (?)"><svg class="i" data-i="key"></svg></button>
@@ -1776,6 +1786,7 @@ const TEMPLATE = `
     <div class="vhead">
       <span class="vt" id="vt"></span>
       <span class="grow"></span>
+      <button type="button" class="vbtn" id="sigBtn" hidden aria-pressed="false" aria-label="Signals" title="Signals: the robot's values as charts, with the joints' limits, over the view"><svg class="i" data-i="signals"></svg><span class="vbtn-t">Signals</span></button>
       <span class="timemode jumps" id="jumps" hidden role="group" aria-label="Jump between events"><button class="mini" id="jprev" title="Previous event of the chosen kind (,)" aria-label="Previous event"><svg class="i" data-i="left" style="width:12px;height:12px"></svg></button><button class="mini" id="jkind" title="The kind of event , and . jump to" aria-haspopup="true">any</button><button class="mini" id="jnext" title="Next event of the chosen kind (.)" aria-label="Next event"><svg class="i" data-i="right" style="width:12px;height:12px"></svg></button></span>
       <button class="icon-btn" id="paletteBtn" title="Command palette (Ctrl+K)" aria-label="Command palette" aria-keyshortcuts="Control+K Meta+K"><svg class="i" data-i="command"></svg></button>
       <button class="icon-btn" id="layBtn" title="Panels and layouts" aria-label="Layout" aria-haspopup="true" aria-expanded="false" aria-controls="lay-menu"><svg class="i" data-i="panels"></svg></button>

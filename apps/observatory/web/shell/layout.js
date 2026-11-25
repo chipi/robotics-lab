@@ -116,7 +116,7 @@ export function mountLayout({ host, button, left, split, onApply }) {
   menu.append(
     el('div', { class: 'layhead' }, el('h3', {}, 'Layout'), close),
     el('div', { class: 'laygroup' }, 'Panels'), ...panelRows,
-    el('div', { class: 'laygroup' }, 'Sizes'), ...sizes,
+    el('div', { class: 'laysizes' }, el('div', { class: 'laygroup' }, 'Sizes'), ...sizes),     // the columns stack on a phone (shell.css), so there is no width to set
     el('div', { class: 'laygroup' }, 'Saved layouts'),
     el('div', { class: 'layline' }, list, del),
     el('div', { class: 'layline' }, name, save),

@@ -47,16 +47,19 @@ svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-widt
   background: var(--surface-field); border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
 .chip b { font-weight: 500; color: var(--text-1); }
 .chip .ui-badge, .dec .ui-badge, .scenespage .ui-badge, .evrow .ui-badge { padding: 0 var(--sp-2); vertical-align: middle; }
-.follow { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); cursor: pointer; }
-.follow[hidden], [hidden] { display: none !important; }
+[hidden] { display: none !important; }
 /* the time mode (U14): the named mode, how far behind the edge, the way back; no motion of its own (the live glyph's pulse is the kit's, and goes with the motion tokens) */
 .timemode { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .timemode .ui-badge { padding: 0 var(--sp-1); }
 .timemode .behind { color: var(--text-2); }
+/* the badge is the Follow live switch: a button with no chrome of its own, pressed while the run is followed; the focus ring is the kit's */
+.tm-badge { display: inline-flex; align-items: center; min-height: 20px; padding: 0; border: 0; background: transparent; border-radius: var(--radius-2); cursor: pointer; }
+.tm-badge:disabled { cursor: default; }
+.tm-badge:not(:disabled):hover { background: var(--surface-hover); }
 .timemode .mini { height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-2); background: var(--surface-field); border: 1px solid var(--line); color: var(--text-1); }
 .timemode .mini:hover { background: var(--surface-hover); }
 .app.scenes #timemode, .app.scenes #jumps { display: none; }
-.app.scenes #layoutSeg, .app.scenes #frameSeg, .app.scenes #runinfo, .app.scenes #follow, .app.scenes .sep { display: none; }
+.app.scenes #layoutSeg, .app.scenes #frameSeg, .app.scenes #runinfo, .app.scenes .sep { display: none; }
 .icon-btn { width: var(--ctl-h); height: var(--ctl-h); display: inline-grid; place-items: center; border-radius: var(--radius-2); color: var(--text-2); }
 .icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-1); }
 .icon-btn[aria-pressed="true"] { color: var(--text-1); background: var(--surface-press); }
@@ -188,7 +191,11 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .view canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .vhead { position: absolute; left: 0; right: 0; top: 0; height: 26px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3);
   background: var(--veil-1); border-bottom: 1px solid var(--hairline-1); backdrop-filter: blur(4px); z-index: 3; }
-.vhead .vt b { font-weight: 600; } .vhead .vt { color: var(--text-2); }
+.vhead .vt b { font-weight: 600; } .vhead .vt { color: var(--text-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vhead .icon-btn { flex: none; }
+.vbtn { flex: none; height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-2); background: var(--surface-field); border: 1px solid var(--line); color: var(--text-1); }
+.vbtn:hover { background: var(--surface-hover); }
+.vbtn[aria-pressed="true"] { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-ring); }
 .view > svg.gizmo { position: absolute; right: 12px; top: 38px; width: 56px; height: 56px; z-index: 3; pointer-events: none; }
 .readout { position: absolute; right: 10px; bottom: 8px; font: var(--fs-1) var(--font-mono); color: var(--text-2); background: var(--veil-2);
   padding: 3px var(--sp-2); border-radius: var(--radius-2); z-index: 3; pointer-events: none; }
@@ -365,6 +372,7 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 /* the Signals view (ADR-0013): a run with a robot's named values and no pose draws them as charts in the viewport */
 .app.signals-only #layoutSeg, .app.signals-only #frameSeg, .app.signals-only #ovBtn, .app.signals-only #fitBtn,
 .app.signals-only .gizmo, .app.signals-only .vcorner, .app.signals-only .readout { display: none; }
+.app.signals-over #frameSeg, .app.signals-over #ovBtn, .app.signals-over #fitBtn, .app.signals-over .gizmo, .app.signals-over .vcorner, .app.signals-over .readout { display: none; }
 .sigview { position: absolute; left: 0; right: 0; top: 26px; bottom: 0; z-index: 2; background: var(--surface-1); overflow: hidden; }
 .sg-scroll { position: absolute; inset: 0; overflow: auto; overflow-x: hidden; touch-action: pan-y; }
 .sg-empty { padding: var(--sp-6) var(--sp-3); color: var(--text-3); text-align: center; }
@@ -545,9 +553,16 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
 .laymenu .btn.ghost { background: transparent; }
 .laymenu .btn:disabled { opacity: .5; }
 .laymenu input:not([type]), .laymenu select { height: var(--ctl-h); }
+@media (max-width: 960px) { .laysizes { display: none; } }
 
 /* what a palette verb says once the palette has closed (verbs.js); a message, never a target */
 .vmsg { position: fixed; left: 50%; transform: translateX(-50%); bottom: 36px; max-width: min(92vw, 520px); background: var(--surface-3); border: 1px solid var(--line-strong);
   border-radius: var(--radius-3); padding: var(--sp-2) var(--sp-3); z-index: var(--z-toast); box-shadow: var(--elev-2); pointer-events: none; overflow-wrap: anywhere; }
 .vmsg[hidden] { display: none; }
 .vmsg.err { border-color: var(--status-error); color: var(--status-error-on); }
+/* the Signals switch: its word on a wide header, an icon on a phone (the header has no room for both the word and the title; 24 px to tap) */
+.vbtn .i { display: none; width: 14px; height: 14px; }
+@media (max-width: 600px) {
+  .vbtn { width: 24px; height: 24px; padding: 0; display: inline-grid; place-items: center; }
+  .vbtn .i { display: block; } .vbtn .vbtn-t { display: none; }
+}
