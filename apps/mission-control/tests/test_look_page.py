@@ -18,6 +18,10 @@ joints column at its widest, at phone and desktop width; the overview fetches ne
 U23 (the readiness card, readiness.js): named checks from the fields GET /robots/{id} carries, each a status badge (glyph and word); a field the view does not carry
 reads unknown and never ok; the verdict follows the worst check; the card is a layout panel (hide, fold); the overview fetches readiness.js not at all.
 
+U24 (evidence links, libs/web/evidence.js): where a run or a moment is shown, a link "Open in the Observatory at this moment" built with the one shared format
+(an alarm, the robot page's alarm rows, the readiness alarm check, a goal run's result), only behind the Observatory at /control/; evidence.js loads when a link is
+rendered and not on the overview.
+
 U25 (the palette's verbs, palette-verbs.js on libs/web/palette): Ctrl/Cmd+K and a top-bar button open it, never from a key typed in an input, and the overview fetches
 no palette module until then; STOP and STOP ALL are listed first and run on the first Enter, unconfirmed; navigation (overview, each robot, each tab), panels
 and layouts (through layout.js and the store), the theme; a verb that fails shows its error in the toast; no verb starts a goal, takes over, takes a lease or
@@ -82,6 +86,8 @@ WEB = Path(__file__).resolve().parents[1] / "src" / "mission_control" / "web"
 FAKE = mc.robots["duck-1"].adapter.robot
 STOPS = {"stop-robot": "/robots/duck-1/stop", "stop-all": "/stop"}
 errors = []
+SHOTS_U24 = Path(os.environ.get("MC_SHOTS", Path.home() / ".cache" / "robotics-lab-tests")) / "u24-shots"
+SHOTS_U24.mkdir(parents=True, exist_ok=True)
 
 with sync_playwright() as p:
     browser = launch(p)
@@ -773,6 +779,125 @@ with sync_playwright() as p:
             check(f"{view}: each robot has an open verb and each tab a verb", {"nav.robot.a", "nav.robot.b", "nav.tab.a.body", "nav.tab.b.calibration", "nav.tab.a.settings", "nav.tab.b.modules"} <= set(ids), ids)
             check(f"{view}: the Observatory link is a verb under /control/ and absent on a port of its own", "nav.observatory" in ids and "nav.observatory" not in spec["off"], (ids, spec["off"]))
         pctx.close()
+
+    # --- U24: evidence links: "open in the Observatory at this moment", one format for both apps (libs/web/evidence.js) ----------------------------
+    RUN_KEY = "duck/room/mc7-1700"
+    WATCH = f"http://127.0.0.1:8070/watch/{RUN_KEY}"
+    MOMENT = f"{BASE}/web/three/#scene=room&run=duck%2Froom%2Fmc7-1700&view=3d&t=3.5&focus=robot"
+    ANOMALY = {"n": 1, "t": 3.5, "anomaly": "joint_overload", "source": "robot", "module": "body", "severity": "major", "detector": "joint_current",
+               "summary": "left_knee at 130 mA, at or over 120 mA for 1.0 s", "margin": 10, "values": {"joint": "left_knee", "ma": 130, "margin_unit": "mA"}}
+    SYNTH_RUN = {"id": 7, "goal_id": None, "goal": {"name": "explore", "folder": "", "kind": "explore", "params": {}}, "robot": "duck-1", "site": None, "target": None,
+                 "state": "reached", "reason": None, "progress": {"elapsed_s": 12.5}, "result": {"area_m2": 3}, "broken": None, "guardrails": [], "conditions": {},
+                 "run_key": RUN_KEY, "watch": WATCH, "expect": None, "as_expected": None, "decisions": [], "anomalies": [], "created_at": 0, "started_at": 0, "ended_at": 0}
+
+    with soft("evidence: the shared module"):
+        sctx = browser.new_context(viewport={"width": 1440, "height": 900})
+        sp = sctx.new_page()
+        sp.goto(BASE + "/")
+        got = sp.evaluate("""async () => {
+            const m = await import('/lib/evidence.js'), loc = {origin: 'http://o', pathname: '/web/three/'};
+            const a = {loc, scene: 's', run: 'a/s/r 1', view: '3d', t: 1.23456, focus: 'robot'};
+            return {names: Object.keys(m).sort(), link: m.momentLink(a), nofocus: m.momentLink({...a, focus: 'other'}), href: m.evidenceHref({origin: 'http://o', runKey: 'duck/room/r1', t: 2}),
+                    notime: m.evidenceHref({origin: 'http://o', runKey: 'duck/room/r1', t: null}), short: m.evidenceHref({origin: 'http://o', runKey: 'room/r1', t: 2}),
+                    none: m.evidenceHref({origin: 'http://o', runKey: null, t: 2}),
+                    parsed: m.parseMoment(new URL(m.evidenceHref({origin: 'http://o', runKey: 'duck/room/r1', t: 2.25})).hash), junk: m.parseMoment('#t=abc&focus=nope')};
+        }""")
+        check("/lib/evidence.js is served and exports the builder, the parser, the focus list and copyText", {"momentLink", "parseMoment", "FOCUS", "copyText", "evidenceHref"} <= set(got["names"]), got["names"])
+        check("the link is `#scene&run&view&t&focus` in that order, the run URL-encoded, t to 3 decimals", got["link"] == "http://o/web/three/#scene=s&run=a%2Fs%2Fr+1&view=3d&t=1.235&focus=robot", got["link"])
+        check("an unknown focus is left out", got["nofocus"] == "http://o/web/three/#scene=s&run=a%2Fs%2Fr+1&view=3d&t=1.235", got["nofocus"])
+        check("a run key is robot/scene/run: its scene is the middle part", got["href"] == "http://o/web/three/#scene=room&run=duck%2Froom%2Fr1&view=3d&t=2&focus=robot", got["href"])
+        check("no time reads as the run's start", got["notime"].endswith("&t=0&focus=robot"), got["notime"])
+        check("a key that is not robot/scene/run, or no key, makes no link", got["short"] is None and got["none"] is None, (got["short"], got["none"]))
+        check("the parser reads what the builder wrote, and ignores what is not a time or a focus", got["parsed"] == {"t": 2.25, "focus": "robot"} and got["junk"] == {"t": None, "focus": None}, (got["parsed"], got["junk"]))
+        sctx.close()
+
+    for view, size, scheme in (("phone 390x844", {"width": 390, "height": 844}, "light"), ("desktop 1440x900", {"width": 1440, "height": 900}, "dark")):
+        for under in (False, True):
+            where = "behind the Observatory at /control/" if under else "on its own port"
+            ectx = browser.new_context(viewport=size, color_scheme=scheme)
+            ep = ectx.new_page()
+            ep.set_default_timeout(5000)
+            ep.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
+            ep.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
+            ereqs = []
+            ep.on("request", lambda r: ereqs.append(r.url))
+            if under:      # the page's address is /control/...; its requests go to the same server without the prefix, as the Observatory's proxy does
+                ep.route(re.compile(r"/control/"), lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
+            runs_live = [False]
+            ep.route(re.compile(r"/api/v1/goal-runs(\?|/)"), lambda r: r.fulfill(json={"ok": True, "runs": [SYNTH_RUN]} if "?" in r.request.url else {"ok": True, "run": SYNTH_RUN})
+                     if runs_live[0] else r.fallback())
+            root = BASE + ("/control/" if under else "/")
+            evidence_fetched = lambda: [u for u in ereqs if u.endswith("/lib/evidence.js")]
+
+            with soft(f"{view}, {where}: evidence"):
+                ep.goto(root)
+                wait(ep, "window.__mc && window.__mc.ready")
+                ep.wait_for_timeout(300)
+                check(f"{view}, {where}: the phone overview with no run and no alarm fetches evidence.js not at all", evidence_fetched() == [], evidence_fetched())
+                mc.bus.emit("anomaly", robot="duck-1", goal_run=7, watch=WATCH + "#t=3.5", anomaly=ANOMALY)
+                wait(ep, "!document.getElementById('alarm').hidden")
+                ep.click("#alarm")
+                wait(ep, "!document.getElementById('alarms').hidden && !!document.querySelector('#alarm-insp h3')")
+                if under:
+                    wait(ep, "!!document.querySelector('#alarm-insp a.evidence')")
+                    a = ep.locator("#alarm-insp a.evidence")
+                    check(f"{view}, {where}: the alarm's moment links to the Observatory's 3D view at its time, framing the robot", a.count() == 1 and a.get_attribute("href") == MOMENT, a.get_attribute("href"))
+                    check(f"{view}, {where}: the link says what it does and opens in a new tab safely", a.inner_text().strip() == "Open in the Observatory at this moment" and a.get_attribute("target") == "_blank"
+                          and "noopener" in (a.get_attribute("rel") or ""))
+                    check(f"{view}, {where}: it is the only Observatory link in the alarm's inspector", ep.locator("#alarm-insp a", has_text="Observatory").count() == 1)
+                    rt = ep.evaluate("""async (h) => { const m = await import('/lib/evidence.js'); return m.parseMoment(new URL(h).hash); }""", MOMENT)
+                    check(f"{view}, {where}: the parser reads the link back to the alarm's time and the robot focus", rt == {"t": 3.5, "focus": "robot"}, rt)
+                    ep.evaluate("""() => { const t = document.getElementById('alarm-insp'); t.__seen = [...t.querySelectorAll('a.evidence')].map((a) => getComputedStyle(a).color); }""")
+                else:
+                    ep.wait_for_timeout(300)
+                    check(f"{view}, {where}: there is no evidence link (the Observatory is not at this origin) and evidence.js is not fetched",
+                          ep.locator("a.evidence").count() == 0 and evidence_fetched() == [], (ep.locator("a.evidence").count(), evidence_fetched()))
+                    check(f"{view}, {where}: the alarm still opens its watch page at the configured address",
+                          ep.locator("#alarm-insp a", has_text="Observatory").get_attribute("href") == WATCH + "#t=3.5")
+                ep.click("#alarm")      # close the panel again
+
+            with soft(f"{view}, {where}: evidence on the robot page"):
+                ep.goto(root + "#robot/duck-1")
+                wait(ep, "!document.getElementById('robot-page').hidden && document.getElementById('stop-robot').textContent === 'STOP duck-1'")
+                wait(ep, "!!document.querySelector('#rp-alarms-body .alarmrows li')")
+                wait(ep, "!!document.querySelector('#readiness-checks li')")
+                if under:
+                    wait(ep, "!!document.querySelector('#rp-alarms-body a.evidence') && !!document.querySelector('#readiness-checks [data-check=alarms] a.evidence')")
+                    row = ep.locator("#rp-alarms-body a.evidence")
+                    check(f"{view}, {where}: the robot page's alarm row has the same link", row.count() == 1 and row.get_attribute("href") == MOMENT, row.get_attribute("href"))
+                    rd = ep.locator("#readiness-checks [data-check=alarms] a.evidence")
+                    li = ep.locator("#readiness-checks [data-check=alarms]")
+                    check(f"{view}, {where}: the readiness card's alarm check has it, beside its status glyph and word", rd.get_attribute("href") == MOMENT and li.get_attribute("data-status") == "error"
+                          and li.locator(".ui-badge .ui-glyph").count() == 1, (rd.get_attribute("href"), li.get_attribute("data-status")))
+                    check(f"{view}, {where}: no sideways scrolling with the links shown", ep.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
+                    check(f"{view}, {where}: STOP and STOP ALL are still on top", ep.evaluate("""() => ['stop-robot', 'stop-all'].every((id) => { const b = document.getElementById(id), r = b.getBoundingClientRect();
+                        const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return e === b || b.contains(e); })"""))
+                    ep.screenshot(path=str(SHOTS_U24 / f"mc-robot-alarm-evidence-{'phone-light' if size['width'] < 600 else 'desktop-dark'}.png"), full_page=True)
+                else:
+                    ep.wait_for_timeout(300)
+                    check(f"{view}, {where}: the robot page shows no evidence link and does not fetch evidence.js", ep.locator("a.evidence").count() == 0 and evidence_fetched() == [], evidence_fetched())
+
+            with soft(f"{view}, {where}: evidence on a goal run"):
+                runs_live[0] = True
+                ep.goto(root)
+                wait(ep, "window.__mc && window.__mc.ready")
+                wait(ep, "!!document.querySelector('#run-detail[data-run=\"7\"]')")
+                if under:
+                    wait(ep, "!!document.querySelector('#run-detail a.evidence')")
+                    g = ep.locator("#run-detail a.evidence")
+                    want = f"{BASE}/web/three/#scene=room&run=duck%2Froom%2Fmc7-1700&view=3d&t=12.5&focus=robot"
+                    check(f"{view}, {where}: a finished goal run's result links to the Observatory at the run's last moment (its elapsed time)", g.count() == 1 and g.get_attribute("href") == want, g.get_attribute("href"))
+                    ep.screenshot(path=str(SHOTS_U24 / f"mc-run-evidence-{'phone-light' if size['width'] < 600 else 'desktop-dark'}.png"), full_page=True)
+                    ep.evaluate("location.hash = '#robot/duck-1'")
+                    wait(ep, "!document.getElementById('robot-page').hidden && !!document.querySelector('#readiness-checks li')")
+                    ep.evaluate("""() => { const mc = window.__mc, r = mc.S.robots.find((x) => x.id === 'duck-1'); r.lock = {...r.lock, holder: 'someone', unreachable: false}; r.goal_run = 7; mc.renderRobotPage(); }""")
+                    f = ep.locator("#readiness-checks [data-check=free] a.evidence")
+                    f.wait_for()
+                    check(f"{view}, {where}: a robot held by a goal run links that run at its start", f.get_attribute("href") == f"{BASE}/web/three/#scene=room&run=duck%2Froom%2Fmc7-1700&view=3d&t=0&focus=robot", f.get_attribute("href"))
+                else:
+                    ep.wait_for_timeout(300)
+                    check(f"{view}, {where}: a goal run shows no evidence link, only its Watch link", ep.locator("a.evidence").count() == 0 and ep.locator("#watch").get_attribute("href") == WATCH and evidence_fetched() == [])
+            ectx.close()
 
     # reduced motion: the chevron's transition is gone
     def chevron_ms(reduced):

@@ -178,7 +178,9 @@ li[data-ok="false"] .val { color: var(--status-error-on); }
 .alarmrows { list-style: none; margin: 0; padding: 0; }
 .alarmrows li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hairline-2); }
 .alarmrows .sev { font-size: var(--fs-1); font-weight: 600; text-transform: uppercase; min-width: 58px; }
-.alarmrows .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.alarmrows .what { flex: 1 1 14em; min-width: 0; overflow-wrap: anywhere; }
+.alarmrows li, .checks li { flex-wrap: wrap; }
+a.evidence { flex: none; margin-left: auto; text-decoration: none; }
 .twrap { overflow-x: auto; }
 table.t { width: 100%; border-collapse: collapse; }
 .t th { text-align: left; font-size: var(--fs-1); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }

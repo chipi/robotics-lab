@@ -298,9 +298,9 @@ function fitChecks(r) {
   const l = r.lock || {}, now = Date.now() / 1000;
   const flags = Object.entries((r.status || {}).flags || {}).filter(([, v]) => v).map(([k]) => `${k}: its status says so`);
   const bad = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S && SEV.indexOf(x.a.severity) >= SEV.indexOf("major"));
-  let alarm = null;
+  let alarm = null, w = null;
   if (bad.length) {
-    const w = bad.reduce((a, x) => (SEV.indexOf(x.a.severity) >= SEV.indexOf(a.a.severity) ? x : a));
+    w = bad.reduce((a, x) => (SEV.indexOf(x.a.severity) >= SEV.indexOf(a.a.severity) ? x : a));
     alarm = `${w.a.severity} alarm ${w.a.anomaly}: ${w.a.summary || ""} (${ago(w.at)}${bad.length > 1 ? `, ${bad.length} in the last minute` : ""})`;
   }
   return [
@@ -310,7 +310,7 @@ function fitChecks(r) {
     { id: "free", ok: l.unreachable ? null : !l.holder, what: "Nobody holds it",
       val: l.unreachable ? "not known" : l.holder ? `held by ${l.holder}${r.goal_run != null ? `: goal run #${r.goal_run}` : ""}` : "free" },
     { id: "flags", ok: !flags.length, what: "No status flag set", val: flags.length ? flags.join("; ") : "none" },
-    { id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none" },
+    { id: "alarms", ok: !alarm, what: "No major or critical alarm in the last 60 s", val: alarm || "none", alarm: w },
   ];
 }
 // A sensor's reading for the facts line: a range in cm (or that nothing is in range), else the colour's name or the value.
@@ -394,7 +394,7 @@ function renderRobotPage() {
   setKids($("rp-alarms-sum"), recent.length ? plural(recent.length, "alarm") : "none");
   setKids($("rp-alarms-body"), recent.length
     ? h("ul", { class: "alarmrows" }, recent.map((x) => h("li", {}, h("span", { class: "sev sev-" + x.a.severity }, x.a.severity),
-      h("span", { class: "what" }, `${x.a.anomaly}: ${x.a.summary || ""}`), h("span", { class: "faint" }, ago(x.at)))))
+      h("span", { class: "what" }, `${x.a.anomaly}: ${x.a.summary || ""}`), h("span", { class: "faint" }, ago(x.at)), momentLink(runKeyOf(x.watch), x.a.t))))
     : h("div", { class: "empty" }, "No alarms in the last minute. A major or critical one makes the robot unfit for 60 s."));
 
   const parts = pr ? pr.subsystems : null;
@@ -517,9 +517,36 @@ function loadReadiness() {
     .catch((e) => { setKids($("rp-readiness-body"), h("div", { class: "empty" }, "The readiness card could not be loaded: " + e.message)); });
   return readyBusy;
 }
-const paintReadiness = (r) => readyMod
-  ? readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), list: readyMod.checks(r, fitChecks(r)), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) })
-  : loadReadiness();
+function paintReadiness(r) {
+  if (!readyMod) { loadReadiness(); return; }
+  const fit = fitChecks(r);
+  readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), list: readyMod.checks(r, fit), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) });
+  const w = fit.find((c) => c.id === "alarms").alarm, held = r.lock && r.lock.holder && r.goal_run != null ? runKeyOfRun(r.goal_run) : null;
+  const into = (check, link) => { const li = link && document.querySelector(`#readiness-checks [data-check="${check}"]`); if (li) li.append(link); };
+  into("alarms", w && momentLink(runKeyOf(w.watch), w.a.t));
+  into("free", held && momentLink(held, 0));
+}
+
+// --- evidence links (look-and-feel U24): "open in the Observatory at this moment", in the one format both apps share (libs/web/evidence.js) ----------
+// Mission Control stands at /control/ behind the Observatory on one origin, so the Observatory is this page's own origin there; on a port of its own it is
+// somewhere the page cannot know, and no link is shown (the alarm keeps its watch link, which points at the address the adapter was configured with).
+// evidence.js loads the first time a link is to be drawn and the page repaints then: the phone overview, with no run or alarm in view, never fetches it.
+const behindObservatory = () => location.pathname === "/control" || location.pathname.startsWith("/control/");
+let evidenceMod = null, evidenceBusy = null;
+function loadEvidence() {
+  evidenceBusy ||= import("/lib/evidence.js").then((m) => { evidenceMod = m; renderAlarms(); renderRunDetail(); renderRobotPage(); }).catch(() => {});
+}
+// an alarm's watch address is `<observatory>/watch/<run_key>#t=<s>`: the run key is robot/scene/run
+const runKeyOf = (watch) => (typeof watch === "string" ? (/\/watch\/([^#?]+)/.exec(watch) || [])[1] || null : null);
+// the run key of a goal run this page has listed (the robot view carries only the run's number)
+const runKeyOfRun = (id) => (S.runs.find((x) => x.id === id) || {}).run_key || null;
+// t: seconds into the run; a missing time is the run's start
+function momentLink(runKey, t) {
+  if (!runKey || !behindObservatory()) return null;
+  if (!evidenceMod) { loadEvidence(); return null; }
+  const href = evidenceMod.evidenceHref({ origin: location.origin, runKey, t });
+  return href ? h("a", { class: "btn sm evidence", href, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null;
+}
 
 // The command palette (palette-verbs.js, with libs/web/palette): loaded the first time it is asked for, by Ctrl/Cmd+K or the top-bar button, never by the
 // overview. Once loaded it binds its own Ctrl/Cmd+K. Its verbs press STOP's own buttons for STOP; none starts a goal or takes a robot.
@@ -850,6 +877,7 @@ function renderRunDetail() {
     r.guardrails.length ? h("div", { class: "faint", style: "font-size:12px" }, "must not: " + r.guardrails.map((g) => g.name + (g.mps ? " " + g.mps : "") + (g.seconds ? " " + g.seconds : "")).join(", ")) : null,
     r.broken ? h("div", { class: "dim" }, "Broken: " + r.broken.detail) : null,
     r.result ? h("pre", { class: "json" }, JSON.stringify(r.result, null, 1)) : null,
+    !live ? momentLink(r.run_key, pr.elapsed_s) : null,
     (r.anomalies || []).length ? h("div", { class: "run-anomalies", id: "run-anomalies" }, h("h3", {}, "Alarms"), r.anomalies.map(anomalyLine))
       : h("div", { class: "run-anomalies", id: "run-anomalies" }),
     h("div", { class: "decisions", id: "decisions" }, r.decisions.map((d) => h("div", {}, d.text))),
@@ -1093,7 +1121,7 @@ function renderAlarmInspector() {
         toast(j.stop.confirmed ? `${x.robot} stopped.` : `${x.robot}: STOP sent, but the robot did not answer, so it cannot be confirmed.`, !j.stop.confirmed);
       }) }, `STOP ${x.robot}`),
       x.goal_run != null ? h("button", { class: "btn", type: "button", onclick: guard(() => loadRunDetail(x.goal_run)) }, "Show the run") : null,
-      x.watch ? h("a", { class: "btn", href: x.watch, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null));
+      momentLink(runKeyOf(x.watch), a.t) || (x.watch ? h("a", { class: "btn", href: x.watch, target: "_blank", rel: "noopener" }, "Open in the Observatory at this moment") : null)));
 }
 
 $("alarm").addEventListener("click", () => {
