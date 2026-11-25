@@ -1,0 +1,138 @@
+<title>Look and Feel Round 3</title>
+<style>
+/* layout: a sticky filter bar over one column of before/after pairs; each pair has a number to quote back */
+:root {
+  --bg: #f3f4f6; --panel: #ffffff; --line: #d5d8de; --text: #1c1e22; --dim: #5b606b;
+  --accent: #2f6fd6;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; color-scheme: dark }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--ui); }
+.wrap { max-width: 1500px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 60px; }
+h1 { font-size: 24px; margin: 0 0 4px; text-wrap: balance; }
+h2 { font-size: 17px; margin: 28px 0 8px; }
+p.lead { color: var(--dim); margin: 0 0 16px; max-width: 70ch; }
+.qs { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.qs li { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; max-width: 110ch; }
+.qs b { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding-block: 10px; margin-top: 20px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: var(--panel); color: var(--text); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lbl { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.pairs { display: grid; gap: 28px; margin-top: 16px; }
+.pair { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.pair header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.pair .n { font: 600 15px var(--mono); color: var(--accent); }
+.pair .name { font-family: var(--mono); font-size: 13px; color: var(--dim); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cols.narrow { grid-template-columns: repeat(2, minmax(0, 400px)); justify-content: start; }
+figure { margin: 0; min-width: 0; }
+figcaption { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+@media (max-width: 760px) { .cols, .cols.narrow { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <h1>Look and feel, round 3: time, signals, panels, palette, readiness, evidence</h1>
+  <p class="lead">Before is round 2 (4975be6); after is fc7d78f, with U14 to U18 in the Observatory and U23 to U25 in Mission Control. The first pairs compare the same fixtures, dark and light, desktop 1440 px and phone 390 px. The views that did not exist before are shown alone at the end. Quote a number with your feedback.</p>
+
+  <h2>Questions for you</h2>
+  <ol class="qs">
+    <li><b>Q1</b>Mission Control's robot page now gives two verdicts side by side (#9, #25). The header and "Why it is fit to go" say <i>Fit to go</i> (5 of 5). The new Readiness card says <i>check first</i> (8 of 9), because the sim robot declares no guardrails. Five checks appear on both cards. Choose one: (a) Readiness replaces the fit card, and the header follows Readiness; (b) both stay, and Readiness keeps only its extra checks (link, battery, guardrails, settings); (c) leave both as they are.</li>
+    <li><b>Q2</b>The two cards treat battery differently. Readiness calls under 20 % an error, using the line where the server raises <code>low_battery</code>. The fit card says "its threshold comes with B2". Use 20 % in both, or another figure?</li>
+    <li><b>Q3</b>In Mission Control's palette, STOP is the first row and is selected when the palette opens (#23, #24). Ctrl+K and then Enter stops the robot, with no confirmation, as the plan asked. Keep that, or keep STOP first but select nothing until you type or press an arrow key?</li>
+    <li><b>Q4</b>Signal threshold bands (#15) appear only on a joint signal in a run that has no pose. That is because the Signals view opens only for runs without a pose, and a run's signals carry no limits of their own, so a real duck run shows none today. Choose: (a) let the Signals view open for runs with a pose; (b) add <code>limits</code> to a signal's declaration (a contract change); (c) both; (d) leave it.</li>
+    <li><b>Q5</b>The Observatory's top bar has a Live or Replay badge with "Return to live" (#1, #5). The old "Follow live" checkbox is still there and does the same job. Fold it into the badge in U26? A test that clicks the checkbox would change with it.</li>
+    <li><b>Q6</b>Anything else: say the number and what you would change.</li>
+  </ol>
+
+  <h2>Already on my list to fix</h2>
+  <ol class="qs">
+    <li>The run info in the Observatory's top bar is cut off at 1440 px for a run a little longer than the test's ("30 sam…", #1). The width test passes with 2 px to spare.</li>
+    <li>The Layout menu shows the two width sliders on a phone, where the columns stack and the sliders do nothing (#18).</li>
+    <li>An evidence link frames the robot, but the robot fills only about a tenth of the view's height (#19).</li>
+    <li>On a phone, the Observatory's palette and Layout buttons are 21 px wide, under the 24 px tap minimum.</li>
+    <li>The Layout menu's styles are copied between the two apps. They move into the shared kit in U26.</li>
+    <li>The robot view carries no run key, so the readiness card's "held by goal run #N" links only when that run is in the page's run list. It also carries no <code>allow_real_runs</code>, so Readiness cannot check it.</li>
+  </ol>
+
+  <div class="bar" role="toolbar" aria-label="Filter the screenshots">
+    <span class="lbl">App</span>
+    <div class="seg" data-key="app"><button data-v="all" aria-pressed="true">Both</button><button data-v="observatory" aria-pressed="false">Observatory</button><button data-v="control" aria-pressed="false">Mission Control</button></div>
+    <span class="lbl">Theme</span>
+    <div class="seg" data-key="theme"><button data-v="all" aria-pressed="true">Both</button><button data-v="dark" aria-pressed="false">Dark</button><button data-v="light" aria-pressed="false">Light</button></div>
+    <span class="lbl">Width</span>
+    <div class="seg" data-key="width"><button data-v="all" aria-pressed="true">Both</button><button data-v="1440" aria-pressed="false">Desktop</button><button data-v="390" aria-pressed="false">Phone</button></div>
+  </div>
+
+  <div class="pairs" id="pairs"></div>
+</div>
+
+<script>
+const APPNAME = { observatory: "Observatory", control: "Mission Control" };
+const PAIRS = [
+  ["observatory", "3d", "Run, 3D: Live or Replay badge, jump group, Layout and palette buttons", ["dark-1440", "light-1440", "dark-390", "light-390"]],
+  ["observatory", "map", "Run, map: marks by kind, the same time controls", ["dark-1440", "light-1440", "dark-390", "light-390"]],
+  ["control", "robot", "Robot page: the Readiness card, the palette button", ["dark-1440", "dark-390", "light-390"]],
+  ["control", "overview", "Overview: the palette button", ["dark-1440", "dark-390", "light-390"]],
+];
+const NEW = [
+  ["observatory", "observatory-signals-dark-1440", "Signals: threshold bands and state bars", "dark", "1440"],
+  ["observatory", "observatory-signals-light-390", "Signals: threshold bands and state bars", "light", "390"],
+  ["observatory", "observatory-layout-menu-dark-1440", "The Layout menu", "dark", "1440"],
+  ["observatory", "observatory-layout-menu-light-390", "The Layout menu", "light", "390"],
+  ["observatory", "evidence-focus-1440-dark", "An evidence link opened: 2.00 s, paused, framing the robot", "dark", "1440"],
+  ["observatory", "evidence-focus-390-light", "An evidence link opened: 2.00 s, paused, framing the robot", "light", "390"],
+  ["observatory", "observatory-palette-dark-1440", "The palette (Ctrl+K)", "dark", "1440"],
+  ["observatory", "observatory-palette-light-390", "The palette (Ctrl+K)", "light", "390"],
+  ["control", "mission-control-palette-dark-1440", "The palette: STOP and STOP ALL first", "dark", "1440"],
+  ["control", "mission-control-palette-light-390", "The palette: STOP and STOP ALL first", "light", "390"],
+  ["control", "mc-robot-alarm-evidence-desktop-dark", "An alarm: the readiness card and the evidence links", "dark", "1440"],
+  ["control", "mc-robot-alarm-evidence-phone-light", "An alarm: the readiness card and the evidence links", "light", "390"],
+  ["control", "mc-run-evidence-desktop-dark", "A finished goal run: its evidence link", "dark", "1440"],
+  ["control", "mc-run-evidence-phone-light", "A finished goal run: its evidence link", "light", "390"],
+];
+const host = document.getElementById("pairs");
+let n = 0;
+const where = (w) => (w === "390" ? "phone 390" : "desktop 1440");
+for (const [app, v, label, sizes] of PAIRS) for (const sz of sizes) {
+  const [theme, width] = sz.split("-"), name = `${app}-${v}-${sz}`, el = document.createElement("section");
+  n += 1;
+  el.className = "pair"; el.dataset.app = app; el.dataset.theme = theme; el.dataset.width = width; el.id = "p" + n;
+  el.innerHTML = `<header><span class="n">#${n}</span><strong>${APPNAME[app]}: ${label}</strong><span class="name">${theme} · ${where(width)}</span></header>
+    <div class="cols ${width === "390" ? "narrow" : ""}">
+      <figure><figcaption>Before (round 2)</figcaption><img loading="lazy" src="before/${name}.png" alt="${APPNAME[app]} ${label}, ${theme}, ${width} px, before"></figure>
+      <figure><figcaption>After</figcaption><img loading="lazy" src="after/${name}.png" alt="${APPNAME[app]} ${label}, ${theme}, ${width} px, after"></figure>
+    </div>`;
+  host.appendChild(el);
+}
+for (const [app, file, label, theme, width] of NEW) {
+  const el = document.createElement("section");
+  n += 1;
+  el.className = "pair"; el.dataset.app = app; el.dataset.theme = theme; el.dataset.width = width; el.id = "p" + n;
+  el.innerHTML = `<header><span class="n">#${n}</span><strong>${APPNAME[app]}: ${label}</strong><span class="name">new · ${theme} · ${where(width)}</span></header>
+    <div class="cols narrow" style="${width === "390" ? "" : "grid-template-columns: minmax(0, 1fr)"}">
+      <figure><figcaption>New</figcaption><img loading="lazy" src="new/${file}.png" alt="${APPNAME[app]} ${label}, ${theme}, ${width} px"></figure>
+    </div>`;
+  host.appendChild(el);
+}
+const sel = { app: "all", theme: "all", width: "all" };
+function apply() {
+  for (const el of host.children) el.hidden = !Object.entries(sel).every(([k, v]) => v === "all" || el.dataset[k] === v);
+}
+for (const seg of document.querySelectorAll(".seg")) seg.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  for (const x of seg.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+  sel[seg.dataset.key] = b.dataset.v; apply();
+});
+</script>

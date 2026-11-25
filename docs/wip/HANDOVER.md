@@ -46,12 +46,14 @@ in order".
 | U21 Mission Control body view on the stage | done: 61aca43 |
 | Review round 2 (3D) and its fixes | done: 5b68eb6; the answers' settings: see "Last state" |
 | U22 Mission Control panels and layouts | done: c565d96 |
-| U14 to U18, U23 to U25, U26 | not started |
+| U23 readiness card, U14 time, U25 Mission Control palette verbs, U15 signals | done: 187f08a, e49660a, 18e3614, 354fe11 |
+| U16 Observatory panels and layouts, U17 evidence links | done: 2805f06, 5ae343f |
+| U18 Observatory palette verbs, U24 Mission Control evidence link (`libs/web/evidence.js`) | done: 5275bfa, fc7d78f |
+| Review round 3 | answered 2026-11-25 ([round 3](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM)); the decisions are in LOOK-AND-FEEL-PLAN; the fixes and the timeline redesign are in progress |
+| U26 | not started |
 
-Next, in order (the plan's lanes): the Observatory U14 (time), U15 (signals), U16 (panels and
-layouts), U17 (evidence links), U18 (palette verbs); Mission Control U23 (readiness card), U24
-(evidence link), U25 (palette verbs). Then **review round 3** (time, panels, palette,
-readiness), U26 (the sweep), **review round 4** (final).
+Next: the operator's answers to **review round 3** (Q1 to Q6), their fixes and the six items
+"already on my list" on the round 3 page; then U26 (the sweep), **review round 4** (final).
 
 How a unit runs (it worked this session): an `implementer` subagent on sonnet per unit with
 the brief in [look-and-feel/UNIT-BRIEF](look-and-feel/UNIT-BRIEF.md) and the plan row; units
@@ -121,30 +123,20 @@ decisions list.
 
 ## Last state
 
-2026-11-24 evening, at the operator's pause ("finish all work in progress, write the
-handover, pause until tomorrow"). Nothing is in flight: no subagent, no long-job, no
-uncommitted work in the worktree.
+2026-11-25 evening. Every 4.5 unit except U26 is on main (U14 to U18, U23 to U25, see the
+table); each landed after the full page suite of the app it touched passed locally, plus
+`make lint` and `make test-web`. Review round 3 is published and waits for the operator.
 
-- **Main:** 4975be6 (the round 2 answers) plus this handover. Every 4.5 commit up to fc46a9f
-  has `VERDICT GREEN`; c565d96 (U22) and 4975be6 were pushed at the pause: check their CI
-  first (`ci_watch.py <sha>`), and fix red before anything else.
-- **Round 2 answers, done in 4975be6:** the 3D view opens on the robot, with "Whole scene" as
-  a remembered setting in the Overlays popover; the ghost is on by default and remembered;
-  the camera toolbar is one "Camera" button up to 960 px. Mission Control's body view keeps
-  no follow modes and no gizmo (the operator agreed).
-- **Next:** U14 (Observatory time) and U23 (Mission Control readiness card) can start in
-  parallel; then the rest of the lanes, review round 3, U26, review round 4; then steps 4.9,
-  5, 6, 7.
-- **For review round 3, look at these by eye** (tests cover them, nobody has seen them):
-  Mission Control's open Layout menu (U22) on phone and desktop; the Observatory's open
-  "Camera" panel on a phone; the inspector panels in both apps.
-- **Known gaps, for U26 or a later unit:** U22 has no panel reordering (the store's frozen
-  shape has no order key), no layouts on the overview, no layout export or import; the
-  palette is not wired into either app (U18, U25) and a verb's error only reaches the
-  console; K51 (one unstable eye shot).
-- **The review records:** `docs/wip/look-and-feel/round1/`, `round2/` and the review pages
-  are committed; the pages link their images as `before/` and `after/`, so on the docs site
-  they show no images. The Artifacts above are the readable copies.
+- **CI:** 187f08a and 5ae343f green. e49660a and 354fe11 were red only on the Pages deploy
+  (GitHub's outage that afternoon, 500 and 502); 5ae343f's deploy replaced them.
+- **Round 3's questions:** Q1 the two verdicts on the robot page (the fit card against
+  Readiness), Q2 the battery line, Q3 STOP selected when the palette opens, Q4 signal limits
+  only on a run without a pose, Q5 the Follow live checkbox beside the Live/Replay badge, Q6
+  anything else.
+- **Gaps the units found, not built:** the robot view has no run key and no `allow_real_runs`;
+  a goal run's result has no time of its own (U24 uses `progress.elapsed_s`);
+  `createTimeModel` cannot leave live without a seek (U14 parks 1e-5 s before the edge); play,
+  speed and loop still live in the shell, not the time model.
 
 Lessons from this session (each cost a red CI or a debug round):
 

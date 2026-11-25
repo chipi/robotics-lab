@@ -29,6 +29,18 @@ Each unit's first step is to check the facts it rests on.
   light rig (the `--scene-*` lights) for the 3D pane, the Explore body and Mission Control,
   dark lights brighter and neutral (sky 1, sun 1.4); the dark grid one step brighter
   (`--draw-grid` follows it, an amendment in `test_tokens.py`); `I` in the keyboard help.
+- **Review round 3** ([the page](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM), 2026-11-25):
+  the rest looks good for now; more feedback after using it. Q1: the Readiness card replaces
+  the fit card, and the robot page's header verdict follows it (one verdict, one list). Q2: the
+  battery check uses the server's rule (an error under 20 %, cleared above 25 %), read from the
+  server, not copied into the page. Q3: STOP stays the palette's first row but is not selected
+  when it opens. Q4: the Signals view opens for runs with a pose too, so the duck's joints get
+  their limit bands. Q5: the "Follow live" checkbox folds into the Live/Replay badge. The
+  timeline's many flat lanes look dull and basic: one redesigned direction is built directly
+  (not variants), reviewed in round 4, mixing all four ideas offered: lanes grouped by section
+  that fold to a summary lane; the data inside the bars (a sparkline for a signal, density for
+  a sensor's rate, so a gap shows); an events and alarms lane on top; a muted tone per section,
+  colour kept for what needs attention.
 - **One design system for both apps:** the same tokens, type scale, colours and components,
   from `libs/web`, for full consistency. The one difference kept on purpose is density:
   the Observatory compact (12 px base, 24 px controls), Mission Control regular (14 px base,
