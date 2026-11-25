@@ -18,6 +18,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import FAKE_FILE, check, finish, installation_file
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control import alarms as alarms_mod
@@ -69,8 +70,7 @@ with sync_playwright() as p:
     page.set_default_timeout(5000)
     page.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
     page.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
-    page.goto(BASE + "/")
-    wait(page, "window.__mc && window.__mc.ready")
+    boot(page, BASE + "/", "window.__mc && window.__mc.ready")
     no_scroll = lambda: page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
     # One verdict: the header chip follows the Readiness card's overall status (ok, warn, error, unknown). duck-1's profile declares no guardrail (a warning), so its idle
@@ -173,6 +173,8 @@ with sync_playwright() as p:
         reasons_rows = page.locator("#readiness-checks li[data-status=unknown]").evaluate_all("(els) => els.map((e) => e.dataset.check)")
         check("must fail: online and free: no error, the guardrails warning, the battery ok from the server's rule, and the header says check first in words", f == IDLE and reasons == []
               and reasons_rows == [] and page.locator("#readiness-checks li[data-check=battery]").get_attribute("data-status") == "ok" and "check first" in page.locator("#verdict").inner_text().lower() and page.locator("#readiness-checks li[data-check=guardrails]").get_attribute("data-status") == "warn", (f, reasons, reasons_rows))
+        # the header follows the card on the next render: wait for it before comparing
+        wait(page, "(() => { const v = document.getElementById('verdict'), o = document.getElementById('readiness-overall'); return v.dataset.status === o.dataset.status && v.innerText.trim() === o.innerText.trim(); })()")
         check("the header verdict is the card's own: the same status and the same word", page.locator("#verdict").get_attribute("data-status") == page.locator("#readiness-overall").get_attribute("data-status")
               and page.locator("#verdict").inner_text().strip() == page.locator("#readiness-overall").inner_text().strip(), (page.locator("#verdict").inner_text(), page.locator("#readiness-overall").inner_text()))
         check("there is one verdict list: the old 'Why it is fit to go' card and its checks are gone", page.locator("[data-panel=fit]").count() == 0 and page.locator("#fit-checks").count() == 0 and page.locator("#fit").count() == 0)
@@ -240,7 +242,7 @@ with sync_playwright() as p:
                     "severity": "major", "detector": "d", "summary": "overload before the page opened", "values": {"joint": "left_knee"}})
         late = ctx.new_page()
         late.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
-        late.goto(BASE + "/#robot/duck-1")
+        boot(late, BASE + "/#robot/duck-1", "window.__mc && window.__mc.ready")
         fit_is("error", pg=late)
         reasons = late.locator("#readiness-checks li[data-status=error]").all_inner_texts()
         check("must fail: opened after a major alarm: Overview says not ready, with the alarm as the reason", "not ready" in late.locator("#verdict").inner_text().lower()
@@ -285,15 +287,13 @@ with sync_playwright() as p:
 
     # --- the address is the page: a direct visit ------------------------------------------------------
     with soft("a direct visit"):
-        page.goto(BASE + "/?visit=1#robot/duck-1")
-        wait(page, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+        boot(page, BASE + "/?visit=1#robot/duck-1", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
         wait(page, "document.querySelectorAll('#rp-parts [data-part]').length === 3")
         check("must fail: opening #robot/<id> directly lands on the robot page, loaded", fit()[0] == IDLE)
 
     # --- light, and desktop -----------------------------------------------------------------------------------------------
     with soft("light and desktop"):
-        page.goto(BASE + "/?visit=2#robot/duck-1")
-        wait(page, "window.__mc && window.__mc.ready && document.querySelectorAll('#rp-parts [data-part]').length === 3")
+        boot(page, BASE + "/?visit=2#robot/duck-1", "window.__mc && window.__mc.ready && document.querySelectorAll('#rp-parts [data-part]').length === 3")
         page.emulate_media(color_scheme="light")
         check("light: the robot page follows the system, no sideways scrolling", page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg-app').trim()") == "#e4e6ea" and no_scroll())
         page.screenshot(path=str(SHOTS / "mc-robot-page-phone-light.png"), full_page=True)

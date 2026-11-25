@@ -44,6 +44,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import check, finish, installation_file
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control.api import serve
@@ -110,8 +111,7 @@ with sync_playwright() as p:
             wait(page, "!document.querySelector('#drawer-root .scrim:not([hidden])')")
 
     def open_page():
-        page.goto(BASE + "/#robot/duck-1")
-        wait(page, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+        boot(page, BASE + "/#robot/duck-1", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
         wait(page, "document.getElementById('stop-robot').textContent === 'STOP duck-1'")
 
     def tab(name):
@@ -186,8 +186,7 @@ with sync_playwright() as p:
     check("style.css uses no old alias of the token file", old == [], old)
 
     page.set_viewport_size({"width": 1440, "height": 900})
-    page.goto(BASE + "/")
-    wait(page, "window.__mc && window.__mc.ready && document.getElementById('conn').textContent === 'live'")
+    boot(page, BASE + "/", "window.__mc && window.__mc.ready && document.getElementById('conn').textContent === 'live'")
     check("the page is density regular, 14 px base", page.evaluate("document.documentElement.dataset.density === 'regular' && getComputedStyle(document.body).fontSize === '14px'"))
     wait(page, "!!document.querySelector('header .ui-brand')")
     check("the top bar's brand is brand.js's link", page.evaluate("(() => { const a = document.querySelector('header [data-slot=brand] a.ui-brand'); return !!a && a.textContent === 'Mission Control'; })()"))
@@ -271,8 +270,7 @@ with sync_playwright() as p:
     check("a fresh state enables them again", page.evaluate("[...document.querySelectorAll('[data-needs-fresh]')].every((b) => !b.disabled) && document.getElementById('goal-fresh').hidden"))
 
     # the real thing, not a set-back stamp: the robot stops answering, the server says offline
-    page.goto(BASE + "/")
-    wait(page, "window.__mc && window.__mc.ready && window.__mc.freshOf(window.__mc.S.robots[0]) === 'fresh'")
+    boot(page, BASE + "/", "window.__mc && window.__mc.ready && window.__mc.freshOf(window.__mc.S.robots[0]) === 'fresh'")
     FAKE.set_offline(True)
     try:
         wait(page, "window.__mc.freshOf(window.__mc.S.robots[0]) === 'offline' && document.getElementById('g-run').disabled", 10000)
@@ -290,8 +288,7 @@ with sync_playwright() as p:
     # a kit module that fails to load leaves the page, STOP and the plain chip as they are
     broken = ctx.new_page()
     broken.route(re.compile(r".*/lib/(brand|status)\.js$"), lambda r: r.abort())
-    broken.goto(BASE + "/")
-    broken.wait_for_function("window.__mc && window.__mc.ready && document.getElementById('conn').textContent === 'live'", timeout=8000)
+    boot(broken, BASE + "/", "window.__mc && window.__mc.ready && document.getElementById('conn').textContent === 'live'", timeout=8000)
     check("kit failed to load: no brand link, the static brand stays, STOP and STOP ALL are visible and enabled", broken.evaluate(
         "!document.querySelector('.ui-brand') && document.querySelector('[data-slot=brand]').textContent === 'Mission Control' && ['stop-robot', 'stop-all'].every((i) => { const b = document.getElementById(i), r = b.getBoundingClientRect(); return !b.disabled && r.width > 0 && r.height > 0; })"))
     with soft("kit failed: a click on stop-robot"):
@@ -305,8 +302,7 @@ with sync_playwright() as p:
     seen = []
     light.on("request", lambda r: seen.append(r.url))
     light.set_viewport_size({"width": 390, "height": 844})
-    light.goto(BASE + "/")
-    light.wait_for_function("window.__mc && window.__mc.ready", timeout=8000)
+    boot(light, BASE + "/", "window.__mc && window.__mc.ready", timeout=8000)
     light.wait_for_timeout(1200)
     heavy = [u for u in seen if "/lib/vendor/" in u or "three" in u.lower() or "bodyview" in u or "/lib/stage/" in u or "/lib/body/inspector" in u]
     check("the overview fetches no three.js, vendor module, stage, inspector or body view", heavy == [], heavy)
@@ -332,8 +328,7 @@ with sync_playwright() as p:
         reqs, calls = [], []
         arm_page.on("request", lambda r: reqs.append(r.url))
         arm_page.on("request", lambda r: calls.append((r.method, r.url)) if r.method in ("POST", "DELETE", "PUT") else None)
-        arm_page.goto(BASE + "/")
-        arm_page.wait_for_function("window.__mc && window.__mc.ready && window.__mc.S.areas.length === 2", timeout=8000)
+        boot(arm_page, BASE + "/", "window.__mc && window.__mc.ready && window.__mc.S.areas.length === 2", timeout=8000)
         arm_page.wait_for_timeout(800)
         check(f"{view}: the overview has not fetched confirm.js or confirm.css", not [u for u in reqs if "/lib/confirm." in u], [u for u in reqs if "confirm" in u])
         check(f"{view}: STOP and STOP ALL are not armed and carry no confirm", arm_page.evaluate("[...document.querySelectorAll('#stop-robot, #stop-all, #alarm-stop')].every((b) => !b.hasAttribute('data-armed') && !b._dangerous)"))
@@ -383,8 +378,7 @@ with sync_playwright() as p:
     dp = ctx.new_page()
     dp.on("request", lambda r: drawer_reqs.append(r.url))
     dp.set_viewport_size({"width": 390, "height": 844})
-    dp.goto(BASE + "/#robot/duck-1")
-    dp.wait_for_function("window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden", timeout=8000)
+    boot(dp, BASE + "/#robot/duck-1", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden", timeout=8000)
     dp.click("#tab-settings")
     dp.wait_for_function("!!document.querySelector('#st-blocks [data-block]')")
     dp.click("#st-history-open")
@@ -399,8 +393,7 @@ with sync_playwright() as p:
         tctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark")
         tp = tctx.new_page()
         tp.set_default_timeout(5000)
-        tp.goto(BASE + "/")
-        wait(tp, "window.__mc && window.__mc.ready")
+        boot(tp, BASE + "/", "window.__mc && window.__mc.ready")
         tp.evaluate("localStorage.removeItem('rl.theme'); localStorage.setItem('mc-theme', 'light')")
         tp.reload()
         wait(tp, "window.__mc && window.__mc.ready")
@@ -437,8 +430,7 @@ with sync_playwright() as p:
                 return e && (e === b || b.contains(e)) ? 'button' : (e ? e.tagName + '#' + e.id + '.' + e.className : 'nothing'); }""", sid)
 
         def lopen(tab_name="overview"):
-            lp.goto(BASE + "/#robot/duck-1" + ("" if tab_name == "overview" else "/" + tab_name))
-            wait(lp, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+            boot(lp, BASE + "/#robot/duck-1" + ("" if tab_name == "overview" else "/" + tab_name), "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
             wait(lp, "document.getElementById('stop-robot').textContent === 'STOP duck-1'")
             wait(lp, "!!document.querySelector('#rp-layout-menu')")      # layout.js is mounted
 
@@ -624,8 +616,7 @@ with sync_playwright() as p:
     oreqs = []
     olay.on("request", lambda r: oreqs.append(r.url))
     olay.set_viewport_size({"width": 390, "height": 844})
-    olay.goto(BASE + "/")
-    olay.wait_for_function("window.__mc && window.__mc.ready", timeout=8000)
+    boot(olay, BASE + "/", "window.__mc && window.__mc.ready", timeout=8000)
     olay.wait_for_timeout(800)
     check("the phone overview fetches neither layout.js nor the layout store nor readiness.js", not [u for u in oreqs if "layout" in u or "readiness" in u], [u for u in oreqs if "layout" in u or "readiness" in u])
     olay.close()
@@ -648,8 +639,7 @@ with sync_playwright() as p:
                 return e && (e === b || b.contains(e)) ? 'button' : (e ? e.tagName + '#' + e.id + '.' + e.className : 'nothing'); }""", sid)
 
         def popen_page(hash_=""):
-            pp.goto(BASE + "/" + hash_)
-            wait(pp, "window.__mc && window.__mc.ready")
+            boot(pp, BASE + "/" + hash_, "window.__mc && window.__mc.ready")
             wait(pp, "document.getElementById('stop-robot').textContent === 'STOP duck-1'")
 
         def rows():
@@ -722,8 +712,7 @@ with sync_playwright() as p:
             fp = fctx.new_page()
             fp.set_default_timeout(5000)
             fp.route(re.compile(r"/web/palette-verbs\.js"), lambda r: r.abort())
-            fp.goto(BASE + "/")
-            wait(fp, "window.__mc && window.__mc.ready")
+            boot(fp, BASE + "/", "window.__mc && window.__mc.ready")
             fp.keyboard.press("Control+k")
             wait(fp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
             msg = fp.evaluate("document.getElementById('toast').textContent")
@@ -891,7 +880,7 @@ with sync_playwright() as p:
     with soft("evidence: the shared module"):
         sctx = browser.new_context(viewport={"width": 1440, "height": 900})
         sp = sctx.new_page()
-        sp.goto(BASE + "/")
+        boot(sp, BASE + "/", "window.__mc && window.__mc.ready")
         got = sp.evaluate("""async () => {
             const m = await import('/lib/evidence.js'), loc = {origin: 'http://o', pathname: '/web/three/'};
             const a = {loc, scene: 's', run: 'a/s/r 1', view: '3d', t: 1.23456, focus: 'robot'};
@@ -928,8 +917,7 @@ with sync_playwright() as p:
             evidence_fetched = lambda: [u for u in ereqs if u.endswith("/lib/evidence.js")]
 
             with soft(f"{view}, {where}: evidence"):
-                ep.goto(root)
-                wait(ep, "window.__mc && window.__mc.ready")
+                boot(ep, root, "window.__mc && window.__mc.ready")
                 ep.wait_for_timeout(300)
                 check(f"{view}, {where}: the phone overview with no run and no alarm fetches evidence.js not at all", evidence_fetched() == [], evidence_fetched())
                 mc.bus.emit("anomaly", robot="duck-1", goal_run=7, watch=WATCH + "#t=3.5", anomaly=ANOMALY)
@@ -955,8 +943,7 @@ with sync_playwright() as p:
                 ep.click("#alarm")      # close the panel again
 
             with soft(f"{view}, {where}: evidence on the robot page"):
-                ep.goto(root + "#robot/duck-1")
-                wait(ep, "!document.getElementById('robot-page').hidden && document.getElementById('stop-robot').textContent === 'STOP duck-1'")
+                boot(ep, root + "#robot/duck-1", "!document.getElementById('robot-page').hidden && document.getElementById('stop-robot').textContent === 'STOP duck-1'")
                 wait(ep, "!!document.querySelector('#rp-alarms-body .alarmrows li')")
                 wait(ep, "!!document.querySelector('#readiness-checks li')")
                 if under:
@@ -977,8 +964,7 @@ with sync_playwright() as p:
 
             with soft(f"{view}, {where}: evidence on a goal run"):
                 runs_live[0] = True
-                ep.goto(root)
-                wait(ep, "window.__mc && window.__mc.ready")
+                boot(ep, root, "window.__mc && window.__mc.ready")
                 wait(ep, "!!document.querySelector('#run-detail[data-run=\"7\"]')")
                 if under:
                     wait(ep, "!!document.querySelector('#run-detail a.evidence')")
@@ -1008,8 +994,7 @@ with sync_playwright() as p:
         dp2.route(re.compile(r"/api/v1/goal-runs(\?|/)"), lambda r: r.fulfill(json={"ok": True, "runs": [SYNTH_RUN]} if "?" in r.request.url else {"ok": True, "run": SYNTH_RUN}))
         held = []
         dp2.route(re.compile(r"/lib/evidence\.js"), lambda r: held.append(r))
-        dp2.goto(BASE + "/control/")
-        wait(dp2, "window.__mc && window.__mc.ready && !!document.querySelector('#run-detail[data-run=\"7\"] #save-name')")
+        boot(dp2, BASE + "/control/", "window.__mc && window.__mc.ready && !!document.querySelector('#run-detail[data-run=\"7\"] #save-name')")
         for _ in range(40):
             if held:
                 break
@@ -1031,8 +1016,7 @@ with sync_playwright() as p:
         fp.route(UNDER, lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
         bad = re.compile(r"/lib/evidence\.js")
         fp.route(bad, lambda r: r.abort())
-        fp.goto(BASE + "/control/#robot/duck-1")
-        wait(fp, "!document.getElementById('robot-page').hidden && !!document.querySelector('#rp-alarms-body .alarmrows li')")
+        boot(fp, BASE + "/control/#robot/duck-1", "!document.getElementById('robot-page').hidden && !!document.querySelector('#rp-alarms-body .alarmrows li')")
         wait(fp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
         msg = fp.evaluate("document.getElementById('toast').textContent")
         fp.wait_for_timeout(300)
@@ -1050,8 +1034,7 @@ with sync_playwright() as p:
         op = octx.new_page()
         op.set_default_timeout(5000)
         op.route(UNDER, lambda r: r.continue_(url=r.request.url.replace("/control/", "/", 1)))
-        op.goto(BASE + "/control/")
-        wait(op, "window.__mc && window.__mc.ready && !!window.__mc.KIT.brand")
+        boot(op, BASE + "/control/", "window.__mc && window.__mc.ready && !!window.__mc.KIT.brand")
         href = op.evaluate("window.__mc.KIT.brand.APPS.observatory.href")
         op.keyboard.press("Control+k")
         wait(op, "!!document.querySelector('.pal') && !document.querySelector('.pal').hidden && document.querySelectorAll('.pal-row').length > 0")
@@ -1076,8 +1059,7 @@ with sync_playwright() as p:
     def chevron_ms(reduced):
         c2 = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", reduced_motion="reduce" if reduced else "no-preference")
         p2 = c2.new_page()
-        p2.goto(BASE + "/#robot/duck-1")
-        p2.wait_for_function("window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden", timeout=8000)
+        boot(p2, BASE + "/#robot/duck-1", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden", timeout=8000)
         v = p2.evaluate("getComputedStyle(document.querySelector('.shead .chev')).transitionDuration")
         c2.close()
         return v

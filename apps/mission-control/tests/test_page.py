@@ -20,6 +20,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import FAKE_FILE, check, finish, robot_file
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control.api import serve
@@ -87,8 +88,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
     page.on("console", lambda m: errors.append("console: " + m.text) if m.type == "error" else None)
-    page.goto(BASE + "/")
-    wait(page, "window.__mc && window.__mc.ready")
+    boot(page, BASE + "/", "window.__mc && window.__mc.ready")
 
     # --- the first screen, at phone width ----------------------------------------------------------
     check("the robot list shows the robot, online, its lock free", page.locator("#robot-fake-1").get_attribute("data-online") == "true"
@@ -346,6 +346,7 @@ with sync_playwright() as p:
     check("delete an area", get("/sites/home/areas")["areas"] == [])
     page.set_input_files("#import-file", path)
     wait(page, "window.__mc.S.areas.length === 1")
+    wait(page, "document.getElementById('toast').textContent.includes('Imported')")   # the toast follows loadSite(), which sets the areas first
     check("Import site brings the area back, and says what it did", get("/sites/home/areas")["areas"][0]["name"] == "Galley"
           and "Imported" in page.locator("#toast").inner_text())
 
@@ -431,8 +432,7 @@ with sync_playwright() as p:
     BASE2 = f"http://127.0.0.1:{srv2.server_address[1]}"
     page2 = browser.new_context(viewport={"width": 390, "height": 800}).new_page()
     page2.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
-    page2.goto(BASE2 + "/")
-    wait(page2, "!document.getElementById('tokenbox').hidden")
+    boot(page2, BASE2 + "/", "!document.getElementById('tokenbox').hidden")
     check("with tokens required the page loads and asks for one", page2.locator("#token").is_visible())
     check("STOP ALL works before any token is entered", (page2.click("#stop-all"), True)[1])
     wait(page2, "document.getElementById('toast').textContent.toLowerCase().includes('stop')")

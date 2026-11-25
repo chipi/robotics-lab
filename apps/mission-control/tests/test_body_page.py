@@ -24,6 +24,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import DUCK_REGISTRATION, FAKE_FILE, check, finish, installation_file
+from pageboot import boot
 
 from observatory import kinematics
 from observatory.shots import launch
@@ -152,16 +153,13 @@ with sync_playwright() as p:
     quat = lambda b, n: ((b.get("links") or {}).get(n) or {}).get("quat") or [9, 9, 9, 9]
     J = lambda b: defaultdict(dict, (b or {}).get("joints") or {})
     try:
-        page.goto(BASE + "/")
-        wait("window.__mc && window.__mc.ready")
+        boot(page, BASE + "/", "window.__mc && window.__mc.ready")
         check("must fail: the overview loads no three.js (the phone page stays light)", not any("/lib/vendor/" in u for u in requests), [u for u in requests if "/lib/" in u])
-        page.goto(BASE + "/#robot/duck-1")
-        wait("!document.getElementById('robot-page').hidden && document.querySelectorAll('#rp-joints-body tr[data-joint]').length === 2")
+        boot(page, BASE + "/#robot/duck-1", "!document.getElementById('robot-page').hidden && document.querySelectorAll('#rp-joints-body tr[data-joint]').length === 2")
         page.wait_for_timeout(500)
         check("must fail: the robot page's Overview loads no three.js either: its Body card reads the joints from the shared rule only", not any("/lib/vendor/" in u or "bodyview" in u for u in requests)
               and "All 2 joints ok" in page.locator("#rp-body-sum").inner_text() and page.locator("#rp-body canvas").count() == 0, page.locator("#rp-body-sum").inner_text())
-        page.goto(BASE + "/#robot/duck-1/body")
-        wait("!document.getElementById('robot-page').hidden && !!window.__mc.body", 20000)
+        boot(page, BASE + "/#robot/duck-1/body", "!document.getElementById('robot-page').hidden && !!window.__mc.body", timeout=20000)
         wait("window.__mc.body?.state()?.drawn === 3", 20000)
         check("must fail: the body mounts in the Body section: a canvas inside it, three parts drawn", page.locator("#rp-body canvas").count() == 1
               and page.evaluate("(document.querySelector('#rp-body canvas')?.getBoundingClientRect().height || 0) > 150") and body().get("drawn") == 3, body())
@@ -341,8 +339,7 @@ with sync_playwright() as p:
                     "severity": "major", "detector": "d", "summary": "overload before the page opened", "values": {"joint": "left_hip_pitch"}})
         late = ctx.new_page()
         late.on("pageerror", lambda e: errors.append("pageerror: " + str(e)))
-        late.goto(BASE + "/#robot/duck-1/body")
-        late.wait_for_function("window.__mc && window.__mc.ready && window.__mc.body?.state()?.drawn === 3", timeout=20000)
+        boot(late, BASE + "/#robot/duck-1/body", "window.__mc && window.__mc.ready && window.__mc.body?.state()?.drawn === 3", timeout=20000)
         lj = lambda: late.evaluate("window.__mc.body.state().joints") or {}
         late.wait_for_function("window.__mc.body.state().joints?.left_hip_pitch?.state === 'error'", timeout=8000)
         check("must fail: opened after a major joint_overload: the joint's row says error, and the mesh has the error colour, with no live event since the page opened",

@@ -713,7 +713,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     }
     const m = moment();
     return {
-      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment() }), ...(semanticOut() && { semantic: semanticOut() }), raw_frame: rawSummary(),
+      ...identity(), t: M.t, tick: m.tick, tick_t: m.t, frame: M.frame, view: M.view, ...(hasSignals() && { signals: sigMoment(), signals_view: signalsShown() }), ...(semanticOut() && { semantic: semanticOut() }), raw_frame: rawSummary(),
       belief: m.bw.map(f3), belief_map: m.bm.map(f3), truth: m.tr ? m.tr.map(f3) : null, distance: f3(m.dist), last_event: m.ev,
       selection: selectionOut(), t_range: [M.run.t0, M.run.t1], eye: eyeOut(), alerts: eyeOn() ? alertOut() : [], decided: decidedOut(),
       hidden: (M.run.streams || []).filter((s) => !s.missing && !shown(s.id)).map((s) => s.id),
@@ -775,19 +775,20 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   }
 
   // ---- popovers ---------------------------------------------------------------------------------
-  let popEl = null;
+  let popEl = null, popFrom = null;         // the open popover, and the button that opened it (the focus goes back there)
   function popover(anchor, html, bind) {
     closePop();
-    popEl = document.createElement('div'); popEl.className = 'pop'; popEl.innerHTML = html; document.body.appendChild(popEl);
+    popEl = document.createElement('div'); popEl.className = 'pop'; popEl.innerHTML = html; document.body.appendChild(popEl); popFrom = anchor;
     paintIcons(popEl);
     const r = anchor.getBoundingClientRect(), w = popEl.offsetWidth, h = popEl.offsetHeight;
     popEl.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px';
     popEl.style.top = (r.bottom + 4 + h > innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
     bind && bind(popEl);
+    popEl.querySelector('button, input, select')?.focus();       // a keyboard user opened it: the focus goes in, Tab walks the items, Esc closes it
     setTimeout(() => document.addEventListener('pointerdown', outside), 0);
   }
   const outside = (e) => { if (popEl && !popEl.contains(e.target)) closePop(); };
-  function closePop() { popEl?.remove(); popEl = null; document.removeEventListener('pointerdown', outside); }
+  function closePop() { const held = popEl?.contains(document.activeElement); popEl?.remove(); popEl = null; document.removeEventListener('pointerdown', outside); if (held) popFrom?.focus(); }
 
   // ---- export video (ADR-0017): the render service's engines, asked when a run opens; a job, polled once a second ----------
   let render = null;                      // /api/v1/render's answer, null while it is asked
@@ -1639,7 +1640,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) return;
     if (e.target.matches?.('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (e.key === ' ' && e.target.matches?.('.lane-s, .lane-l, .lane-m, .dl-name, .tm-badge')) return;       // Space on a focused lane, or on the Live / Replay badge, folds, selects or toggles it, as on any button
+    if (e.key === ' ' && e.target.matches?.('.lane-s, .lane-l, .lane-m, .dl-name, .tm-badge, .pop button')) return;       // Space on a focused lane, a popover's item, or on the Live / Replay badge, folds, selects or toggles it, as on any button
     const k = e.key, lk = k.toLowerCase();
     if (k === '/') { e.preventDefault(); $('q').focus(); }
     else if (k === '?') help();

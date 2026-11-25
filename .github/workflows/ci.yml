@@ -4,7 +4,7 @@
 # Each job runs the same make targets as on the workstation, so a red job reproduces locally with
 # the target named in its step:
 #   unit   → make check-boundaries ci-fast   package boundaries (RFC-0018), lint, every project's unit tests
-#   pages  → make test-observatory-pages test-control-page   the Observatory's two pages and Mission Control's page in headless Chromium
+#   pages  → make test-observatory-pages test-control-page test-nxt-page   the Observatory's two pages, Mission Control's page and nxt-web's page in headless Chromium
 #   compat → make test-run-compat    a run opens in Rerun and the Observatory (Lichtblick's checks skipped)
 #   images → make test-integration test-observatory-image nxt-programs   the Docker images, the NXC programs
 
@@ -56,8 +56,22 @@ jobs:
         run: make observatory-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
       - name: make test-observatory-pages
         run: make test-observatory-pages
+      # keyed on the Makefile's LDRAW_ZIP_SHA256 (keep the two equal): ldraw.org is fetched once per library version, not on every run
+      - uses: actions/cache@v6
+        with:
+          path: ~/opt/ldraw
+          key: ldraw-023083918da2d3697c794fb4267975509584f3611b993095874206a803fa610f
+      - name: "The NXT's meshes (make ldraw-fetch robots-lego): test_nxt_page skips without them"
+        run: make ldraw-fetch robots-lego
       - name: make test-control-page
-        run: make test-control-page
+        run: |
+          # no pipe: the runner's default bash has no pipefail, so a failed make would not fail the step
+          make test-control-page > "$RUNNER_TEMP/control-page.log" 2>&1 || { cat "$RUNNER_TEMP/control-page.log"; exit 1; }
+          cat "$RUNNER_TEMP/control-page.log"
+          # a missing mesh set prints SKIP and exits 0: after the step above the NXT's must not (the duck's are built from Pollen's MuJoCo model, which CI has not)
+          if grep -q '^SKIP test_nxt_page' "$RUNNER_TEMP/control-page.log"; then echo "test_nxt_page skipped: its meshes were not built"; exit 1; fi
+      - name: make test-nxt-page
+        run: make test-nxt-page
 
   compat:
     name: A run opens in Rerun and the Observatory (Lichtblick skipped)

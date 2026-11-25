@@ -182,6 +182,34 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     pg.click("#jkind")
     pg.click('[data-jkind=""]')
 
+    # the same popover with the keyboard alone: Enter on the button opens it, the focus moves into it, Tab walks its items, Enter chooses, Esc closes it
+    pg.focus("#jkind")
+    pg.keyboard.press("Enter")
+    pg.wait_for_function("!!document.querySelector('.pop [data-jkind]')")
+    check("the jump-kind popover opens with Enter on its button", True)
+    check("... and the focus is inside it", pg.evaluate("!!document.activeElement.closest('.pop')"), pg.evaluate("document.activeElement.outerHTML.slice(0, 80)"))
+    pg.keyboard.press("Tab")
+    pg.keyboard.press("Tab")
+    pg.keyboard.press("Enter")
+    kb_kind = pg.inner_text("#jkind").strip()
+    check("Tab and Enter choose a kind, and the popover closes", kb_kind not in ("any", "") and not pg.evaluate("!!document.querySelector('.pop')"), kb_kind)
+    pg.focus("#jkind")
+    pg.keyboard.press("Enter")
+    pg.wait_for_function("!!document.querySelector('.pop [data-jkind]')")
+    was_playing = pg.evaluate("window.miniview.internals.M.play.on")
+    pg.keyboard.press("Tab")
+    pg.keyboard.press(" ")
+    check("Space on a popover's item chooses it and does not play or pause the run", pg.inner_text("#jkind").strip() != kb_kind and pg.evaluate("window.miniview.internals.M.play.on") == was_playing,
+          (pg.inner_text("#jkind"), was_playing))
+    pg.focus("#jkind")
+    pg.keyboard.press("Enter")
+    pg.wait_for_function("!!document.querySelector('.pop')")
+    pg.keyboard.press("Escape")
+    check("Esc closes the popover", not pg.evaluate("!!document.querySelector('.pop')"))
+    check("... and the focus is back on the button", pg.evaluate("document.activeElement.id") == "jkind", pg.evaluate("document.activeElement.id"))
+    pg.click("#jkind")
+    pg.click('[data-jkind=""]')
+
     # the linked cursor: a click on the scrubber moves what the 3D view draws (the trail runs up to the playhead), not only the number
     def scrub_to(t):
         x = pg.evaluate("""(t) => { const r = document.getElementById('overlay').getBoundingClientRect(), run = window.miniview.internals.M.run,

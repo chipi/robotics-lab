@@ -20,6 +20,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import DUCK_REGISTRATION, FAKE_FILE, check, finish, installation_file
+from pageboot import boot
 
 from observatory.server import make_server
 from observatory.shots import launch
@@ -112,8 +113,7 @@ with sync_playwright() as p:
             check(f"waited for {js[:90]}", False, "timed out")
 
     try:
-        page.goto(BASE + "/control/")
-        wait("window.__mc && window.__mc.ready")
+        boot(page, BASE + "/control/", "window.__mc && window.__mc.ready")
         wait("document.querySelector('#robot-fake-1')?.getAttribute('data-online') === 'true'")
         check("Mission Control's page loads from the Observatory's address, its robots live over the stream that came through the proxy",
               page.url == BASE + "/control/" and page.locator("#robot-fake-1").get_attribute("data-online") == "true", page.url)
@@ -136,8 +136,7 @@ with sync_playwright() as p:
         worked = page.evaluate("api('POST', '/robots/fake-1/lock', {}).then((j) => j.ok, (e) => e.code)")
         check("with the token entered the action works", worked is True and page.locator("#tokenbox").is_hidden(), worked)
 
-        page.goto(BASE + "/control/#robot/duck-1/body")
-        wait("!document.getElementById('robot-page').hidden && !!window.__mc.body", 20000)
+        boot(page, BASE + "/control/#robot/duck-1/body", "!document.getElementById('robot-page').hidden && !!window.__mc.body", timeout=20000)
         wait("window.__mc.body?.state()?.drawn === 2", 20000)
         check("the robot page's body mounts under /control/: its script, the description and the meshes through the proxy, two parts drawn",
               page.locator("#rp-body canvas").count() == 1 and BASE + "/control/web/bodyview.js" in requests
@@ -149,8 +148,7 @@ with sync_playwright() as p:
         check("the Observatory's own page loads from the same address", page.url.startswith(BASE + "/web/three/") and page.title().strip() != "", (page.url, page.title()))
         check("no script error, no console error and no failed request, on either page", errors == [], errors)
         page.screenshot(path=str(SHOTS / "mc-one-origin-observatory.png"))
-        page.goto(BASE + "/control")
-        wait("window.__mc && window.__mc.ready")
+        boot(page, BASE + "/control", "window.__mc && window.__mc.ready")
         check("/control with no slash lands on the page at /control/", page.url == BASE + "/control/", page.url)
     finally:
         browser.close()

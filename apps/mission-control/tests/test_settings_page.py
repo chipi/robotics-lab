@@ -21,6 +21,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import FAKE_FILE, check, finish, installation_file
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control.api import serve
@@ -98,8 +99,7 @@ with sync_playwright() as p:
     active = lambda: page.evaluate("document.activeElement.id")
 
     def open_page(n, hash_="robot/duck-1"):
-        page.goto(BASE + f"/?visit={n}#{hash_}")
-        wait(page, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+        boot(page, BASE + f"/?visit={n}#{hash_}", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
         wait(page, "document.querySelectorAll('#rp-parts [data-part]').length === 3")
 
     def tab(name):

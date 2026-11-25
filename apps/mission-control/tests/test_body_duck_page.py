@@ -46,6 +46,7 @@ if FOLDER is None:
 from playwright.sync_api import sync_playwright
 
 from common import check, finish, FAKE_FILE
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control import description
@@ -104,8 +105,7 @@ with sync_playwright() as p:
 
     body = lambda: page.evaluate("window.__mc.body ? window.__mc.body.state() : {}") or {}
     try:
-        page.goto(BASE + "/#robot/duck-1/body")
-        wait(f"window.__mc && window.__mc.body && window.__mc.body.state() && window.__mc.body.state().meshes === {n_visuals}")
+        boot(page, BASE + "/#robot/duck-1/body", f"window.__mc && window.__mc.body && window.__mc.body.state() && window.__mc.body.state().meshes === {n_visuals}")
         page.wait_for_timeout(500)
         b = body()
         check("every link with a visual is drawn", b.get("drawn") == len(with_visuals), (b.get("drawn"), len(with_visuals)))

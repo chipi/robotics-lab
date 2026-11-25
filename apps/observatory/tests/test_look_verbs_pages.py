@@ -185,6 +185,16 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("Camera follow: Heading sets the follow mode", pg.evaluate(CAM)["follow"] == "heading", pg.evaluate(CAM)["follow"])
     run_verb("cam.follow.off")
     check("Camera follow: Off clears it", pg.evaluate(CAM)["follow"] == "off")
+    run_verb("view.fit")
+    c4 = camera()
+    check("View: Fit puts the camera back where the view starts", c4["position"] == c0["position"] and c4["position"] != c3["position"], (c0["position"], c3["position"], c4["position"]))
+    # a verb that presses a control the page no longer has says so, in the message line, instead of doing nothing
+    open_pal()
+    pg.evaluate("document.querySelector('#camCtl [data-cam=\"fit-scene\"]').remove()")
+    pg.click('.pal-row[data-verb="cam.fit-scene"]')
+    pg.wait_for_function(MSG + " !== null")
+    m = pg.evaluate(MSG)
+    check("a camera verb whose button is gone reports it as an alert", m and m["role"] == "alert" and "not on the page" in m["text"], m)
     pg.evaluate("window.miniview.setView('top')")
 
     # ---- time
@@ -282,6 +292,16 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     check("an overlay verb toggles the overlay", pg.evaluate("window.miniview.config().overlays.coords") == (not before))
     run_verb("overlay.coords")
     open_pal()
+    check("the belief to truth line is on by default and the verb says what it does now", "Hide the belief to truth line" in pg.evaluate(TITLES), pg.evaluate(TITLES))
+    pg.keyboard.press("Escape")
+    run_verb("overlay.rel")
+    check("... and it turns the line off", pg.evaluate("window.miniview.internals.M.rel.belief_truth") is False)
+    open_pal()
+    check("... then offers to show it", "Show the belief to truth line" in pg.evaluate(TITLES), pg.evaluate(TITLES))
+    pg.keyboard.press("Escape")
+    run_verb("overlay.rel")
+    check("... and back on again", pg.evaluate("window.miniview.internals.M.rel.belief_truth") is True)
+    open_pal()
     st = [i for i in ids() if i.startswith("stream.")]
     check("streams of the run are verbs", len(st) >= 2 and any(i.startswith("stream.hide.") for i in st), st)
     pg.keyboard.press("Escape")
@@ -304,6 +324,17 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     run_verb("link.copy")
     m = pg.evaluate(MSG)
     check("a refused clipboard is a visible alert that carries the link", m and m["role"] == "alert" and "#scene=" in m["text"], m)
+
+    # the palette lists its verbs when it opens; a run closed behind it leaves link.copy with nothing to link
+    open_pal()
+    pg.evaluate("window.miniview.scenes()")
+    pg.click('.pal-row[data-verb="link.copy"]')
+    pg.wait_for_function(MSG + " !== null")
+    m = pg.evaluate(MSG)
+    check("Copy link with no run open is an alert that says so", m and m["role"] == "alert" and "no run open" in m["text"], m)
+    run_verb("nav.scenes")
+    check("Go to all scenes and runs closes the run and shows the list", pg.evaluate("window.miniview.internals.M.runId") is None and pg.evaluate("document.getElementById('app').classList.contains('scenes')"))
+    load("duck/room/replay1")
 
     # ---- an error is shown, not only logged
     pg.evaluate("(() => { window.miniview.setView = () => { throw new Error('the view broke'); }; })()")

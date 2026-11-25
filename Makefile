@@ -90,8 +90,8 @@ test-libs: libs-sync ## The libraries' own tests, each in its own environment (n
 	done; [ $$fail = 0 ] && echo "test-libs PASS" || { echo "test-libs FAIL"; exit 1; }
 
 test-web: ## The shared web library (libs/web, RFC-0024): one token file no app declares again, one three.js (standard library only; its pages' tests are the two apps')
-	@for t in libs/web/tests/test_*.py; do $(PYTHON) $$t >/tmp/robotics-lab-test_web.log 2>&1 && echo "PASS $$t" \
-	  || { cat /tmp/robotics-lab-test_web.log; echo "test-web FAIL $$t"; exit 1; }; done
+	@for t in libs/web/tests/test_*.py; do log=$$(mktemp); $(PYTHON) $$t >$$log 2>&1 && echo "PASS $$t" \
+	  || { cat $$log; rm -f $$log; echo "test-web FAIL $$t"; exit 1; }; rm -f $$log; done
 	@echo "test-web PASS"
 
 observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, with Playwright)
@@ -101,7 +101,7 @@ observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, wi
 lint: ## Byte-compile every Python file of every project
 	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
 	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(OBSERVATORY_DIR)/src $(OBSERVATORY_DIR)/tests \
-	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests libs/runfile/src libs/gate/src libs/worldmodel/src scripts >/dev/null \
+	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests libs/runfile/src libs/gate/src libs/worldmodel/src libs/runner/src libs/runner/tests libs/simhost/src libs/simhost/tests scripts >/dev/null \
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
 	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
@@ -279,7 +279,7 @@ ci-fast: lint test-sim-lock test-deploy test-libs test-web test-unit test-duck t
 	@echo "ci-fast PASS"
 
 .PHONY: ci
-ci: ci-fast test-observatory-pages test-control-page test-run-compat test-integration test-observatory-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
+ci: ci-fast test-observatory-pages test-control-page test-nxt-page test-run-compat test-integration test-observatory-image nxt-programs docs-lint docs-build ## What every merge must pass (full gate)
 	@echo "ci PASS"
 
 # ---- NXT: run and package ----------------------------------------------------
@@ -403,6 +403,20 @@ LDRAW_DIR ?= $(HOME)/opt/ldraw/ldraw
 robots-lego: observatory-sync ## The LEGO robots' descriptions (RFC-0011): the EV3 Track3r and Spike3r (LDraw OMR 31313) and the NXT Shooterbot, URDF and meshes by robots/ldraw/from_ldraw.py; needs the LDraw parts library in $(LDRAW_DIR) (ldraw.org complete.zip, unpacked in ~/opt/ldraw)
 	@test -f $(LDRAW_DIR)/LDConfig.ldr || { echo "robots-lego: no LDraw library in $(LDRAW_DIR); unpack ldraw.org's complete.zip into ~/opt/ldraw or set LDRAW_DIR"; exit 2; }
 	LDRAW_DIR=$(LDRAW_DIR) $(OBSERVATORY_DIR)/.venv/bin/python robots/ldraw/from_ldraw.py ev3-track3r ev3-spike3r nxt-shooterbot
+
+# The parts library the LEGO meshes are built from, for a machine that has none (CI): ldraw.org's complete.zip, checked against the sha256 of the
+# release the committed robot.urdf files were built with (a newer release fails here, loudly, instead of changing the meshes), unpacked so that
+# $(LDRAW_DIR) exists. About 140 MB down, 620 MB unpacked, 30 s. Does nothing when the library is already there.
+LDRAW_ZIP_URL    ?= https://library.ldraw.org/library/updates/complete.zip
+LDRAW_ZIP_SHA256 ?= 023083918da2d3697c794fb4267975509584f3611b993095874206a803fa610f
+.PHONY: ldraw-fetch
+ldraw-fetch: ## Download ldraw.org's complete.zip (sha256 checked) and unpack it as $(LDRAW_DIR), unless it is there; the library folder must be named ldraw
+	@if test -f $(LDRAW_DIR)/LDConfig.ldr; then echo "ldraw-fetch: $(LDRAW_DIR) is there"; else \
+	  home=$$(dirname $(LDRAW_DIR)); zip=$$(mktemp); mkdir -p $$home \
+	  && curl -fsSL --retry 3 -o $$zip $(LDRAW_ZIP_URL) \
+	  && echo "$(LDRAW_ZIP_SHA256)  $$zip" | sha256sum -c --quiet - \
+	  && unzip -q -o $$zip -d $$home && test -f $(LDRAW_DIR)/LDConfig.ldr \
+	  && echo "ldraw-fetch PASS" || { rm -f $$zip; echo "ldraw-fetch FAIL: $(LDRAW_ZIP_URL) did not download, did not match its sha256, or did not unpack to $(LDRAW_DIR)"; exit 1; }; rm -f $$zip; fi
 
 rerun-export: duck-sync ## A run in Rerun with the robot drawn as itself (RFC-0011): make rerun-export RUN=<robot/scene/run> [OUT=file.rrd]
 	@test -n "$(RUN)" || { echo "rerun-export: RUN=<robot/scene/run> is needed"; exit 2; }

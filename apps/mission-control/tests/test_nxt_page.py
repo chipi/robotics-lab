@@ -56,6 +56,7 @@ if FOLDER is None:
 from playwright.sync_api import sync_playwright
 
 from common import FAKE_FILE, check, finish
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control import description
@@ -162,8 +163,7 @@ with sync_playwright() as p:
 
             try:
                 # --- the robot is on the page and the page names it ------------------------------------------------------------------
-                page.goto(BASE + "/")
-                wait("window.__mc && window.__mc.ready")
+                boot(page, BASE + "/", "window.__mc && window.__mc.ready")
                 check(f"[{variant}] the NXT has a card with a link to its page", page.locator("a[data-robot='nxt-1']").count() == 1)
                 page.click("a[data-robot='nxt-1']")
                 wait("!document.getElementById('robot-page').hidden")
@@ -224,8 +224,7 @@ with sync_playwright() as p:
                       r["online"] is True and URLS[variant] != "http://127.0.0.1:8000", r["online"])
 
                 # --- D5: an idle, online NXT is fit; the facts line reads its sensors --------------------------------------------------
-                page.goto(BASE + "/#robot/nxt-1")
-                wait("!!document.querySelector('#verdict[data-status]') && !!document.querySelector('#rp-facts [data-sensor]')")
+                boot(page, BASE + "/#robot/nxt-1", "!!document.querySelector('#verdict[data-status]') && !!document.querySelector('#rp-facts [data-sensor]')")
                 wait("document.querySelector('#readiness-checks [data-check=battery]')?.dataset.status === 'ok'")
                 errs = page.locator("#readiness-checks li[data-status=error]").all_inner_texts()
                 check(f"[{variant}] online and idle, the NXT has no error (no flag, no alarm), and its battery is ok from the server's rule: 75 %", errs == []

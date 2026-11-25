@@ -21,6 +21,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 from common import check, finish, installation_file
+from pageboot import boot
 
 from observatory.shots import launch
 from mission_control.api import serve
@@ -87,8 +88,7 @@ with sync_playwright() as p:
     card_status = lambda: page.locator("[data-procedure=odometry_scale] [data-cal-status]").inner_text()
 
     def open_page(n, rid="duck-1"):
-        page.goto(BASE + f"/?visit={n}#robot/{rid}/calibration")
-        wait(page, "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
+        boot(page, BASE + f"/?visit={n}#robot/{rid}/calibration", "window.__mc && window.__mc.ready && !document.getElementById('robot-page').hidden")
         wait(page, "!!document.querySelector('[data-procedure=odometry_scale]')")
 
     def close_drawer():
