@@ -28,11 +28,11 @@ Cleared items are struck from the list when settled.
 | D0 | Review the NXT design note (second host kind, sensor declaration, stand-in profile) | D2 onwards built on its defaults |
 | ~~Telemetry (5)~~ | Settled 2026-11-23: you approved the `robotics-lab` Grafana folder in the homelab session; service account `robotics-lab-sync` (Edit on that folder only), token in `~/grafana/robotics-lab-sync.env` on the mini, read over ssh, never printed | sending needs no token: OTLP over protobuf to the tailnet nodes (agent-access.md §5) |
 | D0 defaults | [NXT-D0.md](NXT-D0.md) §5 lists 12 defaults; two worth a look: the NXT's sensors sat in `capabilities.sensors`, not the profile's `sensors` block (6; moved into the block 2026-11-24, E4); and whether D0 becomes an ADR as RFC-0028's starting point (12) | D3 onwards built on them |
-| B3 second opinion | Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built: only without truth |
-| B3 alarm | Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | not added |
+| ~~B3 second opinion~~ | Answered 2026-11-24 (see below) and built in E2: the guardrails also run with a truth, recording only. Was: Arm the robot-side guardrails (fall, contact, drop) also when a truth exists, as a second opinion? Today: only without truth | built in E2 |
+| ~~B3 alarm~~ | Answered 2026-11-24 and built in E2 (contract 1.7): a `robot_guard` anomaly kind. Was: Add a `robot_guard` anomaly kind so a robot-side fall or contact reaches the alarm feed as critical? Today it ends the goal `stopped_by_guardrail` but the alarm feed does not show it | built in E2 |
 | B7 frame | A start pose you place on the map lasts one goal. Keep it until the robot is carried again instead? (Needs a clear control and a rule for stale placements.) | built: per goal |
 | B7 dock | The first start pose a site sees becomes its dock pose when it has none. Right? | built that way |
-| B8 defaults | Simulator-first: opt-in per goal; a rehearsal counts for 24 h, same goal content, same site, a sim robot of the same kind. `rtf_low` below 0.95, minor. Right numbers? Should `sim_first` be the default for every goal on a real robot? | built as listed |
+| ~~B8 defaults~~ | Answered 2026-11-24, the default reversed and built in E1: simulator-first is on by default for goals on a real robot, opt out per goal; 24 h and 0.95 stand. Was: Simulator-first: opt-in per goal; a rehearsal counts for 24 h, same goal content, same site, a sim robot of the same kind. `rtf_low` below 0.95, minor. Right numbers? Should `sim_first` be the default for every goal on a real robot? | built in E1 |
 | B3 numbers | `fall_tilt_deg` 45 and `fall_s` 0.5 are proposals; measure on the real duck (with B9) | in the profile, marked unmeasured |
 
 ## Asked after the answers (2026-11-24)
@@ -117,12 +117,11 @@ that needed a decision. The work each answer creates is the "follow-ups" unit se
   between a sample's truth read and its write gave the run a first tick without a truth, so the
   epoch came after it. That sample now goes to the next recording only; an in-process check
   reproduces the race.
-- **A page-test flake under load** (`test_page`, "event stream is live"): seen once at a load of
-  60 to 70 during B8, passed on re-run. Not diagnosed.
-- **A `test_duck_real` flake** (E5): once in about nine runs the last check found no `run` in the
-  answer. Unverified guess: the held robot was still offline after the gate restart. The test
-  now waits for it to be online and prints the whole answer; 3 of 3 passed since, which does not
-  prove it gone.
+- ~~A page-test flake under load~~ (`test_page`, "event stream is live"): fixed in c3a7789, three
+  races each reproduced with an injected delay (the stream's `onopen`, the dock line after
+  `loadSite`, the lock after the debounced reload); the test waits for what it reads.
+- ~~A `test_duck_real` flake~~ (E5): once in about nine runs the last check found no `run` in the
+  answer. c3a7789: the bare wait is now a check; 20 of 20 runs passed under load.
 - **The NXT's battery percent is a guess:** a linear span from 6000 mV (0 %) to 8400 mV (100 %),
   low below 20 % (D5); D1 can calibrate it. A robot file overrides the span.
 
@@ -137,10 +136,10 @@ that needed a decision. The work each answer creates is the "follow-ups" unit se
   run): while robotd-lite runs on the brick it stops the tracks 0.5 s after the last command;
   stock firmware and direct drive mode have no brick-side stop. So D10 drives over Bluetooth
   only with robotd-lite running; the D1 checklist has the checks.
-- **The standing duck does not turn on `vx` 0 with `vyaw` under about 1.0 to 1.1 rad/s** (E10,
-  KNOWN-ISSUES K48): the simulator's walking network, not ours. Open and needs an owner of
-  `robots.py` / `duck.py`: Mission Control's `POST /robots/{id}/drive` should refuse that command
-  with the reason (the floor is the profile's `locomotion.stand_turn.min_rad_s`, 1.1).
+- ~~The standing duck does not turn on `vx` 0 with `vyaw` under about 1.0 to 1.1 rad/s~~ (E10,
+  KNOWN-ISSUES K48): the simulator's walking network, not ours. The Mission Control half is
+  done: `POST /robots/{id}/drive` refuses it, 422 `stand_turn_below_floor` (E5; the floor is the
+  profile's `locomotion.stand_turn.min_rad_s`, 1.1). The real duck's floor is still to measure.
 - **The duck walks about 0.47 of the commanded speed over the ground:** a 5 s walk at 0.3 m/s
   covers 0.65 m (the slow first second in it). The calibration's `by_speed` row is keyed by the
   commanded speed (K49).

@@ -9,8 +9,9 @@ drives it all from Mission Control.
 ## Where to start
 
 - **How the pieces fit:** [How the platform fits together](architecture.md).
-- **Where do things stand?** [The plan we execute on](wip/EXECUTION-PLAN.md): each phase, its
-  checkpoint, what is done and what is not.
+- **Where do things stand?** [The handover](wip/HANDOVER.md) is the living status;
+  [the phase 5 plan](wip/PHASE5-NEXT-PLAN.md) has the items and the wrap-up order;
+  [the plan we execute on](wip/EXECUTION-PLAN.md) is the plan as written, with each phase's history.
 - **Proposals:** [Proposals (RFC)](rfc/README.md).
 - **Accepted decisions:** [Decisions (ADR)](adr/README.md).
 - **Ideas and notes:** [In progress](wip/README.md).
@@ -24,9 +25,11 @@ drives it all from Mission Control.
 | [`apps/mission-control/`](https://github.com/chipi/robotics-lab/tree/main/apps/mission-control) | Mission Control: robots, sites, goals, STOP |
 | [`apps/nxt-web/`](https://github.com/chipi/robotics-lab/tree/main/apps/nxt-web) | The NXT: Python control, web UI, NXC programs for the brick |
 | [`libs/simhost/`](https://github.com/chipi/robotics-lab/tree/main/libs/simhost) | The simulator host: the host file, the reset, the truth sampler |
+| [`libs/runner/`](https://github.com/chipi/robotics-lab/tree/main/libs/runner) | The runner: starts a navigator as a payload, judges it by the truth, writes the official run |
 | [`libs/runfile/`](https://github.com/chipi/robotics-lab/tree/main/libs/runfile) | The run format |
 | [`libs/gate/`](https://github.com/chipi/robotics-lab/tree/main/libs/gate) | The robot gate: one driver per robot |
 | [`libs/worldmodel/`](https://github.com/chipi/robotics-lab/tree/main/libs/worldmodel) | Objects, the semantic map, sites |
+| [`libs/web/`](https://github.com/chipi/robotics-lab/tree/main/libs/web) | The web library both apps share: tokens, fonts, the 3D stage, the palette |
 | [`robots/`](https://github.com/chipi/robotics-lab/tree/main/robots) | Each robot: the duck's profile, plugins and navigator; the robots' descriptions and meshes |
 
 Pollen's own code (the Microduck's simulator and services) is not in this repository: each machine

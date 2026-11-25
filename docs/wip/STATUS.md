@@ -1,8 +1,8 @@
 # Status and open decisions
 
 **Superseded (2026-11-21): this page is where things stood on 2026-11-14 and is kept as that
-record; it is not kept up to date. Where things stand now: [the plan we execute
-on](EXECUTION-PLAN.md) (each phase and its checkpoint) and [how the platform fits
+record; it is not kept up to date. Where things stand now: [the handover](HANDOVER.md), the
+living status, and [the phase 5 plan](PHASE5-NEXT-PLAN.md); [how the platform fits
 together](../architecture.md).**
 
 Last updated 2026-11-14. One page to review where things stand; details live in the linked notes.

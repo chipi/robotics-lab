@@ -52,8 +52,11 @@ in order".
 | Review round 3 | answered 2026-11-25 ([round 3](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM)); the decisions are in LOOK-AND-FEEL-PLAN; the fixes and the timeline redesign are in progress |
 | U26 | not started |
 
-Next: the operator's answers to **review round 3** (Q1 to Q6), their fixes and the six items
-"already on my list" on the round 3 page; then U26 (the sweep), **review round 4** (final).
+Next: round 3's answers (in LOOK-AND-FEEL-PLAN) are being built: Mission Control (one readiness
+verdict, the server's battery rule, STOP not preselected, `rl.theme`), the timeline redesign,
+then the Observatory (Signals for runs with a pose, Follow live into the badge, the section-fold
+bug) and the six items "already on my list"; then the audit's tests and CI fixes, U26 (the
+sweep), **review round 4** (final).
 
 How a unit runs (it worked this session): an `implementer` subagent on sonnet per unit with
 the brief in [look-and-feel/UNIT-BRIEF](look-and-feel/UNIT-BRIEF.md) and the plan row; units

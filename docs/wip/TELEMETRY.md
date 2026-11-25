@@ -22,7 +22,9 @@ to the keys that are already there:
 ```
 
 - No block, or no installation file: telemetry is off, nothing starts, nothing is sent.
-- `environment` is required (`dev` for the simulator on the workstation, `prod` for a real robot).
+- `environment` is required: any slug matching `^[a-z0-9_-]+$` (checked in
+  `libs/runfile/src/runfile/installation.py`). Use `dev` for the simulator on the workstation;
+  the operator chose `staging` for the X3 stack ([the handover](HANDOVER.md), decisions).
   At least one signal URL is required; leave one out and that signal is off.
 - A bad block (an empty one, an unknown key) is reported with one line on start, and Mission
   Control runs without telemetry.
@@ -70,9 +72,10 @@ GRAFANA_HTTP_URL=https://grafana.tail6d0ed4.ts.net GRAFANA_API_TOKEN=... make gr
 - `grafana-import` posts to `$GRAFANA_HTTP_URL/api/dashboards/db` into the folder `robotics-lab`
   (it must exist) with `overwrite`, so running it again replaces the dashboard. The URL and the
   token are read from the environment only, and the token is never printed.
-- **Not verified:** how Grafana renders the panels and variables (the PromQL and LogsQL were run
-  against the stack, the dashboard was not imported). Check the panels after the first
-  import. The p95 panel reads the SDK's default bucket bounds (0, 5, 10, 25, 50 s and up), so it is
+- **Imported:** 5f2449f imported it (`robotics-lab-live`, folder `robotics-lab`, version 1).
+- **Not verified:** how Grafana renders the panels and variables. The commit records that the
+  queries return the send check's data, not that the panels render. Check the panels in
+  Grafana. The p95 panel reads the SDK's default bucket bounds (0, 5, 10, 25, 50 s and up), so it is
   coarse for short goals.
 
 ## Old runs

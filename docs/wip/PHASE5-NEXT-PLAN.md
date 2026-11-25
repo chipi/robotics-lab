@@ -7,6 +7,13 @@ green), and on 2026-11-23 after item 2 and item 3's step 2. The order is
 [architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Items 1 and 2 are
 done; item 3 step 2 is done** (the run keeps the body; the operator's decisions and the proof are in
 [what the body data is today](PHASE5-ITEM3-BODY-DATA.md)). **Next: item 3 step 3**, the alarm feed.
+This paragraph is the 2026-11-23 header, kept as written.
+
+**Current state (2026-11-25):** the work follows the MVP 1 wrap-up order (the section "The MVP 1
+wrap-up, in order", below, and [the handover](HANDOVER.md)). Step 4.5, the look-and-feel build, is
+at review round 3, answered by the operator; its fixes are in progress and U26, the sweep, is
+next. [The handover](HANDOVER.md) is the living status; the item tables below record what each
+item built.
 
 ## Where things stand
 
@@ -49,7 +56,7 @@ MVP 2 is "stepping up the game", by a proper architectural evolution, not by bol
   starting in a simulator (Gazebo), on an architecture that supports every approach as a peer
   (robotd, ROS 2, the NXT's, more later). Its direction: the operator's vision note on depth
   cameras, SLAM and 3D mapping, and [ADR-0020](../adr/ADR-0020-robots-behind-our-own-interfaces.md)
-  (proposed, for reflection). Its first step is an architecture reflection on paper, then RFCs;
+  (accepted 2026-11-23). Its first step is an architecture reflection on paper, then RFCs;
   nothing for it is built before those are agreed. Item 6 below is its old shape (stubs) and is
   revised by that work.
 
@@ -455,9 +462,9 @@ platform.
 
 | Unit | What | Proof | Size | Builds here |
 | --- | --- | --- | --- | --- |
-| C1 | One origin (RFC-0024 step 3): the Observatory proxies Mission Control's API; the token is needed for actions only (Q3, Q4); Mission Control reads runs only through the Observatory's API (Q5) | API tests through the proxy; both apps' pages from one address in Chromium | M-L | done (2026-11-24; the real deploy is pending the operator): the Observatory forwards `/control/...` to Mission Control with the standard library (any method, the stream a chunk at a time, `Authorization` across, no cookie); Mission Control's page is relative so it works at `/` and `/control/`; `--require-tokens actions` makes reads open and actions need a token (STOP always open); `check_boundaries` forbids Mission Control's source the run readers and its container gets no data folder. Proven on a test stack (`test_control_proxy`, `test_one_origin_page`, `test_tokens`). Not built: the shared "Robots / Runs" navigation and the phone watch page (RFC-0024 question 6); POST routes that only read need the token too |
-| C2 | Mission Control's container drives the sim duck. It mounts the gate's and the navigator's sockets, the installation file, the robot's folder (description, meshes) and the profile store, at the paths the installation names, under the same UID | `make stack-up`, then a goal run from the deployed page against `sim_duck` | M | done (2026-11-24; the real deploy is pending the operator): the deploy overlay gives Mission Control's container the installation file, the gate's folder, the robot's folder and the profile store at the paths the installation names, under the same UID, and no data folder. The navigator is TCP on the host's loopback, not a socket, so both containers run on the host's network (loopback only; RFC-0024 section 9). Proven by `make sim-deployed` on a test stack: a point goal started from the page at `/control/` ended `reached`, the run is in the Observatory. The real installation's gate socket shares a folder with robotd's, so it is mounted only when it exists, and Mission Control restarts after the gate does |
-| C3 | The deploy scripts: deploy from a named commit, not whatever the main checkout holds; one target that replaces the solo Observatory project; a smoke after it (health, `/lib/`, the pages in Chromium) | the smoke's output after a deploy | S-M | done (2026-11-24; the real deploy is pending the operator): `scripts/deploy.py` (`make deploy COMMIT=<sha>`, `deploy-dry`, `deploy-rollback`, `deploy-smoke`; [the recipe](DEPLOY.md)): `git archive` of the named commit, images tagged by it, the solo project taken down after the build, the deployed sha recorded for the rollback, the smoke ends the deploy. Proven on a test stack: a deploy, a redeploy, a rollback (also to a commit before the proxy), the solo project replaced |
+| C1 | One origin (RFC-0024 step 3): the Observatory proxies Mission Control's API; the token is needed for actions only (Q3, Q4); Mission Control reads runs only through the Observatory's API (Q5) | API tests through the proxy; both apps' pages from one address in Chromium | M-L | done (2026-11-24; deployed to staging as 4e13c2e, see [DEPLOY](DEPLOY.md)): the Observatory forwards `/control/...` to Mission Control with the standard library (any method, the stream a chunk at a time, `Authorization` across, no cookie); Mission Control's page is relative so it works at `/` and `/control/`; `--require-tokens actions` makes reads open and actions need a token (STOP always open); `check_boundaries` forbids Mission Control's source the run readers and its container gets no data folder. Proven on a test stack (`test_control_proxy`, `test_one_origin_page`, `test_tokens`). Not built: the shared "Robots / Runs" navigation and the phone watch page (RFC-0024 question 6); POST routes that only read need the token too |
+| C2 | Mission Control's container drives the sim duck. It mounts the gate's and the navigator's sockets, the installation file, the robot's folder (description, meshes) and the profile store, at the paths the installation names, under the same UID | `make stack-up`, then a goal run from the deployed page against `sim_duck` | M | done (2026-11-24; deployed to staging as 4e13c2e, see [DEPLOY](DEPLOY.md)): the deploy overlay gives Mission Control's container the installation file, the gate's folder, the robot's folder and the profile store at the paths the installation names, under the same UID, and no data folder. The navigator is TCP on the host's loopback, not a socket, so both containers run on the host's network (loopback only; RFC-0024 section 9). Proven by `make sim-deployed` on a test stack: a point goal started from the page at `/control/` ended `reached`, the run is in the Observatory. The real installation's gate socket shares a folder with robotd's, so it is mounted only when it exists, and Mission Control restarts after the gate does |
+| C3 | The deploy scripts: deploy from a named commit, not whatever the main checkout holds; one target that replaces the solo Observatory project; a smoke after it (health, `/lib/`, the pages in Chromium) | the smoke's output after a deploy | S-M | done (2026-11-24; deployed to staging as 4e13c2e, see [DEPLOY](DEPLOY.md)): `scripts/deploy.py` (`make deploy COMMIT=<sha>`, `deploy-dry`, `deploy-rollback`, `deploy-smoke`; [the recipe](DEPLOY.md)): `git archive` of the named commit, images tagged by it, the solo project taken down after the build, the deployed sha recorded for the rollback, the smoke ends the deploy. Proven on a test stack: a deploy, a redeploy, a rollback (also to a commit before the proxy), the solo project replaced |
 
 The robot page's look follows the mock-up the operator approved on 2026-11-23 ("mockup is
 good"): tabs, collapsible sections, Settings as a block list with a compact read view, a
@@ -506,7 +513,7 @@ The operator decided the parked items on 2026-11-24 ([PARKED-FOR-OPERATOR.md](PA
 | E7 | A `takeover_names` key in the NXT host file; `make sim-nxt` drops its own nxt-web (D7). **Done 2026-11-24** (`NxtHost.takeover_names`, passed to nxt-web as `--takeover-names`; `sim_nxt.py`'s takeover scenario runs on simhost's nxt-web; `libs/simhost/tests/test_simhost.py`; [NXT-SIM.md](NXT-SIM.md)) | S |
 | E8 | A `sim-lock` helper in the repo that every simulator job takes the same way. **Done 2026-11-24** (`scripts/sim-lock`, `fcntl.flock` on `$ROBOTICS_LAB_SIM_LOCK` or `${XDG_RUNTIME_DIR:-/tmp}/robotics-lab-sim.lock`, 7200 s wait; `make sim-duck`, `sim-nxt`, `sim-gate-scenarios` and `sim-deployed` run under it; `make test-sim-lock`; [DUCK-SIM-FOR-AGENTS.md](DUCK-SIM-FOR-AGENTS.md)) | S |
 | E9 | The socket check moved into `libs/runfile`, used by `lab-link` and Mission Control (B6). **Done 2026-11-24** (`runfile.linkcheck.check_socket`, one function with the forward and gate wordings; `labrunner.link.check_socket` wraps it, Mission Control's copy in `duck_real.py` is deleted; `libs/runfile/tests/test_linkcheck.py`, `test_link.py`, `test_duck_real.py`) | S |
-| E10 | Investigate the duck's motion in the simulator: turning in place, the two speed figures (0.36 and 0.55 of commanded), the placed-start stall; fix what is ours. **Done 2026-11-24** (turning: the walking network starts no turn below ~1.0-1.1 rad/s from a stand, not ours; the profile's `locomotion.stand_turn.min_rad_s` and a refusal of a kick under it; Mission Control's drive refusal is left to an owner of `robots.py`, K48. Speed: B9's 0.36 was a wall 0.55 m ahead in the default scene, the sheet's 0.55 summed sway, the walk is ~0.47 over the ground; `lab-measure-walk` marks a blocked leg, `lab-score-sheet` takes net displacement, K49. Placed-start: the test told the duck faced 0, K50; fixed) | M |
+| E10 | Investigate the duck's motion in the simulator: turning in place, the two speed figures (0.36 and 0.55 of commanded), the placed-start stall; fix what is ours. **Done 2026-11-24** (turning: the walking network starts no turn below ~1.0-1.1 rad/s from a stand, not ours; the profile's `locomotion.stand_turn.min_rad_s` and a refusal of a kick under it; Mission Control's drive refuses it too, E5: 422 `stand_turn_below_floor`, K48. Speed: B9's 0.36 was a wall 0.55 m ahead in the default scene, the sheet's 0.55 summed sway, the walk is ~0.47 over the ground; `lab-measure-walk` marks a blocked leg, `lab-score-sheet` takes net displacement, K49. Placed-start: the test told the duck faced 0, K50; fixed) | M |
 
 ### 5. Step 6 (telemetry): needs the operator before it starts
 
@@ -524,8 +531,10 @@ to use it: [TELEMETRY.md](TELEMETRY.md)):
   (U2); Mission Control's hook and wiring (U3); `make telemetry-send-check`, run against the real
   stack (U4); the dashboard file, `make grafana-dry` and `make grafana-import` (U5);
   `observatory archive`, a dry run unless `--apply` (U6); these docs (U7).
-- **Not done:** the dashboard is not imported into Grafana, and its datasource types and panel
-  queries are untested there (the operator imports it); `observatory archive --apply` has not
+- **Imported:** the dashboard was imported in 5f2449f (`make grafana-import`, folder
+  `robotics-lab`, version 1). That commit records that the queries return the send check's
+  data; it does not record the panels rendering in Grafana, and this note does not verify it.
+- **Not done:** `observatory archive --apply` has not
   been run on the real data folder, and which runs count as official is still to confirm with the
   operator against the dry run's table.
 

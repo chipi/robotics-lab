@@ -1,5 +1,10 @@
 # The plan we execute on (from 2026-11-19)
 
+> **Where things stand now (2026-11-25):** this page was written for phases 0 to 5 and is not
+> kept up to date past them (its Phase 6, "the first other robot", still says it waits for the
+> EV3). The living status is [the handover](HANDOVER.md); the items and the MVP 1 wrap-up order
+> are in [the phase 5 plan](PHASE5-NEXT-PLAN.md). The history below is left as written.
+
 **Status:** the operator's plan, 2026-11-19: "write this down in a file and we execute on this".
 Each phase ends with a checkpoint (§ The checkpoint) before the next one starts.
 

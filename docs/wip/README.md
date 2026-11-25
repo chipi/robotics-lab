@@ -12,7 +12,23 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 
 ## Open notes
 
-- [Status and open decisions](STATUS.md) — start here.
+- [Handover](HANDOVER.md) — start here: the living status of the MVP 1 wrap-up.
+- [Phase 5: the plan after step 1](PHASE5-NEXT-PLAN.md) — the items, the wrap-up order, what
+  each built.
+- [Known issues](KNOWN-ISSUES.md), [parked for the operator](PARKED-FOR-OPERATOR.md).
+- [Look and feel: the step 4.5 plan](LOOK-AND-FEEL-PLAN.md), with its
+  [research](LOOK-AND-FEEL-RESEARCH.md) and [unit brief](look-and-feel/UNIT-BRIEF.md).
+- [Telemetry](TELEMETRY.md) and [its retention design](TELEMETRY-RETENTION-DESIGN.md);
+  [deploying the platform](DEPLOY.md), [deployment notes](DEPLOYMENT-NOTES.md),
+  [the staging cut-over](STAGING-CUTOVER.md), [prod on the X3](PROD-ON-X3.md).
+- [MCP coverage](MCP-COVERAGE.md), [the execution plan](EXECUTION-PLAN.md) (the history up to
+  phase 5; the current state is in the handover), [status (superseded)](STATUS.md).
+- The real duck: [backlog](REAL-DUCK-BACKLOG.md), [bringing up the link](REAL-DUCK-LINK.md),
+  [measurements](REAL-DUCK-MEASURE.md), [readiness](PHASE5-REAL-DUCK-READINESS.md).
+- NXT: [D0](NXT-D0.md), [D1 checklist](NXT-D1-CHECKLIST.md), [MVP 1](NXT-MVP1.md),
+  [the CH22 rim](CH22-RIM.md).
+- [MVP 2 spike](MVP2-SPIKE.md), [sensors against ROS](SENSORS-VS-ROS.md),
+  [pending decisions](PHASE5-DECISIONS-PENDING.md).
 - [Roadmap](ROADMAP.md) — the order of work.
 - [Ideas](IDEAS.md) — NXT programs, wireless NXT, bigger NXT robots and the arm robot, goal
   projects, eval-harness and flotilla ideas.

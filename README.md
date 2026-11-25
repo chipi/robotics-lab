@@ -58,6 +58,10 @@ Three kinds of folder (RFC-0018). Every project is its own uv project with its o
 | [libs/runfile/](libs/runfile/) | The run format: schemas, writer and reader, keys, the truth copy, the importers of a robot's log, the catalog |
 | [libs/gate/](libs/gate/) | The robot gate (RFC-0017), `robotgate`: one driver per robot |
 | [libs/worldmodel/](libs/worldmodel/) | Objects, the semantic map and sites, which know no robot |
+| [libs/web/](libs/web/) | The web library both apps share (RFC-0024): the design tokens and fonts, the three.js stage, the palette, layouts, time, evidence links; plain ES modules, served at `/lib/` (`make test-web`) |
+| [scenes/](scenes/) | The scenes, one folder each with a `scene.json` (bounds, rooms, hazards, boxes), versioned here and read by `libs/runfile` (the scene file, PHASE5-NEXT-PLAN item 2); `scenes/apartment` |
+| [dashboards/](dashboards/) | The Grafana dashboard for the telemetry (`robotics-lab-live.json`; `make grafana-dry`, `make grafana-import`; [TELEMETRY](docs/wip/TELEMETRY.md)) |
+| [nav2/](nav2/) | A Nav2 container for comparing against the duck's navigator (RFC-0015, ADR-0018): a learning tool, nothing of ours depends on it |
 | [robots/duck/](robots/duck/) | Pollen's Microduck: its profile and plugins, its navigator (a payload), its simulator scenes and probes, its tools (`duck-replay`, `duck-site`, `duck-pic` ...); registered for the runner as `duck` |
 | [robots/](robots/) | Each robot's description and meshes (RFC-0011): the duck, the EV3s, the NXT Shooterbot |
 
@@ -71,7 +75,12 @@ so a red job reproduces locally with the target it names:
 
 | Target | What |
 | --- | --- |
-| `make ci-fast` | lint (compile, workflows, package boundaries), then every project's unit tests: `test-unit` (nxt), `test-duck`, `test-observatory`, `test-control` |
+| `make ci-fast` | lint (compile, workflows, package boundaries), then `test-sim-lock`, `test-deploy`, `test-libs`, `test-web` and every project's unit tests: `test-unit` (nxt), `test-duck`, `test-observatory`, `test-control` |
+| `make test-libs` | each library's own tests, each in its own environment (`libs/runfile`, `simhost`, `gate`, `runner`) |
+| `make test-web` | the shared web library: one token file, one three.js (standard library only) |
+| `make test-deploy` | `scripts/deploy.py`'s self-test: a named commit's files, the overlay, the record and the rollback (no Docker) |
+| `make test-sim-lock` | `scripts/sim-lock`'s self-test: waits for a holder, gives up after its timeout (no simulator) |
+| `make test-control-page` | Mission Control's page in headless Chromium at phone and desktop width, light and dark |
 | `make test-observatory-pages` | the Observatory's two pages in headless Chromium (`OBSERVATORY_CHROMIUM`, else Playwright's) |
 | `make test-integration` | the NXT web UI image (built from the repo root) answers with a simulated brick and records an Observatory run |
 | `make test-observatory-image` | the Observatory's image runs with the data mounted read only and its index on its own volume, serves a run, and cannot write the data |
@@ -89,7 +98,8 @@ is not set.
 The docs site lives in [`docs/`](docs/index.md) (MkDocs Material, same conventions as the
 operator's other projects): `make docs-serve` to read it, `make docs-validate` before pushing.
 
-- Start with [status and open decisions](docs/wip/STATUS.md).
+- Start with [the handover](docs/wip/HANDOVER.md), the living status, and
+  [the phase 5 plan](docs/wip/PHASE5-NEXT-PLAN.md).
 - [Proposals (RFC)](docs/rfc/README.md): the NXT web UI, the robot brain, one robot interface,
   perception and planning, missions with flotilla and eval-harness.
 - [In progress](docs/wip/README.md): ideas, Microduck notes, parts list.
