@@ -52,8 +52,8 @@ jobs:
           python-version: '3.12'
       - name: Install uv
         run: pip install "uv==${UV_VERSION}"
-      - name: Playwright's Chromium
-        run: make observatory-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
+      - name: Playwright's Chromium, and nxt-web (test_nxt_page runs it)
+        run: make observatory-sync nxt-sync && cd apps/observatory && uv run --frozen playwright install --with-deps chromium
       - name: make test-observatory-pages
         run: make test-observatory-pages
       # keyed on the Makefile's LDRAW_ZIP_SHA256: ldraw.org is fetched once per library version, not on every run
@@ -66,13 +66,28 @@ jobs:
           key: ldraw-${{ steps.ldraw.outputs.sha }}
       - name: "The NXT's meshes (make ldraw-fetch robots-lego): test_nxt_page skips without them"
         run: make ldraw-fetch robots-lego
+      # keyed on the Makefile's DUCK_RL_SHA (and MUJOCO_VERSION for the venv): Pollen's repository is fetched once per pinned commit
+      - name: The duck's model pins
+        id: duck
+        run: |
+          echo "sha=$(make -s duck-model-sha)" >> "$GITHUB_OUTPUT"
+          echo "mujoco=$(make -s duck-mujoco-version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/opt/microduck_rl
+            ~/.cache/robotics-lab/duck-mujoco-venv
+          key: duck-${{ steps.duck.outputs.sha }}-mujoco-${{ steps.duck.outputs.mujoco }}
+      - name: "The duck's meshes (make robots-duck): test_body_duck_page skips without them"
+        run: make robots-duck && git diff --exit-code -- robots/duck/robot.urdf robots/duck/fk_fixture.json
       - name: make test-control-page
         run: |
           # no pipe: the runner's default bash has no pipefail, so a failed make would not fail the step
           make test-control-page > "$RUNNER_TEMP/control-page.log" 2>&1 || { cat "$RUNNER_TEMP/control-page.log"; exit 1; }
           cat "$RUNNER_TEMP/control-page.log"
-          # a missing mesh set prints SKIP and exits 0: after the step above the NXT's must not (the duck's are built from Pollen's MuJoCo model, which CI has not)
+          # a missing mesh set prints SKIP and exits 0: after the steps above neither the NXT's nor the duck's must
           if grep -q '^SKIP test_nxt_page' "$RUNNER_TEMP/control-page.log"; then echo "test_nxt_page skipped: its meshes were not built"; exit 1; fi
+          if grep -q '^SKIP test_body_duck_page' "$RUNNER_TEMP/control-page.log"; then echo "test_body_duck_page skipped: its meshes were not built"; exit 1; fi
       - name: make test-nxt-page
         run: make test-nxt-page
 

@@ -398,6 +398,34 @@ MUJOCO_PYTHON ?= /work/pollen/microduck_rl/.venv/bin/python
 robots: ## The robots' descriptions (RFC-0011): the duck's URDF and meshes from Pollen's MuJoCo model (MUJOCO_PYTHON)
 	$(MUJOCO_PYTHON) robots/duck/from_mjcf.py
 
+# The duck's meshes for a machine that has no Pollen checkout (CI): microduck_rl at the commit the committed robot.urdf and fk_fixture.json were
+# built from (0daab160, develop, 2026-11-10; the commit docs/wip/PHASE0-SPIKE.md records), fetched shallow, and the MuJoCo that built them (3.10.0,
+# the version in /work/pollen/microduck_rl/.venv) in a venv of its own, so no lock file changes. A newer commit or MuJoCo shows as a git diff on
+# robot.urdf / fk_fixture.json, not silently. Does nothing for the fetch when the model is already there.
+DUCK_RL_URL    ?= https://github.com/pollen-robotics/microduck_rl.git
+DUCK_RL_SHA    ?= 0daab160d3fb1c2cbaba16a4a19052f36709dd9e
+DUCK_RL_DIR    ?= $(HOME)/opt/microduck_rl
+DUCK_MJCF      ?= $(DUCK_RL_DIR)/src/mjlab_microduck/robot/microduck/robot_allcollisions_backlash.xml
+MUJOCO_VERSION ?= 3.10.0
+DUCK_VENV      ?= $(HOME)/.cache/robotics-lab/duck-mujoco-venv
+.PHONY: duck-model-sha
+duck-model-sha: ## Print the pinned microduck_rl commit (CI keys its checkout cache on it)
+	@echo $(DUCK_RL_SHA)
+.PHONY: duck-mujoco-version
+duck-mujoco-version: ## Print the pinned MuJoCo version (CI keys its venv cache on it)
+	@echo $(MUJOCO_VERSION)
+.PHONY: duck-model-fetch
+duck-model-fetch: ## Fetch microduck_rl at DUCK_RL_SHA (shallow) into DUCK_RL_DIR, unless the model is there
+	@if test -f $(DUCK_MJCF); then echo "duck-model-fetch: $(DUCK_RL_DIR) is there"; else \
+	  mkdir -p $(DUCK_RL_DIR) && cd $(DUCK_RL_DIR) && git init -q . \
+	  && git fetch -q --depth 1 $(DUCK_RL_URL) $(DUCK_RL_SHA) && git checkout -q FETCH_HEAD \
+	  && test -f $(DUCK_MJCF) && echo "duck-model-fetch PASS" || { echo "duck-model-fetch FAIL: $(DUCK_RL_SHA) of $(DUCK_RL_URL) did not fetch to $(DUCK_RL_DIR)"; exit 1; }; fi
+.PHONY: robots-duck
+robots-duck: duck-model-fetch ## The duck's meshes without Pollen's venv (make robots-duck): MuJoCo $(MUJOCO_VERSION) in $(DUCK_VENV), the model from duck-model-fetch
+	@test -x $(DUCK_VENV)/bin/python || uv venv -q $(DUCK_VENV)
+	@$(DUCK_VENV)/bin/python -c "import mujoco,sys; sys.exit(mujoco.__version__ != '$(MUJOCO_VERSION)')" 2>/dev/null || uv pip install -q --python $(DUCK_VENV)/bin/python mujoco==$(MUJOCO_VERSION)
+	$(DUCK_VENV)/bin/python robots/duck/from_mjcf.py $(DUCK_MJCF)
+
 LDRAW_DIR ?= $(HOME)/opt/ldraw/ldraw
 .PHONY: robots-lego
 robots-lego: observatory-sync ## The LEGO robots' descriptions (RFC-0011): the EV3 Track3r and Spike3r (LDraw OMR 31313) and the NXT Shooterbot, URDF and meshes by robots/ldraw/from_ldraw.py; needs the LDraw parts library in $(LDRAW_DIR) (ldraw.org complete.zip, unpacked in ~/opt/ldraw)
