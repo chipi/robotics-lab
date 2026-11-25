@@ -388,6 +388,7 @@ setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "a
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
 setOverlay("coords|gizmo|legend|hazards_top", bool)
 select({kind, index})       scenes()                    jump(dir, kind?)   next (1) or previous (-1) event mark, of one kind or any; resolves with t
+focus("robot")              momentLink({focus?})        the 3D camera on the robot at the playhead (true, or false); the link `<page>#scene=..&run=..&view=3d&t=<s>&focus=robot` to the playhead (opening it lands there, paused, framed; an unknown focus is ignored)
 setSection(id, open)        setAngles(bool)
 explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)

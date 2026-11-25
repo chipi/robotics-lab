@@ -20,7 +20,7 @@ const LAYER = Object.fromEntries(DRAWN.map((id, k) => [id, k + 1]));
 const DEPTH_NAME = { f: 'floor', o: 'obstacle', v: 'overhead', b: 'below the floor' };
 const deg = (r) => (r * 180) / Math.PI;
 
-let S, M, renderer, scene, views, marker, canvas, stg, camBar, camToggle, floorSaved = true, camPending = false, ovSaved = { ghost: true, open_scene: false };
+let S, M, renderer, scene, views, marker, canvas, stg, camBar, camToggle, floorSaved = true, camPending = false, camFocused = false, ovSaved = { ghost: true, open_scene: false };
 let camRun = null;
 let sceneG = null, scn = null, run = null, fr = null, RW = null, RM = null, rebuilding = false;
 const R = () => (M.frame === 'world' ? RW : RM);
@@ -337,6 +337,7 @@ function syncCamBar() {
 }
 // every camera action ends here: the page draws the new place, the gizmo and the buttons follow
 function camAct(fn) {
+  camFocused = false;
   fn();
   syncCamBar();
   if (fr) adapter.draw();
@@ -405,7 +406,7 @@ const adapter = {
     ovSaved = { ghost: prefs().ghost !== false, open_scene: prefs().open_scene === true };     // the ghost is on and the view opens on the robot until a viewer chooses otherwise
     Object.assign(M.ov, { ghost: ovSaved.ghost, open_scene: ovSaved.open_scene, trail: true, xray: false, inspector: false });       // overlays like the floor: the Overlays menu and setOverlay
     buildInspector(stage);
-    views.home3d = () => (run && fr && RW && !M.ov.open_scene ? robotFrame(camTick()) : null);       // null: the fixed iso that sees the whole scene
+    views.home3d = () => (run && fr && RW && (camFocused || !M.ov.open_scene) ? robotFrame(camTick()) : null);       // null: the fixed iso that sees the whole scene
     const css = document.createElement('link');
     css.rel = 'stylesheet'; css.href = new URL('../shell/camera.css', import.meta.url).href;
     document.head.append(css);
@@ -443,7 +444,7 @@ const adapter = {
 
   setScene(sc) { scn = sc; stg.setBounds(bounds()); buildSceneObjects(); },
   setRun(r, f) {
-    if (M.runId !== camRun) { camRun = M.runId; camPending = true; }           // a run opened: the camera frames its robot at the first draw; a rebuild of the same run leaves it
+    if (M.runId !== camRun) { camRun = M.runId; camPending = true; camFocused = false; }           // a run opened: the camera frames its robot at the first draw; a rebuild of the same run leaves it
     run = r; fr = f; buildRunObjects(); buildBody();
   },
   // the run grew: add what it gained (ticks i0..i1-1, the plans and worlds that became available); nothing is rebuilt
@@ -469,6 +470,14 @@ const adapter = {
   settled: () => new Promise((res) => requestAnimationFrame(() => res())),
   resize() { views.resize(); },
   fit() { views.fit(); },
+  // an evidence link's `focus=robot`: the 3D camera on the robot at the playhead, whatever the opening-camera setting; false without a 3D camera
+  focusRobot() {
+    const f0 = views.slot3() && robotFrame();
+    if (!f0) return false;
+    camAct(() => views.fitBox(f0, { keepFollow: true }));
+    camFocused = true;                                            // the stage resizes as the panels settle, which re-homes the camera: home stays the robot until a camera action
+    return true;
+  },
   persist: persistOv,
   theme() {
     readPalette();

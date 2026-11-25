@@ -30,6 +30,7 @@ import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DE
 import { statusOf, glyph, label } from '/lib/status.js';
 import { mountTopBar } from '/lib/brand.js';
 import { createTimeMode } from './timemode.js';
+import { parseMoment, momentLink as buildLink, copyText } from './evidence.js';
 import { mountLayout, prefs, savePrefs } from './layout.js';
 
 const API = '/api/v1/';
@@ -1110,6 +1111,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const kv = (k, v, u = '', cls = '') => `<div class="kv ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="u">${u}</span><button class="cp" title="Copy" data-copy="${esc(`${k}: ${v} ${u}`.replace(/<[^>]+>/g, ''))}">${svgI('copy', 11)}</button></div>`;
   const isec = (key, title, dot, body, act = '') => `<div class="sec" data-open="${M.secOpen['i' + key] !== false}" data-sec="i${key}"><button class="shead"><span class="caret">${svgI('chev', 12)}</span>${dot ? `<span class="dot" style="background:${dot}"></span>` : ''}${title}<span class="act">${act}</span></button><div class="ibody">${body}</div></div>`;
   let momentJson = null;
+  const MOMENT_ACTS = '<span class="mono" data-link="1" style="cursor:pointer" title="Copy a link to this moment, framed on the robot">copy link</span><span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>';
   // the inspector's last event, and the events before and after the playhead to jump to
   function eventSections(ev) {
     const prev = [...M.run.events].reverse().find((e) => M.kinds[e.kind] !== false && e.t < M.t - 1e-6), next = M.run.events.find((e) => M.kinds[e.kind] !== false && e.t > M.t + 1e-6);
@@ -1148,14 +1150,14 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     if (M.tab === 'moment' && !hasTicks()) {
       const sg = sigMoment(), ev = lastEvent();
       momentJson = { t: M.t, sample: sg ? sg.i : null, signals: sg ? sg.values : null, last_event: ev };
-      el.innerHTML = isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Sample', sg ? `${sg.i + 1} of ${sg.n}` : 'none yet', '', sg ? '' : 'na'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
+      el.innerHTML = isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Sample', sg ? `${sg.i + 1} of ${sg.n}` : 'none yet', '', sg ? '' : 'na'), MOMENT_ACTS)
         + signalsSection(sg) + eventSections(ev);
     } else if (M.tab === 'moment') {
       const m = moment(), map = M.frame === 'map', ev = m.ev, sg = hasSignals() ? sigMoment() : null;
       const pose = (p) => kv('x', fx(p[0]), 'm') + kv('y', fx(p[1]), 'm') + kv('Yaw', fx(deg(p[2]), 1), '°');
       momentJson = { t: m.t, tick: m.tick, frame: M.frame, belief: (map ? m.bm : m.bw).map(f3), truth: m.tr && !map ? m.tr.map(f3) : null, distance: f3(m.dist), heading_error_deg: f3(m.herr), cmd: m.cmd, last_event: ev, ...(sg && { signals: sg.values }) };
       el.innerHTML =
-        isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick + 1} of ${m.n}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), '<span class="mono" data-json="1" style="cursor:pointer">copy JSON</span>')
+        isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick + 1} of ${m.n}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), MOMENT_ACTS)
         + (hasSignals() ? signalsSection(sg) : '')
         + isec('b', 'Belief', 'var(--c-belief)', pose(map ? m.bm : m.bw), `<span class="fchip">${map ? 'map' : 'world'}</span>`)
         + isec('t', 'Truth', 'var(--c-truth)', map ? kv('Truth', 'hidden in the map frame', '', 'na') : m.tr ? pose(m.tr) : kv('Truth', 'none in this run', '', 'na'), '<span class="fchip">world</span>')
@@ -1182,6 +1184,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     el.querySelectorAll('[data-seek]').forEach((b) => (b.onclick = () => b.dataset.seek !== '' && setTime(+b.dataset.seek)));
     const jb = el.querySelector('[data-json]');
     if (jb) jb.onclick = (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(JSON.stringify(momentJson, null, 1)).catch(() => {}); } catch (_) { /* no clipboard here */ } jb.textContent = 'copied'; setTimeout(() => (jb.textContent = 'copy JSON'), 800); };
+    const lb = el.querySelector('[data-link]');
+    if (lb) lb.onclick = async (e) => { e.stopPropagation(); lb.textContent = (await copyText(momentLink())) ? 'copied' : 'not copied'; setTimeout(() => (lb.textContent = 'copy link'), 800); };
     const tr = $('toRow');
     if (tr) tr.onclick = () => { selectNode(tr.dataset.stream); };
   }
@@ -1378,6 +1382,18 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const ids = T.order.filter((id) => id.startsWith('signals.') && T.nodes[id].leaf && shown(id));
     sigView.render({ run: M.run, sig: store.sig, ids, selected: M.selNode, t: M.t });
   }
+  // the evidence link (evidence.js) to the playhead; a run with a pose is linked on the 3D view, which is the camera `focus` moves
+  function momentLink({ focus = 'robot' } = {}) {
+    if (!M.run) return null;
+    const framed = hasTicks() && knownViews().includes('3d');
+    return buildLink({ loc: location, scene: M.sceneId, run: M.runId, view: framed && focus === 'robot' ? '3d' : M.view, t: M.t, focus: framed ? focus : null });
+  }
+  // `focus=robot`: the 3D camera frames the robot at the playhead, and the run stays paused where the link put it
+  function focusOn(what) {
+    if (what !== 'robot' || !M.run || !hasTicks()) return false;
+    play(false);
+    return !!adapter.focusRobot?.();
+  }
   function writeHash() {
     history.replaceState(null, '', M.runId ? '#' + new URLSearchParams({ scene: M.sceneId, run: M.runId, view: M.view, frame: M.frame }) : '#scenes');
   }
@@ -1415,6 +1431,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     setTime: async (t, sync = false) => { if (M.run) await store.ensure(+t); return setTime(t, sync); },
     // the next (dir > 0) or previous event mark, of one kind or any; resolves with the time after the jump (it stays when there is no mark)
     jump: async (dir, kind) => { if (M.run) stepEvent(dir, kind); return M.t; },
+    // the 3D camera on what is named (only 'robot' now): true when it moved, false for another value or a run with no pose
+    focus: async (what) => focusOn(what),
     setView, setFrame, setVisible, setTimeMode, setRelation, setViewVisible,
     // an overlay on or off: coords, gizmo, legend, hazards_top (the scene's real hazards drawn over the robot's model)
     setOverlay: (name, on) => { if (!(name in M.ov)) return false; M.ov[name] = !!on; renderChrome(); if (hasTicks()) adapter.draw(); adapter.persist?.(); return !!on; },
@@ -1433,6 +1451,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   };
   window.miniview = Object.fromEntries(Object.entries(api).map(([k, f]) => [k, call(f)]));
   window.miniview.state = state;
+  window.miniview.momentLink = momentLink;
   window.miniview.exploreState = () => (explore ? explore.state() : null);
   window.miniview.exploreView = (kind) => (explore ? explore.view(kind) : null);
   window.miniview.exploreSnapshot = () => (explore ? explore.snapshot() : null);
@@ -1639,7 +1658,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   // ---- boot ---------------------------------------------------------------------------------------------
   adapter.init(stage, shell);
   applyTheme(stored() || (mq.matches ? 'light' : 'dark'));
-  const h = new URLSearchParams(location.hash.slice(1));
+  const h = new URLSearchParams(location.hash.slice(1)), at = parseMoment(location.hash);       // writeHash drops t and focus once the run is open
   M.view = VIEW_ALIAS[h.get('view')] || (knownViews().includes(h.get('view')) ? h.get('view') : watch ? 'watch' : 'top');
   M.frame = (h.get('frame') === 'map' || h.get('data') === '1') && !EYE_VIEWS.includes(M.view) ? 'map' : 'world';
   if (eye) {
@@ -1668,7 +1687,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       } else if (h.get('run') || h.get('scene')) {
         try { await openRun(h.get('scene') || undefined, h.get('run') || undefined); } catch (e) { console.warn('the URL names no run:', String(e)); scenesPage(); }
       } else if (!M.run && !M.loading) scenesPage();
-      if (M.runId && h.has('t') && Number.isFinite(+h.get('t'))) { await store.ensure(+h.get('t')); setTime(+h.get('t')); }       // a link from the other page: the same moment
+      if (M.runId && at.t !== null) { await store.ensure(at.t); setTime(at.t); if (at.focus) focusOn(at.focus); }       // a link from the other page, or an evidence link: the same moment
       renderChrome();
       await fontsReady();
     } catch (e) { console.error(e); document.body.append(String(e)); } finally { end(); }
