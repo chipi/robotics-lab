@@ -353,13 +353,28 @@ the design tokens (`/lib/tokens.css`, loaded before `shell.css`), the vendored t
 cached for a day; the pages' import maps point at it) and the robot body component (`/lib/body/`). The
 CSP is unchanged: it is the same origin.
 
+**The shared UI.** The Observatory's pages and Mission Control's are built from the same kit: the
+design tokens and the stylesheet of shared components (`tokens.css`, `ui.css`), the status
+vocabulary (`status.js`: one glyph, word and colour per status, so a verdict reads the same in both
+apps), the command palette (`palette/`), the layout store (`layout/store.js`: panels, widths and
+named layouts, in the browser's storage only, `rl.layouts.observatory`), the time model
+(`time/timemodel.js`: the Live and Replay modes of the badge, below) and the evidence links to a
+moment (`evidence.js`, the format `momentLink()` writes and the pages read from the hash). A colour
+or a status in the workbench comes from the tokens and `status.js`, not from `shell.css`; a change
+to a shared module is a change to both apps. The contracts of each module and the amendments made
+after they shipped are in [LOOK-AND-FEEL-PLAN](../../docs/wip/LOOK-AND-FEEL-PLAN.md) (Frozen
+contracts, Amendments).
+
 The two pages are one workbench (`web/shell/`: top bar, outliner, properties, inspector, timeline,
 themes) with a
 renderer adapter each (`web/three/app.js`, `web/deck/app.js`). The view area is the element
 `#stage`; the status chip
-`#runinfo` reads "robot · kind · verdict · length · N ticks"; `#follow` (with `#follow-on`) shows
-only while the run is
-live. `#exportBtn` ("Export video") is enabled when the render service lists an available engine
+`#runinfo` reads "robot · kind · length · N ticks" (and "N samples" for a run with signals; the
+verdict is on the Run button beside it); the **Live / Replay badge** (`#tm-badge`, with `#tm-behind`
+"N s behind" and `#tm-golive` "Return to live") is the Follow live switch, shown with a run open:
+Live while following the edge of a run still being written, Replay anywhere else and for every
+finished run (then the badge is disabled). `#exportBtn` ("Export video") is enabled when the
+render service lists an available engine
 for the run's robot (its title says why when not); it opens a panel (engine, from, to, size, Start;
 then the job's status, a `<video>` and a download link). Fonts (Inter, JetBrains Mono; OFL, licences
 in `libs/web/fonts/`) are served by the service: no request leaves the machine.
@@ -386,22 +401,49 @@ each call once it has drawn (set it to `false` before calling, then wait for `tr
 load(scene, run)            setTime(t)                  setView("top|front|back|left|right|three|3d|eye|chase|watch")
 setFrame("world|map")       setVisible(streamId, bool)  setTimeMode(streamId, "at|window|upto", seconds)
 setRelation("belief_truth|depth_pose", bool)            setViewVisible(view, streamId, bool)
-setOverlay("coords|gizmo|legend|hazards_top", bool)
+setOverlay("coords|gizmo|legend|hazards_top", bool)     any other overlay the page has (the three.js page: floor, ghost, open_scene, trail, xray, inspector); false for an unknown name
+setData(bool)               true is setFrame("map"), false setFrame("world") (the older name)
 select({kind, index})       scenes()                    jump(dir, kind?)   next (1) or previous (-1) event mark, of one kind or any; resolves with t
-focus("robot")              momentLink({focus?})        the 3D camera on the robot at the playhead (true, or false); the link `<page>#scene=..&run=..&view=3d&t=<s>&focus=robot` to the playhead (opening it lands there, paused, framed; an unknown focus is ignored)
+focus("robot")              the 3D camera on the robot at the playhead (true, or false for another value or a run with no pose)
+momentLink({focus?})        the link `<page>#scene=..&run=..&view=3d&t=<s>&focus=robot` to the playhead, or null with no run open (opening it lands there, paused, framed; an unknown focus is ignored)
 setSection(id, open)        setAngles(bool)
 explore(robot?)             explorePart(link|null)      explorePose("recorded|hand")
 exploreJoint(name, radians) exploreHide(link, bool)     exploreIsolate(link|null)
 exploreKind("robot|depth|map")   exploreView(kind?) -> the depth frame's or the map's view (state, screenOfCell, screenOfPoint, canvas), for scripts
-state()     -> {tab, angles, robot, sections: [{id, name, open, streams}], run, scene, status, seq, follow,
-                loaded: {ticks, of, complete, ranges}, t, tick, tick_t, frame, view, belief, belief_map, truth, distance,
-                last_event, selection, t_range, hidden, eye, alerts, decided, semantic?}
+exploreScreenOf(link)       where a part's centre is on the screen, `[clientX, clientY]`, to click a part by name (null before Explore opens or for a link the body lacks)
+state()     -> {tab, angles, robot, sections, run, scene, status, seq, follow, time, loaded, t, tick, ...}   every key below
 config()    -> {modes, on, vv, size, kinds, play, rel, overlays, view, frame, theme, follow, scene, run}   plain data
 whenLoaded() -> resolves with {ticks} when every tick of the open run is loaded
 exploreState() -> for the robot body {robot, kind: "robot body", pose, selected, hidden, isolated, why, links, drawn, values, poses}; for "depth frame" {kind, shown, why, index, n, t, rows, cols, distance_mm, status, derived, derivedWhy, tickT, color, cell, kinds}; for "map" {kind, shown, why, worldN, worldCount, worldT, w, h, res, counts, obstacles, drops, plan, belief, objects, areas, view, layers, cell}   (null before Explore opens)
 exploreSnapshot() -> the body as a PNG data URL
 ```
 
+- **The keys of `state()`** (`web/shell/shell.js` `state()`, `identity()`, `panels()`):
+  - `tab`: the right panel's tab (`moment`, `sel`, `explore`, `decided`); `angles`: the
+    joint-angle switch; `robot`: the open robot's name or null; `sections`:
+    `[{id, name, open, streams}]`, the left panel's five sections.
+  - `run`: the run's key (null on the scenes page); `scene`: its scene; `status`: `live`, `ended`,
+    `stopped` or `broken`; `seq`: the last record applied; `follow`: whether the playhead follows
+    the edge (the badge pressed); `time`: `{mode: "live" | "replay", can_live, behind_s}` or null
+    with no run open.
+  - `loaded`: `{ticks, of, complete, ranges, samples}`, the ticks held, the run's count, whether all
+    are held, the `[first, end)` pairs, and the samples held; null with no run open.
+  - `t`: the playhead (run seconds); `tick`: the 0-based index at it (0 with no pose); `tick_t`: that
+    tick's time; `frame`: `world` or `map`; `view`; `t_range`: `[t0, t1]`.
+  - `belief` (the belief carried to the world frame through the epoch in force), `belief_map` (as
+    recorded, the map frame) and `truth` (the world frame, null on a real robot): `[x, y, yaw]`;
+    `distance`: how far the belief is from the truth, in metres (null with no truth);
+    `last_event`; `selection`: what `select` chose, as described, or null; `hidden`: the ids of the
+    streams the run has and the viewer switched off.
+  - `raw_frame`: `{i, n, t, frame_t_ns, state_t_ns, pair_dt_ms}` for the raw depth frame at the
+    playhead, or null.
+  - `eye`, `alerts`, `decided`: the eye camera, the alerts and the Decided tab, as below.
+  - `signals?`: `{i, n, t, values}` for the sample at or before the playhead (a run with signals);
+    `signals_view?`: whether the Signals view is showing (see Signals below); `semantic?`: the
+    semantic map at the playhead (a run with one).
+  A run with no ticks loaded (no pose, or the scenes page) answers `tick: 0`, `belief`, `truth`,
+  `distance` and `selection` null, and has no `tick_t`, `belief_map`, `raw_frame`, `eye`, `alerts`,
+  `decided` or `hidden`.
 - **The left panel by meaning** (UXS-001, 2026-11-16). The outliner's top level is five sections:
   World (`sec.world`: the scene's `g.scene`, the truth's `g.truth`), Body (`sec.body`: the robot's
   3D model `body.model`, its joints by chain `g.chain.<chain>`, from the robot's description, or
@@ -410,7 +452,11 @@ exploreSnapshot() -> the body as a PNG data URL
   belong to none). A joint is the signal `joint_<name>` (ADR-0016), shown by its name with its
   angle at the playhead in degrees (`[data-angle]`; `setAngles(false)` hides them). Sections are
   closed until a viewer opens them, except the one holding the selected stream; what a viewer
-  opened and the angles switch are remembered in the browser (`localStorage` `miniview.left`).
+  opened and the angles switch are remembered in the layout store (`localStorage`
+  `rl.layouts.observatory`, `panels.open` and `panels.angles` of the layout in use). The older key
+  `miniview.left` is read once, by the store, when no layout is saved yet, to carry `open` and
+  `angles` over into a layout named `default`; it is not written for them again. The three.js page
+  still writes its own viewer preferences there (the floor, the ghost, `open_scene`).
   The timeline's rows and the Moment's signals follow the same order. `setVisible` and
   `setSection` take a node id or a name; the names before the sections still resolve (`Sensors`
   is Senses, `Robot` Body, `Signals` Other values).
@@ -472,7 +518,8 @@ exploreSnapshot() -> the body as a PNG data URL
     its hash puts the playhead there once the run is open (Follow live turns off, as with any seek).
 - **Explore** (RFC-0011 §3.3): the right panel's third tab (`#tabExplore`, `#explore`), a detail
   view whose first kind is a robot's body (the run's robot, or any of `GET /api/v1/robots`). The
-  description's meshes placed by the pages' forward kinematics (`web/shell/robot.js`, the same as
+  description's meshes placed by the pages' forward kinematics (`libs/web/body/robot.js`, served at
+  `/lib/body/robot.js`, the same as
   `observatory.kinematics`, checked against `robots/duck/fk_fixture.json`), posed **as recorded** (the
   joints' values at the playhead, following it) or **by hand** (a slider per joint by chain, within
   its limits; it starts from the recorded pose). A part is picked in the body or in the list of
@@ -514,10 +561,14 @@ exploreSnapshot() -> the body as a PNG data URL
   chart per numeric signal and a band per text signal on one time axis with the playhead; a click
   or a drag on a chart (`.sg-p`) seeks; the layout and frame buttons are hidden, the streams the
   run lacks are hidden ("Show them"), "tick" reads "sample" and the status chip counts samples.
+  A run with signals **and** a pose keeps its views and has the **Signals switch** (`#sigBtn`, off
+  when a run opens): it lays the Signals view over the viewport
+  (`.signals-over`), so a joint's chart shows its limit bands.
   The run store loads every
   sample when the run opens (`GET .../signals`, in windows) and takes the later ones by record.
   `state()` adds `signals` (`{i, n, t, values}` for the sample at or before the playhead) and
-  `loaded.samples`; a run with no pose answers `tick: 0` and `belief: null`.
+  `loaded.samples`; a run with no pose answers `tick: 0` and `belief: null`. `signals_view` is true
+  when the Signals view is showing (always for a run with no pose, the switch for one with a pose).
 - `load(scene, run)`: `run` is the key, or a name only one run of that scene has. It **rejects** (an
   `Error`) for an unknown
   scene, an unknown run or an ambiguous name (listing the keys), and leaves the open run as it was.
@@ -528,8 +579,9 @@ exploreSnapshot() -> the body as a PNG data URL
   `follow`. `tick` is the 0-based index; the page shows it 1-based, "tick 457 of 464".
 - **Follow live is a mode**: it pins the playhead to the newest tick of a live run. Any change of
   time (`setTime`, a click on
-  the timeline or the transport, a key, playback) turns it off, and the switch shows it; the switch
-  turns it on again.
+  the timeline or the transport, a key, playback) turns it off, and the Live / Replay badge shows
+  it (Replay, with "N s behind"); pressing the badge or "Return to live" turns it on again.
+  `state().follow` and `state().time` say which.
 - `setTime(t)` waits for the ticks up to `t` to be loaded. `select` takes a depth return (`{kind:
   "depth", index}`, the index being `tick * 100000` plus
   the point's place in its tick), a robot (`{kind: "robot", index: 0 belief | 1 truth}`) or a map cell
@@ -580,16 +632,28 @@ stretch. An epoch that arrives behind drawn ticks makes the shell call `setRun` 
 on the epoch is drawn
 again. The shell gives the adapter `M` (the model), `shown(id, view)`, `cfg(id)`, `size(id)`, `pick(sel)`,
 `viewChanged()`, `tickAt(t)` and `palette()`. The 3D views of both pages start from the same camera;
-`viewer/tests/test_ui.py` checks that six world points land on the same pixels.
+`apps/observatory/tests/test_ui.py` checks that six world points land on the same pixels.
 
 ## Commands (the agent's face)
 
-`observatory scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K | state
-<run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
-frame | film | import | repair <key> | compact <key> | index | serve | mcp | scene <id> [--file F]`
-(`scene`: the repository's `scenes/<id>/scene.json`, or F, copied into the data folder).
-`import --robot nxt <run>.csv [--scene S] [--tz ZONE] [--sprocket-diameter M --track-width M]
-[--config PATH]` imports an nxt-web recording (ADR-0013); `state` of a run with signals prints
+`observatory scenes | runs <scene> | events <key|name> [--kinds a,b] | events --all --kind K |
+anomalies <run> [--detector a,b] [--min-severity S] [--experimental] [--layout F] |
+state <run> --at t | objects <run> --at t [--json] | sensor <run> --at t [--json] |
+frame <run> --at t | film <run> --at t [--span S --n N] | video <run> -o F | import | repair <key> |
+compact <key> | index | archive | serve | render-serve | mcp | scene <id> [--file F]`
+(`scene`: the repository's `scenes/<id>/scene.json`, or F, copied into the data folder). The
+command is `observatory`; `miniview` is the same entry point (`pyproject.toml`
+`[project.scripts]`). `scenes`, `runs`, `events`, `anomalies`, `state`, `objects` and `sensor`
+take `--json`. `anomalies` runs the detectors of RFC-0019 over the recording and writes nothing;
+`archive [--days N] [--archive P] [--robot R] [--apply]` is a dry run unless `--apply`, and leaves
+official, young and live runs; `video` renders a run with an engine (`--engine`, `--fps`,
+`--size`, `--from`, `--to`, `--inset`, `--intro`, `--hide`, ADR-0017) and `render-serve` is the
+service the pages' Export video uses (port 8071, `--state` or `OBSERVATORY_STATE` for the videos).
+`frame` and `film` take `--view`, `--frame`, `--hide`, `--lib` and `-o`.
+`import <duck run folders> [--scene S] [--follow] [--idle SECONDS]` imports a duck's log (a live
+run with `--follow`); `import --robot nxt <run>.csv [--scene S] [--tz ZONE]
+[--sprocket-diameter M --track-width M] [--config PATH]` imports an nxt-web recording (ADR-0013);
+`state` of a run with signals prints
 them, of a run with a semantic map its objects, current sighting and room; `objects` prints the
 same three alone (`--json`: the API's `semantic`). While a service holds the
 index the
