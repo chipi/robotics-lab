@@ -178,6 +178,7 @@ nav:
     - Roadmap: wip/ROADMAP.md
     - Ideas: wip/IDEAS.md
     - "Research plan: learned avoidance, training, agent skills": wip/RESEARCH-LEARNED-AVOIDANCE.md
+    - "Research R1 and R2: NVIDIA's controller, our depth sensor": wip/RESEARCH-R1-R2.md
     - Mission control, requirements: wip/MISSION-CONTROL-REQUIREMENTS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md

@@ -6,6 +6,21 @@ R8 when the real duck arrives. `onnxruntime` approved as a dependency (R4); GPU 
 approved (R6, R7), each GPU-mode swap still announced beforehand and kept clear of the nightly
 window; a new Isaac Lab stack on the DGX is the homelab's call.
 
+**Results so far** ([R1 and R2](RESEARCH-R1-R2.md), 2026-11-26), and what they change:
+
+- No trained navigation checkpoint is published; NVIDIA expects users to train their own. R4
+  waits for R6 (a random-weight model can test the plumbing only).
+- Their controller is a residual on the requested velocity, trained against NVIDIA's own walker,
+  not Pollen's `0daab160` that our simulator runs. Testing it on our duck would pair it with a
+  walker it never saw, which favours training against Pollen's walker (R6's port to our stack).
+- The seam (R3) must hand the controller the command actually applied after the guard, and the
+  depth frame's age: both are inputs it observes.
+- Our simulated depth sensor is near-ideal: noise only. The cheap impairments to add (R2): minimum
+  range, bias and scale, random invalid zones, dropped frames, one frame of delay. An invalid zone
+  must not use status 255, which the navigator reads as a drop below the floor line
+  (`tof8x8.py:286`).
+- Licences: their code BSD-3-Clause; the robot meshes CC BY-NC-SA 4.0.
+
 **Status:** a research plan, written 2026-11-26 at the operator's request ("see it first as a
 series of research activities, and then we decide"). Nothing here is planned work or approved;
 each activity names what it needs from the operator. The trigger: NVIDIA's tutorial
