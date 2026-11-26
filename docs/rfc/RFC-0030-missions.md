@@ -766,6 +766,9 @@ the operator's.
    - **Recommendation: A**, with the naming and the approver hook of section 13 written down now.
    - **Reviewer:** not asked. The review's header notes that RFC-0030 must say how the two relate
      before the name `missions` is fixed.
+   - **Deferred (the operator, 2026-11-26):** "maybe"; discussed after MVP 2, when mission
+     planning starts. Written down as an idea in [IDEAS.md](../wip/IDEAS.md) ("With flotilla",
+     item 5). Until then nothing here depends on flotilla.
 
 ## 10. Consequences
 

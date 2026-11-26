@@ -185,6 +185,24 @@ not built in flotilla yet, so these wait for those parts or drive them.
    program crash: each a case with a fix (back up, stop, notify).
 4. **NXT and duck as two hosts in one fleet.** The duck sees and talks, the NXT drives; flotilla
    coordinates and records who did what.
+5. **flotilla as the outer approver of auto-mode missions** (an idea and an opportunity, written
+   down 2026-11-26; the operator: "maybe", to discuss after MVP 2 when mission planning starts).
+   Mission Control plans, reviews, approves and runs steps (RFC-0030); flotilla would decide
+   whether a mission type may run on a robot at all, as RFC-0005 proposed before Mission Control
+   existed. The join sketched in RFC-0030 section 13:
+   - flotilla approves as a named token identity on Mission Control's approval route; Mission
+     Control still enforces the plan checksum, the stop latch and mode 3 on the simulator only;
+   - flotilla's ladder maps onto the approval modes: shadow is a plan reviewed and not run,
+     propose is mode 1 or 2, auto is mode 3;
+   - RFC-0005's whole-mission rehearsal on the simulated duck becomes the rule when auto mode
+     reaches a real robot;
+   - the freeze is one more source of a STOP, which needs the gap RFC-0030 section 12 records
+     closed (a STOP not sent through Mission Control does not latch a mission yet);
+   - "mission" means a flotilla case there and a plan run here: settle the word before it hardens.
+
+   Open then: whether this happens, or Mission Control's approval modes are enough and RFC-0005
+   is rewritten or retired; flotilla's own state (its host agent, a robot-host ADR, the answers
+   to [FLOTILLA-ASKS.md](FLOTILLA-ASKS.md)), not checked on 2026-11-26.
 
 ## With the Microduck
 
