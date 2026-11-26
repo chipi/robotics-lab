@@ -97,6 +97,7 @@ nav:
     - RFC-0023 — The views: rfc/RFC-0023-the-views.md
     - RFC-0024 — One platform: rfc/RFC-0024-one-platform.md
     - RFC-0025 — From MVP 1 to MVP 2: rfc/RFC-0025-mvp1-to-mvp2.md
+    - RFC-0030 — Missions, planning as a module: rfc/RFC-0030-missions.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
