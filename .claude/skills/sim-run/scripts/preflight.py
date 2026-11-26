@@ -4,6 +4,7 @@ would read. It starts nothing, takes no lock, runs no sudo, writes nothing.
 
     preflight.py                  # the lock, the host, the simulator, the installation
     preflight.py --json
+    preflight.py --root PATH      # check another worktree (default: the one this script is in)
 
 One line per check (PASS / WARN / FAIL / INFO), then `SIM-PREFLIGHT READY`, `BUSY` or `NOT READY`.
 Exit 0 READY, 3 BUSY (another job holds the lock: wait, do not start), 1 NOT READY.
@@ -116,6 +117,15 @@ def check_lock() -> bool:
     return False
 
 
+def check_venv(root: Path) -> None:
+    """The navigator a challenge starts runs from robots/duck/.venv; a fresh git worktree has none until `make duck-sync`."""
+    py = root / "robots" / "duck" / ".venv" / "bin" / "python"
+    if py.exists():
+        line("PASS", "duck venv", f"{py} exists")
+    else:
+        line("FAIL", "duck venv", f"{py} is missing: the navigator runs from it and `lab-challenge` cannot start; run `make duck-sync` in {root}")
+
+
 def check_host() -> dict | None:
     f = Path(os.path.expanduser(os.environ.get("ROBOTICS_LAB_HOST") or str(DEFAULT_HOST)))
     h = read_json(f)
@@ -190,8 +200,10 @@ def check_installation() -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--root", type=Path, default=ROOT, help="the worktree whose duck venv to check")
     a = ap.parse_args()
     free = check_lock()
+    check_venv(a.root.resolve())
     check_sim(check_host())
     check_installation()
     bad = [x for x in lines if x["status"] == "FAIL"]

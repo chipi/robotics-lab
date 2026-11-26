@@ -27,6 +27,7 @@ sudo for as long as the challenge runs lasted, and a correct password read as "S
 | --- | --- | --- |
 | `lock` FAIL, held | another job (a person's or an agent's) has the simulator | wait; never start a second job, never delete the lock file |
 | `duck-sim sudo patch` FAIL | unpatched `duck-sim` still asks sudo | stop; the operator applies `robots/duck/sim/patches/duck-sim-sudo-free-down.patch` (`scripts/host-setup` does it) |
+| `duck venv` FAIL | `robots/duck/.venv` is missing (a fresh git worktree has none); the navigator runs from it | `make duck-sync` in the worktree, then run the preflight again |
 | `host file` FAIL | no host file, or it names no Pollen checkout | `simhost show`, `scripts/host-check`; ask |
 | `installation` WARN | `ROBOTICS_LAB_INSTALLATION` unset, or it is the operator's file or shares its data/index | write a scratch installation (below) and set the variable |
 | `simulator` INFO up | a simulator is running | with a free lock it is a leftover or a hand session: ask before a job resets it |
@@ -35,6 +36,8 @@ The preflight is evidence, not a verdict: READY says the lock is free and the fi
 
 ## Run
 
+0. A fresh git worktree needs `make duck-sync` before `lab-challenge` (or any job that starts the navigator): the navigator runs from
+   `robots/duck/.venv`, which a new worktree does not have. The preflight fails on it.
 1. Scratch installation, outside the repo (`docs/wip/NXT-SIM.md`, "A test installation file"): a JSON file with `installation: 1`, a scratch
    `data`, `index` and `state`, and the `robots` the job needs. **Never edit `~/.config/robotics-lab/installation.json`.**
    `export ROBOTICS_LAB_INSTALLATION=<scratch file>`.

@@ -34,6 +34,8 @@ Starting a batch is a simulator job: do `sim-run` first (lock, patch, scratch in
 `sim-run`'s preflight READY; a clean, committed tree; the dataset id exists in `/work/robotics-evals/data/datasets/`; the arms differ in
 one setting; at least 10 scenarios per arm (the script fails under `--min-items`, default 10). Exact p up to 30 items; no interval at 5 or fewer.
 
+`evh` is at `/work/robotics-evals/.venv/bin/evh` and is not on `PATH` (`command -v evh` finds nothing); every `evh` in this skill means that file.
+
 ## Success: signals that must agree
 
 1. `BATCH-SCORES PASS`: every dataset item has exactly one run with a verdict, all builds agree apart from the sensor seed, none dirty.
