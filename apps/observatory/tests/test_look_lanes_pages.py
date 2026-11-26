@@ -147,6 +147,12 @@ def ready_lanes(pg, n=1):
     pg.wait_for_function(f"document.querySelectorAll('#dlanes canvas.lanes-cv').length === {n}")
 
 
+def at_rest(pg):
+    # fold() clicks a lane and leaves the pointer on it: :hover repaints that lane, so the tones are measured with the pointer off the lanes and the fades done
+    pg.mouse.move(1, 1)
+    pg.wait_for_function("!document.querySelector('#lanes :hover, #lanes .rec') && !document.getAnimations().some((a) => a.playState === 'running' && a.effect?.target?.closest?.('#lanes'))")
+
+
 def fold(pg, sec, want):
     cur = pg.evaluate(f"document.querySelector('#lanesL .lane-s[data-fold=\"{sec}\"]').getAttribute('aria-expanded') === 'true'")
     if cur != want:
@@ -328,6 +334,7 @@ with sync_playwright() as p:
     check("a section lane is a header: at least 32 px, taller than any stream lane under it (30 px; a sparkline 44 px), and the label column and the canvas column agree row by row",
           min(hs["sec"]) >= 32 and hs["sec"] == hs["secR"] and min(hs["str"]) >= 30 and max(hs["str"]) < min(hs["sec"]) + 1 and min(hs["spark"]) >= 44 and hs["spark"] == hs["sparkR"] and hs["all"], hs)
     check("... and the whole lane block stays a share of the window (at most 46 % of it, it scrolls beyond that)", hs["box"] <= 0.46 * hs["view"], hs)
+    at_rest(pg)
     cd = pg.evaluate(CONTRAST)
     low = {k: v for k, v in cd.items() if k != "tones" and ((not v and k != "missing stream") or (v and min(v) < 4.5))}
     check("lane text is legible in the dark theme: section names and counts, stream names, the not-in-this-run line, all at 4.5:1 or more against their lane", not low and len(cd["section count"]) >= 4, cd)
@@ -362,6 +369,7 @@ with sync_playwright() as p:
     hi, lo = px(lp, row, HI_T, 90), px(lp, row, LO_T, 90)
     check("light theme: the same lanes draw, the sparkline still follows the data", hi["top"] is not None and lo["top"] is not None and hi["top"] < lo["top"], (hi, lo))
     lp.evaluate("window.miniview.setTime(0.8)")
+    at_rest(lp)
     cl_ = lp.evaluate(CONTRAST)
     low = {k: v for k, v in cl_.items() if k != "tones" and ((not v and k != "missing stream") or (v and min(v) < 4.5))}
     check("light theme: lane text is legible, 4.5:1 or more against its lane", not low, cl_)

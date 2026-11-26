@@ -1019,9 +1019,11 @@ with sync_playwright() as p:
         boot(fp, BASE + "/control/#robot/duck-1", "!document.getElementById('robot-page').hidden && !!document.querySelector('#rp-alarms-body .alarmrows li')")
         wait(fp, "!document.getElementById('toast').hidden && document.getElementById('toast').classList.contains('err')")
         msg = fp.evaluate("document.getElementById('toast').textContent")
-        fp.wait_for_timeout(300)
+        # each repaint tries the load again and holds a slot until that try fails too: the counts are read in the same frame as the settled page, not after it
+        counts = fp.wait_for_function("""(() => { const c = [document.querySelectorAll('.evidence-slot').length, document.querySelectorAll('a.evidence').length,
+          document.querySelectorAll('#rp-alarms-body .alarmrows li').length]; return c[0] === 0 && c; })()""", timeout=8000).json_value()
         check("the page says the Observatory links could not be loaded, leaves no empty slot and no link, and keeps the alarm row", "Observatory links could not be loaded" in msg
-              and fp.locator(".evidence-slot").count() == 0 and fp.locator("a.evidence").count() == 0 and fp.locator("#rp-alarms-body .alarmrows li").count() >= 1, msg)
+              and counts[0] == 0 and counts[1] == 0 and counts[2] >= 1, (msg, "slots, links, alarm rows:", counts))
         fp.unroute(bad)
         fp.evaluate("window.__mc.renderRobotPage()")
         wait(fp, "!!document.querySelector('#rp-alarms-body a.evidence')")
