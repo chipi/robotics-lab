@@ -167,6 +167,18 @@ hardware until R8.
 | R7 | Can we train our own variant? | Our command (the path follower's, not a gamepad), our obstacles (apartment-like rooms, door frames, chair legs), our caps; trained on R6's stack, judged in R5's scenarios | R6; GPU hours | Our own local controller, its record, and its evaluation |
 | R8 | Does it hold on the real duck? | When the real duck arrives: the rules first, then the learned controller under the guard, at the capped speed, after a safety review like RFC-0025 step 10's | The real duck; the operator present; a safety review | The sim-to-real gap for the local layer |
 
+**R7, split (decided by the operator, 2026-11-26: all five before MVP 2).** Our edge is owning the
+whole loop (navigator, guards, challenge course, judges, home, evaluation), not compute. Each is
+judged against M2b (NVIDIA's recipe, deploy-matched) on `avoidance_v1`, which training never sees.
+
+| Part | What | Depends on |
+| --- | --- | --- |
+| R7a | Our challenge families as the training distribution: `lab-scenarios` writes a training pool (seeds disjoint from evaluation), microduck-nav loads it by file; one family held out to test generalisation | M2b's code |
+| R7b | Our guards in the loop: the reflex and cliff stop run inside training, and each intervention costs reward, so the controller steers before a guard must fire | R7a's environment |
+| R7c | Failure mining: failed runs (judge verdicts, stops, anomalies) become training scenarios, plus start poses just before the failure; evaluation items excluded by manifest | `lab-scenarios`; run files |
+| R7d | Train in the home: the apartment as a training scene; real-home data private until reviewed | A survey of what scan or scene exists |
+| R7e | Teacher and student: a teacher with the true obstacle map, a student with the 64 zones only, trained to imitate | R7a and R7b |
+
 ## 5. Decisions the research feeds
 
 1. Leave a local-controller seam in the navigator split (R3): the cheapest decision, and the one
