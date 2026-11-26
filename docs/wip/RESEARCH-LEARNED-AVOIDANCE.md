@@ -21,6 +21,22 @@ window; a new Isaac Lab stack on the DGX is the homelab's call.
   (`tof8x8.py:286`).
 - Licences: their code BSD-3-Clause; the robot meshes CC BY-NC-SA 4.0.
 
+From [S1 to S4](RESEARCH-S1-S4.md), 2026-11-26:
+
+- 51 NVIDIA skills found (44 Isaac Sim, 2 isaac-ros-cli, 5 in NVIDIA's own "Mission Control");
+  none covers MuJoCo, Gazebo, a time-of-flight sensor, nvblox or cuVSLAM. None to use as is; a few
+  patterns to adapt (a model's deployment files recorded together with their checksums, for R4
+  and R6; read-only preflight scripts; evals that tempt a shortcut).
+- Licences: the Isaac Sim and Mission Control skills are Apache-2.0 (copy and adapt with a
+  notice). The two isaac-ros-cli skills carry NVIDIA's proprietary header despite an Apache
+  `LICENSE`: read only, write our own. Asking NVIDIA is the operator's call.
+- S4: the ROS connector keeps Isaac ROS possible only in part. RFC-0025 names SLAM Toolbox's
+  reset, a 2D grid map, fixed topic names, and ROS 2 Jazzy. Proposed for step 5a: the mapper as a
+  declared binding in the profile (its topics and its reset service), not SLAM Toolbox by name.
+- S5 candidates, ranked: reading a run file, a simulator job under the lock, a challenge batch with
+  arms, a motion-safety preamble, the ROS connector bring-up, a DGX training run. The operator
+  picks.
+
 **Status:** a research plan, written 2026-11-26 at the operator's request ("see it first as a
 series of research activities, and then we decide"). Nothing here is planned work or approved;
 each activity names what it needs from the operator. The trigger: NVIDIA's tutorial
