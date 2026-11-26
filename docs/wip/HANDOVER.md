@@ -5,6 +5,10 @@ Started 2026-11-24. The operator moved the cut point: the session was cleared **
 here. A fresh session reads this first ("Last state" at the end is the pick-up point), then
 the documents it names. Keep this file the living status; finalize it at the end of step 5.
 
+**The learning arc (R1-R7, M1, M2, R5), 2026-11-26:** its own pick-up point is
+[HANDOVER-TRAINING-2026-11-26.md](HANDOVER-TRAINING-2026-11-26.md); read it first when continuing
+the training or the evaluations.
+
 ## Where the work happens
 
 - Worktree: `/work/robotics-lab/mission-control`, branch `mission-control`. Commits go to main

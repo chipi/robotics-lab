@@ -140,6 +140,7 @@ nav:
   - In progress:
     - Overview: wip/README.md
     - "Handover: the MVP 1 wrap-up, for the next session": wip/HANDOVER.md
+    - "Handover: the learning arc, 2026-11-26": wip/HANDOVER-TRAINING-2026-11-26.md
     - "Technical review, 2026-11-26 (round 4, step 4.9)": wip/TECH-REVIEW-2026-11-26.md
     - "Review of RFC-0030 (Missions), 2026-11-26": wip/RFC-0030-REVIEW-2026-11-26.md
     - "Review of RFC-0024 (one platform) against MVP 2, 2026-11-26": wip/RFC-0024-REVIEW-2026-11-26.md
