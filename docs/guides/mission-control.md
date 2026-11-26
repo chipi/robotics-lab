@@ -180,7 +180,8 @@ Mission Control and Observatory on free ports.
   version store), Export site and Import site, the LLM planner, access tokens
   (`--require-tokens`), the MCP server, the Docker image (`make control-up`), the phone layout and
   the light theme, and the Observatory links from a run (the fake records no run).
-- The Modules tab shows one module as "answers for undefined" (`rules@1`); that is the page's
-  behaviour today, not a fault in the scratch setup.
+- The local controller (`rules@1`) has no settings block of its own, and the Modules tab says so;
+  a run may pick another controller (`lab-challenge --local-controller`), which this page does not
+  show.
 - The numbers (battery, poses, durations) are the fake's and are invented.
 - Screenshots are dark theme, 1440 wide.

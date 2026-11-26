@@ -88,12 +88,13 @@ function paintModules(r) {
   keepFocus(box, () => setKids(box,
     h("div", { class: "modlist" }, mods.map((m, i) => h("section", { class: "card", "data-plugin": m.iface },
       fold("mod:" + m.iface, i === 0,
-        [h("b", { class: "mono" }, m.name), h("span", { class: "dim" }, `answers for ${m.block}`), h("span", { class: "sp" }),
+        [h("b", { class: "mono" }, m.name), h("span", { class: "dim" }, m.block ? `answers for ${m.block}` : "no settings block of its own"), h("span", { class: "sp" }),
           m.ov ? h("span", { class: "badge" }, `${variant} changes ${m.ov}`) : null, h("span", { class: "tag" }, "live state not reported")],
         h("div", {},
           h("div", { class: "kvgrid" }, m.vals.map(([k, v, o]) => h("div", {}, h("span", { class: "mono dim" }, k), h("span", { class: "mono" + (o ? " ovr" : "") }, v)))),
-          h("div", { class: "prov" }, h("a", { href: hashOf(r.id, "settings"), onclick: () => { ST.block = m.block; if (ST.shownProfile) { stViewer(); stMark(); } } }, `All of ${m.block} in Settings`),
-            m.more > 0 ? ` (${m.more} more values there)` : "")),
+          m.block ? h("div", { class: "prov" }, h("a", { href: hashOf(r.id, "settings"), onclick: () => { ST.block = m.block; if (ST.shownProfile) { stViewer(); stMark(); } } }, `All of ${m.block} in Settings`),
+            m.more > 0 ? ` (${m.more} more values there)` : "")
+            : h("div", { class: "prov dim" }, "Chosen in the profile's plugins; a run may pick another (lab-challenge --local-controller).")),
         "mhead")))),
     h("div", { class: "hint" }, `Configured, as the ${variant} variant runs them. Mission Control is not told what a plugin does while a goal runs.`)));
 }

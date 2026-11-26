@@ -159,6 +159,8 @@ with sync_playwright() as p:
               and all(h.get_attribute("aria-expanded") in ("true", "false") and h.get_attribute("aria-controls") for h in heads.all()))
         check("must fail: each says plainly that its live state is not reported (no source reaches Mission Control)",
               all("live state not reported" in page.locator(f"#rp-modules [data-plugin={k}]").inner_text() for k in REPO["plugins"]))
+        check("must fail: no row names an undefined block (a plugin with no settings block of its own says so)",
+              "undefined" not in page.locator("#rp-modules").inner_text(), page.locator("#rp-modules").inner_text()[:400])
         loco_head = page.locator("#rp-modules [data-plugin=locomotion] button[data-collapse]")
         if loco_head.get_attribute("aria-expanded") == "true":
             loco_head.click()
