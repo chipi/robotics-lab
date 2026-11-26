@@ -30,9 +30,10 @@ MVP 2 (the operator's decision).
 | --- | --- | --- |
 | Smoke | OneWall, 64 x 20 | First try failed: mjviser 0.0.17 pulled mujoco-core 4.0.1, which overwrote mujoco 3.10.0 (fixed b5a9fa9). Second: passed, 0.64 s/iteration |
 | M1 | OneWall, 4096 x 200, 15:55Z | **Passed**: progress 0.20 to 0.35, collisions 0.74 to 0.16, replay 13 of 16 stopped before the wall (81 %), 4.76 s/iteration. Folder `m1/2026-11-26_15-55-36/` |
-| M2a | `Mjlab-Nav-MicroDuck` (NVIDIA-faithful, 50 Hz, sidestep), 4096 x 1500, 16:15Z to 18:14Z, commit b5a9fa9 | **Done**, exit 0, 16 checkpoints (every 100) in `m2a/2026-11-26_16-15-00/`, each with a rate sidecar. Progress rose (0.44 to 0.49) but collisions per iteration were lowest at 250-499 (0.27) and rose to 0.52 by the end, the approach penalty growing: it learned to push closer. The end is not the best model; **select on `avoidance_val`** (expect a checkpoint near 300-500) |
+| M2a | `Mjlab-Nav-MicroDuck` (NVIDIA-faithful, 50 Hz, sidestep), 4096 x 1500, 16:15Z to 18:14Z, commit b5a9fa9 | **Done**, exit 0, 16 checkpoints (every 100) in `m2a/2026-11-26_16-15-00/`, each with a rate sidecar. Progress rose (0.44 to 0.49) but collisions per iteration were lowest at 250-499 (0.27) and rose to 0.52 by the end, the approach penalty growing: it learned to push closer. The end is not the best model; candidates by the pre-registered rule (lowest 100-wide collision window, 100-199 at 0.208): `model_100`, `model_200`, `model_1499`, selected on `avoidance_val` |
 | M2b | `Mjlab-Nav-Deploy-MicroDuck` (10 Hz policy, no sidestep), 4096 x 400, commit 8399be8 | **In flight**: started 18:15Z, due about 20:35Z; the homelab swaps back to prod when it ends. 400 iterations because one iteration is 5x the simulated time of M2a's |
 | R5 rules arm | `rules@1` on `avoidance_v1` (30 items) | **30 of 30**, 0 collisions, min clearance 0.094 m, mean 43 s; imported as `rules_v1` (robotics-evals f3d68a7) |
+| R5 rules arm, v2 | `rules@1` on `avoidance_v2` (40 items, challenges 24-28 x seeds 1-8, robotics-lab e97edbe) | **23 of 40** (57.5 %), 0 collisions: narrow_doorway 3/8, dense_boxes 2/8, chair_cluster 8/8, slalom 8/8, box_behind_door 2/8. Two families at 8/8 cannot show a gain (four pilot seeds overstated them; not changed after seeing test seeds). Imported (robotics-evals a111bba) |
 
 The DGX: the operator gave it to us for the whole series ("it stays yours until you're done with
 M1 and M2"); the homelab session runs every swap and copies folders to `/work/microduck-nav-runs/`.
@@ -59,11 +60,12 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
 
 ## In flight when written
 
-- M2a, then M2b on the DGX (above).
-- `avoidance_v2` and `avoidance_val`: about 5 harder families added to `challenges.py`, calibrated
-  on pilot seeds 101-104 to a 30-50 % rules failure, frozen on seeds 1-8, the rules arm run on it,
-  the pre-registration written. An agent was doing this; check robotics-evals and robotics-lab
-  main for its commits.
+- M2b on the DGX (above).
+- R5 M2a arm: an agent runs the three candidates on `avoidance_val` (33 items), writes the
+  selection into the pre-registration, then the selected checkpoint on v2 and v1, imports `m2a`
+  and runs `comparison-show`. Holm across arms waits for M2b.
+- CI on main was red from 54defc1 to 3a22670 (`test_settings_page` waited for exactly four
+  Modules rows; the local-controller slot made five). Fixed in 26097d2.
 
 ## Next, in order
 
