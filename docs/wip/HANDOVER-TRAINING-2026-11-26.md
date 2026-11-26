@@ -62,7 +62,8 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
 
 - R5 M2a arm: an agent runs the three candidates on `avoidance_val` (33 items), writes the
   selection into the pre-registration, then the selected checkpoint on v2 and v1, imports `m2a`
-  and runs `comparison-show`. Then the same for M2b (candidates 200, 300, 399), and Holm across both arms.
+  and runs `comparison-show`. Then the same for M2b (candidates 200, 300, 399), and Holm across both
+  arms.
 - CI on main was red from 54defc1 to 3a22670 (`test_settings_page` waited for exactly four
   Modules rows; the local-controller slot made five). Fixed in 26097d2.
 
