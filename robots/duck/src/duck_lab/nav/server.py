@@ -28,7 +28,10 @@ It keeps the navigator contract (libs/runner/CONTRACT.md) as a navigator API. Me
   goal.anomaly {kind, summary, values?} -> {ok}: an anomaly of the harness its runner measured (since contract 1.6: rtf_low), recorded once
       per kind in the run, source "harness"; the run goes on
   state -> the robot's latest state (while a goal runs)       objects -> the semantic map now (ADR-0019 shape)
-  inventory -> RFC-0016's inventory                           map -> mapd's grid (in the placed frame of the latest goal that had a start pose)
+  inventory -> RFC-0016's inventory                           map {units?} -> mapd's grid (in the placed frame of the latest goal that had a start pose);
+                                                              units "site" (since 1.8): res_m and origin in true metres, answered with units "site"
+  site_pose {odom {x, y, yaw}} -> {x, y, yaw, frame "site", placed} | {error bad_pose}: robotd's odometry pose (unscaled) in the site frame,
+      placed by the latest goal's start pose and scaled by the odometry scale that goal ran (since 1.8; not the navigator's belief)
   calibration.list -> {procedures: [{id, params}]}            calibration.start {procedure, params?} -> {ok, procedure, params} | {error}
   calibration.status -> {state, procedure, step, reason, params, measured, marks}      calibration.cancel -> {ok}   (contract 1.3; duck_lab.nav.calibration)
 `seed.objects` are Mission Control's confirmed objects of the site (their ids are Mission Control's; they come back as `seed`
@@ -51,11 +54,12 @@ from duck_lab.nav import calibration, contract
 from duck_lab.nav.calibration import Calibration
 from duck_lab.nav.client import LeaseLost, Rpc
 from duck_lab.nav.explore_run import Explorer
-from duck_lab.nav.frames import move_grid
+from duck_lab.nav.frames import compose, move_grid
 from duck_lab.nav.guardrails import ROBOT_SIDE, Guard, RobotSide
 from duck_lab.nav.camera import CameraClient
 from duck_lab.nav.run import Navigator, decision
 from duck_lab.nav.runlog import RunLog
+from duck_lab.profile import load as load_profile
 from runfile.navcontract import CALIBRATION_METHODS, ENDS, HARNESS_ANOMALIES
 from worldmodel.objects import load_kinds
 from worldmodel.semantic_map import CONFIRM_N, SemanticMap
@@ -515,6 +519,8 @@ class NavServer:
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
         self.placed_frame: dict | None = None       # the latest goal's start-pose frame, which `map` is answered in
+        self.frame: tuple | None = None             # (that frame or None, the odometry scale that goal ran): one fact, read together by `site_pose`
+        self._base_scale: float | None = None       # the scale of the profile this server hands its goals, before any goal has run
         self.calibration: Calibration | None = None
         self._lock = threading.Lock()
 
@@ -538,7 +544,7 @@ class NavServer:
         finally:
             rpc.close()
 
-    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "goal.anomaly", "map", "state", "objects", "inventory") + CALIBRATION_METHODS
+    METHODS = ("hello", "goal.start", "goal.status", "goal.cancel", "goal.break", "goal.anomaly", "map", "state", "objects", "inventory", "site_pose") + CALIBRATION_METHODS
 
     def call(self, method: str, p: dict):
         if method not in self.METHODS:
@@ -572,7 +578,13 @@ class NavServer:
         if method == "map":
             grid = self._map()                  # the robot's map, between goals too: its clients never open mapd themselves
             f = self.placed_frame               # in the frame the latest goal's start pose set (mapd's metres, as the grid is)
-            return move_grid(grid, (f["x"], f["y"], f["yaw"])) if f and grid.get("cells") else grid
+            grid = move_grid(grid, (f["x"], f["y"], f["yaw"])) if f and grid.get("cells") else grid
+            if p.get("units") == "site":        # the scale after the move, so the cells are those of the unscaled answer
+                k = self._frame()[1]
+                grid = {**grid, "res_m": grid["res_m"] * k, "origin": [v * k for v in grid["origin"]], "units": "site"}
+            return grid
+        if method == "site_pose":
+            return self.site_pose(p)
         if method in ("state", "objects", "inventory"):
             if run is None or run.nav is None or run.state in ENDS:
                 return {"error": "no goal is running"} if method != "objects" else {"objects": []}
@@ -585,6 +597,26 @@ class NavServer:
                 with nav._sem_lock:
                     return nav.semantic.inventory(nav._map_raw)
         raise KeyError(method)
+
+    def _frame(self) -> tuple:
+        if self.frame is None and self._base_scale is None:
+            self._base_scale = float(load_profile(self.variant, self.profile).localisation.odometry.scale)
+        return self.frame or (None, self._base_scale)
+
+    def site_pose(self, p: dict) -> dict:
+        """robotd's odometry pose in the site frame: the frame the latest goal's start pose set (none: mapd's), true metres by the
+        scale that goal ran (not the belief's by_speed steps or fixes: this is the odometry, as the page has always shown it)."""
+        o = p.get("odom")
+        try:
+            pose = tuple(o[k] for k in ("x", "y", "yaw"))
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in pose):
+                raise ValueError
+        except (TypeError, KeyError, ValueError):
+            return {"error": {"code": "bad_pose", "message": "odom is {x, y, yaw}: three finite numbers"}}
+        placed, k = self._frame()
+        frame = (placed["x"] * k, placed["y"] * k, placed["yaw"]) if placed else (0.0, 0.0, 0.0)
+        x, y, yaw = compose(frame, (pose[0] * k, pose[1] * k, pose[2]))
+        return {"x": x, "y": y, "yaw": yaw, "frame": "site", "placed": placed is not None}
 
     def start(self, spec: dict) -> dict:
         with self._lock:
@@ -611,6 +643,7 @@ class NavServer:
                 return {"error": {"code": "start_failed", "message": f"{type(exc).__name__}: {exc}"}}
             self.run = run
             self.placed_frame = run.placed["frame"] if run.placed else None
+            self.frame = (self.placed_frame, run.nav.scale)
             meta = getattr(run.nav.profile, "meta", None) or {}
             # the profile this goal runs, as its run records it: a client scaling the robot's poses checks it reads the same one
             answer = {"run_key": key, "profile": {k: meta.get(k) for k in ("checksum", "version", "source")}}

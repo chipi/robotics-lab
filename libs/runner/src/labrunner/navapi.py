@@ -64,7 +64,7 @@ def unchecked(has_truth: bool, guardrails: list) -> list:
 STARTED_S = 60.0         # the navigator API answers within this, or the runner gives up
 WATCH_S = 0.2            # how often a goal's run is copied and its state asked
 ROUTE_EVERY = 40         # truth samples between two looks at the navigator's connections (2 s at 20 Hz)
-READS = ("map", "state", "objects", "inventory")   # what the navigator sees: answered on a connection of their own
+READS = ("map", "state", "objects", "inventory", "site_pose")   # what the navigator sees: answered on a connection of their own
 
 
 class GoalWatch:

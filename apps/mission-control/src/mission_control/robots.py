@@ -32,6 +32,7 @@ import time
 import traceback
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from robotgate import Gate, GateError, JsonlLog, ProtocolError
 from runfile import registry
@@ -273,10 +274,39 @@ class Session:
         self.cid, self.client, self.ended = cid, client, None
 
 
+@runtime_checkable
+class RobotAdapter(Protocol):
+    """What RobotRuntime, the API and the core call on any robot's adapter (RFC-0014 §3.3.1). `call` is the robot's own interface
+    when it has one (the fake's); an adapter whose robot sits behind a gate of its own (duck, NXT) raises NotImplementedError there and
+    answers through `make_gate`. `map`, `sighting` and `make_navigator` raise ApiError (404, 404, 501) for a robot without one; they
+    are called only for the capability the robot file declares, or on a request, so the refusal is the answer.
+
+    Beside these, an adapter may give `make_gate(link)` (see GatedAdapter), `make_watcher()` (its own alarms: the NXT's) and
+    `watch_url(run_key)` (the Observatory's page for a goal run): the runtime and the core look for each with hasattr/getattr."""
+
+    call: Callable[..., Any]
+
+    def make_navigator(self, gate: Any, clock: Callable[[], float] = ...) -> Any: ...
+
+    def map(self) -> dict: ...
+
+    def map_version(self) -> int: ...
+
+    def sighting(self) -> dict: ...
+
+
+@runtime_checkable
+class GatedAdapter(RobotAdapter, Protocol):
+    """An adapter whose robot sits behind a gate that is not robotgate.Gate in this process: the duck's remote gate and the NXT's.
+    The runtime uses the gate it makes in place of its own, with its lease, takeover list and log."""
+
+    def make_gate(self, link: Any) -> Any: ...
+
+
 class RobotRuntime:
     OWN_SOURCE = "mission-control"
 
-    def __init__(self, cfg: RobotConfig, adapter, *, clock, wall, bus, log_dir=None):
+    def __init__(self, cfg: RobotConfig, adapter: RobotAdapter, *, clock, wall, bus, log_dir=None):
         self.cfg, self.adapter, self.clock, self.bus, self.wall = cfg, adapter, clock, bus, wall
         self.link = Link(adapter.call, clock, cfg.call_timeout_s)
         sink = JsonlLog(Path(log_dir) / f"gate-{cfg.id}.jsonl", wall) if log_dir else None
@@ -475,7 +505,7 @@ class RobotRuntime:
         return {"robot": self.cfg.id, "confirmed": confirmed, "online": self.online()}
 
 
-def make_adapter(cfg: RobotConfig, clock):
+def make_adapter(cfg: RobotConfig, clock) -> RobotAdapter:
     """The adapter for a robot file's adapter type. Built: fake; duck-sim (the simulated duck behind lab-gate and lab-nav-server,
     RFC-0014 step 2); nxt-web (the NXT behind nxt-web's HTTP API and lock, step 4)."""
     if cfg.adapter["type"] == "fake":

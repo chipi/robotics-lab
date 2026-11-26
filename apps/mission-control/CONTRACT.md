@@ -499,22 +499,26 @@ has no `robot.state` request); the gate streams each subscriber at its own rate,
 Control's stream never slows the navigator's. Mission Control subscribes at the whole number
 `ceil(rates.state_hz)`, at most `rates.max_state_hz`; the gate refuses a rate that is not a whole
 number above 0 (`bad_rate`, in its own words, robotd not asked), and a refused subscription is
-said as the robot's state error, not waited out. The map is the navigator API's `map` (mapd's grid,
-unscaled, in mapd's frame) at the robot's `map_hz`, shown in the site frame; the
-poses and the map are scaled by the profile's `localisation.odometry.scale`, from the version read
-again at every goal's start (a version saved since applies from that goal). When `goal.start` says
-the navigator runs another version (another checksum) than Mission Control read, the goal run gets
+said as the robot's state error, not waited out. The map is the navigator API's `map` with
+`units: "site"` (the grid in true metres, in the frame the latest goal's start pose set) at the
+robot's `map_hz`. The pose is the navigator API's `site_pose` of robotd's odometry: the navigator
+owns the frame and the scale (navigator contract 1.8), and Mission Control scales and places
+nothing. A navigator that answers neither (below 1.8) gives no map and a state with no `pose` and a
+`pose_error` saying why; the robot stays online, as its gate answers, and the pose is not made up
+from a scale of Mission Control's. When `goal.start` says the navigator runs another version
+(another checksum) than Mission Control read (for the joints' names and rates), the goal run gets
 a decision saying so, with both versions. `GET /robots/{id}/sighting` is `404 no_sighting` (the
 camera runs with a goal, and its sightings are in the Observatory run).
 
-The navigator API, as the server speaks it: navigator contract **1.7**
+The navigator API, as the server speaks it: navigator contract **1.8**
 (`runfile.navcontract.CONTRACT`; the version history is in
 [`libs/runner/CONTRACT.md`](../../libs/runner/CONTRACT.md)). What each minor version added, for
 what Mission Control does with it: 1.1 `anomalies` in `goal.status`; 1.2 `not_enforced` in
 `goal.start`; 1.3 the `calibration.*` methods (a navigator below it drives no calibration);
 1.4 the robot checks `contact`, `fall` and `drop_clearance` for a name the runner cannot judge;
 1.5 `start_pose` (a navigator below it refuses a run that has one); 1.6 `goal.anomaly` and the
-`rtf_low` no-verdict run; 1.7 the `robot_guard` anomaly. A minor version adds and never changes,
+`rtf_low` no-verdict run; 1.7 the `robot_guard` anomaly; 1.8 `site_pose` and `map` with
+`units: "site"` (the one owner of the frame and the scale). A minor version adds and never changes,
 so Mission Control accepts any navigator of major version 1 and refuses another major.
 
 | Method | Meaning |
@@ -527,7 +531,8 @@ so Mission Control accepts any navigator of major version 1 and refuses another 
 | `goal.anomaly {kind, summary, values?}` | contract 1.6, the runner's: an anomaly it measured and the navigator cannot see. The one kind is `rtf_low` (`values {sim_s, wall_s, rtf, below}`, minor, source `harness`), sent after 5 s of wall time when the simulator runs under the runner's threshold. It is recorded once per run and comes back in `goal.status`'s `anomalies`; another kind is `{error: {code: "bad_anomaly"}}`, and a goal that is not running ignores it. Mission Control never sends it: it sees the anomaly, and the run has no verdict |
 | `runner.status` | the runner's own: `{navigator_pid, truth_connections {checks, max}, goals, last_goal}` |
 | `state`, `objects`, `inventory` | what the navigator sees now, while a run is active |
-| `map` | the robot's map (mapd's grid): the active run's, or, between runs, read by the navigator API from mapd |
+| `map {units?}` | the robot's map (mapd's grid): the active run's, or, between runs, read by the navigator API from mapd; with `units: "site"` (1.8) in true metres, which Mission Control asks for |
+| `site_pose {odom {x, y, yaw}}` | contract 1.8: robotd's odometry pose in the site frame, placed and scaled by the navigator (the frame of the latest goal's start pose, the scale that goal ran); Mission Control asks it at each state poll and shows the answer |
 | `calibration.list`, `calibration.start {procedure, params?}`, `calibration.status`, `calibration.cancel` | contract 1.3: a procedure the navigator drives, its measurement, and (from the runner) the reference by the truth; Mission Control's calibration routes above are its client (`libs/runner/CONTRACT.md`, 1.3) |
 
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as

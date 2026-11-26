@@ -51,6 +51,21 @@ def mapd(path: Path):
 mapd(tmp / "map.sock")
 nav = server.NavServer({"robot": tmp / "gate.sock", "depth": tmp / "depth.sock", "map": tmp / "map.sock"}, tmp / "data", tmp / "out")
 check("between goals the navigator API answers `map` from mapd itself", nav.call("map", {}) == GRID and asked == ["map.grid"], asked)
+from duck_lab.profile import load as load_profile  # noqa: E402
+from duck_lab.nav.frames import compose  # noqa: E402
+
+BASE_SCALE = float(load_profile("sim").localisation.odometry.scale)
+ODOM = {"x": 1.0, "y": 0.5, "yaw": 0.3}
+check("contract 1.8: before any goal `site_pose` is odometry through the profile's scale, in no frame",
+      nav.call("site_pose", {"odom": ODOM}) == {"x": 1.0 * BASE_SCALE, "y": 0.5 * BASE_SCALE, "yaw": 0.3, "frame": "site", "placed": False}, nav.call("site_pose", {"odom": ODOM}))
+for label, bad in (("no odom", {}), ("a missing yaw", {"odom": {"x": 1, "y": 2}}), ("a string", {"odom": {"x": "1", "y": 2, "yaw": 0}}),
+                   ("a NaN", {"odom": {"x": float("nan"), "y": 2, "yaw": 0}}), ("a list", {"odom": [1, 2, 0]})):
+    check(f"must fail: {label} is not an odometry pose: bad_pose, an answer and not an internal error",
+          (nav.call("site_pose", bad).get("error") or {}).get("code") == "bad_pose", nav.call("site_pose", bad))
+sited = nav.call("map", {"units": "site"})
+check("`map` with units site: res_m and origin in true metres (times the scale), the cells as they were, and the unit said",
+      abs(sited["res_m"] - GRID["res_m"] * BASE_SCALE) < 1e-12 and sited["origin"] == [v * BASE_SCALE for v in GRID["origin"]]
+      and sited["cells"] == GRID["cells"] and sited["units"] == "site", sited)
 check("state, objects and inventory still need a running goal",
       nav.call("state", {}) == {"error": "no goal is running"} and nav.call("objects", {}) == {"objects": []})
 
@@ -64,7 +79,7 @@ class FakeRun:
             self.placed = {"pose": {**spec["start_pose"], "frame": "site"}, "frame": {"x": 0.5, "y": -0.25, "yaw": 0.0}}
 
     def start(self):
-        self.nav = types.SimpleNamespace(profile=types.SimpleNamespace(meta=META))
+        self.nav = types.SimpleNamespace(profile=types.SimpleNamespace(meta=META), scale=0.9)       # the scale the goal runs
         self.state = "running"
         return "duck/apartment/mc1-x"
 
@@ -83,8 +98,18 @@ check("goal.start with a start pose answers `placed`: the pose taken and the fra
 moved = nav.call("map", {})
 check("`map` is then answered in the placed frame (the grid's origin moved by the change, the cells as they were)",
       moved["origin"] == [0.4, -0.45] and moved["cells"] == GRID["cells"] and moved["width"] == 3, moved)
+placed = reply["placed"]["frame"]
+want = compose((placed["x"] * 0.9, placed["y"] * 0.9, placed["yaw"]), (ODOM["x"] * 0.9, ODOM["y"] * 0.9, ODOM["yaw"]))
+got = nav.call("site_pose", {"odom": ODOM})
+check("must fail: `site_pose` after a placed goal is the frame it answered, scaled by the scale that goal ran, composed with the scaled odometry",
+      got["frame"] == "site" and got["placed"] is True and all(abs(a - b) < 1e-12 for a, b in zip((got["x"], got["y"], got["yaw"]), want)), (got, want))
+sited = nav.call("map", {"units": "site"})
+check("and `map` with units site is the placed grid, scaled after the move: the same cells, the origin the placed one times the scale",
+      sited["cells"] == moved["cells"] and [round(v, 9) for v in sited["origin"]] == [round(v * 0.9, 9) for v in moved["origin"]] and sited["units"] == "site", sited)
 nav.run.state = "reached"
 reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}})
+check("a goal with no start pose has no frame again: `site_pose` is scaled odometry, placed false, with the scale that goal ran",
+      nav.call("site_pose", {"odom": ODOM}) == {"x": 0.9, "y": 0.45, "yaw": 0.3, "frame": "site", "placed": False}, nav.call("site_pose", {"odom": ODOM}))
 check("a goal with no start pose answers no `placed`, and `map` is mapd's own again (the frame is per goal)",
       "placed" not in reply and nav.call("map", {}) == GRID, (reply, nav.call("map", {})))
 nav.run.state = "reached"

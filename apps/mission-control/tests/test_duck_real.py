@@ -141,7 +141,9 @@ class StubNav:
                         result = {"state": stub.state, "reason": None, "progress": None, "result": None, "broken": None, "run_key": "duck/apartment/mc-real-1",
                                   "decisions": [], "decisions_n": 0, "anomalies": [], "anomalies_n": 0, "objects": None, "objects_v": -1}
                     elif m == "map":
-                        result = {"res_m": 0.05, "origin": [0.0, 0.0], "width": 2, "height": 1, "cells": "?."}
+                        result = {"res_m": 0.05, "origin": [0.0, 0.0], "width": 2, "height": 1, "cells": "?.", "units": "site"}
+                    elif m == "site_pose":
+                        result = {**p["odom"], "frame": "site", "placed": False}
                     elif m == "calibration.start":
                         stub.cal_calls.append((m, p))
                         result = {"params": {"speed_mps": 0.3, "seconds": 2.0}}

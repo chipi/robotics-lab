@@ -733,9 +733,8 @@ class FakeNavigator:
 
 
 class FakeAdapter:
-    """What Mission Control needs of any robot's adapter (RFC-0014 §3.3.1): `call` (the robot's own
-    interface), `make_navigator(gate, clock)`, `map()` and `sighting()`. The robot file's
-    adapter options: {"type": "fake", "world": {...}}; the limits are the factsheet's maximumSpeed and maximumAngularSpeed and the
+    """The fake robot as an adapter: the surface is robots.RobotAdapter (RFC-0014 §3.3.1), with `call` the robot's own interface and
+    the gate Mission Control's own. The robot file's adapter options: {"type": "fake", "world": {...}}; the limits are the factsheet's maximumSpeed and maximumAngularSpeed and the
     control block's deadman_s."""
 
     def __init__(self, cfg, clock=time.monotonic):

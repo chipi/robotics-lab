@@ -129,6 +129,8 @@ class StubNav:
         self.contract = "1.0"                # the navigator contract hello names
         self.map_calls = 0
         self.placed = None                   # contract 1.5: what goal.start answers a start pose with (none: a navigator that did not hear it)
+        self.site = True                     # contract 1.8: answers `site_pose` and a `map` in true metres (False: a 1.7 navigator, which answers neither)
+        self.scale, self.frame, self.site_calls = 0.9, None, []      # the odometry scale it runs, the frame the latest goal's start pose set (mapd's metres), site_pose's calls
         self.cal_calls, self.cal_answer = [], {}     # contract 1.3's calibration.* calls received, and what each is answered with
         self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), self._handler())
         self.server.daemon_threads = True
@@ -150,12 +152,22 @@ class StubNav:
                                   "camera": True}
                     elif m == "goal.start":
                         stub.started.append(p)
+                        stub.frame = stub.placed["frame"] if stub.placed and p.get("start_pose") else None
                         result = {"error": {"code": "held", "message": "driven by script since 12:00", "holder": "script"}} \
                             if stub.mode == "held" else {"run_key": stub.key, "profile": stub.profile,
                                                          **({"placed": stub.placed} if stub.placed and p.get("start_pose") else {})}
                     elif m == "map":
                         stub.map_calls += 1
                         result = {"res_m": 0.05, "origin": [-0.1, -0.2], "width": 3, "height": 2, "cells": "?.#" + ".?#"}
+                        if stub.site and p.get("units") == "site":
+                            result = {**result, "res_m": result["res_m"] * stub.scale, "origin": [v * stub.scale for v in result["origin"]], "units": "site"}
+                    elif m == "site_pose" and stub.site:
+                        stub.site_calls.append(p)
+                        o, f, k = p["odom"], stub.frame, stub.scale
+                        f = (f["x"] * k, f["y"] * k, f["yaw"]) if f else (0.0, 0.0, 0.0)
+                        c, sn = math.cos(f[2]), math.sin(f[2])
+                        result = {"x": f[0] + c * o["x"] * k - sn * o["y"] * k, "y": f[1] + sn * o["x"] * k + c * o["y"] * k,
+                                  "yaw": math.atan2(math.sin(f[2] + o["yaw"]), math.cos(f[2] + o["yaw"])), "frame": "site", "placed": stub.frame is not None}
                     elif m == "goal.status":
                         objs = stub.objects
                         stub.objects = None
@@ -234,6 +246,8 @@ check("must fail: its joint angles are in its state by the profile's joint names
 check("the lock is the gate's own: free", robot()["lock"]["holder"] is None)
 m = call("GET", "/robots/duck-sim/map")["map"]
 check("the map is the navigator API's (mapd's grid), in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
+check("must fail: its resolution and origin are the navigator's, in true metres: Mission Control scales nothing",
+      abs(m["resolution_m"] - 0.05 * nav.scale) < 1e-9 and [round(v, 6) for v in m["origin"]] == [round(-0.1 * nav.scale, 6), round(-0.2 * nav.scale, 6)], m)
 n0, t0 = nav.map_calls, time.monotonic()
 time.sleep(3.0)
 rate = (nav.map_calls - n0) / (time.monotonic() - t0)
@@ -383,7 +397,8 @@ check("a 1.5 navigator gets goal.start with the start pose (yaw wrapped), and th
       r["state"] == "running" and abs(nav.started[-1]["start_pose"]["yaw"] - START["yaw"]) < 1e-9 and nav.started[-1]["start_pose"]["x"] == 2.0
       and r["conditions"]["start_pose"]["y"] == 1.0, (r["state"], nav.started[-1].get("start_pose")))
 adapter = mc.robot("duck-sim").adapter
-check("the adapter knows the frame the start pose set (mapd's metres), from goal.start's answer", adapter.placed == {"x": 0.5, "y": -1.0, "yaw": math.pi / 2}, adapter.placed)
+check("must fail: Mission Control keeps no frame and no scale of its own: the navigator owns both (contract 1.8)",
+      not hasattr(adapter, "placed") and not hasattr(adapter, "scale"), (hasattr(adapter, "placed"), hasattr(adapter, "scale")))
 
 
 def shown_pose():
@@ -391,15 +406,25 @@ def shown_pose():
     return s.get("x"), s.get("y"), s.get("yaw")
 
 
-# odometry (x, 0, yaw) is placed by the frame (0.5, -1.0, pi/2): x' = 0.5 - 0 (y is 0), y' = -1.0 + x, yaw' = yaw + pi/2; then scaled by the profile
-want = lambda: (round((0.5 - math.sin(math.pi / 2) * 0.0) * adapter.scale, 4), round((-1.0 + robotd.x) * adapter.scale, 4))      # noqa: E731
-check("the robot's pose on the page is in that frame: odometry composed with it, then scaled by the profile",
-      wait_for(lambda: shown_pose()[:2] == want() or None, 5.0), (shown_pose(), want()))
+# odometry (x, 0, yaw) is placed by the frame (0.5, -1.0, pi/2) and scaled by the navigator's scale (0.9, not 1: a missed scaling shows): the navigator
+# answers the pose in the site frame, Mission Control shows it as it is: x' = 0.5 s (y is 0), y' = (-1.0 + x) s
+want = lambda: (round(0.5 * nav.scale, 4), round((-1.0 + robotd.x) * nav.scale, 4))      # noqa: E731
+check("must fail: the robot's pose on the page is the navigator's, in the frame the start pose set and in true metres",
+      wait_for(lambda: shown_pose()[:2] == want() or None, 5.0) and robot()["status"]["pose"]["frame"] == "site", (shown_pose(), want()))
+check("must fail: Mission Control sent robotd's raw odometry, unscaled and unplaced, to the navigator",
+      nav.site_calls and abs(nav.site_calls[-1]["odom"]["x"] - robotd.x) < 1e-9 and nav.site_calls[-1]["odom"]["y"] == 0.0 and nav.site_calls[-1]["odom"]["yaw"] == 0.0, nav.site_calls[-1:])
 call("POST", f"/goal-runs/{r['id']}/cancel")
 nav.state, nav.reason = "running", None
 r = call("POST", "/goal-runs", {"goal": POINT, "robots": ["duck-sim"]})["run"]
-check("a goal with no start pose leaves the placed frame: the pose is odometry again", adapter.placed is None, adapter.placed)
+check("a goal with no start pose leaves the placed frame: the pose is odometry, scaled by the navigator",
+      wait_for(lambda: shown_pose()[:2] == (round(robotd.x * nav.scale, 4), 0.0) or None, 5.0), shown_pose())
 call("POST", f"/goal-runs/{r['id']}/cancel")
+nav.site = False
+check("must fail: a navigator below 1.8 answers no site_pose: no pose is shown (Mission Control has no scale to make one), the reason is, and the robot stays online",
+      wait_for(lambda: "pose" not in robot()["status"] and "site_pose" in (robot()["status"].get("pose_error") or "") or None, 5.0) and robot()["online"], robot()["status"])
+check("... and its map in mapd's metres is not shown as the site's: no map", call("GET", "/robots/duck-sim/map").get("error") is not None, call("GET", "/robots/duck-sim/map"))
+nav.site = True
+check("a navigator at 1.8 again: the pose is back", wait_for(lambda: shown_pose()[0] is not None or None, 5.0) and "pose_error" not in robot()["status"], robot()["status"])
 nav.placed = None
 
 # the navigator contract (libs/runner/CONTRACT.md): what Mission Control refuses of a navigator
@@ -574,15 +599,13 @@ check("... and a robot file that names an address keeps its own", str(b.gate_soc
 check("the profile is the installation's: the store's current version (1)", a.profile.meta["version"] == 1, a.profile.meta)
 
 v2 = json.loads(REPO_PROFILE.read_text())
-old_scale = v2["variants"]["sim"]["localisation"]["odometry"]["scale"]
 odo = v2["variants"]["sim"]["localisation"]["odometry"]
 odo["scale"], odo["by_speed"]["0.3"] = 0.95, 0.951          # (the validator holds the scale to by_speed at cruise)
 store.save("duck", v2)
-check("a version saved after start is not read until a goal starts", a.scale == old_scale and a.profile.meta["version"] == 1, a.scale)
+check("a version saved after start is not read until a goal starts", a.profile.meta["version"] == 1)
 note = a._goal_started({"run_key": "k", "profile": {"checksum": checksum(v2), "version": 2, "source": "given"}})
-check("at a goal's start the profile is read again: version 2's scale scales the poses from this run",
-      a.profile.meta["version"] == 2 and a.scale == v2["variants"]["sim"]["localisation"]["odometry"]["scale"] and note is None,
-      (a.profile.meta, a.scale, note))
+check("at a goal's start the profile is read again: version 2 is the one this adapter reads from this run",
+      a.profile.meta["version"] == 2 and note is None, (a.profile.meta, note))
 note = a._goal_started({"run_key": "k", "profile": {"checksum": checksum(repo), "version": 1, "source": "given"}})
 check("must fail: a navigator that runs another version than Mission Control reads is said, with both versions",
       note is not None and "version 1" in note and "version 2" in note, note)

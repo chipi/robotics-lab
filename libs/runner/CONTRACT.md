@@ -1,6 +1,6 @@
 # The navigator contract
 
-**Version 1.7.** What a navigator answers to its runner and to Mission Control: the duck's payload
+**Version 1.8.** What a navigator answers to its runner and to Mission Control: the duck's payload
 (`duck_lab.payload`, the courses' navigator) and its navigator API (`duck_lab.nav.server`, Mission
 Control's, behind `lab-nav-server`) both keep it, and another robot's navigator can. The names are in
 code once, in `runfile.navcontract`; the contract test (`robots/duck/tests/test_contract.py`) runs
@@ -30,8 +30,9 @@ error):
   `localise` -> `{pose}` (its pose in its own map: a fix, else a survey), `stop` -> `{ok}` (its run
   is closed, the process ends). `goal.status` adds `pose`.
 - **The navigator API** (one navigator per goal run): `goal.anomaly {kind, summary, values?}` (1.6,
-  below), `map` (mapd's grid), and while a goal runs
-  `state`, `objects`, `inventory` (RFC-0016). `goal.start` takes `seed`, `goal_run` and `scene`,
+  below), `map` (mapd's grid; in true metres with `units: "site"`, 1.8), `site_pose` (1.8), and
+  while a goal runs `state`, `objects`, `inventory` (RFC-0016). `goal.start` takes `seed`,
+  `goal_run` and `scene`,
   and answers `profile {checksum, version, source}`; `goal.status` adds `progress`, `decisions`,
   `anomalies` (1.1) and
   `objects` (`apps/mission-control/CONTRACT.md`). Its runner adds `runner.status`. It answers
@@ -78,6 +79,28 @@ does not have as the navigator's failure, saying which (`runfile.navcontract.che
 A stop asked from outside is named in the navigator's own run as well: its stop event, and the run's
 verdict when the stop ends the run, is `stopped_by_guardrail` or `cancelled` (the duck's
 `Navigator.stop_goal`).
+
+## 1.8
+
+The **navigator API** owns the conversion from robotd's odometry to the site frame, so a client
+(Mission Control; a ROS connector later) holds no frame and no scale of its own (technical review
+2.b). Both changes are additive; a navigator below 1.8 answers neither, and a client that asked
+and reads no `frame: "site"` or `units: "site"` was not heard (as for `placed`, 1.5).
+
+- `site_pose {odom: {x, y, yaw}}` -> `{x, y, yaw, frame: "site", placed}`: robotd's odometry pose
+  (unscaled, in the odometry's frame) as the site frame has it, in metres and radians. With `k` the
+  `localisation.odometry.scale` of the profile the latest goal ran, and `F` the `placed.frame` that
+  goal's `goal.start` answered (its start pose's change from mapd's frame, rounded as answered):
+  `(x, y) = (F.x k, F.y k) + R(F.yaw) (odom.x k, odom.y k)` and `yaw = wrap(F.yaw + odom.yaw)`.
+  `placed` says whether `F` was set; a goal with no `start_pose`, and a navigator before any goal,
+  have no frame (identity), and then `k` is the scale of the profile the navigator was given. It
+  is the odometry through the one scale, as the page has always shown it, not the navigator's
+  belief (`goal.status`'s `progress.pose`: fixes, the by-speed steps). `odom` that is not three
+  finite numbers is `{error: {code: "bad_pose", message}}`. The runner answers it on a connection of
+  its own, as `map`, so a `goal.start` in progress never holds it.
+- `map {units: "site"}` answers the grid as `map` does (the latest goal's placed frame, the same
+  cells) with `res_m` and `origin` in true metres (times `k`) and `units: "site"`. `map` with no
+  `units` is unchanged: mapd's own metres.
 
 ## 1.7
 

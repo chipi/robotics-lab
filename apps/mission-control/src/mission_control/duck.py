@@ -9,11 +9,11 @@
   moves the robot and writes the Observatory run; Mission Control only starts, watches and cancels.
 
 robotd has no `robot.state` request, only the `robot.subscribe` stream: the adapter keeps one subscription through the
-gate and answers `robot.state` from it, in the shape the page expects (pose in the site frame, mode, flags).
+gate and answers `robot.state` from it, in the shape the page expects (pose in the site frame, mode, flags). The pose is
+the navigator API's `site_pose` of robotd's odometry: the navigator owns the frame and the scale, this adapter has neither.
 
 The adapter imports neither the duck's navigator nor the host library (phase 5 step 1): the map comes through the navigator
-API's `map`, the odometry scale from the robot's profile version (read again at every goal's start), the addresses from the
-installation file (runfile.installation), else the robot file's adapter block."""
+API's `map`, the addresses from the installation file (runfile.installation), else the robot file's adapter block."""
 
 import json
 import math
@@ -32,6 +32,7 @@ GATE_NAME = "mission-control"
 STATE_STALE_S = 2.0
 HEALTH_EVERY_S = 10.0
 CALL_TIMEOUT_S = 5.0
+SITE_POSE_TIMEOUT_S = 1.0     # the state poll asks the navigator for the pose each time: a navigator that hangs must not hold the state loop for CALL_TIMEOUT_S
 POLL_EVERY_S = 0.2
 FAILS_BEFORE_LOST = 15      # polls in a row that fail before the navigator is called gone (3 s)
 
@@ -233,8 +234,8 @@ class DuckNavigatorClient:
     def bind(self, on_decision, on_objects) -> None:
         self._on_decision, self._on_objects = on_decision, on_objects
 
-    def _rpc(self, method: str, params: dict | None = None):
-        with socket.create_connection(self.address, timeout=CALL_TIMEOUT_S) as sock:
+    def _rpc(self, method: str, params: dict | None = None, timeout: float = CALL_TIMEOUT_S):
+        with socket.create_connection(self.address, timeout=timeout) as sock:
             sock.sendall((json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}) + "\n").encode())
             reply = json.loads(sock.makefile("r").readline())
         if "error" in reply:
@@ -377,12 +378,10 @@ class DuckAdapter:
         self.observatory = (options.get("observatory") or (inst.observatory if inst is not None else None) or "").rstrip("/") or None
         self.cfg, self.clock = cfg, clock
         self.profile = cfg.profile
-        self.scale = self._scale(self.profile)
         self._stream = None
         self._stream_at = 0.0
         self._health = (0.0, None)
         self._gate = None
-        self.placed = None          # {x, y, yaw} in mapd's own metres: where the latest goal's start pose put the map's frame (contract 1.5)
 
     # Where an adapter reads its addresses beyond the robot file's block: the installation's entry for the robot, and a default per address.
     # The real duck's adapter overrides both: the installation's entry is the simulator's unless it says it is the real one.
@@ -410,25 +409,19 @@ class DuckAdapter:
 
     # --- the profile: the version this machine runs, read again when a goal starts ----------------------
 
-    @staticmethod
-    def _scale(profile) -> float:
-        return float(profile.localisation.odometry.scale)
-
     def _goal_started(self, reply: dict) -> str | None:
-        """A goal has started: the profile read again (a version saved since applies from this run), and checked against the one
-        the navigator says it runs. A difference is said, as a decision on the goal run: the poses are scaled by Mission Control's."""
+        """A goal has started: the profile read again (a version saved since applies from this run: the joints' names), and checked
+        against the one the navigator says it runs. A difference is said, as a decision on the goal run."""
         from .robots import ConfigError, read_profile
-        self.placed = (reply.get("placed") or {}).get("frame")      # the frame the goal's start pose set; the navigator's `map` is in it too
         try:
             self.profile = read_profile(self.cfg.robot, self.cfg.variant)
         except ConfigError as exc:
-            return f"Mission Control could not read the robot's profile again ({exc}): poses scaled by version {self.profile.meta['version']}"
-        self.scale = self._scale(self.profile)
+            return f"Mission Control could not read the robot's profile again ({exc}): profile version {self.profile.meta['version']} stays"
         theirs = (reply.get("profile") or {}).get("checksum")
         mine = self.profile.meta["checksum"]
         if theirs and theirs != mine:
             return (f"the navigator runs profile {theirs[:15]}… (version {reply['profile'].get('version')}), Mission Control reads "
-                    f"{mine[:15]}… (version {self.profile.meta['version']}): the poses on this page are scaled by Mission Control's")
+                    f"{mine[:15]}… (version {self.profile.meta['version']})")
         return None
 
     def watch_url(self, run_key: str | None) -> str | None:
@@ -436,13 +429,16 @@ class DuckAdapter:
 
     # --- state: the subscription's latest, in the page's shape ------------------------------------------
 
-    def _placed(self, pos, yaw) -> tuple:
-        """The odometry's pose (robotd's metres, which the page takes to be mapd's frame) in the frame the latest start pose set."""
-        f = self.placed
-        if not f:
-            return pos, yaw
-        c, s = math.cos(f["yaw"]), math.sin(f["yaw"])
-        return (f["x"] + c * pos[0] - s * pos[1], f["y"] + s * pos[0] + c * pos[1]), math.atan2(math.sin(f["yaw"] + yaw), math.cos(f["yaw"] + yaw))
+    def _site_pose(self, pos, yaw) -> dict:
+        """The pose block of the state: the navigator's answer for robotd's odometry, or, when it gives none (down, hung, below contract
+        1.8), why: no pose, never one this adapter made from a scale of its own."""
+        try:
+            a = self._map_nav._rpc("site_pose", {"odom": {"x": pos[0], "y": pos[1], "yaw": yaw}}, SITE_POSE_TIMEOUT_S)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return {"pose_error": f"site_pose: {type(exc).__name__}: {exc}"}
+        if not (isinstance(a, dict) and a.get("frame") == "site" and all(isinstance(a.get(k), (int, float)) for k in ("x", "y", "yaw"))):
+            return {"pose_error": f"site_pose: the navigator gave no site pose ({a.get('error') if isinstance(a, dict) and a.get('error') else 'it speaks a contract below 1.8'})"}
+        return {"pose": {"x": round(a["x"], 4), "y": round(a["y"], 4), "yaw": round(a["yaw"], 4), "frame": "site"}}
 
     def _on_state(self, _state: dict) -> None:
         self._stream_at = self.clock()
@@ -466,8 +462,7 @@ class DuckAdapter:
         pos, yaw = s["odom"]["position"], s["odom"]["yaw"]
         applied = (s.get("move") or {}).get("applied") or [0.0, 0.0, 0.0]
         safety = s.get("safety") or {}
-        pos, yaw = self._placed(pos, yaw)
-        out = {"pose": {"x": round(pos[0] * self.scale, 4), "y": round(pos[1] * self.scale, 4), "yaw": round(yaw, 4), "frame": "site"},
+        out = {**self._site_pose(pos, yaw),
                "velocity": {"vx": round(applied[0], 4), "vyaw": round(applied[2], 4)},
                "mode": "moving" if abs(applied[0]) > 1e-3 or abs(applied[2]) > 1e-3 else "idle",
                "link": "duck-gate", "policy": s.get("policy"),
@@ -491,17 +486,20 @@ class DuckAdapter:
     # --- the map: the navigator API's (mapd's grid), in the site frame -----------------------------------
 
     def _grid(self) -> dict:
-        """The robot's map as its navigator API answers `map`: mapd's grid, unscaled, in mapd's frame."""
-        g = self._map_nav._rpc("map")
+        """The robot's map as its navigator API answers `map {units: "site"}`: mapd's grid in true metres, in the frame the latest start
+        pose set. A navigator below contract 1.8 ignores the unit and answers mapd's metres: not shown as the site's."""
+        g = self._map_nav._rpc("map", {"units": "site"})
         if "error" in g:
             raise ConnectionError(f"the navigator API has no map: {g['error']}")
+        if g.get("units") != "site":
+            raise ConnectionError("the navigator speaks a contract below 1.8: its map is in mapd's metres, which Mission Control no longer scales")
         return g
 
     def map(self) -> dict:
         g = self._grid()
         cells = g.get("cells", "")
-        res = g.get("res_m", 0.05) * self.scale
-        origin = [v * self.scale for v in g.get("origin", [0.0, 0.0])]
+        res = g.get("res_m", 0.05)
+        origin = list(g.get("origin", [0.0, 0.0]))
         data = [-1 if c == "?" else 100 if c == "#" else 0 for c in cells]
         return {"frame": "site", "kind": "occupancy_grid", "resolution_m": res, "origin": origin, "width": g.get("width", 0),
                 "height": g.get("height", 0), "data": data, "version": hash(cells) & 0xFFFFFFF}
