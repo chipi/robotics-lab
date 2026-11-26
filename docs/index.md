@@ -1,10 +1,9 @@
 # robotics-lab
 
-A home robotics lab and the platform under it. A robot brings a profile and plugins, a simulator
-brings a host, a navigator is tested behind a runner that judges it by the simulator's truth, every
-run is recorded one way and watched in the Observatory, and the operator drives it all from Mission
-Control. The robots: Pollen Robotics' Microduck (simulator first), a LEGO Mindstorms NXT 2.0 and
-EV3s, and a TurtleBot3 Burger with ROS 2 in MVP 2.
+A simulator-first lab for robot autonomy. A robot brings a profile and plugins, a simulator
+brings a host, a navigator is tested behind a runner that judges it by the simulator's truth,
+learned controllers are trained and judged against the rules, every run is recorded one way and
+watched in the Observatory, and the operator drives it all from Mission Control.
 
 ![The Observatory replaying a run: the duck's body in 3D, what it believed against what was
 true, and the timeline of every stream](assets/screenshots/observatory-3d-dark-1440.png)

@@ -1,10 +1,9 @@
 # robotics-lab
 
-A home robotics lab, and the platform under it: a simulator-first duck (Pollen Robotics'
-Microduck), a LEGO Mindstorms NXT, **Mission Control** to drive them, the **Observatory** to watch
-and replay every run, a challenge course that judges a robot's navigator by the simulator's truth,
-and research into a learned obstacle-avoidance controller. MVP 1 is built; **MVP 2 is next: a
-TurtleBot3 Burger with ROS 2 and Gazebo.**
+A simulator-first lab for robot autonomy. Any robot sits behind one interface; **Mission Control**
+runs its missions, the **Observatory** records and replays every run, a challenge course judges its
+navigation on frozen scenarios against the simulator's truth, and learned controllers are trained
+and evaluated against the rules they would replace. The real robot comes last, after the simulator.
 
 [![The Observatory replaying a run: the duck's body in 3D, what it believed against what was true,
 and the timeline of every stream](docs/assets/screenshots/observatory-3d-dark-1440.png)](docs/index.md)
@@ -13,21 +12,19 @@ Docs site: **<https://chipi.github.io/robotics-lab/>**
 
 ## What is in it
 
-- **A simulated duck.** Pollen's Microduck runs in Pollen's own simulator; our navigator (localise,
-  plan, walk, explore, avoid) drives it through the same sockets a real duck would give it. The real
-  duck is not here yet.
-- **A LEGO NXT 2.0**, driven from our own Python code: a web UI, NXC programs for the brick, and a
-  simulated brick for development (`apps/nxt-web`).
-- **Mission Control** (`apps/mission-control`): robots, readiness, sites and areas, goals, and a
-  STOP that always works, behind one API with adapters for a fake robot, the simulated duck and the
-  NXT.
-- **The Observatory** (`apps/observatory`, once called miniview): every run as an MCAP file, live
-  and replayed, with the robot's belief against the truth, its map, its plan and its alarms.
-- **A challenge course** (28 numbered challenges, [RFC-0008](docs/rfc/RFC-0008-challenge-course.md)):
-  the runner scores a navigator by the simulator's truth, one difficulty at a time.
-- **Learned avoidance:** a learned local controller for the duck, trained on a GPU box in the
-  public [chipi/microduck-nav](https://github.com/chipi/microduck-nav) and compared with our rules
-  on frozen scenario sets ([the guide](docs/training/index.md)).
+- **Operate:** Mission Control (`apps/mission-control`) holds robots, readiness, sites and areas,
+  goals, and a STOP that always works, behind one API; each robot plugs in through an adapter.
+- **Record and watch:** the Observatory (`apps/observatory`, once called miniview) keeps every run
+  as an MCAP file, live and replayed, with the robot's belief against the truth, its map, its plan
+  and its alarms.
+- **Test:** a challenge course (28 numbered challenges,
+  [RFC-0008](docs/rfc/RFC-0008-challenge-course.md)) scores a navigator by the simulator's truth,
+  one difficulty at a time, and frozen scenario sets compare one navigator with another.
+- **Learn:** learned local controllers, trained on a GPU box in the public
+  [chipi/microduck-nav](https://github.com/chipi/microduck-nav) and judged against the rules on
+  those sets ([the guide](docs/training/index.md)).
+- **Robots:** each is a profile and plugins behind the same interface, simulator first; which ones
+  are wired today is in [Projects](#projects).
 
 | Observatory: every run | Mission Control: the robot page |
 | --- | --- |
@@ -200,6 +197,5 @@ the strict build) runs before every push.
 
 ## Licence
 
-This repository has no licence file yet, so no licence is granted for its code. One file is
-vendored with its own terms: `libs/runfile/src/runfile/schemas/LICENSE-foxglove-schemas.txt`
+[MIT](LICENSE). One file is vendored with its own terms: `libs/runfile/src/runfile/schemas/LICENSE-foxglove-schemas.txt`
 (Foxglove's schemas).
