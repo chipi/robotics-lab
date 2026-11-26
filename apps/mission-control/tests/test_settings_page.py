@@ -1,6 +1,6 @@
 """Mission Control's robot page, Modules, Settings and its two drawers (RFC-0023 D3 and D10, phase 5 item 4a units A2 and A4a) in headless
 Chromium, as test_robot_page.py does it: the real server, a pointer robot to the duck's profile behind the fake adapter and a version store
-under a test installation. Modules lists the profile's four plugins as collapsible rows; Settings lists the blocks, shows a block group by
+under a test installation. Modules lists the profile's plugins as collapsible rows; Settings lists the blocks, shows a block group by
 group (base, the running variant, the other), edits a copy in a drawer and saves it as the next version (from the next goal; Esc and Cancel
 close it, the focus goes back), shows the server's refusal at the field, compares two versions in the History drawer, makes one current,
 exports one (a download) and imports an edited file. Every number goes through the profile API. Phone width has no sideways scrolling.
@@ -148,14 +148,14 @@ with sync_playwright() as p:
 
     open_page(1)
 
-    # --- Modules: the profile's four plugins, one collapsible row each --------------------------------------------------
+    # --- Modules: the profile's plugins, one collapsible row each --------------------------------------------------
     with soft("Modules"):
         tab("modules")
-        wait(page, "document.querySelectorAll('#rp-modules [data-plugin]').length === 4")
+        wait(page, f"document.querySelectorAll('#rp-modules [data-plugin]').length === {len(REPO['plugins'])}")
         names = page.eval_on_selector_all("#rp-modules [data-plugin]", "(els) => els.map((e) => [e.dataset.plugin, e.querySelector('b').textContent])")
-        check("must fail: Modules lists the profile's four plugins, each with its name and version", names == [[k, v] for k, v in REPO["plugins"].items()], names)
+        check("must fail: Modules lists the profile's plugins, each with its name and version", names == [[k, v] for k, v in REPO["plugins"].items()], names)
         heads = page.locator("#rp-modules button[data-collapse]")
-        check("must fail: each is a row with a head button that says whether it is open and names its body", heads.count() == 4
+        check("must fail: each is a row with a head button that says whether it is open and names its body", heads.count() == len(REPO["plugins"])
               and all(h.get_attribute("aria-expanded") in ("true", "false") and h.get_attribute("aria-controls") for h in heads.all()))
         check("must fail: each says plainly that its live state is not reported (no source reaches Mission Control)",
               all("live state not reported" in page.locator(f"#rp-modules [data-plugin={k}]").inner_text() for k in REPO["plugins"]))
