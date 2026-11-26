@@ -13,20 +13,20 @@ ours.
 | 1.1 | HIGH, VERIFIED | A STOP through lab-gate was reported `confirmed` when robotd did not answer | `robotgate/__init__.py` `_stop_from`, `_gate_stop`; `robots.py` `RobotRuntime.stop` | Fixed in 3c478c3 (noted in 819f7cf), tests red first |
 | 1.4 | LOW, VERIFIED | A `ProtocolError` on STOP escaped as a 500 | `robots.py` `stop` | Fixed with 1.1; the NXT's 409 too |
 | 5.a | MEDIUM, VERIFIED | No test of STOP through the proxy with a failing robotd | `test_gate.py`, `test_duck_adapter.py` | Added with 1.1 |
-| 1.2 | MEDIUM, VERIFIED | `allow_real_runs` misses a real robot whose file holds the robot itself (`robots.nxt/nxt-1.json`): hand driving the real NXT never asks | `robots.py:161-174` | Operator's decision, before step 6 |
+| 1.2 | MEDIUM, VERIFIED | `allow_real_runs` misses a real robot whose file holds the robot itself (`robots.nxt/nxt-1.json`): hand driving the real NXT never asks | `robots.py:161-174` | Decided by the operator 2026-11-26; fixed in fb884b2 |
 | 1.3 | MEDIUM, VERIFIED | The gate holds its lock across robot I/O (up to 10 s per STOP on a hung robotd); `_after_stop` and `cancel_run` hold the robot's mutex through settling | `robotgate` `handle`; `core.py:187-196, 681-696` | Planned: with MVP 2 step 1's gate changes |
 | 2.a | MEDIUM, VERIFIED | Three implementations of the lease rules | `robotgate.Gate`, `nxt_lab/lock.py`, `NxtGate` | Planned: MVP 2 step 1, behind the contract test |
 | 2.b | MEDIUM, VERIFIED | Frames and scale computed in three places | navigator `_place`/`move_grid`, `progress.pose`, MC `DuckAdapter._placed` | Planned: before MVP 2 (one frame owner) |
-| 3.a | MEDIUM, VERIFIED | Adapter programming errors look like link loss (caught, shown as offline, no stderr line) | `robots.py:329-360`, `core.py:98-104` | To fix now (small) |
+| 3.a | MEDIUM, VERIFIED | Adapter programming errors look like link loss (caught, shown as offline, no stderr line) | `robots.py:329-360`, `core.py:98-104` | Fixed in fb884b2 |
 | 5.b | MEDIUM, VERIFIED | No cross-adapter contract test of the adapter surface | `mission_control.robots` | Planned: before MVP 2 (step 1 asks for it) |
-| 8.a | MEDIUM, VERIFIED | The Observatory ignores hash-only navigation (no `hashchange`) | `shell.js` | To fix now (small); was a known gap |
+| 8.a | MEDIUM, VERIFIED | The Observatory ignores hash-only navigation (no `hashchange`) | `shell.js` | Fixed in 349f083 |
 | 8.b | MEDIUM, VERIFIED | `createShell` is one 1,540-line closure over a mutable `M` | `shell.js:201-1740` | Planned: split during MVP 2 |
-| 6.a | LOW-MEDIUM, VERIFIED | `?token=` reaches logs on unexpected 500s | `api.py:625`, Observatory `server.py:316` | To fix now (small) |
-| 4.a | LOW, VERIFIED | `int(Content-Length)` gives a 500, not a 400; MC has no request timeout | `api.py:519, 572` | To fix now (small) |
-| 4.b | LOW, SUSPECTED | Profile import only partly validated before the store | `profiles.py:157-165` | To check now |
-| 2.c | LOW, VERIFIED | RFC-0018 §10 says an import exception is in force; the checker has none | RFC-0018, `check_boundaries.py:79` | To fix now (doc) |
+| 6.a | LOW-MEDIUM, VERIFIED | `?token=` reaches logs on unexpected 500s | `api.py:625`, Observatory `server.py:316` | Fixed in fb884b2 |
+| 4.a | LOW, VERIFIED | `int(Content-Length)` gives a 500, not a 400; MC has no request timeout | `api.py:519, 572` | Fixed in fb884b2 |
+| 4.b | LOW, SUSPECTED | Profile import only partly validated before the store | `profiles.py:157-165` | Checked: already validated in profilestore; no change (fb884b2) |
+| 2.c | LOW, VERIFIED | RFC-0018 §10 says an import exception is in force; the checker has none | RFC-0018, `check_boundaries.py:79` | Fixed in fb884b2 (the exception retired) |
 | 3.b | LOW, VERIFIED | A worker thread per timed-out call; a TCP connection per navigator call at 5 Hz; the full grid fetched to learn its version | `robots.py:237-255`, `duck.py:500-510` | Noted |
-| 3.c | LOW, VERIFIED | The nav server maps any `KeyError` to "no method" | `duck_lab/nav/server.py:664` | To fix now (small) |
+| 3.c | LOW, VERIFIED | The nav server maps any `KeyError` to "no method" | `duck_lab/nav/server.py:664` | Fixed in fb884b2 |
 | 8.c | LOW, VERIFIED | `/state` and `/presence` copy the whole run's tick lists per request | Observatory `server.py:552-553` | Noted; measure with perf-observatory |
 | 6.b | LOW, VERIFIED | Mission Control has no access log; the two servers log errors differently | `api.py` | Noted |
 
