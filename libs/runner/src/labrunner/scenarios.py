@@ -26,7 +26,16 @@ scenario is in the manifest's `skipped` with its reason: no challenge and seed r
 scene layout; no geometry is made up), a challenge that is not one goal, a floor feature the format does not carry (a cable, a step, a
 drop; `--with-floor-features` mines it anyway and marks `source.floor_features`), a generator that has changed since the run, or
 `--exclude-dataset MANIFEST` (an evaluation set: its (challenge, seed) never becomes training data; asked before anything else).
-Runner folders only (ticks.jsonl), not data-folder runs."""
+Runner folders only (ticks.jsonl), not data-folder runs.
+
+    uv run lab-scenarios pool --challenges 1,2,3,4,14,15 --seeds 1000-5999 [--exclude-dataset MANIFEST ...] --out FILE.jsonl
+
+`pool` (the training distribution, R7a): the same items as `export`, one canonical line each (so a line is, byte for byte, the file
+`export` writes for that challenge and seed), in one file: the challenges in the order given, the seeds ascending. FILE.manifest.json
+beside it holds the file's sha256, the commit, the command, the counts by challenge and `max_obstacles` (the most any item holds: the
+slot count a trainer needs). `--exclude-dataset MANIFEST` (as `mine`): an evaluation set's (challenge, seed) never enter the pool; the
+manifest counts what each removed. A challenge that is not one goal, or whose floor has a drop or a step (the format does not carry
+it), is refused, as is a pool the exclusions leave empty. The sensor is off in every item: the trainer draws its own."""
 
 import argparse
 import bisect
@@ -45,6 +54,7 @@ from runfile import build as runbuild
 
 FORMAT = "robotics-scenario/1"
 SET_FORMAT = "robotics-scenario-set/1"
+POOL_FORMAT = "robotics-scenario-pool/1"
 STOPS = ("reflex_stop", "cliff_stop", "stuck", "stalled", "trapped")   # events that mark where a run stopped
 REFLEX_WINDOW_S = 10.0       # a trapped or stuck this soon after a reflex_stop is the reflex's consequence (a guess, not read from runs)
 LEAD_S = (2.0, 1.0)          # the variants' starts: the truth pose this long before the first stop, from the earlier to the later
@@ -318,6 +328,44 @@ def mine(runs: list, out: Path, argv: list, variants: int = 4, exclude: list = (
     return manifest
 
 
+def pool(challenges: list, seeds: list, exclude: list, out: Path, argv: list) -> dict:
+    """Write the pool (one canonical item per line) and its manifest beside it; nothing is written when the call is refused.
+    Returns the manifest."""
+    if out.suffix != ".jsonl":
+        raise SystemExit(f"--out {out}: a .jsonl file (the manifest takes its name from it)")
+    unknown = [c for c in challenges if c not in CHALLENGES]
+    if unknown:
+        raise SystemExit(f"unknown challenge {', '.join(unknown)}: the challenges are {', '.join(sorted(CHALLENGES, key=int))}")
+    excluded, excluded_listing = exclusions(list(exclude))
+    lines, counts, most = [], {}, 0
+    for c in challenges:
+        counts[c] = {"layout": CHALLENGES[c].__name__, "items": 0, "excluded": 0}
+        for seed in seeds:
+            if (int(c), seed) in excluded:
+                counts[c]["excluded"] += 1
+                continue
+            item_id, doc, mode = item(c, seed, None)
+            if mode != "go":
+                raise SystemExit(f"challenge {c} ({CHALLENGES[c].__name__}) is not one goal to reach (mode {mode}): the format has one goal")
+            features = [f.name for f in draw(c, seed)[0].floors if abs(f.z1) > 1e-6]
+            if features:
+                raise SystemExit(f"challenge {c} ({CHALLENGES[c].__name__}): the floor has {', '.join(features)}, which {FORMAT} does not carry")
+            lines.append(text_of(doc).encode())
+            counts[c]["items"] += 1
+            most = max(most, len(doc["obstacles"]))
+    if not lines:
+        raise SystemExit("the pool is empty: the exclusions leave no item")
+    sha = runbuild.commit(REPO, 12)
+    manifest = {"format": POOL_FORMAT, "file": out.name, "sha256": hashlib.sha256(b"".join(lines)).hexdigest(), "items": len(lines),
+                "max_obstacles": most, "robotics_lab": {"commit": sha or runbuild.UNKNOWN, "dirty": runbuild.dirty(REPO)},
+                "command": "lab-scenarios " + shlex.join(argv), "challenges": counts,
+                "exclude_datasets": excluded_listing, "excluded": sum(v["excluded"] for v in counts.values())}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(b"".join(lines))
+    out.with_suffix(".manifest.json").write_bytes(text_of(manifest).encode())
+    return manifest
+
+
 def impairment_arg(s: str) -> int | None:
     if s == "off":
         return None
@@ -346,7 +394,17 @@ def main(argv: list | None = None) -> None:
                     help="an evaluation set's manifest.json: its (challenge, seed) are never mined; repeat for more")
     mn.add_argument("--with-floor-features", action="store_true",
                     help="mine a run whose floor has a cable, a step or a drop too (the format does not carry it); the item says so in source.floor_features")
+    pl = sub.add_parser("pool", help="write a training pool: the items of challenges and seeds, one line each, and a manifest")
+    pl.add_argument("--challenges", required=True, help="challenge numbers, comma separated, ranges allowed: 1,2,3,4,14,15")
+    pl.add_argument("--seeds", required=True, help="seeds, comma separated, ranges allowed: 1000-5999")
+    pl.add_argument("--exclude-dataset", type=Path, action="append", default=[], metavar="MANIFEST",
+                    help="an evaluation set's manifest.json: its (challenge, seed) never enter the pool; repeat for more")
+    pl.add_argument("--out", type=Path, required=True, help="the .jsonl file; FILE.manifest.json is written beside it")
     args = ap.parse_args(argv)
+    if args.cmd == "pool":
+        m = pool([str(n) for n in numbers(args.challenges, "--challenges")], numbers(args.seeds, "--seeds"), args.exclude_dataset, args.out, argv)
+        print(f"POOL: {m['items']} items ({m['excluded']} excluded, at most {m['max_obstacles']} obstacles) into {args.out}")
+        return
     if args.cmd == "mine":
         m = mine(args.runs, args.out, argv, args.variants, args.exclude_dataset, args.with_floor_features)
         c = m["counts"]["runs"]
