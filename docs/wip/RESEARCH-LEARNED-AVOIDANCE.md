@@ -38,6 +38,22 @@ From the [R6 plan](RESEARCH-R6-PLAN.md), 2026-11-26 (nothing run; sizes and GPU 
   6.5 to 10.5 GPU hours over five or six swaps. CPU checks first (rays, sensor maths, the walker
   rebuilt in torch, the ONNX round-trip). Training impairments: NVIDIA's numbers first, as R2's are.
 
+From R6's CPU checks C1-C5 (2026-11-26, public repo
+[chipi/microduck-nav](https://github.com/chipi/microduck-nav), `docs/CHECKS.md`; 72 tests pass):
+
+- mjlab and MuJoCo Warp's batched rays run on CPU and match `mj_ray` to 4.4e-7 m, per world.
+  Pollen's
+  walker rebuilt in torch matches its ONNX (within 1e-4 on real observations); NVIDIA's impairments,
+  residual command and guarded Beta head are ported and tested against their formulas.
+- Pollen's walker in mjlab: about 46-48 % of the asked speed from 0.2 m/s up, and it does not walk
+  below 0.2 (0.15 asked: 0.007 m/s with noise off). Training physics reproduces duck-sim's
+  shortfall,
+  so our controller's speed range starts at 0.2 m/s. One seed, flat floor.
+- Found: rsl_rl 5.0.1 has no Beta distribution (written here); mjlab 1.3.0's mocap write needs
+  explicit `env_ids`; NVIDIA's brake guard covers a non-finite logit only (a deployment wrapper
+  needs its own input check); the speed cap acts before the slew, so a lowered request is exceeded
+  for one tick (0.28 after 0.3 to 0.1).
+
 From [S1 to S4](RESEARCH-S1-S4.md), 2026-11-26:
 
 - 51 NVIDIA skills found (44 Isaac Sim, 2 isaac-ros-cli, 5 in NVIDIA's own "Mission Control");
