@@ -86,6 +86,28 @@ them.
   set (3.11, 5.1). Questions 16 to 27 carried the advisor's recommendation or said they were the
   operator's; the operator answered them on 2026-11-23 (section 9).
 
+## Revisions after acceptance
+
+Two design changes, both (2026-11-26, from the avoidance research R3 and S4; operator approved).
+The research is in [RESEARCH-LEARNED-AVOIDANCE.md](../wip/RESEARCH-LEARNED-AVOIDANCE.md),
+[RESEARCH-R1-R2.md](../wip/RESEARCH-R1-R2.md) and [RESEARCH-S1-S4.md](../wip/RESEARCH-S1-S4.md).
+Every earlier decision stands.
+
+- **R3, the local-controller seam** (2026-11-26, from the avoidance research R3; operator
+  approved): a fifth plugin interface beside locomotion, range sensing, localisation and
+  looking, left in the navigator split at step 3. It takes the follower's command, the range
+  history with each frame's age, the body state and the command applied after the guard, and
+  returns a command. `rules@1` is today's behaviour; a learned ONNX model is the other, recorded
+  with its files and checksums. The reflex, the drop stop, the caps and STOP stay above it. A run
+  records the requested, adjusted and applied command per tick. Section 3.7, step 3.
+- **S4, the mapper as a declared binding** (2026-11-26, from the avoidance research S4;
+  operator approved): the profile declares the mapper's topics, map message type and kind, and
+  reset; the reset sequence says "the mapper's declared reset" and no longer names SLAM Toolbox
+  (sections 3.4, 3.6, 3.9, item 19 in section 7, step 2). A distance map, as nvblox publishes,
+  needs a declared map kind. The stale lines on the profile's schema (section 2.4 item 4, and
+  section 3.9) now match `profile.py` as read on 2026-11-26. The ROS 2 distro question is open,
+  not a change (section 8.10, question 28).
+
 ## Names
 
 The operator, 2026-11-23: the vision note "came from another place. And that's an idea. We don't
@@ -314,10 +336,15 @@ Shaped by the duck, MuJoCo or `robotd`:
    (`nxt.py:117-120`). It has no navigator (`nxt.py:178-179`) and no map (`nxt.py:216-217`).
    RFC-0018 §10 notes its lock "keeps its own copy of the gate's rules over HTTP".
 4. **The profile requires duck-shaped blocks.** `REQUIRED` includes `footprint`, `locomotion`
-   and `plugins` (`profile.py:235`). `locomotion` fields include the kick and pivot rules
-   (`profile.py:179-189`). There are exactly four plugin interfaces: locomotion, range sensing,
-   localisation, looking (`profile.py:165`). The `sensors` schema knows `tof8x8` and `camera`
-   only (`profile.py:190-201`). `joints.names` is the duck's 15 (`profile.json:8-10`).
+   and `plugins` (`profile.py:273`). `locomotion` fields include the kick and pivot rules
+   (`profile.py:223-234`). There are exactly four plugin interfaces: locomotion, range sensing,
+   localisation, looking (`profile.py:165`; a fifth, the local controller, is added in section
+   3.7). The `sensors` block is a table by id, each entry of a kind: `tof8x8`, `camera`, `range`,
+   `colour`, `imu`, `odometry`, `scan2d`, `image` and `depth_image` (`profile.py:181-201`, the
+   last seven added by the commit "one sensors block for both robots", 458e0ed, after this
+   RFC's draft read it as two kinds). No kind yet carries a visual-SLAM pose, a point cloud or a
+   voxel map. `joints.names` is the duck's 15 (`profile.json:8-10`). Lines re-read on
+   2026-11-26.
 5. **The host has one kind.** `KINDS = ("pollen-duck-sim",)` (`host.py:25`). The host file must
    name Pollen's two checkouts (`host.py:94-96`). The sockets are five fixed names: robot,
    depth, map, gate, camera (`host.py:28-29`). A reset restarts the whole simulator (about 40 s)
@@ -557,14 +584,15 @@ not in the profile's identity (`robots.py:92-99`, the installation's `variant`).
 - The host kind (Gazebo) is separate from the connector: it provides reset, truth and the scene.
   The connector does not know it is in a simulator.
 - A course reset must also reset the mapper's state, or the new run starts on the last run's map.
-  It is the Burger's equivalent of a fresh `mapd` after the duck's reset. SLAM Toolbox has a
-  service for it, `/slam_toolbox/reset`: after the call its map changed from 81 x 103 to 79 x 102
-  cells, so it re-initialised, but the spike did not compare the maps or try a long map
-  (spike §9). SLAM Toolbox itself coped with the clock going back ("Detected jump back in time.
-  Clearing TF buffer", spike §9). Nav2's costmaps after a reset were not tried (spike §17), and
-  whether a lifecycle restart is enough stays not verified. The spike's reset run called only
-  `reset all` and never `/slam_toolbox/reset`, so it did not test this design (spike §21 re-ran
-  it with the full sequence).
+  It is the Burger's equivalent of a fresh `mapd` after the duck's reset. The reset is part of
+  the mapper's declaration in the profile (section 3.9), not a constant of the connector. SLAM
+  Toolbox, the Burger's mapper, has a service for it, `/slam_toolbox/reset`: after the call its
+  map changed from 81 x 103 to 79 x 102 cells, so it re-initialised, but the spike did not
+  compare the maps or try a long map (spike §9). SLAM Toolbox itself coped with the clock going
+  back ("Detected jump back in time. Clearing TF buffer", spike §9). Nav2's costmaps after a
+  reset were not tried (spike §17), and whether a lifecycle restart is enough stays not
+  verified. The spike's reset run called only `reset all` and never `/slam_toolbox/reset`, so it
+  did not test this design (spike §21 re-ran it with the full sequence).
 - **The reset design, decided** (spike §9). A world reset (`reset: {all: true}`) takes about 0.26 s
   and sends the sim clock to 0, but only if the robot is part of the world file: with the stock
   launch, which spawns the robot after start, the reset deleted the model, `/odom` and `/imu`
@@ -845,8 +873,10 @@ probably must restart SLAM Toolbox").
 The reset sequence that step 5a must prove, in order:
 
 1. `reset all`;
-2. `/slam_toolbox/reset`;
-3. SLAM Toolbox with `restamp_tf: true` (verify the parameter exists in 2.8.5);
+2. the mapper's declared reset (section 3.9; for the Burger, SLAM Toolbox's
+   `/slam_toolbox/reset`);
+3. the mapper's declared timestamp setting, where it has one (for SLAM Toolbox,
+   `restamp_tf: true`; the parameter exists in 2.8.5);
 4. the connector's tf buffer on the node clock (`Buffer(node=...)`);
 5. a new clock-epoch clause, a stale-epoch filter at the connector's boundary: drop any
    source-stamped message whose stamp is ahead of the current sim clock by more than a small
@@ -923,7 +953,8 @@ The operator's answers 5 and 6 make this the central piece of the evolution. Tod
 is the duck's: `duck_lab.nav`, and RFC-0022 §3.3 says it stays "the duck's until a second robot
 runs it". Now a second and a third robot run it. One navigator must drive a legged duck, a
 differential-drive Burger and a tracked NXT, each through its own plugins. RFC-0020 §4 already
-names the four plugin interfaces: locomotion, range sensing, localisation, looking.
+names the four plugin interfaces: locomotion, range sensing, localisation, looking. A fifth, the
+local controller, is added below (2026-11-26).
 
 What already helps:
 
@@ -965,6 +996,7 @@ The work has two parts. First, split `duck_lab.nav` into a part that knows no ro
 planner, the grids, path following, recovery, the goal methods) and the duck's plugins. Second,
 widen the plugin interfaces where they are duck-shaped: range sensing returns 8x8 frames today
 and must return a scan or a single range; localisation must accept a mapper that is not mapd.
+A third part, added 2026-11-26: leave the local-controller seam (below) in the split.
 
 | Robot | Locomotion | Range sensing | Localisation | Looking |
 | --- | --- | --- | --- | --- |
@@ -974,6 +1006,123 @@ and must return a scan or a single range; localisation must accept a mapper that
 
 Proof, in the project's habit: the duck's challenge verdicts stay as they are, and one contract
 test runs against all three plugin sets (as `test_contract.py` does for navigators).
+
+#### The local-controller seam (2026-11-26, from the avoidance research R3; operator approved)
+
+The research into learned obstacle avoidance
+([RESEARCH-LEARNED-AVOIDANCE.md](../wip/RESEARCH-LEARNED-AVOIDANCE.md) sections 2 to 4,
+[RESEARCH-R1-R2.md](../wip/RESEARCH-R1-R2.md), [RESEARCH-S1-S4.md](../wip/RESEARCH-S1-S4.md))
+found a slot the navigator has but does not name: between the path follower and the locomotion
+plugin sits a local layer, what a robot does about what its range sensor sees right now. A
+learned controller is trained on one body and one sensor, so it belongs on the plugin side of the
+split. Leaving room for it is cheap before step 3 and expensive after. This section adds it as a
+fifth plugin interface, beside locomotion, range sensing, localisation and looking. It adds no
+learning to MVP 2: its only implementation in step 3 is `rules@1`, which changes nothing.
+
+**Where the slot is today** (read on 2026-11-26, at commit 4e13c2e):
+
+- The follower returns a command: `step` returns `(Twist, done)` (`follow.py:50-62`), and the
+  robot's part of it is the locomotion plugin's `drive` (`plugins/duck_walk.py:50`). The goal
+  loop calls it at `run.py:1193` (and `:1245`, the tight pivot), at 10 Hz (`TICK_S`, `run.py:43`).
+- Everything after it is a guard that replaces or limits that command, and none of it steers:
+  the cliff stop (`run.py:1223-1240`), the caution pace (`run.py:1267-1272`), the depth reflex
+  (`run.py:1295-1318`: a return in the corridor within `reflex_ahead_m`, or any return within
+  `emergency_mm`, sends a zero `Twist`, then surveys and replans), the stuck stop
+  (`run.py:1319-1333`), and last the speed cap in `Navigator.move` (`run.py:344`), which the
+  guardrails set from `max_speed` (`guardrails.py:121-123`).
+- The range sensor's frame is derived once into a `FrameView` (`_on_frame`, `run.py:922`;
+  `plugins/tof8x8.py:85`). No history of frames is kept for a controller, and no frame carries
+  its age: `dt_ms` is the gap between a frame and the robot state it was paired with
+  (`run.py:911-920`), not how old the frame is.
+- The run records the follower's `vx` (`run.py:355`: `vx=tw.vx`), not the capped one, and the
+  zero a reflex sends is a separate event. The command that was actually sent is not a signal.
+- The stale-stream stop exists already: a state or depth stream silent past the profile's limit
+  stops the goal (`_watchdog`, `run.py:571-586`).
+
+**What the interface takes, and returns.** Each tick, after the follower and before any guard:
+
+| In | What | Why it is there |
+| --- | --- | --- |
+| The follower's command | The `Twist` from `step` (`follow.py:62`) | The goal; a learned controller is a residual on it (R1 §1.1) |
+| The range history | The last N frames of the robot's range sensor, each with its age in seconds | A model sees frames at 15 Hz in a 10 Hz loop, so it needs the age (R1 §1.2) |
+| The body state | The robot's state: IMU tilt and rate, joints, loop rate, safety flags (`_on_state`, `run.py:878`; `body.py:20`) | Part of the observation (R1 §1.2) |
+| The applied command | What was actually sent last tick, after the guard and the cap | An observation input of the published controller (R1 §1.2, indices 50 to 52) |
+
+It returns one command, a `Twist` in the robot's own terms (for the duck, `vx` and `vyaw`;
+the plugin's `bind` takes the profile and the robot). The sketch below is the shape, not the
+code:
+
+```text
+LocalController:
+    name, version
+    bind(profile)
+    reset()                       # at a goal start and after a reset: the history is emptied
+    command(requested, ranges, body, applied) -> command
+        # ranges: [(frame, age_s), ...], oldest first; applied: the command sent last tick
+```
+
+**Implementations.**
+
+- **`rules@1`, the default and the only one in step 3.** It returns the follower's command
+  unchanged, so today's behaviour is today's: the local layer's rules are the guards listed above,
+  which stay where they are (`run.py:1223-1333`). The reflex is not moved into `rules@1`, because
+  it also surveys and replans, which is the navigator's recovery and not a command. A profile
+  with no local controller gets `rules@1`.
+- **`learned`: an ONNX model.** It lives in a plugin, never in the navigator's core, and needs
+  `onnxruntime`, approved as a dependency for this on 2026-11-26. The profile names the model by
+  its files and each file's SHA-256: the exported policy, the environment file and the I/O
+  description from the same training run, never "the newest run" and never a raw checkpoint. This
+  is NVIDIA's artifact rule, adapted (S1: `isaac-sim-robot-navigation`,
+  `references/policy-deployment.md`, Apache-2.0). Loading refuses a file whose checksum differs.
+  No published navigation checkpoint exists (R1 §1.12), so the first one is trained by us (R6).
+- **For the Burger, possibly Nav2's controller.** Nav2's controller server turns a path and its
+  costmap into a velocity, which fits the same slot. Not designed here: step 7 decides whether
+  Nav2 is ever the controller or the whole navigator.
+
+**The safety layering: a learned controller never has the last word.** The reflex, the drop
+stop, the guardrails' speed caps and STOP stay outside the interface and above it. In order:
+the controller's command goes through the cliff stop, the pace, the reflex and the stuck stop as
+the follower's does, then the cap, then the gate with its lease and STOP. Concretely:
+
+- The guards read the controller's command, never ask it, and a guard that stops sends zero. The
+  controller learns of that only through the applied command of the next tick.
+- Translation never exceeds the follower's: the seam clamps `vx` to the requested value, as
+  NVIDIA's own action does ("the actor can steer and brake, never speed up", R1 §1.1).
+  Steering and braking are the model's.
+- A model that fails (no frame, an exception, a non-finite output) returns the follower's
+  command, and the run records it as an anomaly. Whether to stop instead is for the first
+  learned arm's evidence (R5).
+- The stale-stream stop above, the lease, the deadman and STOP are unchanged. A tighter
+  staleness bound for a model (NVIDIA's is 0.25 s on frame, state and command, R1 §1.1) is an
+  open point, not a decision.
+
+**What a run records.** Per tick, as signals beside the existing ones, additive to the run
+format: the requested command (the follower's), the adjusted command (the controller's) and the
+applied command (after the guards and the cap), so the Observatory shows when and how much the
+controller overrode the follower. With `rules@1` the first two are equal. The applied command is
+a new record: today only the follower's is kept (`run.py:355`).
+
+**The model is part of the run's identity.** The run's start record names the local controller
+and, for a learned one, its model files with their checksums. The build identity of RFC-0005
+section 2.4 (`brain@<commit>+model@<alias>+policies@<set>`, where `model@` names a language
+model) gains the controller's model: the form, for instance `ctrl@<alias>-<first 8 of the
+checksum>`, is proposed here and is for RFC-0005's evaluation work to settle.
+
+**Where it lands.** In step 3 (section 6), as part of the split: the interface in
+`plugins/interfaces.py`, its entry in `plugins.INTERFACES` (`plugins/__init__.py:17`) and in the
+profile's `INTERFACES` and `NEEDS` (`profile.py:165-167`), `rules@1`, and the call between
+`step` and the guards. The profile names the controller under `plugins` (`local_controller`,
+absent meaning `rules@1`, so every stored profile still loads) and holds the model block for a
+learned one (additive, as the sensors block was). The Observatory's drawing of the signals is
+step 8's.
+
+**Not decided, and not verified.** The loop runs at 10 Hz and NVIDIA's controller at 50 Hz
+(R1 §1.4): whether a controller we train runs at our rate, or the seam gives it its own rate, is
+open. Whether a model trained against Pollen's walker transfers to the robot is R8's question,
+not this RFC's. The ranges and body inputs above are R1's contract for one published controller,
+read in its code and not run against ours; another controller may need others, so the interface
+passes what the navigator has and a plugin picks. Nothing was run for this section: the code
+lines were read.
 
 ### 3.8 Where a robot's software runs
 
@@ -1011,12 +1160,14 @@ What changes:
 
 Today the sensor layer is the duck's:
 
-- The profile's schema knows two sensor kinds, `tof8x8` and `camera`
-  (`libs/runfile/src/runfile/profile.py:190-199`). The `capabilities.sensors` list is empty for
-  the duck (`robots/duck/profile.json:216`).
+- The profile's sensors block holds a table of sensors by id, each of one of nine kinds: the
+  duck's `tof8x8` and `camera`, and `range`, `colour`, `imu`, `odometry`, `scan2d`, `image` and
+  `depth_image` (`libs/runfile/src/runfile/profile.py:181-201`; re-read on 2026-11-26, it said
+  two kinds before commit 458e0ed). The `capabilities.sensors` list is empty for the duck
+  (`robots/duck/profile.json:227`).
 - The run file has one sensor frame, `tof` (`wire.py:91`).
 - The navigator's range-sensing plugin is the 8x8 one, `tof8x8@1`
-  (`robots/duck/profile.json:229`).
+  (`robots/duck/profile.json:240`).
 - The depth arrives by a socket the host file names, not by declaration
   (`libs/simhost/src/simhost/host.py:28-29`).
 
@@ -1057,6 +1208,51 @@ The rules:
 This is the design for cameras from the start (section 3.5). The first build carries only the
 scan, the IMU and odometry. Profile v2 (step 2) writes the declaration; step 4 writes each host
 kind's list; step 5a builds the scan, IMU and odometry paths.
+
+**The mapper is declared too** (2026-11-26, from the avoidance research S4; operator approved).
+The sensors are declared, but this RFC named one mapper, SLAM Toolbox, in the connector's own
+design: its reset in the reset sequence (section 3.6), a 2D grid as the only map, and fixed
+topic names (`/scan`, `/odom`, `/imu`, `/cmd_vel`, `/tf`; sections 3.0, 3.2 and 3.3). That would make
+the connector a SLAM Toolbox connector, and a different mapper on a Jetson, such as one of
+NVIDIA's Isaac ROS nodes, would need the connector rewritten. So the robot's profile declares
+its mapper, and the connector reads the declaration. It names:
+
+- **The inputs:** which declared sensors it reads, and the topic each arrives on (the
+  connector remaps; no topic name is a constant).
+- **The outputs:** the topic and message type of its map, the map's kind (below), and where its
+  pose comes from (a topic, or the `map`-to-`odom` tf).
+- **The reset:** a service or an action, its name and its type, or none. The reset sequence of
+  section 3.6 calls "the mapper's declared reset"; it does not know which mapper that is.
+- **The mapper's own parameters** that the sequence depends on, such as a timestamp setting
+  after a clock reset. They belong to the mapper's entry, not to the connector.
+
+For the Burger the declaration is SLAM Toolbox 2.8.5: it reads the scan and odometry, its map is
+an occupancy grid, its reset is `/slam_toolbox/reset` (spike §9), and its parameter is
+`restamp_tf: true` (section 3.6). The two Isaac ROS nodes the research read are the contrast
+(RESEARCH-S1-S4.md section 6.2, from NVIDIA's documentation; nothing was run):
+
+| Mapper | Inputs | Pose | Map output | Reset |
+| --- | --- | --- | --- | --- |
+| SLAM Toolbox (the Burger) | scan, odometry, tf | tf `map` to `odom` | occupancy grid | `/slam_toolbox/reset` |
+| cuVSLAM | stereo or RGB-D images, camera info, optional IMU | `visual_slam/tracking/odometry` (`nav_msgs/Odometry`), tf | none | `visual_slam/reset`, a custom service type |
+| nvblox | depth image and camera info, or a point cloud; a pose | from elsewhere | `nvblox_msgs/DistanceMapSlice`, not an occupancy grid | none in its topics page; not verified |
+
+**The map has a declared kind.** The contract's `map` is an occupancy grid
+(`capabilities.map.kind` is `occupancy_grid`, `robots/duck/profile.json:230`; RFC-0014's
+capability table; the duck's adapter builds it at `mission_control/duck.py:504`).
+An nvblox-style mapper publishes a distance map, a field of distances to the nearest obstacle,
+which is not a grid of cells. So the declaration says the kind, `occupancy_grid` or
+`distance_map`, and the connector translates the first into the contract's `map`. For a
+`distance_map` no conversion is defined here: the connector refuses the profile at start and
+names the kind. Whether a threshold on the distance is a fair conversion, or the contract gains a
+second map kind, is decided when such a mapper is chosen. Not verified: whether `nvblox_nav2` can
+emit an occupancy grid, and whether nvblox has a reset service.
+
+This is a few lines of schema in profile v2 (step 2), read by the connector in step 5a. It
+removes three of the five SLAM Toolbox assumptions the research found (the reset, the fixed
+topic names, the mapper's inputs) and prepares the fourth (the map's kind). The fifth, the ROS 2
+distro, is an open question (section 8.10, question 28), not a change. The design adds no Isaac
+ROS dependency, and nothing here builds one.
 
 A note from the spike on what the simulator and the real robot share (spike §14, §16): for the
 Burger nothing is shared below the topic, since the simulator uses plugins and the real robot uses
@@ -1548,8 +1744,8 @@ Burger is the end of MVP 2 (question 8).
 | 0 | Accept this RFC and ADR-0020 together (question 10); name the follow-up RFCs | All code | The operator's decision | S | this RFC, ADR-0020 |
 | 0b | The spike, done (section 6.1), zero platform code: the TurtleBot3 Gazebo simulation in a container, driving by hand, SLAM Toolbox, a saved map; the real-time factor; the bridge's stamps; whether the base holds the last velocity; three extensions (SLAM against truth, cameras, a throwaway connector) | All code | Measured answers to many of section 10's "not verified" items; notes in `docs/wip/MVP2-SPIKE.md` | S | the operator (question 14) |
 | 1 | The robot interface written as a contract with a number; the duck's connector and the NXT's brought to it; the gate takes method names from it (the gate's calls themselves needed no change in the spike, spike §20); the adapter surface written down, with `robot.state` gaining the clock and epoch keys (section 3.6); a connector reachable by a network address, for the placement setting (section 3.8) | Duck behaviour, protocol 1 accepted by the new gate | One contract test run against the fake, duck-gate and NXT adapters (as `test_contract.py` does for navigators); `make sim-duck` | M | RFC-0026, "the robot interface" |
-| 2 | Profile v2: required blocks shrink to identity, factsheet, control, capabilities, plugins; locomotion, footprint, sensors become per-kind; a plugin set may be empty; the judge's fall rule by kinematics; sensors declared per robot and variant, with a source per sensor (sections 3.9, 3.10); registration names its connector; the placement setting has a home | The duck's profile migrated by `upgrade` (`profile.py:503`), checksums rule | Every stored profile loads; the duck's numbers unchanged; a plugin-less stub profile validates | M | RFC-0027, "profiles for any robot" |
-| 3 | Our navigator for any robot (section 3.7): `duck_lab.nav` split into a part that knows no robot and the duck's plugins; the plugin interfaces widened (a scan, a single range, a mapper that is not mapd); the Burger's plugins (differential drive, 2D scan, localisation) and the NXT's (tracked, ultrasonic, dead reckoning), proved against stubs | The duck's verdicts; navigator contract 1.2 | The duck's challenge verdicts match; one contract test against all three plugin sets | L | a new RFC, "a navigator for any robot" (number to be given) |
+| 2 | Profile v2: required blocks shrink to identity, factsheet, control, capabilities, plugins; locomotion, footprint, sensors become per-kind; a plugin set may be empty; the judge's fall rule by kinematics; sensors declared per robot and variant, with a source per sensor (sections 3.9, 3.10); registration names its connector; the placement setting has a home; the mapper's declaration (topics, map message type and kind, reset; section 3.9) and the local controller's entry (section 3.7) | The duck's profile migrated by `upgrade` (`profile.py:503`), checksums rule | Every stored profile loads; the duck's numbers unchanged; a plugin-less stub profile validates | M | RFC-0027, "profiles for any robot" |
+| 3 | Our navigator for any robot (section 3.7): `duck_lab.nav` split into a part that knows no robot and the duck's plugins; the plugin interfaces widened (a scan, a single range, a mapper that is not mapd); the local-controller seam left in the split, a fifth interface with `rules@1` as its only implementation (section 3.7); the Burger's plugins (differential drive, 2D scan, localisation) and the NXT's (tracked, ultrasonic, dead reckoning), proved against stubs | The duck's verdicts; navigator contract 1.2 | The duck's challenge verdicts match; one contract test against all three plugin sets | L | a new RFC, "a navigator for any robot" (number to be given) |
 | 4 | The host kind written as a contract; `simhost` gets a module per kind, starting from what the NXT's kind needed in MVP 1 (below); a stub Gazebo host, and the gate's fake adapter proves lease, STOP and state in Mission Control; a run with a stub scan, to settle the run format and the clock epoch (decided here, not in step 8, because step 5a's reset proof needs it); a reset that returns only when settled (section 3.4) | MuJoCo kind unchanged; `scene.json` and the layout readers untouched | The robot page shows the stub; a run opens in the Observatory; the duck's verdicts match | M | RFC-0028, "host kinds" (the scene part moves to step 9) |
 | 5a | The Burger in Gazebo, joined at the interface, without our navigator: the ROS connector (split placement first), the bridge, `/scan`, `/odom`, `/imu`, truth from the model's odometry plugin (section 3.4); the host kind and its settled-reset contract; driving by hand from Mission Control; a run with truth; simulator time beside wall time and the real-time factor checked each run (question 7); the clock rule and the clock epoch of section 3.6; the last-hop watchdog (the connector in the simulator) and the `Twist` relay (section 3.3); the reset sequence of section 3.6. A stock TurtleBot3 world until step 9 (question 20, decided) | Nothing of the duck | Drive the Burger from Mission Control; a recorded run with truth; the reset sequence of 3.6 proved: a reset in the middle of a run with belief and truth still moving afterwards; `map`-to-`world` from the spawn pose checked against truth. Needs steps 1 and 4 only; runs in parallel with step 3 | L | ADR on time and frames, now that the clock rule is settled (question 13, closed) |
 | 5b | Our navigator drives the Burger in Gazebo: the Burger's plugins from step 3 against the live connector; Mission Control's goals; maps and runs in the Observatory | The connector and the reset of 5a | A goal reaches by truth; the duck's verdicts still match. Needs steps 3 and 5a | M | the new navigator RFC |
@@ -1773,8 +1969,9 @@ critical path.
     buffer was built without the node clock; SLAM Toolbox stamped `map`-to-`odom` with the last
     scan's stamp (`restamp_tf` false), which a cleared buffer rejects (section 3.6). The reset
     is needed for every course, so step 5a must prove the ordered sequence of section 3.6: `reset
-    all`, `/slam_toolbox/reset`, `restamp_tf: true`, the buffer on the node clock, a stale-epoch
-    filter, and a truth reader that is not a JSON subprocess. The spike's reset run did not call
+    all`, the mapper's declared reset (SLAM Toolbox's `/slam_toolbox/reset`), its timestamp
+    setting (`restamp_tf: true`), the buffer on the node clock, a stale-epoch filter, and a
+    truth reader that is not a JSON subprocess. The spike's reset run did not call
     `/slam_toolbox/reset`, so it did not test this design. The earlier "not established" is the
     reader's crash, now diagnosed (cause 1).
 20. **A robot with two sensor sources.** The NXT with a Pi module has a brick's sensors and a
@@ -1934,6 +2131,12 @@ Decided by the spike (question 4, closed): A. ROS 2 Jazzy, Gazebo Sim 8.15.0 (Ha
 `turtlebot3_gazebo` 2.3.7, SLAM Toolbox 2.8.5, `ros_gz` 1.0.25 (spike §2, §3); no second pair was
 needed. Not verified: the `main` branch, support dates of Jazzy and Harmonic (spike §3). ADR-0020's
 "Open" item is settled.
+
+Open (2026-11-26, from the avoidance research S4; no change to the decision above): Jazzy stays
+decided. NVIDIA's Isaac ROS documentation on its `main` branch says its packages are built for
+"ROS 2 Lyrical". Which distro Isaac ROS 5.1 uses is not verified, nor whether a Jazzy connector
+and a Lyrical node interoperate over DDS (standard messages usually do). It matters only if an
+Isaac ROS node is ever added; question 28.
 
 ### 8.11 Where Gazebo runs
 
@@ -2140,6 +2343,12 @@ New questions the answers raised:
   manifest, and what comes back, a model with a scale and a frame placeable in `world` or `map`.
   Everything else belongs to the tool's own RFCs. Section 5.1 is reframed as requirements
   toward those RFCs.
+- **28. Which ROS 2 distro does an Isaac ROS node need, and does it meet our Jazzy connector?**
+  Added 2026-11-26 from the avoidance research S4. Jazzy is decided (question 4, section 8.10)
+  and stays. Isaac ROS's documentation on `main` names "ROS 2 Lyrical"; the distro of Isaac ROS
+  5.1 is not verified, and neither is DDS interoperation between a Jazzy connector and a node on
+  another distro. **Open.** Nothing in MVP 2 depends on it: no Isaac ROS node is planned, and the
+  mapper declaration (section 3.9) only keeps the path open. Check when a Jetson is chosen.
 
 ## 10. Not covered, and what I did not verify
 
@@ -2227,3 +2436,15 @@ Line numbers cited: `file:line` is as the file reads on 2026-11-23. RFC citation
 because several RFCs are edited often. A line in `profile.py`, `host.py`, `wire.py` and the gate
 was checked by reading the line itself; the 2.4 item 7 geometry lines were read in place, and
 `CONTRACT.md:45` is the point goal (the advisor cited line 47; the file as read has it at 45).
+
+Added 2026-11-26 (the local-controller seam, the declared mapper): every `file:line` in those two
+additions, and the re-read lines in section 2.4 item 4 and section 3.9, was read on that date,
+at commit 4e13c2e (the navigator's `run.py` has since moved, uncommitted, by about a dozen
+lines).
+Not run: no code, simulator or model was run for them. Not verified: that a model's observation
+fits the interface as drawn (R1 read one published controller's code, without its checkpoint,
+which is not published); the loop-rate mismatch of section 3.7; the Isaac ROS facts, which come
+from NVIDIA's documentation through the research and were not tried on a Jetson; whether
+`nvblox_nav2` can emit an occupancy grid; whether nvblox has a reset service; the Isaac ROS 5.1
+distro (question 28). RFC-0005's build identity is quoted from its section 2.4; the form of the
+controller's part in it is a proposal for that RFC's work.

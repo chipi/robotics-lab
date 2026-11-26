@@ -33,6 +33,9 @@ From [S1 to S4](RESEARCH-S1-S4.md), 2026-11-26:
 - S4: the ROS connector keeps Isaac ROS possible only in part. RFC-0025 names SLAM Toolbox's
   reset, a 2D grid map, fixed topic names, and ROS 2 Jazzy. Proposed for step 5a: the mapper as a
   declared binding in the profile (its topics and its reset service), not SLAM Toolbox by name.
+- Landed in RFC-0025 (2026-11-26, operator approved): R3 as the fifth plugin interface in section
+  3.7, and S4's proposal as the declared mapper in section 3.9 and the reset sequence of section
+  3.6. The ROS 2 distro is an open question there (question 28), not a change.
 - S5 candidates, ranked: reading a run file, a simulator job under the lock, a challenge batch with
   arms, a motion-safety preamble, the ROS connector bring-up, a DGX training run. The operator
   picks.
@@ -121,7 +124,7 @@ hardware until R8.
 | --- | --- | --- | --- | --- |
 | R1 | What exactly do they observe, output and assume? | Read the task (`isaaclab_tasks.contrib.microduck_obstacle`) and the deployment scripts on `exp/microduck`: the observation vector, history length, action scaling, rates, the brake, the licence, whether a trained navigation checkpoint is published | Nothing | A short note: the contract, and whether we may use it |
 | R2 | Is our simulated depth sensor as imperfect as theirs? | Compare their sensor model (noise, delay, invalid cells, floor-edge impairment, mount randomisation) with our `tof8x8` simulation and with recorded simulator runs | Nothing | A gap table; a list of impairments to add to our simulator, useful with or without learning |
-| R3 | Where does the seam go? | A paper design: the local-controller interface in RFC-0025 section 3.7's split, the safety layering, the recorded signals, the profile entry | Nothing | A section proposed for RFC-0025 before step 3, or a short RFC if the operator wants one |
+| R3 | Where does the seam go? | A paper design: the local-controller interface in RFC-0025 section 3.7's split, the safety layering, the recorded signals, the profile entry | Nothing | A section proposed for RFC-0025 before step 3, or a short RFC if the operator wants one. **Done 2026-11-26:** written into RFC-0025 section 3.7 (the local-controller seam), operator approved |
 | R4 | Does their policy avoid obstacles in our simulator? | Run their ONNX (if published; else R6 first) in the navigator's local slot against the MuJoCo duck, after building their observation from our streams | `onnxruntime` as a new dependency (approval); simulator time | Sim-to-sim result on a handful of layouts; the observation shim |
 | R5 | Is it better than our rules, by evidence? | Frozen scenarios (cones, boxes, door frames, the cases our reflex stopped for, e.g. phase 1 run 16's door frame), at least 10 per arm, arms: rules, learned, learned with the rules as guard; scores: success, collisions, minimum clearance, time, stops, falls | R4; eval-harness via `import-run` | A comparison with intervals, and the decision input for R3 |
 | R6 | Can we train it ourselves? | Two candidates on the DGX: their Isaac Lab and Newton task as published (does it run on the DGX's GB10, aarch64? unknown), or the same task ported to `microduck_rl`/mjlab, which already trains there. A short run each, timed and measured | The operator's go per GPU-mode swap; Isaac Lab's install, a new stack on the DGX (the homelab's call) | A training recipe with numbers, and the choice of stack |
