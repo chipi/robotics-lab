@@ -1,5 +1,11 @@
 # Research plan: learned obstacle avoidance, and training our own
 
+**Decided (the operator, 2026-11-26):** all activities approved, R1-R7 and S1-S5 to run before MVP
+2;
+R8 when the real duck arrives. `onnxruntime` approved as a dependency (R4); GPU training on the DGX
+approved (R6, R7), each GPU-mode swap still announced beforehand and kept clear of the nightly
+window; a new Isaac Lab stack on the DGX is the homelab's call.
+
 **Status:** a research plan, written 2026-11-26 at the operator's request ("see it first as a
 series of research activities, and then we decide"). Nothing here is planned work or approved;
 each activity names what it needs from the operator. The trigger: NVIDIA's tutorial
