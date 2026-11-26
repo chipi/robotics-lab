@@ -19,6 +19,7 @@ from pathlib import Path
 
 from labrunner import robots
 from labrunner.rpc import Rpc
+from runfile import build as runbuild
 from runfile import keys, scenefile
 from runfile.navcontract import ContractError, ENDS, check_hello, check_state
 from runfile.profilestore import describe
@@ -37,6 +38,34 @@ class PayloadError(RuntimeError):
 def event(kind: str, text: str, /, **raw) -> dict:          # positional: a row's own fields may be named `kind` (a goal's)
     """The runner's own event, in the shape a navigator row's event has in a run (runfile.adapters.duck)."""
     return {"kind": kind, "text": text, "notable": True, "t_src": None, "raw": raw}
+
+
+REPO = Path(__file__).resolve().parent       # the checkout whose commit a run's build names (git finds its root from here)
+
+
+def add_impairment_arg(ap) -> None:
+    ap.add_argument("--depth-impairment", type=int, metavar="SEED", default=None,
+                    help="simulate the real depth sensor's impairments (the profile's numbers, seed SEED; run i of a batch uses SEED + i); "
+                         "default off; a real robot refuses it")
+
+
+def impairment_seed(seed: int | None, i: int, probe: bool = False) -> int | None:
+    """Run i's impairment seed from the option's: SEED + i in a batch, SEED itself for a probe (one fixed run)."""
+    return None if seed is None else seed if probe else seed + i
+
+
+def impairment_in_force(variant: str, seed: int | None, profile=None) -> dict | None:
+    """What the depth impairment is for this run: the option's setting, else the profile version's own (a stored version may
+    have it on, read from `profile` when the caller has it); None when it is not on. A real robot has no such block."""
+    if seed is not None:
+        return {"enabled": True, "seed": seed}
+    if variant != "sim":
+        return None
+    try:
+        block = (profile or robots.profile(variant)).sensors.tof8x8.get("impairment")
+    except (OSError, ValueError, AttributeError, KeyError):
+        return None
+    return dict(block.data if hasattr(block, "data") else block) if block else None
 
 
 PROC = Path("/proc")       # where a process's sockets are read, when the host has it (a test points it elsewhere)
@@ -122,19 +151,24 @@ class Remote:
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
                  copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None,
                  camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None,
-                 scene_file: Path | None = None):
+                 scene_file: Path | None = None, depth_impairment: int | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
         `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
         `extra`: more of the payload's own options (a navigator's test switches); `robot`: another robot socket than the
         host's (a gate's), spoken to as `client`; `scene_file`: the scene description the run is judged in (a challenge's, written
-        for it), else the repository's for `scene` when there is one (runfile.scenefile), recorded as judge_scene."""
+        for it), else the repository's for `scene` when there is one (runfile.scenefile), recorded as judge_scene;
+        `depth_impairment`: the simulated depth sensor's impairments on, with this seed (the payload's --depth-impairment), refused for
+        a variant that is not the simulator's. The run records its build (runfile.build), read here, at the run's start."""
+        if depth_impairment is not None and variant != "sim":
+            raise ValueError(f"--depth-impairment is the simulator's: the {variant!r} robot's depth frames are not impaired")
         # the profile version this machine runs the robot on, resolved once before anything starts (a named one that does not exist
         # refuses the run here): the file the referee judges by (labrunner.geometry) is the file handed to the navigator, so both
         # read one version, and the official run records it as judge_profile; only the robot's own navigator takes --profile
         profile = robots.given_profile() if payload is None else None
+        self.build = runbuild.of(REPO, host, variant, impairment_in_force(variant, depth_impairment))
         run = {**(run or {}), "judge_profile": describe(robots.profile_file()), "judge_scene": judge_scene(scene, scene_file),
-               "judge_truth": judge_truth(host)}
+               "judge_truth": judge_truth(host), "build": self.build}
         self.host, self.run_out = host, Path(run_out)
         self.dir = Path(tempfile.mkdtemp(prefix="pl-"))           # short: a unix socket path is limited to ~100 bytes
         self.sock = self.dir / "payload.sock"
@@ -151,7 +185,8 @@ class Remote:
                "--robot", str(robot or host.sockets["robot"]), "--depth", str(host.sockets["depth"]), "--map", str(host.sockets["map"]),
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
-            (["--client", client] if client else []) + (["--profile", str(profile)] if profile else []) + list(extra or [])
+            (["--client", client] if client else []) + (["--profile", str(profile)] if profile else []) + \
+            (["--depth-impairment", str(depth_impairment)] if depth_impairment is not None else []) + list(extra or [])
         env = navigator_env()                                     # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)

@@ -43,9 +43,10 @@ from pathlib import Path
 import simhost
 from labrunner import robots
 from labrunner.camera import CameraServer
-from labrunner.remote import judge_truth, navigator_env, truth_connections
+from labrunner.remote import REPO, add_impairment_arg, impairment_in_force, judge_truth, navigator_env, truth_connections
 from labrunner.rpc import Rpc
 from labrunner.guard import TRUTH, TruthGuard
+from runfile import build as runbuild
 from runfile import keys, registry, scenefile
 from runfile.catalog import default_data
 from runfile.navcontract import CALIBRATION_ENDS, ContractError, ENDS, check_hello, check_state, speaks
@@ -81,11 +82,12 @@ class GoalWatch:
         # asked for and checked by no one: the goal runs, and says so (here, and in the run's judge_truth)
         self.not_enforced = unchecked(runner.has_truth, guardrails)
         self.judge_truth = judge_truth(runner.host, self.not_enforced)
+        self.build = runbuild.of(REPO, runner.host, runner.variant, impairment_in_force(runner.variant, getattr(runner, "depth_impairment", None), judge))
         self.truth_log = TruthLog(self.dir / "truth.jsonl") if runner.has_truth else None
         self.copy = TruthCopy(keys.run_dir(runner.payload_data, key), keys.run_dir(runner.data, key), key,
                               self.truth_log.nearest if self.truth_log else no_truth,
                               run={"judge_profile": self.judge, "judge_scene": runner.judge_scene,
-                                   "judge_truth": self.judge_truth})
+                                   "judge_truth": self.judge_truth, "build": self.build})
         self.guard = TruthGuard(guardrails, profile=judge, scene=runner.scene) if runner.has_truth else None
         self.broken = None
         self.state = None
@@ -185,7 +187,7 @@ class GoalWatch:
                 "no_verdict": f"rtf_low: {self.rtf_low['rtf']} under {self.runner.rtf_low}" if self.rtf_low else None,
                 "truth_samples": self.sampler.samples if self.sampler else 0, "truth_error": self.sampler.error if self.sampler else None, "truth_copy": self.copy.stats(),
                 "truth_connections": dict(self.route), "judge_profile": self.judge, "navigator_profile": self.navigator_profile,
-                "judge_scene": self.runner.judge_scene, "judge_truth": self.judge_truth}
+                "judge_scene": self.runner.judge_scene, "judge_truth": self.judge_truth, "build": self.build}
 
 
 class CalibrationWatch:
@@ -214,7 +216,7 @@ class CalibrationWatch:
 
 class NavRunner:
     def __init__(self, host, data: Path, out: Path, scene: str = "apartment", client: str = "lab-nav-server",
-                 robot_socket: Path | None = None, rtf_low: float = RTF_LOW):
+                 robot_socket: Path | None = None, rtf_low: float = RTF_LOW, depth_impairment: int | None = None):
         self.rtf_low = rtf_low                                  # the real-time factor under which a run has no verdict (--rtf-low)
         self.robot_name = robots.get().NAME                     # read once, at start: robots.get() exits on a bad name, a server must not
         api_cmd = robots.navigator_command("NAVIGATOR_API")     # a robot with no navigator (the NXT) is refused here, before anything starts
@@ -223,6 +225,9 @@ class NavRunner:
         self.judge_scene = scenefile.describe(self.scene.path)
         self.has_truth = host.truth_port is not None            # the host file's one signal: none, no sampler, no camera, no truth guardrails
         self.variant = robots.variant(host, self.robot_name)    # the navigator's and the referee's: one
+        if depth_impairment is not None and self.variant != "sim":
+            raise ValueError(f"--depth-impairment is the simulator's: the {self.variant!r} robot's depth frames are not impaired")
+        self.depth_impairment = depth_impairment                # every goal's navigator runs with it (its seed), and every run records it
         self.host, self.data, self.out = host, Path(data), Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.payload_data = self.out / "payload-data"           # the navigator's own runs: not the Observatory's data folder
@@ -239,7 +244,7 @@ class NavRunner:
                "--client", client, "--data", str(self.payload_data), "--out", str(self.out), "--scene", scene,
                "--variant", self.variant] + \
             (["--camera", str(self.camera.path)] if self.camera else []) + \
-            ["--profile", str(profile)]
+            ["--profile", str(profile)] + (["--depth-impairment", str(depth_impairment)] if depth_impairment is not None else [])
         env = navigator_env()                                   # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.out / "navigator.log", "a")
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -411,13 +416,14 @@ def main() -> None:
                     help="the Observatory's data folder: each goal run is written there as a run (env OBSERVATORY_DATA)")
     ap.add_argument("--out", type=Path, default=Path("state/nav"), help="the navigator's own output folders, one per goal run")
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
+    add_impairment_arg(ap)
     ap.add_argument("--robot", help="the robot, by its registered name (default: the only one registered)")
     args = ap.parse_args()
     robots.select(args.robot)
     if args.data is None:
         sys.exit("lab-nav-server: --data (or OBSERVATORY_DATA): where the runs are written")
     host = simhost.load(args.host)
-    runner = NavRunner(host, args.data, args.out, args.scene, args.client, args.robot_socket, args.rtf_low)
+    runner = NavRunner(host, args.data, args.out, args.scene, args.client, args.robot_socket, args.rtf_low, args.depth_impairment)
     listen, _, port = args.listen.rpartition(":")
     srv = Server((listen or "127.0.0.1", int(port)), runner)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))      # a terminate stops the navigator API too (runner.close)

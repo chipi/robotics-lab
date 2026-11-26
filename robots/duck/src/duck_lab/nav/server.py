@@ -189,7 +189,8 @@ class GoalRun:
         try:
             self.nav = Navigator(sockets=srv.sockets,
                                  log=out / "ticks.jsonl", runlog=self.runlog,
-                                 client=srv.client, calibration=srv.variant, profile_path=srv.profile)
+                                 client=srv.client, calibration=srv.variant, profile_path=srv.profile,
+                                 depth_impairment=srv.depth_impairment)
         except BaseException:
             self.runlog.finish()
             raise
@@ -512,10 +513,13 @@ class GoalRun:
 
 class NavServer:
     def __init__(self, sockets: dict, data: Path, out: Path, scene: str = "apartment", client: str = "duck-nav-server",
-                 variant: str | None = "sim", profile: Path | None = None):
+                 variant: str | None = "sim", profile: Path | None = None, depth_impairment: int | None = None):
         # sockets: the navigator's ("robot": a gate's, "depth", "map", and "camera" when it has one), handed in by its runner
         self.sockets, self.data, self.out, self.scene, self.client = sockets, data, out, scene, client
         self.variant, self.profile = variant, profile       # the profile version every goal's navigator runs (phase 5 step 1)
+        if depth_impairment is not None and variant != "sim":
+            raise ValueError(f"--depth-impairment is the simulator's: the {variant or 'real'!r} duck's depth frames are not impaired")
+        self.depth_impairment = {"enabled": True, "seed": depth_impairment} if depth_impairment is not None else None      # every goal's navigator's setting
         self.robot_sock = sockets["robot"]
         self.run: GoalRun | None = None
         self.placed_frame: dict | None = None       # the latest goal's start-pose frame, which `map` is answered in
@@ -738,10 +742,11 @@ def main() -> None:
     ap.add_argument("--scene", default="apartment", help="the Observatory scene of the runs")
     ap.add_argument("--variant", default="sim", help="the robot profile's variant (sim, or real)")
     ap.add_argument("--profile", type=Path, help="the profile version to run (its runner's choice, phase 5 step 1); default the robot's own")
+    ap.add_argument("--depth-impairment", type=int, metavar="SEED", help="the simulated depth sensor's impairments on, with this seed (the simulator only)")
     args = ap.parse_args()
     sockets = {"robot": args.robot, "depth": args.depth, "map": args.map, **({"camera": args.camera} if args.camera else {})}
     nav = NavServer(sockets, args.data, args.out, args.scene, args.client, None if args.variant == "real" else args.variant,
-                    args.profile)
+                    args.profile, args.depth_impairment)
     if "/" in args.listen:
         Path(args.listen).unlink(missing_ok=True)
         srv = UnixServer(args.listen, nav)

@@ -360,7 +360,9 @@ class Navigator:
         pose = self.localisation.pose()
         if pose is None:
             return
+        # `vx`/`vyaw` stay the caller's command; `requested` and `applied` are what the robot was asked and what it was sent (the cap)
         self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), tilt=self._tilt(),
+                    requested={"vx": round(tw.vx, 4), "vyaw": round(tw.vyaw, 3)}, applied={"vx": round(vx, 4), "vyaw": round(tw.vyaw, 3)},
                     **extra, **({"depth": self._depth} if self._depth else {}))
         self._depth = None
 

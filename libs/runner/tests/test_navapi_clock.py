@@ -118,7 +118,7 @@ real_get, real_popen, real_api, real_connect, real_start = (robots.get, navapi.s
 real_module = registry.module
 robots.get = lambda name=None: fake
 registry.module = lambda name, inst=False: fake
-navapi.subprocess.Popen = Proc
+navapi.subprocess.Popen = lambda cmd, *a, **kw: real_popen(cmd, *a, **kw) if cmd[0] == "git" else Proc(cmd, **kw)     # git: the run's build reads the commit
 navapi.CameraServer, navapi.Sampler, navapi.TruthGuard, navapi.TruthCopy = Camera, Sampler, Guard, copy
 navapi.truth_connections = lambda pid, port: 1
 navapi.NavRunner.api, navapi.NavRunner._connect = api, lambda self: None

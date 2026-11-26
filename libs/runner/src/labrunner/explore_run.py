@@ -16,6 +16,7 @@ from pathlib import Path
 from labrunner import robots
 from labrunner.cli import add_args
 from labrunner.guard import GUARD_M, drop_distance
+from labrunner.remote import add_impairment_arg
 from runfile import scenefile
 from runfile.catalog import default_data
 from worldmodel.objects import load_kinds
@@ -45,6 +46,7 @@ def main() -> None:
                     "belief's (the run before RFC-0016 §6's frame fix; a test)")
     ap.add_argument("--no-fix-gate", action="store_true", help="every mapd fix is taken (the run before the fix gate)")
     ap.add_argument("--payload", help="another navigator's command, keeping the payload contract (default: ours)")
+    add_impairment_arg(ap)
     add_args(ap)
     args = ap.parse_args()
     robots.select(args.robot)
@@ -73,6 +75,8 @@ def main() -> None:
     host = simhost.load(args.host)
     if host.truth_port is None:
         sys.exit(f"lab-explore: {host.source} has no truth (truth_port is null): the runner needs it for the guard and the run")
+    if args.depth_impairment is not None and robots.variant(host) != "sim":
+        sys.exit(f"lab-explore: --depth-impairment is the simulator's: this host runs the {robots.variant(host)!r} robot, whose frames are not impaired")
     args.out.mkdir(parents=True, exist_ok=True)
     name = args.run or args.out.name
     key = keys.make_key(robots.get().NAME, args.scene, name)
@@ -90,7 +94,7 @@ def main() -> None:
         sampler = Sampler(host).start()
         nav = Remote(host, args.out, args.scene, name, Path(data), key, truth_log, run={"kind": "exploration"}, scene_file=scene.path,
                      payload=shlex.split(args.payload) if args.payload else None, camera=camera.path if camera else None,
-                     extra=extra)
+                     extra=extra, depth_impairment=args.depth_impairment)
         print(f"Observatory run {key} -> {keys.run_dir(Path(data), key)}", file=sys.stderr)
         guarded = threading.Event()
 

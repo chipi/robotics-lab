@@ -120,7 +120,7 @@ real_get, real_popen, real_api, real_connect, real_start = (robots.get, navapi.s
                                                              navapi.NavRunner._connect, navapi.GoalWatch.start)
 robots.get = lambda name=None: fake
 registry.module = lambda name, inst=False: fake
-navapi.subprocess.Popen = Proc
+navapi.subprocess.Popen = lambda cmd, *a, **kw: real_popen(cmd, *a, **kw) if cmd[0] == "git" else Proc(cmd, **kw)     # git: the run's build reads the commit
 navapi.CameraServer, navapi.Sampler, navapi.TruthGuard, navapi.TruthCopy, navapi.truth_connections = Camera, Sampler, Guard, copy, connections
 navapi.NavRunner.api, navapi.NavRunner._connect = api, lambda self: None
 navapi.GoalWatch.start = lambda self: self
@@ -183,6 +183,8 @@ try:
     check("must fail: with truth the official run records judge_truth available, nothing unenforced",
           g is not None and made["copy"][-1].run.get("judge_truth") == {"available": True, "reason": None, "unenforced": []},
           made["copy"][-1].run)
+    check("a goal run's official record carries the build identity, and its summary (runner.json) too",
+          g is not None and made["copy"][-1].run.get("build", {}).get("id", "").startswith("brain@") and g.summary()["build"] == g.build, made["copy"][-1].run)
     check("must fail: with truth the navigator is given the registration's profile (the installation names none)",
           "--profile" in cmd and cmd[cmd.index("--profile") + 1] == str(own), cmd)
     check("with truth: the navigator's connections to the truth are looked at", made["connections"] == [(4242, 7000)], made["connections"])

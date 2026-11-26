@@ -147,7 +147,9 @@ try:
     class Started(Exception):
         pass
 
-    def popen(cmd, **kw):
+    def popen(cmd, *a, **kw):
+        if cmd[0] == "git":       # the run's build reads the commit through this module's Popen
+            return real_popen(cmd, *a, **kw)
         seen["cmd"], seen["env"] = cmd, kw.get("env")
         raise Started()
 
@@ -177,8 +179,9 @@ try:
           and "ROBOTICS_LAB_HOST" not in env and "PATH" in env, sorted(k for k in env if k.startswith("ROBOTICS")))
     apartment = scenefile.describe(scenefile.REPOSITORY / "apartment" / "scene.json")
     check("the official run records the referee's profile and the scene file it judges in beside the runner's own fields",
-          seen.get("run") == {"kind": "go-to", "judge_profile": judged.meta, "judge_scene": apartment,
-                                       "judge_truth": {"available": True, "reason": None, "unenforced": []}}, seen.get("run"))
+          {k: v for k, v in (seen.get("run") or {}).items() if k != "build"} == {"kind": "go-to", "judge_profile": judged.meta, "judge_scene": apartment,
+                                       "judge_truth": {"available": True, "reason": None, "unenforced": []}}
+          and seen["run"]["build"]["id"].startswith("brain@"), seen.get("run"))
 
     # lab-nav-server runs many goals: it reads the profile again at each goal.start
     goals, calls = [], []
@@ -246,7 +249,9 @@ robots._resolved.clear()
 seen = {}
 
 
-def popen_reg(cmd, **kw):
+def popen_reg(cmd, *a, **kw):
+    if cmd[0] == "git":
+        return real_popen(cmd, *a, **kw)
     seen["cmd"] = cmd
     raise Started()
 

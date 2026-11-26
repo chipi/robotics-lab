@@ -30,7 +30,7 @@ from pathlib import Path
 from labrunner import explore, robots, sequence
 from labrunner.challenges import CHALLENGES, build
 from labrunner.judge import Judge
-from labrunner.remote import Remote
+from labrunner.remote import Remote, add_impairment_arg, impairment_seed
 from labrunner.scene import miniview_scene, mjcf
 from labrunner.frames import compose, inverse
 from runfile import keys
@@ -53,7 +53,7 @@ def floats(n: int):
 
 
 def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, payload: list | None = None,
-        start: tuple | None = None, goal: tuple | None = None) -> dict:
+        start: tuple | None = None, goal: tuple | None = None, depth_impairment: int | None = None) -> dict:
     """One challenge run, the navigator as a payload process (RFC-0021 §3): it gets the robot's sockets and nothing else;
     the runner reads the truth (its own sampler), judges, and writes the official run with the truth put in (runner.Remote,
     runfile.truthcopy). `start` and `goal`: a probe of one moment of a seed's run (challenges.build)."""
@@ -74,7 +74,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
     t0 = time.monotonic()
     try:
         sampler = Sampler(host).start()
-        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload, scene_file=sc)
+        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload, scene_file=sc, depth_impairment=depth_impairment)
 
         route = {"checks": 0, "max": None}       # the payload's connections to the truth's port, looked at every 2 s
 
@@ -124,6 +124,7 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
            "goal": list(scene.goal), "jitter": [round(v, 4) for v in scene.jitter], "notes": scene.notes, **verdict,
            "truth_hz": round(sampler.samples / max(time.monotonic() - t0, 1e-9), 1) if sampler else None,
            "rtf": sampler.rtf() if sampler else None, "clock": sampler.clock() if sampler else None, "truth_copy": copy, "payload": "process",
+           "build": nav.build if nav is not None else None,
            "payload_truth_connections": route if nav is not None else None}
     (run_out / "result.json").write_text(json.dumps(row, indent=1))
     return row
@@ -157,19 +158,23 @@ def main() -> None:
     ap.add_argument("--start", type=floats(3), help="x,y,yaw: a probe starts the duck here, named in the seed's world as a run of it "
                     "shows it (ticks, truth); every run then uses --seed itself")
     ap.add_argument("--goal", type=floats(2), help="x,y in the seed's world: a probe goes to this one goal (mode go), whatever the challenge")
+    add_impairment_arg(ap)
     robots.add_robot_arg(ap)
     args = ap.parse_args()
     robots.select(args.robot)
     if args.miniview_data is None:
         raise SystemExit("no miniview data folder (--miniview-data or OBSERVATORY_DATA): every challenge run is a miniview run")
     host = simhost.load(args.host)
+    if args.depth_impairment is not None and robots.variant(host) != "sim":
+        raise SystemExit(f"--depth-impairment is the simulator's: this host runs the {robots.variant(host)!r} robot, whose frames are not impaired")
     probe = args.start is not None or args.goal is not None
     rows = []
     started = time.monotonic()
     try:
         for i in range(args.runs):
             row = one(host, args.challenge, args.seed + (0 if probe else i), args.miniview_data, args.out,
-                      shlex.split(args.payload) if args.payload else None, start=args.start, goal=args.goal)
+                      shlex.split(args.payload) if args.payload else None, start=args.start, goal=args.goal,
+                      depth_impairment=impairment_seed(args.depth_impairment, i, probe))
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered", "no_verdict")      # challenges 21-23

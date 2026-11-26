@@ -40,6 +40,14 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   Mission Control wrote the run: `{id (integer), name, kind?, robot?, site?}`; it is written when
   the run starts and is part of the run record, so `GET /api/v1/runs/<key>` returns it and a page
   can say "goal run 42, go_to_object fridge". A run with none was not made for a goal run.
+  `build` (additive; the runner's, from `runfile.build`) is the run's build identity, one string and
+  its parts: `{id, brain, ctrl, walker, sim, tof, seed, dirty}`, where `id` is
+  `brain@<robotics-lab commit 12>[-dirty]+ctrl@<local controller, rules@1>+walker@<8 of the walking
+  policy's sha256, or unknown>+sim@<simulator commit 8, or real>+tof@<impairment preset, or off>-s<seed>`
+  and each other field is the part as the string writes it (`dirty` a boolean: a tracked file differed
+  from the commit; an untracked one does not count). It is read at the run's start; a dirty tree is
+  recorded, not refused. A part that could not be read is `unknown`, never a guess. A run written
+  before it has no `build`, and every reader treats it as absent.
 - **Time**: `log_time = started_at_ns + t` (UTC nanoseconds; `t` is the run's time and only grows);
   `publish_time` is the source's own clock (each tick also keeps `t_src`).
 - **Writer**: one, with `writer.lock` (`{pid, host, started_at_ns}`) created exclusively; it refuses
@@ -108,6 +116,11 @@ data/runs/<robot>/<scene>/<run>/source/                         an import's orig
   `raw` holds every source field a message has no field of its own for; non-finite numbers in it are
   the strings
   `"inf"`, `"-inf"`, `"nan"`. A tick is read only when its last message has arrived.
+  The duck's tick says what it commanded in two places, additive: `cmd` (`/miniview/command`) is, as
+  it always was, the command the caller of `move` gave (the follower's, or a guard's zero); the
+  tick's `raw.requested` and `raw.applied` (`{vx, vyaw}` each) are the command asked of the
+  robot and the one sent after the speed cap, and differ in `vx` when the cap applies. A run
+  written before them has neither in `raw`.
 - **Reading** (ADR-0008): every record is checked per kind (required fields, types, lengths, finite
   numbers, time that
   does not go back); a bad one is skipped and counted (`rejects`, `first_error`). A run is

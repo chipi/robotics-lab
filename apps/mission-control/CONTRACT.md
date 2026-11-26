@@ -482,7 +482,8 @@ between Mission Control and the simulator, both the runner's (`libs/runner`, RFC
   truth: no sampler, no camera server and no `--camera`, no truth guardrails, the official run copied
   with no tick paired; a goal that asks for a truth guardrail still runs, and the run records it
   as `not_enforced` (runner.json) and in `judge_truth {available, reason, unenforced}` beside
-  `judge_profile` and `judge_scene`; the official run's record also says `official: true` (the
+  `judge_profile` and `judge_scene`, and `build` (the run's build identity,
+  apps/observatory/CONTRACT.md); the official run's record also says `official: true` (the
   marker retention keeps by). The navigator is always handed `--profile` (the installation's
   `robots.<name>.profile`, else the registration's) and `--variant` (the installation's
   `robots.<name>.variant`, else `sim` with a truth and `real` without); the referee reads the same.
