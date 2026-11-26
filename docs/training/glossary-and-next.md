@@ -124,9 +124,10 @@ parity note's options: run the learned controller on its own 50 Hz loop, or acce
 and check, in R4 and R5, that avoidance does not degrade. Which is open; a third option is to
 train at a rate that matches (not discussed in the sources; my suggestion).
 
-### 3. A model failure: brake, or the follower's command?
+### 3. A model failure: brake (decided)
 
-The sources disagree.
+**Decided by the operator, 2026-11-26: brake.** RFC-0025 section 3.7 now says so. Before the
+decision the sources disagreed:
 
 - RFC-0025 section 3.7 says a failing model "returns the follower's command, and the run records it
   as an anomaly. Whether to stop instead is for the first learned arm's evidence (R5)".

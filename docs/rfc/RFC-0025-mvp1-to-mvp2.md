@@ -540,7 +540,8 @@ The honest list of what differs, so the contract does not pretend otherwise:
   watched, in four parts. The connector remaps the base's input to a topic only it publishes. It
   owns the one place where Nav2's and any hand-driving velocity meet (ROS has a tool for that,
   `twist_mux`; not verified in this repo; it arbitrates between sources and does not stop a
-  robot, so the watchdog above is a separate piece). It watches the graph for other publishers and raises
+  robot, so the watchdog above is a separate piece). It watches the graph for other publishers and
+  raises
   `someone_else_drives` (RFC-0017 §3.2). And it isolates the robot's graph by `ROS_DOMAIN_ID`. A
   real boundary would be SROS2; that is out of scope.
 - **ROS has a clock of its own.** Simulation stamps against our wall clock (section 3.6).
@@ -1089,9 +1090,10 @@ the follower's does, then the cap, then the gate with its lease and STOP. Concre
 - Translation never exceeds the follower's: the seam clamps `vx` to the requested value, as
   NVIDIA's own action does ("the actor can steer and brake, never speed up", R1 §1.1).
   Steering and braking are the model's.
-- A model that fails (no frame, an exception, a non-finite output) returns the follower's
-  command, and the run records it as an anomaly. Whether to stop instead is for the first
-  learned arm's evidence (R5).
+- A model that fails (no frame, an exception, a non-finite input or output) brakes: the residual
+  (-1, 0, 0) through the limits and slew, or a plain stop when the inputs are not numbers, and the
+  run records it as an anomaly. **Decided by the operator, 2026-11-26** (`plugins/learned.py`).
+  The guards apply either way.
 - The stale-stream stop above, the lease, the deadman and STOP are unchanged. A tighter
   staleness bound for a model (NVIDIA's is 0.25 s on frame, state and command, R1 §1.1) is an
   open point, not a decision.
@@ -1212,7 +1214,8 @@ kind's list; step 5a builds the scan, IMU and odometry paths.
 **The mapper is declared too** (2026-11-26, from the avoidance research S4; operator approved).
 The sensors are declared, but this RFC named one mapper, SLAM Toolbox, in the connector's own
 design: its reset in the reset sequence (section 3.6), a 2D grid as the only map, and fixed
-topic names (`/scan`, `/odom`, `/imu`, `/cmd_vel`, `/tf`; sections 3.0, 3.2 and 3.3). That would make
+topic names (`/scan`, `/odom`, `/imu`, `/cmd_vel`, `/tf`; sections 3.0, 3.2 and 3.3). That would
+make
 the connector a SLAM Toolbox connector, and a different mapper on a Jetson, such as one of
 NVIDIA's Isaac ROS nodes, would need the connector rewritten. So the robot's profile declares
 its mapper, and the connector reads the declaration. It names:
@@ -1289,7 +1292,8 @@ things follow, all in the existing design and none built:
   id, kind and where it comes from (the brick's HTTP, or the Pi). Nothing assumes one source or
   one machine. NXT-MVP1.md's D0 records this as a requirement so the host kind, the sensor
   declaration and the installation entry do not assume either.
-- **The last-hop watchdog covers both links** (section 3.3). Bluetooth's command latency and drop rate
+- **The last-hop watchdog covers both links** (section 3.3). Bluetooth's command latency and drop
+  rate
   decide the deadman's timeout over that link; unit D10 of NXT-MVP1.md measures them. The Pi
   module's link is not measured.
 

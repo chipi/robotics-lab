@@ -18,7 +18,7 @@
    tuning, curriculum,        R7a-e: our own variant     R8: the real duck, with measured
    more envs, longer runs     (our families, guards in   sensor faults, under a safety review
                                the loop, failure mining,         ^
-                               the home, teacher-student)         |
+                               Pollen's apartment, t-s)           |
                                                                 |
  retraining the walker  ---- (invalidates the trained controller: train it again)
  recovery skills            -- independent track, on Pollen's training code
@@ -39,7 +39,7 @@
 **What.** A controller trained on our world instead of NVIDIA's. On 2026-11-26 the operator split R7
 into five parts and decided that all five run before MVP 2
 (`RESEARCH-LEARNED-AVOIDANCE.md`, section 4). Our edge, the plan says, is owning the whole loop:
-navigator, guards, challenge course, judges, the home and the evaluation, not compute. Each part is
+navigator, guards, challenge course, judges and the evaluation, not compute. Each part is
 judged against "M2b" (the plan's name for NVIDIA's recipe, deploy-matched; not defined elsewhere in
 the docs I read) on `avoidance_v1`, which training never sees.
 
@@ -48,7 +48,7 @@ the docs I read) on `avoidance_v1`, which training never sees.
 | R7a | Our challenge families as the training distribution. `lab-scenarios` writes a training pool (seeds disjoint from evaluation), microduck-nav loads it by file, one family is held out to test generalisation | New layouts: replaces or joins `layouts.py`'s ten families ([page 3](the-task.md)) |
 | R7b | Our guards in the loop. The reflex and the cliff stop run inside training, and each intervention costs reward, so the controller steers before a guard must fire | A new reward term, and the guards' logic in the environment: the controller learns to be careful because the safety layer above it is part of its world |
 | R7c | Failure mining. Failed runs (judge verdicts, stops, anomalies) become training scenarios, plus start poses just before the failure; evaluation items are excluded by manifest | The training distribution is aimed at what the rules and earlier models got wrong |
-| R7d | Train in the home: the apartment as a training scene; real-home data stays private until reviewed | A scene from a scan; depends on a survey of what scan or scene exists |
+| R7d | Train in an apartment: Pollen's simulated 6-room apartment as a static training scene, start and goal pairs through its doorways | The survey (done): about 1 to 2 weeks |
 | R7e | Teacher and student: a teacher with the true obstacle map, a student with the 64 zones only, trained to imitate | Not PPO on the student: the student is trained by imitation (supervised), a different method from this guide's |
 
 Two things from earlier pages meet here:
@@ -188,14 +188,15 @@ models, not reinforcement learning.**
 
 **Why not RL.** Page 1's loop needs a cheap simulator and a reward you can write down per step. The
 local controller has both: a few seconds of physics and "did you touch it". "Explore the apartment
-well" has a horizon of minutes and a reward nobody has defined; no simulator has our apartment; and
+well" has a horizon of minutes and a reward nobody has defined; no simulator has the rooms it would
+explore; and
 mistakes cost real time. Recognising a kitchen or a chair, meanwhile, is a labelled-examples problem
 with well-understood methods.
 
 **How it ties in.**
 
 - **Photogrammetry.** The separate photogrammetry project (RFC-0025 section 5) builds 3D models of
-  the apartment from images. Those give geometry for scenes and, with labels, data for recognition.
+  rooms from images. Those give geometry for scenes and, with labels, data for recognition.
 - **The semantic map.** Objects and areas land in the semantic map
   ([RFC-0016](../rfc/RFC-0016-objects-and-semantic-map.md)); the code is `libs/worldmodel`.
 - **Missions.** Instructions in words such as "go to the kitchen" need areas and objects to mean
