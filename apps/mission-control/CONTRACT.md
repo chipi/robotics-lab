@@ -4,7 +4,8 @@
 serves the API on
 `--host`/`MC_HOST` (default `127.0.0.1`) and `--port`/`MC_PORT` (default 8060). The robot files are
 read from `--robots`/`MC_ROBOTS`, the SQLite store and the gates' logs are kept in
-`--state`/`MC_STATE`. By default there is no login: the tailnet is the authentication (RFC-0014 §3.9);
+`--state`/`MC_STATE`. By default there is no login: the tailnet is the authentication (RFC-0014
+§3.9);
 `--require-tokens` adds per-client tokens (below).
 `tests/test_api.py` checks this file against a running server. Units SI (metres, radians, seconds).
 Every response that carries a position names its `frame`; the one frame so far is `site`.
@@ -16,17 +17,18 @@ is `{"ok": false, "error": {"code", "message", ...data}}` with an honest status 
 
 | Status | Codes |
 | --- | --- |
-| 400 | `bad_json` |
+| 400 | `bad_json`, `bad_length` (Content-Length is not a count of bytes), `unknown_method` (a gate's: a method the robot's gate does not have) |
 | 403 | `not_allowed` (takeover by a name not on the robot's list) |
 | 401 | `unauthorized` (tokens are required and the call has none, or one that is not valid) |
-| 404 | `not_found` (`what`, `id`), `no_route`, `no_map`, `no_recogniser` |
+| 404 | `not_found` (`what`, `id`), `no_route`, `no_map`, `no_recogniser`, `no_sighting` (the duck's camera runs with a goal), `no_profile` (the robot's file holds the robot itself: no versions), `no_calibration` (the navigator does not calibrate), `no_calibration_run` |
 | 405 | `method_not_allowed` |
-| 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use`, `real_runs_not_allowed` (a drive or a calibration on a real robot whose file lacks `allow_real_runs`; a goal run is `refused` instead) |
+| 409 | `held` (`holder`, `since`), `lease_ended` (`reason`), `no_lease`, `not_holder`, `unknown_connection` (the gate's: that connection is closed), `robot_busy`, `run_ended`, `goal_running`, `name_taken`, `label_taken`, `site_in_use`, `area_in_use`, `already_revoked` (a token), `real_runs_not_allowed` (a drive or a calibration on a real robot whose file lacks `allow_real_runs`; a goal run is `refused` instead); the profile versions: `installation` (the installation file is wrong), `no_store` (no version store on this machine), `profile` (the stored profile cannot be read), `profile_not_writable`; a calibration: `calibration_running`, `not_done`, `reference_by_truth`, `already_kept`, `no_value`, `implausible` (`value`), and the navigator's own refusal under its own code (`refused` when it gives none; `holder`) |
 | 413 | `too_large` |
-| 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline`, `bad_bundle` |
-| 501 | `not_built` (`share: split`, RFC-0014 step 10) |
+| 422 | `invalid`, `bad_goal`, `unknown_kind`, `bad_guardrail`, `bad_outline`, `bad_bundle`, `bad_start_pose`, `bad_params` (a calibration's), `profile` (a profile that does not validate) |
+| 500 | `internal` (a bug: the server's stderr has the line) |
+| 501 | `not_built` (`share: split`, RFC-0014 step 10; the NXT has no navigator) |
 | 502 | `planner_failed` (the LLM planner did not answer, or not with goals) |
-| 503 | `robot_offline` |
+| 503 | `robot_offline`, `navigator_unreachable` (a calibration: the robot's navigator did not answer) |
 
 A command to an offline robot is an error and nothing is queued. A goal that a robot cannot take is
 **not** an error: it is a run in the state `refused` with the reason in `reason` (below).
@@ -72,7 +74,8 @@ goal, and what `GET /robots/{id}` shows only after Mission Control restarts.
 `online_after_s`. It is never a flag the adapter sets. A robot that has not answered since start-up
 is offline.
 
-**The client's name** for STOP is `client` in the body, else the `X-Client` header, else `api`; it is
+**The client's name** for STOP is `client` in the body, else the `X-Client` header, else `api`; it
+is
 logged and on the event stream.
 
 ### The lock
@@ -133,13 +136,15 @@ when the run starts: `{x, y, yaw}`, the site frame, metres and radians (`yaw` is
 turn; a `frame` other than `site` or any other key is a `422 bad_start_pose`). It belongs to the
 run, not the goal, and is kept in the run's `conditions.start_pose`. It is one robot's: with a team
 or several robots it is a 422. A robot with no truth cannot read where it stands, so the navigator
-takes the word and sets the run's frame by it ([navigator contract 1.5](../../libs/runner/CONTRACT.md));
+takes the word and sets the run's frame by it ([navigator contract
+1.5](../../libs/runner/CONTRACT.md));
 the run says so in a decision (`placed`), the robot's pose and map on the page are in that frame
 until a run without one, and a navigator that does not speak 1.5 refuses the run (the reason says
 so) rather than run it in the wrong frame. The fake robot is set down at the pose. Refused, as the
 run's reason: inside a no-go area, and for the fake outside its world or inside an object. The
 robot's dock is the first start pose a site sees, when it has none: the site's `dock_pose` is
-`{x, y, yaw, frame, robot, set_from}`, `set_from` `placed_start` for that and `robot_pose` for a dock
+`{x, y, yaw, frame, robot, set_from}`, `set_from` `placed_start` for that and `robot_pose` for a
+dock
 taken from the robot's own pose when no start pose was sent; the site page says which.
 
 ### One goal on several robots
@@ -150,7 +155,8 @@ the goal when the first robot reaches it and cancels and stops the others; `shar
 child run per robot, each an ordinary goal run with `parent_id`. The children start in the order of
 the robot ids.
 
-- A robot that cannot take part (offline, busy, or refused by its capabilities) is left out: its child
+- A robot that cannot take part (offline, busy, or refused by its capabilities) is left out: its
+  child
   is a run in the state `refused` with the reason. If no robot can, the group is `refused`.
 - If a robot is **held** by another client, the children already started are cancelled and the
   group is `refused`, naming the robot (RFC-0017 §3.5.3).
@@ -197,15 +203,20 @@ States: `queued`, `running`, then one of the navigator contract's ends
   but not got to, a navigator answering a state its contract does not have.
 - `stopped_by_guardrail`: a guardrail broke; `broken` is `{name, detail}`. Not the same as `failed`.
 - `not_found`: an object goal whose exploring ended without finding it.
-- `cancelled`: `cancel`, or a STOP (the latch). `interrupted`: a takeover, or the robot stopped answering.
-- `as_expected` is null while running, then true when the end matches `expect` (`reach`: `reached` or
-  `done`; `refuse`: `refused`). It stays null for a run that has **no verdict**: the navigator raised
-  `rtf_low` (its runner measured the simulator under real time: [libs/runner/CONTRACT.md](../../libs/runner/CONTRACT.md),
+- `cancelled`: `cancel`, or a STOP (the latch). `interrupted`: a takeover, or the robot stopped
+  answering.
+- `as_expected` is null while running, then true when the end matches `expect` (`reach`: `reached`
+  or
+  `done`; `refuse`: `refused`). It stays null for a run that has **no verdict**: the navigator
+  raised
+  `rtf_low` (its runner measured the simulator under real time:
+  [libs/runner/CONTRACT.md](../../libs/runner/CONTRACT.md),
   1.6), so the run's timing and truth pairing are not what they say. The run keeps the state the
   navigator gave it, and `no_verdict` says why (`rtf_low: ...`); it is null for every other run.
 - **The simulator-first flag.** A goal runs on the real robot only after a rehearsal, unless it says
   `sim_first: false` (on by default since 4e E1: absent is true for a real robot; false is kept, as
-  the opt-out; the page's box is ticked and always sends it). The rehearsal is a run of the same goal
+  the opt-out; the page's box is ticked and always sends it). The rehearsal is a run of the same
+  goal
   in the simulator that ended as expected, within 24 h. A run is *real* when its `target` is `real`,
   or its robot is a registered robot whose variant is `real`; a goal run on any other is a simulator
   run and is not held to the flag. A run *rehearses* when it ran the same goal content (its
@@ -217,10 +228,12 @@ States: `queued`, `running`, then one of the navigator contract's ends
   that rehearsed it), robot, goal_version, rehearse_on}`; for a goal with `sim_first: false` it is
   information, never a refusal. A rehearsal is not used
   up. A group's robots are held one by one (a child run refused).
-- `progress`: `elapsed_s`, `pose`, `area` (the area it believes it is in, by the operator's outlines,
+- `progress`: `elapsed_s`, `pose`, `area` (the area it believes it is in, by the operator's
+  outlines,
   or null), `guardrails_ok`, `distance_left_m`, and for exploring `waypoints_visited`,
   `cells_explored`. Written at most once a second.
-- `result` by kind: `go_to_object` `{object: {id, kind, x, y, label, frame}, stand: {x, y, yaw, frame}}`
+- `result` by kind: `go_to_object` `{object: {id, kind, x, y, label, frame}, stand: {x, y, yaw,
+  frame}}`
   (the id is the site's stable one); `inventory` `{areas: [{area, name, objects}], none_defined,
   cells_explored, objects_found, ended_by}`; `explore` `{cells_explored, objects_found, ended_by}`
   where `ended_by` is `no_frontier_left` or `budget`; `point` and `go_to_area` none.
@@ -269,16 +282,19 @@ when it does. **Only the operator's calls create, change or delete an area;** a 
 
 An **outline** is a list of at least three `[x, y]` in the site frame, simple (no crossing), with an
 area above zero; it is stored counter-clockwise. A split line must cross the outline in exactly two
-places and miss every corner. An object's `area` is the outline that holds its position, by geometry,
+places and miss every corner. An object's `area` is the outline that holds its position, by
+geometry,
 or null.
 
-Objects get Mission Control's own stable ids (`obj-1`, ...). A run's objects are merged into the site's:
+Objects get Mission Control's own stable ids (`obj-1`, ...). A run's objects are merged into the
+site's:
 the same kind within 0.5 m (1.5 m for a kind the navigator calls unique) is the same object, and a
 label is never touched by a merge.
 
 ## The event stream
 
-`GET /api/v1/events` is server-sent events. Each event is `id: <seq>`, `event: <kind>` and `data:` the
+`GET /api/v1/events` is server-sent events. Each event is `id: <seq>`, `event: <kind>` and `data:`
+the
 JSON `{seq, t, kind, robot, ...}`. Query:
 
 - `since=<seq>`: replay what the ring (the latest 5000) still holds after it, then go live.
@@ -293,13 +309,14 @@ JSON `{seq, t, kind, robot, ...}`. Query:
 | `state` | each robot's status at its `rates.state_hz` (default 2): `pose`, `velocity`, `mode`, `battery_pct`, `link`, `flags`, and `joints` `{name: radians}` when the robot reports them (the duck: robotd's angles under the profile's `joints.names`); the NXT adds `sensors` (see `GET /robots/{id}`) and raises `anomaly` events itself: `low_battery` (major, under 20 %, for every robot that reports a percent: see `battery` above), `link_lost` (major), `deadman_stop` (major) and `obstacle_stop` (minor), source `robot` |
 | `map` | when a robot's map changes, at most `rates.map_hz` (default 1) |
 | `robot-online`, `robot-offline` | a change, with the error |
-| `lock` | the gate's log: `event` is `acquired`, `refused`, `released`, `expired`, `taken_over`, `lease_ended`, `stop`, `stop_failed` |
+| `lock` | the gate's log: `event` is `acquired`, `refused`, `released`, `expired`, `taken_over`, `lease_ended`, `stop`, `stop_failed`, `not_watched`, `disconnected` (a holder dropped), and `holder` (a remote gate's poll: who holds it now, none included) |
 | `stop`, `stop-all` | every STOP, with the client's name |
 | `goal-run` | a state change or progress, with `goal_run` |
 | `decision` | the navigator's decisions with their reasons, with `goal_run` |
 | `anomaly` | an anomaly the navigator raised (`anomaly`: RFC-0019's record, its `t` the run's clock), with `goal_run` and `watch` (the Observatory's page for the run at `#t=`); the kinds the runner and the robot's own guards add are below |
 | `objects` | objects merged into a site (`changes`) |
 | `object-named` | an operator's label |
+| `error` | something a robot's loop raised, with `message`; counted, and logged by telemetry |
 
 A comment line `: keepalive` comes every 15 s.
 
@@ -326,11 +343,48 @@ page's readiness card counts a major or critical one. Two kinds matter for what 
 A navigator below 1.7 never raises `robot_guard`; a robot-side stop is then only the run's
 `stopped_by_guardrail`.
 
+## Telemetry
+
+Mission Control sends what its event bus sees to the operator's observability stack
+(OpenTelemetry over OTLP/HTTP; `telemetry.py`, design in
+[TELEMETRY-RETENTION-DESIGN](https://github.com/chipi/robotics-lab/blob/main/docs/wip/TELEMETRY-RETENTION-DESIGN.md)).
+It is **off** unless the installation file has a `telemetry` block (`environment`, and at least
+one of `traces`, `metrics`, `logs`: an http(s) URL each; `metrics_interval_s`, 5 to 300, default
+15). The file is read once, at start: a change needs a restart; a bad file prints one line
+(`telemetry: off (...)`) and Mission Control still starts. The service is `mission-control`.
+Nothing here is an API: no route, no reply changes, and a telemetry failure never reaches a
+caller.
+
+The hook is one listener on the bus. It runs on the emitting thread, only hands points to a
+queue (a point the sink cannot record is counted as dropped), and catches everything: it never
+blocks and never
+raises. Every point of a robot carries `robot_id`, `robot_kind` and `host_kind`, from the
+adapter type: `duck-sim` is `legged` on `pollen-duck-sim`, `duck-real` `legged` on `microduck`,
+`nxt-web` `tracked` on `nxt-brick`, `fake` `fake` on `fake`; any other type is `unknown`.
+Python's `mission_control` logger goes to the logs signal too.
+
+| Event | Metrics | Spans | Log record (`kind`) |
+| --- | --- | --- | --- |
+| `robot-online`, `robot-offline` | gauge `robotics_lab.robot.online` 1 or 0 | | `robot-online` (info), `robot-offline` (warn, with the error) |
+| `lock` | gauge `robotics_lab.robot.lock_held` 1 or 0: `acquired` and a gate's `holder` poll with someone set it, `released`, `expired`, `taken_over`, `lease_ended`, a gate's `disconnected` and a poll with nobody clear it | | `lock` (info, with `event`); `refused`, `not_watched`, `stop` and `stop_failed` leave none |
+| `goal-run`, first `running` of a run | gauge `robotics_lab.goals.active` per robot | `goal.run` opens (`goal_run`, `run_key`, `client`) | `goal-run`, `state` running |
+| `goal-run`, an end | counter `robotics_lab.goals` (`state`); histogram `robotics_lab.goal.duration` in seconds (`state`) from the run's `running` to its end; the active gauge | the span closes: error status for `failed`, `stalled`, `timeout`, `not_found`, `stopped_by_guardrail`, `interrupted`, or any end with a `broken` must-not; `reached`, `done`, `cancelled` and `refused` are not errors | `goal-run` (warn for an error end, else info; `reason`) |
+| `goal-run` `refused` (it never ran) | the counter | a `goal.refused` span of no length (`reason`, `client`) | as above |
+| `anomaly` | counter `robotics_lab.anomalies` (`anomaly`, `severity`, `source`) | an `anomaly` event on the goal run's span | `anomaly`, at the anomaly's severity |
+| `stop` | counter `robotics_lab.stops` | | `stop` (info if `confirmed`, else warn) |
+| `stop-all` | none: each robot's own `stop` is counted | | one `stop-all` (warn if a robot was not confirmed) |
+| `error` | counter `robotics_lab.errors` | | `error` (error) |
+
+A goal on several robots (`share`) has no signal of its own: its children, one per robot, do.
+A severity the stack does not know is sent as `info`.
+
 ## The MCP server
 
-`mission-control mcp [--url http://127.0.0.1:8060]` (stdio; env `MC_URL`) is the way in for an outside
+`mission-control mcp [--url http://127.0.0.1:8060]` (stdio; env `MC_URL`) is the way in for an
+outside
 agent. It is a client of this API: every tool is one allowed call, and the server calls nothing else
-(`ALLOWED` in `mcp_server.py`, 39 routes, checked by `tests/test_mcp.py`). It needs the `mcp` package,
+(`ALLOWED` in `mcp_server.py`, 39 routes, checked by `tests/test_mcp.py`). It needs the `mcp`
+package,
 which only this command imports. [MCP-COVERAGE](../../docs/wip/MCP-COVERAGE.md) lists every route
 of this API against the tools, with the reason for each one that is not a tool.
 
@@ -353,18 +407,23 @@ An API error is a tool error whose text is `code: message`, so an agent can read
 may not do, and how:
 
 - **Fire** (O21, RFC-0014 §3.8): there is no tool for it and no allowed route could do it.
-- **Take a robot another client holds** (RFC-0017 §3.5.7): there is no takeover tool; the client name
-  is fixed by the operator (`--client` or `MC_MCP_CLIENT`, default `mcp-agent`) and no tool takes one.
+- **Take a robot another client holds** (RFC-0017 §3.5.7): there is no takeover tool; the client
+  name
+  is fixed by the operator (`--client` or `MC_MCP_CLIENT`, default `mcp-agent`) and no tool takes
+  one.
   A held robot is refused to the agent, naming the holder.
 - **Draw, change or delete areas, make or delete sites, import a site, set a site's guardrails,
   assign a robot to a site** (RFC-0014 §3.5.3: the operator's): not tools, not allowed routes.
-- **Write a profile** (save, import): a profile carries the robot's limits, which a goal may only add
-  to. Not tools, not allowed routes; an agent reads versions, diffs them, chooses among the saved ones
+- **Write a profile** (save, import): a profile carries the robot's limits, which a goal may only
+  add
+  to. Not tools, not allowed routes; an agent reads versions, diffs them, chooses among the saved
+  ones
   and keeps what a calibration measured (the procedure's bounds still apply). Nor give a calibration
   the operator's tape (`reference`), discard a run, edit or retire a goal, plan in words (`/plan`),
   or touch tokens.
 - **Run on a real robot** (RFC-0014 §3.8, RFC-0002 §3.5): `target` is `sim` unless the operator
-  started the server with `--allow-real` or `MC_MCP_ALLOW_REAL=1`; anything else is refused before the
+  started the server with `--allow-real` or `MC_MCP_ALLOW_REAL=1`; anything else is refused before
+  the
   call leaves the process. A calibration start or keep and `use_profile_version` name no target, so
   they are refused the same way for a robot whose profile variant is `real`.
 - **Opt a goal out of its rehearsal**: `sim_first: false` in `create_goal` or `run_adhoc_goal` is
@@ -374,8 +433,10 @@ may not do, and how:
 ## Per-client tokens
 
 `mission-control serve --require-tokens` (env `MC_REQUIRE_TOKENS=1`) makes every call carry a token
-that names its client: `Authorization: Bearer mc_...`, or `?token=` on the event stream, which a browser
-cannot give a header. It refuses to start while no token exists. Without the flag nothing changes: every
+that names its client: `Authorization: Bearer mc_...`, or `?token=` on the event stream, which a
+browser
+cannot give a header. It refuses to start while no token exists. Without the flag nothing changes:
+every
 call works and a client names itself in the body.
 
 - **A token for actions only** (RFC-0024 question 4): `--require-tokens actions` (env
@@ -386,16 +447,20 @@ call works and a client names itself in the body.
   made, as the other scope does. A server before this scope knows only `1`, and `actions` reads
   there as no tokens at all: the deploy's smoke compares `scope` with what it asked.
 
-- **Make, list, revoke**: `mission-control token create --client NAME` prints the token once; only its
-  sha256 is kept. `token list` shows id, client and state, never the token. `token revoke ID` ends it.
-  Over the API (with a token): `GET /tokens` (`required`, `tokens`), `POST /tokens {client}` (201, the
+- **Make, list, revoke**: `mission-control token create --client NAME` prints the token once; only
+  its
+  sha256 is kept. `token list` shows id, client and state, never the token. `token revoke ID` ends
+  it.
+  Over the API (with a token): `GET /tokens` (`required`, `tokens`), `POST /tokens {client}` (201,
+  the
   token shown once) and `DELETE /tokens/{id}` (a second revoke is 409, an unknown id 404). The MCP
   server cannot reach these routes.
 - **Always open, with no token or a wrong one**: STOP (`POST /robots/{id}/stop`, `POST /stop`),
   `GET /health` and the page's own files (it has to load to ask for a token). A STOP with a valid
   token is logged under the token's client, otherwise under the name it gave.
 - **The token is the identity**: a lock, a takeover, a goal run and a STOP are recorded under the
-  token's client, whatever `client` the body says. A takeover is therefore for the names on a robot's
+  token's client, whatever `client` the body says. A takeover is therefore for the names on a
+  robot's
   list only by token. The run carries `client`; so do the `goal-run` and `stop` events.
 - **The MCP server** takes `--token` / `MC_TOKEN` and speaks as that client.
 - **The page** shows a token box when a call is answered 401, keeps the token in `localStorage`
@@ -408,10 +473,12 @@ call works and a client names itself in the body.
 (`app.js`, `settings.js`, `bodyview.js`, `readiness.js`, `layout.js`, `palette-verbs.js` and
 `style.css`), plain files with no build step, served by the same server.
 It is a client of this API and the event stream and has no
-call of its own. It shows the robots (online, status, lock holder), the selected robot's map with the
+call of its own. It shows the robots (online, status, lock holder), the selected robot's map with
+the
 objects and areas layers, a point goal by tapping the map and the other goal kinds by form, the
 library, the goal runs with their progress and decisions, area drawing, renaming and deleting, site
-export and import, STOP for the selected robot and STOP ALL (always on screen), and a Watch link that
+export and import, STOP for the selected robot and STOP ALL (always on screen), and a Watch link
+that
 is disabled while a run's `watch` is null. A robot's card links to its page, `#robot/<id>`
 (RFC-0023 D3): six sections, of which Overview (the Readiness card and the header verdict that
 follows it, one verdict: ready, check first, not ready or not known, each check with a glyph and a
@@ -419,21 +486,26 @@ word: online, its gate, held, the link, the battery (the server's `battery` rule
 major or critical alarm in the last minute, guardrails, settings; an absent field is unknown, never
 ok; from `GET /robots/{id}` and the alarm feed) and Parts (the profile's subsystems, and who holds
 the robot)
-work, Modules lists the profile's four plugins (`plugins`, each with the block it answers for and that
+work, Modules lists the profile's four plugins (`plugins`, each with the block it answers for and
+that
 block's numbers as the running variant has them; no source reports a plugin's own state to Mission
 Control, so each says "live state not reported"), Settings is the profile API as a page (no endpoint
 of its own: the versions, a version's profile through `export?version=`, a save, going back, the
 diff, export as a download and import of a file): a version block by block with the base beside the
-`sim` and `real` variants (the numbers the running variant overrides marked), a form that edits a copy
+`sim` and `real` variants (the numbers the running variant overrides marked), a form that edits a
+copy
 of the shown version in one layer (the base or a variant) with each number's unit and its dict's
 `measured` and `why`, a refusal shown at the field it names, a save marked "from the next goal",
 Body (RFC-0024 step 2) draws the robot's own 3D model from `GET /robots/{id}/description` and
-its meshes, posed from the state's `joints`, each joint coloured by the worst alarm in the last minute
-that names it (`joint_overload`, `joint_tracking`, `motor_hot`: its `values.joint`; major and critical
+its meshes, posed from the state's `joints`, each joint coloured by the worst alarm in the last
+minute
+that names it (`joint_overload`, `joint_tracking`, `motor_hot`: its `values.joint`; major and
+critical
 the error colour, minor the warn colour; the joints not ok are listed in words), and Calibration
 (unit A3: the calibration API above) has a card per procedure with its value now and what it sets,
 the profile's measured lines under them, and the same side drawer as Settings for a run: the step
-guide, the parameters, the run polled while it walks (Cancel), what it measured beside the value now,
+guide, the parameters, the run polled while it walks (Cancel), what it measured beside the value
+now,
 the operator's tape where the runner had no truth, what keeping it changes, and Keep as the next
 settings version. three.js is loaded only when
 a robot with a description is opened. The shared web library, `libs/web`, is served at `/lib/`
@@ -454,7 +526,8 @@ nothing); and a change to a shared module is a change to both apps. The contract
 module and the amendments made after they shipped
 are in [LOOK-AND-FEEL-PLAN](../../docs/wip/LOOK-AND-FEEL-PLAN.md) (Frozen contracts, Amendments).
 
-**One origin** (RFC-0024 step 3): the page's addresses are relative (`api/v1/...`, `web/...`), so the
+**One origin** (RFC-0024 step 3): the page's addresses are relative (`api/v1/...`, `web/...`), so
+the
 same page works at `/` here and at `/control/` behind the Observatory, which forwards `/control/...`
 to this server as it is (the page, the API, the event stream, the `Authorization` header). The
 library stays absolute, `/lib/`: the Observatory serves the same files.
@@ -479,7 +552,8 @@ between Mission Control and the simulator, both the runner's (`libs/runner`, RFC
   `duck/<scene>/mc<id>-<time>`, is the runner's copy of the navigator's run with the truth put in,
   and the guardrails only the truth can check (`contact`, `fall`, `drop_clearance`, the robot inside
   a `no_go_area`) are the runner's. On a host file with `truth_port: null` (a real robot) it has no
-  truth: no sampler, no camera server and no `--camera`, no truth guardrails, the official run copied
+  truth: no sampler, no camera server and no `--camera`, no truth guardrails, the official run
+  copied
   with no tick paired; a goal that asks for a truth guardrail still runs, and the run records it
   as `not_enforced` (runner.json) and in `judge_truth {available, reason, unenforced}` beside
   `judge_profile` and `judge_scene`, and `build` (the run's build identity,
@@ -539,7 +613,8 @@ so Mission Control accepts any navigator of major version 1 and refuses another 
 `seed.objects` are the site's confirmed objects (their ids Mission Control's; they come back as
 `seed`); `seed.areas` are the operator's outlines `{id, name, type, outline}`. A goal run's
 `run_key` is the Observatory run's key and `watch` is `<observatory>/watch/<run_key>`. The
-Observatory run carries `goal_run {id, name, kind, robot}` in its record ([`apps/observatory/CONTRACT.md`](../observatory/CONTRACT.md)).
+Observatory run carries `goal_run {id, name, kind, robot}` in its record
+([`apps/observatory/CONTRACT.md`](../observatory/CONTRACT.md)).
 
 The navigator takes a goal only where the robot's map knows a way: a point or an area in space the
 robot has not seen is `refused` ("no path on the map"), as the navigator has always refused it;
@@ -590,11 +665,13 @@ Anomalies from a run). The runner records the three as `not_enforced` in its own
 ## The NXT
 
 `adapter {"type": "nxt-web", "url": "http://127.0.0.1:8000", "full_speed_mps", "full_turn_rps"}`
-(`robots.nxt/nxt-1.json`) is the NXT behind `nxt-web`, which is the only process on the brick's link,
+(`robots.nxt/nxt-1.json`) is the NXT behind `nxt-web`, which is the only process on the brick's
+link,
 so nxt-web is the robot's gate (RFC-0017): its lock, its STOP and its takeover list
 (`--takeover-names`) are the robot's, and the file's `control.takeover` and `control.lease_s` do not
 apply to it. Mission Control is a client: `POST /robots/{id}/lock` takes nxt-web's lock in the
-client's name and returns the session of this API; drive is `/api/drive` with nxt-web's session, STOP
+client's name and returns the session of this API; drive is `/api/drive` with nxt-web's session,
+STOP
 is `/api/stop`, who holds the lock is `/api/lock`, polled at the state rate (a lease that ended at
 nxt-web, by its own page's STOP, expiry or takeover, ends the API's session with nxt-web's reason).
 `vx` and `vyaw` become the tracks in percent: both tracks at 100 is `full_speed_mps`, the tracks 50
@@ -629,10 +706,12 @@ the field went.
 | `rates {state_hz, map_hz, max_state_hz}`, `online_after_s`, `teams [names]` | ours |
 
 `GET /robots/{id}` returns `factsheet`, `control` and `capabilities`. The first format's
-`capabilities.drive {max_vx, max_vyaw, deadman_s}` is now `factsheet.physicalParameters.maximumSpeed`
+`capabilities.drive {max_vx, max_vyaw, deadman_s}` is now
+`factsheet.physicalParameters.maximumSpeed`
 and `maximumAngularSpeed` and `control.deadman_s`; its top-level `lease_s` and `takeover` are
 `control.lease_s` and `control.takeover`. There is no VDA adapter.
 
 `state_hz` may not exceed `max_state_hz`, which is what the robot's interface allows. A call that
-does not answer within `adapter.call_timeout_s` is abandoned on its own thread and counts as an error;
+does not answer within `adapter.call_timeout_s` is abandoned on its own thread and counts as an
+error;
 a late answer may still arrive, and the robot's deadman covers it.

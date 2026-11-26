@@ -21,8 +21,8 @@ the documents it names. Keep this file the living status; finalize it at the end
 | --- | --- | --- |
 | 3 | MCP for every surface ([MCP-COVERAGE](MCP-COVERAGE.md)) | done: 41ec285, CI green |
 | 4 | Look-and-feel research ([LOOK-AND-FEEL-RESEARCH](LOOK-AND-FEEL-RESEARCH.md)) | done: a0425fc, CI green |
-| 4.5 | The look-and-feel build ([LOOK-AND-FEEL-PLAN](LOOK-AND-FEEL-PLAN.md), ADR-0021) | in progress |
-| 4.9 | Ready for MVP 2? Repo structure, how the apps combine, which app fronts the other | waiting |
+| 4.5 | The look-and-feel build ([LOOK-AND-FEEL-PLAN](LOOK-AND-FEEL-PLAN.md), ADR-0021) | done: every unit on main, review round 4 answered 2026-11-26 (all A), look-and-feel closed for MVP 1 |
+| 4.9 | Ready for MVP 2? Repo structure, how the apps combine, which app fronts the other | ready: the Observatory fronts both; `libs/missions` carved out (1cd9e8c) |
 | 5 | Close-out: docs, README, screenshots after 4.5, rename and branding, RFC-0024 advisor review | waiting |
 | 6 | NXT at the brick (D1, D9, D10); staging redeployed with the NXT robot file first | waiting |
 | 7 | Staging cut-over ([STAGING-CUTOVER](STAGING-CUTOVER.md)) after the X3 maintenance window | waiting |
@@ -56,11 +56,9 @@ The live plan to MVP 2 is the
 [Road to MVP 2](https://claude.ai/artifact/PaDG8VzAWASixHKoRgdGW9) tracker: one row per item
 in its database (collection `items`), updated with ArtifactData as each item changes status.
 
-Next: round 3's answers (in LOOK-AND-FEEL-PLAN) are being built: Mission Control (one readiness
-verdict, the server's battery rule, STOP not preselected, `rl.theme`), the timeline redesign,
-then the Observatory (Signals for runs with a pose, Follow live into the badge, the section-fold
-bug) and the six items "already on my list"; then the audit's tests and CI fixes; U26 (the
-sweep) is built, and **review round 4** (final) is answered: look-and-feel and step 4.9 are closed.
+Next: step 5 (the close-out), then 6 and 7. Round 3's answers, the timeline redesign, the audit's
+tests and CI fixes and U26 (the sweep) are all built; **review round 4** (final) is answered:
+look-and-feel and step 4.9 are closed.
 
 How a unit runs (it worked this session): an `implementer` subagent on sonnet per unit with
 the brief in [look-and-feel/UNIT-BRIEF](look-and-feel/UNIT-BRIEF.md) and the plan row; units
@@ -130,16 +128,18 @@ decisions list.
 
 ## Last state
 
-2026-11-25 evening. Every 4.5 unit except U26 is on main (U14 to U18, U23 to U25, see the
-table); each landed after the full page suite of the app it touched passed locally, plus
-`make lint` and `make test-web`. Review round 3 is published and waits for the operator.
+2026-11-26. Main is at 54defc1 (docs-only; its docs run is green, its ci run was still going
+when this was written). Step 4.5 is finished: every unit is on main, U26 (the sweep) included,
+and review rounds 3 and 4 are answered (all A in round 4: look-and-feel is closed for MVP 1).
+Step 4.9 is ready: the Observatory fronts both apps and `libs/missions` is carved out
+(1cd9e8c, RFC-0030). Also landed since 2026-11-25: the technical review's fixes (fb884b2,
+349f083), the local-controller seam (1edb397), runs that record their build (ebe0b8a) and the
+operator's decisions of 2026-11-26 (d2babc8). What is left of MVP 1 is steps 5 to 7.
 
-- **CI:** 187f08a and 5ae343f green. e49660a and 354fe11 were red only on the Pages deploy
-  (GitHub's outage that afternoon, 500 and 502); 5ae343f's deploy replaced them.
-- **Round 3's questions:** Q1 the two verdicts on the robot page (the fit card against
-  Readiness), Q2 the battery line, Q3 STOP selected when the palette opens, Q4 signal limits
-  only on a run without a pose, Q5 the Follow live checkbox beside the Live/Replay badge, Q6
-  anything else.
+- **Round 3's questions** (answered 2026-11-25, in LOOK-AND-FEEL-PLAN): Q1 the two verdicts on
+  the robot page (the fit card against Readiness), Q2 the battery line, Q3 STOP selected when
+  the palette opens, Q4 signal limits only on a run without a pose, Q5 the Follow live
+  checkbox beside the Live/Replay badge, Q6 anything else.
 - **Gaps the units found, not built:** the robot view has no run key and no `allow_real_runs`;
   a goal run's result has no time of its own (U24 uses `progress.elapsed_s`);
   `createTimeModel` cannot leave live without a seek (U14 parks 1e-5 s before the edge); play,
