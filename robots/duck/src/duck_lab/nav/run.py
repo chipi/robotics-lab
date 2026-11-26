@@ -199,7 +199,9 @@ class Navigator:
 
     def __init__(self, sockets: dict, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None,
-                 profile_path=None):
+                 profile_path=None, depth_impairment: dict | None = None):
+        # `depth_impairment`: this run's own setting of the simulated depth sensor's impairments, over the profile's (depth_impair:
+        # {"enabled": true, "seed": 7, ...}); refused for any environment but the simulator
         # `sockets`: the robot's ("robot", "depth", "map": paths), handed in by whoever starts the navigator, from the host
         # file (RFC-0021: host_links); the navigator knows no machine's paths, and never the simulator's truth: that is its
         # runner's (RFC-0021 step 6), which puts it into the official run.
@@ -221,7 +223,13 @@ class Navigator:
         # all three, so the map and the pose stay in the same (true) metres. The map's origin is its
         # first stop, so scaling about it keeps the duck where it is.
         # `profile_path`: the profile version its runner hands it (phase 5 step 1), else the robot's own file
-        self.configure(profile if profile is not None else load_profile(calibration, profile_path))
+        try:
+            self.configure(profile if profile is not None else load_profile(calibration, profile_path))
+            if depth_impairment is not None:
+                self.range.set_impairment(self.profile, depth_impairment)
+        except Exception:
+            self.robot.close()
+            raise
         self._t0 = time.monotonic()
         self.runlog = runlog
         self._sid = runlog.new_session() if runlog else None
@@ -282,7 +290,7 @@ class Navigator:
         # ran on (phase 5 step 1): the merged numbers, the file's checksum (its identity) and where it came from, so a run explains
         # itself with no store and a replay uses what the run used, not today's file
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, odom_by_speed=self.localisation.by_speed,
-                    pivot_vx_mps=self.locomotion.pivot_vx,
+                    pivot_vx_mps=self.locomotion.pivot_vx, depth_impairment=self.range.impairment.record(),
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data),
                              **{k: v for k, v in (getattr(self.profile, "meta", None) or {}).items() if k in ("checksum", "version", "source")},
                              "data": self.profile.data})

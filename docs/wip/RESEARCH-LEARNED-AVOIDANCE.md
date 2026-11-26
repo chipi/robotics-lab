@@ -18,7 +18,11 @@ window; a new Isaac Lab stack on the DGX is the homelab's call.
 - Our simulated depth sensor is near-ideal: noise only. The cheap impairments to add (R2): minimum
   range, bias and scale, random invalid zones, dropped frames, one frame of delay. An invalid zone
   must not use status 255, which the navigator reads as a drop below the floor line
-  (`tof8x8.py:286`).
+  (`tof8x8.py:286`). Not enough on its own: the cliff check reads any invalid floor zone as "no
+  floor", so the impairment's own status (13) is skipped there, and only when the profile has the
+  impairment block (the simulator's). **Done in the simulator, off by default** (R2, 2026-11-26).
+  Open, a safety call for the operator: should the real sensor's own failed zones also count as
+  unknown rather than as a drop?
 - Licences: their code BSD-3-Clause; the robot meshes CC BY-NC-SA 4.0.
 
 From [S1 to S4](RESEARCH-S1-S4.md), 2026-11-26:

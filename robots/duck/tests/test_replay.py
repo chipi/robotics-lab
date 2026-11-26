@@ -280,7 +280,7 @@ with tempfile.TemporaryDirectory() as tmp:
     real_open = Tof8x8.open
     Tof8x8.open = lambda self, path: None
     for k in real:
-        setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {})())
+        setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {"close": lambda self: None})())
     try:
         stub = {"robot": "/nonexistent/robot.sock", "depth": "/nonexistent/tof.sock", "map": "/nonexistent/map.sock"}
         sim_nav = Navigator(stub, calibration="sim")
@@ -296,6 +296,13 @@ with tempfile.TemporaryDirectory() as tmp:
         (store / "7.json").write_text(json.dumps(v7))
         given_log = store / "ticks.jsonl"
         given_nav = Navigator(stub, calibration="sim", profile_path=store / "7.json", log=given_log)
+        imp_log = store / "impaired.jsonl"
+        imp_nav = Navigator(stub, calibration="sim", log=imp_log, depth_impairment={"enabled": True, "seed": 5})
+        try:
+            Navigator(stub, calibration=None, depth_impairment={"enabled": True, "seed": 5})
+            real_refused = False
+        except ValueError:
+            real_refused = True
     finally:
         Tof8x8.open = real_open
         for k, v in real.items():
@@ -328,6 +335,14 @@ with tempfile.TemporaryDirectory() as tmp:
     check("the navigator itself writes it into its calibration event: the merged numbers, the checksum, the version, the source",
           wp.get("data") == given_nav.profile.data and wp.get("checksum") == meta["checksum"] and wp.get("version") == 7
           and wp.get("source") == "given", {k: wp.get(k) for k in ("checksum", "version", "source")})
+    plain_cal = next(json.loads(line) for line in given_log.read_text().splitlines() if '"calibration"' in line)
+    imp_cal = next(json.loads(line) for line in imp_log.read_text().splitlines() if '"calibration"' in line)
+    check("a run's calibration event says whether its depth sensor was impaired: off unless asked",
+          plain_cal["depth_impairment"] == {"enabled": False, "seed": 0} and sim_nav.range.impairment.enabled is False, plain_cal["depth_impairment"])
+    check("asked for in the run: on, with its seed and numbers, recorded in the event and live on the sensor",
+          imp_nav.range.impairment.enabled and imp_cal["depth_impairment"]["enabled"] is True and imp_cal["depth_impairment"]["seed"] == 5
+          and imp_cal["depth_impairment"]["min_range_m"] == 0.12 and "episode" in imp_cal["depth_impairment"], imp_cal["depth_impairment"])
+    check("asked for on the real duck's frames: the navigator refuses to start", real_refused and real_nav.range.impairment.enabled is False)
     full = RunLog(data, "apartment", "calib2", "exploration", None)
     full_sid = full.new_session()
     full.row(full_sid, {"t": 0.0, "event": "calibration", "tof": load_tof("sim"), "odom_scale": 0.91,

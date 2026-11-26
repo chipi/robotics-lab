@@ -272,6 +272,20 @@
             "range_kind": "radial",
             "measured": "2026-11-16. Range: the simulator's tof.py casts unit rays (mj_ray) and reports the hit distance along each, so readings are radial. Pitch: robots/duck/sim/probes/floor_fit.py over the challenge course's 40 flat-floor runs, the offset (0 to 4 deg in 0.5 deg steps with radial readings, and the real duck's 3 deg axial) that puts the recorded floor returns at floor height; 2.5 deg radial places them at +5.5 to -3.7 mm from 0.3 to 0.9 m (mean |error| 2.8 mm, the smallest), 0 deg radial 16 to 32 mm high (23.2), 3 deg axial 6 to 18 mm low (14.6). The servo joints alone (tof_truth.py, which leaves the model's passive backlash hinges at 0) put the optical axis 3.0 deg less steep than 3 deg believed: the extra ~2.5 deg is not in the servo angles, most likely the head sagging on its backlash hinges (not measured directly).",
             "why": "with the real duck's values (3 deg, axial) the cliff check placed the floor up to 2 cm too low and, with the head near level (the walk's first second, the neck pitched up ~13 deg), stopped for drops that were not there: 131 frames and 8 cliff stops in the challenge course's 40 runs on flat floor (robots/duck/sim/probes/cliff_replay.py). 0 deg also removed them but by placing the floor too high, which made the check blind to the first 2-3 cm of any drop. The real duck keeps mapd's 3 deg and axial ranges (cliff.py's defaults); whether the real sensor's ranges are axial is not checked here."
+          },
+          "impairment": {
+            "enabled": false,
+            "seed": 0,
+            "min_range_m": 0.12,
+            "bias_m": 0.02,
+            "scale": 0.02,
+            "zone_bias_m": 0.01,
+            "invalid_zone_p": 0.03,
+            "frame_dropout_p": 0.02,
+            "latency_frames_max": 1,
+            "invalid_status": 13,
+            "measured": "not measured: NVIDIA's priors for their Microduck avoidance task (isaac-sim/IsaacLab exp/microduck 802b8d5, sensors.py:27-78: minimum 0.12 m, episode bias U(-0.02, 0.02) m, scale U(0.98, 1.02), zone bias U(-0.01, 0.01) m, invalid zone 0.03 per zone per frame, frame dropout 0.02, latency 0 or 1 frames), which their own comments call uncalibrated (docs/wip/RESEARCH-R1-R2.md). invalid_status 13 is mine: any status that is neither a return's (5, 9) nor no-target (255); the VL53L5CX's own table was recalled, not read.",
+            "why": "Pollen's simulator reports clean returns (noise only), so a reflex, a cliff check or a learned controller tried there meets a better sensor than the real one (R2). Off in the profile: a run turns it on (the navigator's depth_impairment, or a profile version with enabled true) and the run records the setting and the seed. The simulator's frames only: the real duck's profile has no such block. A blanked zone carries a status the cliff check does not read as a drop (255 below the floor line is one)."
           }
         },
         "camera": {

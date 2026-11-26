@@ -186,7 +186,11 @@ SENSOR_KINDS = {
                "reflex_margin_m": "nonneg",
                "mount": {"pitch_offset_deg": "num", "range_kind": "str"},
                "floor_view": {"from_m": "pos", "to_m": "pos", "half_width_m": "pos"},
-               "side_drops": {"below_slope": "nonneg", "suspect_frames": "int", "suspect_ratio": "pos", "clear_m": "pos"}},
+               "side_drops": {"below_slope": "nonneg", "suspect_frames": "int", "suspect_ratio": "pos", "clear_m": "pos"},
+               # the simulator's depth impairments (duck_lab.plugins.depth_impair): only a simulator variant has the block
+               "impairment": {"enabled": "bool", "seed": "nonneg", "min_range_m": "pos", "bias_m": "nonneg", "scale": "nonneg",
+                              "zone_bias_m": "nonneg", "invalid_zone_p": "nonneg", "frame_dropout_p": "nonneg",
+                              "latency_frames_max": "nonneg", "invalid_status": "int"}},
     "camera": {**SENSOR_ID, "hfov_deg": "pos", "range_m": "pos", "p_detect": "pos", "range_noise": "nonneg", "bearing_noise_deg": "nonneg",
                "period_s": "pos"},
     # declared: one distance (an ultrasonic), a colour, a 2D scan, an IMU, odometry, an image, a depth image. The fields follow ROS's

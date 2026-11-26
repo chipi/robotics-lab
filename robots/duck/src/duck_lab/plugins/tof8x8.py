@@ -37,6 +37,8 @@ import math
 import socket
 import threading
 
+from duck_lab.plugins.depth_impair import DepthImpairment
+
 STEP_M = 0.05       # the floor-view probe spacing, along and across: the floor cells are 5 cm (run.FLOOR_CELL_M)
 
 
@@ -145,12 +147,19 @@ class Tof8x8:
         self.reflex_half_w_m = profile.footprint.radius_m + t.reflex_margin_m
         self.below_slope = t.side_drops.below_slope
         self.view = t.floor_view
+        self.set_impairment(profile)
         self.beams = self._beams()
         self.on_frame = None             # called with each frame (the navigator derives, logs and remembers it)
         self.last, self.frames = None, 0
         self._nearest_mm = None
         self._sock = self._f = self._thread = None
         self._stop = threading.Event()
+
+    def set_impairment(self, profile, override: dict | None = None) -> None:
+        """The stage the simulator's frames pass through (depth_impair): the profile's setting, a run's own laid over it. `unknown`:
+        the status of a zone it blanked, which the cliff check does not read as a drop."""
+        self.impairment = DepthImpairment.from_profile(profile, override)
+        self.unknown = {self.impairment.invalid_status} if profile.sensors.tof8x8.get("impairment") else set()
 
     # ---- the stream ------------------------------------------------------------------------------------------------------
     def open(self, path) -> None:
@@ -175,7 +184,9 @@ class Tof8x8:
             msg = json.loads(line)
             if msg.get("method") != "tof.frame":
                 continue
-            fr = msg["params"]
+            fr = self.impairment.apply(msg["params"])
+            if fr is None:
+                continue
             self.last = fr
             rows, cols = fr["rows"], fr["cols"]
             central = range(cols // 2 - 2, cols // 2 + 2)
@@ -333,6 +344,8 @@ class Tof8x8:
             h_floor = t_floor * math.hypot(d[0], d[1])     # horizontal distance to that floor point
             if h_floor > self.look_m:
                 continue
+            if frame["status"][i] in self.unknown:
+                continue        # blanked by the simulator's impairment: not a return, and not "nothing there" either
             valid = frame["status"][i] in self.valid and frame["distance_mm"][i] > 0
             if valid:
                 r = self.along_beam(frame["distance_mm"][i], beam)

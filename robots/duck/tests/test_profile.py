@@ -127,6 +127,9 @@ OLD = {
             "floor_view": {"from_m": 0.20, "to_m": 0.40, "half_width_m": 0.10},                # step_check.FROM_M, TO_M, HALF_WIDTH_M
             "side_drops": {"below_slope": 0.035, "suspect_frames": 5,                          # side_drops.BELOW_SLOPE, SUSPECT_FRAMES
                            "suspect_ratio": 3.0, "clear_m": 0.10},                                 # SUSPECT_RATIO, CLEAR_M
+            # new with R2 (no constant before it): NVIDIA's sensors.py:27-78 values for the simulator's depth impairments, switched off
+            "impairment": {"seed": 0, "min_range_m": 0.12, "bias_m": 0.02, "scale": 0.02, "zone_bias_m": 0.01,
+                           "invalid_zone_p": 0.03, "frame_dropout_p": 0.02, "latency_frames_max": 1, "invalid_status": 13},
         },
         "camera": {k: v for k, v in CAMERA_DEFAULTS.items()},
     },
