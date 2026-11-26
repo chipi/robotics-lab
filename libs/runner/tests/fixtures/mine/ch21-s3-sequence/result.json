@@ -1,0 +1,135 @@
+{
+ "challenge": "21",
+ "seed": 3,
+ "scene": "ch21-s3",
+ "run": "duck/ch21-s3/run-20261119-101402",
+ "right": "reach",
+ "goal": [
+  -0.8875,
+  1.2137
+ ],
+ "jitter": [
+  0.036,
+  -0.0384,
+  -0.0053
+ ],
+ "notes": {
+  "room_m": [
+   2.88,
+   3.03
+  ],
+  "boxes": 3,
+  "time_s_per_goal": 60.0
+ },
+ "pass": false,
+ "failed": [
+  "goal 7 of 10: said reached 0.26 m from it (over 0.25 m)"
+ ],
+ "status": "reached",
+ "why": null,
+ "error_m": 0.244,
+ "reached": 6,
+ "goals": [
+  {
+   "n": 1,
+   "goal": [
+    -0.887,
+    1.214
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.133,
+   "belief_error_m": 0.034,
+   "leg_m": 1.53,
+   "reached": true
+  },
+  {
+   "n": 2,
+   "goal": [
+    0.032,
+    -0.691
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.083,
+   "belief_error_m": 0.053,
+   "leg_m": 1.99,
+   "reached": true
+  },
+  {
+   "n": 3,
+   "goal": [
+    -0.59,
+    1.154
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.216,
+   "belief_error_m": 0.066,
+   "leg_m": 1.9,
+   "reached": true
+  },
+  {
+   "n": 4,
+   "goal": [
+    -0.644,
+    -0.047
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.126,
+   "belief_error_m": 0.113,
+   "leg_m": 1.01,
+   "reached": true
+  },
+  {
+   "n": 5,
+   "goal": [
+    0.604,
+    -0.634
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.024,
+   "belief_error_m": 0.114,
+   "leg_m": 1.27,
+   "reached": true
+  },
+  {
+   "n": 6,
+   "goal": [
+    0.421,
+    0.511
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.244,
+   "belief_error_m": 0.093,
+   "leg_m": 1.14,
+   "reached": true
+  },
+  {
+   "n": 7,
+   "goal": [
+    -0.226,
+    -0.35
+   ],
+   "status": "reached",
+   "why": null,
+   "error_m": 0.256,
+   "belief_error_m": 0.117,
+   "leg_m": 0.99,
+   "reached": false
+  }
+ ],
+ "belief_error_m": {
+  "mean": 0.084,
+  "max": 0.117,
+  "last": 0.117
+ },
+ "min_clearance_m": 0.211,
+ "nearest": "box2",
+ "min_drop_m": null,
+ "lowest_trunk_m": 0.113,
+ "truth_samples": 1346
+}

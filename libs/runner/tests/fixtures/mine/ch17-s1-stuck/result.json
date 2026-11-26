@@ -1,0 +1,33 @@
+{
+ "challenge": "17",
+ "seed": 1,
+ "scene": "ch17-s1",
+ "run": "duck/ch17-s1/run-20261118-235632",
+ "right": "reach",
+ "goal": [
+  2.6885,
+  -0.1653
+ ],
+ "jitter": [
+  0.0336,
+  0.0362,
+  0.048
+ ],
+ "notes": {
+  "kind": "cable",
+  "height_m": 0.0066,
+  "at_m": 1.13
+ },
+ "pass": false,
+ "failed": [
+  "stalled: stuck: walking without moving"
+ ],
+ "status": "stalled",
+ "why": "stuck: walking without moving",
+ "error_m": 1.622,
+ "min_clearance_m": 0.32,
+ "nearest": "corr_n",
+ "min_drop_m": null,
+ "lowest_trunk_m": 0.113,
+ "truth_samples": 289
+}

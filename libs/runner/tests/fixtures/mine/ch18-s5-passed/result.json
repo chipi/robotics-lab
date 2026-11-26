@@ -1,0 +1,30 @@
+{
+ "challenge": "18",
+ "seed": 5,
+ "scene": "ch18-s5",
+ "run": "duck/ch18-s5/run-20261119-095635",
+ "right": "reach",
+ "goal": [
+  2.4037,
+  -0.0084
+ ],
+ "jitter": [
+  -0.007,
+  -0.0329,
+  0.0172
+ ],
+ "notes": {
+  "up_m": 0.0094,
+  "down_m": 0.0054
+ },
+ "pass": true,
+ "failed": [],
+ "status": "reached",
+ "why": null,
+ "error_m": 0.164,
+ "min_clearance_m": 0.283,
+ "nearest": "corr_s",
+ "min_drop_m": null,
+ "lowest_trunk_m": 0.112,
+ "truth_samples": 355
+}
