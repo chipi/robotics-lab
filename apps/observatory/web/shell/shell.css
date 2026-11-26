@@ -551,3 +551,17 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
   .vbtn { width: 24px; height: 24px; padding: 0; display: inline-grid; place-items: center; }
   .vbtn .i { display: block; } .vbtn .vbtn-t { display: none; }
 }
+
+/* the eye on a phone: the watch page keeps one column (its two-column span left the top bar in a 100 px strip), the view is square so the picture
+   is most of it, and the HUD is a compact strip over the top with the depth box small in the corner, so the two never meet and the HUD stays under 40 % of the view */
+@media (max-width: 960px) {
+  .app.watch .view { grid-column: 1; }
+  .app.eyeview .view { aspect-ratio: 1 / 1; }
+}
+@media (max-width: 600px) {
+  .hudbox { left: 8px; right: 8px; width: auto; max-height: 36%; overflow: hidden; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-1); line-height: 1.4; }
+  .hudbox .hk { min-width: 44px; } .hudbox .hv { padding-left: 48px; }
+  .app.watch .hudbox { top: 8px; }
+  .hudraw { right: 8px; bottom: 8px; padding: var(--sp-1); }
+  .hudraw canvas { width: 56px; height: 56px; }
+}

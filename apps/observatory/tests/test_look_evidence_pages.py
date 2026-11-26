@@ -123,6 +123,36 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
               and near(c2["target"][:2], c2["robot"][:2], 0.05) and c2["ndc"]["inside"], (c2["target"], c2["robot"]))
 
         pg3 = fresh(390, 844, "light")
+        # hash-only navigation on an open page: an evidence link pasted into the address bar (or clicked as a same-page link) is not a reload
+        pg4 = fresh()
+        boot(pg4, f"{base}/web/three/#scene=room&run=arm/room/r1&view=top&t=1", reload=True)
+        pg4.wait_for_function("window.miniview.state().run !== null && Math.abs(window.miniview.state().t - 1) < 0.11")
+        pg4.evaluate("window.__same = 1")
+        pg4.evaluate("location.hash = '#scene=room&run=arm/room/r1&view=3d&t=2&focus=robot'")
+        pg4.wait_for_function("window.miniview.state().view === '3d' && Math.abs(window.miniview.state().t - 2) < 0.11")
+        pg4.wait_for_function(f"{A}.camera().moving === false")
+        c4 = pg4.evaluate(f"{A}.camera()")
+        check("hash navigation: an evidence link assigned to location.hash on an open page opens at t=2 on the 3D view framed on the robot, paused, without a reload",
+              pg4.evaluate("window.__same") == 1 and pg4.evaluate("window.miniview.config().play.on") is False
+              and near(c4["target"][:2], c4["robot"][:2], 0.05) and c4["ndc"]["inside"], (c4["target"], c4["robot"]))
+        pg4.evaluate("location.hash = '#scene=room&run=arm/room/r1&view=3d&t=1.5'")
+        pg4.wait_for_function("Math.abs(window.miniview.state().t - 1.5) < 0.11")
+        check("hash navigation: a hash with only t changed seeks there, same view", pg4.evaluate("window.miniview.state().view") == "3d" and pg4.evaluate("window.__same") == 1)
+        pg4.go_back()
+        pg4.wait_for_function("Math.abs(window.miniview.state().t - 2) < 0.11")
+        pg4.go_back()
+        pg4.wait_for_function("window.miniview.state().view === 'top' && Math.abs(window.miniview.state().t - 1) < 0.11")
+        check("hash navigation: back after two pushes returns to t=2, then to the first moment (t=1, the top view), no reload", pg4.evaluate("window.__same") == 1)
+        pg4.evaluate("window.miniview.setTime(0.5)")
+        pg4.evaluate("location.hash = '#scene=room&run=arm/room/r1&view=top&t=2.5'")
+        pg4.wait_for_function("Math.abs(window.miniview.state().t - 2.5) < 0.11")
+        pg4.go_back()
+        pg4.wait_for_function("Math.abs(window.miniview.state().t - 0.5) < 0.11")
+        check("hash navigation: back restores the playhead the viewer had left, even when the earlier hash carried no t (the shell rewrites it without one)", abs(pg4.evaluate("window.miniview.state().t") - 0.5) < 0.11)
+        pg4.evaluate("window.miniview.setTime(1.0)")
+        pg4.wait_for_timeout(300)
+        check("hash navigation: the shell's own hash writes do not loop back as navigations", abs(pg4.evaluate("window.miniview.state().t") - 1.0) < 0.11)
+
         c3 = open_link(pg3, L + "&focus=robot", whole_scene=True)
         check("390 px light: the link frames the robot too, and the page has no horizontal overflow",
               near(c3["target"][:2], c3["robot"][:2], 0.05) and c3["ndc"]["inside"] and pg3.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (c3["ndc"], ))

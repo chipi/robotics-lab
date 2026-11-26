@@ -172,8 +172,8 @@ with tempfile.TemporaryDirectory() as tmp:
         ready(page)
         return r
 
-    def open_page(b, url, *, whole=True):
-        page = b.new_context(viewport={"width": 1600, "height": 1000}, color_scheme="dark").new_page()
+    def open_page(b, url, *, whole=True, size=(1600, 1000), scheme="dark"):
+        page = b.new_context(viewport={"width": size[0], "height": size[1]}, color_scheme=scheme).new_page()
         page.logs = []
         page.on("console", lambda m: page.logs.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") and "404" not in m.text else None)
         page.on("pageerror", lambda e: page.logs.append(f"pageerror: {e}"))
@@ -375,6 +375,35 @@ with tempfile.TemporaryDirectory() as tmp:
         # `latest` is the scene's newest run
         lw = open_page(b, f"{base}/watch/duck/room/latest", whole=False)
         check("/watch/<robot>/<scene>/latest opens the scene's newest run", lw.evaluate("window.miniview.state().run") == "duck/room/eye1", lw.evaluate("window.miniview.state().run"))
+        # ---- a phone (390 px): the top bar spans the width, no two controls overlap, the HUD leaves most of the view ---------
+        # The HUD (text box) may cover at most 40 % of the view and the HUD with the depth box at most 50 %: the eye's picture is the point of the page.
+        PHONE = """(() => {
+          const r = (e) => e.getBoundingClientRect(), vis = (e) => e.offsetParent !== null && r(e).width > 0 && r(e).height > 0;
+          const ctl = [...document.querySelectorAll('#topbar button, #topbar a, #topbar input, .transport button, .transport input, .transport select, .tlopts button, .tlopts select')].filter(vis);
+          const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+          const over = [];
+          for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) if (!ctl[i].contains(ctl[j]) && !ctl[j].contains(ctl[i]) && hit(r(ctl[i]), r(ctl[j]))) over.push([ctl[i].id || ctl[i].textContent.trim(), ctl[j].id || ctl[j].textContent.trim()]);
+          const v = r(document.querySelector('.view')), h = r(document.getElementById('hudtxt')), d = r(document.querySelector('.hudraw')), area = (x) => Math.max(0, x.width) * Math.max(0, x.height);
+          const inter = Math.max(0, Math.min(h.right, d.right) - Math.max(h.left, d.left)) * Math.max(0, Math.min(h.bottom, d.bottom) - Math.max(h.top, d.top));
+          const top = r(document.getElementById('topbar'));
+          const vh = r(document.querySelector('.vhead'));
+          return { over, topW: top.width, win: innerWidth, hud: area(h) / area(v), both: (area(h) + area(d) - inter) / area(v), hudDepth: inter, viewH: v.height,
+                   inside: h.left >= v.left - 1 && h.right <= v.right + 1 && h.top >= v.top - 1 && h.bottom <= v.bottom + 1 && d.right <= v.right + 1 && d.bottom <= v.bottom + 1,
+                   overflowX: document.documentElement.scrollWidth > innerWidth, scrollY: Math.round(scrollY), headClear: h.top >= vh.bottom - 1 };
+        })()"""
+        for what, url in (("watch", f"{base}/watch/duck/room/eye1#t=2.05"), ("eye", f"{base}/web/three/#scene=room&run=duck/room/eye1&view=eye&t=2.05")):
+            for scheme in ("light", "dark"):
+                ph = open_page(b, url, whole=False, size=(390, 844), scheme=scheme)
+                ph.wait_for_function("Math.abs(window.miniview.state().t - 2.05) < 1e-6", timeout=15000)
+                ph.wait_for_function("document.getElementById('hudtxt').textContent.length > 20")
+                g = ph.evaluate(PHONE)
+                shot(ph, f"phone-{what}-{scheme}")
+                check(f"390 px {what} {scheme}: the top bar spans the width, no two controls of the top bar and the transport overlap, no horizontal scroll, and the page was not scrolled by the decisions list",
+                      g["topW"] >= g["win"] - 1 and not g["over"] and not g["overflowX"] and g["scrollY"] == 0, g)
+                check(f"390 px {what} {scheme}: the HUD covers at most 40 % of the view, with the depth box at most 50 %, the two do not overlap, both stay inside the view and clear of its header, the view is at least 300 px tall",
+                      g["hud"] <= 0.4 and g["both"] <= 0.5 and g["hudDepth"] == 0 and g["inside"] and g["headClear"] and g["viewH"] >= 300, g)
+                check(f"390 px {what} {scheme}: no page errors", not ph.logs, ph.logs)
+
         check("no page errors on any page", not (page.logs or b_state_logs or w.logs or back.logs or lw.logs or page0.logs or att.logs), (page.logs, w.logs, back.logs, lw.logs, page0.logs, att.logs))
         b.close()
     httpd.shutdown()

@@ -109,6 +109,14 @@ with sync_playwright() as p:
         check("touch targets are at least 44 px on the phone: the tabs, the section heads, the back button, the picker", page.evaluate(
             "() => ['.tab', '#rp-readiness-head', '#rp-back', '#rp-picker', '#theme'].every((s) => [...document.querySelectorAll(s)].every((e) => e.getBoundingClientRect().height >= 44 || !e.offsetParent))"))
         check("no sideways scrolling on the robot page at 390 px", no_scroll())
+        TABS_WHOLE = """() => { const w = innerWidth; return [...document.querySelectorAll('.tabs .tab')].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect();
+            return { t: e.textContent.trim(), ok: r.left >= 0 && r.right <= w && e.scrollWidth <= e.clientWidth + 1 }; }); }"""
+        for w in (390, 320):
+            page.set_viewport_size({"width": w, "height": 800})
+            whole = page.evaluate(TABS_WHOLE)
+            check(f"at {w} px every tab is on screen with its whole label (Overview, Body, Modules, Settings, Calibration: none clipped, none behind a scroll)",
+                  len(whole) == 5 and all(t["ok"] for t in whole), whole)
+        page.set_viewport_size({"width": 390, "height": 800})
 
     # --- tabs: the selected one is in the address, so reload and back keep it ------------------------------------------
     with soft("tabs"):

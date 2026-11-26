@@ -427,6 +427,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function paintHud() {
     const on = eyeOn() && !!M.run && hasTicks();
     $('eyehud').hidden = $('eyecone').hidden = !on;
+    app.classList.toggle('eyeview', on);
     if (!on) return;
     const m = moment(), ev = m.ev, d = ev?.decision, live = M.run.status === 'live', al = alertOut();
     const view = adapter.eyeView?.();
@@ -476,7 +477,10 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     let now = null;
     for (const r of rows) if (+r.dataset.t <= M.t + 1e-9) now = r;
     rows.forEach((r) => r.classList.toggle('now', r === now));
-    if (now && M.watch) now.scrollIntoView({ block: 'nearest' });
+    if (now && M.watch) {                              // the list's own scroll only: scrollIntoView would also scroll a phone's page down to the row
+      const box = now.closest('.decided'), b = box.getBoundingClientRect(), n = now.getBoundingClientRect();
+      if (n.top < b.top) box.scrollTop -= b.top - n.top; else if (n.bottom > b.bottom) box.scrollTop += n.bottom - b.bottom;
+    }
   }
   // the links between the explorer and the watch page, at this moment
   function paintLinks() {
@@ -1405,7 +1409,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     return !!adapter.focusRobot?.();
   }
   function writeHash() {
-    history.replaceState(null, '', M.runId ? '#' + new URLSearchParams({ scene: M.sceneId, run: M.runId, view: M.view, frame: M.frame }) : '#scenes');
+    history.replaceState(history.state, '', M.runId ? '#' + new URLSearchParams({ scene: M.sceneId, run: M.runId, view: M.view, frame: M.frame }) : '#scenes');
   }
 
   // ---- theme (D1): dark by default, follows the system, a switch overrides and is remembered -------------
@@ -1686,6 +1690,29 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       });
     }),
   });
+
+  // ---- hash navigation: a link pasted into the address bar, or followed on this page, is not a reload -----------------------
+  // writeHash uses replaceState, which fires no hashchange, so only the viewer's own navigations land here. Each history entry is
+  // stamped, and the playhead is kept for the entry being left: writeHash drops `t`, so Back could not read it from the hash.
+  let navChain = Promise.resolve(); const left = new Map();
+  const stamp = () => { if (history.state?.rl === undefined) history.replaceState({ rl: Math.random().toString(36).slice(2) }, ''); return history.state.rl; };
+  let here = stamp();
+  async function followHash() {
+    const from = here; here = stamp();
+    if (M.run) left.set(from, M.t);
+    const q = new URLSearchParams(location.hash.slice(1)), at = parseMoment(location.hash), want = VIEW_ALIAS[q.get('view')] || q.get('view');
+    const sc = q.get('scene') || undefined, run = q.get('run') || undefined;
+    if (!watch && (sc || run) && (!M.runId || (run !== undefined && run !== M.runId && run !== M.run?.id) || (sc !== undefined && sc !== M.sceneId))) {
+      try { await openRun(sc, run); } catch (e) { console.warn('the URL names no run:', String(e)); return; }
+    } else if (!watch && !sc && !run && M.runId && /^#?(scenes)?$/.test(location.hash)) { scenesPage(); return; }
+    if (!M.runId) return;
+    if (want && want !== M.view && knownViews().includes(want)) setView(want);
+    const t = at.t ?? left.get(here) ?? null;
+    if (t !== null) { await store.ensure(t); setTime(t); }
+    if (at.focus) focusOn(at.focus);
+    renderChrome();
+  }
+  window.addEventListener('hashchange', () => { navChain = navChain.then(followHash).catch((e) => console.warn(e)); });
 
   // ---- boot ---------------------------------------------------------------------------------------------
   adapter.init(stage, shell);

@@ -315,8 +315,8 @@ fieldset.stgroup legend { padding: 0 6px; font-family: var(--font-mono); font-si
   .strip { padding: var(--sp-3) var(--sp-3) 0; gap: 6px 14px; }
   .laymenu { right: var(--sp-3); }
   .strip h1 { font-size: var(--fs-5); }
-  .tabs { padding: 0 var(--sp-2); }
-  .tab { min-height: 44px; padding: 0 var(--sp-3); }
+  .tabs { padding: 0 var(--sp-1); gap: 0; flex-wrap: wrap; overflow-x: visible; }  /* a tab is never cut: it fits, or the row wraps */
+  .tab { min-height: 44px; padding: 0 var(--sp-2); }
   .content { padding: var(--sp-3); }
   .grid2 { gap: var(--sp-3); }
   .checks .val { max-width: 45%; }
