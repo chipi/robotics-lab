@@ -546,6 +546,11 @@ screenshots: observatory-sync ## Retake the README's and docs' screenshots (docs
 	@cd $(OBSERVATORY_DIR) && uv run --frozen python ../../scripts/look_shots.py --out ../../docs/assets/screenshots --only $(SCREENSHOT_SHOTS)
 	@rm -f docs/assets/screenshots/shots.json && ls -l docs/assets/screenshots && echo "screenshots PASS"
 
+.PHONY: screenshots-nxt
+screenshots-nxt: observatory-sync nxt-sync ## Retake the NXT web guide's screenshots (docs/assets/screenshots/guides/nxt-web) against nxt-web --fake on port 18210 in headless Chromium; no robot, no USB, no Bluetooth
+	@cd $(OBSERVATORY_DIR) && uv run --frozen python ../../scripts/nxt_shots.py --out ../../docs/assets/screenshots/guides/nxt-web
+	@echo "screenshots-nxt PASS"
+
 .PHONY: docs-clean
 docs-clean: ## Remove built site
 	rm -rf site/
