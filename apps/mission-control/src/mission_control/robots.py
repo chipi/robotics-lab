@@ -39,7 +39,7 @@ from runfile import registry
 from runfile.profile import FormatError, Profile, checksum, merge_variant, validate_profile
 from runfile.profilestore import StoreError
 
-from . import guardrails, robotfile
+from . import planning, robotfile
 from .battery import BatteryRule
 from .errors import ApiError, conflict, invalid
 
@@ -139,7 +139,7 @@ class RobotConfig:
             raise ConfigError(f"{self.id}: {exc}") from None
         self.control = control
         try:
-            self.guardrails = guardrails.normalise_list(raw.get("guardrails"))
+            self.guardrails = planning.normalise_list(raw.get("guardrails"))
         except ApiError as exc:
             raise ConfigError(f"{self.id}: {exc}") from None
         try:                                # the profile's own rules (runfile.profile): one set for the robot file and the profile

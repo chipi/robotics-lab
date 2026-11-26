@@ -703,6 +703,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
+    { name = "missions" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "robotgate" },
@@ -718,6 +719,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "missions", editable = "../../libs/missions" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.45,<2" },
     { name = "robotgate", editable = "../../libs/gate" },
@@ -729,6 +731,11 @@ dev = [
     { name = "labrunner", editable = "../../libs/runner" },
     { name = "simhost", editable = "../../libs/simhost" },
 ]
+
+[[package]]
+name = "missions"
+version = "0.1.0"
+source = { editable = "../../libs/missions" }
 
 [[package]]
 name = "opentelemetry-api"

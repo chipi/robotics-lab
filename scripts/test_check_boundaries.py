@@ -134,6 +134,22 @@ check("a robot with a path source to the format passes", got == [], got)
 got = run(lambda r: project(r, "robots/duck", "duck_lab", {}, '[tool.uv.sources]\nrunfile = { path = "../../libs/nowhere" }\n'))
 check("a path source that is not a project is a failure", len(got) == 1, got)
 
+# mission planning (RFC-0030): Mission Control imports it, and it imports nothing of the lab, so it has no path to a robot
+got = run(lambda r: (project(r, "libs/missions", "missions", {"planner.py": "import robotgate\nfrom runfile import navcontract\nimport mission_control.core\nimport simhost\n"}),
+                     project(r, "libs/gate", "robotgate", {}), project(r, "libs/runfile", "runfile", {}),
+                     project(r, "apps/mission-control", "mission_control", {}), project(r, "libs/simhost", "simhost", {})))
+check("the planning library may import no package of the lab: not the gate, the run format, Mission Control nor the host library",
+      len(got) == 4 and all("libs/missions/src/missions/planner.py" in g for g in got), got)
+got = run(lambda r: (project(r, "apps/mission-control", "mission_control", {"planning.py": "from missions import goals\nimport missions.planner\n"},
+                             '[tool.uv.sources]\nmissions = { path = "../../libs/missions" }\n'),
+                     project(r, "libs/missions", "missions", {"goals.py": "import json\n"})))
+check("Mission Control may import the planning library, and name it as a path source", got == [], got)
+got = run(lambda r: (project(r, "libs/missions", "missions", {}, '[tool.uv.sources]\nrunfile = { path = "../runfile" }\n'),
+                     project(r, "libs/runfile", "runfile", {})))
+check("the planning library with a path source to another library fails", len(got) == 1 and "pyproject.toml" in got[0], got)
+got = run(lambda r: (project(r, "apps/observatory", "observatory", {"a.py": "import missions\n"}), project(r, "libs/missions", "missions", {})))
+check("only Mission Control may import the planning library: the Observatory may not", len(got) == 1, got)
+
 # a file that does not parse is a failure, not silence
 got = run(lambda r: project(r, "libs/runfile", "runfile", {"bad.py": "def (:\n"}))
 check("a file that does not parse fails", len(got) == 1 and "does not parse" in got[0], got)

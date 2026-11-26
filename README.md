@@ -57,6 +57,7 @@ Three kinds of folder (RFC-0018). Every project is its own uv project with its o
 | [libs/runner/](libs/runner/) | The runner (RFC-0021, RFC-0022), `labrunner`: starts a robot's navigator as a payload, judges it by the truth, writes the official run; the course and its judge, the scores, the simulated camera, the gate proxy; `lab-challenge`, `lab-eval`, `lab-explore`, `lab-go`, `lab-nav-server`, `lab-gate`, `lab-scenarios` (scenario sets for the eval repository) (`--robot duck`; the old `duck-*` names work for one release) |
 | [libs/runfile/](libs/runfile/) | The run format: schemas, writer and reader, keys, the truth copy, the importers of a robot's log, the catalog |
 | [libs/gate/](libs/gate/) | The robot gate (RFC-0017), `robotgate`: one driver per robot |
+| [libs/missions/](libs/missions/) | Mission planning (RFC-0030), `missions`: the goal schemas, the guardrail vocabulary and its merge, the planner; data in, data out, no robot; standard library only |
 | [libs/worldmodel/](libs/worldmodel/) | Objects, the semantic map and sites, which know no robot |
 | [libs/web/](libs/web/) | The web library both apps share (RFC-0024): the design tokens and fonts, the three.js stage, the palette, layouts, time, evidence links; plain ES modules, served at `/lib/` (`make test-web`) |
 | [scenes/](scenes/) | The scenes, one folder each with a `scene.json` (bounds, rooms, hazards, boxes), versioned here and read by `libs/runfile` (the scene file, PHASE5-NEXT-PLAN item 2); `scenes/apartment` |
@@ -76,7 +77,7 @@ so a red job reproduces locally with the target it names:
 | Target | What |
 | --- | --- |
 | `make ci-fast` | lint (compile, workflows, package boundaries), then `test-sim-lock`, `test-deploy`, `test-libs`, `test-web` and every project's unit tests: `test-unit` (nxt), `test-duck`, `test-observatory`, `test-control` |
-| `make test-libs` | each library's own tests, each in its own environment (`libs/runfile`, `simhost`, `gate`, `runner`) |
+| `make test-libs` | each library's own tests, each in its own environment (`libs/runfile`, `simhost`, `gate`, `missions`, `runner`) |
 | `make test-web` | the shared web library: one token file, one three.js (standard library only) |
 | `make test-deploy` | `scripts/deploy.py`'s self-test: a named commit's files, the overlay, the record and the rollback (no Docker) |
 | `make test-sim-lock` | `scripts/sim-lock`'s self-test: waits for a holder, gives up after its timeout (no simulator) |

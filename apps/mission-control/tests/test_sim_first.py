@@ -16,7 +16,7 @@ from pathlib import Path
 
 from common import FAKE_FILE, Clock, check, finish, finish_run, installation_file, run_for
 
-from mission_control import goals
+from mission_control import goals, planning
 from mission_control.api import serve
 from mission_control.core import MissionControl
 from mission_control.robots import RobotConfig
@@ -73,11 +73,11 @@ plain = b2["goal"]["id"]
 st, b3 = call("POST", "/goals", {k: v for k, v in POINT.items() if k != "sim_first"} | {"name": "unsaid"})
 check("a goal that never heard of it has no field", st == 201 and "sim_first" not in b3["goal"], b3)
 unsaid = b3["goal"]["id"]
-v = goals.version(goals.validate(POINT))
+v = planning.version(planning.validate(POINT))
 check("a goal's version is its content: not its name, folder or the flag; any other edit changes it",
-      v == goals.version(goals.validate({**POINT, "name": "other", "folder": "x", "sim_first": False}))
-      and v != goals.version(goals.validate({**POINT, "params": {"x": 1.1, "y": 0.0}}))
-      and v != goals.version(goals.validate({**POINT, "done_when": {"within_m": 0.5}})), v)
+      v == planning.version(planning.validate({**POINT, "name": "other", "folder": "x", "sim_first": False}))
+      and v != planning.version(planning.validate({**POINT, "params": {"x": 1.1, "y": 0.0}}))
+      and v != planning.version(planning.validate({**POINT, "done_when": {"within_m": 0.5}})), v)
 
 # --- the real robot, before any rehearsal ---------------------------------------------------------------------------------------------
 r = run(gid, "duck-real", "real")

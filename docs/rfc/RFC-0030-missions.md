@@ -2,7 +2,8 @@
 
 **Status:** Proposed, revision 2 (2026-11-26), after the advisor's
 [review](../wip/RFC-0030-REVIEW-2026-11-26.md), which the operator approved folding in. For the
-operator's decision. Nothing in it is built. Findings are cited as (review C1) and so on.
+operator's decision. Built so far: row 1 of section 7, step 1 of 4.4 (the carve-out, 2026-11-26);
+nothing else. Findings are cited as (review C1) and so on.
 **Date:** 2026-11-26
 **Decided by the operator on 2026-11-26 (recorded here, not open):** the platform keeps two
 modes, named "manual" and "auto" (section 6.1); auto works as plan, review, then execute
@@ -333,6 +334,25 @@ The import sites that change (review M4; `api.py` imports none of goals, planner
 I read the import lines; I did not run the move, so a cycle or a missed site would show only in
 `make ci-fast`.
 
+**Built (2026-11-26, step 1 only).** `libs/missions` holds `planner.py`, `guardrails.py` (vocabulary,
+`_LIMITS` and `merge` unchanged), the planning half of `goals.py` and `errors.py`
+(`PlanError`). It imports nothing of the lab (`ALLOWED["missions"]` is empty; `runfile` was not
+needed, because the run states stayed). Mission Control reaches it through one module,
+`planning.py`, which maps `PlanError` to `ApiError` (422 with the library's code; 502 for
+`planner_failed`), and a test pins that no other file of the package imports `missions`. What the
+real code showed against the table above:
+
+- A fourth test file imports the moved names: `tests/test_sim_first.py:19` (`goals.version`,
+  `goals.validate`). The table lists three.
+- `goals.normalise_folder` went with `validate`, which calls it (section 2 classes it as config).
+- `capability_refusal`, `not_checkable` and `start_pose` stayed in Mission Control's `goals.py`:
+  they take no schema, and `start_pose` raises an `ApiError`.
+- `test_planner.py` and `test_goals.py` were each split, not moved whole: Mission Control keeps
+  `POST /plan`, the site's context and the merge check (a plan never loosens); the library keeps
+  the matcher, the LLM client against its stand-in, the schemas and the import pin (now over every
+  file of the library). `tests/test_characterise_missions.py` records the answers and error codes
+  of goals, plans and guardrails from before the move (`characterise_missions.json`).
+
 ### 4.5 The mission state machine, in Mission Control (review H3)
 
 Approval is not a flag in an answer. Mission Control holds the mission's state and refuses what
@@ -660,7 +680,7 @@ Manual mode is unaffected throughout.
 
 | # | What | When | Depends on | Size |
 | --- | --- | --- | --- | --- |
-| 1 | The `libs/missions` carve-out (section 4.4 steps 1 and 2) and the versioned plan contract. A plan is how a sequence or an auto mission runs; manual mode keeps `POST /goal-runs` as it is, and a plan of one goal is optional, never required | **Before MVP 2**, as a step before RFC-0025's step 1, together with the technical review's two refactors | Nothing; guarded by `make ci-fast` and the goal tests. The carve-out adds `missions` to `MODULES`, `ALLOWED`, `libs-sync` and `LIBS_TESTS` (4.1) | S to M |
+| 1 | The `libs/missions` carve-out (section 4.4 steps 1 and 2) and the versioned plan contract. A plan is how a sequence or an auto mission runs; manual mode keeps `POST /goal-runs` as it is, and a plan of one goal is optional, never required | **Before MVP 2**, as a step before RFC-0025's step 1, together with the technical review's two refactors. **Done 2026-11-26 for 4.4 step 1 (the carve-out, see "Built" in 4.4); 4.4 step 2 (the plan document) is not built** | Nothing; guarded by `make ci-fast` and the goal tests. The carve-out adds `missions` to `MODULES`, `ALLOWED`, `libs-sync` and `LIBS_TESTS` (4.1) | S to M |
 | 2 | The auto-mode spike (section 6.7): explore the apartment in the duck simulator, replanning on new sightings; rules planner and rule reviewer first, then an LLM. Token and cost capture before the first LLM run | **During MVP 2**, as a bounded side lane off the critical path; it stops at its measures and reports | Nothing from steps 1 to 5a; the duck simulator and Mission Control as they are | S to M |
 | 3 | Auto mode as a feature: the mission runner, the review stage, the decision record, approval modes | **After MVP 2** | The written robot interface (RFC-0025 step 1); the scan and map in the run (step 8), so the decision record is one run-format change, not two; a second robot, so plans are shown not to be duck-shaped (step 5b or 6); a safety review before an AI drives a real robot, like step 10's, which covers the stop latch (6.5, C1) and the server-side approval (4.5, H3) | L |
 

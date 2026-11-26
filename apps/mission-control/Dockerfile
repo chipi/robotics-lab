@@ -1,6 +1,6 @@
 # Mission Control (RFC-0014 §3.13) as an image, to run on any of the operator's machines.
 #
-#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile and libs/gate too
+#   docker build -f apps/mission-control/Dockerfile -t mission-control:local .     # from the repository root: it installs libs/runfile, libs/gate and libs/missions too
 #   docker run --rm -p 127.0.0.1:8060:8060 -v $PWD/apps/mission-control/robots.example:/config/robots:ro -v mc-state:/state mission-control:local
 #
 # `make`'s control-up / control-down wrap apps/mission-control/compose.yml. Configuration (the robot files) and data (the SQLite store, the gates'
@@ -8,7 +8,7 @@
 # network, never through a device on this host. The API has no login by default: publish the port on loopback (as above) or on the
 # tailnet's address, never on a public interface (RFC-0014 §3.9); `--require-tokens` adds per-client tokens.
 #
-# The versions are apps/mission-control/uv.lock's, installed with `uv sync --frozen --no-dev`. The gate (RFC-0017, libs/gate) and the run
+# The versions are apps/mission-control/uv.lock's, installed with `uv sync --frozen --no-dev`. The gate (RFC-0017, libs/gate), mission planning (RFC-0030, libs/missions) and the run
 # format (libs/runfile) are path sources in apps/mission-control/pyproject.toml, so the folders sit side by side as they do in the
 # repository, and are installed editable from there. libs/web (the design tokens, three.js, the robot body) sits beside them, where api.py finds it. No robot's package is in the image (phase 5 step 1): a robot file that points at a
 # robot's profile (`"robot": "duck"`) needs an installation file mounted (ROBOTICS_LAB_INSTALLATION) whose robots.<name>.registration
@@ -24,6 +24,8 @@ COPY libs/runfile/src ./libs/runfile/src
 COPY libs/web ./libs/web
 COPY libs/gate/pyproject.toml ./libs/gate/pyproject.toml
 COPY libs/gate/src ./libs/gate/src
+COPY libs/missions/pyproject.toml ./libs/missions/pyproject.toml
+COPY libs/missions/src ./libs/missions/src
 COPY apps/mission-control/pyproject.toml apps/mission-control/uv.lock ./apps/mission-control/
 COPY apps/mission-control/src ./apps/mission-control/src
 RUN cd apps/mission-control && uv sync --frozen --no-dev \

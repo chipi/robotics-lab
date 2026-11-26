@@ -11,7 +11,7 @@ from pathlib import Path
 
 from robotgate import GateError, ProtocolError
 
-from . import goals, guardrails, planner
+from . import goals, planning
 from .errors import ApiError, conflict, invalid, not_found
 from .alarms import RecentAlarms
 from .auth import Tokens
@@ -211,7 +211,7 @@ class MissionControl:
                 raise conflict("name_taken", f"the folder {goal['folder'] or '/'} has a goal called {goal['name']!r}")
 
     def create_goal(self, spec) -> dict:
-        goal = goals.validate(spec)
+        goal = planning.validate(spec)
         with self.store.transaction():
             self._folder_clash(goal)
             now = self.wall()
@@ -231,7 +231,7 @@ class MissionControl:
     def list_goals(self, folder: str | None = None) -> list:
         rows = self.store.all("SELECT * FROM goals WHERE retired = 0 ORDER BY folder, name")
         if folder is not None:
-            folder = goals.normalise_folder(folder)
+            folder = planning.normalise_folder(folder)
             rows = [r for r in rows if folder == "" or r["folder"] == folder or r["folder"].startswith(folder + "/")]
         return [self._goal_view(r) for r in rows]
 
@@ -243,7 +243,7 @@ class MissionControl:
     def update_goal(self, gid: int, spec) -> dict:
         self._goal_row(gid)
         self._running_goal(gid)
-        goal = goals.validate(spec)
+        goal = planning.validate(spec)
         with self.store.transaction():
             self._folder_clash(goal, gid)
             self.store.execute("UPDATE goals SET name = ?, folder = ?, spec = ?, updated_at = ? WHERE id = ?",
@@ -308,7 +308,7 @@ class MissionControl:
             raise invalid("target is 'sim' or 'real'")
         if target == "real" and rt.cfg.kind == "fake":
             raise invalid("the fake robot is not a real robot")
-        goal = goals.validate(goal_spec, require_name=False)
+        goal = planning.validate(goal_spec, require_name=False)
         start_pose = goals.start_pose(body.get("start_pose"))
         site_id = self._site_of(body, rt)
         if not rt.online():
@@ -354,7 +354,7 @@ class MissionControl:
         rts = [self.robot(i) for i in ids]
         if target == "real" and any(rt.cfg.kind == "fake" for rt in rts):
             raise invalid("the fake robot is not a real robot")
-        goal = goals.validate(goal_spec, require_name=False)
+        goal = planning.validate(goal_spec, require_name=False)
         sites = {self._site_of(body, rt) for rt in rts}
         now = self.wall()
         parent_id = self.store.execute(
@@ -462,7 +462,7 @@ class MissionControl:
         levels = {"robot": rt.cfg.guardrails, "goal": goal_guards}
         if site_id is not None:
             levels["site"] = self.sites.guardrails(site_id)
-        merged = guardrails.merge(levels)
+        merged = planning.merge(levels)
         caps = rt.cfg.capabilities
         conditions = {"done_when": goal["done_when"], "not_checkable": goals.not_checkable(caps, goal),
                       **({"start_pose": start_pose} if start_pose else {})}
@@ -533,13 +533,13 @@ class MissionControl:
         """What a run on the real robot records about its rehearsal in the simulator (None for a run that is not real): `flagged` (the
         goal is simulator-first), `state` (`rehearsed` or `not_rehearsed`), `run` (the simulator run that rehearsed it), `goal_version`.
 
-        A run rehearses when it ran this goal's content (goals.version), on a robot of the same registered kind in the simulator variant
+        A run rehearses when it ran this goal's content (planning.version), on a robot of the same registered kind in the simulator variant
         with target `sim`, for the same site, ended as expected with a verdict (an `rtf_low` run has none), within REHEARSAL_MAX_AGE_S.
         The goal is the stored one, so an edit drops it; the newest such run is the one named. Nothing consumes a rehearsal: a refused or
         failed real run can be tried again on the same one, until it is a day old."""
         if not self._real(rt, target):
             return None
-        version = goals.version(goal)
+        version = planning.version(goal)
         twins = self._simulated_twins(rt)
         found = None
         if twins:
@@ -547,7 +547,7 @@ class MissionControl:
                 f"SELECT * FROM goal_runs WHERE robot IN ({','.join('?' * len(twins))}) AND target = 'sim' AND as_expected = 1"
                 " AND site_id IS ? AND ended_at >= ? AND share IS NULL ORDER BY ended_at DESC, id DESC",
                 (*twins, site_id, self.wall() - goals.REHEARSAL_MAX_AGE_S))
-            found = next((r for r in rows if goals.version(loads(r["goal"])) == version), None)
+            found = next((r for r in rows if planning.version(loads(r["goal"])) == version), None)
         return {"flagged": goal.get("sim_first", True), "state": "rehearsed" if found else "not_rehearsed",
                 "run": found["id"] if found else None, "robot": found["robot"] if found else None, "goal_version": version,
                 "rehearse_on": twins[0] if twins else None}
@@ -709,7 +709,7 @@ class MissionControl:
         areas = self.sites.areas(site) if site else []
         objects = self.sites.objects(site) if site else []
         kinds = {k for r in ([rt] if rt else self.robots.values()) for rec in r.cfg.capabilities.get("recognisers", []) for k in rec.get("kinds", [])}
-        out = planner.plan(text, planner.Context(areas, objects, kinds, site), self.planner)
+        out = planning.plan(text, planning.Context(areas, objects, kinds, site), self.planner)
         out["site"] = site
         return out
 

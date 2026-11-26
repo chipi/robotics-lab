@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "robotgate",
     "runfile",
+    "missions",
     "mcp>=2.3.0",
     "opentelemetry-sdk>=1.45,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.45,<2",
@@ -19,10 +20,11 @@ dev = [
     "simhost",
 ]
 
-# The gate (RFC-0017) is a library (libs/gate), a path source like the run format, so there is one copy of the rules.
+# The gate (RFC-0017) and mission planning (RFC-0030) are libraries (libs/gate, libs/missions), path sources like the run format, so there is one copy of the rules.
 [tool.uv.sources]
 labrunner = { path = "../../libs/runner", editable = true }
 robotgate = { path = "../../libs/gate", editable = true }
+missions = { path = "../../libs/missions", editable = true }
 runfile = { path = "../../libs/runfile", editable = true }
 simhost = { path = "../../libs/simhost", editable = true }
 worldmodel = { path = "../../libs/worldmodel", editable = true }

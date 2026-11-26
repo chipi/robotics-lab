@@ -28,6 +28,7 @@ drives it all from Mission Control.
 | [`libs/runner/`](https://github.com/chipi/robotics-lab/tree/main/libs/runner) | The runner: starts a navigator as a payload, judges it by the truth, writes the official run |
 | [`libs/runfile/`](https://github.com/chipi/robotics-lab/tree/main/libs/runfile) | The run format |
 | [`libs/gate/`](https://github.com/chipi/robotics-lab/tree/main/libs/gate) | The robot gate: one driver per robot |
+| [`libs/missions/`](https://github.com/chipi/robotics-lab/tree/main/libs/missions) | Mission planning: goal schemas, the guardrail vocabulary, the planner; no robot |
 | [`libs/worldmodel/`](https://github.com/chipi/robotics-lab/tree/main/libs/worldmodel) | Objects, the semantic map, sites |
 | [`libs/web/`](https://github.com/chipi/robotics-lab/tree/main/libs/web) | The web library both apps share: tokens, fonts, the 3D stage, the palette |
 | [`robots/`](https://github.com/chipi/robotics-lab/tree/main/robots) | Each robot: the duck's profile, plugins and navigator; the robots' descriptions and meshes |

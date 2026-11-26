@@ -30,7 +30,7 @@ truth's port in any run since (583 checks in the proof batch, 150 in an explorat
 | **Gate** | The one lock in front of a robot: one driver at a time, a STOP that always works, takeover by name | Who holds the robot | What they do with it | `libs/gate` (`robotgate`, the rules), `libs/runner` (`lab-gate`, the proxy) | [RFC-0017](rfc/RFC-0017-robot-access.md) |
 | **Run format and the Observatory** | Every run recorded one way (format 2, MCAP); the viewer and its API, live and replay | Runs | Robots, hosts | `libs/runfile`, `apps/observatory` | [ADR-0007](adr/ADR-0007-run-file-format-2.md), [the Observatory's contract](https://github.com/chipi/robotics-lab/blob/main/apps/observatory/CONTRACT.md) |
 | **World model** | Objects, the semantic map, sites and their areas, for any robot | Places and things | Robots | `libs/worldmodel` | [RFC-0016](rfc/RFC-0016-objects-and-semantic-map.md) |
-| **Mission Control** | The operator's control panel: robots, sites, goals, live status, STOP | Robots through their adapters | How a navigator works, the truth | `apps/mission-control` | [RFC-0014](rfc/RFC-0014-mission-control.md) |
+| **Mission Control** | The operator's control panel: robots, sites, goals, live status, STOP | Robots through their adapters | How a navigator works, the truth | `apps/mission-control`; the goal schemas, guardrail vocabulary and planner it uses are `libs/missions` ([RFC-0030](rfc/RFC-0030-missions.md)) | [RFC-0014](rfc/RFC-0014-mission-control.md) |
 
 Which package may import which is checked on every `make lint` (`scripts/check_boundaries.py`, the
 table in [RFC-0018 §10](rfc/RFC-0018-lab-projects-and-seams.md)): the navigator (`duck_lab.nav`, the

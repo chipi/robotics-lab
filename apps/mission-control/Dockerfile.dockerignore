@@ -1,4 +1,4 @@
-# The build context is the repository root (the image installs the libraries it uses (libs/runfile, libs/gate) beside Mission Control; no
+# The build context is the repository root (the image installs the libraries it uses (libs/runfile, libs/gate, libs/missions) beside Mission Control; no
 # robot's package): only what the Dockerfile copies goes in.
 *
 !apps/mission-control/pyproject.toml
@@ -9,4 +9,6 @@
 !libs/web
 !libs/gate/pyproject.toml
 !libs/gate/src
+!libs/missions/pyproject.toml
+!libs/missions/src
 **/__pycache__/

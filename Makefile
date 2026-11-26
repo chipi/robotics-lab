@@ -79,9 +79,9 @@ duck-sync: ## Create/refresh the duck project's venv from its lock (uv, with its
 # need a robot (its simulator files, its profile) stay in the duck's.
 LIBS_TESTS := runfile:tests/test_profile_schema.py runfile:tests/test_installation.py runfile:tests/test_truthcopy.py simhost:tests/test_simhost.py \
               runfile:tests/test_profilestore.py runfile:tests/test_observatory_paths.py gate:tests/test_gate.py runner:tests/test_gate_proxy.py \
-              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py runfile:tests/test_linkcheck.py runfile:tests/test_retention.py runfile:tests/test_dashboard.py runfile:tests/test_build.py runner:tests/test_build_record.py runner:tests/test_scenarios.py
-libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, runner)
-	@for d in runfile simhost gate runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
+              runner:tests/test_profile_source.py runner:tests/test_navapi_notruth.py runfile:tests/test_registration.py runner:tests/test_remote_contract.py runfile:tests/test_stops_before.py runfile:tests/test_store_anomaly.py runfile:tests/test_scenefile.py runner:tests/test_import.py runner:tests/test_navapi_calibration.py runner:tests/test_link.py runner:tests/test_navapi_clock.py runner:tests/test_no_navigator.py runner:tests/test_measure.py runfile:tests/test_linkcheck.py runfile:tests/test_retention.py runfile:tests/test_dashboard.py runfile:tests/test_build.py runner:tests/test_build_record.py runner:tests/test_scenarios.py missions:tests/test_goals.py missions:tests/test_planner.py
+libs-sync: ## Create/refresh each library's own venv from its lock (libs/runfile, simhost, gate, missions, runner)
+	@for d in runfile simhost gate missions runner; do (cd libs/$$d && uv sync --frozen --quiet) || exit 1; done; echo "libs-sync PASS"
 
 test-libs: libs-sync ## The libraries' own tests, each in its own environment (no robot installed)
 	@fail=0; for t in $(LIBS_TESTS); do d=$${t%%:*}; f=$${t#*:}; log=$$(mktemp); \
@@ -101,7 +101,7 @@ observatory-sync: ## Create/refresh the Observatory's venv from its lock (uv, wi
 lint: ## Byte-compile every Python file of every project
 	@$(PYTHON) -m compileall -q $(NXT_DIR)/src $(NXT_DIR)/scripts $(NXT_DIR)/tests \
 	  $(DUCK_DIR)/src $(DUCK_DIR)/tests $(DUCK_DIR)/sim $(OBSERVATORY_DIR)/src $(OBSERVATORY_DIR)/tests \
-	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests libs/runfile/src libs/gate/src libs/worldmodel/src libs/runner/src libs/runner/tests libs/simhost/src libs/simhost/tests scripts >/dev/null \
+	  $(CONTROL_DIR)/src $(CONTROL_DIR)/tests libs/runfile/src libs/gate/src libs/missions/src libs/missions/tests libs/worldmodel/src libs/runner/src libs/runner/tests libs/simhost/src libs/simhost/tests scripts >/dev/null \
 	  || { echo "lint FAIL: Python does not compile"; exit 1; }
 	@uv run --no-project --quiet --with pyyaml python scripts/check_workflows.py \
 	  || { echo "lint FAIL: a GitHub workflow does not parse"; exit 1; }
@@ -134,7 +134,7 @@ OBSERVATORY_TESTS       := tests/test_env.py tests/test_duck_adapter.py tests/te
 OBSERVATORY_PAGE_TESTS   := tests/test_live_page.py tests/test_store_page.py tests/test_ui.py tests/test_nxt_pages.py tests/test_replay_pages.py tests/test_export_pages.py tests/test_explore_pages.py tests/test_eye_pages.py \
                        tests/test_semantic_pages.py tests/test_anomaly_pages.py tests/test_body_pages.py tests/test_look_ui_pages.py tests/test_look_time_pages.py tests/test_look_shell_pages.py tests/test_look_confirm_pages.py tests/test_look_3d_pages.py tests/test_look_palette_pages.py tests/test_look_signals_pages.py tests/test_look_layout_pages.py tests/test_look_evidence_pages.py tests/test_look_verbs_pages.py tests/test_look_lanes_pages.py tests/test_boot_helper.py
 
-CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_adapter_contract.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py tests/test_telemetry_hook.py
+CONTROL_TESTS       := tests/test_geometry.py tests/test_goals.py tests/test_sites.py tests/test_fake.py tests/test_core.py tests/test_api.py tests/test_mcp.py tests/test_duck_adapter.py tests/test_teams.py tests/test_planner.py tests/test_planning.py tests/test_characterise_missions.py tests/test_tokens.py tests/test_nxt_adapter.py tests/test_adapter_contract.py tests/test_nxt_registered.py tests/test_robotfile.py tests/test_profile_api.py tests/test_calibration_api.py tests/test_sim_first.py tests/test_duck_real.py tests/test_telemetry.py tests/test_telemetry_hook.py
 
 .PHONY: test-control test-duck test-observatory test-observatory-pages
 test-control: control-sync nxt-sync ## Mission Control against the fake robot: rules, store, core, the HTTP API and its event stream (no simulator, no robot)
@@ -166,7 +166,7 @@ test-observatory-pages: observatory-sync ## the Observatory's two pages in headl
 .PHONY: test-control-page
 test-control-page: observatory-sync ## Mission Control's page in headless Chromium at phone and desktop width, light and dark (the Observatory's Playwright and OBSERVATORY_CHROMIUM; control has no browser dependency)
 	@for t in test_page test_robot_page test_settings_page test_calibration_page test_body_page test_body_duck_page test_nxt_page test_one_origin_page test_look_page; do log=$$(mktemp); \
-	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then if grep -q "^SKIP" $$log; then grep "^SKIP" $$log; else echo "PASS $(CONTROL_DIR)/tests/$$t.py"; fi; \
+	  if (cd $(OBSERVATORY_DIR) && PYTHONPATH=$(abspath $(CONTROL_DIR))/src:$(abspath libs/gate)/src:$(abspath libs/missions)/src uv run --frozen python $(abspath $(CONTROL_DIR))/tests/$$t.py) >$$log 2>&1; then if grep -q "^SKIP" $$log; then grep "^SKIP" $$log; else echo "PASS $(CONTROL_DIR)/tests/$$t.py"; fi; \
 	  else echo "FAIL $(CONTROL_DIR)/tests/$$t.py"; cat $$log; rm -f $$log; exit 1; fi; rm -f $$log; done
 	@echo "test-control-page PASS"
 

@@ -26,7 +26,7 @@ import threading
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-for p in (REPO / "apps/observatory/tests", REPO / "apps/mission-control/tests", REPO / "apps/mission-control/src", REPO / "libs/gate/src"):
+for p in (REPO / "apps/observatory/tests", REPO / "apps/mission-control/tests", REPO / "apps/mission-control/src", REPO / "libs/gate/src", REPO / "libs/missions/src"):
     sys.path.insert(0, str(p))
 
 CACHE = Path.home() / ".cache" / "robotics-lab-tests"

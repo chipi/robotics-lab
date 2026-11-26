@@ -6,7 +6,7 @@ import math
 import re
 import time
 
-from . import geometry, guardrails
+from . import geometry, planning
 from .errors import ApiError, conflict, invalid, not_found
 from .store import dumps, loads
 
@@ -251,7 +251,7 @@ class Sites:
         """The site's guardrails, including its no-go areas; an area is stored by id."""
         self._row(sid)
         out = []
-        for g in guardrails.normalise_list(entries):
+        for g in planning.normalise_list(entries):
             if g["name"] == "no_go_area":
                 g = {"name": "no_go_area", "area": self.area(sid, g["area"])["id"]}
             if g not in out:
@@ -386,7 +386,7 @@ class Sites:
                 report["objects"]["created"].append(oid)
             wanted = []
             for g in bundle.get("guardrails", []):
-                g = guardrails.normalise(g)
+                g = planning.normalise(g)
                 if g["name"] == "no_go_area":
                     g = {"name": "no_go_area", "area": self.area(sid, g["area"])["id"]}
                 wanted.append(g)

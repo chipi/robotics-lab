@@ -1,0 +1,3557 @@
+{
+ "direct_levels": [
+  "robot",
+  "site",
+  "goal"
+ ],
+ "direct_match": [
+  [
+   {
+    "kind": "go_to_area",
+    "name": "go to the Kitchen",
+    "params": {
+     "area": "kitchen"
+    }
+   }
+  ],
+  [
+   {
+    "kind": "go_to_object",
+    "name": "go to cold box",
+    "params": {
+     "label": "the cold box"
+    }
+   }
+  ],
+  [
+   {
+    "kind": "go_to_object",
+    "name": "go to fridge",
+    "params": {
+     "kind": "fridge"
+    }
+   }
+  ],
+  [
+   {
+    "kind": "go_to_object",
+    "name": "go to bed",
+    "params": {
+     "kind": "bed"
+    }
+   }
+  ],
+  [
+   {
+    "kind": "point",
+    "name": "go to (1.5, 0.5)",
+    "params": {
+     "x": 1.5,
+     "y": 0.5
+    }
+   }
+  ],
+  [
+   {
+    "kind": "point",
+    "name": "go to (2, -1)",
+    "params": {
+     "x": 2.0,
+     "y": -1.0
+    }
+   }
+  ],
+  [
+   {
+    "kind": "explore",
+    "name": "explore the site",
+    "params": {
+     "site": true
+    }
+   }
+  ],
+  [
+   {
+    "kind": "explore",
+    "name": "explore the Kitchen",
+    "params": {
+     "area": "kitchen"
+    }
+   }
+  ],
+  [],
+  [
+   {
+    "kind": "inventory",
+    "name": "inventory of the site",
+    "params": {
+     "areas": []
+    }
+   }
+  ],
+  [
+   {
+    "kind": "inventory",
+    "name": "inventory of the Kitchen",
+    "params": {
+     "areas": [
+      "kitchen"
+     ]
+    }
+   }
+  ],
+  [
+   {
+    "kind": "inventory",
+    "name": "inventory of the site",
+    "params": {
+     "areas": []
+    }
+   }
+  ],
+  [
+   {
+    "kind": "go_to_area",
+    "must_not": [
+     "contact"
+    ],
+    "name": "go to the Kitchen",
+    "params": {
+     "area": "kitchen"
+    }
+   }
+  ],
+  [],
+  [],
+  []
+ ],
+ "direct_merge": [
+  [
+   {
+    "from": [
+     "robot",
+     "site",
+     "goal"
+    ],
+    "mps": 0.3,
+    "name": "max_speed"
+   },
+   {
+    "from": [
+     "robot",
+     "goal"
+    ],
+    "name": "contact"
+   },
+   {
+    "from": [
+     "robot",
+     "goal"
+    ],
+    "m": 0.3,
+    "name": "drop_clearance"
+   },
+   {
+    "area": "a",
+    "from": [
+     "site"
+    ],
+    "name": "no_go_area"
+   },
+   {
+    "from": [
+     "site",
+     "goal"
+    ],
+    "name": "time_limit",
+    "seconds": 30.0
+   },
+   {
+    "area": "b",
+    "from": [
+     "goal"
+    ],
+    "name": "no_go_area"
+   }
+  ],
+  [
+   {
+    "from": [
+     "goal"
+    ],
+    "mps": 0.9,
+    "name": "max_speed"
+   },
+   {
+    "from": [
+     "goal"
+    ],
+    "name": "time_limit",
+    "seconds": 30.0
+   },
+   {
+    "from": [
+     "goal"
+    ],
+    "name": "contact"
+   },
+   {
+    "area": "b",
+    "from": [
+     "goal"
+    ],
+    "name": "no_go_area"
+   },
+   {
+    "from": [
+     "goal"
+    ],
+    "m": 0.1,
+    "name": "drop_clearance"
+   }
+  ],
+  [],
+  []
+ ],
+ "direct_names": [
+  "contact",
+  "fall",
+  "stuck",
+  "time_limit",
+  "max_speed",
+  "drop_clearance",
+  "no_go_area"
+ ],
+ "direct_normalise": [
+  {
+   "ok": {
+    "name": "contact"
+   }
+  },
+  {
+   "ok": {
+    "name": "fall"
+   }
+  },
+  {
+   "ok": {
+    "name": "stuck"
+   }
+  },
+  {
+   "ok": {
+    "mps": 0.2,
+    "name": "max_speed"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "max_speed needs mps, a number above 0"
+   }
+  },
+  {
+   "ok": {
+    "area": "x",
+    "name": "no_go_area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "no_go_area needs the area (an id or a name of the site)"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "contact has no limit, got ['mps']"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "a guardrail is a name or an object with a name, got 3"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "a guardrail is a name or an object with a name, got {'name': 3}"
+   }
+  }
+ ],
+ "direct_normalise_list": [
+  {
+   "ok": []
+  },
+  {
+   "ok": [
+    {
+     "name": "contact"
+    },
+    {
+     "name": "fall"
+    }
+   ]
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "must_not is a list of guardrails"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "a guardrail is a name or an object with a name, got ['x']"
+   }
+  }
+ ],
+ "direct_plan": [
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "done_when": {
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_area",
+       "must_not": [],
+       "name": "go to the Kitchen",
+       "params": {
+        "area": "kitchen"
+       }
+      },
+      "read_back": "go to the area kitchen"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {
+        "facing_deg": 45.0,
+        "within_m": 0.35,
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_object",
+       "must_not": [],
+       "name": "go to cold box",
+       "params": {
+        "label": "the cold box"
+       }
+      },
+      "read_back": "go to the object called 'the cold box'"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {
+        "facing_deg": 45.0,
+        "within_m": 0.35,
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_object",
+       "must_not": [],
+       "name": "go to fridge",
+       "params": {
+        "kind": "fridge"
+       }
+      },
+      "read_back": "go to the fridge"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {
+        "facing_deg": 45.0,
+        "within_m": 0.35,
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_object",
+       "must_not": [],
+       "name": "go to bed",
+       "params": {
+        "kind": "bed"
+       }
+      },
+      "read_back": "go to the bed"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "done_when": {
+        "within_m": 0.25,
+        "within_s": 60.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "point",
+       "must_not": [],
+       "name": "go to (1.5, 0.5)",
+       "params": {
+        "frame": "site",
+        "x": 1.5,
+        "y": 0.5
+       }
+      },
+      "read_back": "go to (1.5, 0.5)"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "done_when": {
+        "within_m": 0.25,
+        "within_s": 60.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "point",
+       "must_not": [],
+       "name": "go to (2, -1)",
+       "params": {
+        "frame": "site",
+        "x": 2.0,
+        "y": -1.0
+       }
+      },
+      "read_back": "go to (2, -1)"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {},
+       "expect": "reach",
+       "folder": "",
+       "kind": "explore",
+       "must_not": [],
+       "name": "explore the site",
+       "params": {
+        "site": true
+       }
+      },
+      "read_back": "explore the whole site"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {},
+       "expect": "reach",
+       "folder": "",
+       "kind": "explore",
+       "must_not": [],
+       "name": "explore the Kitchen",
+       "params": {
+        "area": "kitchen"
+       }
+      },
+      "read_back": "explore the area kitchen"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [],
+    "llm_configured": false,
+    "message": "no goal matched, and no LLM planner is configured",
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {},
+       "expect": "reach",
+       "folder": "",
+       "kind": "inventory",
+       "must_not": [],
+       "name": "inventory of the site",
+       "params": {
+        "areas": []
+       }
+      },
+      "read_back": "take an inventory of the whole site"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {},
+       "expect": "reach",
+       "folder": "",
+       "kind": "inventory",
+       "must_not": [],
+       "name": "inventory of the Kitchen",
+       "params": {
+        "areas": [
+         "kitchen"
+        ]
+       }
+      },
+      "read_back": "take an inventory of kitchen"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "budget": {
+        "minutes": 5.0
+       },
+       "done_when": {},
+       "expect": "reach",
+       "folder": "",
+       "kind": "inventory",
+       "must_not": [],
+       "name": "inventory of the site",
+       "params": {
+        "areas": []
+       }
+      },
+      "read_back": "take an inventory of the whole site"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "done_when": {
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_area",
+       "must_not": [
+        {
+         "name": "contact"
+        }
+       ],
+       "name": "go to the Kitchen",
+       "params": {
+        "area": "kitchen"
+       }
+      },
+      "read_back": "go to the area kitchen, and must not: contact"
+     }
+    ],
+    "llm_configured": false,
+    "message": null,
+    "source": "matcher"
+   }
+  },
+  {
+   "ok": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [],
+    "llm_configured": false,
+    "message": "no goal matched, and no LLM planner is configured",
+    "source": "matcher"
+   }
+  },
+  {
+   "error": {
+    "code": "invalid",
+    "message": "text is the request in words"
+   }
+  },
+  {
+   "error": {
+    "code": "invalid",
+    "message": "text is the request in words"
+   }
+  },
+  {
+   "error": {
+    "code": "invalid",
+    "message": "text is the request in words"
+   }
+  },
+  {
+   "error": {
+    "code": "invalid",
+    "message": "text is the request in words"
+   }
+  }
+ ],
+ "direct_validate": [
+  {
+   "ok": {
+    "done_when": {
+     "within_m": 0.25,
+     "within_s": 60.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "point",
+    "must_not": [],
+    "name": "to the door",
+    "params": {
+     "frame": "site",
+     "x": 1.0,
+     "y": 2.0
+    }
+   }
+  },
+  {
+   "ok": {
+    "done_when": {
+     "within_m": 0.5,
+     "within_s": 60.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "point",
+    "must_not": [],
+    "name": "p",
+    "params": {
+     "frame": "map",
+     "x": 1.0,
+     "y": 2.0
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {
+     "facing_deg": 45.0,
+     "within_m": 0.35,
+     "within_s": 300.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "go_to_object",
+    "must_not": [
+     {
+      "name": "contact"
+     },
+     {
+      "name": "fall"
+     },
+     {
+      "mps": 0.2,
+      "name": "max_speed"
+     }
+    ],
+    "name": "fridge",
+    "params": {
+     "area": "kitchen",
+     "kind": "fridge"
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {
+     "facing_deg": 45.0,
+     "within_m": 0.35,
+     "within_s": 300.0
+    },
+    "expect": "reach",
+    "folder": "a/b",
+    "kind": "go_to_object",
+    "must_not": [],
+    "name": "fridge by label",
+    "params": {
+     "label": "the cold box"
+    },
+    "scene": "flat",
+    "sim_first": false
+   }
+  },
+  {
+   "ok": {
+    "done_when": {
+     "within_s": 300.0
+    },
+    "expect": "refuse",
+    "folder": "",
+    "kind": "go_to_area",
+    "must_not": [],
+    "name": "area",
+    "params": {
+     "area": "kitchen"
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 2.0
+    },
+    "done_when": {},
+    "expect": "reach",
+    "folder": "",
+    "kind": "explore",
+    "must_not": [],
+    "name": "e1",
+    "params": {
+     "site": true
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {},
+    "expect": "reach",
+    "folder": "",
+    "kind": "explore",
+    "must_not": [],
+    "name": "e2",
+    "params": {
+     "area": "kitchen"
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {},
+    "expect": "reach",
+    "folder": "",
+    "kind": "inventory",
+    "must_not": [],
+    "name": "inv",
+    "params": {
+     "areas": []
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {},
+    "expect": "reach",
+    "folder": "",
+    "kind": "inventory",
+    "must_not": [
+     {
+      "area": "stairwell",
+      "name": "no_go_area"
+     },
+     {
+      "name": "contact"
+     }
+    ],
+    "name": "inv2",
+    "params": {
+     "areas": [
+      "kitchen",
+      "study"
+     ]
+    }
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "name must be a non-empty string"
+   }
+  },
+  {
+   "error": {
+    "code": "unknown_kind",
+    "message": "unknown goal kind 'fetch'; known: point, go_to_object, go_to_area, explore, inventory"
+   }
+  },
+  {
+   "error": {
+    "code": "unknown_kind",
+    "message": "unknown goal kind None; known: point, go_to_object, go_to_area, explore, inventory"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "unknown goal fields ['colour']"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "point params are {x, y, frame?}"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "x must be a number, got True"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "x must be a number, got 'a'"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "a point's frame is 'site' or 'map'"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "params must be an object"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "a point goal has no budget"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "expect is 'reach' or 'refuse'"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "sim_first is true or false"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "a folder path has no . or .. parts"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "folder is a path like 'kitchen' or 'tests/course'"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "name must be a non-empty string"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "within_m does not apply to a go_to_area goal"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "within_s must be a number above 0, got -4"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "done_when keys are ['facing_deg', 'within_m', 'within_s']"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "done_when keys are ['facing_deg', 'within_m', 'within_s']"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "go_to_area params are {area}"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "explore params are {area} or {site: true}"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "explore's site is true: the site of the run"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "budget minutes must be a number above 0, got 0"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "budget is {minutes}"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "inventory areas is a list"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "inventory params are {areas?}"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "must_not is a list of guardrails"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "max_speed needs mps, a number above 0"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "max_speed needs mps, a number above 0"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "time_limit needs seconds, a number above 0"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "contact has no limit, got ['mps']"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "no_go_area needs the area (an id or a name of the site)"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "a guardrail is a name or an object with a name, got 3"
+   }
+  },
+  {
+   "error": {
+    "code": "bad_goal",
+    "message": "a goal is an object"
+   }
+  }
+ ],
+ "direct_validate_adhoc": [
+  {
+   "ok": {
+    "done_when": {
+     "within_m": 0.25,
+     "within_s": 60.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "point",
+    "must_not": [],
+    "name": "to the door",
+    "params": {
+     "frame": "site",
+     "x": 1.0,
+     "y": 2.0
+    }
+   }
+  },
+  {
+   "ok": {
+    "done_when": {
+     "within_m": 0.5,
+     "within_s": 60.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "point",
+    "must_not": [],
+    "name": "p",
+    "params": {
+     "frame": "map",
+     "x": 1.0,
+     "y": 2.0
+    }
+   }
+  },
+  {
+   "ok": {
+    "budget": {
+     "minutes": 5.0
+    },
+    "done_when": {
+     "facing_deg": 45.0,
+     "within_m": 0.35,
+     "within_s": 300.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "go_to_object",
+    "must_not": [
+     {
+      "name": "contact"
+     },
+     {
+      "name": "fall"
+     },
+     {
+      "mps": 0.2,
+      "name": "max_speed"
+     }
+    ],
+    "name": "fridge",
+    "params": {
+     "area": "kitchen",
+     "kind": "fridge"
+    }
+   }
+  },
+  {
+   "ok": {
+    "done_when": {
+     "within_m": 0.25,
+     "within_s": 60.0
+    },
+    "expect": "reach",
+    "folder": "",
+    "kind": "point",
+    "must_not": [],
+    "name": "ad-hoc point",
+    "params": {
+     "frame": "site",
+     "x": 0.0,
+     "y": 0.0
+    }
+   }
+  }
+ ],
+ "direct_version": [
+  "sha256:577ba3a6d466ada3",
+  "sha256:4adc0f27564eb388",
+  "sha256:c3ff6625a90b4d03",
+  "sha256:cf4303e74a828cf1",
+  "sha256:f3568391c785bcc1",
+  "sha256:cae96637b21d446a",
+  "sha256:0a581ba7a34e9426",
+  "sha256:04c608135dfe0f4c",
+  "sha256:559f2773b17232fd"
+ ],
+ "folders": [
+  {
+   "body": {
+    "goals": [
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "a/b",
+      "id": 4,
+      "kind": "go_to_object",
+      "must_not": [],
+      "name": "fridge by label",
+      "params": {
+       "label": "the cold box"
+      },
+      "scene": "flat",
+      "sim_first": false
+     }
+    ],
+    "ok": true
+   },
+   "status": 200
+  },
+  {
+   "body": {
+    "goals": [
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "a/b",
+      "id": 4,
+      "kind": "go_to_object",
+      "must_not": [],
+      "name": "fridge by label",
+      "params": {
+       "label": "the cold box"
+      },
+      "scene": "flat",
+      "sim_first": false
+     }
+    ],
+    "ok": true
+   },
+   "status": 200
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_goal",
+     "message": "a folder path has no . or .. parts"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_goal",
+     "message": "a folder path has no . or .. parts"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "goals": [
+     {
+      "done_when": {
+       "within_s": 300.0
+      },
+      "expect": "refuse",
+      "folder": "",
+      "id": 5,
+      "kind": "go_to_area",
+      "must_not": [],
+      "name": "area",
+      "params": {
+       "area": "kitchen"
+      }
+     },
+     {
+      "budget": {
+       "minutes": 2.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 6,
+      "kind": "explore",
+      "must_not": [],
+      "name": "e1",
+      "params": {
+       "site": true
+      }
+     },
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 7,
+      "kind": "explore",
+      "must_not": [],
+      "name": "e2",
+      "params": {
+       "area": "kitchen"
+      }
+     },
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 3,
+      "kind": "go_to_object",
+      "must_not": [
+       {
+        "name": "contact"
+       },
+       {
+        "name": "fall"
+       },
+       {
+        "mps": 0.2,
+        "name": "max_speed"
+       }
+      ],
+      "name": "fridge",
+      "params": {
+       "area": "kitchen",
+       "kind": "fridge"
+      }
+     },
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 8,
+      "kind": "inventory",
+      "must_not": [],
+      "name": "inv",
+      "params": {
+       "areas": []
+      }
+     },
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 9,
+      "kind": "inventory",
+      "must_not": [
+       {
+        "area": "stairwell",
+        "name": "no_go_area"
+       },
+       {
+        "name": "contact"
+       }
+      ],
+      "name": "inv2",
+      "params": {
+       "areas": [
+        "kitchen",
+        "study"
+       ]
+      }
+     },
+     {
+      "done_when": {
+       "within_m": 0.5,
+       "within_s": 60.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 2,
+      "kind": "point",
+      "must_not": [],
+      "name": "p",
+      "params": {
+       "frame": "map",
+       "x": 1.0,
+       "y": 2.0
+      }
+     },
+     {
+      "done_when": {
+       "within_m": 0.25,
+       "within_s": 60.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 1,
+      "kind": "point",
+      "must_not": [],
+      "name": "to the door",
+      "params": {
+       "frame": "site",
+       "x": 1.0,
+       "y": 2.0
+      }
+     },
+     {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "a/b",
+      "id": 4,
+      "kind": "go_to_object",
+      "must_not": [],
+      "name": "fridge by label",
+      "params": {
+       "label": "the cold box"
+      },
+      "scene": "flat",
+      "sim_first": false
+     }
+    ],
+    "ok": true
+   },
+   "status": 200
+  }
+ ],
+ "goal_put": [
+  {
+   "body": {
+    "goal": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "expect": "reach",
+     "folder": "",
+     "id": 1,
+     "kind": "point",
+     "must_not": [],
+     "name": "to the door",
+     "params": {
+      "frame": "site",
+      "x": 1.0,
+      "y": 2.0
+     }
+    },
+    "ok": true
+   },
+   "status": 200
+  },
+  {
+   "body": {
+    "error": {
+     "code": "unknown_kind",
+     "message": "unknown goal kind 'fetch'; known: point, go_to_object, go_to_area, explore, inventory"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_guardrail",
+     "message": "max_speed needs mps, a number above 0"
+    },
+    "ok": false
+   },
+   "status": 422
+  }
+ ],
+ "goals_http": [
+  {
+   "in": 0,
+   "out": {
+    "body": {
+     "goal": {
+      "done_when": {
+       "within_m": 0.25,
+       "within_s": 60.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 1,
+      "kind": "point",
+      "must_not": [],
+      "name": "to the door",
+      "params": {
+       "frame": "site",
+       "x": 1.0,
+       "y": 2.0
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 1,
+   "out": {
+    "body": {
+     "goal": {
+      "done_when": {
+       "within_m": 0.5,
+       "within_s": 60.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 2,
+      "kind": "point",
+      "must_not": [],
+      "name": "p",
+      "params": {
+       "frame": "map",
+       "x": 1.0,
+       "y": 2.0
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 2,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "",
+      "id": 3,
+      "kind": "go_to_object",
+      "must_not": [
+       {
+        "name": "contact"
+       },
+       {
+        "name": "fall"
+       },
+       {
+        "mps": 0.2,
+        "name": "max_speed"
+       }
+      ],
+      "name": "fridge",
+      "params": {
+       "area": "kitchen",
+       "kind": "fridge"
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 3,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {
+       "facing_deg": 45.0,
+       "within_m": 0.35,
+       "within_s": 300.0
+      },
+      "expect": "reach",
+      "folder": "a/b",
+      "id": 4,
+      "kind": "go_to_object",
+      "must_not": [],
+      "name": "fridge by label",
+      "params": {
+       "label": "the cold box"
+      },
+      "scene": "flat",
+      "sim_first": false
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 4,
+   "out": {
+    "body": {
+     "goal": {
+      "done_when": {
+       "within_s": 300.0
+      },
+      "expect": "refuse",
+      "folder": "",
+      "id": 5,
+      "kind": "go_to_area",
+      "must_not": [],
+      "name": "area",
+      "params": {
+       "area": "kitchen"
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 5,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 2.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 6,
+      "kind": "explore",
+      "must_not": [],
+      "name": "e1",
+      "params": {
+       "site": true
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 6,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 7,
+      "kind": "explore",
+      "must_not": [],
+      "name": "e2",
+      "params": {
+       "area": "kitchen"
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 7,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 8,
+      "kind": "inventory",
+      "must_not": [],
+      "name": "inv",
+      "params": {
+       "areas": []
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 8,
+   "out": {
+    "body": {
+     "goal": {
+      "budget": {
+       "minutes": 5.0
+      },
+      "done_when": {},
+      "expect": "reach",
+      "folder": "",
+      "id": 9,
+      "kind": "inventory",
+      "must_not": [
+       {
+        "area": "stairwell",
+        "name": "no_go_area"
+       },
+       {
+        "name": "contact"
+       }
+      ],
+      "name": "inv2",
+      "params": {
+       "areas": [
+        "kitchen",
+        "study"
+       ]
+      }
+     },
+     "ok": true
+    },
+    "status": 201
+   }
+  },
+  {
+   "in": 9,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "name must be a non-empty string"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 10,
+   "out": {
+    "body": {
+     "error": {
+      "code": "unknown_kind",
+      "message": "unknown goal kind 'fetch'; known: point, go_to_object, go_to_area, explore, inventory"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 11,
+   "out": {
+    "body": {
+     "error": {
+      "code": "unknown_kind",
+      "message": "unknown goal kind None; known: point, go_to_object, go_to_area, explore, inventory"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 12,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "unknown goal fields ['colour']"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 13,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "point params are {x, y, frame?}"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 14,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "x must be a number, got True"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 15,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "x must be a number, got 'a'"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 16,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "a point's frame is 'site' or 'map'"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 17,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "params must be an object"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 18,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "a point goal has no budget"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 19,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "expect is 'reach' or 'refuse'"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 20,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "sim_first is true or false"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 21,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "a folder path has no . or .. parts"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 22,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "folder is a path like 'kitchen' or 'tests/course'"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 23,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "name must be a non-empty string"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 24,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 25,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 26,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "go_to_object params are exactly one of kind, id, label, and an optional area"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 27,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "within_m does not apply to a go_to_area goal"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 28,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "within_s must be a number above 0, got -4"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 29,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "done_when keys are ['facing_deg', 'within_m', 'within_s']"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 30,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "done_when keys are ['facing_deg', 'within_m', 'within_s']"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 31,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "go_to_area params are {area}"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 32,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "explore params are {area} or {site: true}"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 33,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "explore's site is true: the site of the run"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 34,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "budget minutes must be a number above 0, got 0"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 35,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "budget is {minutes}"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 36,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "inventory areas is a list"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 37,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_goal",
+      "message": "inventory params are {areas?}"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 38,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "must_not is a list of guardrails"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 39,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 40,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "max_speed needs mps, a number above 0"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 41,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "max_speed needs mps, a number above 0"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 42,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "time_limit needs seconds, a number above 0"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 43,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "contact has no limit, got ['mps']"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 44,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "no_go_area needs the area (an id or a name of the site)"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 45,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_guardrail",
+      "message": "a guardrail is a name or an object with a name, got 3"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 46,
+   "out": {
+    "body": {
+     "error": {
+      "code": "bad_json",
+      "message": "the body is a JSON object"
+     },
+     "ok": false
+    },
+    "status": 400
+   }
+  }
+ ],
+ "import": {
+  "bad": {
+   "error": {
+    "code": "not_found",
+    "message": "no site copy2"
+   }
+  },
+  "good": {
+   "error": {
+    "code": "not_found",
+    "message": "no site copy"
+   }
+  }
+ },
+ "llm_500": {
+  "body": {
+   "error": {
+    "code": "planner_failed",
+    "message": "the planner did not answer: HTTPError: HTTP Error 500: Internal Server Error"
+   },
+   "ok": false
+  },
+  "status": 502
+ },
+ "llm_bad_json": {
+  "body": {
+   "error": {
+    "code": "planner_failed",
+    "message": "the planner's answer is not the goals JSON"
+   },
+   "ok": false
+  },
+  "status": 502
+ },
+ "llm_goals_not_list": {
+  "body": {
+   "ok": true,
+   "plan": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [],
+    "llm_configured": true,
+    "message": "no goal matched",
+    "site": "home",
+    "source": "llm"
+   }
+  },
+  "status": 200
+ },
+ "llm_no_json": {
+  "body": {
+   "ok": true,
+   "plan": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [],
+    "llm_configured": true,
+    "message": "no goal matched",
+    "site": "home",
+    "source": "llm"
+   }
+  },
+  "status": 200
+ },
+ "llm_off": {
+  "body": {
+   "ok": true,
+   "plan": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [],
+    "llm_configured": false,
+    "message": "no goal matched, and no LLM planner is configured",
+    "site": "home",
+    "source": "matcher"
+   }
+  },
+  "status": 200
+ },
+ "llm_unreachable": {
+  "body": {
+   "error": {
+    "code": "planner_failed",
+    "message": "the planner did not answer: URLError: <urlopen error [Errno 111] Connection refused>"
+   },
+   "ok": false
+  },
+  "status": 502
+ },
+ "plan_ghost": {
+  "body": {
+   "error": {
+    "code": "not_found",
+    "id": "ghost",
+    "message": "no robot ghost",
+    "what": "robot"
+   },
+   "ok": false
+  },
+  "status": 404
+ },
+ "plan_http": [
+  {
+   "in": "go to the kitchen",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [],
+         "name": "go to the Kitchen",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "Please go to my cold box",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [
+       {
+        "goal": {
+         "kind": "fly",
+         "name": "fly",
+         "params": {}
+        },
+        "why": "unknown goal kind 'fly'; known: point, go_to_object, go_to_area, explore, inventory"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "must_not": [
+          "teleport"
+         ],
+         "name": "bad guardrail",
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "name": "extra field",
+         "obey": true,
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown goal fields ['obey']"
+       }
+      ],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [
+          {
+           "name": "contact"
+          },
+          {
+           "mps": 0.2,
+           "name": "max_speed"
+          }
+         ],
+         "name": "tidy up",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen, and must not: contact, max_speed 0.2"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "llm"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "go to the fridge",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {
+          "facing_deg": 45.0,
+          "within_m": 0.35,
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_object",
+         "must_not": [],
+         "name": "go to fridge",
+         "params": {
+          "label": "my fridge"
+         }
+        },
+        "read_back": "go to the object called 'my fridge'"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "go to the bed",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [
+       {
+        "goal": {
+         "kind": "fly",
+         "name": "fly",
+         "params": {}
+        },
+        "why": "unknown goal kind 'fly'; known: point, go_to_object, go_to_area, explore, inventory"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "must_not": [
+          "teleport"
+         ],
+         "name": "bad guardrail",
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "name": "extra field",
+         "obey": true,
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown goal fields ['obey']"
+       }
+      ],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [
+          {
+           "name": "contact"
+          },
+          {
+           "mps": 0.2,
+           "name": "max_speed"
+          }
+         ],
+         "name": "tidy up",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen, and must not: contact, max_speed 0.2"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "llm"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "go to 1.5, 0.5",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_m": 0.25,
+          "within_s": 60.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "point",
+         "must_not": [],
+         "name": "go to (1.5, 0.5)",
+         "params": {
+          "frame": "site",
+          "x": 1.5,
+          "y": 0.5
+         }
+        },
+        "read_back": "go to (1.5, 0.5)"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "drive to (2 -1)",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_m": 0.25,
+          "within_s": 60.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "point",
+         "must_not": [],
+         "name": "go to (2, -1)",
+         "params": {
+          "frame": "site",
+          "x": 2.0,
+          "y": -1.0
+         }
+        },
+        "read_back": "go to (2, -1)"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "explore",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {},
+         "expect": "reach",
+         "folder": "",
+         "kind": "explore",
+         "must_not": [],
+         "name": "explore the site",
+         "params": {
+          "site": true
+         }
+        },
+        "read_back": "explore the whole site"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "explore the kitchen",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {},
+         "expect": "reach",
+         "folder": "",
+         "kind": "explore",
+         "must_not": [],
+         "name": "explore the Kitchen",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "explore the area kitchen"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "explore the moon",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [
+       {
+        "goal": {
+         "kind": "fly",
+         "name": "fly",
+         "params": {}
+        },
+        "why": "unknown goal kind 'fly'; known: point, go_to_object, go_to_area, explore, inventory"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "must_not": [
+          "teleport"
+         ],
+         "name": "bad guardrail",
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "name": "extra field",
+         "obey": true,
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown goal fields ['obey']"
+       }
+      ],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [
+          {
+           "name": "contact"
+          },
+          {
+           "mps": 0.2,
+           "name": "max_speed"
+          }
+         ],
+         "name": "tidy up",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen, and must not: contact, max_speed 0.2"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "llm"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "inventory",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {},
+         "expect": "reach",
+         "folder": "",
+         "kind": "inventory",
+         "must_not": [],
+         "name": "inventory of the site",
+         "params": {
+          "areas": []
+         }
+        },
+        "read_back": "take an inventory of the whole site"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "take an inventory of the kitchen",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {},
+         "expect": "reach",
+         "folder": "",
+         "kind": "inventory",
+         "must_not": [],
+         "name": "inventory of the Kitchen",
+         "params": {
+          "areas": [
+           "kitchen"
+          ]
+         }
+        },
+        "read_back": "take an inventory of kitchen"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "what is in the flat",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "budget": {
+          "minutes": 5.0
+         },
+         "done_when": {},
+         "expect": "reach",
+         "folder": "",
+         "kind": "inventory",
+         "must_not": [],
+         "name": "inventory of the site",
+         "params": {
+          "areas": []
+         }
+        },
+        "read_back": "take an inventory of the whole site"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "go to the kitchen without touching anything",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [
+          {
+           "name": "contact"
+          }
+         ],
+         "name": "go to the Kitchen",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen, and must not: contact"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "matcher"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "make me a sandwich",
+   "out": {
+    "body": {
+     "ok": true,
+     "plan": {
+      "confirm_required": true,
+      "dropped": [
+       {
+        "goal": {
+         "kind": "fly",
+         "name": "fly",
+         "params": {}
+        },
+        "why": "unknown goal kind 'fly'; known: point, go_to_object, go_to_area, explore, inventory"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "must_not": [
+          "teleport"
+         ],
+         "name": "bad guardrail",
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+       },
+       {
+        "goal": {
+         "kind": "point",
+         "name": "extra field",
+         "obey": true,
+         "params": {
+          "x": 1,
+          "y": 1
+         }
+        },
+        "why": "unknown goal fields ['obey']"
+       }
+      ],
+      "goals": [
+       {
+        "goal": {
+         "done_when": {
+          "within_s": 300.0
+         },
+         "expect": "reach",
+         "folder": "",
+         "kind": "go_to_area",
+         "must_not": [
+          {
+           "name": "contact"
+          },
+          {
+           "mps": 0.2,
+           "name": "max_speed"
+          }
+         ],
+         "name": "tidy up",
+         "params": {
+          "area": "kitchen"
+         }
+        },
+        "read_back": "go to the area kitchen, and must not: contact, max_speed 0.2"
+       }
+      ],
+      "llm_configured": true,
+      "message": null,
+      "site": "home",
+      "source": "llm"
+     }
+    },
+    "status": 200
+   }
+  },
+  {
+   "in": "  ",
+   "out": {
+    "body": {
+     "error": {
+      "code": "invalid",
+      "message": "text is the request in words"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": "",
+   "out": {
+    "body": {
+     "error": {
+      "code": "invalid",
+      "message": "text is the request in words"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": null,
+   "out": {
+    "body": {
+     "error": {
+      "code": "invalid",
+      "message": "text is the request in words"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  },
+  {
+   "in": 7,
+   "out": {
+    "body": {
+     "error": {
+      "code": "invalid",
+      "message": "text is the request in words"
+     },
+     "ok": false
+    },
+    "status": 422
+   }
+  }
+ ],
+ "plan_no_robot": {
+  "body": {
+   "ok": true,
+   "plan": {
+    "confirm_required": true,
+    "dropped": [],
+    "goals": [
+     {
+      "goal": {
+       "done_when": {
+        "within_s": 300.0
+       },
+       "expect": "reach",
+       "folder": "",
+       "kind": "go_to_area",
+       "must_not": [],
+       "name": "go to the Kitchen",
+       "params": {
+        "area": "kitchen"
+       }
+      },
+      "read_back": "go to the area kitchen"
+     }
+    ],
+    "llm_configured": true,
+    "message": null,
+    "site": "home",
+    "source": "matcher"
+   }
+  },
+  "status": 200
+ },
+ "robot_files": {
+  "bad_limit": {
+   "config_error": "id must be lower case letters, digits and dashes, got 'g-bad_limit'"
+  },
+  "good": {
+   "ok": [
+    {
+     "mps": 0.2,
+     "name": "max_speed"
+    },
+    {
+     "name": "stuck"
+    }
+   ]
+  },
+  "none": {
+   "ok": []
+  },
+  "not_list": {
+   "config_error": "id must be lower case letters, digits and dashes, got 'g-not_list'"
+  },
+  "unknown": {
+   "config_error": "g-unknown: unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+  }
+ },
+ "run_bad_goal": {
+  "body": {
+   "error": {
+    "code": "unknown_kind",
+    "message": "unknown goal kind 'fetch'; known: point, go_to_object, go_to_area, explore, inventory"
+   },
+   "ok": false
+  },
+  "status": 422
+ },
+ "run_bad_guardrail": {
+  "body": {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "max_speed needs mps, a number above 0"
+   },
+   "ok": false
+  },
+  "status": 422
+ },
+ "run_bad_pose": [
+  {
+   "body": {
+    "error": {
+     "code": "bad_start_pose",
+     "message": "start_pose is {x, y, yaw}: metres in the site frame and radians"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_start_pose",
+     "message": "start_pose's yaw must be a number, got 'a'"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_start_pose",
+     "message": "start_pose is {x, y, yaw}: metres in the site frame and radians"
+    },
+    "ok": false
+   },
+   "status": 422
+  },
+  {
+   "body": {
+    "error": {
+     "code": "bad_start_pose",
+     "message": "start_pose is {x, y, yaw}: metres in the site frame and radians"
+    },
+    "ok": false
+   },
+   "status": 422
+  }
+ ],
+ "run_loosen": {
+  "body": {
+   "ok": true,
+   "run": {
+    "anomalies": [],
+    "as_expected": false,
+    "broken": null,
+    "client": "api",
+    "conditions": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "not_checkable": []
+    },
+    "decisions": [],
+    "expect": "reach",
+    "goal": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "expect": "reach",
+     "folder": "",
+     "kind": "point",
+     "must_not": [
+      {
+       "mps": 0.9,
+       "name": "max_speed"
+      },
+      {
+       "name": "time_limit",
+       "seconds": 30.0
+      },
+      {
+       "name": "contact"
+      }
+     ],
+     "name": "g",
+     "params": {
+      "frame": "site",
+      "x": 1.0,
+      "y": 0.0
+     }
+    },
+    "goal_id": null,
+    "guardrails": [
+     {
+      "from": [
+       "robot",
+       "site",
+       "goal"
+      ],
+      "mps": 0.3,
+      "name": "max_speed"
+     },
+     {
+      "from": [
+       "robot",
+       "goal"
+      ],
+      "name": "contact"
+     },
+     {
+      "from": [
+       "robot"
+      ],
+      "name": "fall"
+     },
+     {
+      "area": "stairwell",
+      "from": [
+       "site"
+      ],
+      "name": "no_go_area"
+     },
+     {
+      "from": [
+       "goal"
+      ],
+      "name": "time_limit",
+      "seconds": 30.0
+     }
+    ],
+    "id": 1,
+    "no_verdict": null,
+    "parent_id": null,
+    "progress": null,
+    "reason": "no path that avoids the no-go area stairwell",
+    "result": null,
+    "robot": "fake-1",
+    "run_key": null,
+    "share": null,
+    "site": "home",
+    "state": "refused",
+    "target": "sim",
+    "watch": null
+   }
+  },
+  "status": 201
+ },
+ "run_refused_guardrail_not_enforced": {
+  "body": {
+   "ok": true,
+   "run": {
+    "anomalies": [],
+    "as_expected": false,
+    "broken": null,
+    "client": "api",
+    "conditions": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "not_checkable": []
+    },
+    "decisions": [],
+    "expect": "reach",
+    "goal": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "expect": "reach",
+     "folder": "",
+     "kind": "point",
+     "must_not": [],
+     "name": "g",
+     "params": {
+      "frame": "site",
+      "x": 1.0,
+      "y": 0.0
+     }
+    },
+    "goal_id": null,
+    "guardrails": [
+     {
+      "from": [
+       "robot",
+       "site"
+      ],
+      "mps": 0.3,
+      "name": "max_speed"
+     },
+     {
+      "from": [
+       "robot"
+      ],
+      "name": "contact"
+     },
+     {
+      "from": [
+       "robot"
+      ],
+      "name": "fall"
+     },
+     {
+      "area": "stairwell",
+      "from": [
+       "site"
+      ],
+      "name": "no_go_area"
+     }
+    ],
+    "id": 3,
+    "no_verdict": null,
+    "parent_id": null,
+    "progress": null,
+    "reason": "no path that avoids the no-go area stairwell",
+    "result": null,
+    "robot": "fake-1",
+    "run_key": null,
+    "share": null,
+    "site": "home",
+    "state": "refused",
+    "target": "sim",
+    "watch": null
+   }
+  },
+  "status": 201
+ },
+ "run_tighten": {
+  "body": {
+   "ok": true,
+   "run": {
+    "anomalies": [],
+    "as_expected": false,
+    "broken": null,
+    "client": "api",
+    "conditions": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "not_checkable": []
+    },
+    "decisions": [],
+    "expect": "reach",
+    "goal": {
+     "done_when": {
+      "within_m": 0.25,
+      "within_s": 60.0
+     },
+     "expect": "reach",
+     "folder": "",
+     "kind": "point",
+     "must_not": [
+      {
+       "mps": 0.1,
+       "name": "max_speed"
+      },
+      {
+       "m": 0.2,
+       "name": "drop_clearance"
+      }
+     ],
+     "name": "g",
+     "params": {
+      "frame": "site",
+      "x": 1.0,
+      "y": 0.0
+     }
+    },
+    "goal_id": null,
+    "guardrails": [
+     {
+      "from": [
+       "robot",
+       "site",
+       "goal"
+      ],
+      "mps": 0.1,
+      "name": "max_speed"
+     },
+     {
+      "from": [
+       "robot"
+      ],
+      "name": "contact"
+     },
+     {
+      "from": [
+       "robot"
+      ],
+      "name": "fall"
+     },
+     {
+      "area": "stairwell",
+      "from": [
+       "site"
+      ],
+      "name": "no_go_area"
+     },
+     {
+      "from": [
+       "goal"
+      ],
+      "m": 0.2,
+      "name": "drop_clearance"
+     }
+    ],
+    "id": 2,
+    "no_verdict": null,
+    "parent_id": null,
+    "progress": null,
+    "reason": "no path that avoids the no-go area stairwell",
+    "result": null,
+    "robot": "fake-1",
+    "run_key": null,
+    "share": null,
+    "site": "home",
+    "state": "refused",
+    "target": "sim",
+    "watch": null
+   }
+  },
+  "status": 201
+ },
+ "site_guardrails": {
+  "bad_limit": {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "time_limit needs seconds, a number above 0"
+   }
+  },
+  "good": {
+   "ok": [
+    {
+     "name": "contact"
+    },
+    {
+     "area": "kitchen",
+     "name": "no_go_area"
+    },
+    {
+     "m": 0.3,
+     "name": "drop_clearance"
+    }
+   ]
+  },
+  "no_area": {
+   "error": {
+    "code": "not_found",
+    "message": "no area nowhere"
+   }
+  },
+  "not_a_list": {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "must_not is a list of guardrails"
+   }
+  },
+  "unknown": {
+   "error": {
+    "code": "bad_guardrail",
+    "message": "unknown guardrail 'teleport'; known: contact, fall, stuck, time_limit, max_speed, drop_clearance, no_go_area"
+   }
+  }
+ }
+}

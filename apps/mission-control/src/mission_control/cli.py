@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .api import serve
 from .core import MissionControl
-from .planner import load_planner
+from .planning import load_planner
 from .robots import ConfigError, load_robot_files
 from .telemetry import sink_from_installation
 

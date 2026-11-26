@@ -130,7 +130,7 @@ such as `nav2/`, and the integration tests that need several projects together.
         robots (duck, NXT, simulator)           people, agents, scripts
              |  runs (file)      ^ commands              |
              v                   |                       v
-       RUN FORMAT <---- brains --+---- the gate <---- Mission Control
+       RUN FORMAT <---- brains --+---- the gate <---- Mission Control ----> missions (planning, RFC-0030)
              ^                                              |
              |  reads                                       | API
         THE OBSERVATORY <-----------------------------------'
@@ -256,6 +256,7 @@ after every move, equal throughout.
 | `libs/runfile` | `runfile` | keys, schemas, wire, signals, validate, mcapio, se2, store, catalog, index, the adapters, `env` | `viewer/src/miniview` |
 | `libs/gate` | `robotgate` | the gate (RFC-0017), standard library only | `duck_lab/gate.py` |
 | `libs/worldmodel` | `worldmodel` | objects, semantic map, relocalise, site, `kinds.json` | `duck_lab/world_model` |
+| `libs/missions` | `missions` | goal schemas, the guardrail vocabulary and merge, the planner (RFC-0030), standard library only | `mission_control` (2026-11-26) |
 | `apps/observatory` | `observatory` | the server, importer, pages, video, export, CLI | `viewer/` |
 | `apps/mission-control` | `mission_control` | as before | `control/` |
 | `apps/nxt-web` | `nxt_lab` | as before, with its programs and toolchain | `nxt/` |
@@ -278,6 +279,11 @@ unit) and `libs/runner` (`labrunner`, RFC-0022: imports runfile, robotgate, worl
 never a robot's package); and the duck's navigator (`duck_lab.nav`, the payload, the plugins, the profile)
 is a unit of its own that may import neither `labrunner` nor `simhost`, while the duck's tools may.
 The table in force is `scripts/check_boundaries.py`'s.
+
+**Since then (2026-11-26):** `libs/missions` (`missions`, RFC-0030 row 1) joined: it imports no other
+unit, and only `mission_control` imports it, through one module (`planning.py`). The arrow
+`mission_control -> missions` is in the picture of section 5.2; no robot, gate or runner can be
+reached from it.
 
 The one exception, by module, was `mission_control.duck` (Mission Control's duck adapter),
 which imported `duck_lab.nav.client` and `duck_lab.nav.run.load_scale`. It is retired: phase 5

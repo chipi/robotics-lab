@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 from . import goals
-from .errors import ApiError, invalid
+from .errors import PlanError, invalid
 
 NUM = r"-?\d+(?:\.\d+)?"
 LLM_TIMEOUT_S = 30.0
@@ -120,12 +120,12 @@ class LlmPlanner:
                 answer = json.loads(resp.read())
             content = answer["choices"][0]["message"]["content"]
         except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as exc:
-            raise ApiError(502, "planner_failed", f"the planner did not answer: {type(exc).__name__}: {exc}") from None
+            raise PlanError("planner_failed", f"the planner did not answer: {type(exc).__name__}: {exc}") from None
         found = re.search(r"\{.*\}", content, re.S)
         try:
             specs = json.loads(found.group(0))["goals"] if found else []
         except (ValueError, KeyError, TypeError):
-            raise ApiError(502, "planner_failed", "the planner's answer is not the goals JSON") from None
+            raise PlanError("planner_failed", "the planner's answer is not the goals JSON") from None
         return specs if isinstance(specs, list) else []
 
 
@@ -168,7 +168,7 @@ def plan(text, ctx: Context, llm: LlmPlanner | None = None) -> dict:
         try:
             g = goals.validate(spec, require_name=False)
             proposed.append({"goal": g, "read_back": read_back(g)})
-        except ApiError as exc:
+        except PlanError as exc:
             dropped.append({"goal": spec, "why": str(exc)})
     return {"source": source if proposed or dropped else ("llm" if llm is not None else "matcher"), "llm_configured": llm is not None,
             "goals": proposed, "dropped": dropped, "confirm_required": True,

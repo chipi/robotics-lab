@@ -26,6 +26,7 @@ from pathlib import Path
 MODULES = {
     "runfile": "runfile",
     "robotgate": "robotgate",
+    "missions": "missions",
     "worldmodel": "worldmodel",
     "simhost": "simhost",
     "observatory": "observatory",
@@ -46,11 +47,12 @@ MODULES = {
 ALLOWED = {
     "runfile": set(),
     "robotgate": set(),
+    "missions": set(),
     "worldmodel": set(),
     "simhost": set(),
     "labrunner": {"runfile", "robotgate", "worldmodel", "simhost"},
     "observatory": {"runfile"},
-    "mission_control": {"robotgate", "runfile"},
+    "mission_control": {"robotgate", "runfile", "missions"},
     "nxt_lab": {"runfile"},
     "duck_nav": {"runfile", "robotgate", "worldmodel"},
     "duck_lab": {"runfile", "robotgate", "worldmodel", "simhost", "labrunner", "duck_nav"},
