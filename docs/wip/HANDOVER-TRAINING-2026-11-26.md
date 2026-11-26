@@ -30,8 +30,8 @@ MVP 2 (the operator's decision).
 | --- | --- | --- |
 | Smoke | OneWall, 64 x 20 | First try failed: mjviser 0.0.17 pulled mujoco-core 4.0.1, which overwrote mujoco 3.10.0 (fixed b5a9fa9). Second: passed, 0.64 s/iteration |
 | M1 | OneWall, 4096 x 200, 15:55Z | **Passed**: progress 0.20 to 0.35, collisions 0.74 to 0.16, replay 13 of 16 stopped before the wall (81 %), 4.76 s/iteration. Folder `m1/2026-11-26_15-55-36/` |
-| M2a | `Mjlab-Nav-MicroDuck` (NVIDIA-faithful, 50 Hz, sidestep), 4096 x 1500, started 16:15Z, commit b5a9fa9 | **In flight**, due about 18:14Z. At iteration 500: no collapse, a slow drift to more collisions (0.21 to 0.30 per iteration over windows) for slightly more progress; let run, pick the checkpoint by validation |
-| M2b | `Mjlab-Nav-Deploy-MicroDuck` (10 Hz policy, no sidestep), 4096 x 400, commit 8399be8 | **In flight**: after M2a, about 18:20Z to 20:35Z. 400 iterations because one iteration is 5x the simulated time of M2a's |
+| M2a | `Mjlab-Nav-MicroDuck` (NVIDIA-faithful, 50 Hz, sidestep), 4096 x 1500, 16:15Z to 18:14Z, commit b5a9fa9 | **Done**, exit 0, 16 checkpoints (every 100) in `m2a/2026-11-26_16-15-00/`, each with a rate sidecar. Progress rose (0.44 to 0.49) but collisions per iteration were lowest at 250-499 (0.27) and rose to 0.52 by the end, the approach penalty growing: it learned to push closer. The end is not the best model; **select on `avoidance_val`** (expect a checkpoint near 300-500) |
+| M2b | `Mjlab-Nav-Deploy-MicroDuck` (10 Hz policy, no sidestep), 4096 x 400, commit 8399be8 | **In flight**: started 18:15Z, due about 20:35Z; the homelab swaps back to prod when it ends. 400 iterations because one iteration is 5x the simulated time of M2a's |
 | R5 rules arm | `rules@1` on `avoidance_v1` (30 items) | **30 of 30**, 0 collisions, min clearance 0.094 m, mean 43 s; imported as `rules_v1` (robotics-evals f3d68a7) |
 
 The DGX: the operator gave it to us for the whole series ("it stays yours until you're done with
