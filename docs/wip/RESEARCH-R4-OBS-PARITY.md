@@ -98,6 +98,42 @@ after, all 10 pass, the worst slot off by 1.2e-7.
 - **A skipped tick's action.** When the model is not run (stale frame, zero request), the previous
   action is zeros; training always has an action.
 
+## Outcome, 2026-11-26: each model at the rate it trained at
+
+microduck-nav now trains two models (its `docs/M2.md`): M2a `Mjlab-Nav-MicroDuck` (50 Hz
+policy step, lateral limit 0.12) and M2b `Mjlab-Nav-Deploy-MicroDuck` (10 Hz, five walker
+steps per action, lateral 0). `learned.py` runs either:
+
+- **The rate and the lateral limit come with the model.** Order: the ONNX `metadata_props`
+(`task`, `policy_step_s`, `lateral_limit`,
+  `obs_layout`; microduck-nav writes them at export since `57de640`), then a sidecar
+  `<model>.onnx.json`, then `--model-rate 50|10` (`model_rate` in the run's setting). The first
+  that exists decides; a flag that disagrees with it is refused; a model with none is refused,
+  naming the three. Metadata or a sidecar with only one of the two numbers is refused, not
+  completed from a lower source.  The checkpoints trained before the export wrote metadata
+  need the sidecar or the flag; the sidecar for M2a is `{"task": "Mjlab-Nav-MicroDuck",
+  "policy_step_s": 0.02, "lateral_limit": 0.12, "obs_layout": "nav-1343-v1"}` and for M2b
+  `{"task": "Mjlab-Nav-Deploy-MicroDuck", "policy_step_s": 0.1, "lateral_limit": 0.0,
+  "obs_layout": "nav-1343-v1"}`.
+- **The history is spaced by the model's own `policy_step_s`** (0.02 s or 0.1 s), and
+`ResidualCommand` takes its lateral bound from the
+  model. `tests/fixtures/obs_parity_deploy.json` (the 10 Hz task's five states) is checked in
+  `test_local_controller.py` beside the 50 Hz one, both profiles, all 1343 slots within 1e-6.
+- **The run records it**: the calibration event's `local_controller.model` carries `task`,
+`policy_step_s`, `lateral_limit`,
+  `obs_layout` and `spec_source` (metadata, sidecar or flag) beside the sha256 and the IO. The
+  build identity stays `ctrl@learned@<sha8>`: the sha8 already names the file, and the rate
+  is the file's.
+- **A float32 fix the 10 Hz fixture found.** A radial zone whose axial depth is exactly 4.0
+m came back as 4.0000000000000004 after the
+  millimetre round trip and was judged out of range (slot 610 of the long-history state,
+  0 against 4.0). The bounds are now judged on the float32 depth, as training does.
+
+The 10 Hz mismatch listed above ("The control rate") is therefore gone for an M2b model:
+the navigator's 0.1 s tick is its policy step.  For M2a it is unchanged. Not covered: no
+trained M2a or M2b model has run at the navigator; `--model-rate` is not yet plumbed through
+`labrunner`'s own copy of the options (`labrunner.remote`).
+
 ## Not covered
 
 - The ONNX itself: no trained model exists yet, so the parity is of the input; the network, the

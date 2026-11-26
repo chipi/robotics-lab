@@ -8,14 +8,17 @@ def add_args(ap) -> None:
     ap.add_argument("--local-controller", choices=("rules", "learned"), default=None,
                     help="rules (the profile's rules@1, the default) or learned (an ONNX model, with --model); the simulator only")
     ap.add_argument("--model", type=Path, metavar="PATH", default=None, help="the ONNX model of --local-controller learned")
+    ap.add_argument("--model-rate", type=int, choices=(50, 10), default=None, metavar="HZ",
+                    help="the rate the model was trained at, 50 (Mjlab-Nav-MicroDuck) or 10 (Mjlab-Nav-Deploy-MicroDuck); read only when the model has no "
+                         "ONNX metadata and no <model>.onnx.json beside it, and refused if it disagrees with them")
 
 
 def setting(args, ap) -> dict | None:
-    """{"name": "learned", "model": path} for the options, None for the profile's own; a usage error (exit 2) for a model with no
+    """{"name": "learned", "model": path[, "model_rate": 50|10]} for the options, None for the profile's own; a usage error (exit 2) for a model with no
     learned controller, a learned one with no model or one that is not a file, or for the real duck's variant."""
     if args.local_controller != "learned":
-        if args.model is not None:
-            ap.error("--model is the model of --local-controller learned")
+        if args.model is not None or args.model_rate is not None:
+            ap.error("--model and --model-rate belong to --local-controller learned")
         return None
     if args.model is None:
         ap.error("--local-controller learned needs --model PATH")
@@ -23,4 +26,4 @@ def setting(args, ap) -> dict | None:
         ap.error(f"--model {args.model}: not a file")
     if getattr(args, "variant", "sim") == "real":
         ap.error("--local-controller learned is the simulator's for now: the real duck refuses it (RFC-0025 R8)")
-    return {"name": "learned", "model": str(args.model)}
+    return {"name": "learned", "model": str(args.model), **({"model_rate": args.model_rate} if args.model_rate else {})}

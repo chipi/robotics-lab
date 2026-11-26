@@ -4,6 +4,7 @@ follower's command back as it is (the default, both profiles); `learned@<sha8>` 
 a real robot. The guards stay above it. A tiny random-weight ONNX is written here, by hand, so no extra package is needed. No simulator.
 Run: cd robots/duck && uv run python tests/test_local_controller.py"""
 
+import argparse
 import atexit
 import collections
 import hashlib
@@ -85,12 +86,13 @@ def value_info(name, dims):
     return text(1, name) + ld(2, ld(1, vi(1, 1) + ld(2, shape)))
 
 
-def write_onnx(path, weights, bias, input_name="obs", output_name="action", width=1343):
+def write_onnx(path, weights, bias, input_name="obs", output_name="action", width=1343, meta=None):
     nodes = ld(1, text(1, input_name) + text(1, "w") + text(2, "mm") + text(4, "MatMul")) + \
         ld(1, text(1, "mm") + text(1, "b") + text(2, output_name) + text(4, "Add"))
     graph = nodes + text(2, "g") + ld(5, tensor("w", [width, 3], weights)) + ld(5, tensor("b", [1, 3], bias)) + \
         ld(11, value_info(input_name, [1, width])) + ld(12, value_info(output_name, [1, 3]))
-    path.write_bytes(vi(1, 8) + text(2, "test") + ld(7, graph) + ld(8, text(1, "") + vi(2, 17)))
+    props = b"".join(ld(14, text(1, k) + text(2, v)) for k, v in (meta or {}).items())
+    path.write_bytes(vi(1, 8) + text(2, "test") + ld(7, graph) + ld(8, text(1, "") + vi(2, 17)) + props)
     return path
 
 
@@ -321,63 +323,65 @@ check("a history of frames 0.1 s apart fills the ticks oldest first, each with i
 
 # ---- parity with microduck-nav's training observation (R4): the golden vectors the training code builds, rebuilt here ----------------
 GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "obs_parity.json").read_text())
+DEPLOY = json.loads((Path(__file__).parent / "fixtures" / "obs_parity_deploy.json").read_text())
 
 
-def golden_frame(axial_m, profile):
+def golden_frame(axial_m, profile, golden=GOLDEN):
     """A training frame (optical-axis metres, 0 where the zone gave nothing) as this profile's sensor would report it."""
     t = profile.sensors.tof8x8
-    factor = np.array(GOLDEN["zone_axial_factor"]) if t.mount.range_kind == "radial" else np.ones(64)
+    factor = np.array(golden["zone_axial_factor"]) if t.mount.range_kind == "radial" else np.ones(64)
     mm = np.array(axial_m) / factor * 1000.0
     status = [t.valid_status[0] if m > 0 else t.no_target_status for m in axial_m]
     return {"rows": 8, "cols": 8, "distance_mm": mm.tolist(), "status": status, "t_ns": 0, "seq": 0}
 
 
-for profile in (SIM, REAL):
-    kind = profile.sensors.tof8x8.mount.range_kind
-    axial = axial_factors(Tof8x8(profile))
-    for st in GOLDEN["states"]:
-        enc = [p + b for p, b in zip(st["joint_pos"], st["backlash"])]
-        enc.insert(JOINTS.index("mouth"), 0.0)
-        vel = list(st["joint_vel"])
-        vel.insert(JOINTS.index("mouth"), 0.0)
-        body = {"imu": {"quat": st["quat"], "gyro": st["gyro"]}, "joints": enc, "velocities": vel}
-        ranges = [(golden_frame(f["axial_m"], profile), f["age_s"]) for f in st["frames"]]
-        got = observation(Twist(st["requested"][0], st["requested"][2]), ranges, body, Twist(st["applied"][0], st["applied"][2]),
-                          set(profile.sensors.tof8x8.valid_status), step_s=MODEL_STEP_S, previous_action=np.array(st["previous_action"]),
-                          joint_velocity=np.array(st["joint_vel"]), axial=axial)
-        want = np.array(st["observation"])
-        worst = int(np.abs(got - want).argmax())
-        check(f"parity with the training observation, {st['name']} state, {kind} ranges: all 1343 within 1e-6",
-              np.abs(got - want).max() <= GOLDEN["tolerance"], f"worst slot {worst}: {got[worst]} vs {want[worst]}")
+for golden, label in ((GOLDEN, "50 Hz"), (DEPLOY, "10 Hz")):
+    for profile in (SIM, REAL):
+        kind = profile.sensors.tof8x8.mount.range_kind
+        axial = axial_factors(Tof8x8(profile))
+        for st in golden["states"]:
+            enc = [p + b for p, b in zip(st["joint_pos"], st["backlash"])]
+            enc.insert(JOINTS.index("mouth"), 0.0)
+            vel = list(st["joint_vel"])
+            vel.insert(JOINTS.index("mouth"), 0.0)
+            body = {"imu": {"quat": st["quat"], "gyro": st["gyro"]}, "joints": enc, "velocities": vel}
+            ranges = [(golden_frame(f["axial_m"], profile, golden), f["age_s"]) for f in st["frames"]]
+            got = observation(Twist(st["requested"][0], st["requested"][2]), ranges, body, Twist(st["applied"][0], st["applied"][2]),
+                              set(profile.sensors.tof8x8.valid_status), step_s=golden["step_s"], previous_action=np.array(st["previous_action"]),
+                              joint_velocity=np.array(st["joint_vel"]), axial=axial)
+            want = np.array(st["observation"])
+            worst = int(np.abs(got - want).argmax())
+            check(f"parity with the training observation at {label}, {st['name']} state, {kind} ranges: all 1343 within 1e-6",
+                  np.abs(got - want).max() <= golden["tolerance"], f"worst slot {worst}: {got[worst]} vs {want[worst]}")
 
 # ---- the learned controller ------------------------------------------------------------------------------------------------------------
 check("the model's control step is the training env's step_dt (50 Hz), the history's spacing", abs(MODEL_STEP_S - GOLDEN["step_s"]) < 1e-9, GOLDEN["step_s"])
 check("the 14 joints are the training env's, in its order, less the mouth", list(NAV_JOINTS) == GOLDEN["joints"], (NAV_JOINTS, GOLDEN["joints"]))
 check("their default pose is the training env's", np.allclose(DEFAULT, GOLDEN["default_pose"], atol=1e-6), (DEFAULT, GOLDEN["default_pose"]))
 check("the simulator's radial ranges become optical-axis depths by the training grid's own factors, the real duck's (axial) are left alone",
-      np.allclose(Learned(SIM, RANDOM).axial, GOLDEN["zone_axial_factor"], atol=1e-6) and np.allclose(axial_factors(Tof8x8(REAL)), 1.0))
+      np.allclose(Learned(SIM, RANDOM, model_rate=50).axial, GOLDEN["zone_axial_factor"], atol=1e-6) and np.allclose(axial_factors(Tof8x8(REAL)), 1.0))
 
 sha = hashlib.sha256(RANDOM.read_bytes()).hexdigest()
-ln = Learned(SIM, RANDOM)
+ln = Learned(SIM, RANDOM, model_rate=50)
 check("it names itself learned@<8 of the model's sha256>", ln.ident == f"learned@{sha[:8]}" and isinstance(ln, interfaces.LocalController), ln.ident)
 d = ln.describe()
 check("it records the model's full sha256 and its input and output", d["model"]["sha256"] == sha and d["model"]["input"] == {"name": "obs", "shape": [1, 1343]}
       and d["model"]["output"] == {"name": "action", "shape": [1, 3]} and d["ident"] == ln.ident, d)
-check("the input's name is read from the file, not assumed", Learned(SIM, PUSH).describe()["model"]["input"]["name"] == "observations")
+check("the input's name is read from the file, not assumed", Learned(SIM, PUSH, model_rate=50).describe()["model"]["input"]["name"] == "observations")
 try:
-    Learned(SIM, SHORT)
+    Learned(SIM, SHORT, model_rate=50)
     wrong = False
 except ValueError as e:
     wrong = "1343" in str(e)
 check("a model whose input is not 1343 wide is refused, naming it", wrong)
 try:
-    Learned(SIM, tmp / "missing.onnx")
+    Learned(SIM, tmp / "missing.onnx", model_rate=50)
     gone = False
 except (OSError, ValueError):
     gone = True
 check("a model file that is not there is refused", gone)
 
-ln = Learned(SIM, RANDOM)
+ln = Learned(SIM, RANDOM, model_rate=50)
 applied, outs = Twist(), []
 for i in range(6):
     body = body_state(vel=0.01 * i)
@@ -389,7 +393,7 @@ check("a random-weight model runs six ticks: finite, never faster than asked (0.
       all(isinstance(x, Twist) and math.isfinite(x.vx) and math.isfinite(x.vyaw) and 0.0 <= x.vx <= 0.3 + 1e-9 and abs(x.vyaw) <= 0.75 for x in outs), outs)
 check("... slewed from standing: no tick jumps more than 0.1 m/s (1 m/s^2 over a 0.1 s tick)",
       all(abs(b.vx - a.vx) <= 0.1 + 1e-9 for a, b in zip([Twist()] + outs, outs)), outs)
-push = Learned(SIM, PUSH)
+push = Learned(SIM, PUSH, model_rate=50)
 out = push.command(Twist(0.3, 0.0), [(frame(), 0.0)], body_state(), Twist(0.3, 0.0))
 check("a model that pushes every residual to +1 cannot go faster than the follower: vx stays at or under 0.3", 0.0 < out.vx <= 0.3 + 1e-9, out)
 check("no frame at all: zero (the model is not run on nothing)", ln.command(Twist(0.3, 0.2), [], body_state(), Twist(0.2, 0.0)) == Twist(0.0, 0.0))
@@ -399,9 +403,87 @@ ln.command(Twist(0.0, 0.0), [(frame(), 0.0)], body_state(vel=0.7), Twist())
 check("the joint velocities are kept on a tick the model does not run on, so the first tick after a pause is not a stale one", np.allclose(ln.joint_velocity, 0.7), ln.joint_velocity)
 check("no robot state: zero", ln.command(Twist(0.3, 0.0), [(frame(), 0.0)], None, Twist(0.2, 0.0)) == Twist(0.0, 0.0))
 
+# ---- the model's rate and lateral limit travel with the model: metadata, then a sidecar, then --model-rate; none is refused -----------
+import duck_lab.plugins.learned as learned_mod
+from duck_lab.nav import controller_args
+
+META_10 = {"task": "Mjlab-Nav-Deploy-MicroDuck", "policy_step_s": "0.1", "lateral_limit": "0.0", "obs_layout": "nav-1343-v1"}
+META_50 = {"task": "Mjlab-Nav-MicroDuck", "policy_step_s": "0.02", "lateral_limit": "0.12", "obs_layout": "nav-1343-v1"}
+bare = write_onnx(tmp / "bare.onnx", [0.0] * (1343 * 3), [0.0, 0.0, 0.0])
+
+
+def refused_with(*words, **kw):
+    try:
+        Learned(SIM, kw.pop("model", bare), **kw)
+    except ValueError as e:
+        return all(w in str(e) for w in words)
+    return False
+
+
+check("a model with no metadata, no sidecar and no --model-rate is refused, saying what to give (never guessed)", refused_with("rate", "--model-rate", ".onnx.json"))
+for rate, step, lat in ((50, 0.02, 0.12), (10, 0.1, 0.0)):
+    sp = Learned(SIM, bare, model_rate=rate).spec
+    check(f"--model-rate {rate}: policy step {step} s, lateral limit {lat}, from the flag",
+          sp["policy_step_s"] == step and sp["lateral_limit"] == lat and sp["source"] == "flag" and sp["task"] is None, sp)
+check("--model-rate 25 is refused (only 50 and 10 were trained)", refused_with("50", "10", model_rate=25))
+side = write_onnx(tmp / "side.onnx", [0.0] * (1343 * 3), [0.0, 0.0, 0.0])
+sidecar = Path(str(side) + ".json")
+sidecar.write_text(json.dumps({"task": "Mjlab-Nav-Deploy-MicroDuck", "policy_step_s": 0.1, "lateral_limit": 0.0, "obs_layout": "nav-1343-v1"}))
+sp = Learned(SIM, side).spec
+check("a sidecar <model>.onnx.json is read: the task, 0.1 s, lateral 0", sp == {"task": "Mjlab-Nav-Deploy-MicroDuck", "policy_step_s": 0.1,
+      "lateral_limit": 0.0, "obs_layout": "nav-1343-v1", "source": "sidecar"}, sp)
+check("... and the same rate on the flag is fine; the sidecar comes before it", Learned(SIM, side, model_rate=10).spec["source"] == "sidecar")
+check("a flag that disagrees with the sidecar is refused, not silently dropped", refused_with("50", "0.1", model=side, model_rate=50))
+sidecar.write_text(json.dumps({"policy_step_s": 0.02}))
+check("a sidecar without lateral_limit is refused, naming the key", refused_with("lateral_limit", model=side))
+sidecar.write_text("{not json")
+check("a sidecar that is not JSON is refused", refused_with("sidecar", model=side))
+sidecar.write_text(json.dumps({"policy_step_s": -0.1, "lateral_limit": 0.0}))
+check("a sidecar with a step that is not positive is refused", refused_with("policy_step_s", model=side))
+sidecar.write_text(json.dumps({"policy_step_s": 0.1, "lateral_limit": 0.0, "obs_layout": "nav-9999-v9"}))
+check("a sidecar for another observation layout is refused", refused_with("obs_layout", model=side))
+meta = write_onnx(tmp / "meta.onnx", [0.0] * (1343 * 3), [0.0, 0.0, 0.0], meta=META_10)
+Path(str(meta) + ".json").write_text(json.dumps({"policy_step_s": 0.02, "lateral_limit": 0.12}))
+sp = Learned(SIM, meta, model_rate=10).spec
+check("ONNX metadata comes first: it wins over a sidecar that says 50 Hz", sp["policy_step_s"] == 0.1 and sp["lateral_limit"] == 0.0 and sp["source"] == "metadata"
+      and sp["task"] == "Mjlab-Nav-Deploy-MicroDuck", sp)
+check("a flag that disagrees with the metadata is refused", refused_with("50", model=meta, model_rate=50))
+half = write_onnx(tmp / "half.onnx", [0.0] * (1343 * 3), [0.0, 0.0, 0.0], meta={"policy_step_s": "0.1"})
+check("metadata with a step and no lateral limit is refused, not completed from a sidecar or a flag", refused_with("lateral_limit", model=half, model_rate=10))
+m50 = write_onnx(tmp / "m50.onnx", [0.0] * (1343 * 3), [0.0, 0.0, 0.0], meta=META_50)
+check("metadata of the 50 Hz task: 0.02 s, lateral 0.12", Learned(SIM, m50).spec["policy_step_s"] == 0.02 and Learned(SIM, m50).spec["lateral_limit"] == 0.12)
+
+ten, fifty = Learned(SIM, meta), Learned(SIM, m50)
+check("the residual takes the lateral limit from the model: 0 for the 10 Hz one, 0.12 for the 50 Hz one", ten.residual.limits[1] == 0.0 and fifty.residual.limits[1] == 0.12
+      and list(ten.residual.limits[[0, 2]]) == [0.35, 0.75], (ten.residual.limits, fifty.residual.limits))
+steps, real_observation = [], learned_mod.observation
+learned_mod.observation = lambda *a, **kw: (steps.append(a[5]), real_observation(*a, **kw))[1]
+try:
+    for ctrl in (ten, fifty):
+        ctrl.command(Twist(0.3, 0.0), [(frame(), 0.0)], body_state(), Twist(0.2, 0.0))
+finally:
+    learned_mod.observation = real_observation
+check("the history is spaced by the model's own step: 0.1 s for the 10 Hz model, 0.02 s for the 50 Hz one", steps == [0.1, 0.02], steps)
+d = ten.describe()["model"]
+check("describe records the task, the rate, the lateral limit, the layout and where they came from", d["task"] == "Mjlab-Nav-Deploy-MicroDuck" and d["policy_step_s"] == 0.1
+      and d["lateral_limit"] == 0.0 and d["obs_layout"] == "nav-1343-v1" and d["spec_source"] == "metadata", d)
+
+ap = argparse.ArgumentParser()
+controller_args.add_args(ap)
+a = ap.parse_args(["--local-controller", "learned", "--model", str(RANDOM), "--model-rate", "10"])
+check("--model-rate 10 goes into the controller's setting", controller_args.setting(a, ap) == {"name": "learned", "model": str(RANDOM), "model_rate": 10}, controller_args.setting(a, ap))
+check("... and a setting with no rate has no model_rate key", "model_rate" not in controller_args.setting(ap.parse_args(["--local-controller", "learned", "--model", str(RANDOM)]), ap))
+check("a setting's model_rate reaches Learned through plugins.local_controller", plugins.local_controller(SIM, {"name": "learned", "model": str(bare), "model_rate": 10}).spec["policy_step_s"] == 0.1)
+try:
+    ap.parse_args(["--model-rate", "25"])
+    odd = False
+except SystemExit:
+    odd = True
+check("--model-rate takes 50 or 10 only", odd)
+
 # ---- a non-finite input gives the brake ----------------------------------------------------------------------------------------------
 INF, NAN = float("inf"), float("nan")
-push = Learned(SIM, PUSH)
+push = Learned(SIM, PUSH, model_rate=50)
 fresh = [(frame(), 0.0)]
 cases = {
     "a NaN gyro": (Twist(0.3, 0.0), fresh, body_state(gyro=(NAN, 0, 0)), Twist(0.2, 0.0)),
@@ -418,11 +500,11 @@ check("... and a brake from a crawl reaches zero, never reverses", out.vx == 0.0
 check("a NaN request or applied command: a plain stop", push.command(Twist(NAN, 0.0), fresh, body_state(), Twist()) == Twist(0.0, 0.0)
       and push.command(Twist(0.3, 0.0), fresh, body_state(), Twist(NAN, 0.0)) == Twist(0.0, 0.0))
 nan_model = write_onnx(tmp / "nan.onnx", [0.0] * (1343 * 3), [NAN, 0.0, 0.0])
-out = Learned(SIM, nan_model).command(Twist(0.3, 0.0), fresh, body_state(), Twist(0.2, 0.0))
+out = Learned(SIM, nan_model, model_rate=50).command(Twist(0.3, 0.0), fresh, body_state(), Twist(0.2, 0.0))
 check("a model whose output is not finite: the brake too", abs(out.vx - 0.1) < 1e-9, out)
 
 # ---- the navigator uses it: the order, the history, the identity -----------------------------------------------------------------------
-lnav = navigator(Learned(SIM, RANDOM))
+lnav = navigator(Learned(SIM, RANDOM, model_rate=50))
 check("a navigator told to use it reports learned@<sha8>", lnav.controller.ident == f"learned@{sha[:8]}")
 lnav.range._nearest_mm = 600
 lnav.go_to((4.0, 2.5), 1.0)
@@ -436,7 +518,7 @@ real_open = Tof8x8.open
 Tof8x8.open = lambda self, path: None
 for k in real:
     setattr(nav_run, k, lambda *a, **kw: type("Stub", (), {"close": lambda self: None, "latest": None})())
-SETTING = {"name": "learned", "model": str(RANDOM)}
+SETTING = {"name": "learned", "model": str(RANDOM), "model_rate": 50}
 try:
     nav = Navigator(STUB, log=tmp / "ticks.jsonl", calibration="sim", local_controller=SETTING)
     check("Navigator(local_controller=...) in the simulator builds the learned controller", nav.controller.ident == f"learned@{sha[:8]}", nav.controller.ident)
@@ -444,6 +526,9 @@ try:
     cal = [json.loads(x) for x in (tmp / "ticks.jsonl").read_text().splitlines() if '"calibration"' in x]
     check("... and the run's calibration event names it and the model's checksum and input",
           cal and cal[0]["local_controller"]["model"]["sha256"] == sha and cal[0]["local_controller"]["ident"] == f"learned@{sha[:8]}", cal)
+    check("... and the calibration event carries the model's rate and lateral limit (here from the flag: 50 Hz, 0.12)",
+          cal and cal[0]["local_controller"]["model"]["policy_step_s"] == 0.02 and cal[0]["local_controller"]["model"]["lateral_limit"] == 0.12
+          and cal[0]["local_controller"]["model"]["spec_source"] == "flag", cal and cal[0].get("local_controller"))
     plain_nav = Navigator(STUB, log=tmp / "plain.jsonl", calibration="sim")
     plain_nav._log.flush()
     cal = [json.loads(x) for x in (tmp / "plain.jsonl").read_text().splitlines() if '"calibration"' in x]
@@ -456,7 +541,7 @@ try:
         refused = "simulator" in str(e)
     check("must fail: a real robot refuses it in the navigator (and closes what it opened)", refused)
     try:
-        Learned(REAL, RANDOM)
+        Learned(REAL, RANDOM, model_rate=50)
         refused = False
     except ValueError as e:
         refused = "simulator" in str(e)

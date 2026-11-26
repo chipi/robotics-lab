@@ -42,7 +42,7 @@ def local_controller(profile, setting: dict | None = None, tick_s: float = 0.1):
         if setting["name"] != "learned":
             raise LookupError(f"no local controller {setting['name']!r} (the overrides are rules and learned)")
         from duck_lab.plugins.learned import Learned
-        return Learned(profile, setting["model"], tick_s)
+        return Learned(profile, setting["model"], tick_s, setting.get("model_rate"))
     spec = profile.plugins.data.get("local_controller", "rules@1")
     cls = REGISTRY.get(spec)
     if cls is None or not isinstance(cls(profile), LocalController):

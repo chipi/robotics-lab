@@ -15,6 +15,8 @@ command has no lateral part.
 """
 
 import hashlib
+import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -28,7 +30,9 @@ OBS_DIM, ACTION_DIM = 1343, 3
 HISTORY, ZONES = 10, 64
 MIN_RANGE_M, MAX_RANGE_M = 0.12, 4.0       # a return outside it is invalid, judged on the optical-axis depth (microduck-nav observations.py)
 EMPTY_AGE_S = 1.0                          # a tick with no frame: empty, aged 1 s, as at a training reset
-MODEL_STEP_S = 0.02                        # the control step the model was trained at (decimation 4 of 5 ms): the history's spacing
+MODEL_STEP_S = 0.02                        # the 50 Hz model's control step (decimation 4 of 5 ms) and policy step: the history's spacing
+RATES = {50: (0.02, 0.12), 10: (0.1, 0.0)}   # --model-rate: Hz -> (policy step s, lateral limit m/s): M2a Mjlab-Nav-MicroDuck, M2b Mjlab-Nav-Deploy-MicroDuck
+OBS_LAYOUT = "nav-1343-v1"                 # microduck-nav's nav_export.OBS_LAYOUT: the slot order observation() builds
 LIMITS, SLEW, MAX_AGE_S, LATERAL_RATIO = (0.35, 0.12, 0.75), (1.0, 1.0, 3.0), 0.25, 0.35
 BRAKE = (-1.0, 0.0, 0.0)
 
@@ -37,6 +41,53 @@ DEFAULT_POSE = {"left_hip_yaw": 0.0, "left_hip_roll": -0.0873, "left_hip_pitch":
                 "neck_pitch": 0.3491, "head_pitch": 0.3491, "head_yaw": 0.0, "head_roll": 0.0,
                 "right_hip_yaw": 0.0, "right_hip_roll": 0.0873, "right_hip_pitch": 0.4579, "right_knee": 0.0049, "right_ankle": -0.4530}
 DEFAULT = np.array([DEFAULT_POSE[n] for n in NAV_JOINTS])
+
+
+def _number(raw: dict, key: str, where: str, minimum: float, strict: bool) -> float:
+    try:
+        value = float(raw[key])
+    except KeyError:
+        raise ValueError(f"{where}: {key} is missing (it needs policy_step_s and lateral_limit)") from None
+    except (TypeError, ValueError):
+        raise ValueError(f"{where}: {key} {raw[key]!r} is not a number") from None
+    if not math.isfinite(value) or value < minimum or (strict and value == minimum):
+        raise ValueError(f"{where}: {key} {raw[key]!r} is out of range (must be {'above' if strict else 'at least'} {minimum})")
+    return value
+
+
+def model_spec(path: Path, metadata: dict, model_rate: int | None = None) -> dict:
+    """What the model was trained at: its task, policy step (s, the history's spacing) and lateral limit (m/s), and where that came from.
+    The order is the ONNX metadata (microduck-nav's export writes it), a sidecar `<model>.onnx.json`, then `--model-rate` (50 or 10):
+    the first that exists decides, and a flag that disagrees with it is refused, not ignored. A model with none of them is refused, never
+    guessed: run at a rate it did not train at, it reads a history of the wrong length."""
+    if model_rate is not None and model_rate not in RATES:
+        raise ValueError(f"--model-rate {model_rate}: only {' and '.join(map(str, RATES))} Hz were trained")
+    sidecar = Path(str(path) + ".json")
+    if metadata:
+        where, raw, source = f"{path} ONNX metadata", dict(metadata), "metadata"
+    elif sidecar.is_file():
+        where, source = f"sidecar {sidecar}", "sidecar"
+        try:
+            raw = json.loads(sidecar.read_text())
+        except ValueError as exc:
+            raise ValueError(f"{where}: not JSON ({exc})") from None
+        if not isinstance(raw, dict):
+            raise ValueError(f"{where}: a JSON object expected")
+    elif model_rate is not None:
+        step, lateral = RATES[model_rate]
+        return {"task": None, "policy_step_s": step, "lateral_limit": lateral, "obs_layout": OBS_LAYOUT, "source": "flag"}
+    else:
+        raise ValueError(f"{path}: the model does not say what rate it was trained at (no ONNX metadata, no sidecar {sidecar}) and "
+                         f"--model-rate was not given: pass --model-rate 50 (Mjlab-Nav-MicroDuck) or 10 (Mjlab-Nav-Deploy-MicroDuck)")
+    layout = raw.get("obs_layout", OBS_LAYOUT)
+    if layout != OBS_LAYOUT:
+        raise ValueError(f"{where}: obs_layout {layout!r}, this controller builds {OBS_LAYOUT!r}")
+    spec = {"task": raw.get("task"), "policy_step_s": _number(raw, "policy_step_s", where, 0.0, True),
+            "lateral_limit": _number(raw, "lateral_limit", where, 0.0, False), "obs_layout": layout, "source": source}
+    if model_rate is not None and abs(RATES[model_rate][0] - spec["policy_step_s"]) > 1e-9:
+        raise ValueError(f"{path}: --model-rate {model_rate} means a policy step of {RATES[model_rate][0]} s but the model's {source} says "
+                         f"{spec['policy_step_s']} s: drop the flag or fix the {source}")
+    return spec
 
 
 def brake_action() -> np.ndarray:
@@ -96,7 +147,7 @@ def _tick(frame: dict, valid: set, axial: np.ndarray) -> np.ndarray:
     status = np.asarray(frame["status"]).reshape(-1)
     if status.shape != (ZONES,):
         raise ValueError(f"frame status: {ZONES} numbers expected, got {status.shape[0]}")
-    metres = mm / 1000.0 * axial
+    metres = (mm / 1000.0 * axial).astype(np.float32).astype(float)       # training judges its bounds in float32: 4.0 m must stay 4.0 m
     ok = np.isin(status, list(valid)) & (metres >= MIN_RANGE_M) & (metres <= MAX_RANGE_M)
     return np.concatenate((np.where(ok, metres, 0.0), ok.astype(float)))
 
@@ -141,7 +192,7 @@ class Learned:
     name = "learned"
     version = 1
 
-    def __init__(self, profile, model, tick_s: float = 0.1):
+    def __init__(self, profile, model, tick_s: float = 0.1, model_rate: int | None = None):
         if profile.variant != "sim":
             raise ValueError(f"the learned local controller is the simulator's for now: the {profile.variant!r} robot refuses it (RFC-0025 R8)")
         self.path = Path(model).expanduser()
@@ -158,9 +209,10 @@ class Learned:
         if len(outs) != 1 or outs[0].shape[-1] != ACTION_DIM:
             raise ValueError(f"{self.path}: the model must give one output {ACTION_DIM} wide, it has {[(o.name, o.shape) for o in outs]}")
         self.input, self.output = ins[0], outs[0]
+        self.spec = model_spec(self.path, self.session.get_modelmeta().custom_metadata_map, model_rate)
         self.bind(profile)
         self.tick_s = tick_s
-        self.residual = ResidualCommand(tick_s)
+        self.residual = ResidualCommand(tick_s, limits=(LIMITS[0], self.spec["lateral_limit"], LIMITS[2]))
         self.last_error = None
         self.reset()
 
@@ -175,7 +227,8 @@ class Learned:
 
     def describe(self) -> dict:
         return {"name": self.name, "version": self.version, "ident": self.ident,
-                "model": {"path": str(self.path), "sha256": self.sha256,
+                "model": {"path": str(self.path), "sha256": self.sha256, "task": self.spec["task"], "policy_step_s": self.spec["policy_step_s"],
+                          "lateral_limit": self.spec["lateral_limit"], "obs_layout": self.spec["obs_layout"], "spec_source": self.spec["source"],
                           "input": {"name": self.input.name, "shape": list(self.input.shape)},
                           "output": {"name": self.output.name, "shape": list(self.output.shape)}}}
 
@@ -229,7 +282,7 @@ class Learned:
             self._remember_velocity(body, strict=False)
             cmd = self.residual.process(req, np.zeros(ACTION_DIM), have, age)
             return Twist(float(cmd[0]), float(cmd[2]))
-        obs = observation(requested, ranges, body, applied, self.valid, MODEL_STEP_S, self.previous_action, self.joint_velocity, self.axial)
+        obs = observation(requested, ranges, body, applied, self.valid, self.spec["policy_step_s"], self.previous_action, self.joint_velocity, self.axial)
         self._remember_velocity(body)
         out = self.session.run(None, {self.input.name: obs[None, :]})[0].reshape(-1)
         if out.shape != (ACTION_DIM,) or not np.isfinite(out).all():
