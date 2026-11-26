@@ -720,6 +720,7 @@ the operator's.
    - C: `goalkit` (what it holds today, but a kit has no boundary).
    - **Recommendation: A.** The module holds plans, and a mission is the word the operator uses.
    - **Reviewer:** A, agree. The name clash with RFC-0005 is question 7.
+   - **Decided (the operator, 2026-11-26): A, `missions`.**
 2. **Do sites' areas and objects belong to missions or to config?**
    - A: config; Mission Control keeps `sites.py` and the planner receives a snapshot.
    - B: the module takes the read side (areas, objects, `area_at`) as types.
@@ -727,6 +728,8 @@ the operator's.
    - **Recommendation: A.** Execution writes to sites (`merge_run_objects`, `set_dock_if_unset`),
      so they are not the planner's data. Revisit at C when a second program needs them.
    - **Reviewer:** A, agree; the site snapshot stamp goes in the provenance (4.2, M2).
+   - **Decided (the operator, 2026-11-26): A, config.** Mission Control keeps `sites.py`; the
+     planner receives a snapshot.
 3. **Does the LLM planner stay optional and off by default?**
    - A: yes; off unless `planner.json` exists (as `planner.py:7-9` says now), the matcher always
      on.
