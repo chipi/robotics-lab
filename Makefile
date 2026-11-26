@@ -551,6 +551,14 @@ screenshots-nxt: observatory-sync nxt-sync ## Retake the NXT web guide's screens
 	@cd $(OBSERVATORY_DIR) && uv run --frozen python ../../scripts/nxt_shots.py --out ../../docs/assets/screenshots/guides/nxt-web
 	@echo "screenshots-nxt PASS"
 
+GUIDE_APPS ?= mission-control,observatory
+GUIDE_ONLY ?=
+
+.PHONY: screenshots-guides
+screenshots-guides: observatory-sync ## Retake the user guides' walkthrough shots (docs/assets/screenshots/guides/<app>/, dark, 1440 wide) from a fixture run and the fake robot; GUIDE_APPS=mission-control|observatory, GUIDE_ONLY=<app>-<step>,...; the body steps need the duck's meshes (make robots)
+	@cd $(OBSERVATORY_DIR) && uv run --frozen python ../../scripts/look_shots.py --out ../../docs/assets/screenshots --guides $(GUIDE_APPS) $(if $(GUIDE_ONLY),--only $(GUIDE_ONLY))
+	@ls -l docs/assets/screenshots/guides/* && echo "screenshots-guides PASS"
+
 .PHONY: docs-clean
 docs-clean: ## Remove built site
 	rm -rf site/

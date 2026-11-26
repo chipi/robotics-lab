@@ -220,7 +220,171 @@ def shoot(browser, app, view, width, theme, base, mc_base, desc, out: Path, erro
     return name
 
 
-def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index: bool) -> int:
+# ---- the guides' walkthroughs (docs/guides): one PNG per step, dark, 1440 wide, in --out/guides/<app>/ -----------------------------------------
+# A walkthrough is one page driven in order, because a step (a run under way, a STOP) needs the one before it; --only filters what is written,
+# never what is driven. The names are the guides' own: a guide links NN-name.png, so a name is never reused for another view.
+
+GUIDE_SHOTS = {
+    "mission-control": ["01-robot-list", "02-robot-readiness", "03-robot-body", "04-robot-modules", "05-robot-settings", "06-site-and-area", "07-goal-form",
+                        "08-run-under-way", "09-run-reached", "10-stop"],
+    "observatory": ["01-runs", "02-run-3d", "03-belief-truth", "04-timeline-scrub", "05-map-frame", "06-alarms-decisions", "07-eye", "08-signals", "09-watch",
+                    "10-explore", "11-shared-address"],
+}
+GUIDE_LIMITS = [
+    "mission-control 08-10: the fake robot writes no Observatory run (its run_key is None), so the run's Watch link is shown disabled; the link itself is not shown live",
+    "observatory: a live (still recording) run, a real robot's run, Export video (needs the render service) and comparing runs are not shown",
+]
+
+
+def guide_control(page, snap, mc_base, desc):
+    ready = lambda: page.wait_for_function("window.__mc && window.__mc.ready", timeout=30000)  # noqa: E731
+    page.goto(f"{mc_base}/")
+    ready()
+    page.wait_for_function("document.querySelector('#robot-fake-1')?.getAttribute('data-online') === 'true'", timeout=15000)
+    snap("01-robot-list")
+
+    page.goto(f"{mc_base}/#robot/duck-1")
+    ready()
+    page.wait_for_function("!document.getElementById('robot-page').hidden && document.querySelectorAll('#rp-parts [data-part]').length === 3", timeout=15000)
+    snap("02-robot-readiness")
+    page.click("#tab-body")
+    page.wait_for_function("!!window.__mc.body", timeout=30000)
+    if desc:
+        page.wait_for_function(f"window.__mc.body.state() && window.__mc.body.state().meshes === {desc['n_visuals']}", timeout=60000)
+    snap("03-robot-body")
+    page.click("#tab-modules")
+    page.wait_for_selector("#rp-modules-body [data-plugin]", timeout=15000)
+    snap("04-robot-modules")
+    page.click("#tab-settings")
+    page.wait_for_selector("#st-blocks [data-block]", timeout=15000)
+    # the notice at the top names this run's scratch folder; the picture says <scratch> instead of a path on the machine that took it
+    scrub = "(() => { const w = document.createTreeWalker(document.getElementById('rp-settings-body'), NodeFilter.SHOW_TEXT); for (let n = w.nextNode(); n; n = w.nextNode()) n.nodeValue = n.nodeValue.replace(/\\/[^ ]*look-shots-[a-z0-9_]+/g, '<scratch>'); })()"
+    snap("05-robot-settings", before=lambda: page.evaluate(scrub))
+    page.click("#rp-back")
+    page.wait_for_function("document.getElementById('robot-page').hidden", timeout=10000)
+
+    page.click("#robot-duck-1")
+    page.click("#maphint ~ details summary, details summary:has-text('New site')")
+    page.fill("#site-name", "Test flat")
+    page.fill("#site-kind", "apartment")
+    page.click("#site-create")
+    page.wait_for_selector("#site-sel option:has-text('Test flat')", state="attached", timeout=10000)
+    page.select_option("#site-sel", index=1)
+    page.wait_for_function("document.querySelector('#area-draw') && !document.querySelector('#area-list').textContent.includes('Pick a site')", timeout=10000)
+    page.click("#area-draw")
+    box = page.locator("#map").bounding_box()
+    # the map is 8 m wide on the fake's world; corners of a "Kitchen" at the right of the dock
+    for fx, fy in ((0.60, 0.25), (0.85, 0.25), (0.85, 0.55), (0.60, 0.55)):
+        page.mouse.click(box["x"] + box["width"] * fx, box["y"] + box["height"] * fy)
+    page.fill("#area-name", "Kitchen")
+    page.fill("#area-type", "kitchen")
+    snap("06-site-and-area", before=lambda: page.locator("#area-draft").scroll_into_view_if_needed())
+    page.click("#area-save")
+    page.wait_for_selector("#area-list [data-area]", timeout=10000)
+
+    page.mouse.click(box["x"] + box["width"] * 0.74, box["y"] + box["height"] * 0.66)
+    page.wait_for_function("document.getElementById('g-x').value !== ''", timeout=5000)
+    snap("07-goal-form")
+    page.click("#g-run")
+    page.wait_for_selector("#run-list .run", timeout=10000)
+    page.wait_for_function("(() => { const t = document.querySelector('#run-progress'); return !!t && /elapsed\\s*[1-9]/.test(t.textContent); })()", timeout=15000)
+    snap("08-run-under-way", quick=True)
+    page.wait_for_function("/reached|stalled|timeout|failed|cancelled/.test(document.querySelector('#run-state')?.textContent || '')", timeout=60000)
+    snap("09-run-reached")
+
+    page.mouse.click(box["x"] + box["width"] * 0.12, box["y"] + box["height"] * 0.15)
+    page.click("#g-run")
+    page.wait_for_function("/Run #2/.test(document.querySelector('#run-detail')?.textContent || '') && /running/.test(document.querySelector('#run-state')?.textContent || '')", timeout=15000)
+    page.wait_for_function("(() => { const t = document.querySelector('#run-progress'); return !!t && /elapsed\\s*[1-9]/.test(t.textContent); })()", timeout=15000)
+    page.click("#stop-robot")
+    page.wait_for_function("/cancelled|stopped|interrupted/.test(document.querySelector('#run-state')?.textContent || '')", timeout=15000)
+    snap("10-stop")
+
+
+def guide_observatory(page, snap, base, desc):
+    # the page keeps its view, tab and frame across a change of the URL's hash, so each step starts from a blank document, as a reader opening the link would
+    def run(view, frame="world", path="/web/three/"):
+        page.goto("about:blank")
+        obs_run(page, base, view, frame, path)
+
+    go_obs(page, base)
+    page.wait_for_selector("#scenespage tr[data-run]", timeout=15000)
+    snap("01-runs")
+    run("3d")
+    snap("02-run-3d")
+    run("top")
+    snap("03-belief-truth", before=lambda: page.locator("#inspBody").get_by_text("Error", exact=True).first.scroll_into_view_if_needed())
+    run("3d")
+    page.evaluate("window.miniview.setTime(1.4)")
+    snap("04-timeline-scrub")
+    run("top", "map")
+    snap("05-map-frame")
+    run("3d")
+    page.evaluate("window.miniview.setTime(2.4)")
+    page.click("#tabDecided")
+    page.locator("#alane .mk.al").nth(1).click()
+    snap("06-alarms-decisions")
+    run("eye")
+    snap("07-eye")
+    page.click("#sigBtn")
+    page.wait_for_selector("#sigview:not([hidden])", timeout=10000)
+    snap("08-signals")
+    run("watch", path=f"/watch/{KEY}")
+    snap("09-watch")
+    if desc:
+        run("3d")
+        page.evaluate("window.__ready = false")
+        page.evaluate("window.miniview.explore()")
+        page.wait_for_function("window.__ready === true", timeout=30000)
+        page.wait_for_function("(() => { const s = window.miniview.exploreState(); return !!s && s.shown !== false; })()", timeout=30000)
+        snap("10-explore")
+    page.goto(f"{base}/control/")
+    page.wait_for_function("window.__mc && window.__mc.ready", timeout=30000)
+    snap("11-shared-address")
+
+
+def take_guides(browser, which, base, mc_base, desc, out: Path, only: str | None, errors: list, taken: list) -> None:
+    for app, flow, url in (("mission-control", guide_control, mc_base), ("observatory", guide_observatory, base)):
+        if which and app not in which:
+            continue
+        folder = out / "guides" / app
+        folder.mkdir(parents=True, exist_ok=True)
+        ctx = browser.new_context(viewport={"width": 1440, "height": 900}, color_scheme="dark", reduced_motion="reduce", device_scale_factor=1)
+        ctx.add_init_script("try { localStorage.setItem('miniview.theme', 'dark'); localStorage.setItem('rl.theme', 'dark'); localStorage.setItem('mc-theme', 'dark'); } catch (e) {}")
+        page = ctx.new_page()
+        page.set_default_timeout(15000)
+        page.on("pageerror", lambda e, a=app: errors.append(f"guide {a}: pageerror: {e}"))
+        page.on("console", lambda m, a=app: errors.append(f"guide {a}: console: {m.text[:160]}") if m.type == "error" and "Failed to load resource" not in m.text else None)
+        page.on("response", lambda r, a=app: errors.append(f"guide {a}: http {r.status}: {r.url}") if r.status >= 400 and "favicon" not in r.url else None)
+
+        def snap(name, before=None, quick=False, a=app, folder=folder):
+            if only and not any(o in f"{a}-{name}" for o in only.split(",")):
+                return
+            if before:
+                before()
+            page.add_style_tag(content=FREEZE)
+            settle(page, 50 if quick else 250)
+            shot = page.screenshot()
+            for _ in range(0 if quick else 10):
+                page.wait_for_timeout(500)
+                again = page.screenshot()
+                if again == shot:
+                    break
+                shot = again
+            else:
+                if not quick:
+                    errors.append(f"guide {a}/{name}: still changing after 5 s; the last picture is kept")
+            (folder / f"{name}.png").write_bytes(shot)
+            taken.append(f"guides/{a}/{name}.png")
+            print("took", taken[-1], flush=True)
+
+        try:
+            flow(page, snap, url, desc)
+        finally:
+            ctx.close()
+
+
+def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index: bool, guides: str | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     CACHE.mkdir(parents=True, exist_ok=True)
     tmp = Path(tempfile.mkdtemp(prefix="look-shots-", dir=CACHE))
@@ -271,7 +435,9 @@ def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index
         with sync_playwright() as p:
             browser = launch(p)
             try:
-                for app, view, widths in VIEWS:
+                if guides is not None:
+                    take_guides(browser, [g for g in guides.split(",") if g], base, mc_base, desc, out, only, errors, taken)
+                for app, view, widths in ([] if guides is not None else VIEWS):
                     for width in widths:
                         for theme in THEMES:
                             name = f"{app}-{view}-{theme}-{width}.png"
@@ -293,6 +459,13 @@ def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index
                 srv.server_close()
         mc.close()
     rev = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if guides is not None:
+        print(f"{len(taken)} guide shots in {out / 'guides'}; {len(errors)} page errors")
+        for e in errors:
+            print("  page error:", e)
+        for s in GUIDE_LIMITS:
+            print("  not shown:", s)
+        return 1 if errors else 0
     (out / "shots.json").write_text(json.dumps({"commit": rev, "taken": taken, "skipped": skipped, "not_covered": NOT_COVERED, "page_errors": errors}, indent=1))
     if html_index:
         write_index(out, taken)
@@ -339,17 +512,37 @@ def compare(before: Path, after: Path, out: Path) -> int:
     return 0
 
 
+def fixture_data(dest: Path) -> int:
+    from observatory import kinematics
+
+    duck = REPO / "robots" / "duck"
+    joints = [j.name for j in kinematics.load(duck / "robot.urdf").joints.values() if j.type != "fixed"] if (duck / "robot.urdf").is_file() else []
+    tmp = Path(tempfile.mkdtemp(prefix="look-shots-", dir=CACHE))
+    atexit.register(shutil.rmtree, tmp, True)
+    os.environ["OBSERVATORY_INDEX"] = str(tmp / "index.sqlite")
+    build_data(dest, joints)
+    print(f"fixture data in {dest}: runs {KEY} and duck/room/shots0, scene {SCENE_ID}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--out", type=Path, help="the folder the pictures go to (required except with --fixture-data)")
     ap.add_argument("--html", action="store_true", help="also write index.html in --out")
     ap.add_argument("--only", help="take only the shots whose name contains this text (a comma-separated list: any of them)")
     ap.add_argument("--slim", action="store_true", help="drop the 1440 light shots of the flat (non-3D) views, to keep the folder small")
+    ap.add_argument("--guides", nargs="?", const="mission-control,observatory", metavar="APPS",
+                    help="take the guides' walkthrough shots (docs/guides) into --out/guides/<app>/, dark, 1440 wide; APPS is a comma list of mission-control, observatory (default both); --only filters by <app>-<step>")
+    ap.add_argument("--fixture-data", type=Path, metavar="DIR", help="write the fixture data folder (a duck run and a scene) into DIR and stop: a scratch Observatory can serve it (docs/guides/observatory.md)")
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), type=Path)
     a = ap.parse_args()
+    if not a.out and not a.fixture_data:
+        ap.error("--out is required")
     if a.compare:
         return compare(a.compare[0], a.compare[1], a.out)
-    return take_all(a.out, a.only, a.slim, a.html)
+    if a.fixture_data:
+        return fixture_data(a.fixture_data)
+    return take_all(a.out, a.only, a.slim, a.html, a.guides)
 
 
 if __name__ == "__main__":
