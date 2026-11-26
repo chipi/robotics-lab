@@ -4,6 +4,10 @@ The MVP 1 close-out (the operator, 2026-11-23): "decide on a new name for the re
 the project's branding". This page gives the options and a recommendation; the decision is the
 operator's. Nothing is renamed until it is made.
 
+**Decided (the operator, 2026-11-26): the name stays `robotics-lab` for now.** None of the options
+below, nor a sci-fi set offered after them (Tycho, Magrathea, Calvin, Huey, Shatterdome), was
+liked; the question is reopened later, not in this close-out. Branding waits with it.
+
 ## What a name has to cover
 
 - **Robot-neutral.** RFC-0022 took "duck" out of the platform's names; the duck, the NXT and the
