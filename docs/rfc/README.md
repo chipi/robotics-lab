@@ -81,5 +81,8 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0030 — Missions: planning as a module, Mission Control as the executor; manual and auto
   modes](RFC-0030-missions.md) (Proposed, revision 2, 2026-11-26, after the advisor's review;
   modes and sequencing decided by the operator)
+- [RFC-0031 — Learning in the lab: training as a run on another kind of
+  resource](RFC-0031-learning-in-the-lab.md) (Proposed, draft 1, 2026-11-26; for the operator's
+  decision)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).
