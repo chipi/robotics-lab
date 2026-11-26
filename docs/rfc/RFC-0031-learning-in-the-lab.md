@@ -1,6 +1,7 @@
 # RFC-0031: Learning in the lab, training as a run on another kind of resource
 
-**Status:** Proposed, revision 2 (2026-11-26), after the advisor's
+**Status:** Accepted (the operator, 2026-11-26: all eight questions as recommended), revision 2
+(2026-11-26), after the advisor's
 [review](../wip/RFC-0031-REVIEW-2026-11-26.md). For the operator's decision. Nothing here is built.
 The operator approved writing it with option A of section 5 as the recommendation; that is a
 recommendation, not a decision. One rule is decided and recorded in section 7.2 (the promotion
@@ -600,6 +601,7 @@ question stays the operator's.
      planner, and a library called `models` would invite the clash into imports. `learning` matches
      the view. "Lab Bench" names the app of option B, which is not the proposal.
    - **Reviewer:** B, agree; the record type `Controller` or `ControllerModel`.
+   - **Decided (the operator, 2026-11-26): B.**
 2. **Where the model registry lives.**
    - A: in the platform: operational rows (request, approval, promotion) in Mission Control, the
      training artefacts and the eval summary as files the Observatory imports, the model record
@@ -611,6 +613,7 @@ question stays the operator's.
      derived record sits next to them. B would make a private evaluation repository the home of a
      fact the robots need, and `data/` is changed only through `evh`. C is option C's argument.
    - **Reviewer:** A with C1's correction (the data path of 6.2; drop "store").
+   - **Decided (the operator, 2026-11-26): A**, with C1's correction.
 3. **Do eval goals run in Mission Control or in `robotics-evals`?**
    - A: Mission Control starts the batch, under the simulator lock, and hands scores to `evh`.
    - B: the batch stays the `challenge-batch` flow; Mission Control and the Observatory read the
@@ -622,6 +625,7 @@ question stays the operator's.
      and `missions` only (`check_boundaries.py:55`) and has no executor for it. Until then eval
      stays with the skill and `robotics-evals`, and the eval spec is a document the skill fills.
    - **Reviewer:** C, agree (M4).
+   - **Decided (the operator, 2026-11-26): C.**
 4. **How a GPU budget is approved.**
    - A: each window by the operator, as today.
    - B: a training plan approved once with a GPU-hours budget, as RFC-0030's mode 3 is for a
@@ -631,6 +635,8 @@ question stays the operator's.
      ledger without a manual correction.** C is not recommended while the nightly window is
      someone else's. B must keep the 2026-11-26 decision that each swap is announced.
    - **Reviewer:** A then B; B needs tokens on; the homelab's `timeout` is the enforcement.
+   - **Decided (the operator, 2026-11-26): A, then B** after three windows without a manual
+     correction.
 5. **Promotion rules.**
    - A: operator only, by a named token identity (7.1), after a comparison with an interval under
      the rule of 7.2 (success on `avoidance_v2`, no regression on `avoidance_v1`: 30 of 30, 0
@@ -643,6 +649,8 @@ question stays the operator's.
      to a metric. C adds a reviewer the lab does not have; it can be added when there is a second
      person.
    - **Reviewer:** A with M2's rule, M3's refusal and M7's checks; C when there is a second person.
+   - **Decided (the operator, 2026-11-26): A**, with the MCP version switch refused when it changes
+     `plugins.local_controller`.
 6. **Inside MVP 2, or after it?**
    - A: after M2a and M2b are recorded, as a side lane during MVP 2 (the read-only slice only).
    - B: after MVP 2, with RFC-0030's auto mode.
@@ -651,6 +659,7 @@ question stays the operator's.
      adapter.** The read-only slice costs the critical path attention and no code on its steps.
    - **Reviewer:** A for the read-only slice, B for the adapter; the slice starts when M2a and M2b
      are recorded.
+   - **Decided (the operator, 2026-11-26): A for the read-only slice, B for the adapter.**
 7. **Does a training run share `goal_runs` or have its own table?**
    - A: its own table, `training_requests`, with its own states (6.1); the lists are separate.
    - B: `goal_runs` gets a `resource` column; `robot` and `target` become nullable.
@@ -658,6 +667,7 @@ question stays the operator's.
      robot-shaped, and the run states are the navigator's (`navcontract.ENDS`), not a trainer's.
    - **Reviewer:** A with M5: its own vocabulary, with `stopped_with_checkpoint` distinct from
      `failed`.
+   - **Decided (the operator, 2026-11-26): A.**
 8. **The first UI slice.**
    - A: the training run page and the Learning list, read-only, in the Observatory, from imported
      folders; the model page when the first learned arm has a comparison.
@@ -667,6 +677,7 @@ question stays the operator's.
      and risks nothing. C is moot: on `avoidance_v1` the rules arm scores 1.0 (7.2), and a learned
      arm does not exist yet (R5 is the first eval).
    - **Reviewer:** A as modified above: the unit is the training run, not the model.
+   - **Decided (the operator, 2026-11-26): A**, the unit the training run.
 
 ## 12. Consequences
 
