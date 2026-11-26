@@ -79,6 +79,7 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0025 — From MVP 1 to MVP 2: the platform's architecture and its
   evolution](RFC-0025-mvp1-to-mvp2.md) (Accepted, 2026-11-23)
 - [RFC-0030 — Missions: planning as a module, Mission Control as the executor; manual and auto
-  modes](RFC-0030-missions.md) (Proposed, 2026-11-26; modes and sequencing decided by the operator)
+  modes](RFC-0030-missions.md) (Proposed, revision 2, 2026-11-26, after the advisor's review;
+  modes and sequencing decided by the operator)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).
