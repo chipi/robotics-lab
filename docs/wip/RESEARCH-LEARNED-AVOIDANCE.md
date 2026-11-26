@@ -25,6 +25,19 @@ window; a new Isaac Lab stack on the DGX is the homelab's call.
   unknown rather than as a drop?
 - Licences: their code BSD-3-Clause; the robot meshes CC BY-NC-SA 4.0.
 
+From the [R6 plan](RESEARCH-R6-PLAN.md), 2026-11-26 (nothing run; sizes and GPU hours estimated):
+
+- Recommended: port NVIDIA's task to mjlab (option A), training on MuJoCo Warp with Pollen's
+  walker, on the stack the DGX already runs; about 2,240 lines. Isaac Lab on the DGX (B) needs a
+  new CUDA 13 stack, the homelab's call; NVIDIA's task as is (C) is only the reference arm.
+- Batched ray-casting exists in MuJoCo Warp (`mujoco_warp/_src/ray.py:1224`, `rays` over worlds
+  and rays). The hardest part: obstacles placed per environment that the rays see (not verified).
+- Pollen's walker does not walk below about 0.2 m/s (`MICRODUCK.md:105`) while NVIDIA caps the
+  controller at 0.15-0.2 m/s: the speed range needs a floor of 0.2 for our walker.
+- First milestone M1: one wall layout, stop before it; about 0.5 h of a GPU-mode window. In all
+  6.5 to 10.5 GPU hours over five or six swaps. CPU checks first (rays, sensor maths, the walker
+  rebuilt in torch, the ONNX round-trip). Training impairments: NVIDIA's numbers first, as R2's are.
+
 From [S1 to S4](RESEARCH-S1-S4.md), 2026-11-26:
 
 - 51 NVIDIA skills found (44 Isaac Sim, 2 isaac-ros-cli, 5 in NVIDIA's own "Mission Control");
