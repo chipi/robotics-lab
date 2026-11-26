@@ -70,6 +70,12 @@ markdown_extensions:
 nav:
   - Home: index.md
   - How it fits together: architecture.md
+  - User guides:
+    - Overview: guides/index.md
+    - Mission Control: guides/mission-control.md
+    - The Observatory: guides/observatory.md
+    - The NXT web app: guides/nxt-web.md
+    - The lab from the command line: guides/command-line.md
   - Training the controller:
     - Overview and the product view: training/index.md
     - 1. Reinforcement learning from zero: training/reinforcement-learning.md

@@ -22,6 +22,8 @@ true, and the timeline of every stream](assets/screenshots/observatory-3d-dark-1
 
 ## Where to start
 
+- **Using the apps:** [User guides](guides/index.md) for Mission Control, the Observatory, the NXT
+  web app and the command line.
 - **How the pieces fit:** [How the platform fits together](architecture.md).
 - **Where do things stand?** [The handover](wip/HANDOVER.md);
   [the learning arc's handover](wip/HANDOVER-TRAINING-2026-11-26.md);

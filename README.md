@@ -187,6 +187,8 @@ The docs site is **<https://chipi.github.io/robotics-lab/>**, built from [`docs/
 with MkDocs Material; `make docs-serve` reads it locally and `make docs-validate` (Markdown lint and
 the strict build) runs before every push.
 
+- [User guides](docs/guides/index.md): Mission Control, the Observatory, the NXT web app, the
+  command line.
 - [How the platform fits together](docs/architecture.md), the map.
 - [The handover](docs/wip/HANDOVER.md), the living status, and
   [the phase 5 plan](docs/wip/PHASE5-NEXT-PLAN.md).
