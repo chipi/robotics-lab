@@ -30,7 +30,8 @@ A real bug: on a phone, Mission Control's `.scrim` is `z-index: 40` and the `.st
    - Groups: surfaces, lines (with hairlines and veils), text, action, status, data, axes, HUD,
      scene, ramps, controls; the exact list is in the plan's "Frozen contracts".
    - Old names (`--border`, `--ok`, `--warn`, `--error`, `--hair-*`) were aliases in the first
-     block until the sweep (U26) took them out; `libs/web/tests/test_tokens.py` now fails on any use of one.
+     block until the sweep (U26) took them out; `libs/web/tests/test_tokens.py` now fails on any use
+     of one.
    - Invariants (fonts, type scale, space, radius, elevation, z-order, motion, tap sizes) live in
      the first block only. Themed tokens have the same key set in dark, light and the
      `prefers-color-scheme` block. A test checks both, plus contrast, ramps, and that no hex

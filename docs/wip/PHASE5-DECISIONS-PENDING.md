@@ -54,7 +54,8 @@ control as one platform".** From main at `36670fb`: `make observatory-down` (pro
 
 ### P2. Redeploy the Observatory (shared state) (done)
 
-**Done (2026-11-23).** The operator: "you can do P2 when you think is best". After A4's CI was green,
+**Done (2026-11-23).** The operator: "you can do P2 when you think is best". After A4's CI was
+green,
 `make observatory-up` ran from main at `aea6d23` and the container came up healthy (EXIT=0).
 
 - Health: `{"ok":true,"runs":1629}`.
@@ -114,7 +115,8 @@ fully independent things".
 
 ### A1, the robot page (2026-11-23)
 
-- **What makes the robot unfit:** it is offline, its gate cannot be reached, someone holds it (Mission
+- **What makes the robot unfit:** it is offline, its gate cannot be reached, someone holds it
+  (Mission
   Control's own goal run too), any status flag is set, or a major or critical alarm came in the last
   60 s. A minor or info alarm does not count. The plan named only critical; major was added by
   default. Undo: `fitReasons` in `web/app.js`.
@@ -210,7 +212,8 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   The per-version Export is gone; Export exports the version shown.
 - **Edit, Save and Import** are disabled when the store is not writable.
 - **Contrast:** primary buttons are the accent darkened to 78 % (white text 5.2:1 dark, 6.9:1
-  light); tags and units use `--text-2`, not `--text-3` (`--text-dim` and `--text-faint` before tokens v2; the faint one was about 3:1).
+  light); tags and units use `--text-2`, not `--text-3` (`--text-dim` and `--text-faint` before
+  tokens v2; the faint one was about 3:1).
 - **Not covered:** no screen reader or axe run; Chromium only; no `inert` behind a drawer (a Tab
   trap only); the Modules row highlights overrides only among its first 12 values.
 
@@ -229,7 +232,8 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
 
 ### B2, stopping on its own health (2026-11-23)
 
-- **The end:** the contract's `stopped_by_guardrail`, no version change. `broken` is `{name, detail}`
+- **The end:** the contract's `stopped_by_guardrail`, no version change. `broken` is `{name,
+  detail}`
   with the name `motor_hot`, `battery_low`, `robot_unhealthy` or `stale_stream` (the names are open:
   `goal.break` already carries any name). The run keeps a `guardrail` event with the decision
   `guardrail`; the cause's anomaly (`motor_hot`, `robot_unhealthy`, `thread_failed`) is raised where
@@ -266,7 +270,8 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   reference over the odometry's distance, to 3 decimals; a value outside 0.5 to 1.5 is not kept
   (the robot was probably blocked, or the tape misread). No bound is the operator's: they are
   constants in `calibration.py`.
-- **What keeping writes,** in the variant the robot runs (`variants.<variant>.localisation.odometry`):
+- **What keeping writes,** in the variant the robot runs
+  (`variants.<variant>.localisation.odometry`):
   the table's `by_speed` entry at the speed walked, and `scale` when that is `at_speed_mps` (the
   profile's rule ties them within 1 %); with no table (the real variant today), `scale` alone. Its
   `measured` line says when, by which procedure and run, the walk, both distances and the value,
@@ -301,7 +306,8 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
 Contract 1.6 (`goal.anomaly`); the flag in Mission Control's goals; the clock in the runner. What
 "simulator-first" means, and each default, with how to undo it:
 
-- **Opt-in per goal:** a goal's `sim_first: true`. Default false, as RFC-0014 §3.4.2 said (a goal not
+- **Opt-in per goal:** a goal's `sim_first: true`. Default false, as RFC-0014 §3.4.2 said (a goal
+  not
   rehearsed is flagged on a real run, never forbidden). Every real run records its rehearsal state
   (`conditions.rehearsal`), flagged or not. Undo or flip: `goals.validate`, and the refusal in
   `core._create_and_start` (to make every goal sim-first, read `flagged` as true there).
@@ -318,7 +324,8 @@ Contract 1.6 (`goal.anomaly`); the flag in Mission Control's goals; the clock in
   the twin is a robot file whose adapter's default is `sim` (`duck-sim`) beside a real adapter that
   names no variant.
 - **The clock:** the runner keeps the simulator's time beside the wall clock for every goal
-  (`truth.jsonl` `sim_time`, `runner.json` `clock`). `rtf_low` is raised under `simhost.truth.RTF_LOW`
+  (`truth.jsonl` `sim_time`, `runner.json` `clock`). `rtf_low` is raised under
+  `simhost.truth.RTF_LOW`
   (0.95, a guess, a named constant; `lab-nav-server --rtf-low`) once the run is 5 s old
   (`RTF_MIN_WALL_S`: a ratio over the first samples is noise). Severity `minor`: Mission Control
   makes a robot unfit for a major one, and a slow simulator is not the robot's fault.

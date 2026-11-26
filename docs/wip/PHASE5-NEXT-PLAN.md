@@ -4,7 +4,8 @@
 for the next session to start from; updated the same day after item 1 (`0488ca3`, `642a82b`, both CI
 green), and on 2026-11-23 after item 2 and item 3's step 2. The order is
 [RFC-0023 §7.1](../rfc/RFC-0023-the-views.md) items 3 to 6 and the
-[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Items 1 and 2 are
+[architecture review](ARCHITECTURE-REVIEW-2026-11-22.md)'s "during phase 5" list. **Items 1 and 2
+are
 done; item 3 step 2 is done** (the run keeps the body; the operator's decisions and the proof are in
 [what the body data is today](PHASE5-ITEM3-BODY-DATA.md)). **Next: item 3 step 3**, the alarm feed.
 This paragraph is the 2026-11-23 header, kept as written.
@@ -12,7 +13,8 @@ This paragraph is the 2026-11-23 header, kept as written.
 **Current state (2026-11-25):** the work follows the MVP 1 wrap-up order (the section "The MVP 1
 wrap-up, in order", below, and [the handover](HANDOVER.md)). Step 4.5, the look-and-feel build, is
 at review round 4: U26, the sweep, is built (not yet committed) and its screenshots are in
-`docs/wip/look-and-feel/round4/after/`. [The handover](HANDOVER.md) is the living status; the item tables below record what each
+`docs/wip/look-and-feel/round4/after/`. [The handover](HANDOVER.md) is the living status; the item
+tables below record what each
 item built.
 
 ## Where things stand
@@ -20,7 +22,8 @@ item built.
 - **Item 1, one navigator contract, is done** (both commits, below). After it, on the operator's go
   (2026-11-22): the main checkout (`/work/robotics-lab/main`) was pulled to `642a82b` and the
   installation file (`~/.config/robotics-lab/installation.json`) registers the duck from it
-  (`/work/robotics-lab/main/robots/duck/registration.json`, before: a test folder); the Observatory's
+  (`/work/robotics-lab/main/robots/duck/registration.json`, before: a test folder); the
+  Observatory's
   index was rebuilt (219 scenes, 1629 runs; backup in
   `/work/robotics-lab/state/miniview/backup-20261122-before-stops/`; 0 `aborted` left, 9
   `stopped_by_guardrail` events, no data file changed) and the Observatory redeployed from main
@@ -169,7 +172,8 @@ recorded reason (`runfile.navcontract.stop_before`: the index's 9 are all guardr
 the old way, read back), the stop rule in `test_contract.py`, 5 mutants killed; `make sim-duck
 --keep` PASS 48, its 34 runs: the time-limit and drop-clearance stops `stopped_by_guardrail`, the
 cancel `cancelled`, events and verdicts, no `aborted`. The Observatory's index was rebuilt after it
-(above): its 9 old rows now read `stopped_by_guardrail`. Not covered: the payload's `goal.break` path
+(above): its 9 old rows now read `stopped_by_guardrail`. Not covered: the payload's `goal.break`
+path
 is unit-tested only (no challenge in 1-11, seed 1, breaks an invariant).
 
 ### 2. The apartment out of the runner
@@ -279,12 +283,14 @@ covered: `lab-eval` and `lab-explore` not run live (as part 1).
      much; STOP, the run, the Observatory at that moment). Proof: the contract, body and adapter
      tests and the page in Chromium at phone width, 5 of 5 mutants killed, `make ci-fast` PASS.
      Live (2026-11-23): `tests/sim_duck.py --only point --profile <a test profile>` on the real
-     simulator: the goal run kept `joint_overload` and `joint_tracking`, and the event stream carried
+     simulator: the goal run kept `joint_overload` and `joint_tracking`, and the event stream
+     carried
      9 `anomaly` events, each with its `#t=` link (`PASS sim_duck`). `--profile` seeds Mission
      Control's profile store with a test profile; `make sim-duck` runs without it. (Corrected in
      part 4: the Observatory's pages already seek to `#t=`.)
   4. **The Observatory's marks** (the operator, 2026-11-23: (a) now, (b) later).
-     **(a) The tagged ones: done (2026-11-23).** A run's `anomaly` events keep the navigator's record
+     **(a) The tagged ones: done (2026-11-23).** A run's `anomaly` events keep the navigator's
+     record
      (`runfile.store.anomaly_of`; `wire` keeps an anomaly event's `raw`); an `anomalies` stream;
      the shell's Alarms lane (one mark per anomaly, coloured by severity, the harness's a diamond,
      a click seeks), the inspector's rows, and pins on the map in both renderers (the belief's place
@@ -499,7 +505,8 @@ D10 last.
 
 ### 4e. Follow-ups from the operator's decisions (2026-11-24)
 
-The operator decided the parked items on 2026-11-24 ([PARKED-FOR-OPERATOR.md](PARKED-FOR-OPERATOR.md),
+The operator decided the parked items on 2026-11-24
+([PARKED-FOR-OPERATOR.md](PARKED-FOR-OPERATOR.md),
 "The operator's answers"). The work they create, before telemetry:
 
 | Unit | What | Size |
