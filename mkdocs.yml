@@ -181,6 +181,7 @@ nav:
     - "Research R1 and R2: NVIDIA's controller, our depth sensor": wip/RESEARCH-R1-R2.md
     - "Research S1 to S4: NVIDIA's agent skills, Isaac ROS": wip/RESEARCH-S1-S4.md
     - "Research R6: a plan to train the controller ourselves": wip/RESEARCH-R6-PLAN.md
+    - "Research R4: the learned controller's observation against microduck-nav's": wip/RESEARCH-R4-OBS-PARITY.md
     - Mission control, requirements: wip/MISSION-CONTROL-REQUIREMENTS.md
     - Long-term direction: wip/ECOSYSTEM.md
     - Microduck: wip/MICRODUCK.md

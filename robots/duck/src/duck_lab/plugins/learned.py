@@ -8,9 +8,10 @@ and `command_from_action`): limits (0.35, 0.12, 0.75), translation never faster 
 gives zero. That logic is ported here, not imported. A non-finite input or output gives the brake: NVIDIA's guard warns on a far-off
 input only and misses an infinite one (R1/C4).
 
-Not verified against NVIDIA's `nav_pad.py` (not in this repository): the order of the 14 joints and their default pose (taken as
-robotd's order less the mouth, and Pollen's HOME_FRAME), the sign and frame of the gravity, the order of the sensor's 64 zones, and
-the history layout (tick by tick, oldest first, each tick's 64 ranges then its 64 valid flags, as R1's table reads).
+The observation is checked slot by slot against what `microduck-nav` trains on (docs/wip/RESEARCH-R4-OBS-PARITY.md) and, for five
+constructed states, against the vectors its own observation functions build (tests/fixtures/obs_parity.json, in test_local_controller.py).
+What cannot match is listed there: the model is queried every navigator tick (0.1 s), not every 0.02 s control step, and the duck's
+command has no lateral part.
 """
 
 import hashlib
@@ -21,12 +22,13 @@ import onnxruntime as ort
 
 from duck_lab.nav.follow import Twist
 from duck_lab.nav.runlog import JOINTS
-from duck_lab.plugins.tof8x8 import rotate
+from duck_lab.plugins.tof8x8 import Tof8x8, rotate
 
 OBS_DIM, ACTION_DIM = 1343, 3
 HISTORY, ZONES = 10, 64
-MIN_RANGE_M, MAX_RANGE_M = 0.12, 4.0       # a return outside it is invalid (NVIDIA's observations.py:18-28)
+MIN_RANGE_M, MAX_RANGE_M = 0.12, 4.0       # a return outside it is invalid, judged on the optical-axis depth (microduck-nav observations.py)
 EMPTY_AGE_S = 1.0                          # a tick with no frame: empty, aged 1 s, as at a training reset
+MODEL_STEP_S = 0.02                        # the control step the model was trained at (decimation 4 of 5 ms): the history's spacing
 LIMITS, SLEW, MAX_AGE_S, LATERAL_RATIO = (0.35, 0.12, 0.75), (1.0, 1.0, 3.0), 0.25, 0.35
 BRAKE = (-1.0, 0.0, 0.0)
 
@@ -79,23 +81,34 @@ def _numbers(values, n: int, what: str) -> np.ndarray:
     return a
 
 
-def _tick(frame: dict, valid: set) -> np.ndarray:
-    """One frame as the model reads it: 64 ranges in metres, then 64 valid flags; an invalid return is 0 (a missing return is not
-    free space, so its flag says so)."""
+def axial_factors(tof) -> np.ndarray:
+    """What a reading (m) is multiplied by to be the depth along the optical axis, which is what the model trained on: each zone's
+    beam x component for a sensor that reads along the beam (the simulator's), 1 for one that already reads along the axis."""
+    if tof.range_kind == "axial":
+        return np.ones(ZONES)
+    return np.array([b[0] for b in tof.beams])
+
+
+def _tick(frame: dict, valid: set, axial: np.ndarray) -> np.ndarray:
+    """One frame as the model reads it: 64 depths along the optical axis in metres, then 64 valid flags; an invalid return is 0 (a
+    missing return is not free space, so its flag says so)."""
     mm = _numbers(frame["distance_mm"], ZONES, "frame distance_mm")
     status = np.asarray(frame["status"]).reshape(-1)
     if status.shape != (ZONES,):
         raise ValueError(f"frame status: {ZONES} numbers expected, got {status.shape[0]}")
-    metres = mm / 1000.0
+    metres = mm / 1000.0 * axial
     ok = np.isin(status, list(valid)) & (metres >= MIN_RANGE_M) & (metres <= MAX_RANGE_M)
     return np.concatenate((np.where(ok, metres, 0.0), ok.astype(float)))
 
 
-def observation(requested, ranges: list, body: dict, applied, valid: set, tick_s: float, previous_action, joint_velocity) -> np.ndarray:
-    """NVIDIA's 1343 inputs (R1 section 1.2): gyro 3, projected gravity 3, joint positions less the default 14, joint velocities 14
-    (the caller's, one tick late), previous action 3, requested velocity 3, zeros 10 (head and body pose commands), applied command 3,
-    ten ticks of 64 ranges and 64 flags oldest first, ten frame ages. Raises ValueError for an input that is not finite or not as long
-    as it must be."""
+def observation(requested, ranges: list, body: dict, applied, valid: set, step_s: float, previous_action, joint_velocity,
+                axial=None) -> np.ndarray:
+    """microduck-nav's 1343 inputs: gyro 3, projected gravity 3, joint positions less the default 14, joint velocities 14 (the caller's,
+    one tick late), previous action 3, requested velocity 3, zeros 10 (head and body pose commands), applied command 3, ten steps of
+    64 depths and 64 flags oldest first, ten frame ages. `step_s` spaces the ten steps: the model's control step, not the navigator's
+    tick. `axial` (64 factors, see axial_factors) turns a sensor's readings into optical-axis depths; None for one that reads so. Raises
+    ValueError for an input that is not finite or not as long as it must be."""
+    axial = np.ones(ZONES) if axial is None else axial
     imu = body["imu"]
     gyro, quat = _numbers(imu["gyro"], 3, "gyro"), _numbers(imu["quat"], 4, "quat")
     joints = _numbers(body["joints"], len(JOINTS), "joints")
@@ -113,11 +126,11 @@ def observation(requested, ranges: list, body: dict, applied, valid: set, tick_s
     obs[34:37], obs[37:40], obs[50:53] = previous_action, req, app
     for k in range(HISTORY):
         slot = HISTORY - 1 - k
-        offset = k * tick_s
+        offset = k * step_s
         fresh = [(a, f) for f, a in ranges if a >= offset - 1e-9]
         if fresh:
             age, frame = min(fresh, key=lambda c: c[0])
-            obs[53 + slot * 128:53 + (slot + 1) * 128] = _tick(frame, valid)
+            obs[53 + slot * 128:53 + (slot + 1) * 128] = _tick(frame, valid, axial)
             obs[1333 + slot] = age - offset
         else:
             obs[1333 + slot] = EMPTY_AGE_S
@@ -145,7 +158,7 @@ class Learned:
         if len(outs) != 1 or outs[0].shape[-1] != ACTION_DIM:
             raise ValueError(f"{self.path}: the model must give one output {ACTION_DIM} wide, it has {[(o.name, o.shape) for o in outs]}")
         self.input, self.output = ins[0], outs[0]
-        self.valid = set(profile.sensors.tof8x8.valid_status)
+        self.bind(profile)
         self.tick_s = tick_s
         self.residual = ResidualCommand(tick_s)
         self.last_error = None
@@ -153,6 +166,7 @@ class Learned:
 
     def bind(self, profile) -> None:
         self.valid = set(profile.sensors.tof8x8.valid_status)
+        self.axial = axial_factors(Tof8x8(profile))
 
     def reset(self) -> None:
         self.residual.reset()
@@ -171,6 +185,19 @@ class Learned:
         except Exception as exc:        # noqa: BLE001 - whatever the model or an input does, the answer is the brake
             self.last_error = f"{type(exc).__name__}: {exc}"
             return self._brake(requested, applied)
+
+    def _remember_velocity(self, body, strict: bool = True) -> None:
+        """The joint velocities of this tick, for the next one's observation (the model reads them one step late), kept on every tick
+        and not only those the model runs on, so a tick after a pause does not read the pause's."""
+        if body is None:
+            return
+        try:
+            velocities = _numbers(body["velocities"], len(JOINTS), "joint velocities")
+        except (KeyError, ValueError):
+            if strict:
+                raise
+            return
+        self.joint_velocity = velocities[[i for i, n in enumerate(JOINTS) if n != "mouth"]]
 
     def _vectors(self, requested, applied):
         return (np.array([requested.vx, 0.0, requested.vyaw], dtype=float), np.array([applied.vx, 0.0, applied.vyaw], dtype=float))
@@ -199,14 +226,14 @@ class Learned:
         age = min(ages, default=0.0)
         if not have or age > MAX_AGE_S or not req.any():
             self.previous_action = np.zeros(ACTION_DIM)
+            self._remember_velocity(body, strict=False)
             cmd = self.residual.process(req, np.zeros(ACTION_DIM), have, age)
             return Twist(float(cmd[0]), float(cmd[2]))
-        obs = observation(requested, ranges, body, applied, self.valid, self.tick_s, self.previous_action, self.joint_velocity)
+        obs = observation(requested, ranges, body, applied, self.valid, MODEL_STEP_S, self.previous_action, self.joint_velocity, self.axial)
+        self._remember_velocity(body)
         out = self.session.run(None, {self.input.name: obs[None, :]})[0].reshape(-1)
         if out.shape != (ACTION_DIM,) or not np.isfinite(out).all():
             return self._brake(requested, applied)
         self.previous_action = np.clip(out.astype(float), -1.0, 1.0)
-        velocities = _numbers(body["velocities"], len(JOINTS), "joint velocities")
-        self.joint_velocity = velocities[[i for i, n in enumerate(JOINTS) if n != "mouth"]]
         cmd = self.residual.process(req, out, True, age)
         return Twist(float(cmd[0]), float(cmd[2]))

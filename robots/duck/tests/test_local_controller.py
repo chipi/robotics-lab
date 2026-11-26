@@ -31,7 +31,7 @@ from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import JOINTS
 from duck_lab.nav.side_drops import SuspectMemory
 from duck_lab.plugins import interfaces
-from duck_lab.plugins.learned import Learned, ResidualCommand, brake_action, observation
+from duck_lab.plugins.learned import DEFAULT, MODEL_STEP_S, NAV_JOINTS, Learned, ResidualCommand, axial_factors, brake_action, observation
 from duck_lab.plugins.rules import Rules
 from duck_lab.plugins.tof8x8 import Tof8x8
 from duck_lab.profile import load
@@ -294,7 +294,7 @@ def body_state(gyro=(0.1, 0.2, 0.3), quat=(1.0, 0.0, 0.0, 0.0), vel=0.0):
 
 
 valid = set(SIM.sensors.tof8x8.valid_status)
-o = observation(Twist(0.25, 0.4), [(frame(1000), 0.0)], body_state(), Twist(0.1, 0.2), valid, tick_s=0.1, previous_action=np.array([0.5, -0.5, 0.25]),
+o = observation(Twist(0.25, 0.4), [(frame(1000), 0.0)], body_state(), Twist(0.1, 0.2), valid, step_s=0.1, previous_action=np.array([0.5, -0.5, 0.25]),
                 joint_velocity=np.zeros(14))
 check("the vector is 1343 floats, all finite", o.shape == (1343,) and np.isfinite(o).all(), o.shape)
 check("0-2 the gyro, 3-5 the gravity in the body frame (down, level)", o[0:3].tolist() == [np.float32(0.1), np.float32(0.2), np.float32(0.3)]
@@ -309,17 +309,54 @@ check("the nine ticks before it have no frame: zeros, not valid, aged 1 s", not 
 bad = frame(5000, status=5)
 bad["distance_mm"][1] = 100
 bad["status"][2] = 255
-o = observation(Twist(0.25, 0), [(bad, 0.0)], body_state(), Twist(), valid, tick_s=0.1, previous_action=np.zeros(3), joint_velocity=np.zeros(14))
+o = observation(Twist(0.25, 0), [(bad, 0.0)], body_state(), Twist(), valid, step_s=0.1, previous_action=np.zeros(3), joint_velocity=np.zeros(14))
 last = o[53 + 9 * 128:53 + 10 * 128]
 check("a return under 0.12 m, over 4 m or with a no-target status is written 0 and its flag 0 (a missing return is not free space)",
       last[0] == 0 and last[64] == 0 and last[1] == 0 and last[65] == 0 and last[2] == 0 and last[66] == 0, last[:3])
 hist = [(frame(1000 + 100 * k, seq=k), 0.05 + 0.1 * (4 - k)) for k in range(5)]
-o = observation(Twist(0.25, 0), hist, body_state(), Twist(), valid, tick_s=0.1, previous_action=np.zeros(3), joint_velocity=np.zeros(14))
+o = observation(Twist(0.25, 0), hist, body_state(), Twist(), valid, step_s=0.1, previous_action=np.zeros(3), joint_velocity=np.zeros(14))
 ages = o[1333:1343]
 check("a history of frames 0.1 s apart fills the ticks oldest first, each with its own age (0.05 s for the newest)",
       abs(ages[9] - 0.05) < 1e-6 and abs(ages[8] - 0.05) < 1e-6 and ages[:5].min() >= 0 and abs(o[53 + 9 * 128] - 1.4) < 1e-5, (ages, o[53 + 9 * 128]))
 
+# ---- parity with microduck-nav's training observation (R4): the golden vectors the training code builds, rebuilt here ----------------
+GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "obs_parity.json").read_text())
+
+
+def golden_frame(axial_m, profile):
+    """A training frame (optical-axis metres, 0 where the zone gave nothing) as this profile's sensor would report it."""
+    t = profile.sensors.tof8x8
+    factor = np.array(GOLDEN["zone_axial_factor"]) if t.mount.range_kind == "radial" else np.ones(64)
+    mm = np.array(axial_m) / factor * 1000.0
+    status = [t.valid_status[0] if m > 0 else t.no_target_status for m in axial_m]
+    return {"rows": 8, "cols": 8, "distance_mm": mm.tolist(), "status": status, "t_ns": 0, "seq": 0}
+
+
+for profile in (SIM, REAL):
+    kind = profile.sensors.tof8x8.mount.range_kind
+    axial = axial_factors(Tof8x8(profile))
+    for st in GOLDEN["states"]:
+        enc = [p + b for p, b in zip(st["joint_pos"], st["backlash"])]
+        enc.insert(JOINTS.index("mouth"), 0.0)
+        vel = list(st["joint_vel"])
+        vel.insert(JOINTS.index("mouth"), 0.0)
+        body = {"imu": {"quat": st["quat"], "gyro": st["gyro"]}, "joints": enc, "velocities": vel}
+        ranges = [(golden_frame(f["axial_m"], profile), f["age_s"]) for f in st["frames"]]
+        got = observation(Twist(st["requested"][0], st["requested"][2]), ranges, body, Twist(st["applied"][0], st["applied"][2]),
+                          set(profile.sensors.tof8x8.valid_status), step_s=MODEL_STEP_S, previous_action=np.array(st["previous_action"]),
+                          joint_velocity=np.array(st["joint_vel"]), axial=axial)
+        want = np.array(st["observation"])
+        worst = int(np.abs(got - want).argmax())
+        check(f"parity with the training observation, {st['name']} state, {kind} ranges: all 1343 within 1e-6",
+              np.abs(got - want).max() <= GOLDEN["tolerance"], f"worst slot {worst}: {got[worst]} vs {want[worst]}")
+
 # ---- the learned controller ------------------------------------------------------------------------------------------------------------
+check("the model's control step is the training env's step_dt (50 Hz), the history's spacing", abs(MODEL_STEP_S - GOLDEN["step_s"]) < 1e-9, GOLDEN["step_s"])
+check("the 14 joints are the training env's, in its order, less the mouth", list(NAV_JOINTS) == GOLDEN["joints"], (NAV_JOINTS, GOLDEN["joints"]))
+check("their default pose is the training env's", np.allclose(DEFAULT, GOLDEN["default_pose"], atol=1e-6), (DEFAULT, GOLDEN["default_pose"]))
+check("the simulator's radial ranges become optical-axis depths by the training grid's own factors, the real duck's (axial) are left alone",
+      np.allclose(Learned(SIM, RANDOM).axial, GOLDEN["zone_axial_factor"], atol=1e-6) and np.allclose(axial_factors(Tof8x8(REAL)), 1.0))
+
 sha = hashlib.sha256(RANDOM.read_bytes()).hexdigest()
 ln = Learned(SIM, RANDOM)
 check("it names itself learned@<8 of the model's sha256>", ln.ident == f"learned@{sha[:8]}" and isinstance(ln, interfaces.LocalController), ln.ident)
@@ -358,6 +395,8 @@ check("a model that pushes every residual to +1 cannot go faster than the follow
 check("no frame at all: zero (the model is not run on nothing)", ln.command(Twist(0.3, 0.2), [], body_state(), Twist(0.2, 0.0)) == Twist(0.0, 0.0))
 check("a frame older than 0.25 s: zero", ln.command(Twist(0.3, 0.2), [(frame(), 0.3)], body_state(), Twist(0.2, 0.0)) == Twist(0.0, 0.0))
 check("a stopped follower (zero request): zero", ln.command(Twist(0.0, 0.0), [(frame(), 0.0)], body_state(), Twist(0.2, 0.0)) == Twist(0.0, 0.0))
+ln.command(Twist(0.0, 0.0), [(frame(), 0.0)], body_state(vel=0.7), Twist())
+check("the joint velocities are kept on a tick the model does not run on, so the first tick after a pause is not a stale one", np.allclose(ln.joint_velocity, 0.7), ln.joint_velocity)
 check("no robot state: zero", ln.command(Twist(0.3, 0.0), [(frame(), 0.0)], None, Twist(0.2, 0.0)) == Twist(0.0, 0.0))
 
 # ---- a non-finite input gives the brake ----------------------------------------------------------------------------------------------
