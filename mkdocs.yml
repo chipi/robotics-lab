@@ -70,6 +70,15 @@ markdown_extensions:
 nav:
   - Home: index.md
   - How it fits together: architecture.md
+  - Training the controller:
+    - Overview and the product view: training/index.md
+    - 1. Reinforcement learning from zero: training/reinforcement-learning.md
+    - 2. PPO, step by step: training/ppo.md
+    - 3. Our task: training/the-task.md
+    - 4. Rewards: training/rewards.md
+    - 5. Running it and reading results: training/running-and-results.md
+    - 6. Opportunities: training/opportunities.md
+    - 7. Glossary and where to continue: training/glossary-and-next.md
   - Proposals (RFC):
     - Overview: rfc/README.md
     - RFC-0001 — The NXT web UI: rfc/RFC-0001-nxt-web-ui.md

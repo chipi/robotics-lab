@@ -12,6 +12,8 @@ drives it all from Mission Control.
 - **Where do things stand?** [The handover](wip/HANDOVER.md) is the living status;
   [the phase 5 plan](wip/PHASE5-NEXT-PLAN.md) has the items and the wrap-up order;
   [the plan we execute on](wip/EXECUTION-PLAN.md) is the plan as written, with each phase's history.
+- **How the duck learns to steer around obstacles:** [Training the controller](training/index.md), a
+  guide from first principles.
 - **Proposals:** [Proposals (RFC)](rfc/README.md).
 - **Accepted decisions:** [Decisions (ADR)](adr/README.md).
 - **Ideas and notes:** [In progress](wip/README.md).
