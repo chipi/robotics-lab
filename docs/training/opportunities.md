@@ -18,7 +18,7 @@
    tuning, curriculum,        R7a-e: our own variant     R8: the real duck, with measured
    more envs, longer runs     (our families, guards in   sensor faults, under a safety review
                                the loop, failure mining,         ^
-                               Pollen's apartment, t-s)           |
+                               Pollen's apartment, t-s)        |
                                                                 |
  retraining the walker  ---- (invalidates the trained controller: train it again)
  recovery skills            -- independent track, on Pollen's training code
