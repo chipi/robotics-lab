@@ -1,0 +1,190 @@
+<title>Look and Feel Round 4</title>
+<style>
+/* layout: a sticky filter bar over one column of views; each view has a number to quote back */
+:root {
+  --bg: #f3f4f6; --panel: #ffffff; --line: #d5d8de; --text: #1c1e22; --dim: #5b606b;
+  --accent: #2f6fd6;
+  --ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1b1d21; --panel: #24272c; --line: #3a3e46; --text: #e6e8eb; --dim: #a1a6b0;
+  --accent: #6aa0f0; color-scheme: dark }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--ui); }
+.wrap { max-width: 1500px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 60px; }
+h1 { font-size: 24px; margin: 0 0 4px; text-wrap: balance; }
+h2 { font-size: 17px; margin: 28px 0 8px; }
+p.lead, p.note { color: var(--dim); margin: 0 0 12px; max-width: 70ch; }
+ul.chg { margin: 0 0 8px; padding-left: 20px; max-width: 110ch; }
+ul.chg li { margin-bottom: 4px; }
+.qs { display: grid; gap: 8px; padding: 0; margin: 0; list-style: none; }
+.qs li { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; max-width: 110ch; }
+.qs b { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+.qs .opts { display: block; margin-top: 4px; }
+.qs .rec { display: block; margin-top: 4px; color: var(--dim); }
+code { font-family: var(--mono); font-size: 13px; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding-block: 10px; margin-top: 20px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; background: var(--panel); color: var(--text); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lbl { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.pairs { display: grid; gap: 28px; margin-top: 16px; }
+.pair { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.pair[hidden] { display: none; }
+.pair header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.pair .n { font: 600 15px var(--mono); color: var(--accent); }
+.pair .name { font-family: var(--mono); font-size: 13px; color: var(--dim); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cols.narrow { grid-template-columns: repeat(2, minmax(0, 400px)); justify-content: start; }
+.cols.quad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cols.quad.narrow { grid-template-columns: repeat(4, minmax(0, 300px)); }
+.cols.solo { grid-template-columns: minmax(0, 1fr); }
+.cols.solo.narrow { grid-template-columns: minmax(0, 400px); }
+.cols + .cols { margin-top: 12px; }
+figure { margin: 0; min-width: 0; }
+figcaption { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+.start[hidden] { display: none; }
+@media (max-width: 1100px) { .cols.quad, .cols.quad.narrow { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 760px) { .cols, .cols.narrow, .cols.quad, .cols.quad.narrow { grid-template-columns: 1fr; } }
+</style>
+
+<div class="wrap">
+  <h1>Look and feel, round 4 (final): the whole set, and the timeline lanes</h1>
+  <p class="lead">The whole set after U26 (shots at 9962cd0): both apps, every main view, dark and light side by side, desktop 1440 px and phone 390 px. Then the timeline lanes redesign, before and after (shots at 8e8a172), and three close-ups. Quote a number with your feedback.</p>
+
+  <h2>What changed since round 3</h2>
+  <ul class="chg">
+    <li><b>The timeline lanes redesign</b> (built directly, not as variants, as you asked): lanes grouped by section that fold to a summary lane; the data inside the bars (a sparkline for a signal, density for a sensor's rate, so a gap shows); an events and alarms lane on top; a muted tone per section, with colour kept for what needs attention. Part 2 shows before and after.</li>
+    <li><b>U26, the sweep:</b> no literal colour outside <code>tokens.css</code> (a test fails on one), the old token names gone and banned, five new data colours for the semantic map, and the black ink token <code>--text-on-light</code>.</li>
+    <li><b>The Layout menu and the palette's opening</b> moved into the shared kit (<code>libs/web</code>), so the two apps no longer keep copies of the menu's styles.</li>
+    <li><b>Your round 3 answers, Q1 to Q5</b> (the plan lists them as decided; HANDOVER lists the build as in progress, so the shots are the check): one Readiness verdict that the robot page header follows; the battery check uses the server's rule (error under 20 %, cleared above 25 %); STOP is the palette's first row but not selected on open; the Signals view opens for runs with a pose, so joints get limit bands; Follow live folds into the Live or Replay badge.</li>
+    <li><b>The after set is the final one for step 5's screenshots:</b> 42 pictures, taken the same way as the earlier rounds, from fixed fixtures. Tick "Show the start" to see each next to how it looked before any of this work (9ef2d59).</li>
+  </ul>
+
+  <h2>Questions for you</h2>
+  <ol class="qs">
+    <li><b>Q1</b>The timeline lanes redesign (Part 2, #22 to #35, and the close-ups, #36 to #41). The plan says it was built directly and is reviewed here, and the handover records no answer from you, so this is the first time you decide on it. Choose: (A) accepted as it is; (B) accepted with changes (name the number and what to change); (C) not accepted (say what is wrong). <span class="rec">Recommendation: A if the folded summary lanes and the alarms lane read clearly on the phone (#22 to #35); otherwise B.</span></li>
+    <li><b>Q2</b>Is any view still to change before the close-out? The views are: Observatory runs, 3D, map, eye, chase, watch, explore; Mission Control overview, robot, body, and the phone drawer. Choose: (A) none; (B) name the views and the change. <span class="rec">Recommendation: A. Everything you flagged in rounds 1 to 3 is in the set; a new idea after using it goes to MVP 2 (Q5).</span></li>
+    <li><b>Q3</b>Dark and light balance. Compare each view's two columns: contrast, the floor and grid in 3D, the tone of the panels. Choose: (A) balanced; (B) dark is stronger (name what to lift in light); (C) light is stronger (name what to lift in dark). <span class="rec">Recommendation: A, unless a number shows one theme losing detail. Contrast was checked by test and colour-blind safety by simulation only, not by a person.</span></li>
+    <li><b>Q4</b>The phone layouts (390 px): Mission Control's robot page and drawer with STOP, the Observatory's stacked columns, the collapsed camera toolbar, the lanes. Choose: (A) good as they are; (B) name the views that need work. <span class="rec">Recommendation: A, with real-device checks left for MVP 2 (no real device was used for any shot).</span></li>
+    <li><b>Q5</b>Is look-and-feel closed for MVP 1, with every further change an MVP 2 item? Choose: (A) closed; (B) one more round, after the changes named in Q1 to Q4. <span class="rec">Recommendation: A if Q1 to Q4 are A. If Q1 to Q4 name small fixes, they ship and the round is still closed: (A) with those fixes.</span></li>
+    <li><b>Q6</b>Anything else: say the number and what you would change. If nothing, skip this one.</li>
+    <li><b>Q7</b>Step 4.9, ready for MVP 2? The technical review (2026-11-26) said ready after four small refactors: the STOP reply carries the robot's answer, the adapter surface as a Protocol with one contract test, one frame and scale owner, and the <code>libs/missions</code> carve-out. The first three are done; the carve-out is being built now. Choose: (A) ready once the carve-out lands; (B) something else must come first (name it). <span class="rec">Recommendation: A.</span></li>
+    <li><b>Q8</b>Your question in 4.9: should Mission Control, the app that needs the other, front both instead of the Observatory? Choose: (A) keep the Observatory as the one front, as built; (B) Mission Control fronts both. <span class="rec">Recommendation: A, the reviewer's answer. The Observatory holds no robot state and must stay up when the robot stack is down; its proxy holds no token and decides nothing. Fronting with Mission Control would put the process that holds the robot locks on the path of every large run read. Not measured: the proxy's delay on the live event stream.</span></li>
+  </ol>
+
+  <h2>How to answer</h2>
+  <p>Reply in the chat with the numbers, for example "Q1 A, Q2 B: the map view's legend, Q7 A". Quote a picture's # with any change. "All good" means every recommendation and closes the round.</p>
+
+  <h2>Not covered by these pictures</h2>
+  <ul class="chg">
+    <li>The 3D camera is the page's default orbit, the same on every run, not a pose chosen for each view.</li>
+    <li>The drawer is shown on the phone only.</li>
+    <li>A live (still recording) run, a real robot, the semantic-object layer and the video export have no fixture, so none is drawn. No real device was used.</li>
+    <li>The runs view, light, 1440 px, is missing from the lanes before and after (the shot set was slimmed); the full set in Part 1 has it.</li>
+  </ul>
+
+  <div class="bar" role="toolbar" aria-label="Filter the screenshots">
+    <span class="lbl">App</span>
+    <div class="seg" data-key="app"><button data-v="all" aria-pressed="true">Both</button><button data-v="observatory" aria-pressed="false">Observatory</button><button data-v="control" aria-pressed="false">Mission Control</button></div>
+    <span class="lbl">Width</span>
+    <div class="seg" data-key="width"><button data-v="all" aria-pressed="true">Both</button><button data-v="1440" aria-pressed="false">Desktop</button><button data-v="390" aria-pressed="false">Phone</button></div>
+    <span class="lbl">Part</span>
+    <div class="seg" data-key="part"><button data-v="all" aria-pressed="true">All</button><button data-v="1" aria-pressed="false">1 Whole set</button><button data-v="2" aria-pressed="false">2 Lanes</button></div>
+    <label class="lbl"><input type="checkbox" id="start"> Show the start (before any look-and-feel work), Part 1</label>
+  </div>
+
+  <h2>Part 1: the whole set after U26</h2>
+  <div class="pairs" id="p1"></div>
+  <h2>Part 2: the timeline lanes, before and after</h2>
+  <p class="note">Before is the build without the redesign; after is with it. Views without a timeline (runs, and Mission Control) should look the same in both. Each row is dark then light.</p>
+  <div class="pairs" id="p2"></div>
+  <h2>Close-ups of the lanes and the Signals view</h2>
+  <div class="pairs" id="p3"></div>
+</div>
+
+<script>
+const APPNAME = { observatory: "Observatory", control: "Mission Control" };
+const VIEWS = [
+  ["observatory", "runs", "Runs list"],
+  ["observatory", "3d", "Run, 3D"],
+  ["observatory", "map", "Run, map"],
+  ["observatory", "eye", "Run, eye"],
+  ["observatory", "chase", "Run, chase"],
+  ["observatory", "watch", "Watch"],
+  ["observatory", "explore", "Explore"],
+  ["control", "overview", "Overview"],
+  ["control", "robot", "Robot page"],
+  ["control", "body", "Body view"],
+  ["control", "drawer", "Phone drawer"],
+];
+const WIDTHS = ["1440", "390"];
+const MISSING_LANES = new Set(["observatory-runs-light-1440"]);
+const NO_DESKTOP = new Set(["control-drawer"]);
+const where = (w) => (w === "390" ? "phone 390" : "desktop 1440");
+let n = 0;
+function fig(cap, src, alt, cls) {
+  return `<figure class="${cls || ""}"><figcaption>${cap}</figcaption><img loading="lazy" src="${src}" alt="${alt}"></figure>`;
+}
+function card(host, part, app, width, title, name, body) {
+  const el = document.createElement("section");
+  n += 1;
+  el.className = "pair"; el.dataset.app = app; el.dataset.width = width; el.dataset.part = part; el.id = "p" + n;
+  el.innerHTML = `<header><span class="n">#${n}</span><strong>${title}</strong><span class="name">${name}</span></header>${body}`;
+  host.appendChild(el);
+}
+const p1 = document.getElementById("p1"), p2 = document.getElementById("p2"), p3 = document.getElementById("p3");
+for (const [app, v, label] of VIEWS) for (const w of WIDTHS) {
+  if (w === "1440" && NO_DESKTOP.has(`${app}-${v}`)) continue;
+  const base = `${app}-${v}`, alt = `${APPNAME[app]} ${label}`, nar = w === "390" ? "narrow" : "";
+  const f = (t) => `${base}-${t}-${w}.png`;
+  card(p1, "1", app, w, `${APPNAME[app]}: ${label}`, where(w),
+    `<div class="cols ${nar}">${fig("Dark", "round4/after/" + f("dark"), `${alt}, dark, ${w} px`)}${fig("Light", "round4/after/" + f("light"), `${alt}, light, ${w} px`)}</div>
+     <div class="cols ${nar} start" hidden>${fig("Start, dark", "before/" + f("dark"), `${alt}, dark, ${w} px, start`)}${fig("Start, light", "before/" + f("light"), `${alt}, light, ${w} px, start`)}</div>`);
+}
+for (const [app, v, label] of VIEWS) for (const w of WIDTHS) {
+  if (app !== "observatory") continue;
+  const base = `${app}-${v}`, alt = `${APPNAME[app]} ${label}`, nar = w === "390" ? "narrow" : "";
+  const cells = [];
+  for (const t of ["dark", "light"]) {
+    if (MISSING_LANES.has(`${base}-${t}-${w}`)) continue;
+    const f = `${base}-${t}-${w}.png`;
+    cells.push(fig(`Before, ${t}`, "round4/lanes/before/" + f, `${alt}, ${t}, ${w} px, before the lanes redesign`));
+    cells.push(fig(`After, ${t}`, "round4/lanes/after/" + f, `${alt}, ${t}, ${w} px, after the lanes redesign`));
+  }
+  card(p2, "2", app, w, `${APPNAME[app]}: ${label}, lanes`, where(w) + (cells.length < 4 ? " · dark only" : ""),
+    `<div class="cols quad ${nar}">${cells.join("")}</div>`);
+}
+const CLOSE = [
+  ["lanes-dark-1440", "The lanes, close-up", "dark", "1440"],
+  ["lanes-light-1440", "The lanes, close-up", "light", "1440"],
+  ["lanes-dark-390", "The lanes, close-up", "dark", "390"],
+  ["observatory-signals-dark-1440", "Signals view: threshold bands", "dark", "1440"],
+  ["observatory-signals-pose-dark-1440", "Signals view for a run with a pose (round 3 Q4)", "dark", "1440"],
+  ["observatory-signals-light-390", "Signals view: threshold bands", "light", "390"],
+];
+for (const [file, label, theme, w] of CLOSE) {
+  card(p3, "2", "observatory", w, `Observatory: ${label}`, `${theme} · ${where(w)}`,
+    `<div class="cols solo ${w === "390" ? "narrow" : ""}">${fig("After", "round4/lanes/after/tests/" + file + ".png", `Observatory ${label}, ${theme}, ${w} px`)}</div>`);
+}
+const sel = { app: "all", width: "all", part: "all" };
+function apply() {
+  for (const host of [p1, p2, p3]) for (const el of host.children)
+    el.hidden = !Object.entries(sel).every(([k, v]) => v === "all" || el.dataset[k] === v);
+}
+for (const seg of document.querySelectorAll(".seg")) seg.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  for (const x of seg.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+  sel[seg.dataset.key] = b.dataset.v; apply();
+});
+document.getElementById("start").addEventListener("change", (e) => {
+  for (const el of p1.querySelectorAll(".start")) el.hidden = !e.target.checked;
+});
+</script>

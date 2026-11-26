@@ -42,6 +42,12 @@ Each unit's first step is to check the facts it rests on.
   that fold to a summary lane; the data inside the bars (a sparkline for a signal, density for
   a sensor's rate, so a gap shows); an events and alarms lane on top; a muted tone per section,
   colour kept for what needs attention.
+- **Review round 4, the final** ([the page](https://claude.ai/artifact/TvtMWQp29cFp1Pmqc4ak7H),
+  2026-11-26):
+  every answer A. The timeline lanes redesign is accepted as built; no view changes; dark and
+  light balanced; the phone layouts good; look-and-feel is closed for MVP 1, and further changes
+  are MVP 2 items. Step 4.9 (Q7, Q8): ready for MVP 2 once the `libs/missions` carve-out lands
+  (it landed, 1cd9e8c); the Observatory stays the one front of both apps.
 - **One design system for both apps:** the same tokens, type scale, colours and components,
   from `libs/web`, for full consistency. The one difference kept on purpose is density:
   the Observatory compact (12 px base, 24 px controls), Mission Control regular (14 px base,

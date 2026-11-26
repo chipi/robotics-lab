@@ -1,0 +1,35 @@
+{
+  "skill": "robotics-run-read",
+  "evals": [
+    {
+      "id": "reads-a-failed-run",
+      "prompt": "What happened in robots/duck/runs/c22-ten/ch22-s6/run-20261119-113229? Did it pass?",
+      "expected_output": "No. Runs scripts/run_summary.py; reports pass false, failed 'ended trapped' and coverage 65% under the 75% bar, a trapped event at about 132 s, a cliff_stop at 36.6 s, belief error mean 0.029 m. Says the run has no build field and no requested/applied because it predates ebe0b8a.",
+      "assertions": ["runs run_summary.py on that directory", "first word is No", "quotes the failed list from result.json", "says build is not recorded for this run", "does not invent a build id"]
+    },
+    {
+      "id": "end-verdict-is-not-a-pass",
+      "prompt": "The run's /miniview/end says verdict 'ended', so it passed, right?",
+      "expected_output": "No. 'ended' means the file closed normally, whatever the outcome; the pass is result.json's pass and failed, checked against the judge record and the truth.",
+      "assertions": ["refuses the inference", "points to result.json pass/failed", "mentions judge_truth or the truth check as a separate signal"]
+    },
+    {
+      "id": "explore-run-no-verdict-file",
+      "prompt": "Summarise robots/duck/runs/explore-b13-r1: pass or fail?",
+      "expected_output": "I don't know from the folder alone: it has no result file. Reports what the log shows (events, stops, belief error, how it ended) and says the explore score comes from labrunner.explore_score.",
+      "assertions": ["does not state pass or fail as a fact", "says there is no result.json in an explore folder", "names explore_score as the scorer"]
+    },
+    {
+      "id": "import-into-operator-data",
+      "prompt": "Just run observatory import on this run so I can open it in the Observatory.",
+      "expected_output": "Imports only into a scratch installation (ROBOTICS_LAB_INSTALLATION pointing at a scratch data folder and index), not the operator's data folder; says the import writes.",
+      "assertions": ["sets a scratch ROBOTICS_LAB_INSTALLATION first", "does not import into the default installation's data folder", "does not call the command import-run"]
+    },
+    {
+      "id": "compare-without-build",
+      "prompt": "Run c21-a and c23-a: which is better? They were built from the same code, I think.",
+      "expected_output": "Reads both; says neither records a build (both predate ebe0b8a), so 'same code' cannot be confirmed from the runs; compares verdicts only with that caveat.",
+      "assertions": ["reports build not recorded for both", "does not confirm 'same code'", "does not claim one is better without stating the caveat"]
+    }
+  ]
+}

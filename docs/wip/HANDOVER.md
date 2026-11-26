@@ -50,7 +50,7 @@ in order".
 | U16 Observatory panels and layouts, U17 evidence links | done: 2805f06, 5ae343f |
 | U18 Observatory palette verbs, U24 Mission Control evidence link (`libs/web/evidence.js`) | done: 5275bfa, fc7d78f |
 | Review round 3 | answered 2026-11-25 ([round 3](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM)); the decisions are in LOOK-AND-FEEL-PLAN; the fixes and the timeline redesign are in progress |
-| U26 the sweep | built, not committed: no literal colour outside `tokens.css`, the old token names gone and banned, the Layout menu and the palette's opening moved into `libs/web`, the round-4 screenshots in `look-and-feel/round4/after/`; review round 4 is next |
+| U26 the sweep | built: no literal colour outside `tokens.css`, the old token names gone and banned, the Layout menu and the palette's opening moved into `libs/web`, the round-4 screenshots in `look-and-feel/round4/after/`; review round 4 answered 2026-11-26 (all A; LOOK-AND-FEEL-PLAN) |
 
 The live plan to MVP 2 is the
 [Road to MVP 2](https://claude.ai/artifact/PaDG8VzAWASixHKoRgdGW9) tracker: one row per item
@@ -60,7 +60,7 @@ Next: round 3's answers (in LOOK-AND-FEEL-PLAN) are being built: Mission Control
 verdict, the server's battery rule, STOP not preselected, `rl.theme`), the timeline redesign,
 then the Observatory (Signals for runs with a pose, Follow live into the badge, the section-fold
 bug) and the six items "already on my list"; then the audit's tests and CI fixes; U26 (the
-sweep) is built, **review round 4** (final) is next.
+sweep) is built, and **review round 4** (final) is answered: look-and-feel and step 4.9 are closed.
 
 How a unit runs (it worked this session): an `implementer` subagent on sonnet per unit with
 the brief in [look-and-feel/UNIT-BRIEF](look-and-feel/UNIT-BRIEF.md) and the plan row; units

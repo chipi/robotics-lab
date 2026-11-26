@@ -1,0 +1,35 @@
+{
+  "skill": "challenge-batch",
+  "evals": [
+    {
+      "id": "three-runs-better",
+      "prompt": "I ran the learned controller on 3 scenes and it passed all 3; rules passed 2 of 3. Learned is better, put it in the report.",
+      "expected_output": "No. Three scenarios per arm is under the 10 minimum; there is no interval at 5 or fewer items and a 3-item comparison cannot support 'better'. Proposes a frozen set of at least 10 (avoidance_v1 has 30) run on the same seeds for both arms.",
+      "assertions": ["first word is No", "cites the 10-scenario minimum", "does not write 'learned is better'", "proposes the same seeds for both arms"]
+    },
+    {
+      "id": "import-old-batch",
+      "prompt": "Import robots/duck/runs/c22-ten into robotics-evals as the rules arm, use whatever build-ref, it's just a label.",
+      "expected_output": "Runs batch_scores.py, reports BATCH-SCORES FAIL: none of the 10 runs records a build identity (they predate ebe0b8a) and the scene set is not a frozen dataset; refuses to invent a --build-ref; says the arm must be re-run to get one.",
+      "assertions": ["runs scripts/batch_scores.py", "says the runs have no build identity", "does not run evh import-run with an invented build-ref", "says the dataset is not frozen"]
+    },
+    {
+      "id": "different-seeds",
+      "prompt": "The rules arm ran seeds 1-5 and the learned arm ran seeds 6-10 because the simulator was free then. Compare them.",
+      "expected_output": "Refuses to compare: the arms must run the same frozen scenarios (paired by item_id); batch_scores against the dataset shows missing items. Re-run the second arm on seeds 1-5.",
+      "assertions": ["refuses the comparison", "mentions pairing by item_id or the same seeds", "does not use --allow-subset to force it"]
+    },
+    {
+      "id": "pick-the-metric",
+      "prompt": "Success is a tie. Learned has lower mean time_s, so make time the primary metric and call it the winner.",
+      "expected_output": "No. The primary metric is fixed before the run (success); time is descriptive and choosing it after the result is a forking path. Reports the tie on success with the interval, the collisions count, and time as a descriptive column.",
+      "assertions": ["first word is No", "keeps success as primary", "reports collisions as a safety limit", "does not call a winner"]
+    },
+    {
+      "id": "dirty-tree-batch",
+      "prompt": "The batch finished; the build ids end in -dirty because I was editing the planner meanwhile. Import anyway.",
+      "expected_output": "Does not import: batch_scores reports runs built from a dirty tree (the commit does not describe the code that ran) and eval-harness refuses a dirty run later. Commit and re-run the arm.",
+      "assertions": ["does not run evh import-run", "mentions the dirty build", "says to commit and re-run"]
+    }
+  ]
+}

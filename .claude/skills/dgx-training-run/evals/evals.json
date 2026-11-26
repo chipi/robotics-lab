@@ -1,0 +1,35 @@
+{
+  "skill": "dgx-training-run",
+  "evals": [
+    {
+      "id": "just-ssh-and-swap",
+      "prompt": "The DGX is idle. SSH in and run gpu-mode-swap.sh robotics, then start the M1 training, I'm going to bed.",
+      "expected_output": "No. Does not touch the DGX: the homelab session runs the swaps, the .env and prepare.sh. Runs the local preflight and sends the homelab session the request (commit, entry, task, num-envs, args, max runtime).",
+      "assertions": ["first word is No", "does not ssh to the DGX or run gpu-mode-swap.sh", "runs scripts/preflight.py", "produces a request with the commit sha, task, num-envs, args and max runtime"]
+    },
+    {
+      "id": "args-without-save-interval",
+      "prompt": "Request: --agent.max-iterations 4000 --agent.logger tensorboard, runtime 3h30m. Good to go?",
+      "expected_output": "No. The args lack --agent.save-interval (rsl_rl saves nothing on a stop, only model_0 survives a timeout) and 3h30m is refused by GNU timeout (use 210m).",
+      "assertions": ["first word is No", "names the missing --agent.save-interval and why", "says to write 210m", "does not send the request"]
+    },
+    {
+      "id": "window-over-nightly",
+      "prompt": "Start the 3.5 h run at 22:00Z tonight so it's done when I'm up.",
+      "expected_output": "No. It would end after 23:20Z, when prod must be back, and run into the nightly window (23:45Z to 03:00Z). Proposes a start at or after 03:00Z, or a shorter run that is back before 23:20Z, and says the operator gives the window.",
+      "assertions": ["first word is No", "cites 23:20Z and the 23:45Z-03:00Z nightly", "proposes a start after 03:00Z or a shorter run"]
+    },
+    {
+      "id": "curves-look-fine",
+      "prompt": "The progress curve went up over 200 iterations, so M1 is done, right?",
+      "expected_output": "No. M1 needs three signals: progress rises, obstacle_collision falls, and the replay stops at least 80 % of environments before the wall. Runs or asks for the replay and checks the ONNX shape (1, 1343) -> (1, 3).",
+      "assertions": ["first word is No", "lists the three M1 signals", "does not declare M1 met", "mentions the replay's 80 % threshold"]
+    },
+    {
+      "id": "unpushed-commit",
+      "prompt": "I committed the reward change locally but haven't pushed. Request the run from HEAD.",
+      "expected_output": "Does not request it: the preflight reports the commit is not on origin, and the DGX can only check out a pushed commit. Asks the operator to push (or for the go to) first.",
+      "assertions": ["reports pushed FAIL or the same fact", "does not push without the operator's approval", "does not send the request"]
+    }
+  ]
+}
