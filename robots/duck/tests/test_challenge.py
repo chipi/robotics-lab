@@ -47,7 +47,7 @@ for ch in CHALLENGES:
           (on_start, round(clear, 3)))
 check("doorways: the seed cycles 80, 50 and 42 cm", [build("2", s).notes["gap_m"] for s in (0, 1, 2)] == [0.8, 0.5, 0.42])
 check("the step-downs are refusals, the explorations are their own, the rest are reaches",
-      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach", "17": "reach", "18": "reach", "19": "reach", "20": "reach", "21": "reach", "22": "explore", "23": "explore"})
+      {ch: build(ch, 1).right for ch in CHALLENGES} == {"1": "reach", "2": "reach", "3": "reach", "4": "reach", "5": "reach", "6": "reach", "7": "reach", "8": "refuse", "9": "refuse", "10": "reach", "11": "reach", "12": "refuse", "13": "reach", "14": "reach", "15": "reach", "16": "reach", "17": "reach", "18": "reach", "19": "reach", "20": "reach", "21": "reach", "22": "explore", "23": "explore", "24": "reach", "25": "reach", "26": "reach", "27": "reach", "28": "reach"})
 import random  # noqa: E402
 
 blocks, goal_clear = [], []
@@ -569,6 +569,62 @@ trail.see(1.0, (0.0, 0.0))
 trail.see(2.0, (b1.cx, b1.cy))
 trail.see(3.0, (0.0, 0.0))
 check("the trail: an area is entered once, at the first time", trail.entered == {"room_a": 1.0, "room_b": 2.0}, trail.entered)
+
+# challenges 24-28 (avoidance_v2, R5): harder families of the same task; each draws again until a path exists at the footprint
+from labrunner import challenges as chmod  # noqa: E402
+from labrunner.scene import wall  # noqa: E402
+
+check("avoidance_v2: the path test's radius is the profile's footprint and 2 cm", abs(chmod.PATH_R_M - (FOOTPRINT_M + 0.02)) < 1e-9, chmod.PATH_R_M)
+check("avoidance_v2: the path test's overhead limit is the profile's", chmod.OVERHEAD_M == OVERHEAD_CLEAR_M, chmod.OVERHEAD_M)
+room_ = _walled("room", -0.6, 3.0, -1.5, 1.5)
+for gap, want in ((0.15, False), (0.30, True)):      # 0.15 m is under the duck's own width; 0.30 m is a door it fits through
+    d = [wall("d_s", 1.2, -1.5, 1.2, -gap / 2), wall("d_n", 1.2, gap / 2, 1.2, 1.5)]
+    check(f"the path test: a {gap * 100:.0f} cm doorway is {'open' if want else 'shut'}", chmod.reachable(room_ + d, (2.2, 0.0)) is want)
+check("the path test: a wall across the room with no door is shut", not chmod.reachable(room_ + [wall("w", 1.2, -1.5, 1.2, 1.5)], (2.2, 0.0)))
+check("the path test: a goal inside a box is out", not chmod.reachable(room_ + [Box("b", 2.2, 0.0, 0.2, 0.2, 0.0, 0.3)], (2.2, 0.0)))
+check("the path test: an overhead shelf is no wall", chmod.reachable(room_ + [Box("shelf", 1.2, 0.0, 0.1, 1.5, 0.35, 0.38)], (2.2, 0.0)))
+
+V2 = {ch: [CHALLENGES[ch](s, random.Random(f"{ch}-{s}")) for s in range(1, 31)] for ch in ("24", "25", "26", "27", "28")}
+GOAL_CLEAR_M = geometry.profile().footprint.goal_clearance_m
+check("avoidance_v2: every seed of every family leaves a path from the start to the goal at the footprint",
+      all(chmod.reachable(sc.boxes, sc.goal) for scs in V2.values() for sc in scs))
+goal_clear = [min(chmod._near(sc.goal, b) for b in sc.boxes if b.z0 < OVERHEAD_CLEAR_M) for scs in V2.values() for sc in scs]
+check("avoidance_v2: the goal is clear of every body by the profile's goal clearance", all(c >= GOAL_CLEAR_M - 1e-9 for c in goal_clear), round(min(goal_clear), 3))
+check("avoidance_v2: one goal to reach; every layout has its own name (the item id is the layout and the seed)",
+      all(sc.mode == "go" and sc.right == "reach" for scs in V2.values() for sc in scs)
+      and len({CHALLENGES[ch].__name__ for ch in CHALLENGES}) == len(CHALLENGES))
+check("avoidance_v2: avoidance_v1's challenges (4, 14, 15, 2, 3, 1) keep their generators",
+      [CHALLENGES[c].__name__ for c in ("4", "14", "15", "2", "3", "1")] == ["box_in_open", "thin_legs", "small_boxes", "doorway", "corner_in_doorway", "corridor"])
+
+c24 = V2["24"]
+check("challenge 24: a room (4 walls) and a doorway wall in two pieces, 6 bodies; the gap in NARROW_GAP_M, its middle 0.7-1.0 m off the line",
+      all(len(sc.boxes) == 6 and chmod.NARROW_GAP_M[0] - 1e-3 <= sc.notes["gap_m"] <= chmod.NARROW_GAP_M[1] + 1e-3
+          and 0.7 - 1e-3 <= abs(sc.notes["door_y_m"]) <= 1.0 + 1e-3 for sc in c24), [sc.notes for sc in c24[:2]])
+check("challenge 24: the goal is beyond the doorway wall, both sides of the line drawn", all(sc.goal[0] > sc.notes["door_x_m"] for sc in c24)
+      and {sc.notes["door_y_m"] > 0 for sc in c24} == {True, False})
+c25 = V2["25"]
+check("challenge 25: 10-40 boxes 14-20 cm across, 8-30 cm tall, the gap between neighbours in DENSE_GAP_M",
+      all(10 <= sc.notes["boxes"] <= 40 and sc.notes["boxes"] == sum(b.name.startswith("dense") for b in sc.boxes)
+          and chmod.DENSE_GAP_M[0] - 1e-3 <= sc.notes["gap_m"] <= chmod.DENSE_GAP_M[1] + 1e-3
+          and all(0.14 - 1e-9 <= 2 * b.hx <= 0.20 + 1e-9 and 0.08 - 1e-9 <= b.z1 <= 0.30 + 1e-9 for b in sc.boxes if b.name.startswith("dense"))
+          for sc in c25), [sc.notes["boxes"] for sc in c25])
+c26 = V2["26"]
+chairs = [{b.name.split("_")[0] for b in sc.boxes if b.name.startswith("chair")} for sc in c26]
+check("challenge 26: 3-5 chairs, each four legs 2-4 cm across and a seat above the duck's head",
+      all(chmod.CHAIRS[0] <= len(c) <= chmod.CHAIRS[1] and sc.notes["chairs"] == len(c)
+          and sum("_leg" in b.name for b in sc.boxes) == 4 * len(c) and all(0.02 <= 2 * b.hx <= 0.04 for b in sc.boxes if "_leg" in b.name)
+          and all(b.z0 > OVERHEAD_CLEAR_M for b in sc.boxes if b.name.endswith("_seat")) for c, sc in zip(chairs, c26)), [len(c) for c in chairs])
+c27 = V2["27"]
+posts = [[b for b in sc.boxes if b.name.startswith("post")] for sc in c27]
+check("challenge 27: 4-5 posts along the way on alternate sides, each across the centre line (the straight way is blocked), both counts drawn",
+      all(len(ps) == sc.notes["posts"] and 4 <= len(ps) <= 5 and all(a.cy * b.cy < 0 for a, b in zip(ps, ps[1:]))
+          and all(a.cx < b.cx for a, b in zip(ps, ps[1:])) and all(abs(p.cy) < p.hy for p in ps) for ps, sc in zip(posts, c27))
+      and {len(ps) for ps in posts} == {4, 5}, [len(ps) for ps in posts])
+c28 = V2["28"]
+hid = [next(b for b in sc.boxes if b.name == "hidden") for sc in c28]
+check("challenge 28: one box at least 0.2 m behind the doorway wall, 7 bodies, the gap in DOOR_BEHIND_GAP_M",
+      all(len(sc.boxes) == 7 and h.cx - h.hx >= sc.notes["door_x_m"] + 0.2 - 1e-3 and
+          chmod.DOOR_BEHIND_GAP_M[0] - 1e-3 <= sc.notes["gap_m"] <= chmod.DOOR_BEHIND_GAP_M[1] + 1e-3 for sc, h in zip(c28, hid)))
 
 print("test_challenge", "FAIL " + ", ".join(failures) if failures else "PASS")
 sys.exit(1 if failures else 0)

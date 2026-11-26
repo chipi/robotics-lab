@@ -1,6 +1,7 @@
 """The challenges (RFC-0008 §3, ADR-0015): each a function from a seed to a scene in its own frame, the duck's start at
 the origin facing +x. The ranges are first guesses (ADR-0015), to tune when they run. Every edge of the start's floor
-that is not the challenge's drop is walled: the only drop is the one being tested.
+that is not the challenge's drop is walled: the only drop is the one being tested. Challenges 24-28 are avoidance_v2's families (R5, 2026-11-26):
+numbers are never reused or changed, datasets and runs name them.
 """
 
 import hashlib
@@ -475,9 +476,182 @@ def two_rooms(seed: int, rng: random.Random) -> Scene:
                                      "boxes": len(boxes)})
 
 
+# ---- challenges 24-28: the harder avoidance families of avoidance_v2 (R5, the operator 2026-11-26) -------------------------------
+# avoidance_v1 (challenges 4, 14, 15, 2, 3, 1) was 30/30 for the rules navigator, so `success` could not separate arms there. These
+# are the same task (reach a goal in a walled room, nothing to refuse, one goal) with the obstacles the rules arm does worst on, each
+# a distinct skill. Every generator draws again until a path exists at the duck's footprint, so a failure is the navigator's, not
+# the scene's. The ranges were calibrated on seeds 101-104, which are not part of any dataset.
+PATH_R_M = 0.083 + 0.02      # the footprint radius (profile footprint.radius_m) and 2 cm: what a path must clear
+OVERHEAD_M = 0.30            # an underside above this passes over the duck's head (profile footprint.overhead_clear_m)
+
+NARROW_GAP_M = (0.27, 0.33)      # challenge 24's doorway
+DENSE_GAP_M = (0.40, 0.48)       # challenge 25: between neighbouring boxes
+CHAIRS = (3, 5)                  # challenge 26
+SLALOM_OVERLAP_M = (0.10, 0.14)  # challenge 27: a post's inner edge past the centre line
+DOOR_BEHIND_GAP_M = (0.38, 0.46)  # challenge 28
+
+
+def _near(p: tuple, b: Box) -> float:
+    """The distance from point p to box b's outline in plan (0 inside)."""
+    c, s = math.cos(-b.yaw), math.sin(-b.yaw)
+    dx, dy = p[0] - b.cx, p[1] - b.cy
+    return math.hypot(max(abs(c * dx - s * dy) - b.hx, 0.0), max(abs(s * dx + c * dy) - b.hy, 0.0))
+
+
+def reachable(boxes: list, goal: tuple, radius: float = PATH_R_M, cell: float = 0.04) -> bool:
+    """Whether a disc of `radius` can go from the start (the origin) to `goal` among `boxes` (the ones under OVERHEAD_M), on a grid
+    of `cell` metres, eight ways."""
+    obs = [b for b in boxes if b.z0 < OVERHEAD_M]
+    pts = [p for b in boxes for p in b.corners()]
+    x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+    nx, ny = int((max(p[0] for p in pts) - x0) / cell) + 1, int((max(p[1] for p in pts) - y0) / cell) + 1
+    memo = {}
+
+    def free(ij: tuple) -> bool:
+        if ij not in memo:
+            p = (x0 + ij[0] * cell, y0 + ij[1] * cell)
+            memo[ij] = 0 <= ij[0] < nx and 0 <= ij[1] < ny and all(_near(p, b) > radius for b in obs)
+        return memo[ij]
+    start, end = (round(-x0 / cell), round(-y0 / cell)), (round((goal[0] - x0) / cell), round((goal[1] - y0) / cell))
+    if not free(start) or not free(end):
+        return False
+    seen, todo = {start}, [start]
+    while todo:
+        i, j = todo.pop()
+        if max(abs(i - end[0]), abs(j - end[1])) <= 1:
+            return True
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                n = (i + di, j + dj)
+                if n not in seen and free(n):
+                    seen.add(n)
+                    todo.append(n)
+    return False
+
+
+def _drawn(cid: str, seed: int, tries: int, draw):
+    """`draw()` until it gives a scene's (boxes, goal, rest) with a path; its draws all come from the seed's generator."""
+    for _ in range(tries):
+        out = draw()
+        if reachable(out[0], out[1]):
+            return out
+    raise RuntimeError(f"challenge {cid}, seed {seed}: no scene with a path in {tries} draws")
+
+
+def narrow_doorway(seed: int, rng: random.Random) -> Scene:
+    """A narrow doorway with the approach off-axis (challenge 24): a wall across a 3 m room 1.0-1.3 m ahead with a gap of
+    NARROW_GAP_M (the duck is 0.166 m across), its middle 0.7-1.0 m to one side of the start's line, so the doorway is outside
+    the sensor's view from the start and must be found, and the goal beyond it. Challenge 2's gaps are 0.42-0.8 m, on the axis."""
+    def draw():
+        gap, x, side = rng.uniform(*NARROW_GAP_M), rng.uniform(1.0, 1.3), rng.choice((-1, 1))
+        door = side * rng.uniform(0.7, 1.0)
+        gx = x + rng.uniform(0.9, 1.2)
+        goal = (round(gx, 3), round(max(-1.0, min(1.0, door + rng.uniform(-0.3, 0.3))), 3))
+        boxes = _walled("room", -0.6, gx + 0.6, -1.5, 1.5) + [wall("door_s", x, -1.5, x, door - gap / 2),
+                                                               wall("door_n", x, door + gap / 2, x, 1.5)]
+        return boxes, goal, (gap, door, x, gx)
+    boxes, goal, (gap, door, x, gx) = _drawn("24", seed, 50, draw)
+    return Scene(f"ch24-s{seed}", f"Narrow doorway {gap * 100:.0f} cm, off-axis", boxes, [slab("floor", -0.6, gx + 0.6, -1.5, 1.5)],
+                 goal, "reach", 90.0, notes={"gap_m": round(gap, 3), "door_y_m": round(door, 3), "door_x_m": round(x, 3)})
+
+
+def dense_boxes(seed: int, rng: random.Random) -> Scene:
+    """A dense field of small boxes (challenge 25): boxes 14-20 cm across in a staggered lattice of columns 0.45-0.55 m apart, DENSE_GAP_M
+    between neighbours (the duck is 0.166 m across), some left out, between the start and the goal 3.0-3.4 m ahead. Challenge 15's
+    boxes stand 0.45 m apart centre to centre, a gap of 0.25 m or more is always open between them."""
+    def draw():
+        goal = (round(rng.uniform(3.0, 3.4), 3), round(rng.uniform(-0.3, 0.3), 3))
+        gap, h, pitch_x = rng.uniform(*DENSE_GAP_M), rng.uniform(0.07, 0.10), rng.uniform(0.45, 0.55)
+        pitch_y = 2 * h + gap
+        boxes, col = [], 0
+        x = 0.6
+        while x < goal[0] - 0.5:
+            y = -1.2 + h + (pitch_y / 2 if col % 2 else 0.0)
+            while y < 1.2 - h:
+                c = (x + rng.uniform(-0.03, 0.03), y + rng.uniform(-0.03, 0.03))
+                if rng.random() > 0.12 and math.dist(c, goal) > 0.5 and math.dist(c, (0.0, 0.0)) > 0.45:
+                    boxes.append(Box(f"dense{len(boxes)}", round(c[0], 4), round(c[1], 4), h, h, 0.0, round(rng.uniform(0.08, 0.30), 3),
+                                     round(rng.uniform(-0.5, 0.5), 4)))
+                y += pitch_y
+            x += pitch_x
+            col += 1
+        return _room(goal[0]) + boxes, goal, (gap, len(boxes))
+    boxes, goal, (gap, n) = _drawn("25", seed, 100, draw)
+    return Scene(f"ch25-s{seed}", "A dense field of small boxes", boxes, [slab("floor", -0.6, goal[0] + 0.6, -1.5, 1.5)], goal,
+                 "reach", 120.0, notes={"gap_m": round(gap, 3), "boxes": n})
+
+
+def chair_cluster(seed: int, rng: random.Random) -> Scene:
+    """A forest of thin legs (challenge 14 is one chair): CHAIRS chairs, each four legs 2-4 cm across in a 0.38 m
+    square under a seat above the duck's head, turned at random, 0.55 m or more apart centre to centre in the way to the goal. The
+    legs are all the sensor's 8 x 8 zones can hit; a seat is overhead, the duck walks under it."""
+    def draw():
+        goal_x, goal_y = rng.uniform(2.8, 3.2), rng.uniform(-0.3, 0.3)
+        want, centres = rng.randint(*CHAIRS), []
+        for _ in range(500):
+            if len(centres) >= want:
+                break
+            c = (rng.uniform(0.9, goal_x - 0.7), rng.uniform(-0.8, 0.8))
+            if math.dist(c, (goal_x, goal_y)) > 0.6 and all(math.dist(c, o) >= 0.55 for o in centres):
+                centres.append(c)
+        w, boxes = rng.uniform(0.02, 0.04), []
+        for i, (cx, cy) in enumerate(centres):
+            yaw = rng.uniform(-math.pi / 4, math.pi / 4)
+            co, si = math.cos(yaw), math.sin(yaw)
+            for k, (dx, dy) in enumerate(((-0.19, -0.19), (0.19, -0.19), (0.19, 0.19), (-0.19, 0.19))):
+                boxes.append(Box(f"chair{i}_leg{k}", round(cx + co * dx - si * dy, 4), round(cy + si * dx + co * dy, 4), w / 2, w / 2,
+                                 0.0, 0.42, round(yaw, 4)))
+            boxes.append(Box(f"chair{i}_seat", round(cx, 4), round(cy, 4), 0.22, 0.22, 0.42, 0.45, round(yaw, 4)))
+        return _room(goal_x) + boxes, (round(goal_x, 3), round(goal_y, 3)), (len(centres), w)
+    boxes, goal, (n, w) = _drawn("26", seed, 50, draw)
+    return Scene(f"ch26-s{seed}", "A cluster of chairs, their legs", boxes, [slab("floor", -0.6, goal[0] + 0.6, -1.5, 1.5)], goal,
+                 "reach", 120.0, notes={"chairs": n, "leg_m": round(w, 3)})
+
+
+def slalom(seed: int, rng: random.Random) -> Scene:
+    """A slalom of posts (NVIDIA's `slalom` layout, microduck_nav layouts.py): 4-5 thin posts (8-10 cm deep, 0.3-0.4 m across) 0.26-0.32
+    m apart along the way on alternate sides, each reaching SLALOM_OVERLAP_M past the centre line, so the straight line is
+    blocked and the way is an S through gaps of about 0.3 m between the posts' tips, the goal 0.3 m past the last."""
+    def draw():
+        n, side, x = rng.randint(4, 5), rng.choice((-1, 1)), rng.uniform(0.7, 0.9)
+        boxes = []
+        for i in range(n):
+            hx, hy, over = rng.uniform(0.04, 0.05), rng.uniform(0.15, 0.2), rng.uniform(*SLALOM_OVERLAP_M)
+            boxes.append(Box(f"post{i}", round(x, 4), round(side * (hy - over), 4), hx, hy, 0.0, rng.uniform(0.3, 0.45),
+                             round(rng.uniform(-0.3, 0.3), 4)))
+            side, x = -side, x + rng.uniform(0.26, 0.32)
+        goal = (round(x + 0.3, 3), round(rng.uniform(-0.2, 0.2), 3))
+        return _room(goal[0]) + boxes, goal, n
+    boxes, goal, n = _drawn("27", seed, 50, draw)
+    return Scene(f"ch27-s{seed}", "A slalom of posts", boxes, [slab("floor", -0.6, goal[0] + 0.6, -1.5, 1.5)], goal, "reach", 90.0,
+                 notes={"posts": n})
+
+
+def box_behind_door(seed: int, rng: random.Random) -> Scene:
+    """A box just behind a doorway, hidden until through (challenge 28): a wall 1.0-1.2 m ahead with a gap of DOOR_BEHIND_GAP_M, its middle
+    0.3 m or less off the line, and behind the wall, beside the way out of the gap and on the goal's side, a box 0.2-0.3 m
+    from the wall, its near face 0.05 m from the gap's middle line. From the start the wall hides it; the duck meets it in the doorway."""
+    def draw():
+        gap, x, off = rng.uniform(*DOOR_BEHIND_GAP_M), rng.uniform(1.0, 1.2), rng.uniform(-0.3, 0.3)
+        side = rng.choice((-1, 1))
+        hx, hy = rng.uniform(0.12, 0.2), rng.uniform(0.15, 0.25)
+        bx = x + rng.uniform(0.20, 0.30) + hx
+        by = off + side * (0.05 + hy)
+        gx = bx + hx + rng.uniform(0.5, 0.8)
+        goal = (round(gx, 3), round(max(-1.0, min(1.0, off + side * rng.uniform(0.5, 0.9))), 3))
+        boxes = _walled("room", -0.6, gx + 0.6, -1.5, 1.5) + [wall("door_s", x, -1.5, x, off - gap / 2),
+                                                               wall("door_n", x, off + gap / 2, x, 1.5),
+                                                               Box("hidden", round(bx, 4), round(by, 4), hx, hy, 0.0, rng.uniform(0.3, 0.45))]
+        return boxes, goal, (gap, x, off)
+    boxes, goal, (gap, x, off) = _drawn("28", seed, 50, draw)
+    return Scene(f"ch28-s{seed}", "A box just behind a doorway", boxes, [slab("floor", -0.6, goal[0] + 0.6, -1.5, 1.5)], goal,
+                 "reach", 90.0, notes={"gap_m": round(gap, 3), "door_x_m": round(x, 3), "door_y_m": round(off, 3)})
+
+
 CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_open, "5": u_turn, "6": dead_end, "7": wedged, "8": step_down, "9": step_down_diagonal, "10": ledge, "11": passage_by_hole, "12": table_edge,
               "13": overhang, "14": thin_legs, "15": small_boxes, "16": threshold, "17": floor_things, "18": step_up_down,
-              "19": flight(True), "20": flight(False), "21": ten_goals, "22": one_room_with_a_drop, "23": two_rooms}
+              "19": flight(True), "20": flight(False), "21": ten_goals, "22": one_room_with_a_drop, "23": two_rooms,
+              "24": narrow_doorway, "25": dense_boxes, "26": chair_cluster, "27": slalom, "28": box_behind_door}
 
 
 def draw(challenge: str, seed: int) -> tuple:
