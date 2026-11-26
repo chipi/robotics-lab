@@ -166,7 +166,7 @@ runner without the truth and the installation file).
 | The host file | another machine (the workstation, the MacBook, a clean container) | [RFC-0021 §3](rfc/RFC-0021-sim-host-and-payload.md) |
 | The payload contract (hello, localise, start, status, cancel, stop) | another navigator: `robots/duck/payloads/straight.py` is a second one | `duck_lab/payload.py` |
 | The navigator API | another robot's navigator, behind Mission Control | [Mission Control's contract](https://github.com/chipi/robotics-lab/blob/main/apps/mission-control/CONTRACT.md) |
-| Mission Control's adapters (`fake`, `duck-sim`, `nxt-web`) | another robot in the control panel | [RFC-0014](rfc/RFC-0014-mission-control.md) |
+| Mission Control's adapters (`fake`, `duck-sim`, `duck-real`, `nxt-web`) | another robot in the control panel | [RFC-0014](rfc/RFC-0014-mission-control.md) |
 | The gate's protocol | another robot's lock | [RFC-0017](rfc/RFC-0017-robot-access.md) |
 | The run format | another recorder; the Observatory reads only the format | [ADR-0007](adr/ADR-0007-run-file-format-2.md) |
 | The camera socket (Detections relative to the robot) | a real camera's detector (designed: none exists yet, and the camera service needs the simulator's truth) | RFC-0021 step 6 |
@@ -175,9 +175,10 @@ runner without the truth and the installation file).
 
 - **Only one robot has run on it.** The navigator takes its numbers from the profile, but it has run
   only on the duck, and its plugins are the duck's (mapd's grid, the 8×8 depth sensor). It is
-  generic when a second robot (the EV3 in phase 6, the TurtleBot3 after the plan) runs it.
-- **Only one simulator kind exists** (`pollen-duck-sim`); the rule of §3.1 is tested when Gazebo
-  is the second.
+  generic when a second robot's navigator (the TurtleBot3 in MVP 2,
+  [RFC-0025](rfc/RFC-0025-mvp1-to-mvp2.md)) runs it.
+- **Two simulator kinds exist** (`pollen-duck-sim`, and `nxt-kinematic-sim` for the NXT,
+  [NXT-D0](wip/NXT-D0.md)); the rule of §3.1 is tested again when Gazebo is the third.
 - **The runner reads its robot's numbers once, when it starts** (the judge's footprint and
   thresholds): with one robot registered that is it; a second robot needs its `--robot` read before
   the course's modules load ([RFC-0022](rfc/RFC-0022-platform-layout-and-names.md)).

@@ -13,6 +13,14 @@ Notes in progress: plans, ideas, analyses. Promotion targets:
 ## Open notes
 
 - [Handover](HANDOVER.md) — start here: the living status of the MVP 1 wrap-up.
+- [Handover: the learning arc, 2026-11-26](HANDOVER-TRAINING-2026-11-26.md) — where the
+  learned-avoidance training and its evaluations stand; read it first when continuing them.
+- [Research plan: learned avoidance](RESEARCH-LEARNED-AVOIDANCE.md), with
+  [R1 and R2](RESEARCH-R1-R2.md), [S1 to S4](RESEARCH-S1-S4.md), [R4](RESEARCH-R4-OBS-PARITY.md)
+  and [R6](RESEARCH-R6-PLAN.md); the guide to it is [Training the controller](../training/index.md).
+- The 2026-11-26 reviews: [technical review](TECH-REVIEW-2026-11-26.md), and the advisor's reviews of
+  [RFC-0024](RFC-0024-REVIEW-2026-11-26.md), [RFC-0030](RFC-0030-REVIEW-2026-11-26.md) and
+  [RFC-0031](RFC-0031-REVIEW-2026-11-26.md).
 - [Phase 5: the plan after step 1](PHASE5-NEXT-PLAN.md) — the items, the wrap-up order, what
   each built.
 - [Known issues](KNOWN-ISSUES.md), [parked for the operator](PARKED-FOR-OPERATOR.md).

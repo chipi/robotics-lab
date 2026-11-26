@@ -1,10 +1,74 @@
 # robotics-lab
 
-A robot platform where any robot can be loaded: a robot brings what it is (a profile and plugins),
-a simulator brings what it provides (a host), a navigator is tested behind a runner that judges it
-by the simulator's truth, every run is recorded one way and watched in one viewer (the
-Observatory), and the operator drives it all from one control panel (Mission Control). Built on
-Pollen's Microduck in simulation first; the LEGO NXT and EV3s and a TurtleBot3 are next.
+A home robotics lab, and the platform under it: a simulator-first duck (Pollen Robotics'
+Microduck), a LEGO Mindstorms NXT, **Mission Control** to drive them, the **Observatory** to watch
+and replay every run, a challenge course that judges a robot's navigator by the simulator's truth,
+and research into a learned obstacle-avoidance controller. MVP 1 is built; **MVP 2 is next: a
+TurtleBot3 Burger with ROS 2 and Gazebo.**
+
+[![The Observatory replaying a run: the duck's body in 3D, what it believed against what was true,
+and the timeline of every stream](docs/assets/screenshots/observatory-3d-dark-1440.png)](docs/index.md)
+
+Docs site: **<https://chipi.github.io/robotics-lab/>**
+
+## What is in it
+
+- **A simulated duck.** Pollen's Microduck runs in Pollen's own simulator; our navigator (localise,
+  plan, walk, explore, avoid) drives it through the same sockets a real duck would give it. The real
+  duck is not here yet.
+- **A LEGO NXT 2.0**, driven from our own Python code: a web UI, NXC programs for the brick, and a
+  simulated brick for development (`apps/nxt-web`).
+- **Mission Control** (`apps/mission-control`): robots, readiness, sites and areas, goals, and a
+  STOP that always works, behind one API with adapters for a fake robot, the simulated duck and the
+  NXT.
+- **The Observatory** (`apps/observatory`, once called miniview): every run as an MCAP file, live
+  and replayed, with the robot's belief against the truth, its map, its plan and its alarms.
+- **A challenge course** (28 numbered challenges, [RFC-0008](docs/rfc/RFC-0008-challenge-course.md)):
+  the runner scores a navigator by the simulator's truth, one difficulty at a time.
+- **Learned avoidance:** a learned local controller for the duck, trained on a GPU box in the
+  public [chipi/microduck-nav](https://github.com/chipi/microduck-nav) and compared with our rules
+  on frozen scenario sets ([the guide](docs/training/index.md)).
+
+| Observatory: every run | Mission Control: the robot page |
+| --- | --- |
+| ![The Observatory's run list](docs/assets/screenshots/observatory-runs-dark-1440.png) | ![Mission Control's robot page: readiness, alarms, parts](docs/assets/screenshots/control-robot-dark-1440.png) |
+
+The screenshots come from a fixture run and the fake robot (`make screenshots`); no simulator and no
+robot were running.
+
+## Quick start
+
+You need [uv](https://docs.astral.sh/uv/) and `make`. Docker is needed only for the `*-up` targets.
+Several defaults in the Makefile are the author's workstation paths (`/work/robotics-lab/...`), so
+name your own folders as below.
+
+```bash
+make help                 # every target, one line each
+make ci-fast              # lint and every project's unit tests: no simulator, no robot
+make docs-serve           # this documentation at http://127.0.0.1:8765
+
+# Mission Control with the fake robot, no Docker: http://127.0.0.1:8060/
+make control-run CONTROL_STATE=$HOME/.local/state/robotics-lab/control
+
+# The Observatory on a folder of runs (in Docker): http://127.0.0.1:8070/
+make observatory-up OBSERVATORY_DATA=$HOME/robotics-lab/data \
+  OBSERVATORY_STATE=$HOME/.local/state/robotics-lab/observatory
+
+# The NXT web UI with a simulated brick (no robot): http://127.0.0.1:8000/
+make nxt-web-fake
+
+make screenshots          # retake the pictures above
+```
+
+The Observatory has no runs until something records one: a run opens from a folder in format 2
+([the contract](apps/observatory/CONTRACT.md)). The fixture run the screenshots use is built in
+`scripts/look_shots.py`.
+
+**The simulated duck** needs Pollen's simulator on the machine, which is not in this repository: set
+the machine up with `scripts/host-setup`, check it with `scripts/host-check`, and name the checkouts
+in a host file (`simhost init`; [RFC-0021](docs/rfc/RFC-0021-sim-host-and-payload.md)). Then
+`lab-challenge`, `lab-explore`, `lab-go` and `make sim-duck` run on it. They reset the simulator and
+are not part of CI.
 
 ## How it fits together
 
@@ -50,7 +114,7 @@ Three kinds of folder (RFC-0018). Every project is its own uv project with its o
 
 | Path | What |
 | --- | --- |
-| [apps/observatory/](apps/observatory/) | The Observatory (once miniview): runs as MCAP, an API with live runs, the workbench pages (`make observatory-up`; [CONTRACT.md](apps/observatory/CONTRACT.md)) |
+| [apps/observatory/](apps/observatory/) | The Observatory (once called miniview): runs as MCAP, an API with live runs, the workbench pages (`make observatory-up`; [CONTRACT.md](apps/observatory/CONTRACT.md)) |
 | [apps/mission-control/](apps/mission-control/) | Mission Control (RFC-0014): robots, goals, sites and areas behind one API; adapters for a fake robot, the simulated duck (behind `lab-gate` and `lab-nav-server`) and the NXT (`make test-control`, `make control-run`, `make sim-duck`; [CONTRACT.md](apps/mission-control/CONTRACT.md)) |
 | [apps/nxt-web/](apps/nxt-web/) | LEGO Mindstorms NXT 2.0 driven from our own Python code: web UI, NXC programs |
 | [libs/simhost/](libs/simhost/) | The simulator host (RFC-0021): the host file (`simhost init`, `show`, `reset`, `down`), the reset, the truth sampler; standard library only. A machine is set up for it by `scripts/host-setup` and checked by `scripts/host-check` |
@@ -69,6 +133,32 @@ Three kinds of folder (RFC-0018). Every project is its own uv project with its o
 Which package may import which is checked by `scripts/check_boundaries.py` (run by `make lint`);
 the table is in [RFC-0018 §10](docs/rfc/RFC-0018-lab-projects-and-seams.md).
 
+Beside this repository:
+
+| Repository | What |
+| --- | --- |
+| [chipi/microduck-nav](https://github.com/chipi/microduck-nav) (public) | NVIDIA's obstacle-avoidance task ported to mjlab against Pollen's walker: the training code, its tasks and its tests. This repository's navigator loads what it trains through a local-controller slot (`robots/duck/src/duck_lab/plugins/learned.py`) |
+| A private eval repository | The datasets of frozen scenarios (exported by `lab-scenarios`), the evaluation runs and their pre-registered comparison, built on eval-harness |
+
+## Status
+
+- **MVP 1: built.** The platform, both apps and their shared web library, the simulated duck behind
+  Mission Control, the NXT's simulator behind it too, a staging stack deployed on the lab's server
+  (the fake robot only), and telemetry into the lab's dashboards. The look-and-feel review closed
+  on 2026-11-26. What is left of it: this close-out (docs, name and branding), the NXT at the
+  brick, and the staging cut-over to a real robot, which wait on hardware and a maintenance
+  window ([the handover](docs/wip/HANDOVER.md)).
+- **The learning arc, now, before MVP 2.** The duck's learned local controller: a first training
+  run (M1) passed, two longer ones (M2a, M2b) are trained, and our rules are the baseline on the
+  frozen sets (30 of 30 on `avoidance_v1`, 23 of 40 on the harder `avoidance_v2`, no collisions).
+  Next are the learned checkpoints against that baseline, then our own training variants
+  ([the learning arc's handover](docs/wip/HANDOVER-TRAINING-2026-11-26.md),
+  [RFC-0031](docs/rfc/RFC-0031-learning-in-the-lab.md)). The real duck arrives later.
+- **MVP 2: next, not started.** A TurtleBot3 Burger on ROS 2 Jazzy and Gazebo Harmonic. A one-day
+  spike ran the simulator headless and mapped a room with SLAM Toolbox
+  ([the spike](docs/wip/MVP2-SPIKE.md)); the design is
+  [RFC-0025](docs/rfc/RFC-0025-mvp1-to-mvp2.md).
+
 ## Checks and CI
 
 The same make targets run on the workstation and in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)),
@@ -85,7 +175,7 @@ so a red job reproduces locally with the target it names:
 | `make test-observatory-pages` | the Observatory's two pages in headless Chromium (`OBSERVATORY_CHROMIUM`, else Playwright's) |
 | `make test-integration` | the NXT web UI image (built from the repo root) answers with a simulated brick and records an Observatory run |
 | `make test-observatory-image` | the Observatory's image runs with the data mounted read only and its index on its own volume, serves a run, and cannot write the data |
-| `make test-run-compat` | a run opens fully in Rerun (`mcap check`, `mcap convert`), in Lichtblick (its image, headless: topics, start date, the topics draw) and in the Observatory; guards ADR-0007's compatibility |
+| `make test-run-compat` | a run opens fully in Rerun (`mcap check`, `mcap convert`), in the Observatory, and in Lichtblick (its image, headless) when `COMPAT_LICHTBLICK=1`; guards ADR-0007's compatibility |
 | `make perf-observatory` | not in CI: replays a real run at 20 Hz through the writer with both pages open and prints latency, bytes per page and lock hold time |
 | `make nxt-programs` | every NXC program compiles for the brick |
 | `make ci` | all of the above and the docs (`docs-lint`, `docs-build`) |
@@ -96,12 +186,20 @@ is not set.
 
 ## Docs
 
-The docs site lives in [`docs/`](docs/index.md) (MkDocs Material, same conventions as the
-operator's other projects): `make docs-serve` to read it, `make docs-validate` before pushing.
+The docs site is **<https://chipi.github.io/robotics-lab/>**, built from [`docs/`](docs/index.md)
+with MkDocs Material; `make docs-serve` reads it locally and `make docs-validate` (Markdown lint and
+the strict build) runs before every push.
 
-- Start with [the handover](docs/wip/HANDOVER.md), the living status, and
+- [How the platform fits together](docs/architecture.md), the map.
+- [The handover](docs/wip/HANDOVER.md), the living status, and
   [the phase 5 plan](docs/wip/PHASE5-NEXT-PLAN.md).
-- [Proposals (RFC)](docs/rfc/README.md): the NXT web UI, the robot brain, one robot interface,
-  perception and planning, missions with flotilla and eval-harness.
-- [In progress](docs/wip/README.md): ideas, Microduck notes, parts list.
-- [History](docs/history/README.md).
+- [Training the controller](docs/training/index.md), a guide to the learned controller from first
+  principles.
+- [Proposals (RFC)](docs/rfc/README.md), [decisions (ADR)](docs/adr/README.md),
+  [in progress](docs/wip/README.md) and [history](docs/history/README.md).
+
+## Licence
+
+This repository has no licence file yet, so no licence is granted for its code. One file is
+vendored with its own terms: `libs/runfile/src/runfile/schemas/LICENSE-foxglove-schemas.txt`
+(Foxglove's schemas).

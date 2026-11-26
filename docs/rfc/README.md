@@ -75,14 +75,14 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
 - [RFC-0023 — The views: the operator's journeys, which surface does what, and where the telemetry
   goes](RFC-0023-the-views.md) (Accepted, 2026-11-21: A for all twelve decisions)
 - [RFC-0024 — One platform: should Mission Control and the Observatory stay two
-  apps?](RFC-0024-one-platform.md) (Proposed, 2026-11-23; for the operator's decision)
+  apps?](RFC-0024-one-platform.md) (Accepted, 2026-11-23: B, reached in C's order; step 3 built)
 - [RFC-0025 — From MVP 1 to MVP 2: the platform's architecture and its
   evolution](RFC-0025-mvp1-to-mvp2.md) (Accepted, 2026-11-23)
 - [RFC-0030 — Missions: planning as a module, Mission Control as the executor; manual and auto
   modes](RFC-0030-missions.md) (Proposed, revision 2, 2026-11-26, after the advisor's review;
   modes and sequencing decided by the operator)
 - [RFC-0031 — Learning in the lab: training as a run on another kind of
-  resource](RFC-0031-learning-in-the-lab.md) (Proposed, revision 2, 2026-11-26, after the advisor's
-  review; for the operator's decision)
+  resource](RFC-0031-learning-in-the-lab.md) (Accepted, 2026-11-26: option A, all eight questions as
+  recommended, after the advisor's review; nothing built yet)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).
