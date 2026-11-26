@@ -480,15 +480,20 @@ CHALLENGES = {"1": corridor, "2": doorway, "3": corner_in_doorway, "4": box_in_o
               "19": flight(True), "20": flight(False), "21": ten_goals, "22": one_room_with_a_drop, "23": two_rooms}
 
 
+def draw(challenge: str, seed: int) -> tuple:
+    """The challenge's scene for this seed in the seed's world (not yet moved), and the start's jitter (x, y, yaw) in it."""
+    rng = random.Random(f"{challenge}-{seed}")
+    scene = CHALLENGES[challenge](seed, rng)
+    d, a = START_JITTER
+    return scene, (rng.uniform(-d, d), rng.uniform(-d, d), rng.uniform(-a, a))
+
+
 def build(challenge: str, seed: int, start: tuple | None = None, goal: tuple | None = None) -> Scene:
     """The challenge's scene for this seed, as the duck meets it: drawn, then moved by the start's jitter.
 
     A probe of one moment of a run: `start` (x, y, yaw) and `goal` (x, y) are named in the seed's world, as that run's ticks and
     truth show it; the duck starts at `start` and the run goes to `goal` alone (mode go), whatever the challenge's mode."""
-    rng = random.Random(f"{challenge}-{seed}")
-    scene = CHALLENGES[challenge](seed, rng)
-    d, a = START_JITTER
-    jitter = (rng.uniform(-d, d), rng.uniform(-d, d), rng.uniform(-a, a))
+    scene, jitter = draw(challenge, seed)
     if goal is not None:
         scene = replace(scene, goal=tuple(round(v, 4) for v in compose(jitter, (goal[0], goal[1], 0.0))[:2]), mode="go", right="reach",
                         goals=())
