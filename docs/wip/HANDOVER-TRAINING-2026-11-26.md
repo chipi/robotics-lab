@@ -94,11 +94,12 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
    mine`, excluding v1, v2 and val).
 8. **R7d** (Pollen's apartment as a static scene, about 1-2 weeks) and **R7e** (teacher and
    student), after R7a/b.
-9. **E5**: the blog post (M2a vs rules vs M2b vs R7 on our duck) and public Hugging Face datasets
-   (`avoidance_v1`, `v2` as `robotics-avoidance-v1/-v2`).
-10. **The MVP 1 close-out** remains: the README and docs pass, the name and branding (the
-    operator's call), the RFC-0024 review's recommendation 5 (split triggers into RFC-0018). Steps
-    6 (NXT at the brick) and 7 (staging) wait for hardware and the X3 window.
+9. **The MVP 1 close-out** remains: the README and docs pass, the name and branding (the
+   operator's call), the RFC-0024 review's recommendation 5 (split triggers into RFC-0018). Steps
+   6 (NXT at the brick) and 7 (staging) wait for hardware and the X3 window.
+10. **E5, after the close-out** (the operator, 2026-11-26): the blog post (M2a vs rules vs M2b vs
+    R7 on our duck) and public Hugging Face datasets (`avoidance_v1`, `v2` as
+    `robotics-avoidance-v1/-v2`).
 
 ## Known gaps and traps
 
