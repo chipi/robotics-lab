@@ -2,7 +2,7 @@
 
 **Status:** Accepted (the operator, 2026-11-26: all eight questions as recommended), revision 2
 (2026-11-26), after the advisor's
-[review](../wip/RFC-0031-REVIEW-2026-11-26.md). For the operator's decision. Nothing here is built.
+[review](../wip/RFC-0031-REVIEW-2026-11-26.md). Nothing here is built yet.
 The operator approved writing it with option A of section 5 as the recommendation; that is a
 recommendation, not a decision. One rule is decided and recorded in section 7.2 (the promotion
 rule, 2026-11-26). Findings are cited as (review C1) and so on.
