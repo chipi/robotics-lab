@@ -301,8 +301,8 @@ const goTab = (tab) => { if (routeId() != null) location.hash = hashOf(routeId()
 
 // The alarm check the readiness card counts: a minor alarm is not a reason, a major or critical one in the last minute is. ok is true or false; the other
 // checks are readiness.js's own, from the robot view.
-function alarmChecks(r) {
-  const now = Date.now() / 1000;
+// now: the render's one clock, so the verdict and the Alarms card agree at the window's edge
+function alarmChecks(r, now = Date.now() / 1000) {
   const bad = S.alarms.filter((x) => x.robot === r.id && now - x.at <= ALARM_WINDOW_S && SEV.indexOf(x.a.severity) >= SEV.indexOf("major"));
   let alarm = null, w = null;
   if (bad.length) {
@@ -393,7 +393,7 @@ function renderRobotPage() {
         h("td", { class: "v inh" }, s.check.kind + (s.check.socket ? " " + s.check.socket : ""),
           s.logs ? h("div", {}, "logs " + s.logs) : null, (s.conflicts || []).length ? h("div", {}, "conflicts with " + s.conflicts.join(", ")) : null),
         h("td", {}, h("span", { class: "tag" }, "not reported"))))))));
-  paintReadiness(r);
+  paintReadiness(r, now);
   paintProfile(r);
   paintBody(r);
 }
@@ -502,9 +502,9 @@ function loadReadiness() {
     .catch((e) => { setKids($("rp-readiness-body"), h("div", { class: "empty" }, "The readiness card could not be loaded: " + e.message)); });
   return readyBusy;
 }
-function paintReadiness(r) {
+function paintReadiness(r, now) {
   if (!readyMod) { loadReadiness(); return; }
-  const fit = alarmChecks(r);
+  const fit = alarmChecks(r, now);
   readyMod.paint({ host: $("rp-readiness-body"), sum: $("rp-readiness-sum"), chip: $("verdict"), list: readyMod.checks(r, fit), h, badge, label: (s) => (KIT.status ? KIT.status.label(s) : s) });
   const w = fit.find((c) => c.id === "alarms").alarm, held = r.lock && r.lock.holder && r.goal_run != null ? runKeyOfRun(r.goal_run) : null;
   const into = (check, link) => { const li = link && document.querySelector(`#readiness-checks [data-check="${check}"]`); if (li) li.append(link); };

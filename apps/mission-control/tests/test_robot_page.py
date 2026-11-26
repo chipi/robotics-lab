@@ -259,7 +259,24 @@ with sync_playwright() as p:
         check("and the Alarms card lists it, and the joint is named under the Body card", "joint_overload" in late.locator("#rp-alarms-body").inner_text()
               and any("left_knee" in t and "error" in t for t in late.locator("#rp-body-joints li").all_inner_texts()), late.locator("#rp-alarms-body").inner_text())
         fit_is(IDLE, 12000, pg=late)
+        wait(late, "document.querySelectorAll('#readiness-checks li[data-status=error]').length === 0 && document.getElementById('rp-alarms-sum').textContent === 'none'")
         check("must fail: after the window it is back to the baseline", late.locator("#readiness-checks li[data-status=error]").count() == 0 and late.locator("#rp-alarms-sum").inner_text() == "none")
+        # one render reads one clock: with a clock that moves on every read, an alarm at the window's edge is either in both the verdict and the Alarms card
+        # or in neither, whatever read it falls between (CI red on 46bbaad: the verdict was the baseline while the card still counted the alarm)
+        split = late.evaluate("""() => { const real = Date.now, t0 = real(), S = window.__mc.S, keep = S.alarms.slice(), W = 3, out = [];
+          try {
+            for (let j = 0; j < 400; j++) {
+              let k = 0;
+              Date.now = () => t0 + 500 * k++;
+              S.alarms = [{ robot: 'duck-1', goal_run: 1, watch: null, at: t0 / 1000 - W + 0.5 * j + 0.25,
+                            a: { n: 900 + j, t: 1, anomaly: 'joint_overload', severity: 'major', summary: 'at the edge', values: {} } }];
+              window.__mc.renderRobotPage();
+              const counted = document.getElementById('rp-alarms-sum').textContent !== 'none', verdict = document.querySelector('#verdict').dataset.status === 'error';
+              if (counted !== verdict) out.push({ j, counted, verdict });
+            }
+          } finally { Date.now = real; S.alarms = keep; window.__mc.renderRobotPage(); }
+          return out; }""")
+        check("must fail: at the window's edge the verdict and the Alarms card agree, read on one clock", split == [], split[:3])
         late.close()
         # the window stays 3 s: restored to 60 it would take the alarm back into the later tests
 
