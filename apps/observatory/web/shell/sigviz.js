@@ -34,7 +34,7 @@ export function inkOn(color) {
     const c = Number(v) / 255;
     return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.18 ? 'rgb(0 0 0)' : 'rgb(255 255 255)';
+  return cssVar(0.2126 * r + 0.7152 * g + 0.0722 * b > 0.18 ? '--text-on-light' : '--text-on-solid');
 }
 // the categorical ramp, by number (a signal's name) or by order of first appearance (a state)
 export const catVar = (i) => `var(--ramp-cat-${(Math.abs(i) % 8) + 1})`;

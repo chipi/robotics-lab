@@ -2,7 +2,7 @@
 // memory and the drops, the plan in force, the belief pose, the semantic map's objects and the operator's areas (the `site` event) when the run
 // has them. Drag to pan, scroll or the buttons to zoom, click a cell for its value and where it is. Plain canvas; the colours are the page's
 // theme tokens and the semantic map's own (shell/semantic.js).
-import { SEMANTIC, LANDMARK_MIN, cssHex } from './semantic.js';
+import { LANDMARK_MIN } from './semantic.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const LAYERS = [['obstacles', 'Obstacles'], ['drops', 'Drops'], ['plan', 'Plan'], ['objects', 'Objects'], ['areas', 'Areas']];
@@ -64,7 +64,7 @@ export function createMapView(host, { data }) {
     const g = world.grid, off = document.createElement('canvas');
     off.width = g.w; off.height = g.h;
     const c = off.getContext('2d'), im = c.createImageData(g.w, g.h);
-    const free = css('--c-free'), occ = css('--c-occ'), rgb = (hex) => { const v = parseInt(hex.slice(1, 7), 16); return [v >> 16, (v >> 8) & 255, v & 255]; };
+    const free = css('--data-free'), occ = css('--data-occupied'), rgb = (hex) => { const v = parseInt(hex.slice(1, 7), 16); return [v >> 16, (v >> 8) & 255, v & 255]; };
     const F = rgb(free), O = rgb(occ), n = { '?': 0, '.': 0, '#': 0 };
     for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) {
       const ch = g.cells[j * g.w + i], o = ((g.h - 1 - j) * g.w + i) * 4;       // row 0 of the cells is the lowest y: the image's last row
@@ -79,31 +79,31 @@ export function createMapView(host, { data }) {
   function paint() {
     const d = S.d, g = d.world.grid, c = cv.getContext('2d'), dpr = window.devicePixelRatio || 1, L = S.layers;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = css('--bg-viewport'); c.fillRect(0, 0, S.w, S.h);
+    c.fillStyle = css('--surface-1'); c.fillRect(0, 0, S.w, S.h);
     const img = gridImage(d.world);
     c.imageSmoothingEnabled = false;
     c.drawImage(img.off, px(g.origin[0]), py(g.origin[1] + g.h * g.res), g.w * g.res * S.view.k, g.h * g.res * S.view.k);
     const cellPx = g.res * S.view.k;
     if (cellPx >= 7) {                                                    // the cell lines, once a cell is big enough to have edges
-      c.strokeStyle = css('--draw-grid'); c.lineWidth = 1; c.beginPath();
+      c.strokeStyle = css('--scene-grid'); c.lineWidth = 1; c.beginPath();
       for (let i = 0; i <= g.w; i++) { const x = Math.round(px(g.origin[0] + i * g.res)) + 0.5; c.moveTo(x, py(g.origin[1])); c.lineTo(x, py(g.origin[1] + g.h * g.res)); }
       for (let j = 0; j <= g.h; j++) { const y = Math.round(py(g.origin[1] + j * g.res)) + 0.5; c.moveTo(px(g.origin[0]), y); c.lineTo(px(g.origin[0] + g.w * g.res), y); }
       c.stroke();
     }
-    c.strokeStyle = css('--border-strong'); c.lineWidth = 1; c.strokeRect(px(g.origin[0]) + 0.5, py(g.origin[1] + g.h * g.res) + 0.5, g.w * g.res * S.view.k, g.h * g.res * S.view.k);
+    c.strokeStyle = css('--line-strong'); c.lineWidth = 1; c.strokeRect(px(g.origin[0]) + 0.5, py(g.origin[1] + g.h * g.res) + 0.5, g.w * g.res * S.view.k, g.h * g.res * S.view.k);
     const dot = (list, color, r) => { c.fillStyle = color; for (const [x, y] of list || []) { c.beginPath(); c.arc(px(x), py(y), r, 0, 6.2832); c.fill(); } };
     const dotR = Math.max(2, Math.min(cellPx * 0.4, 5));
     if (L.areas) for (const a of d.areas || []) {
-      c.strokeStyle = c.fillStyle = cssHex(SEMANTIC.area); c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath();
+      c.strokeStyle = c.fillStyle = css('--data-area'); c.lineWidth = 2; c.setLineDash([6, 4]); c.beginPath();
       a.polygon.forEach(([x, y], n) => (n ? c.lineTo(px(x), py(y)) : c.moveTo(px(x), py(y))));
       c.closePath(); c.stroke(); c.setLineDash([]);
       const cx = a.polygon.reduce((s, p) => s + p[0], 0) / a.polygon.length, cy = a.polygon.reduce((s, p) => s + p[1], 0) / a.polygon.length;
-      c.font = '12px ' + (css('--ui') || 'sans-serif'); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(a.name, px(cx), py(cy));
+      c.font = '12px ' + (css('--font-ui') || 'sans-serif'); c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(a.name, px(cx), py(cy));
     }
-    if (L.obstacles) dot(d.world.obstacles, css('--c-obst'), dotR);
-    if (L.drops) dot(d.world.drops, css('--c-drop'), dotR);
+    if (L.obstacles) dot(d.world.obstacles, css('--data-obstacle'), dotR);
+    if (L.drops) dot(d.world.drops, css('--data-drop'), dotR);
     if (L.objects) for (const o of d.objects || []) {
-      const hex = cssHex(o.landmark >= LANDMARK_MIN ? SEMANTIC.landmark : SEMANTIC.object);
+      const hex = css(o.landmark >= LANDMARK_MIN ? '--data-landmark' : '--data-object');
       c.strokeStyle = c.fillStyle = hex; c.lineWidth = 2;
       let top = null;
       for (const [x, y, hx, hy, yaw, , z1] of o.parts) {
@@ -112,22 +112,22 @@ export function createMapView(host, { data }) {
         c.globalAlpha = o.confirmed ? 1 : 0.5; c.stroke(); c.globalAlpha = 1;
         if (!top || z1 >= top[2]) top = [x, y, z1];
       }
-      if (o.confirmed && top) { c.font = '11px ' + (css('--ui') || 'sans-serif'); c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(o.kind, px(top[0]), py(top[1]) - 4); }
+      if (o.confirmed && top) { c.font = '11px ' + (css('--font-ui') || 'sans-serif'); c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(o.kind, px(top[0]), py(top[1]) - 4); }
     }
     if (L.plan && d.plan?.path?.length) {
-      c.strokeStyle = css('--c-plan'); c.lineWidth = 2.5; c.lineJoin = 'round'; c.beginPath();
+      c.strokeStyle = css('--data-plan'); c.lineWidth = 2.5; c.lineJoin = 'round'; c.beginPath();
       d.plan.path.forEach(([x, y], n) => (n ? c.lineTo(px(x), py(y)) : c.moveTo(px(x), py(y))));
       c.stroke();
     }
     if (d.belief) {
       const [x, y, yaw] = d.belief, r = Math.max(5, (d.radius || 0.08) * S.view.k);
-      c.fillStyle = css('--c-belief'); c.strokeStyle = css('--draw-sel'); c.lineWidth = 1.5;
+      c.fillStyle = css('--data-belief'); c.strokeStyle = css('--scene-select'); c.lineWidth = 1.5;
       c.beginPath(); c.arc(px(x), py(y), r, 0, 6.2832); c.fill(); c.stroke();
       c.beginPath(); c.moveTo(px(x), py(y)); c.lineTo(px(x) + Math.cos(yaw) * r * 1.8, py(y) - Math.sin(yaw) * r * 1.8); c.stroke();
     }
     if (S.cell) {
       const [i, j] = S.cell;
-      c.strokeStyle = css('--draw-sel'); c.lineWidth = 2;
+      c.strokeStyle = css('--scene-select'); c.lineWidth = 2;
       c.strokeRect(px(g.origin[0] + i * g.res), py(g.origin[1] + (j + 1) * g.res), cellPx, cellPx);
     }
   }

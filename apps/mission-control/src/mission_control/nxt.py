@@ -160,8 +160,11 @@ class NxtGate:
             self._http("POST", "/api/drive", {"left": left, "right": right, "session": conn.session})
             return {"ok": True, "applied": [params.get("vx", 0.0), 0.0, params.get("vyaw", 0.0)]}
         if method == "robot.stop":
-            self._http("POST", "/api/stop", {"client": conn.client})
-            return {"ok": True}
+            try:
+                self._http("POST", "/api/stop", {"client": conn.client})
+            except RuntimeError as exc:         # nxt-web took the STOP (its lock ended) and its brick did not answer: STOP is never refused
+                return {"ok": True, "confirmed": False, "errors": [str(exc)]}
+            return {"ok": True, "confirmed": True, "errors": []}
         if method == "robot.health":
             return self.adapter.health()
         raise GateError("unknown_method", f"the NXT gate has no method {method}")

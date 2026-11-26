@@ -16,11 +16,11 @@ const rgb = (hex) => { const n = parseInt(hex.replace('#', ''), 16); return [(n 
 // the page's theme tokens (shell palette, CSS hex strings) -> the colours the layers are built with
 export function setPalette(p) {
   const c = (k) => rgb(p[k]);
-  Object.assign(C, { belief: c('c-belief'), truth: c('c-truth'), plan: c('c-plan'), obst: c('c-obst'), haz: c('c-drop'), x: c('c-x'), y: c('c-y'), z: c('c-z'),
-    box: c('c-box'), boxFill: [...rgb(p['box-fill'].slice(0, 7)), parseInt(p['box-fill'].slice(7, 9) || 'ff', 16)], grid: c('draw-grid'), text: c('draw-label'), rel: c('draw-rel'), sel: c('draw-sel'), bg: c('bg-viewport'),
-    error: c('error'), warn: c('warn'), dim: c('text-dim') });
-  Object.assign(KIND_COL, { f: [...c('c-floor'), 255], o: [...c('c-ob'), 255], v: [...c('c-over'), 255], b: [...c('c-drop'), 255] });
-  Object.assign(CELL_COL, { occ: [...c('c-occ'), 255], free: [...c('c-free'), 255] });
+  Object.assign(C, { belief: c('data-belief'), truth: c('data-truth'), plan: c('data-plan'), obst: c('data-obstacle'), haz: c('data-drop'), x: c('axis-x'), y: c('axis-y'), z: c('axis-z'),
+    box: c('data-box'), boxFill: [...rgb(p['scene-box-fill'].slice(0, 7)), parseInt(p['scene-box-fill'].slice(7, 9) || 'ff', 16)], grid: c('scene-grid'), text: c('scene-label'), rel: c('scene-rel'), sel: c('scene-select'), bg: c('surface-1'),
+    error: c('status-error'), warn: c('status-warn'), dim: c('text-2') });
+  Object.assign(KIND_COL, { f: [...c('data-floor'), 255], o: [...c('data-depth-obstacle'), 255], v: [...c('data-depth-overhead'), 255], b: [...c('data-drop'), 255] });
+  Object.assign(CELL_COL, { occ: [...c('data-occupied'), 255], free: [...c('data-free'), 255] });
   gridCache.clear();
 }
 const P = { depthTest: false };

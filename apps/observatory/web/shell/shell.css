@@ -533,26 +533,11 @@ mark { background: color-mix(in srgb, var(--status-warn) 30%, transparent); colo
   .app.lay-no-left .view { grid-column: 2; } .app.lay-no-left .right { grid-column: 3; }
 }
 .laymenu { position: fixed; z-index: var(--z-popover); overflow: auto; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-3); box-shadow: var(--elev-2); padding: var(--sp-3); }
-.layhead { display: flex; align-items: center; justify-content: space-between; }
-.layhead h3 { margin: 0; font-size: var(--fs-3); }
-.laygroup { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-1); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
-.layrow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-1) var(--sp-2); margin-bottom: var(--sp-2); }
-.layrow input[type="range"] { grid-column: 1 / -1; width: 100%; padding: 0; border: 0; background: transparent; }
-.layline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.layline + .layline { margin-top: var(--sp-2); }
-.layline.sub { padding-left: var(--sp-5); }
-.laymenu label.inline { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.laymenu label.inline.dim { margin-left: auto; }
-.laymenu select { min-width: 0; flex: 1; }
-.laymenu input[type="text"], .laymenu input:not([type]) { min-width: 0; flex: 1; }
-.laymenu textarea { width: 100%; padding: var(--sp-1) var(--sp-2); font: var(--fs-1) var(--font-mono); resize: vertical; }
-.laymenu .hint { min-height: 18px; margin-top: var(--sp-2); }
 .split:focus-visible { background: var(--accent); }
 .laymenu .btn { display: inline-flex; align-items: center; height: var(--ctl-h); padding: 0 var(--sp-3); border: 1px solid var(--control-border); border-radius: var(--radius-2); background: var(--surface-field); white-space: nowrap; }
 .laymenu .btn:hover:not(:disabled) { border-color: var(--line-hover); background: var(--surface-hover); }
 .laymenu .btn.ghost { background: transparent; }
 .laymenu .btn:disabled { opacity: .5; }
-.laymenu input:not([type]), .laymenu select { height: var(--ctl-h); }
 @media (max-width: 960px) { .laysizes { display: none; } }
 
 /* what a palette verb says once the palette has closed (verbs.js); a message, never a target */

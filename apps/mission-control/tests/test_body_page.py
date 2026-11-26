@@ -103,7 +103,7 @@ check("must fail: a robot whose file holds the robot itself has no description: 
 check("an unknown robot is a 404, and a mesh of a robot with no description is too", get("/api/v1/robots/nope/description")[0] == 404 and get("/api/v1/robots/nope/meshes/x.stl")[0] == 404
       and get("/api/v1/robots/fake-1/meshes/trunk.stl")[0] == 404)
 st, hd, raw = get("/lib/tokens.css")
-check("must fail: the shared tokens are served at /lib/tokens.css", st == 200 and hd["Content-Type"].startswith("text/css") and b"--bg-app" in raw, st)
+check("must fail: the shared tokens are served at /lib/tokens.css", st == 200 and hd["Content-Type"].startswith("text/css") and b"--surface-0" in raw, st)
 st, hd, raw = get("/lib/vendor/three.module.js")
 check("must fail: the one three.js is served at /lib/vendor/three.module.js as JavaScript", st == 200 and "javascript" in hd["Content-Type"], (st, hd.get("Content-Type")))
 check("must fail: the body component is served at /lib/body/body.js", get("/lib/body/body.js")[0] == 200 and get("/lib/body/robot.js")[0] == 200)
@@ -175,7 +175,7 @@ with sync_playwright() as p:
         check("must fail: and it follows the next state", abs(quat(body(), "thigh")[2] - math.sin(-0.2)) < 1e-4, body().get("links"))
 
         own = {k: J(b0)[k].get("color") for k in ("left_hip_pitch", "left_knee")}
-        err, warn = css_hex("error"), css_hex("warn")
+        err, warn = css_hex("status-error"), css_hex("status-warn")
         check("must fail: with no alarm every joint is ok and keeps its own colour", all(J(b0).get(k, {}).get("state") == "ok" for k in own) and len({err, warn, *own.values()}) == 4, (own, err, warn))
 
         def anomaly(robot, sev, name, joint, n=1):
@@ -215,12 +215,12 @@ with sync_playwright() as p:
         anomaly("duck-1", "major", "motor_hot", "left_knee", 6)
         wait("window.__mc.body?.state()?.joints?.left_knee?.state === 'error'")
         page.emulate_media(color_scheme="light")
-        wait("(arg) => window.__mc.body?.state()?.joints?.left_knee?.color === arg", 8000, css_hex("error"))
-        check("must fail: in the light theme the error colour is the light token", css_hex("error") != err and J(body())["left_knee"].get("color") == css_hex("error"), (css_hex("error"), err))
+        wait("(arg) => window.__mc.body?.state()?.joints?.left_knee?.color === arg", 8000, css_hex("status-error"))
+        check("must fail: in the light theme the error colour is the light token", css_hex("status-error") != err and J(body())["left_knee"].get("color") == css_hex("status-error"), (css_hex("status-error"), err))
         page.screenshot(path=str(SHOTS / "mc-body-phone-light.png"), full_page=True)
         page.emulate_media(color_scheme="dark")
         page.set_viewport_size({"width": 1500, "height": 900})
-        wait("(arg) => window.__mc.body?.state()?.joints?.left_knee?.color === arg", 8000, css_hex("error"))
+        wait("(arg) => window.__mc.body?.state()?.joints?.left_knee?.color === arg", 8000, css_hex("status-error"))
         page.wait_for_timeout(300)
         box = page.evaluate("(() => { const r = document.querySelector('#rp-body canvas')?.getBoundingClientRect(); return r ? [r.width, r.height] : [0, 0]; })()")
         check("desktop: the canvas fills its section and the page does not scroll sideways", box[0] > 300 and box[1] > 200 and page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), box)

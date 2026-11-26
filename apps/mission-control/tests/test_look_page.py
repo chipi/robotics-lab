@@ -1049,9 +1049,10 @@ with sync_playwright() as p:
     # --- the one predicate and the one typing guard -------------------------------------------------------------------------------------------------
     app_js = (WEB / "app.js").read_text()
     verbs_js = (WEB / "palette-verbs.js").read_text()
-    lib_typing = re.search(r"const TYPING = ('[^\n]*');", (Path(__file__).resolve().parents[3] / "libs" / "web" / "palette" / "palette.js").read_text())
-    app_typing = re.search(r"const TYPING = ('[^\n]*');", app_js)
-    check("the page's Ctrl+K typing guard is the palette lib's selector, character for character", lib_typing and app_typing and lib_typing.group(1) == app_typing.group(1), (lib_typing and lib_typing.group(1), app_typing and app_typing.group(1)))
+    lib_dir = Path(__file__).resolve().parents[3] / "libs" / "web"
+    lazy_typing = re.findall(r"const TYPING = ('[^\n]*');", (lib_dir / "lazy.js").read_text())
+    check("the Ctrl+K typing guard is defined once, in /lib/lazy.js; the palette lib imports it and the page defines none",
+          len(lazy_typing) == 1 and "import { TYPING } from '../lazy.js'" in (lib_dir / "palette" / "palette.js").read_text() and "const TYPING" not in app_js and "const TYPING" not in (lib_dir / "palette" / "palette.js").read_text(), lazy_typing)
     check("'is this page behind the Observatory' is asked in one place: the only /control path literals in the page's code are behindObservatory's own", len(re.findall(r'"/control/?"', app_js)) == 2
           and re.search(r'const behindObservatory = .*"/control".*"/control/"', app_js) is not None and "/control" not in verbs_js, re.findall(r".*/control.*", app_js))
 

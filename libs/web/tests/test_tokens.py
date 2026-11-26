@@ -1,5 +1,5 @@
 """The shared web library (RFC-0024 step 1, tokens v2 of ADR-0021): the design tokens are one file and no app declares them again, the
-themes and the density and motion pairs have the same keys, the old names are aliases that resolve to what they did, the colours meet
+themes and the density and motion pairs have the same keys, no page or script uses a token name of before tokens v2, there is no literal colour outside the token file, the colours meet
 their contrast and colour-blind limits, every page loads the file, and there is one copy of three.js. Standard library only.
 Run: python3 libs/web/tests/test_tokens.py"""
 
@@ -12,7 +12,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from colorlib import DEUTAN, PROTAN, contrast, delta_e, oklab, parse, simulate  # noqa: E402
-from legacy_palette import OLD  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 LIB = ROOT / "libs" / "web"
@@ -61,7 +60,6 @@ INVARIANT = re.compile(r"--(font-(ui|mono|num)|fs-[1-5]|lh-(tight|body)|sp-[1-8]
                        r"|dur-(fast|base|slow)|ease|ctl-h-touch|tap-min|stop-h)")
 DENSITY = {"--ctl-h", "--fs-base", "--pad"}
 MOTION = {"--dur-fast", "--dur-base", "--dur-slow", "--ease"}
-aliases = {k for k, v in first.items() if ALIAS.fullmatch(v) and k in OLD["dark"]}
 invariants = {k for k in first if INVARIANT.fullmatch(k)}
 
 # the frozen contract (docs/wip/LOOK-AND-FEEL-PLAN.md, "Frozen contracts > Tokens"); neutral is the ninth status of status.js, offline the tenth (review round 1)
@@ -70,15 +68,14 @@ THEMED = (
     ["surface-" + n for n in ("0", "1", "2", "3", "field", "hover", "press", "selected", "section", "section-hover", "tip")]
     + ["line-" + n for n in ("subtle", "strong", "hover", "focus")] + ["line"]
     + [f"hairline-{i}" for i in range(1, 6)] + ["veil-1", "veil-2", "veil-scrim", "elev-shadow"]
-    + ["text-1", "text-2", "text-3", "text-on-solid"]
+    + ["text-1", "text-2", "text-3", "text-on-solid", "text-on-light"]
     + ["accent", "accent-soft", "accent-ring", "accent-text", "accent-on", "accent-hover", "danger-solid"]
     + [f"status-{s}{x}" for s in STATUSES for x in ("", "-soft", "-on")]
-    + ["data-" + n for n in ("belief", "truth", "plan", "obstacle", "drop", "floor", "depth-obstacle", "depth-overhead", "box", "occupied", "free", "gap")]
+    + ["data-" + n for n in ("belief", "truth", "plan", "obstacle", "drop", "floor", "depth-obstacle", "depth-overhead", "box", "occupied", "free", "gap", "object", "landmark", "seen", "wedge", "area")]
     + ["axis-x", "axis-y", "axis-z"] + ["hud-" + n for n in ("bg", "line", "text", "key", "value", "warn")]
     + ["scene-" + n for n in ("bg", "floor", "grid", "grid-major", "label", "rel", "select", "box-fill", "gap-hatch", "sky", "ground", "sun", "shadow", "sky-k", "sun-k")]
     + [f"ramp-seq-{i}" for i in range(1, 10)] + [f"ramp-div-{i}" for i in range(1, 10)] + [f"ramp-cat-{i}" for i in range(1, 9)]
     + ["control-track", "control-knob", "control-border"]
-    + ["legacy-text-faint", "legacy-check-border", "legacy-range-knob"]
 )
 THEMED = ["--" + n for n in THEMED]
 
@@ -86,12 +83,12 @@ THEMED = ["--" + n for n in THEMED]
 check("the tokens have a dark set, a light set and the light set again for a page with no theme chosen", bool(first) and bool(light) and bool(media))
 check("the light set in the media query is the light set (same names, same values)", media == light, sorted(set(media.items()) ^ set(light.items()))[:4])
 check("every token the light set changes the dark set has", set(light) <= set(first), sorted(set(light) - set(first)))
-dark_themed = set(first) - aliases - invariants - DENSITY
-check("dark and light have the same keys (the first block also holds the aliases, the invariants and the density default)",
+dark_themed = set(first) - invariants - DENSITY
+check("dark and light have the same keys (the first block also holds the invariants and the density default)",
       dark_themed == set(light), {"dark_only": sorted(dark_themed - set(light))[:6], "light_only": sorted(set(light) - dark_themed)[:6]})
 check("every token of the contract is in dark and light", all(t in dark_themed and t in light for t in THEMED), [t for t in THEMED if t not in light][:8])
-check("the invariants and the aliases are in the first block only (not in light, the media block, or a density block)",
-      not ((invariants | aliases) & (set(light) | set(media) | set(compact) | set(regular))), sorted((invariants | aliases) & (set(light) | set(compact) | set(regular))))
+check("the invariants are in the first block only (not in light, the media block, or a density block)",
+      not (invariants & (set(light) | set(media) | set(compact) | set(regular))), sorted(invariants & (set(light) | set(compact) | set(regular))))
 check("the invariants of the contract are all declared (fonts, type, space, radius, elevation, z, motion, controls)",
       len(invariants) >= 3 + 5 + 2 + 8 + 4 + 4 + 7 + 3 + 3 and {"--z-stop", "--dur-fast", "--ease", "--stop-h", "--tap-min", "--ctl-h-touch", "--radius-pill"} <= invariants, len(invariants))
 check("the density blocks (compact, regular) have the same keys, and the first block has the default", compact and set(compact) == set(regular) == DENSITY and DENSITY <= set(first), [sorted(compact), sorted(regular)])
@@ -110,36 +107,13 @@ zs = [int(first[f"--z-{n}"]) for n in ("base", "sticky", "popover", "drawer", "p
 check("the z scale rises in the contract's order", zs == sorted(zs) and len(set(zs)) == 7, zs)
 
 
-# ---- the resolved values of a theme, and the aliases ----
-def resolve(theme: str) -> dict:
-    env = {**first, **(light if theme == "light" else {})}
-    out, bad = {}, []
-
-    def val(k, seen=()):
-        v = env[k]
-        m = ALIAS.fullmatch(v)
-        if not m:
-            return v
-        if m.group(1) in seen or m.group(1) not in env:
-            bad.append(k)
-            return v
-        return val(m.group(1), seen + (k,))
-    for k in env:
-        out[k] = val(k)
-    out["__bad__"] = bad
-    return out
-
-
-R = {"dark": resolve("dark"), "light": resolve("light")}
-check("every alias resolves (its target exists, no cycle)", not (R["dark"]["__bad__"] or R["light"]["__bad__"]), R["dark"]["__bad__"] + R["light"]["__bad__"])
-check("every old name is still declared (as an alias, or the values themselves of the contract's unchanged names)", all(k in first for k in OLD["dark"]), [k for k in OLD["dark"] if k not in first])
-# changes made on purpose after tokens v2, each from a review round (docs/wip/LOOK-AND-FEEL-PLAN.md, "Decisions"); everything else stays as it was
-AMENDED = {"dark": {"--draw-grid": "#3a3d45"},           # round 2: the dark floor grid was hard to see; the 2D views share the token
-           "light": {}}
-for th in ("dark", "light"):
-    diff = {k: (v, R[th].get(k)) for k, v in {**OLD[th], **AMENDED[th]}.items() if re.sub(r"\s+", "", str(R[th].get(k)).lower()) != re.sub(r"\s+", "", v.lower())}
-    check(f"{th}: every old name resolves to the value it had before tokens v2 (the pages look the same)", not diff, dict(list(diff.items())[:4]))
-check("an alias points at a token that exists in the light set too (or an invariant)", all(ALIAS.fullmatch(first[a]).group(1) in light or ALIAS.fullmatch(first[a]).group(1) in invariants for a in aliases))
+# ---- the resolved values of a theme (the first block is the dark set; a token is never another token's alias) ----
+R = {"dark": dict(first), "light": {**first, **light}}
+check("no token is an alias of another (a value is a value; the invariants hold var() only inside a longer value)", not [k for k, v in first.items() if ALIAS.fullmatch(v)], [k for k, v in first.items() if ALIAS.fullmatch(v)])
+# a value pinned on purpose: round 2 made the dark floor grid brighter, and the 2D views read the same token
+check("the dark grid is the round-2 value", R["dark"]["--scene-grid"] == "#3a3d45", R["dark"]["--scene-grid"])
+check("the two inks for a canvas cell are white and black in both themes (the pin texture and the heat-map text rely on it)",
+      all(R[t]["--text-on-solid"] == "#ffffff" and R[t]["--text-on-light"] == "#000000" for t in R), [(R[t]["--text-on-solid"], R[t]["--text-on-light"]) for t in R])
 
 
 def rgb_of(theme, name):
@@ -248,18 +222,48 @@ for sheet in SHEETS:
         redeclared[str(sheet.relative_to(ROOT))] = sorted(own)
 check("no app stylesheet declares a token again (the values live in libs/web/tokens.css only)", not redeclared, redeclared)
 
-# Today's hex colours in the two app stylesheets; the restyle units (U10, U19) shrink these and U26 takes them to zero. A new hex in any app stylesheet fails.
-HEX_ALLOWED = {"apps/observatory/web/shell/shell.css": 0, "apps/mission-control/src/mission_control/web/style.css": 0}
-HEX = re.compile(r"(?<![\w-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])")
+# No literal colour outside tokens.css (U26 took the allowlist to zero): a #hex, a 0xRRGGBB, or an rgb()/rgba()/hsl() with a number in it, in the
+# stylesheets, scripts and pages of both apps and of libs/web. A colour a script needs is read from a token (getComputedStyle). Not scanned:
+# the vendored libraries, the font files, the standalone mockup/ and proto/ pages (they declare their own variables and load no token file),
+# and the tests. The cap per file is 0 for every file; a file may not be added here.
+HEX_ALLOWED: dict = {}
+WEB_DIRS = [ROOT / "apps" / "mission-control" / "src" / "mission_control" / "web", ROOT / "apps" / "observatory" / "web", LIB]
+SKIP_DIRS = {"vendor", "fonts", "mockup", "proto", "tests", "__pycache__"}
+CODE = [p for base in WEB_DIRS for p in sorted(base.rglob("*"))
+        if p.is_file() and p.suffix in (".css", ".js", ".html") and not (set(p.relative_to(base).parts[:-1]) & SKIP_DIRS) and p != LIB / "tokens.css"]
+LITERAL = re.compile(r"(?<![\w&-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])|\b0x[0-9a-fA-F]{6}\b|\b(?:rgba?|hsla?)\(\s*[\d.]")
 
 
-def hexes(sheet: Path) -> int:
-    return sum(len(HEX.findall(body)) for body in re.findall(r"\{([^{}]*)\}", strip(sheet.read_text())))
+def code_only(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/|<!--.*?-->", "", text, flags=re.S)
+    return re.sub(r"(?m)(^|\s)//[^\n]*", r"\1", text)
 
 
-counts = {str(s.relative_to(ROOT)): hexes(s) for s in SHEETS}
-over = {k: (v, HEX_ALLOWED.get(k, 0)) for k, v in counts.items() if v > HEX_ALLOWED.get(k, 0)}
-check("no hex colour in an app stylesheet beyond today's allowlist (counts only go down)", not over, over)
+literals = {}
+for f in CODE:
+    found = LITERAL.findall(code_only(f.read_text()))
+    if len(found) > HEX_ALLOWED.get(str(f.relative_to(ROOT)), 0):
+        literals[str(f.relative_to(ROOT))] = found[:6]
+check("no literal colour (hex, 0x, rgb(), hsl()) in the apps' web code or libs/web outside tokens.css; the allowlist is empty", not literals and not HEX_ALLOWED, literals)
+check("the colour check scans the pages it should (both apps' scripts and stylesheets, libs/web)", len(CODE) >= 40 and any(p.name == "shell.js" for p in CODE) and any(p.name == "app.js" for p in CODE) and any(p.name == "stage.js" for p in CODE), len(CODE))
+
+# The names tokens v2 replaced (U26 removed the aliases): none may be used in the same files, as var(--old), as '--old' or, for the longer ones, as a bare 'old'
+LEGACY = ("bg-app bg-viewport bg-panel bg-header bg-field bg-hover bg-selected bg-shead bg-shead-hover bg-press border border-strong border-hover text text-dim text-faint "
+          "on-accent ok warn error hair hair-2 hair-3 hair-4 hair-5 veil shadow scrim tip-bg range-bar range-knob check-border box-fill gap-hatch ui mono "
+          "c-belief c-truth c-plan c-obst c-drop c-floor c-ob c-over c-box c-occ c-free c-x c-y c-z c-gap draw-grid draw-label draw-rel draw-sel").split()
+OLD_VAR = re.compile(r"(?<![\w-])--(" + "|".join(sorted(map(re.escape, LEGACY), key=len, reverse=True)) + r")(?![\w-])")
+# a bare name is only checked where it cannot be a word or another token's tail (the stage reads 'box-fill' as --scene-box-fill)
+BARE = [n for n in LEGACY if re.fullmatch(r"(bg-\w+(-hover)?|border-\w+|text-(dim|faint)|on-accent|tip-bg|range-\w+|check-border|c-\w+|draw-\w+)", n)]
+OLD_BARE = re.compile(r"""(?<=['"`])(""" + "|".join(sorted(map(re.escape, BARE), key=len, reverse=True)) + r""")(?=['"`])""")
+legacy_uses = {}
+for f in CODE:
+    text = code_only(f.read_text())
+    hits = [m.group(0) for m in OLD_VAR.finditer(text)] + OLD_BARE.findall(text)
+    if hits:
+        legacy_uses[str(f.relative_to(ROOT))] = hits[:6]
+check("no page or script uses a token name from before tokens v2 (--bg-*, --border, --text-dim, --c-*, --draw-*, --ok/--warn/--error ...)", not legacy_uses, legacy_uses)
+declared = set(first) | set(light)
+check("none of those names is declared in tokens.css either", not [n for n in LEGACY if "--" + n in declared], [n for n in LEGACY if "--" + n in declared])
 
 PAGES = [ROOT / "apps" / "mission-control" / "src" / "mission_control" / "web" / "index.html", *(ROOT / "apps" / "observatory" / "web" / p for p in ("three/index.html", "three/watch.html", "deck/index.html"))]
 check("every page that uses the tokens loads them from /lib/tokens.css, before its own stylesheet",

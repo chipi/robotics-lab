@@ -5,6 +5,10 @@ and calls `tick` on a timer. Stdlib only.
 The lease belongs to the connection that acquired it. It ends on release, expiry (silence), a STOP,
 a takeover or the connection closing; every end stops the robot first (RFC-0017 §3.4).
 
+STOP is never refused and answers `{ok: true, confirmed, errors}`: `ok` means the STOP was
+taken and the lease ended; `confirmed` means the robot answered robot.stop; `errors` names the
+calls that failed.
+
 The gate protocol has a number (RFC-0018 §5.3), `PROTOCOL`: it is `protocol` in `gate.who`, in every other `gate.*` reply, in a
 refusal's data and in a transport's answer to `hello`. A robot's own replies (`robot.*`) are the robot's and carry none. A client
 reads it with `check_protocol`: a missing number is 0 (a gate before the number), accepted with one warning; a newer one is refused."""
@@ -230,9 +234,8 @@ class Gate:
         self._log({"event": "stop", "client": conn.client})
         holder = self._holder
         if holder is not None:
-            self._end(f"stopped_by {conn.client}", holder, f"stopped by {conn.client}", event="lease_ended",
-                      by=conn.client)
-            return {"ok": True}
+            return self._end(f"stopped_by {conn.client}", holder, f"stopped by {conn.client}", event="lease_ended",
+                             by=conn.client)
         return self._gate_stop()
 
     def _require_lease(self, conn: _Conn, method: str) -> None:
@@ -253,15 +256,16 @@ class Gate:
         conn.ended = None
         self._log({"event": "acquired", "client": conn.client, "lease_id": self._lease_id})
 
-    def _end(self, reason: str, conn: _Conn, text: str, *, notify: bool = True, event: str | None = None, **extra) -> None:
-        """Every end of a lease: stop the robot first, then free it, record it, tell the holder."""
-        self._gate_stop()
+    def _end(self, reason: str, conn: _Conn, text: str, *, notify: bool = True, event: str | None = None, **extra) -> dict:
+        """Every end of a lease: stop the robot first, then free it, record it, tell the holder. Returns the stop's reply."""
+        stop = self._gate_stop()
         self._holder = None
         conn.ended = reason
         self._log({"event": event or reason.split()[0], "client": conn.client, "lease_id": self._lease_id,
                    "why": text, **extra})
         if notify:
             conn.notify("lease_lost", {"lease_id": self._lease_id, "reason": reason})
+        return stop
 
     # --- the other doors (RFC-0017 §3.8, RFC-0002 §3.6) --------------------------------------------
 
@@ -310,19 +314,23 @@ class Gate:
         for conn in list(self._conns.values()):
             conn.notify("someone_else_drives", sign)
 
-    def _gate_stop(self):
+    def _gate_stop(self) -> dict:
         """robot.stop, then an explicit zero move: robotd keeps its last request after the deadman
         fired and mapd would never see a stop (RFC-0017 §3.4). A failing robot must not keep the
-        lease alive, so each call is tried and a failure is logged."""
-        result = None
+        lease alive, so each call is tried and a failure is logged. The reply says what the robot
+        did: `ok` is the gate's (the STOP was taken, the lease is ended), `confirmed` is whether the
+        robot answered robot.stop, `errors` the calls that failed."""
+        confirmed, errors = False, []
         self._stopped_at = self._clock()
         for method, params in ((STOP_METHOD, {}), ("robot.move", ZERO_MOVE)):
             try:
-                reply = self._robot(method, params)
-                result = reply if method == STOP_METHOD else result
+                self._robot(method, params)
+                confirmed = confirmed or method == STOP_METHOD
             except Exception as exc:
-                self._log({"event": "stop_failed", "method": method, "error": f"{type(exc).__name__}: {exc}"})
-        return result if result is not None else {}
+                error = f"{type(exc).__name__}: {exc}"
+                errors.append(f"{method}: {error}")
+                self._log({"event": "stop_failed", "method": method, "error": error})
+        return {"ok": True, "confirmed": confirmed, "errors": errors}
 
     def _lease_reply(self) -> dict:
         return {"lease_id": self._lease_id, "expires_in_s": self.lease_s}

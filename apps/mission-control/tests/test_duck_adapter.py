@@ -49,6 +49,7 @@ class StubRobotd:
         self.calls: list = []
         self.x = self.yaw = 0.0
         self.vx = self.vyaw = 0.0
+        self.stop_error = False              # robot.stop answers with an error (the zero move still works)
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(path))
         self.server.listen(8)
@@ -96,6 +97,8 @@ class StubRobotd:
             if m == "robot.move":
                 self.vx, self.vyaw = p.get("vx", 0.0), p.get("vyaw", 0.0)
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"ok": True}})
+            elif m == "robot.stop" and self.stop_error:
+                send({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32000, "message": "stop failed"}})
             elif m == "robot.stop":
                 self.vx = self.vyaw = 0.0
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"ok": True}})
@@ -268,6 +271,21 @@ check("STOP: confirmed, robot.stop then a zero move upstream", stop["confirmed"]
 r = call("POST", "/robots/duck-sim/drive", {"vx": 0.2, "session": a["session"]})
 check("it latched: the holder's next drive is refused with the gate's reason", r["error"]["code"] == "lease_ended" and "stopped_by page" in r["error"]["message"], r)
 check("the robot is free", robot()["lock"]["holder"] is None)
+# through the real remote path (RemoteGate -> the gate proxy -> robotd), `confirmed` is whether robotd answered robot.stop: a wire
+# call that returned is not that
+events = lambda: [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "stop"]      # noqa: E731
+robotd.stop_error = True
+robotd.calls.clear()
+stop = call("POST", "/robots/duck-sim/stop", {"client": "page"})["stop"]
+check("STOP when robotd fails robot.stop: accepted, confirmed False, on the reply and the bus, and the zero move still sent",
+      stop["confirmed"] is False and events()[-1]["confirmed"] is False
+      and ("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}) in robotd.calls, (stop, events()[-1:], robotd.calls))
+c = call("POST", "/robots/duck-sim/lock", {"client": "script"})["lock"]
+stop = call("POST", "/robots/duck-sim/stop", {"client": "page"})["stop"]
+check("... and with a holder too: the lease ended, confirmed False", stop["confirmed"] is False and robot()["lock"]["holder"] is None, stop)
+robotd.stop_error = False
+stop = call("POST", "/robots/duck-sim/stop", {"client": "page"})["stop"]
+check("STOP when robotd answers again: confirmed True, on the bus too", stop["confirmed"] is True and events()[-1]["confirmed"] is True, (stop, events()[-1:]))
 b = call("POST", "/robots/duck-sim/lock", {"client": "script"})["lock"]
 tk = call("POST", "/robots/duck-sim/lock/takeover", {"client": "operator-laptop"})
 check("a takeover is the gate's: refused to a name on no list, done for one on it",

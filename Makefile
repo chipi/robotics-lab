@@ -255,7 +255,7 @@ test-observatory-image: ## the Observatory's image: build it, run it with the da
 	    && curl -fs -m 5 http://127.0.0.1:$$port/api/v1/runs/duck/apartment/explore9 | grep -q '"ticks":116' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/three/ | grep -qi '<html' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/web/shell/shell.js >/dev/null \
-	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/tokens.css | grep -q -- '--warn' \
+	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/tokens.css | grep -q -- '--status-warn' \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/vendor/three.module.js >/dev/null \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/body/body.js >/dev/null \
 	    && curl -fs -m 5 http://127.0.0.1:$$port/lib/fonts/fonts.css | grep -q 'woff2' \

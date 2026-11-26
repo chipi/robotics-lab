@@ -28,7 +28,7 @@ const S = {
 const KIT = {};
 function loadKit() {
   const one = (key, url) => import(url).then((m) => { KIT[key] = m; }).catch((e) => { KIT[key + "Error"] = e.message; });
-  return Promise.all([one("status", "/lib/status.js"), one("brand", "/lib/brand.js"), one("motion", "/lib/motion.js")]).then(paintKit);
+  return Promise.all([one("status", "/lib/status.js"), one("brand", "/lib/brand.js"), one("motion", "/lib/motion.js"), one("lazy", "/lib/lazy.js")]).then(() => { if (KIT.lazy) wirePalette(); paintKit(); });
 }
 
 // A freshness check with the signature of libs/web/time/freshness.js (U6, built at the same time): replace this with an import of it.
@@ -554,37 +554,22 @@ function momentLink(runKey, t, fallback = null) {
 }
 
 // The command palette (palette-verbs.js, with libs/web/palette): loaded the first time it is asked for, by Ctrl/Cmd+K or the top-bar button, never by the
-// overview. Once loaded it binds its own Ctrl/Cmd+K. Its verbs press STOP's own buttons for STOP; none starts a goal or takes a robot.
-let palette = null, paletteBusy = null;
-function loadPalette() {
-  paletteBusy ||= import("./palette-verbs.js").then((m) => {
-    palette = m.mount({
+// overview; /lib/lazy.js (small, loaded with the kit) does the asking and holds the typing guard. Its verbs press STOP's own buttons for STOP; none starts a
+// goal or takes a robot.
+function wirePalette() {
+  KIT.lazy.lazyOpen({
+    button: $("palette-btn"), onError: (m) => toast(m, true),
+    before: () => (route() ? loadLayout() : undefined),           // the panel and layout verbs need it, and a robot page loads it anyway
+    load: () => import("./palette-verbs.js").then((m) => m.mount({
       robots: () => S.robots, route, tabs: TABS, hashOf, stopRobotId: () => (robot() || {}).id ?? null,
       layout: () => (layoutMod ? layoutMod.act : null),
       observatoryHref: () => (KIT.brand ? KIT.brand.APPS.observatory.href : "/"), behindObservatory,
       go: (hash) => { location.hash = hash; }, visit: (href) => location.assign(href),
       stop: () => $("stop-robot").click(), stopAll: () => $("stop-all").click(),
       theme: () => $("theme").click(), themeNow: effectiveTheme, toast,
-    });
-  }).catch((e) => { paletteBusy = null; throw e; });
-  return paletteBusy;
+    })),
+  });
 }
-async function openPalette() {
-  try {
-    if (route()) await loadLayout();           // the panel and layout verbs need it, and a robot page loads it anyway
-    await loadPalette();
-    palette.open();
-  } catch (e) { toast("The command palette could not be loaded: " + e.message, true); }
-}
-$("palette-btn").addEventListener("click", openPalette);
-// libs/web/palette/palette.js's TYPING, verbatim: this guard runs before that module is loaded, so it cannot import it (a test keeps the two equal)
-const TYPING = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
-document.addEventListener("keydown", (ev) => {
-  if (palette || !(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey || ev.key.toLowerCase() !== "k") return;
-  if (ev.target instanceof Element && ev.target.closest(TYPING)) return;
-  ev.preventDefault();
-  openPalette();
-});
 
 function setOpen(head, open) {
   head.setAttribute("aria-expanded", String(open));
@@ -944,11 +929,11 @@ function draw() {
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const css = getComputedStyle(document.documentElement), col = (n) => css.getPropertyValue(n).trim();
-  ctx.fillStyle = col("--bg-viewport"); ctx.fillRect(0, 0, w, hh);
+  ctx.fillStyle = col("--surface-1"); ctx.fillRect(0, 0, w, hh);
   V = computeView(w, hh);
 
   // a 1 m grid
-  ctx.strokeStyle = col("--draw-grid"); ctx.lineWidth = 1; ctx.beginPath();
+  ctx.strokeStyle = col("--scene-grid"); ctx.lineWidth = 1; ctx.beginPath();
   const [wx0, wy1] = toWorld(0, 0), [wx1, wy0] = toWorld(w, hh);
   for (let x = Math.ceil(wx0); x <= wx1; x++) { const [sx] = toScreen(x, 0); ctx.moveTo(sx, 0); ctx.lineTo(sx, hh); }
   for (let y = Math.ceil(wy0); y <= wy1; y++) { const [, sy] = toScreen(0, y); ctx.moveTo(0, sy); ctx.lineTo(w, sy); }
@@ -959,20 +944,20 @@ function draw() {
     for (let j = 0; j < m.height; j++) for (let i = 0; i < m.width; i++) {
       const v = m.data[j * m.width + i];
       if (v < 0) continue;
-      ctx.fillStyle = v >= 50 ? col("--c-occ") : col("--c-free");
+      ctx.fillStyle = v >= 50 ? col("--data-occupied") : col("--data-free");
       const [sx, sy] = toScreen(m.origin[0] + i * res, m.origin[1] + (j + 1) * res);
       ctx.fillRect(sx, sy, res * V.scale + 0.5, res * V.scale + 0.5);
     }
   }
 
-  ctx.font = "11px " + col("--ui"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "11px " + col("--font-ui"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
   if ($("layer-areas").checked) {
     for (const a of S.areas) {
       poly(ctx, a.outline); ctx.fillStyle = col("--accent-soft"); ctx.fill();
       ctx.strokeStyle = col("--accent"); ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
       const c = a.outline.reduce((s, p) => [s[0] + p[0] / a.outline.length, s[1] + p[1] / a.outline.length], [0, 0]);
       const [cx, cy] = toScreen(c[0], c[1]);
-      ctx.fillStyle = col("--on-accent"); ctx.fillText(a.name, cx, cy - 8);
+      ctx.fillStyle = col("--accent-text"); ctx.fillText(a.name, cx, cy - 8);
     }
   }
   if ($("layer-objects").checked) {
@@ -981,34 +966,34 @@ function draw() {
         const [px, py, hx, hy, yaw] = p, c = Math.cos(yaw), s = Math.sin(yaw);
         const pts = [[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]].map(([dx, dy]) => [px + dx * c - dy * s, py + dx * s + dy * c]);
         poly(ctx, pts);
-        ctx.globalAlpha = o.confirmed ? 0.7 : 0.22; ctx.fillStyle = col("--c-box"); ctx.fill(); ctx.globalAlpha = 1;
-        ctx.strokeStyle = o.landmark >= 0.7 ? col("--c-plan") : col("--border-strong"); ctx.lineWidth = o.landmark >= 0.7 ? 2 : 1; ctx.stroke();
+        ctx.globalAlpha = o.confirmed ? 0.7 : 0.22; ctx.fillStyle = col("--data-box"); ctx.fill(); ctx.globalAlpha = 1;
+        ctx.strokeStyle = o.landmark >= 0.7 ? col("--data-plan") : col("--line-strong"); ctx.lineWidth = o.landmark >= 0.7 ? 2 : 1; ctx.stroke();
       }
       const [sx, sy] = toScreen(o.x, o.y);
-      ctx.fillStyle = col("--text"); ctx.fillText(o.label || o.kind, sx, sy);
+      ctx.fillStyle = col("--text-1"); ctx.fillText(o.label || o.kind, sx, sy);
     }
   }
   if (S.draft.length) {
-    poly(ctx, S.draft, S.draft.length < 3); ctx.strokeStyle = col("--warn"); ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = col("--warn");
+    poly(ctx, S.draft, S.draft.length < 3); ctx.strokeStyle = col("--status-warn"); ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = col("--status-warn");
     for (const p of S.draft) { const [sx, sy] = toScreen(p[0], p[1]); ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fill(); }
   }
   if (S.target) {
     const [sx, sy] = toScreen(S.target[0], S.target[1]);
-    ctx.strokeStyle = col("--c-plan"); ctx.lineWidth = 2; ctx.beginPath();
+    ctx.strokeStyle = col("--data-plan"); ctx.lineWidth = 2; ctx.beginPath();
     ctx.moveTo(sx - 8, sy); ctx.lineTo(sx + 8, sy); ctx.moveTo(sx, sy - 8); ctx.lineTo(sx, sy + 8); ctx.stroke();
   }
   const sp = startPose();
   if (sp) {      // where the operator says the robot stands: a ring and the way it faces
     const [sx, sy] = toScreen(sp.x, sp.y), rad = Math.max(8, 0.18 * V.scale);
-    ctx.strokeStyle = col("--warn"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 7);
+    ctx.strokeStyle = col("--status-warn"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 7);
     ctx.moveTo(sx, sy); ctx.lineTo(sx + rad * 1.8 * Math.cos(sp.yaw), sy - rad * 1.8 * Math.sin(sp.yaw)); ctx.stroke();
   }
   const r = robot();
   if (r && r.status && r.status.pose) {
     const p = r.status.pose, [sx, sy] = toScreen(p.x, p.y), rad = Math.max(6, 0.15 * V.scale);
-    ctx.fillStyle = r.online ? col("--c-truth") : col("--text-faint"); ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 7); ctx.fill();
-    ctx.strokeStyle = col("--text"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, sy);
+    ctx.fillStyle = r.online ? col("--data-truth") : col("--text-3"); ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 7); ctx.fill();
+    ctx.strokeStyle = col("--text-1"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx, sy);
     ctx.lineTo(sx + rad * 1.8 * Math.cos(p.yaw), sy - rad * 1.8 * Math.sin(p.yaw)); ctx.stroke();
   }
 }

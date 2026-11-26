@@ -218,13 +218,6 @@ table.t { width: 100%; border-collapse: collapse; }
 .layoutbtn { margin-left: auto; }
 .laymenu { position: absolute; top: 100%; right: var(--sp-6); z-index: var(--z-popover); width: min(380px, calc(100vw - 2 * var(--sp-3))); max-height: calc(100dvh - 270px); overflow: auto;
   background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: var(--radius-3); box-shadow: var(--elev-2); padding: var(--sp-3); }
-.layhead { display: flex; align-items: center; justify-content: space-between; }
-.layhead h3 { margin: 0; }
-.laygroup { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-1); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
-.layrow { display: grid; grid-template-columns: 1fr; gap: var(--sp-1); margin-bottom: var(--sp-2); }
-.layrow input[type="range"] { width: 100%; padding: 0; border: 0; background: transparent; }
-.laymenu .row + .row { margin-top: var(--sp-2); }
-.laymenu select { min-width: 0; flex: 1; }
 
 /* Modules */
 .modlist { display: flex; flex-direction: column; gap: 10px; }

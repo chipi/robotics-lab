@@ -1,0 +1,16 @@
+/* The Layout menu (menu.js), both apps. Tokens only. Where the menu sits (position, width, height) and how its buttons look are the app's. */
+.layhead { display: flex; align-items: center; justify-content: space-between; }
+.layhead h3 { margin: 0; font-size: var(--fs-3); }
+.laygroup { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-1); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.layrow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-1) var(--sp-2); margin-bottom: var(--sp-2); }
+.layrow input[type="range"] { grid-column: 1 / -1; width: 100%; padding: 0; border: 0; background: transparent; }
+.layline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.layline + .layline { margin-top: var(--sp-2); }
+.layline.sub { padding-left: var(--sp-5); }
+.laymenu label.inline { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.laymenu label.inline.dim { margin-left: auto; }
+.laymenu select { min-width: 0; flex: 1; }
+.laymenu input[type="text"], .laymenu input:not([type]) { min-width: 0; flex: 1; }
+.laymenu textarea { width: 100%; padding: var(--sp-1) var(--sp-2); font: var(--fs-1) var(--font-mono); resize: vertical; }
+.laymenu .hint { min-height: 18px; margin-top: var(--sp-2); }
+.laymenu input:not([type]), .laymenu select { height: var(--ctl-h); }

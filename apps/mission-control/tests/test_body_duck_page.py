@@ -116,7 +116,7 @@ with sync_playwright() as p:
         check("the canvas is there with real size", page.evaluate("(document.querySelector('#rp-body canvas')?.getBoundingClientRect().height || 0) > 150"))
         check("no sideways scrolling on the robot page with the real body", page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"))
 
-        err, warn = css_hex("error"), css_hex("warn")
+        err, warn = css_hex("status-error"), css_hex("status-warn")
         own = {j["name"]: (b["joints"].get(j["name"]) or {}).get("color") for j in moving if j["child"] in with_visuals}
         check("with no alarm every moving joint is ok and keeps its mesh colour (not the error or warn colour)",
               all((b["joints"].get(k) or {}).get("state") == "ok" for k in own) and err not in own.values() and warn not in own.values(), own)
@@ -134,9 +134,9 @@ with sync_playwright() as p:
         page.locator("#rp-body").screenshot(path=str(SHOTS / "a5-body-section-phone-dark.png"))
 
         page.emulate_media(color_scheme="light")
-        wait("(arg) => window.__mc.body.state().joints[arg[0]].color === arg[1]", arg=[target["name"], css_hex("error")])
+        wait("(arg) => window.__mc.body.state().joints[arg[0]].color === arg[1]", arg=[target["name"], css_hex("status-error")])
         page.wait_for_timeout(300)
-        check("in the light theme the joint takes the light error colour", css_hex("error") != err, (css_hex("error"), err))
+        check("in the light theme the joint takes the light error colour", css_hex("status-error") != err, (css_hex("status-error"), err))
         page.screenshot(path=str(SHOTS / "a5-body-phone-light.png"), full_page=True)
         page.screenshot(path=str(SHOTS / "a5-body-section-phone-light.png"), clip=page.locator("#rp-body").bounding_box())
 

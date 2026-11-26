@@ -295,7 +295,7 @@ with sync_playwright() as p:
     with soft("light and desktop"):
         boot(page, BASE + "/?visit=2#robot/duck-1", "window.__mc && window.__mc.ready && document.querySelectorAll('#rp-parts [data-part]').length === 3")
         page.emulate_media(color_scheme="light")
-        check("light: the robot page follows the system, no sideways scrolling", page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg-app').trim()") == "#e4e6ea" and no_scroll())
+        check("light: the robot page follows the system, no sideways scrolling", page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--surface-0').trim()") == "#e4e6ea" and no_scroll())
         page.screenshot(path=str(SHOTS / "mc-robot-page-phone-light.png"), full_page=True)
         page.set_viewport_size({"width": 1500, "height": 900})
         page.emulate_media(color_scheme="dark")

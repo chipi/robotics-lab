@@ -29,8 +29,8 @@ A real bug: on a phone, Mission Control's `.scrim` is `z-index: 40` and the `.st
      `--status-warn-soft`).
    - Groups: surfaces, lines (with hairlines and veils), text, action, status, data, axes, HUD,
      scene, ramps, controls; the exact list is in the plan's "Frozen contracts".
-   - Old names (`--border`, `--ok`, `--warn`, `--error`, `--hair-*`) stay as aliases in the first
-     block until the sweep (U26), then a check bans them.
+   - Old names (`--border`, `--ok`, `--warn`, `--error`, `--hair-*`) were aliases in the first
+     block until the sweep (U26) took them out; `libs/web/tests/test_tokens.py` now fails on any use of one.
    - Invariants (fonts, type scale, space, radius, elevation, z-order, motion, tap sizes) live in
      the first block only. Themed tokens have the same key set in dark, light and the
      `prefers-color-scheme` block. A test checks both, plus contrast, ramps, and that no hex
@@ -93,7 +93,7 @@ A real bug: on a phone, Mission Control's `.scrim` is `z-index: 40` and the `.st
   3D looks the same in both; reduced motion works in both; STOP cannot be covered again.
 - Negative: the type scale moves some labels by 1 to 2 px. The belief ghost doubles mesh draws.
   `shell.js` (1,733 lines) is the merge hotspot, so the Observatory lane is serial. The alias
-  block is debt until U26.
+  block was debt until U26, which removed it.
 - Neutral: no new dependency and no deploy (the X3 build hold). JS has no test runner; it is
   tested through the Python Playwright page tests.
 

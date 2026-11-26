@@ -31,7 +31,7 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from robotgate import Gate, GateError, JsonlLog
+from robotgate import Gate, GateError, JsonlLog, ProtocolError
 from runfile import registry
 from runfile.profile import FormatError, Profile, checksum, merge_variant, validate_profile
 from runfile.profilestore import StoreError
@@ -210,7 +210,6 @@ class Link:
         self.ok_at = None
         self.errors = 0
         self.last_error = None
-        self.last_stop_ok = None
 
     def __call__(self, method: str, params: dict | None = None):
         return self.via(self._call, method, params)
@@ -226,12 +225,8 @@ class Link:
         except Exception as exc:
             self.errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"
-            if method == "robot.stop":
-                self.last_stop_ok = False
             raise
         self.ok_at = self._clock()
-        if method == "robot.stop":
-            self.last_stop_ok = True
         return result
 
     def _run(self, call, method: str, params: dict):
@@ -443,19 +438,19 @@ class RobotRuntime:
 
     def stop(self, client: str) -> dict:
         """STOP: through the gate on a connection of its own, from anyone, with no lease (RFC-0017 §3.4).
-        `confirmed` says whether the robot answered robot.stop; an offline robot's STOP is accepted and
-        cannot be confirmed (§3.8)."""
-        self.link.last_stop_ok = None
+        `confirmed` is the gate's own word that the robot answered robot.stop, never inferred from the call to the gate
+        returning (a gate whose robot did not answer still returns); a reply without it is not confirmed. An offline
+        robot's STOP is accepted and cannot be confirmed (§3.8)."""
+        confirmed = False
         try:
             cid = self.gate.open(client)
             try:
-                self.gate.handle(cid, "robot.stop")
+                reply = self.gate.handle(cid, "robot.stop")
+                confirmed = isinstance(reply, dict) and reply.get("confirmed") is True
             finally:
                 self.gate.close(cid)
-        except OSError as exc:                     # a gate in another process that does not answer: accepted, not confirmed
-            self.link.last_stop_ok = False
+        except (OSError, ProtocolError) as exc:    # a gate in another process that does not answer or speaks another protocol: accepted, not confirmed
             self.link.last_error = f"{type(exc).__name__}: {exc}"
-        confirmed = self.link.last_stop_ok is True
         self.bus.emit("stop", robot=self.cfg.id, client=client, confirmed=confirmed)
         return {"robot": self.cfg.id, "confirmed": confirmed, "online": self.online()}
 

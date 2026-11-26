@@ -11,7 +11,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export const RAW_VALID = [5, 9];            // the sensor's "range valid" statuses
 export const NO_TARGET = 255;               // "nothing out there" (duck_lab.nav.cliff)
 export const MAX_MM = 4000;                 // the colour scale's far end: the sensor's range
-export const KINDS = { f: ['floor', '--c-floor'], o: ['obstacle', '--c-ob'], v: ['overhead', '--c-over'], b: ['below the floor', '--c-drop'] };
+export const KINDS = { f: ['floor', '--data-floor'], o: ['obstacle', '--data-depth-obstacle'], v: ['overhead', '--data-depth-overhead'], b: ['below the floor', '--data-drop'] };
 
 // The cell each derived point belongs to, or why they cannot be told apart. Points come in the sensor's cell order: one for each valid
 // zone, and, when the cliff check put one, for a no-target zone. Equal to the valid zones: those zones in order. Equal to the valid and the
@@ -43,7 +43,7 @@ export function createDepthView(host, { api, data }) {
   let heat = seqScale();
   const distColor = (mm) => heat(1 - Math.min(Math.max(mm, 0) / MAX_MM, 1));
   // the text on a cell: white on the dark distance colours, black or white on a kind colour by its brightness
-  const inkOn = (hex) => { const m = /^#([0-9a-f]{6})/i.exec(hex); if (!m) return '#fff'; const v = parseInt(m[1], 16); return ((v >> 16) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114) > 150 ? '#000' : '#fff'; };
+  const inkOn = (hex) => { const m = /^#([0-9a-f]{6})/i.exec(hex); if (!m) return css('--text-on-solid'); const v = parseInt(m[1], 16); return css(((v >> 16) * 0.299 + ((v >> 8) & 255) * 0.587 + (v & 255) * 0.114) > 150 ? '--text-on-light' : '--text-on-solid'); };
 
   const fresh = (f, d) => {
     const count = d.rawStream?.count ?? f?.n;
@@ -109,12 +109,12 @@ export function createDepthView(host, { api, data }) {
     g.font = `${Math.max(9, Math.round(cell * 0.28))}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
     const byKind = S.color === 'kind' && S.kinds.cells;
     heat = seqScale();
-    const field = css('--bg-field'), faint = css('--text-faint'), warn = css('--warn'), sel = css('--draw-sel');
+    const field = css('--surface-field'), edge = css('--line'), faint = css('--text-3'), warn = css('--status-warn'), sel = css('--scene-select');
     for (let r = 0; r < f.rows; r++) for (let c = 0; c < f.cols; c++) {
       const k = r * f.cols + c, x = c * cell, y = r * cell, mm = f.distance_mm[k], ok = RAW_VALID.includes(f.status[k]);
       const pt = byKind ? S.kinds.cells[k] : null;
       if (byKind && pt) {
-        const col = css(KINDS[pt[3]]?.[1] || '--text-dim'); g.fillStyle = col; g.fillRect(x, y, cell, cell); g.fillStyle = inkOn(col); g.fillText(String(mm), x + cell / 2, y + cell / 2);
+        const col = css(KINDS[pt[3]]?.[1] || '--text-2'); g.fillStyle = col; g.fillRect(x, y, cell, cell); g.fillStyle = inkOn(col); g.fillText(String(mm), x + cell / 2, y + cell / 2);
       } else if (ok && !byKind) {
         const fill = distColor(mm); g.fillStyle = fill; g.fillRect(x, y, cell, cell); g.fillStyle = rampInk(fill); g.fillText(String(mm), x + cell / 2, y + cell / 2);
       } else {
@@ -124,7 +124,7 @@ export function createDepthView(host, { api, data }) {
         g.stroke();
         g.fillStyle = warn; g.fillText(ok ? String(mm) : 's' + f.status[k], x + cell / 2, y + cell / 2);
       }
-      g.strokeStyle = 'rgba(0,0,0,.4)'; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+      g.strokeStyle = edge; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
     }
     if (S.cell) { const [r, c] = S.cell; g.strokeStyle = sel; g.lineWidth = 2.5; g.strokeRect(c * cell + 1.5, r * cell + 1.5, cell - 3, cell - 3); }
     for (const b of host.querySelectorAll('[data-color]')) { b.setAttribute('aria-pressed', b.dataset.color === S.color); b.disabled = b.dataset.color === 'kind' && !S.kinds.cells; b.title = b.disabled ? S.kinds.why : ''; }

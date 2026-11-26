@@ -17,7 +17,7 @@ from pathlib import Path
 import bpy  # noqa: E402  (Blender's own module)
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2]))           # viewer/src: observatory.kinematics is plain Python, Blender's can import it
+sys.path.insert(0, str(HERE.parents[2]))           # apps/observatory/src: observatory.kinematics is plain Python, Blender's can import it
 from observatory import kinematics as kin  # noqa: E402
 
 

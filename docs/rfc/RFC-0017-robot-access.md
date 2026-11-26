@@ -208,6 +208,12 @@ duck it is `robot.stop`, then an explicit zero `robot.move`. `robotd` keeps the 
 its deadman fired, and `mapd` then never sees a stop, so the zero move is needed. On the NXT it is
 the Controller's stop, then the deadman.
 
+**What the gate's STOP reply says.** `{ok, confirmed, errors}`. `ok: true` is the gate's: the
+STOP was taken and the lease ended, always. `confirmed` is whether the robot answered
+`robot.stop`; `errors` lists the calls (`robot.stop`, the zero `robot.move`) that failed, as
+`method: Type: message`. It is the same with a holder and with none, and a proxy relays it
+unchanged. A reply without `confirmed` (an older gate) is read as not confirmed.
+
 **No flag to refuse a STOP.** A refused STOP risks a collision; an unwanted one stands the robot
 still. The cost is that anyone on the tailnet can stop a robot; every STOP is in the log with the
 name that sent it.

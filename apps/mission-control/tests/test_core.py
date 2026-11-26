@@ -329,6 +329,83 @@ check("STOP to an offline robot is accepted but cannot be confirmed (RFC-0014 §
 fake(mc).set_offline(False)
 run_for(mc, clock, 1.0)
 
+# STOP's `confirmed` is the gate's reply, whether the robot answered robot.stop (RFC-0014 §3.8): a robot that takes the zero move
+# but not the stop is accepted and not confirmed, on the reply and on the bus
+rt = mc.robots["fake-1"]
+real_call = rt.link._call
+
+
+def stop_refused(method, params=None):
+    if method == "robot.stop":
+        raise TimeoutError("robot.stop: no answer")
+    return real_call(method, params)
+
+
+rt.link._call = stop_refused
+res = mc.stop("fake-1", "page")
+rt.link._call = real_call
+stop_events = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "stop"]
+check("STOP when only robot.stop fails: confirmed False (the robot did not answer it), not inferred from the call returning",
+      res["confirmed"] is False and stop_events and stop_events[-1]["confirmed"] is False, (res, stop_events[-1:]))
+res = mc.stop("fake-1", "page")
+stop_events = [e for e in mc.bus.since(0, 100000)[0] if e["kind"] == "stop"]
+check("STOP with a working robot: confirmed True, on the reply and on the bus",
+      res["confirmed"] is True and stop_events[-1]["confirmed"] is True, (res, stop_events[-1:]))
+
+# a gate that cannot speak our protocol (ProtocolError from its hello) is a STOP not confirmed, never a 500
+from robotgate import ProtocolError  # noqa: E402
+real_open = rt.gate.open
+
+
+def bad_protocol(*a, **k):
+    raise ProtocolError("the gate speaks protocol 99")
+
+
+rt.gate.open = bad_protocol
+try:
+    res = mc.stop("fake-1", "page")
+except Exception as exc:                   # noqa: BLE001
+    res = exc
+rt.gate.open = real_open
+check("STOP when the gate's protocol is not ours: accepted, confirmed False, no exception",
+      isinstance(res, dict) and res["confirmed"] is False, res)
+
+# the NXT's gate: nxt-web answers 409 to /api/stop when the brick does not (not connected, a link error); STOP is still taken
+import http.server  # noqa: E402
+from mission_control.nxt import NxtGate  # noqa: E402
+from mission_control.robots import Link  # noqa: E402
+
+
+class StopHandler(http.server.BaseHTTPRequestHandler):
+    status, body = 200, b'{"ok": true}'
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.send_response(StopHandler.status)
+        self.send_header("Content-Length", str(len(StopHandler.body)))
+        self.end_headers()
+        self.wfile.write(StopHandler.body)
+
+    def log_message(self, *a):
+        pass
+
+
+nxt_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), StopHandler)
+threading.Thread(target=nxt_srv.serve_forever, daemon=True).start()
+ng = NxtGate(f"http://127.0.0.1:{nxt_srv.server_address[1]}", Link(lambda m, p: {}, clock), None)
+ncid = ng.open("page")
+reply = ng.handle(ncid, "robot.stop", {})
+check("NXT: nxt-web answered /api/stop: confirmed", reply.get("ok") is True and reply.get("confirmed") is True, reply)
+StopHandler.status, StopHandler.body = 409, b'{"ok": false, "error": "RuntimeError: not connected"}'
+try:
+    reply = ng.handle(ncid, "robot.stop", {})
+except Exception as exc:                   # noqa: BLE001
+    reply = exc
+check("NXT: nxt-web took the STOP but the brick did not answer (409): accepted, not confirmed, the reason said, no exception",
+      isinstance(reply, dict) and reply.get("ok") is True and reply.get("confirmed") is False and "not connected" in str(reply.get("errors")), reply)
+nxt_srv.shutdown()
+nxt_srv.server_close()
+
 # --- sites, objects and the object goals -------------------------------------------------------------
 mc, clock = boot()
 mc.sites.create("Home", "apartment")

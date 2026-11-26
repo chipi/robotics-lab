@@ -638,8 +638,8 @@ def run_page(b, base, rid, other):
     call(f"window.miniview.setTime({TA})")
 
     # theme
-    # the three.js page clears to the stage's --scene-bg (U11), the deck.gl page to --bg-viewport
-    tkn = "--scene-bg" if lib == "three" else "--bg-viewport"
+    # the three.js page clears to the stage's --scene-bg (U11), the deck.gl page to --surface-1
+    tkn = "--scene-bg" if lib == "three" else "--surface-1"
     tok_dark = ev(f"getComputedStyle(document.documentElement).getPropertyValue('{tkn}').trim()")
     px_dark = pixel(page.locator("#stage").screenshot(), 3, 500)
     page.click("#themeBtn")

@@ -4,21 +4,12 @@
 import { arm } from '../confirm.js';
 import { reducedMotion } from '../motion.js';
 import { registry as defaultRegistry } from './registry.js';
+import { needSheet } from '../sheet.js';
+import { TYPING } from '../lazy.js';
 
 const RECENT_KEY = 'rl.palette.recent';
 const RECENT_MAX = 8;
-const TYPING = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
 
-let sheet = false;
-const needSheet = () => {
-  if (sheet || typeof document === 'undefined') return;
-  const href = new URL('./palette.css', import.meta.url).href;
-  if ([...document.querySelectorAll('link[rel="stylesheet"]')].some((l) => l.href === href)) { sheet = true; return; }
-  sheet = true;
-  const l = document.createElement('link');
-  l.rel = 'stylesheet'; l.href = href;
-  document.head.append(l);
-};
 
 // -1 when `query` is not a subsequence of `text`; else a score, higher is better: a prefix, a word start and a run of letters count more
 export function fuzzy(query, text) {
@@ -59,7 +50,7 @@ export function createPalette({ host = document.body, registry = defaultRegistry
   };
 
   function build() {
-    needSheet();
+    needSheet(import.meta.url, './palette.css');
     root = document.createElement('div');
     root.className = 'pal'; root.hidden = true;
     root.innerHTML = `<div class="pal-scrim"></div>

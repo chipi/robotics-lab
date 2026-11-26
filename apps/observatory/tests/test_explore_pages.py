@@ -251,7 +251,7 @@ def depth_checks(page, tag):
     page.click('#xdepth [data-color="kind"]')
     cell = page.evaluate("window.miniview.exploreView().canvas().width / 8")
     got = [rgb_at(page, int(c * cell + 3), 3) for c in range(4)]
-    want_c = [token(page, v) for v in ("--c-floor", "--c-ob", "--c-over", "--c-drop")]
+    want_c = [token(page, v) for v in ("--data-floor", "--data-depth-obstacle", "--data-depth-overhead", "--data-drop")]
     check(f"{tag}: coloured by the derived kind: floor, obstacle, overhead, below, in the colours the 3D scene uses",
           page.evaluate("window.miniview.exploreState().color") == "kind" and all(close_to(g, w) for g, w in zip(got, want_c)), (got, want_c))
     n_scale = page.evaluate("document.querySelector('#xdepth [data-x=scale]').innerText")
@@ -321,7 +321,7 @@ def map_checks(page, tag, light=False):
         sx, sy = page.evaluate(f"window.miniview.exploreView().screenOfPoint({x}, {y})")
         return rgb_at(page, *at_canvas(page, sx, sy))
 
-    free, occ, plan = token(page, "--c-free"), token(page, "--c-occ"), token(page, "--c-plan")
+    free, occ, plan = token(page, "--data-free"), token(page, "--data-occupied"), token(page, "--data-plan")
     on_plan = lambda: any(close_to(shown_at(0.3, d), plan, 70) for d in (-0.004, 0.0, 0.004))  # noqa: E731  (a thin antialiased line: any of three samples across it, near the plan colour)
     check(f"{tag}: a free cell is the theme's free colour, an occupied one its occupied colour, the plan runs over the grid in the plan colour",
           close_to(shown_at(0.45, -0.15), free) and close_to(shown_at(0.95, -0.05), occ) and on_plan(), (shown_at(0.45, -0.15), free, shown_at(0.95, -0.05), occ, [shown_at(0.3, d) for d in (-0.004, 0.0, 0.004)]))
@@ -588,7 +588,7 @@ with sync_playwright() as p:
             empty_checks(page, "dark")
             ctx2, page2, logs2 = page_of(b, base, 390, 800, "light")
             call(page2, f"window.miniview.load('room', '{D_KEY}')")
-            check("the phone page is in the light theme (the viewport token is the light one)", token(page2, "--bg-viewport") == [246, 247, 249], token(page2, "--bg-viewport"))
+            check("the phone page is in the light theme (the viewport token is the light one)", token(page2, "--surface-1") == [246, 247, 249], token(page2, "--surface-1"))
             depth_checks(page2, "phone, light")
             map_checks(page2, "phone, light")
             over = page2.evaluate("[document.documentElement.scrollWidth, innerWidth, window.miniview.exploreView('map').canvas().getBoundingClientRect().right, window.miniview.exploreView('depth').canvas().getBoundingClientRect().right]")

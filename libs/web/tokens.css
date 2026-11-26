@@ -3,10 +3,9 @@
    (set by each page from the system or its switch) and, in a page that sets no data-theme, when the system is light. The third block is the
    second block again (a stylesheet cannot share one between a selector and a media query).
    libs/web/tests/test_tokens.py fails when the blocks differ, when an app declares a token itself, and when a colour misses its contrast,
-   colour-blind or live-versus-warn limit. Where the contract renamed a token, the old name stays in the first block as an alias until U26;
-   the three legacy-* tokens hold the old value of a colour the checks made a little stronger (text-faint, check-border, range-knob), so
-   the pages that still use the old names look as before. A page's own sizes (the Observatory's --left, --right, --row) stay in its own stylesheet.
-   The first block holds, in this order: the invariants (the same in both themes), the density default, the dark values, the aliases. */
+   colour-blind or live-versus-warn limit, and when a page or script uses a token name of before tokens v2 (--bg-*, --border, --text-dim, --c-*, --draw-* and the rest;
+   the list is in the test). A page's own sizes (the Observatory's --left, --right, --row) stay in its own stylesheet.
+   The first block holds, in this order: the invariants (the same in both themes), the density default, the dark values. */
 :root {
   color-scheme: dark;
 
@@ -37,8 +36,8 @@
   --line-subtle: #303238; --line: #3b3d43; --line-strong: #4a4d55; --line-hover: #4f525a; --line-focus: #4a8bf0;
   --hairline-1: #ffffff08; --hairline-2: #ffffff12; --hairline-3: #ffffff1c; --hairline-4: #ffffff22; --hairline-5: #ffffff55;
   --veil-1: rgba(27, 28, 31, .78); --veil-2: rgba(27, 28, 31, .75); --veil-scrim: #000a; --elev-shadow: #0009;
-  /* text: value, label (4.5:1), hint (3:1) on every surface */
-  --text-1: #d8dadf; --text-2: #9a9da6; --text-3: #7b7e87; --text-on-solid: #ffffff;
+  /* text: value, label (4.5:1), hint (3:1) on every surface; on-solid and on-light are the white and the black ink for a canvas cell filled with a data colour (the same in both themes) */
+  --text-1: #d8dadf; --text-2: #9a9da6; --text-3: #7b7e87; --text-on-solid: #ffffff; --text-on-light: #000000;
   /* action: --accent-on and --accent-hover are the solid primary button (text on the fill, the fill under the pointer); --danger-solid is the STOP colour only */
   --accent: #4a8bf0; --accent-soft: rgba(74, 139, 240, .18); --accent-ring: rgba(74, 139, 240, .55); --accent-text: #cfe0ff; --accent-on: #071428; --accent-hover: #6aa2f5;
   --danger-solid: #cf3a2f;
@@ -57,6 +56,8 @@
   --data-belief: #4f8cff; --data-truth: #34c065; --data-plan: #e6b400; --data-obstacle: #ff9600; --data-drop: #ee44ee;
   --data-floor: #3cc85a; --data-depth-obstacle: #f0503f; --data-depth-overhead: #4a86ee; --data-box: #8a8a96; --data-occupied: #8a8a90; --data-free: #2f4a39;
   --data-gap: #ff8c1a;
+  /* the semantic map (RFC-0016): the same in both themes, chosen to read on both */
+  --data-object: #2e9e5b; --data-landmark: #e89a00; --data-seen: #d62ba8; --data-wedge: #3c78e6; --data-area: #7a5cff;
   --axis-x: #ef5350; --axis-y: #66bb6a; --axis-z: #5b8def;
   /* the robot's-eye HUD (the same in both themes); -head, -warn-text, -error, -error-text and -strong are the five more colours of the HUD box in shell.css */
   --hud-bg: rgba(8, 20, 18, .82); --hud-line: #2c8a66; --hud-text: #9fd9c4; --hud-key: #6aa898; --hud-value: #e8fff6; --hud-warn: #e0a030;
@@ -74,27 +75,6 @@
   --ramp-cat-5: #45c1b4; --ramp-cat-6: #d6a20a; --ramp-cat-7: #a9ebab; --ramp-cat-8: #c96bb6;
   /* controls: the border and the knob are UI boundaries (3:1) */
   --control-track: #4a4d55; --control-knob: #8a8d96; --control-border: #7b7e87;
-  /* until U26: the values the old names had before the checks (see the header) */
-  --legacy-text-faint: #6d7079; --legacy-check-border: #575a62; --legacy-range-knob: #8a8d96;
-
-  /* aliases: the old names, until U26 */
-  --bg-app: var(--surface-0); --bg-viewport: var(--surface-1); --bg-panel: var(--surface-2); --bg-header: var(--surface-3);
-  --bg-field: var(--surface-field); --bg-hover: var(--surface-hover); --bg-selected: var(--surface-selected); --border: var(--line);
-  --text: var(--text-1); --text-dim: var(--text-2); --text-faint: var(--legacy-text-faint);
-  --on-accent: var(--accent-text);
-  --warn: var(--status-warn); --error: var(--status-error); --ok: var(--status-ok);
-  --bg-shead: var(--surface-section); --bg-shead-hover: var(--surface-section-hover); --bg-press: var(--surface-press);
-  --border-strong: var(--line-strong); --border-hover: var(--line-hover);
-  --hair: var(--hairline-2); --hair-2: var(--hairline-1); --hair-3: var(--hairline-4); --hair-4: var(--hairline-5); --hair-5: var(--hairline-3);
-  --veil: var(--veil-1); --shadow: var(--elev-shadow); --scrim: var(--veil-scrim);
-  --tip-bg: var(--surface-tip); --range-bar: var(--control-track); --range-knob: var(--legacy-range-knob); --check-border: var(--legacy-check-border);
-  --c-belief: var(--data-belief); --c-truth: var(--data-truth); --c-plan: var(--data-plan); --c-obst: var(--data-obstacle); --c-drop: var(--data-drop);
-  --c-floor: var(--data-floor); --c-ob: var(--data-depth-obstacle); --c-over: var(--data-depth-overhead); --c-box: var(--data-box);
-  --c-occ: var(--data-occupied); --c-free: var(--data-free);
-  --c-x: var(--axis-x); --c-y: var(--axis-y); --c-z: var(--axis-z); --c-gap: var(--data-gap);
-  --draw-grid: var(--scene-grid); --draw-label: var(--scene-label); --draw-rel: var(--scene-rel); --draw-sel: var(--scene-select);
-  --box-fill: var(--scene-box-fill); --gap-hatch: var(--scene-gap-hatch);
-  --ui: var(--font-ui); --mono: var(--font-mono);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -104,7 +84,7 @@
   --line-subtle: #d8dbe1; --line: #c9ccd3; --line-strong: #b3b7c0; --line-hover: #aab0ba; --line-focus: #2f6fe0;
   --hairline-1: #0000000a; --hairline-2: #00000014; --hairline-3: #0000001c; --hairline-4: #00000026; --hairline-5: #00000055;
   --veil-1: rgba(240, 241, 244, .86); --veil-2: rgba(240, 241, 244, .84); --veil-scrim: #0000006a; --elev-shadow: #00000033;
-  --text-1: #1d1f24; --text-2: #5a5e68; --text-3: #7b7f89; --text-on-solid: #ffffff;
+  --text-1: #1d1f24; --text-2: #5a5e68; --text-3: #7b7f89; --text-on-solid: #ffffff; --text-on-light: #000000;
   --accent: #2f6fe0; --accent-soft: rgba(47, 111, 224, .14); --accent-ring: rgba(47, 111, 224, .5); --accent-text: #1b4fb0; --accent-on: #ffffff; --accent-hover: #2a66d0;
   --danger-solid: #c0392b;
   --status-ok: #1f8f3c; --status-ok-soft: #cde0d5; --status-ok-on: #005b1e;
@@ -120,6 +100,7 @@
   --data-belief: #4682ff; --data-truth: #28b45a; --data-plan: #e6b400; --data-obstacle: #ff9600; --data-drop: #e600e6;
   --data-floor: #3cc85a; --data-depth-obstacle: #e63228; --data-depth-overhead: #3c78e6; --data-box: #8a8a96; --data-occupied: #505050; --data-free: #cdeccd;
   --data-gap: #ff8c1a;
+  --data-object: #2e9e5b; --data-landmark: #e89a00; --data-seen: #d62ba8; --data-wedge: #3c78e6; --data-area: #7a5cff;
   --axis-x: #e03030; --axis-y: #30b030; --axis-z: #3060e0;
   --hud-bg: rgba(8, 20, 18, .82); --hud-line: #2c8a66; --hud-text: #9fd9c4; --hud-key: #6aa898; --hud-value: #e8fff6; --hud-warn: #e0a030;
   --hud-head: #5fe0a8; --hud-warn-text: #ffe2a8; --hud-error: #e05a4f; --hud-error-text: #ffd0cb; --hud-strong: #ffffff;
@@ -133,7 +114,6 @@
   --ramp-cat-1: #0256a9; --ramp-cat-2: #be7100; --ramp-cat-3: #992645; --ramp-cat-4: #00999f;
   --ramp-cat-5: #647ee0; --ramp-cat-6: #006470; --ramp-cat-7: #b5462b; --ramp-cat-8: #bf6971;
   --control-track: #c3c7cf; --control-knob: #7b7f89; --control-border: #7b7f89;
-  --legacy-text-faint: #8d919b; --legacy-check-border: #a5a9b3; --legacy-range-knob: #8d919b;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
@@ -144,7 +124,7 @@
     --line-subtle: #d8dbe1; --line: #c9ccd3; --line-strong: #b3b7c0; --line-hover: #aab0ba; --line-focus: #2f6fe0;
     --hairline-1: #0000000a; --hairline-2: #00000014; --hairline-3: #0000001c; --hairline-4: #00000026; --hairline-5: #00000055;
     --veil-1: rgba(240, 241, 244, .86); --veil-2: rgba(240, 241, 244, .84); --veil-scrim: #0000006a; --elev-shadow: #00000033;
-    --text-1: #1d1f24; --text-2: #5a5e68; --text-3: #7b7f89; --text-on-solid: #ffffff;
+    --text-1: #1d1f24; --text-2: #5a5e68; --text-3: #7b7f89; --text-on-solid: #ffffff; --text-on-light: #000000;
     --accent: #2f6fe0; --accent-soft: rgba(47, 111, 224, .14); --accent-ring: rgba(47, 111, 224, .5); --accent-text: #1b4fb0; --accent-on: #ffffff; --accent-hover: #2a66d0;
     --danger-solid: #c0392b;
     --status-ok: #1f8f3c; --status-ok-soft: #cde0d5; --status-ok-on: #005b1e;
@@ -160,6 +140,7 @@
     --data-belief: #4682ff; --data-truth: #28b45a; --data-plan: #e6b400; --data-obstacle: #ff9600; --data-drop: #e600e6;
     --data-floor: #3cc85a; --data-depth-obstacle: #e63228; --data-depth-overhead: #3c78e6; --data-box: #8a8a96; --data-occupied: #505050; --data-free: #cdeccd;
     --data-gap: #ff8c1a;
+    --data-object: #2e9e5b; --data-landmark: #e89a00; --data-seen: #d62ba8; --data-wedge: #3c78e6; --data-area: #7a5cff;
     --axis-x: #e03030; --axis-y: #30b030; --axis-z: #3060e0;
     --hud-bg: rgba(8, 20, 18, .82); --hud-line: #2c8a66; --hud-text: #9fd9c4; --hud-key: #6aa898; --hud-value: #e8fff6; --hud-warn: #e0a030;
     --hud-head: #5fe0a8; --hud-warn-text: #ffe2a8; --hud-error: #e05a4f; --hud-error-text: #ffd0cb; --hud-strong: #ffffff;
@@ -173,7 +154,6 @@
     --ramp-cat-1: #0256a9; --ramp-cat-2: #be7100; --ramp-cat-3: #992645; --ramp-cat-4: #00999f;
     --ramp-cat-5: #647ee0; --ramp-cat-6: #006470; --ramp-cat-7: #b5462b; --ramp-cat-8: #bf6971;
     --control-track: #c3c7cf; --control-knob: #7b7f89; --control-border: #7b7f89;
-    --legacy-text-faint: #8d919b; --legacy-check-border: #a5a9b3; --legacy-range-knob: #8d919b;
   }
 }
 

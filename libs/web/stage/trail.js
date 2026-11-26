@@ -3,9 +3,11 @@
 // text: head (a data colour, e.g. --data-belief) and fadeTo (--scene-bg); setColors re-paints after a theme change.
 import { parseColor } from './stage.js';
 
+const token = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
 // createTrail(THREE, { max: 600, head, fadeTo }) -> { object, set(points), clear(), setColors({ head, fadeTo }), dispose() }
 // set takes points oldest first, as [x, y, z] arrays or a flat array of numbers; more than `max` keeps the newest `max`.
-export function createTrail(THREE, { max = 600, head = '#ffffff', fadeTo = '#000000' } = {}) {
+export function createTrail(THREE, { max = 600, head = token('--data-belief'), fadeTo = token('--scene-bg') } = {}) {
   const geometry = new THREE.BufferGeometry();
   const pos = new THREE.BufferAttribute(new Float32Array(max * 3), 3);
   const col = new THREE.BufferAttribute(new Float32Array(max * 3), 3);

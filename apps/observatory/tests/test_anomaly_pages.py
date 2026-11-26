@@ -114,7 +114,7 @@ with tempfile.TemporaryDirectory() as tmp:
             # ---- the alarms lane ---------------------------------------------------------------------------------------
             marks = page.evaluate("[...document.querySelectorAll('#alane .mk.al')].map((m) => ({ cls: m.className, ev: +m.dataset.ev, left: m.style.left, color: getComputedStyle(m).color, radius: getComputedStyle(m.firstChild).borderRadius }))")
             err, warn, dim = (page.evaluate(f"({RGB})('{n}')") for n in ("status-error", "status-warn", "status-neutral"))
-            pin_dim = page.evaluate(f"({RGB})('text-dim')")     # the pins are drawn by the page adapters, which still use --text-dim for info; the lane takes the status colour
+            pin_dim = page.evaluate(f"({RGB})('text-2')")     # the pins are drawn by the page adapters, which still use --text-2 for info; the lane takes the status colour
             check(f"[{lib}] must fail: one mark per anomaly on the alarms lane, the lane and its label shown, the events lane still there",
                   len(marks) == 4 and page.evaluate("!document.getElementById('alane').hidden && !document.getElementById('alabel').hidden")
                   and page.evaluate("document.querySelectorAll('#mlane .mk').length") >= 4, marks)
@@ -186,7 +186,7 @@ with tempfile.TemporaryDirectory() as tmp:
             page.click("#themeBtn")
             page.wait_for_function("window.miniview.config().theme === 'light'")
             ready(page)
-            err_l = page.evaluate(f"({RGB})('error')")
+            err_l = page.evaluate(f"({RGB})('status-error')")
             marks_l = page.evaluate("[...document.querySelectorAll('#alane .mk.al')].map((m) => getComputedStyle(m).color)")
             a = page.evaluate(pins)
             cols_l = [rgb(q["hex"]) for q in a["pins"]] if lib == "three" else [f"rgb({q['color'][0]}, {q['color'][1]}, {q['color'][2]})" for q in a["pins"]]

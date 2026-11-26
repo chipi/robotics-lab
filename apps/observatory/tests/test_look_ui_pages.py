@@ -21,7 +21,7 @@ check = Checks("LOOK UI PAGES")
 LIB = Path(__file__).resolve().parents[3] / "libs" / "web"
 SHELL_CSS = Path(__file__).resolve().parents[1] / "web" / "shell" / "shell.css"
 HEAD = [(0.0, "epoch", {"map_to_world": [1.0, 0.0, 0.0]})]
-# the names the tokens kept as aliases until U26: shell.css must use the new ones
+# the names tokens v2 replaced (U26 took the aliases out; test_tokens.py bans them everywhere): shell.css must use the new ones
 OLD_NAMES = ["--bg-app", "--bg-viewport", "--bg-panel", "--bg-header", "--bg-field", "--bg-hover", "--bg-selected", "--bg-shead", "--bg-shead-hover", "--bg-press",
              "--border", "--border-strong", "--border-hover", "--text", "--text-dim", "--text-faint", "--on-accent", "--warn", "--error", "--ok", "--hair",
              "--hair-2", "--hair-3", "--hair-4", "--hair-5", "--veil", "--shadow", "--scrim", "--tip-bg", "--range-bar", "--range-knob", "--check-border",
@@ -236,7 +236,7 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
     css = SHELL_CSS.read_text()
     check("shell.css has no hex colour", not re.findall(r"#[0-9a-fA-F]{3,8}\b", css), re.findall(r"#[0-9a-fA-F]{3,8}\b", css)[:5])
     used = sorted({n for n in OLD_NAMES if re.search(re.escape(n) + r"(?![\w-])", css.replace("--left", "").replace("--right", ""))})
-    check("shell.css uses no old token name (the aliases until U26)", not used, used)
+    check("shell.css uses no old token name (the aliases went in U26)", not used, used)
 
     long_scene = {**scene("apartment_with_a_rather_long_name"), "name": "An apartment with a rather long name indeed"}
     LONG = "duck/apartment_with_a_rather_long_name/exploration_run_with_a_long_identifier_0042"

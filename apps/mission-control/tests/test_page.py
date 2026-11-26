@@ -378,7 +378,7 @@ with sync_playwright() as p:
 
     # --- light and dark -----------------------------------------------------------------------------
     def token():
-        return page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--bg-app').trim()")
+        return page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--surface-0').trim()")
     check("dark follows the system", token() == "#1b1c1f", token())
     page.emulate_media(color_scheme="light")
     check("light follows the system, with the Observatory's tokens", token() == "#e4e6ea", token())

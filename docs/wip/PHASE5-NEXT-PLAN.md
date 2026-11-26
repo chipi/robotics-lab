@@ -11,8 +11,8 @@ This paragraph is the 2026-11-23 header, kept as written.
 
 **Current state (2026-11-25):** the work follows the MVP 1 wrap-up order (the section "The MVP 1
 wrap-up, in order", below, and [the handover](HANDOVER.md)). Step 4.5, the look-and-feel build, is
-at review round 3, answered by the operator; its fixes are in progress and U26, the sweep, is
-next. [The handover](HANDOVER.md) is the living status; the item tables below record what each
+at review round 4: U26, the sweep, is built (not yet committed) and its screenshots are in
+`docs/wip/look-and-feel/round4/after/`. [The handover](HANDOVER.md) is the living status; the item tables below record what each
 item built.
 
 ## Where things stand

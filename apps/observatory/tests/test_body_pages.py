@@ -93,7 +93,7 @@ def status(path):
 
 
 code, hdrs, css = status("/lib/tokens.css")
-check("must fail: the shared design tokens are served at /lib/tokens.css", code == 200 and hdrs["Content-Type"].startswith("text/css") and b"--bg-app" in css, code)
+check("must fail: the shared design tokens are served at /lib/tokens.css", code == 200 and hdrs["Content-Type"].startswith("text/css") and b"--surface-0" in css, code)
 code, hdrs, _ = status("/lib/vendor/three.module.js")
 check("must fail: the one three.js is served from /lib/vendor/, cached for a day", code == 200 and "javascript" in hdrs["Content-Type"]
       and "max-age=86400" in hdrs["Cache-Control"], (code, hdrs.get("Cache-Control")))
@@ -127,7 +127,7 @@ with sync_playwright() as p:
             return page.evaluate(BODY)
 
         css_hex = lambda name: page.evaluate(f"(c) => ({HEX})(({RGB})(c))", name)  # noqa: E731
-        err, warn = css_hex("error"), css_hex("warn")
+        err, warn = css_hex("status-error"), css_hex("status-warn")
         bd = at(1.0)
         own = {j: J(bd)[j].get("color") for j in ("shoulder", "elbow")}
         check("tokens: the error and the warn colours differ and are not a joint's own", len({err, warn, *own.values()}) == 4 and None not in own.values(), (err, warn, own))
@@ -153,7 +153,7 @@ with sync_playwright() as p:
         page.wait_for_function("document.documentElement.dataset.theme === 'light'", timeout=5000)
         bd = at(2.6)
         check("must fail: in the light theme the colours are the light theme's tokens",
-              J(bd)["shoulder"].get("color") == css_hex("error") and J(bd)["elbow"].get("color") == css_hex("warn") and css_hex("error") != err, (J(bd), css_hex("error"), err))
+              J(bd)["shoulder"].get("color") == css_hex("status-error") and J(bd)["elbow"].get("color") == css_hex("status-warn") and css_hex("status-error") != err, (J(bd), css_hex("status-error"), err))
         lib = b.new_context(viewport={"width": 900, "height": 700}, color_scheme="dark").new_page()
         meshes_asked = []
         lib.on("request", lambda r: meshes_asked.append(r.url) if ".stl" in r.url else None)

@@ -210,7 +210,7 @@ cards, Settings as a block list with a compact read view, an edit drawer and a H
   The per-version Export is gone; Export exports the version shown.
 - **Edit, Save and Import** are disabled when the store is not writable.
 - **Contrast:** primary buttons are the accent darkened to 78 % (white text 5.2:1 dark, 6.9:1
-  light); tags and units use `--text-dim`, not `--text-faint` (about 3:1).
+  light); tags and units use `--text-2`, not `--text-3` (`--text-dim` and `--text-faint` before tokens v2; the faint one was about 3:1).
 - **Not covered:** no screen reader or axe run; Chromium only; no `inert` behind a drawer (a Tab
   trap only); the Modules row highlights overrides only among its first 12 values.
 

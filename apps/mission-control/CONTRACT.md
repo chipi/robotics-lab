@@ -55,8 +55,14 @@ A command to an offline robot is an error and nothing is queued. A goal that a r
 | `POST /api/v1/robots/{id}/calibration/keep` | the measured value as the next profile version, `201 {run}` with `kept {version, applies, writes}`. `409`: `no_value` (nothing measured, or no reference yet), `implausible` (outside the procedure's `bounds`: nothing written), `already_kept`, `profile_not_writable` (as the profile save) |
 | `DELETE /api/v1/robots/{id}/calibration` | forgets the run (`409 calibration_running` while it runs): `{discarded}` |
 | `POST /api/v1/robots/{id}/drive` | `{vx, vyaw?, session}`; needs the lease; `409 real_runs_not_allowed` on a real robot whose file lacks `allow_real_runs` (STOP is never refused); `422 stand_turn_below_floor` for `vx` 0 and a `vyaw` under the profile's `locomotion.stand_turn.min_rad_s` (the walking network starts no turn from a stand below it; a robot whose profile has none is not held to it); a command lasts the robot's deadman time, so a driver repeats it |
-| `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is true when the robot answered `robot.stop` |
+| `POST /api/v1/robots/{id}/stop` | `{client?}`: accepted always, needs no lock; ends the holder's lease and latches. Returns `{robot, confirmed, online}`; `confirmed` is the gate's word that the robot answered `robot.stop` (below) |
 | `POST /api/v1/stop` | every robot at once, each reported, a silent one after 3 s: `{robots: [...], all_confirmed}` |
+
+`confirmed` is read from the gate's reply to the STOP, never inferred from the call to the gate
+returning: a gate whose robot did not answer `robot.stop` still returns, and says `confirmed:
+false`. It is false too when the gate does not answer, speaks another protocol, or sends no
+`confirmed` (a gate from before this field). The STOP is accepted in every case: the lease
+ended and the zero move was sent. The event stream's `stop` event carries the same `confirmed`.
 
 Mission Control reads a pointer robot's factsheet, control, capabilities, guardrails and rates once,
 at start: a version saved since changes what the navigator runs and the poses' scale from the next

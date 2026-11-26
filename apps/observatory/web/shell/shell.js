@@ -25,10 +25,10 @@ import { RunStore } from './runstore.js';
 import { createSignalsView, sigColor, sampleAt } from './signals.js';
 import { seqScale, inkOn, jointLimits, catVar } from './sigviz.js';
 import { chainsOf } from '/lib/body/robot.js';
-import { SEMANTIC, cssHex } from './semantic.js';
 import { sensorFromFrame, sensorFromTrunk, trunkQuat, axes as sensorAxes, FOV_DEG, attentionAt } from './eye.js';
 import { statusOf, glyph, label } from '/lib/status.js';
 import { mountTopBar } from '/lib/brand.js';
+import { lazyOpen } from '/lib/lazy.js';
 import { createTimeMode } from './timemode.js';
 import { parseMoment, momentLink as buildLink, copyText } from './evidence.js';
 import { mountLayout, prefs, savePrefs } from './layout.js';
@@ -108,29 +108,29 @@ const LANE_NAME = {
 // colour (a token) and icon of a stream, by id
 function styleOf(id) {
   const c = (v, i) => ({ c: `var(--${v})`, i });
-  if (id === 'scene.boxes') return c('c-box', 'box');
-  if (id === 'scene.hazards') return c('c-drop', 'hazard');
-  if (id.startsWith('belief.')) return c('c-belief', id.endsWith('track') ? 'track' : 'pose');
-  if (id.startsWith('truth.')) return c('c-truth', id.endsWith('track') ? 'track' : 'pose');
-  if (id === 'sensors.depth') return c('c-floor', 'points');
-  if (id.endsWith('.floor')) return c('c-floor', 'points');
-  if (id.endsWith('.obstacle')) return c('c-ob', 'points');
-  if (id.endsWith('.overhead')) return c('c-over', 'points');
-  if (id.endsWith('.below')) return c('c-drop', 'points');
-  if (id === 'sensors.tilt') return c('text-dim', 'tilt');
-  if (id === 'sensors.raw') return c('c-floor', 'grid');
-  if (id === 'world.grid') return c('c-occ', 'grid');
-  if (id === 'world.obstacles') return c('c-obst', 'points');
-  if (id === 'world.drops') return c('c-drop', 'points');
-  if (id === 'world.gaps') return c('c-gap', 'grid');
-  if (id === 'plan.path') return c('c-plan', 'route');
-  if (id === 'semantic.objects') return c('c-floor', 'box');
-  if (id === 'semantic.sighting') return c('c-plan', 'points');
-  if (id === 'semantic.areas') return c('c-plan', 'route');
+  if (id === 'scene.boxes') return c('data-box', 'box');
+  if (id === 'scene.hazards') return c('data-drop', 'hazard');
+  if (id.startsWith('belief.')) return c('data-belief', id.endsWith('track') ? 'track' : 'pose');
+  if (id.startsWith('truth.')) return c('data-truth', id.endsWith('track') ? 'track' : 'pose');
+  if (id === 'sensors.depth') return c('data-floor', 'points');
+  if (id.endsWith('.floor')) return c('data-floor', 'points');
+  if (id.endsWith('.obstacle')) return c('data-depth-obstacle', 'points');
+  if (id.endsWith('.overhead')) return c('data-depth-overhead', 'points');
+  if (id.endsWith('.below')) return c('data-drop', 'points');
+  if (id === 'sensors.tilt') return c('text-2', 'tilt');
+  if (id === 'sensors.raw') return c('data-floor', 'grid');
+  if (id === 'world.grid') return c('data-occupied', 'grid');
+  if (id === 'world.obstacles') return c('data-obstacle', 'points');
+  if (id === 'world.drops') return c('data-drop', 'points');
+  if (id === 'world.gaps') return c('data-gap', 'grid');
+  if (id === 'plan.path') return c('data-plan', 'route');
+  if (id === 'semantic.objects') return c('data-floor', 'box');
+  if (id === 'semantic.sighting') return c('data-plan', 'points');
+  if (id === 'semantic.areas') return c('data-plan', 'route');
   if (id === 'events') return c('warn', 'flag');
   if (id === 'anomalies') return c('error', 'hazard');
   if (id.startsWith('signals.')) return { c: sigColor(id.slice(8)), i: 'track' };
-  return c('text-dim', 'points');
+  return c('text-2', 'points');
 }
 
 // ---- the outliner's tree, from the run's stream list: sections by what a stream means for the robot (UXS-001, operator
@@ -263,8 +263,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const frameName = () => (M.frame === 'map' ? 'Map' : 'World');
   const palette = () => {
     const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue('--' + n).trim();
-    return Object.fromEntries(['bg-viewport', 'c-belief', 'c-truth', 'c-plan', 'c-obst', 'c-drop', 'c-floor', 'c-ob', 'c-over', 'c-box', 'c-occ', 'c-free',
-      'c-x', 'c-y', 'c-z', 'draw-grid', 'draw-label', 'draw-rel', 'draw-sel', 'box-fill', 'text', 'error', 'warn', 'text-dim'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
+    return Object.fromEntries(['surface-1', 'data-belief', 'data-truth', 'data-plan', 'data-obstacle', 'data-drop', 'data-floor', 'data-depth-obstacle', 'data-depth-overhead', 'data-box', 'data-occupied', 'data-free',
+      'axis-x', 'axis-y', 'axis-z', 'scene-grid', 'scene-label', 'scene-rel', 'scene-select', 'scene-box-fill', 'text-1', 'status-error', 'status-warn', 'text-2'].map((n) => [n, v(n)]).concat([['dark', M.theme === 'dark']]));
   };
 
   // ---- epochs, belief in the world, the moment ---------------------------------------------------------
@@ -345,7 +345,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   const rawSummary = () => { const f = rawFrame(true); return f ? { i: f.index, n: f.n, t: f.t, frame_t_ns: f.frame_t_ns, state_t_ns: f.state_t_ns ?? null, pair_dt_ms: f.pair_dt_ms ?? null } : null; };
   // the 8 x 8 distances as an image, coloured by distance (near warm, far cool) with the mm in each zone; a zone whose status is not valid is hatched and says its status
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const rawInk = () => ({ on: cssVar('--text-on-solid'), off: cssVar('--surface-section'), hatch: cssVar('--line-strong'), note: cssVar('--status-warn-on') });
+  const rawInk = () => ({ on: cssVar('--text-on-solid'), off: cssVar('--surface-section'), hatch: cssVar('--line-strong'), note: cssVar('--status-warn-on'), edge: cssVar('--line') });
   function paintRaw(cv, f) {
     const cell = cv.width / f.cols, g = cv.getContext('2d'), ink = rawInk(), heat = seqScale();
     g.font = `${Math.round(cell * 0.3)}px ui-monospace, monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -358,7 +358,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
         for (let o = -cell; o < cell; o += 6) { g.moveTo(x + Math.max(o, 0), y + Math.max(-o, 0)); g.lineTo(x + Math.min(o + cell, cell), y + Math.min(cell - o, cell)); }
         g.stroke(); g.fillStyle = ink.note; g.fillText('s' + f.status[k], x + cell / 2, y + cell / 2);
       }
-      g.strokeStyle = 'rgba(0,0,0,.45)'; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+      g.strokeStyle = ink.edge; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
     }
   }
   function rawSection() {
@@ -1028,8 +1028,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const leafIds = group ? T.leaves(n.id) : [n.id], live = leafIds.filter((l) => !stream(l).missing);
     let h;
     if (s) {
-      h = `<div class="phead"><span style="color:${s.missing ? 'var(--warn)' : sty.c}">${svgI(s.missing ? 'hazard' : sty.i, 16)}</span><span class="nm">${esc(cap(s.name))}</span><span class="fchip">${esc(s.frame)}</span>`
-        + `<span class="id">${esc(n.id)}</span><span class="stat">${s.missing ? `<span style="color:var(--warn)">${esc(cap(s.why || 'missing'))}</span>` : `${nf(s.count)} records${s.rate_hz ? ` · ${s.rate_hz} Hz` : ' · static'}`}</span></div>`;
+      h = `<div class="phead"><span style="color:${s.missing ? 'var(--status-warn)' : sty.c}">${svgI(s.missing ? 'hazard' : sty.i, 16)}</span><span class="nm">${esc(cap(s.name))}</span><span class="fchip">${esc(s.frame)}</span>`
+        + `<span class="id">${esc(n.id)}</span><span class="stat">${s.missing ? `<span style="color:var(--status-warn)">${esc(cap(s.why || 'missing'))}</span>` : `${nf(s.count)} records${s.rate_hz ? ` · ${s.rate_hz} Hz` : ' · static'}`}</span></div>`;
     } else {
       h = `<div class="phead"><span>${svgI(n.i, 16)}</span><span class="nm">${esc(n.name)}</span>${n.sfx ? `<span class="fchip">${esc(n.sfx)}</span>` : '<span></span>'}`
         + `<span class="id">${esc(n.id)}</span><span class="stat">${leafIds.length} streams · ${leafIds.length - live.length} missing</span></div>`;
@@ -1058,7 +1058,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
         + `<span class="lab">Rate</span><span class="ro">${s.rate_hz ? s.rate_hz + ' Hz' : 'static'}</span>`
         + (s.kind ? `<span class="lab">Value</span><span class="ro">${esc(s.kind)}${s.unit ? ' · ' + esc(s.unit) : ''}</span>` : '')
         + (pr ? `<span class="lab">First – last</span><span class="ro">${pr[0].toFixed(2)} – ${pr[1].toFixed(2)} s</span>` : '')
-        + (s.missing ? `<span class="lab">Why missing</span><span class="ro" style="color:var(--warn);font-family:var(--ui)">${esc(s.why || 'missing')}</span>` : ''));
+        + (s.missing ? `<span class="lab">Why missing</span><span class="ro" style="color:var(--status-warn);font-family:var(--font-ui)">${esc(s.why || 'missing')}</span>` : ''));
     }
     const m = hasTicks() ? moment() : null;
     if (/^(belief|truth)\./.test(n.id) || n.id === 'g.belief' || n.id === 'g.truth' || n.id === 'g.robot') {
@@ -1169,8 +1169,8 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
       el.innerHTML =
         isec('m', 'Moment', '', kv('Time', fx(M.t, 2), 's') + kv('Tick', `${m.tick + 1} of ${m.n}`) + kv('Map epoch from', fx(m.epoch, 2), 's'), MOMENT_ACTS)
         + (hasSignals() ? signalsSection(sg) : '')
-        + isec('b', 'Belief', 'var(--c-belief)', pose(map ? m.bm : m.bw), `<span class="fchip">${map ? 'map' : 'world'}</span>`)
-        + isec('t', 'Truth', 'var(--c-truth)', map ? kv('Truth', 'hidden in the map frame', '', 'na') : m.tr ? pose(m.tr) : kv('Truth', 'none in this run', '', 'na'), '<span class="fchip">world</span>')
+        + isec('b', 'Belief', 'var(--data-belief)', pose(map ? m.bm : m.bw), `<span class="fchip">${map ? 'map' : 'world'}</span>`)
+        + isec('t', 'Truth', 'var(--data-truth)', map ? kv('Truth', 'hidden in the map frame', '', 'na') : m.tr ? pose(m.tr) : kv('Truth', 'none in this run', '', 'na'), '<span class="fchip">world</span>')
         + isec('e', 'Error', '', (map ? kv('Belief to truth', 'world frame only', '', 'na derived') : m.dist != null ? kv('Belief to truth', fx(m.dist), 'm', 'derived') + kv('Heading error', fx(m.herr, 1), '°', 'derived') : kv('Belief to truth', 'no truth', '', 'na derived')) + kv('Nearest obstacle', 'not in the data yet', '', 'na'))
         + isec('c', 'Command', '', kv('Forward', fx(m.cmd?.[0]), 'm/s') + kv('Turn', fx(m.cmd?.[1]), 'rad/s'))
         + isec('d', 'Depth frame', '', m.depthTick < 0 ? kv('Depth', 'no frame yet', '', 'na') : kv('Frame tick', `${m.depthTick + 1} of ${m.n}`) + kv('Floor returns', String(m.cnt.f)) + kv('Obstacle returns', String(m.cnt.o)) + kv('Overhead returns', String(m.cnt.v)) + kv('Below the floor', String(m.cnt.b)))
@@ -1190,7 +1190,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     bindSecs(el);
     const rcv = $('rawcv'), rf = rcv && raw.fr;
     if (rcv && rf) paintRaw(rcv, rf);
-    el.querySelectorAll('.cp').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(b.dataset.copy.trim()).catch(() => {}); } catch (_) { /* no clipboard here */ } b.style.color = 'var(--ok)'; setTimeout(() => (b.style.color = ''), 600); }));
+    el.querySelectorAll('.cp').forEach((b) => (b.onclick = (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(b.dataset.copy.trim()).catch(() => {}); } catch (_) { /* no clipboard here */ } b.style.color = 'var(--status-ok)'; setTimeout(() => (b.style.color = ''), 600); }));
     el.querySelectorAll('[data-seek]').forEach((b) => (b.onclick = () => b.dataset.seek !== '' && setTime(+b.dataset.seek)));
     const jb = el.querySelector('[data-json]');
     if (jb) jb.onclick = (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(JSON.stringify(momentJson, null, 1)).catch(() => {}); } catch (_) { /* no clipboard here */ } jb.textContent = 'copied'; setTimeout(() => (jb.textContent = 'copy JSON'), 800); };
@@ -1238,14 +1238,14 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   function legendHtml() {
     if (!M.run) return '';
     const w = M.frame === 'world', sh = (id) => shown(id), sem = (id) => !!adapter.semantic && sh(id);      // the deck page draws no semantic map
-    const L = [['Belief', 'c-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'c-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'c-plan', sh('plan.path'), 1],
-      ['Floor', 'c-floor', sh('sensors.depth.floor')], ['Obstacle', 'c-ob', sh('sensors.depth.obstacle')], ['Overhead', 'c-over', sh('sensors.depth.overhead')], ['Below floor', 'c-drop', sh('sensors.depth.below')],
-      ['Memory', 'c-obst', sh('world.obstacles')], ['Drop', 'c-drop', sh('world.drops')], ['Gap near the plan', 'c-gap', sh('world.gaps')], ['Occupied', 'c-occ', sh('world.grid')], ['Hazard', 'c-drop', w && sh('scene.hazards')],
-      // the semantic map (ADR-0019): its colours are not themed, a '#' colour is taken as it is; a faint key is an object not yet confirmed
-      ['Object', cssHex(SEMANTIC.object), sem('semantic.objects')], ['Object, not yet', cssHex(SEMANTIC.object) + ';opacity:.4', sem('semantic.objects')], ['Landmark', cssHex(SEMANTIC.landmark), sem('semantic.objects')],
-      ['Field of view', cssHex(SEMANTIC.wedge), sem('semantic.sighting')], ['Detection', cssHex(SEMANTIC.seen), sem('semantic.sighting')],
-      ['Area', cssHex(SEMANTIC.area), sem('semantic.areas'), true]];
-    return L.filter((x) => x[2]).map(([n, c, , ln]) => `<span><i class="${ln ? 'ln' : ''}" style="background:${c.startsWith('#') ? c : `var(--${c})`}"></i>${n}</span>`).join('');
+    const L = [['Belief', 'data-belief', sh('belief.pose') || sh('belief.track')], ['Truth', 'data-truth', w && (sh('truth.pose') || sh('truth.track'))], ['Plan', 'data-plan', sh('plan.path'), 1],
+      ['Floor', 'data-floor', sh('sensors.depth.floor')], ['Obstacle', 'data-depth-obstacle', sh('sensors.depth.obstacle')], ['Overhead', 'data-depth-overhead', sh('sensors.depth.overhead')], ['Below floor', 'data-drop', sh('sensors.depth.below')],
+      ['Memory', 'data-obstacle', sh('world.obstacles')], ['Drop', 'data-drop', sh('world.drops')], ['Gap near the plan', 'data-gap', sh('world.gaps')], ['Occupied', 'data-occupied', sh('world.grid')], ['Hazard', 'data-drop', w && sh('scene.hazards')],
+      // the semantic map (ADR-0019): its colours are tokens that do not change with the theme; a faint key is an object not yet confirmed
+      ['Object', 'data-object', sem('semantic.objects')], ['Object, not yet', 'data-object', sem('semantic.objects'), 0, 1], ['Landmark', 'data-landmark', sem('semantic.objects')],
+      ['Field of view', 'data-wedge', sem('semantic.sighting')], ['Detection', 'data-seen', sem('semantic.sighting')],
+      ['Area', 'data-area', sem('semantic.areas'), true]];
+    return L.filter((x) => x[2]).map(([n, c, , ln, faint]) => `<span><i class="${ln ? 'ln' : ''}" style="background:var(--${c})${faint ? ';opacity:.4' : ''}"></i>${n}</span>`).join('');
   }
   const renderLegend = () => { $('legend').innerHTML = legendHtml(); };
   // where the legend is hidden (narrow windows) the overlays popover carries the colour keys
@@ -1267,10 +1267,10 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const a = M.view === '3d' ? adapter.gizmo?.() : AXES[M.view];
     if (!a) { g.innerHTML = ''; return; }
     const R = 20, C = 28, items = ['x', 'y', 'z'].map((k) => ({ k, v: a[k] })).sort((p, q) => p.v[2] - q.v[2]);
-    g.innerHTML = '<circle cx="28" cy="28" r="26" fill="var(--hair-2)" stroke="var(--hair)"/>' + items.map(({ k, v }) => {
-      const x = C + v[0] * R, y = C - v[1] * R, flat = Math.hypot(v[0], v[1]) < 0.2, col = `var(--c-${k})`;
+    g.innerHTML = '<circle cx="28" cy="28" r="26" fill="var(--hairline-1)" stroke="var(--hairline-2)"/>' + items.map(({ k, v }) => {
+      const x = C + v[0] * R, y = C - v[1] * R, flat = Math.hypot(v[0], v[1]) < 0.2, col = `var(--axis-${k})`;
       return (flat ? '' : `<line x1="${C}" y1="${C}" x2="${x}" y2="${y}" stroke="${col}" stroke-width="2"/>`)
-        + `<circle cx="${flat ? C : x}" cy="${flat ? C : y}" r="${flat ? 4 : 6}" fill="${col}"/>` + (flat ? '' : `<text x="${x}" y="${y + 3.2}" text-anchor="middle" font-size="8" font-family="var(--mono)" fill="var(--bg-app)" font-weight="700">${k.toUpperCase()}</text>`);
+        + `<circle cx="${flat ? C : x}" cy="${flat ? C : y}" r="${flat ? 4 : 6}" fill="${col}"/>` + (flat ? '' : `<text x="${x}" y="${y + 3.2}" text-anchor="middle" font-size="8" font-family="var(--font-mono)" fill="var(--surface-0)" font-weight="700">${k.toUpperCase()}</text>`);
     }).join('');
   }
 
@@ -1589,7 +1589,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     const m = e.target.closest('.mk');
     if (!m) { tip.hidden = true; return; }
     const ev = M.run.events[m.dataset.ev];
-    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${ev.decision ? `<br><span class="dim">${esc(ev.decision.reason)}</span>` : ''}${hasTicks() && ev.t > tickSpan()[1] ? `<br><span style="color:var(--warn)">after the last recorded tick (${tickSpan()[1].toFixed(2)} s)</span>` : ''}`;
+    tip.innerHTML = `<b>${ev.t.toFixed(2)} s</b> · <span style="color:${kindColor(ev.kind)}">${esc(ev.kind)}</span><br><span class="dim">${esc(ev.text)}</span>${ev.decision ? `<br><span class="dim">${esc(ev.decision.reason)}</span>` : ''}${hasTicks() && ev.t > tickSpan()[1] ? `<br><span style="color:var(--status-warn)">after the last recorded tick (${tickSpan()[1].toFixed(2)} s)</span>` : ''}`;
     tip.hidden = false; tip.style.left = Math.min(e.clientX + 12, innerWidth - 330) + 'px'; tip.style.top = (e.clientY - 60) + 'px';
   });
   $('mlane').addEventListener('mouseleave', () => { tip.hidden = true; });
@@ -1667,7 +1667,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
   });
 
   // ---- the command palette (verbs.js, on libs/web/palette): loaded by the first Ctrl/Cmd+K or press of its button, never by the page's first paint ----
-  let cmdk = null, paletteBusy = null, flashTimer = 0;
+  let flashTimer = 0;
   function flash(text, err) {       // the palette closes before a verb runs, so a verb's result and its errors are told here
     let m = $('verbmsg');
     if (!m) { m = document.createElement('div'); m.id = 'verbmsg'; document.body.append(m); }
@@ -1675,23 +1675,16 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { m.hidden = true; }, err ? 7000 : 3500);
   }
-  const loadPalette = () => (paletteBusy ||= import('./verbs.js').then(async (m) => {
-    await ensureIndex().catch(() => {});       // the scenes and runs the verbs open come from the index the page already holds
-    cmdk = m.mount({
-      M, shown: (id) => shown(id), say: flash, play, fit, theme: () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true),
-      views: () => [...$('layoutSeg').querySelectorAll('button')].map((b) => [b.dataset.view, b.textContent.trim()]),
-      canLive: () => !$('tm-golive').hidden, goLive: () => setFollow(true), layout: layoutApi?.act ?? null,
-    });
-  }).catch((e) => { paletteBusy = null; throw e; }));
-  async function openPalette() {
-    try { await loadPalette(); cmdk.open(); } catch (e) { flash('The command palette could not be loaded: ' + e.message, true); }
-  }
-  $('paletteBtn').onclick = openPalette;
-  addEventListener('keydown', (e) => {
-    if (cmdk || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'k') return;
-    if (e.target.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
-    e.preventDefault();
-    openPalette();
+  lazyOpen({
+    button: $('paletteBtn'), onError: (m) => flash(m, true),
+    load: () => import('./verbs.js').then(async (m) => {
+      await ensureIndex().catch(() => {});       // the scenes and runs the verbs open come from the index the page already holds
+      return m.mount({
+        M, shown: (id) => shown(id), say: flash, play, fit, theme: () => applyTheme(M.theme === 'dark' ? 'light' : 'dark', true),
+        views: () => [...$('layoutSeg').querySelectorAll('button')].map((b) => [b.dataset.view, b.textContent.trim()]),
+        canLive: () => !$('tm-golive').hidden, goLive: () => setFollow(true), layout: layoutApi?.act ?? null,
+      });
+    }),
   });
 
   // ---- boot ---------------------------------------------------------------------------------------------
@@ -1736,7 +1729,7 @@ export function createShell(adapter, { title = 'miniview', eye = false, watch = 
 
 // The pages link Inter and JetBrains Mono from the service (libs/web/fonts at /lib/fonts, no CDN). A font file is fetched only when
 // text first uses it, so a screenshot taken at once used to show the system fallbacks; ready waits for them,
-// but never longer than 3 s (offline, the system fonts in the --ui and --mono stacks stay).
+// but never longer than 3 s (offline, the system fonts in the --font-ui and --font-mono stacks stay).
 async function fontsReady() {
   await new Promise((r) => requestAnimationFrame(() => r()));
   await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))]);

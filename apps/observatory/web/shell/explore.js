@@ -99,7 +99,10 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t, data })
       const controls = new OrbitControls(camera, renderer.domElement);
       const scene = new THREE.Scene();
       // the viewport's colour, from the theme's tokens (followed when the theme changes)
-      const bg = () => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--bg-viewport').trim() || '#202125');
+      const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+      const bg = () => new THREE.Color(tok('--surface-1'));
+      // the glow of a selected and a hovered link: the accent and the label colour, scaled to what the fixed values were
+      const glow = () => ({ sel: new THREE.Color(tok('--accent')).multiplyScalar(0.4), hover: new THREE.Color(tok('--text-2')).multiplyScalar(0.07) });
       scene.background = bg();
       // the stage's lights and tone mapping (libs/web/stage), so the body here looks as it does in the 3D pane beside it
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -113,8 +116,8 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t, data })
         sun.color.copy(parseColor(THREE, t.sun).color); sun.intensity = t.sunK;
       };
       light();
-      new MutationObserver(() => { scene.background = bg(); light(); if (view) view.dirty = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
-      view = { renderer, camera, controls, scene, links: {}, root: new THREE.Group(), ray: new THREE.Raycaster(), hover: null, dirty: true };
+      new MutationObserver(() => { scene.background = bg(); light(); if (view) { view.glow = glow(); view.dirty = true; } }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+      view = { renderer, camera, controls, scene, links: {}, root: new THREE.Group(), ray: new THREE.Raycaster(), hover: null, dirty: true, glow: glow() };
       scene.add(view.root);
       controls.addEventListener('change', () => (view.dirty = true));
       new ResizeObserver(resize).observe($('xbody'));
@@ -148,7 +151,7 @@ export function createExplore(el, { api, robotDesc, recorded, hasRun, t, data })
     view.body.pose(values());
     for (const [n, g] of Object.entries(view.links)) {
       g.visible = !S.hidden.has(n) && (!S.isolated || S.isolated === n);
-      for (const m of g.children) m.material.emissive?.setHex(n === S.sel ? 0x3a5fa0 : n === view.hover ? 0x2a2a2a : 0x000000);
+      for (const m of g.children) m.material.emissive?.set(n === S.sel ? view.glow.sel : n === view.hover ? view.glow.hover : 0);
     }
     view.dirty = true;
   }

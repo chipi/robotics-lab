@@ -858,11 +858,11 @@ with tempfile.TemporaryDirectory() as tmp, sync_playwright() as p:
         p5.context.close()
         check("page: no console error or warning, no failed request on the page", not console and not missing, (console[:5], missing))
 
-        # no colour literal in the page's scene code: the tokens are read, not copied (the allowed: the white of the pins' texture mask)
+        # no colour literal in the page's scene code: the tokens are read, not copied (U26: none at all, the pins' texture mask reads --text-on-solid)
         src = {n: (Path(__file__).resolve().parents[1] / "web" / "three" / n).read_text() for n in ("build.js", "views.js", "app.js")}
         lit = {n: re.findall(r"#[0-9a-fA-F]{3,8}\b|\b0x[0-9a-fA-F]+\b|rgba?\(", t) for n, t in src.items()}
-        check("no hex, 0x or rgb() colour literal in build.js, views.js or app.js, except the one '#fff' of the anomaly pins' texture mask",
-              lit["views.js"] == [] and lit["app.js"] == [] and lit["build.js"] == ["#fff"] and "g.fillStyle = g.strokeStyle = '#fff'" in src["build.js"], lit)
+        check("no hex, 0x or rgb() colour literal in build.js, views.js or app.js; the pins' texture mask is the --text-on-solid token",
+              lit["views.js"] == [] and lit["app.js"] == [] and lit["build.js"] == [] and "g.fillStyle = g.strokeStyle = C.mask" in src["build.js"], lit)
         check("build.js reads the tokens: no fog fallback 0x9aa3b0, no setPalette", "9aa3b0" not in src["build.js"] and "setPalette" not in src["build.js"] + src["app.js"], "")
 
         check("no console error or warning, no failed request", not console and not missing, (console[:5], missing))

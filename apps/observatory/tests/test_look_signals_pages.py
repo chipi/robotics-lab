@@ -146,7 +146,7 @@ with sync_playwright() as p:
     check("the sequential scale runs from the ramp's first stop to its ninth", norm(r["first"]) == norm(r["t1"]) and norm(r["last"]) == norm(r["t9"]), r)
     d = [b_ - a for a, b_ in zip(r["lums"], r["lums"][1:])]
     check("the scale is monotone in lightness", all(x > 0 for x in d) or all(x < 0 for x in d), r["lums"])
-    check("the ink on a cell is chosen by the cell's lightness: light on dark, dark on light", r["inkOnDark"] != r["inkOnLight"] and "255" in r["inkOnDark"] and "0 0 0" in r["inkOnLight"], r)
+    check("the ink on a cell is chosen by the cell's lightness: light on dark, dark on light", r["inkOnDark"] != r["inkOnLight"] and r["inkOnDark"] == "#ffffff" and r["inkOnLight"] == "#000000", r)
     pg.click("#themeBtn")
     pg.wait_for_function("document.documentElement.dataset.theme === 'dark'")
 

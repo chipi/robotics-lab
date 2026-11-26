@@ -34,10 +34,13 @@ class Robot:
     def __init__(self):
         self.calls = []
         self.fail = False
+        self.fail_methods = {}              # method -> the exception that call raises (a robot that answers move but not stop)
 
     def __call__(self, method, params):
         if self.fail:
             raise RuntimeError("robot gone")
+        if method in self.fail_methods:
+            raise self.fail_methods[method]
         self.calls.append((method, params))
         return {"ok": True}
 
@@ -165,7 +168,7 @@ b = gate.open("bystander")
 gate.handle(a, "gate.acquire")
 gate.handle(a, "robot.move", MOVE)
 robot.calls.clear()
-check("STOP from a connection with no lease is accepted", gate.handle(b, "robot.stop") == {"ok": True})
+check("STOP from a connection with no lease is accepted, and the robot answered", gate.handle(b, "robot.stop") == {"ok": True, "confirmed": True, "errors": []})
 check("STOP stops the robot", robot.stopped(), robot.calls)
 check("STOP ends the holder's lease", gate.who()["holder"] is None)
 check("the holder is told, with the name that stopped it", inbox_a[-1] == ("lease_lost", {"lease_id": 1, "reason": "stopped_by bystander"}), inbox_a)
@@ -191,6 +194,32 @@ robot.fail = True
 gate.close(a)
 check("a robot that fails the stop still ends the lease", gate.who()["holder"] is None)
 check("and the failure is logged", any(e["event"] == "stop_failed" for e in log), log)
+
+# STOP says whether the robot answered robot.stop: accepted is not confirmed
+for why, exc in (("raises", RuntimeError("robotd gone")), ("times out", TimeoutError("no answer from robotd"))):
+    gate, clock, robot, log = make()
+    a, b = gate.open("navigator"), gate.open("bystander")
+    gate.handle(a, "gate.acquire")
+    robot.fail_methods["robot.stop"] = exc
+    robot.calls.clear()
+    reply = gate.handle(b, "robot.stop")
+    check(f"STOP with a holder, robot.stop {why}: accepted, not confirmed, the error said",
+          reply["ok"] is True and reply["confirmed"] is False and len(reply["errors"]) == 1 and "robot.stop" in reply["errors"][0], reply)
+    check(f"... the lease still ended and the zero move was still sent ({why})",
+          gate.who()["holder"] is None and robot.calls == [("robot.move", {"vx": 0.0, "vy": 0.0, "vyaw": 0.0})], robot.calls)
+    reply = gate.handle(b, "robot.stop")
+    check(f"STOP with no holder, robot.stop {why}: accepted, not confirmed, the error said",
+          reply["ok"] is True and reply["confirmed"] is False and "robot.stop" in reply["errors"][0], reply)
+    robot.fail_methods.clear()
+    check("a robot that answers again is confirmed again", gate.handle(b, "robot.stop")["confirmed"] is True)
+gate, clock, robot, log = make()
+a, b = gate.open("navigator"), gate.open("bystander")
+gate.handle(a, "gate.acquire")
+check("STOP with a holder and a working robot: confirmed", gate.handle(b, "robot.stop") == {"ok": True, "confirmed": True, "errors": []})
+gate.handle(a, "gate.acquire")
+robot.fail = True
+reply = gate.handle(a, "robot.stop")
+check("STOP with the whole robot gone: accepted, not confirmed, both errors", reply["ok"] is True and reply["confirmed"] is False and len(reply["errors"]) == 2, reply)
 
 # --- takeover --------------------------------------------------------------------------------
 gate, clock, robot, log = make(names=("operator-laptop", "operator-phone"))

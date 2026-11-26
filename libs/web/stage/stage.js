@@ -84,15 +84,19 @@ export function makeGrid(THREE, bounds, { step = 1, major = 5, plane = 'xy', tok
   return grid;
 }
 
-// a white radial falloff in the alpha channel; the material's colour and opacity (the --scene-shadow token) tint it
+// a white radial falloff in the alpha channel, written as pixels (the stops are alpha only); the material's colour and opacity (the --scene-shadow token) tint it
+const FALLOFF = [[0, 1], [0.35, 0.7], [0.7, 0.25], [1, 0]];
 function shadowTexture(THREE) {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  for (const [s, a] of [[0, 1], [0.35, 0.7], [0.7, 0.25], [1, 0]]) r.addColorStop(s, `rgba(255,255,255,${a})`);
-  g.fillStyle = r;
-  g.fillRect(0, 0, 128, 128);
+  const size = 128, c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d'), img = g.createImageData(size, size);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const d = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2), i = FALLOFF.findIndex(([s]) => d <= s), o = (y * size + x) * 4;
+    const [s0, a0] = FALLOFF[Math.max(i, 1) - 1], [s1, a1] = FALLOFF[Math.max(i, 1)];
+    img.data.fill(255, o, o + 3);
+    img.data[o + 3] = i < 0 ? 0 : Math.round(255 * (a0 + (a1 - a0) * (d - s0) / (s1 - s0)));
+  }
+  g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -121,9 +125,9 @@ export function createStage(THREE, scene, renderer, { bounds = [-4, 4, -3, 3], l
   grid.name = 'stage.grid';
 
   const up = at(plane, 0, 0, 1);
-  const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
+  const hemi = new THREE.HemisphereLight();
   hemi.position.set(...up);
-  const sun = new THREE.DirectionalLight(0xffffff, 1);
+  const sun = new THREE.DirectionalLight();
   sun.position.set(...at(plane, 3, -4, 6));
   const lights = new THREE.Group();
   lights.name = 'stage.lights';

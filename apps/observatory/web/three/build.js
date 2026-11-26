@@ -1,18 +1,19 @@
 import * as THREE from 'three';
 import { gapCells } from '../shell/gaps.js';
-import { SEMANTIC, LANDMARK_MIN } from '../shell/semantic.js';
+import { LANDMARK_MIN } from '../shell/semantic.js';
 import { readStageTokens, parseColor } from '/lib/stage/stage.js';
 
 // The scene's colours, read from the tokens (--data-*, --axis-*, --scene-*, --hud-*, --status-*) by readPalette: CSS text (THREE.Color takes
-// it), read again on a theme change. The semantic map's are not themed (RFC-0016): the legend uses the same.
-export const C = { ...SEMANTIC, depth: {} };
+// it), read again on a theme change. The semantic map's (--data-object and the four after it, RFC-0016) do not change with the theme; the legend uses the same tokens.
+export const C = { depth: {} };
 export function readPalette(el = document.documentElement) {
   const cs = getComputedStyle(el), v = (n) => cs.getPropertyValue('--' + n).trim(), t = readStageTokens(el), fill = parseColor(THREE, t.boxFill);
   Object.assign(C, {
     belief: v('data-belief'), truth: v('data-truth'), plan: v('data-plan'), obst: v('data-obstacle'), hazard: v('data-drop'), occ: v('data-occupied'),
+    object: v('data-object'), landmark: v('data-landmark'), seen: v('data-seen'), wedge: v('data-wedge'), area: v('data-area'),
     free: v('data-free'), x: v('axis-x'), y: v('axis-y'), z: v('axis-z'), box: v('data-box'), grid: t.grid, rel: t.rel, gap: v('data-gap'), fog: t.label,
     boxFill: [fill.color, fill.alpha], depth: { f: v('data-floor'), o: v('data-depth-obstacle'), v: v('data-depth-overhead'), b: v('data-drop') },
-    error: v('status-error'), warn: v('status-warn'), dim: v('text-2'), label: t.label, pill: v('hud-bg'), pillText: v('hud-strong'),
+    mask: v('text-on-solid'), error: v('status-error'), warn: v('status-warn'), dim: v('text-2'), label: t.label, pill: v('hud-bg'), pillText: v('hud-strong'),
   });
   return t;
 }
@@ -275,13 +276,13 @@ function pointsObj(pos, colors, size) {
   return p;
 }
 
-// an anomaly pin's shape as a white texture the severity's colour multiplies: a dot, a diamond, a ring
+// an anomaly pin's shape as a white texture (--text-on-solid, white in both themes) the severity's colour multiplies: a dot, a diamond, a ring
 const pinTextures = {};
 function pinTexture(shape) {
   if (pinTextures[shape]) return pinTextures[shape];
   const c = document.createElement('canvas'), g = c.getContext('2d');
   c.width = c.height = 64;
-  g.fillStyle = g.strokeStyle = '#fff'; g.lineWidth = 9; g.beginPath();
+  g.fillStyle = g.strokeStyle = C.mask; g.lineWidth = 9; g.beginPath();
   if (shape === 'diamond') { g.moveTo(32, 4); g.lineTo(60, 32); g.lineTo(32, 60); g.lineTo(4, 32); g.closePath(); g.fill(); }
   else if (shape === 'ring') { g.arc(32, 32, 24, 0, 7); g.stroke(); }
   else { g.arc(32, 32, 27, 0, 7); g.fill(); }

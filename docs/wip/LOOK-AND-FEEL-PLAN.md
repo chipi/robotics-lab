@@ -28,7 +28,7 @@ Each unit's first step is to check the facts it rests on.
   view has no follow modes and no gizmo (the robot stands still there). Accepted fixes: one
   light rig (the `--scene-*` lights) for the 3D pane, the Explore body and Mission Control,
   dark lights brighter and neutral (sky 1, sun 1.4); the dark grid one step brighter
-  (`--draw-grid` follows it, an amendment in `test_tokens.py`); `I` in the keyboard help.
+  (`--scene-grid`, once `--draw-grid`, is the one token the 2D views read, and `test_tokens.py` pins its dark value); `I` in the keyboard help.
 - **Review round 3** ([the page](https://claude.ai/artifact/EqGutKa2fH14TcgbUuQzHM), 2026-11-25):
   the rest looks good for now; more feedback after using it. Q1: the Readiness card replaces
   the fit card, and the robot page's header verdict follows it (one verdict, one list). Q2: the
@@ -161,7 +161,7 @@ parallel (disjoint files), U9 after U8; then two serial lanes, the Observatory (
 ### Tokens (`libs/web/tokens.css`)
 
 "I" is invariant (first block only); the rest has the same key set in dark, light and the media
-block. Old names stay as aliases in the first block until U26.
+block. The old names were aliases in the first block until U26 removed them (Amendments); a check bans them.
 
 - Surfaces: `--surface-0` app, `-1` viewport, `-2` panel, `-3` header, `-field`, `-hover`,
   `-press`, `-selected`, `-section`, `-section-hover`, `-tip`.
@@ -174,7 +174,7 @@ block. Old names stay as aliases in the first block until U26.
   only).
 - Status, each with `-soft` and `-on`: `--status-ok`, `-info`, `-warn`, `-alert` (orange),
   `-error`, `-unknown`, `-stale`, `-live` (yellow, with its own glyph), `-offline` (grey, its
-  own glyph; round 1). `--ok`, `--warn`, `--error` stay as aliases. A status is never colour
+  own glyph; round 1). A status is never colour
   alone: a glyph and a word.
 - Data (never a status): `--data-belief`, `-truth`, `-plan`, `-obstacle`, `-drop`, `-floor`,
   `-depth-obstacle`, `-depth-overhead`, `-box`, `-occupied`, `-free`, `-gap`.
@@ -252,6 +252,19 @@ other app sees.
   nothing; ArrowDown selects the first row, ArrowUp the last, and a typed query selects its first
   match as usual. STOP and STOP ALL stay the first rows and still run on one Enter once selected.
   Mission Control passes `false`; the Observatory passes nothing and is unchanged.
+
+U26 (the sweep). Each is backward compatible for a caller of the frozen modules.
+
+- Tokens (`tokens.css`): the old-name aliases are gone from the first block, `--ok`, `--warn` and `--error` too (use `--status-ok`, `-warn`, `-error`), and so are the three `--legacy-*` values
+  (`--text-faint` became `--text-3`, `--check-border` `--control-border`, `--range-knob` `--control-knob`, each a little stronger, as the contrast checks wanted). Added, in every block
+  with the same key set: `--data-object`, `-landmark`, `-seen`, `-wedge`, `-area` (the semantic map's five colours, the same in both themes, read by the 3D scene, the map and the legend instead of
+  hex in `semantic.js`) and `--text-on-light` (the black ink for a canvas cell filled with a data colour; `--text-on-solid` is the white one). `test_tokens.py` fails on a literal colour
+  (`#hex`, `0xRRGGBB`, `rgb()`, `hsl()`) in either app's web code or in `libs/web` outside `tokens.css` (its allowlist is empty), and on any old name.
+- `stage/trail.js`: `createTrail`'s defaults for `head` and `fadeTo` are read from `--data-belief` and `--scene-bg` (they were white and black); a caller that passes both is unchanged.
+- `layout/menu.js` and `menu.css` (new): `createLayoutMenu({store, id, trigger, mount, rows, widths, sizeTarget, isShown, setShown, ...})` is the Layout menu both apps use; the layout store
+  is not changed. `sheet.js` (new): `needSheet(moduleUrl, file)` links a stylesheet once; the palette uses it too.
+- `lazy.js` (new, no import): `lazyOpen({button, load, before, onError})` opens the command palette on the button or Ctrl/Cmd+K and loads it then; `TYPING` (the selector for a key typed in a field)
+  moved here from `palette/palette.js`, which imports it. `createPalette` and the registry are unchanged.
 
 ## Risks
 
