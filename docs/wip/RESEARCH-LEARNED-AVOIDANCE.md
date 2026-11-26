@@ -177,7 +177,45 @@ this in RFC-0025 step 5a's design (activity S4); no Isaac ROS dependency is prop
 
 S1 to S4 cost nothing and can run any time; S5 follows the operator's pick.
 
-## 8. Not known yet
+## 8. Track E: evaluation as infrastructure, and a public comparison
+
+The operator, 2026-11-26: compare our navigator with NVIDIA's learned controller, quantified in
+simulation, as a blog post; set up a private robotics eval repository on the operator's own eval
+harness; from now on track runs, build datasets and compare, because many evals of different kinds
+are coming. Decided the same day:
+
+- **The eval repository is private** (proposed name `robotics-evals`, on GitHub).
+- **Datasets are public, on Hugging Face**, which is also their storage: eval-harness uploads to
+  and downloads from the Hub. Everything robotics is public by choice, for the operator's profile
+  on GitHub and Hugging Face; a dataset is published when it is good.
+- **eval-harness 0.8.1** (tag `v0.8.1`). We are beta users; its own agent (the "eval harness"
+  session) helps with any gap we find. `EVAL-HARNESS-ASKS.md` (E1 to E14, written against 0.6)
+  is rechecked against 0.8.1 before anything is asked again.
+
+**A fair comparison** (what makes the post credible):
+
+- NVIDIA's controller retrained unchanged against Pollen's walker (R6), so both run on the same
+  body; their published recipe against their walker is reported beside it, not instead.
+- Like with like: three arms, our rules alone; their controller under our planner; theirs with our
+  rules as the guard. The same frozen scenarios with seeds, at least 10 per arm; scores: success,
+  collisions, minimum clearance, time, stops, falls.
+- Our simulator's sensor impairments added first (R2), or both arms are tested on a sensor better
+  than the real one.
+
+| # | What | Needs | Produces |
+| --- | --- | --- | --- |
+| E1 | The eval repository's layout, the run ledger (one record per run: build identity, scenario, seed, arm, verdict, the run file's hash), and how existing runs (45 in `robots/duck/runs`, 353 MB) enter it | Creating the private repository (the operator's go given) | The repository and its README |
+| E2 | What a robotics dataset is: a scenario set (start pose, scene, seed, instruction) and a run set (run files by hash, verdicts); its card, licence and privacy rules | E1 | The first dataset spec |
+| E3 | eval-harness 0.8.1 against our needs: import of runs, arms, intervals, Hub upload and download; gaps go to its agent | E1, E2 | A gap list, worked with the eval harness agent |
+| E4 | R5 run as the first real eval in it | R2, R4, R6; E3 | The comparison with intervals |
+| E5 | The blog post from E4's numbers, the datasets published on Hugging Face | E4; the operator's review | A post, public datasets |
+
+**Before anything is published:** licences (Pollen's duck meshes are CC BY-NC-SA 4.0, so a scene
+that carries them follows that licence; NVIDIA's skill and task licences, S1 and R1), and privacy
+(RFC-0025 section 5: a run from the apartment may hold faces, screens or documents; real-home runs
+stay out of public datasets until reviewed).
+
+## 9. Not known yet
 
 Whether a trained navigation checkpoint is published (the article gives the walking policy's);
 the licence of the `exp/microduck` branch; whether Isaac Lab runs on the DGX's GB10 (aarch64);
