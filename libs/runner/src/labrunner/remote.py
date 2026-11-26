@@ -49,6 +49,36 @@ def add_impairment_arg(ap) -> None:
                          "default off; a real robot refuses it")
 
 
+def add_controller_args(ap) -> None:
+    ap.add_argument("--local-controller", choices=("rules", "learned"), default=None,
+                    help="the navigator's local controller (RFC-0025 section 3.7): rules (the profile's rules@1, the default) or learned "
+                         "(an ONNX model, with --model); the simulator only, a real robot refuses it")
+    ap.add_argument("--model", type=Path, metavar="PATH", default=None, help="the ONNX model of --local-controller learned")
+
+
+def controller_setting(args, ap) -> dict | None:
+    """The run's local controller from the options: None for the profile's own, else {"name": "learned", "model": path}. A usage
+    error (exit 2) for a model with no learned controller, a learned one with no model, or a model that is not a file."""
+    if args.local_controller != "learned":
+        if args.model is not None:
+            ap.error("--model is the model of --local-controller learned")
+        return None
+    if args.model is None:
+        ap.error("--local-controller learned needs --model PATH")
+    if not args.model.is_file():
+        ap.error(f"--model {args.model}: not a file")
+    return {"name": "learned", "model": str(args.model)}
+
+
+def controller_options(setting: dict | None) -> list:
+    return ["--local-controller", setting["name"], "--model", setting["model"]] if setting else []
+
+
+def refuse_controller_unless_sim(setting: dict | None, variant: str) -> None:
+    if setting and variant != "sim":
+        raise ValueError(f"--local-controller learned is the simulator's for now: the {variant!r} robot refuses it (RFC-0025 R8)")
+
+
 def impairment_seed(seed: int | None, i: int, probe: bool = False) -> int | None:
     """Run i's impairment seed from the option's: SEED + i in a batch, SEED itself for a probe (one fixed run)."""
     return None if seed is None else seed if probe else seed + i
@@ -151,7 +181,7 @@ class Remote:
     def __init__(self, host, run_out: Path, scene: str, name: str, data: Path, key: str, truth_log, variant: str = "sim",
                  copy: TruthCopy | None = None, run: dict | None = None, payload: list | None = None,
                  camera: Path | None = None, extra: list | None = None, robot: Path | None = None, client: str | None = None,
-                 scene_file: Path | None = None, depth_impairment: int | None = None):
+                 scene_file: Path | None = None, depth_impairment: int | None = None, local_controller: dict | None = None):
         """`copy`: an official run already being written (an evaluation's earlier goals), which this payload's run is copied
         on into (TruthCopy.next_source), else a new one; `run`: its run record's fields that are the runner's (`kind`);
         `camera`: the camera's socket the runner serves (labrunner.camera), handed to the payload as one of the robot's;
@@ -159,14 +189,16 @@ class Remote:
         host's (a gate's), spoken to as `client`; `scene_file`: the scene description the run is judged in (a challenge's, written
         for it), else the repository's for `scene` when there is one (runfile.scenefile), recorded as judge_scene;
         `depth_impairment`: the simulated depth sensor's impairments on, with this seed (the payload's --depth-impairment), refused for
-        a variant that is not the simulator's. The run records its build (runfile.build), read here, at the run's start."""
+        a variant that is not the simulator's; `local_controller`: {"name": "learned", "model": path}, handed on as --local-controller and
+        --model, the same refusal. The run records its build (runfile.build), read here, at the run's start."""
         if depth_impairment is not None and variant != "sim":
             raise ValueError(f"--depth-impairment is the simulator's: the {variant!r} robot's depth frames are not impaired")
+        refuse_controller_unless_sim(local_controller, variant)
         # the profile version this machine runs the robot on, resolved once before anything starts (a named one that does not exist
         # refuses the run here): the file the referee judges by (labrunner.geometry) is the file handed to the navigator, so both
         # read one version, and the official run records it as judge_profile; only the robot's own navigator takes --profile
         profile = robots.given_profile() if payload is None else None
-        self.build = runbuild.of(REPO, host, variant, impairment_in_force(variant, depth_impairment))
+        self.build = runbuild.of(REPO, host, variant, impairment_in_force(variant, depth_impairment), ctrl=runbuild.controller(local_controller))
         run = {**(run or {}), "judge_profile": describe(robots.profile_file()), "judge_scene": judge_scene(scene, scene_file),
                "judge_truth": judge_truth(host), "build": self.build}
         self.host, self.run_out = host, Path(run_out)
@@ -186,7 +218,8 @@ class Remote:
                "--listen", str(self.sock), "--out", str(self.run_out), "--data", str(self.payload_data),
                "--scene", scene, "--name", name, "--variant", variant] + (["--camera", str(camera)] if camera else []) + \
             (["--client", client] if client else []) + (["--profile", str(profile)] if profile else []) + \
-            (["--depth-impairment", str(depth_impairment)] if depth_impairment is not None else []) + list(extra or [])
+            (["--depth-impairment", str(depth_impairment)] if depth_impairment is not None else []) + \
+            controller_options(local_controller) + list(extra or [])
         env = navigator_env()                                     # nothing of the host but its sockets, nothing of the installation
         self.log = open(self.run_out / "payload.log", "a")       # an evaluation's payloads, one after another
         self.proc = subprocess.Popen(cmd, stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)

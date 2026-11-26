@@ -62,6 +62,14 @@ def walker(host) -> str:
         return UNKNOWN
 
 
+def controller(setting: dict | None) -> str:
+    """The local controller a run names (RFC-0025 section 3.7): `rules@1`, or `learned@<8 of the model file's sha256>` for the run's
+    override `{"name": "learned", "model": path}`."""
+    if not setting or setting.get("name", "rules") == "rules":
+        return CONTROLLER
+    return f"{setting['name']}@{sha8(Path(setting['model']).expanduser())}"
+
+
 def tof(setting: dict | None) -> tuple:
     """(preset, seed) of the depth impairment `setting` ({"enabled", "seed"}): `off` when it is not enabled."""
     s = setting or {}

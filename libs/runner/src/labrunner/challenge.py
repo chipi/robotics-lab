@@ -30,7 +30,7 @@ from pathlib import Path
 from labrunner import explore, robots, sequence
 from labrunner.challenges import CHALLENGES, build
 from labrunner.judge import Judge
-from labrunner.remote import Remote, add_impairment_arg, impairment_seed
+from labrunner.remote import Remote, add_controller_args, add_impairment_arg, controller_setting, impairment_seed
 from labrunner.scene import miniview_scene, mjcf
 from labrunner.frames import compose, inverse
 from runfile import keys
@@ -53,7 +53,8 @@ def floats(n: int):
 
 
 def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, payload: list | None = None,
-        start: tuple | None = None, goal: tuple | None = None, depth_impairment: int | None = None) -> dict:
+        start: tuple | None = None, goal: tuple | None = None, depth_impairment: int | None = None,
+        local_controller: dict | None = None) -> dict:
     """One challenge run, the navigator as a payload process (RFC-0021 §3): it gets the robot's sockets and nothing else;
     the runner reads the truth (its own sampler), judges, and writes the official run with the truth put in (runner.Remote,
     runfile.truthcopy). `start` and `goal`: a probe of one moment of a seed's run (challenges.build)."""
@@ -74,7 +75,8 @@ def one(host: simhost.Host, challenge: str, seed: int, data: Path, out: Path, pa
     t0 = time.monotonic()
     try:
         sampler = Sampler(host).start()
-        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload, scene_file=sc, depth_impairment=depth_impairment)
+        nav = Remote(host, run_out, scene.id, name, data, key, truth_log, payload=payload, scene_file=sc, depth_impairment=depth_impairment,
+                     local_controller=local_controller)
 
         route = {"checks": 0, "max": None}       # the payload's connections to the truth's port, looked at every 2 s
 
@@ -159,6 +161,7 @@ def main() -> None:
                     "shows it (ticks, truth); every run then uses --seed itself")
     ap.add_argument("--goal", type=floats(2), help="x,y in the seed's world: a probe goes to this one goal (mode go), whatever the challenge")
     add_impairment_arg(ap)
+    add_controller_args(ap)
     robots.add_robot_arg(ap)
     args = ap.parse_args()
     robots.select(args.robot)
@@ -167,6 +170,9 @@ def main() -> None:
     host = simhost.load(args.host)
     if args.depth_impairment is not None and robots.variant(host) != "sim":
         raise SystemExit(f"--depth-impairment is the simulator's: this host runs the {robots.variant(host)!r} robot, whose frames are not impaired")
+    local_controller = controller_setting(args, ap)
+    if local_controller and robots.variant(host) != "sim":
+        raise SystemExit(f"--local-controller learned is the simulator's for now: this host runs the {robots.variant(host)!r} robot (RFC-0025 R8)")
     probe = args.start is not None or args.goal is not None
     rows = []
     started = time.monotonic()
@@ -174,7 +180,7 @@ def main() -> None:
         for i in range(args.runs):
             row = one(host, args.challenge, args.seed + (0 if probe else i), args.miniview_data, args.out,
                       shlex.split(args.payload) if args.payload else None, start=args.start, goal=args.goal,
-                      depth_impairment=impairment_seed(args.depth_impairment, i, probe))
+                      depth_impairment=impairment_seed(args.depth_impairment, i, probe), local_controller=local_controller)
             rows.append(row)
             keys = ("scene", "run", "pass", "failed", "status", "error_m", "min_clearance_m", "min_drop_m")
             more = ("reached", "belief_error_m", "heading_error_deg", "coverage", "end", "entered", "no_verdict")      # challenges 21-23

@@ -1,4 +1,4 @@
-"""The four interfaces a robot's plugins implement (RFC-0020 §4). The navigator decides; the plugins only answer.
+"""The five interfaces a robot's plugins implement (RFC-0020 §4, and the local controller of RFC-0025 section 3.7). The navigator decides; the plugins only answer.
 
 A robot's profile names one implementation of each (`plugins`: `duck-walk@1`, `tof8x8@1`, `mapd@1`, `duck-head@1`), loaded by name
 (`duck_lab.plugins.load`). A plugin is built from the profile and holds the robot's numbers as instance state, so two robots
@@ -128,3 +128,28 @@ class Looking(Protocol):
 
     def restore(self, hold: Callable, view: Callable, tick_s: float = 0.1) -> None:
         """Give the head back its walking command."""
+
+
+@runtime_checkable
+class LocalController(Protocol):
+    """What the robot does about what its range sensor sees now, between the path follower and the guards (RFC-0025 section 3.7).
+    The guards (cliff stop, pace, reflex, stuck stop) and the speed cap stay outside and above it: they read its command and a
+    guard that stops sends zero, which the controller learns only through `applied` of the next tick."""
+
+    name: str
+    version: int
+    ident: str          # `rules@1` or `learned@<8 of the model's sha256>`: the build identity's ctrl part
+
+    def bind(self, profile) -> None:
+        """The robot's numbers, from its profile."""
+
+    def reset(self) -> None:
+        """A goal starts (or the robot was reset): whatever the controller remembers of the last tick is dropped."""
+
+    def command(self, requested, ranges: list, body: dict | None, applied):
+        """The command to send (a Twist) for the follower's `requested`. `ranges`: [(frame, age_s), ...], oldest first, the
+        range sensor's recent frames and how old each is now; `body`: the robot's latest state; `applied`: the command sent last tick,
+        after the guards and the cap."""
+
+    def describe(self) -> dict:
+        """What a run records of the controller: its identity and, for a model, its files' checksums and shapes."""

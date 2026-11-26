@@ -147,6 +147,7 @@ FLOOR_CELL_M = 0.05
 FLOOR_NEAR_M = 0.10      # an explorer's target needs floor seen by the depth sensor this close   # and along it, past what one stop saw (longer would close the gaps beside the stairs)
 SURVEY_TIMEOUT_S = 8.0
 STATE_KEEP = 40          # robot states held to pair depth frames with: two seconds at 20 Hz (autod holds the last second)
+RANGE_KEEP = 32          # depth frames held for the local controller: about two seconds at 15 Hz (RFC-0025 section 3.7)
 WATCHDOG_S = 0.5         # how often the streams' watchdog looks (the limits are the profile's anomalies.state_stale_s, depth_stale_s)
 HEALTH_S = 10.0          # how often a run asks robotd's health (the operator's decision, 2026-11-23: Mission Control's rate)
 
@@ -196,12 +197,17 @@ class Navigator:
     _stops = None            # what stops a goal on robotd's health, at the profile's joints.limits and health block (body.StopWatch, configure)
     stop_end = None
     on_self_stop = None      # told (name, detail) when the navigator stops the goal on its own health, before the stop: the goal's `broken`
+    controller = None        # the local controller (configure; a run may override it: __init__'s local_controller)
+    _ranges = None           # (arrival time, depth frame), newest last: the controller's range history (a navigator built without __init__ has none)
+    _applied = Twist()       # the command sent last tick, after the guards and the cap
 
     def __init__(self, sockets: dict, log: Path | None = None,
                  calibration: str | None = "sim", runlog: RunLog | None = None, client: str | None = None, profile=None,
-                 profile_path=None, depth_impairment: dict | None = None):
+                 profile_path=None, depth_impairment: dict | None = None, local_controller: dict | None = None):
         # `depth_impairment`: this run's own setting of the simulated depth sensor's impairments, over the profile's (depth_impair:
         # {"enabled": true, "seed": 7, ...}); refused for any environment but the simulator
+        # `local_controller`: this run's own local controller over the profile's ({"name": "learned", "model": path}); refused for any
+        # environment but the simulator (RFC-0025 section 3.7)
         # `sockets`: the robot's ("robot", "depth", "map": paths), handed in by whoever starts the navigator, from the host
         # file (RFC-0021: host_links); the navigator knows no machine's paths, and never the simulator's truth: that is its
         # runner's (RFC-0021 step 6), which puts it into the official run.
@@ -227,6 +233,8 @@ class Navigator:
             self.configure(profile if profile is not None else load_profile(calibration, profile_path))
             if depth_impairment is not None:
                 self.range.set_impairment(self.profile, depth_impairment)
+            if local_controller:
+                self.controller = plugins.local_controller(self.profile, local_controller, TICK_S)
         except Exception:
             self.robot.close()
             raise
@@ -234,6 +242,7 @@ class Navigator:
         self.runlog = runlog
         self._sid = runlog.new_session() if runlog else None
         self._states = collections.deque(maxlen=STATE_KEEP)     # (t_ns, robot state), newest last: what a frame is paired with
+        self._ranges = collections.deque(maxlen=RANGE_KEEP)     # (arrival time, depth frame), newest last: the local controller's history
         self._fv = None          # the newest depth frame, paired and derived (FrameView)
         self.sense = {}          # what go_to decides on this tick (room_m, turning), for the signals; empty outside go_to
         self._logging_failed = False
@@ -291,6 +300,7 @@ class Navigator:
         # itself with no store and a replay uses what the run used, not today's file
         self.record(event="calibration", tof=self.tof_cal, odom_scale=self.scale, odom_by_speed=self.localisation.by_speed,
                     pivot_vx_mps=self.locomotion.pivot_vx, depth_impairment=self.range.impairment.record(),
+                    **({"local_controller": self.controller.describe()} if self.controller.ident != plugins.RULES else {}),
                     profile={"id": self.profile.id, "variant": self.profile.variant, "plugins": dict(self.profile.plugins.data),
                              **{k: v for k, v in (getattr(self.profile, "meta", None) or {}).items() if k in ("checksum", "version", "source")},
                              "data": self.profile.data})
@@ -314,6 +324,7 @@ class Navigator:
         self.range = rs = self.plugins["range_sensing"]
         self.localisation = mp = self.plugins["localisation"]
         self.looking = self.plugins["looking"]
+        self.controller = plugins.local_controller(profile)
         lw.bind(getattr(self, "robot", None))
         self.looking.bind(getattr(self, "robot", None))
         self.loc = mp.belief          # the belief the localisation plugin owns: the frames logic below is shared
@@ -345,9 +356,10 @@ class Navigator:
     def _scaled(self, pose: tuple) -> tuple:
         return pose[0] * self.scale, pose[1] * self.scale, pose[2]
 
-    def move(self, tw: Twist, **extra) -> None:
+    def move(self, tw: Twist, requested: Twist | None = None, local: Twist | None = None, **extra) -> None:
         """Send a command and log it with the pose: every command, so surveys, survey turns and the
         waits after a stop are in the log too (explore12 had events there but no poses)."""
+        # `requested` and `local` are the follower's command and the local controller's, when that is not rules@1 (RFC-0025 section 3.7)
         self.sync_memory()
         vx =tw.vx if self.speed_cap is None else max(-self.speed_cap, min(self.speed_cap, tw.vx))
         self._walking = tw.vx > 0.05
@@ -357,12 +369,15 @@ class Navigator:
         except LeaseLost as exc:
             self.lease_ended(exc)
             raise
+        self._applied = Twist(vx, tw.vyaw)
         pose = self.localisation.pose()
         if pose is None:
             return
         # `vx`/`vyaw` stay the caller's command; `requested` and `applied` are what the robot was asked and what it was sent (the cap)
+        asked = requested or tw
         self.record(pose=[round(v, 4) for v in pose], vx=tw.vx, vyaw=round(tw.vyaw, 3), tilt=self._tilt(),
-                    requested={"vx": round(tw.vx, 4), "vyaw": round(tw.vyaw, 3)}, applied={"vx": round(vx, 4), "vyaw": round(tw.vyaw, 3)},
+                    requested={"vx": round(asked.vx, 4), "vyaw": round(asked.vyaw, 3)}, applied={"vx": round(vx, 4), "vyaw": round(tw.vyaw, 3)},
+                    **({"local": {"vx": round(local.vx, 4), "vyaw": round(local.vyaw, 3)}} if local is not None else {}),
                     **extra, **({"depth": self._depth} if self._depth else {}))
         self._depth = None
 
@@ -944,6 +959,8 @@ class Navigator:
             except (KeyError, TypeError, ValueError):
                 pass
         fv = self._fv = self.range.derive(frame, state, dt_ms, pose)
+        if self._ranges is not None:
+            self._ranges.append((time.monotonic(), fv.frame))
         # not while the memory still sits in the frame before the belief's last move: these points would be moved twice
         if fv.ok and pose is not None and not (self.frames_on and self.loc.memory_pending()):
             c, s_ = math.cos(pose[2]), math.sin(pose[2])
@@ -1062,6 +1079,16 @@ class Navigator:
                 if said:
                     self.record(**said)
 
+    def _control(self, tw: Twist) -> Twist:
+        """The local controller's command for the follower's `tw` (RFC-0025 section 3.7): handed the range frames with their age, the
+        robot's latest state and the command sent last tick. Every guard after it reads this command, never asks the controller."""
+        now = time.monotonic()
+        return self.controller.command(tw, [(f, now - t) for t, f in list(self._ranges or ())], getattr(self.state, "latest", None), self._applied)
+
+    def _local_record(self, follower: Twist, local: Twist) -> dict:
+        """What a tick records of a controller that is not rules@1 (its command, and the follower's as `requested`)."""
+        return {} if self.controller.ident == plugins.RULES else {"requested": follower, "local": local}
+
     def go_to(self, goal: tuple, timeout_s: float = 90.0) -> dict:
         try:
             return self._go_to(goal, timeout_s)
@@ -1083,6 +1110,7 @@ class Navigator:
         progress = Progress(start)
         held_at = None       # where a goal inside a drop's ring is held off at (nearest_free), once aimed at
         moves_seen = len(self._moves)
+        self.controller.reset()
         while time.monotonic() - start < timeout_s:
             if self.abort:
                 self.move(Twist())
@@ -1211,6 +1239,8 @@ class Navigator:
                         **({"held_off_m": held, "why": "held off: the goal is inside a drop's ring"} if held else {}),
 
                         "pose": [round(v, 3) for v in pose]}
+            fw, tw = tw, self._control(tw)
+            lc = tw
             pts = []
             fv = self._fv       # the newest frame with the state it was paired with, derived once (FrameView)
             if fv is not None and fv.ok:
@@ -1254,6 +1284,8 @@ class Navigator:
                 # trial 7, wedged by a cabinet) pivot anyway while the room stays above TIGHT_PIVOT_M.
                 tw, done = step(path, pose, now, st, self.loco, self.locomotion, near=near, pivot_ok=True,
                                 close=room < self.loco.slow_clearance_m)
+                fw, tw = tw, self._control(tw)
+                lc = tw
                 if not tight:
                     tight = True
                     self.record(event="tight_pivot", pose=pose, room_m=round(room, 3), nearest_mm=self.range.nearest_mm(),
@@ -1341,7 +1373,7 @@ class Navigator:
                              values={**seen, "window_s": self.loco.stuck.window_s, "moved_max_m": self.loco.stuck.moved_max_m})
                 return {"status": "stalled", "why": "stuck: walking without moving", "time_s": round(now - start, 1),
                         **seen}
-            self.move(tw, nearest_mm=near, turning=st.turning)
+            self.move(tw, nearest_mm=near, turning=st.turning, **self._local_record(fw, lc))
             if int(now / 1.0) != int((now - TICK_S) / 1.0):
                 self.fix()
             time.sleep(max(0.0, TICK_S - (time.monotonic() - now)))

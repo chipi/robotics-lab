@@ -241,7 +241,8 @@ check("what the variants do not change is the same in both",
       REAL.footprint.data == SIM.footprint.data and REAL.locomotion.cruise_mps == SIM.locomotion.cruise_mps
       and REAL.error_budget.data == SIM.error_budget.data)
 check("the plugins are named for every interface the blocks need",
-      SIM.plugins.data == {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1"})
+      SIM.plugins.data == {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1",
+                           "local_controller": "rules@1"})
 
 # ---- the validator's rules, each with the profile broken in one place ---------------------------------------------------------
 def says(raw, *parts) -> bool:

@@ -109,6 +109,38 @@ seen = start(variant="real")
 check("a real robot with no impairment runs: sim is real, walker unknown", seen["run"]["build"]["sim"] == "real"
       and seen["run"]["build"]["walker"] == "unknown", seen.get("run"))
 
+# ---- the local controller, from the runner -----------------------------------------------------------------------------------------
+model = tmp / "policy.onnx"
+model.write_bytes(b"a navigation policy")
+setting = {"name": "learned", "model": str(model)}
+learned = f"learned@{build.sha8(model)}"
+seen = start(local_controller=setting)
+cmd = seen.get("cmd") or []
+check("--local-controller learned --model PATH reaches the payload as its own options",
+      "--local-controller" in cmd and cmd[cmd.index("--local-controller") + 1] == "learned" and cmd[cmd.index("--model") + 1] == str(model), cmd)
+check("and is the identity's ctrl part: learned@<8 of the model's sha256>", seen["run"]["build"]["ctrl"] == learned
+      and f"+ctrl@{learned}+" in seen["run"]["build"]["id"], seen["run"]["build"])
+seen = start()
+check("with none the payload is not handed it, and ctrl stays rules@1", "--local-controller" not in (seen.get("cmd") or []) and seen["run"]["build"]["ctrl"] == "rules@1")
+seen = start(variant="real", local_controller=setting)
+check("must fail: a real robot refuses it, before any process starts or any run is written",
+      isinstance(seen.get("error"), ValueError) and "cmd" not in seen and "run" not in seen, seen.get("error"))
+
+ap = argparse.ArgumentParser()
+remote.add_controller_args(ap)
+check("the options are --local-controller {rules,learned} and --model PATH; absent: no setting",
+      remote.controller_setting(ap.parse_args([]), ap) is None
+      and remote.controller_setting(ap.parse_args(["--local-controller", "rules"]), ap) is None
+      and remote.controller_setting(ap.parse_args(["--local-controller", "learned", "--model", str(model)]), ap) == setting)
+for argv in (["--local-controller", "learned"], ["--model", str(model)], ["--local-controller", "learned", "--model", str(tmp / "no.onnx")],
+             ["--local-controller", "rules", "--model", str(model)]):
+    try:
+        remote.controller_setting(ap.parse_args(argv), ap)
+        refused = False
+    except SystemExit:
+        refused = True
+    check(f"must fail: {' '.join(argv[:2])} ... is refused at the command line", refused, argv)
+
 on_in_profile = types.SimpleNamespace(sensors=types.SimpleNamespace(tof8x8={"impairment": {"enabled": True, "seed": 3}}))
 check("a profile version with the impairment on (and no option) is recorded as on, with its seed",
       build.tof(remote.impairment_in_force("sim", None, on_in_profile)) == ("nvidia", 3))

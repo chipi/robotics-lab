@@ -237,7 +237,7 @@
     "description": "duck"
   },
   "rates": {"state_hz": 2.0, "map_hz": 1.0, "max_state_hz": 10.0},
-  "plugins": {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1"},
+  "plugins": {"locomotion": "duck-walk@1", "range_sensing": "tof8x8@1", "localisation": "mapd@1", "looking": "duck-head@1", "local_controller": "rules@1"},
   "variants": {
     "sim": {
       "joints": {

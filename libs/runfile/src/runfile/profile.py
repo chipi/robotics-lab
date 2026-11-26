@@ -162,7 +162,7 @@ def check_rates(rates) -> dict:
 
 PROFILE_VERSION = 1
 ENVIRONMENTS = ("sim", "real")
-INTERFACES = ("locomotion", "range_sensing", "localisation", "looking")
+INTERFACES = ("locomotion", "range_sensing", "localisation", "looking", "local_controller")
 # the blocks that need an interface's plugin: a profile with the block names the plugin
 NEEDS = {"locomotion": "locomotion", "sensors": "range_sensing", "localisation": "localisation", "looking": "looking"}
 PLUGIN = re.compile(r"^[a-z][a-z0-9_-]*@[1-9][0-9]*$")

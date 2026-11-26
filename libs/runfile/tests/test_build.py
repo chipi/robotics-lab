@@ -84,4 +84,15 @@ check("off by default: preset off, seed 0", build.tof(None) == ("off", 0) and bu
 check("on: the preset's name and the seed", build.tof({"enabled": True, "seed": 5}) == ("nvidia", 5))
 on = build.of(r, host, "sim", {"enabled": True, "seed": 5})
 check("the build says tof@nvidia-s5 for it", on["id"].endswith("+tof@nvidia-s5") and on["tof"] == "nvidia" and on["seed"] == 5, on["id"])
+
+# ---- the local controller (RFC-0025 section 3.7) ------------------------------------------------------------------------------
+model = tmp / "policy.onnx"
+model.write_bytes(b"a navigation policy")
+want = hashlib.sha256(b"a navigation policy").hexdigest()[:8]
+check("no setting: rules@1, the default", build.controller(None) == "rules@1" and build.controller({}) == "rules@1" and build.controller({"name": "rules"}) == "rules@1")
+check("learned: learned@ and 8 of the model file's sha256", build.controller({"name": "learned", "model": str(model)}) == f"learned@{want}")
+check("a model file that cannot be read: learned@unknown, not a guess", build.controller({"name": "learned", "model": str(tmp / "no.onnx")}) == "learned@unknown")
+learned = build.of(r, host, "sim", None, ctrl=build.controller({"name": "learned", "model": str(model)}))
+check("the build's ctrl part and its string carry it", learned["ctrl"] == f"learned@{want}" and f"+ctrl@learned@{want}+walker@" in learned["id"], learned["id"])
+check("the default build still says rules@1", build.of(r, host, "sim", None)["ctrl"] == "rules@1")
 check.done()

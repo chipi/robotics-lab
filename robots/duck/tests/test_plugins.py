@@ -33,7 +33,7 @@ REAL = load("real")
 
 # ---- the profile names them, they are loaded by name ----------------------------------------------------------------------
 loaded = plugins.load(P)
-check("the profile's four interfaces each get a plugin", set(loaded) == {"locomotion", "range_sensing", "localisation", "looking"}, set(loaded))
+check("the profile's five interfaces each get a plugin", set(loaded) == {"locomotion", "range_sensing", "localisation", "looking", "local_controller"}, set(loaded))
 check("each is the interface it is named for (a runtime-checkable Protocol)",
       isinstance(loaded["locomotion"], Locomotion) and isinstance(loaded["range_sensing"], RangeSensing)
       and isinstance(loaded["localisation"], Localisation) and isinstance(loaded["looking"], Looking))
