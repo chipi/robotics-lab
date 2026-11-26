@@ -9,6 +9,8 @@ import threading
 import time
 from pathlib import Path
 
+from robotgate import GateError, ProtocolError
+
 from . import goals, guardrails, planner
 from .errors import ApiError, conflict, invalid, not_found
 from .alarms import RecentAlarms
@@ -99,8 +101,11 @@ class MissionControl:
         while not self._stopping.is_set():
             try:
                 self.tick_robot(rt)
-            except Exception as exc:
+                rt.said.pop("tick", None)
+            except (OSError, GateError, ProtocolError) as exc:
                 self.bus.emit("error", robot=rt.cfg.id, message=f"{type(exc).__name__}: {exc}")
+            except Exception as exc:        # a bug is said once per type, with its traceback; the loop lives on either way
+                rt.unexpected("tick", exc)
             self._stopping.wait(TICK_S)
 
     def close(self) -> None:

@@ -26,8 +26,10 @@ the duck-sim adapter and real for any other. A file that still names one is refu
 import json
 import re
 import secrets
+import sys
 import threading
 import time
+import traceback
 from collections import OrderedDict
 from pathlib import Path
 
@@ -160,9 +162,12 @@ class RobotConfig:
 
     @property
     def runs_real(self) -> bool:
-        """Does a goal run or a calibration on this robot move the real one? The profile's variant says so; a robot with no registered
-        profile (the fake) has only a default variant, not a fact about an environment."""
-        return self.robot is not None and self.variant == "real"
+        """Does a goal run, a hand drive or a calibration on this robot move the real one? The profile's variant says so; a robot with no registered
+        profile has only a default variant, not a fact about an environment: there the adapter decides, and only the fake is not real
+        (a file that holds the robot itself, as the NXT's does, is a real robot; operator, 2026-11-26)."""
+        if self.robot is not None:
+            return self.variant == "real"
+        return self.adapter["type"] != "fake"
 
     def real_run_refusal(self) -> str | None:
         """Why a run that moves the real robot is refused (None: it is not one, or the robot file allows it). The default is no: a
@@ -299,6 +304,7 @@ class RobotRuntime:
         self._next_map = 0.0
         self._map_version = None
         self._was_online = None
+        self.said: dict = {}          # where -> the exception type already said, until that read works again
         self.active = None  # the goal run on this robot now (a core.ActiveRun)
         self.calibration, self.calibration_n = None, 0      # the latest calibration run (calibration.py) and how many there have been
 
@@ -321,6 +327,17 @@ class RobotRuntime:
     def online(self) -> bool:
         return self.link.online(self.cfg.online_after_s)
 
+    def unexpected(self, where: str, exc: Exception) -> None:
+        """A failed read stays "offline" whatever raised it, but only link trouble (an OSError, the gate's or the protocol's
+        error) is just that: any other type is an adapter bug, so it is said, once per type until `where` works again, on stderr
+        with its traceback and as an `error` event."""
+        if isinstance(exc, (OSError, GateError, ProtocolError)) or self.said.get(where) == type(exc).__name__:
+            return
+        self.said[where] = type(exc).__name__
+        print(f"mission-control: robot {self.cfg.id}: {where}: unexpected {type(exc).__name__} (shown offline, not link loss):", file=sys.stderr)
+        traceback.print_exception(exc, file=sys.stderr)
+        self.bus.emit("error", robot=self.cfg.id, message=f"{where}: {type(exc).__name__}: {exc}")
+
     def poll(self, force: bool = False) -> None:
         """Read the robot's state at its rate (§3.2.2) and note whether it answered."""
         now = self.clock()
@@ -333,8 +350,9 @@ class RobotRuntime:
                 self.bus.emit("state", robot=self.cfg.id, **self.status)
                 if not getattr(self.gate, "remote", False):     # a remote gate (duck-gate) watches its own stream
                     self.gate.observe_state(self.status)
-            except Exception:
-                pass
+                self.said.pop("state", None)
+            except Exception as exc:
+                self.unexpected("state", exc)
         if self.cfg.capabilities.get("map") and now >= self._next_map:
             # paced whether or not it changed: a robot's map can be a call through its navigator API, beside its goals
             self._next_map = now + 1.0 / self.cfg.rates["map_hz"]
@@ -343,16 +361,18 @@ class RobotRuntime:
                 if version != self._map_version:
                     self._map_version = version
                     self.bus.emit("map", robot=self.cfg.id, map=self.adapter.map())
-            except Exception:
-                pass
+                self.said.pop("map", None)
+            except Exception as exc:
+                self.unexpected("map", exc)
         if getattr(self.gate, "remote", False):
             try:
                 holder = self.gate.who().get("holder")
                 if holder != self._holder:
                     self._holder = holder
                     self.bus.emit("lock", robot=self.cfg.id, event="holder", holder=holder)
-            except Exception:
-                pass
+                self.said.pop("holder", None)
+            except Exception as exc:
+                self.unexpected("holder", exc)
         online = self.online()
         if online != self._was_online:
             self._was_online = online

@@ -99,6 +99,26 @@ check("must fail: a start pose inside a no-go area the goal carries is refused, 
 reply = nav.call("goal.start", {"kind": "point", "params": {"x": 1, "y": 0}, "start_pose": {"x": 3.0, "y": 1.0, "yaw": 0.0}, **nogo})
 check("... and one outside it is taken", "placed" in reply, reply)
 
+# --- over the socket: only an unknown method is "no method"; a KeyError inside a handler is an internal error (review 3.c) ---
+srv = server.Server(("127.0.0.1", 0), nav)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+
+def rpc(method):
+    with socket.create_connection(("127.0.0.1", srv.server_address[1]), timeout=5) as s:
+        s.sendall((json.dumps({"id": 1, "method": method, "params": {}}) + "\n").encode())
+        return json.loads(s.makefile("r").readline())["error"]
+
+
+real_start = nav.start
+nav.start = lambda p: {}["missing"]
+inside, unknown = rpc("goal.start"), rpc("no.such.method")
+nav.start = real_start
+srv.shutdown()
+check("an unknown method is -32601 no method", unknown["code"] == -32601 and "no.such.method" in unknown["message"], unknown)
+check("a KeyError raised inside a handler is -32603, reported as KeyError, not as a missing method",
+      inside["code"] == -32603 and "KeyError" in inside["message"] and "no method" not in inside["message"], inside)
+
 print()
 print("NAV SERVER", "FAIL " + ", ".join(failures) if failures else "PASS")
 raise SystemExit(1 if failures else 0)

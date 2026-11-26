@@ -628,4 +628,78 @@ with tempfile.TemporaryDirectory() as tmp:
     check("the gate's log is a file beside the state (RFC-0017 §3.6): lease acquired by the navigator", any('"acquired"' in l and "fake-navigator" in l for l in log), log[:3])
     mc2.close()
 
+# --- an adapter's programming error is not link loss: shown offline, but said once, on stderr and as an `error` event (review 3.a) ---------
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+mc, clock = boot()
+rt = mc.robots["fake-1"]
+real_handle = rt.gate.handle
+
+
+def broken(cid, method, params=None, _orig=real_handle):
+    if method == "robot.state":
+        raise broken.exc
+    return _orig(cid, method, params)
+
+
+def last_seq():
+    return (mc.bus.since(0)[0] or [{"seq": 0}])[-1]["seq"]
+
+
+def errors_since(seq):
+    return [e for e in mc.bus.since(seq)[0] if e["kind"] == "error"]
+
+
+broken.exc = AttributeError("'NoneType' object has no attribute 'x'")
+rt.gate.handle = broken
+seq0 = last_seq()
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    run_for(mc, clock, 3.0)
+check("a programming error in the state read: the robot is offline, as before", not rt.online())
+check("it is said once on the bus as an error event with its type",
+      len(errors_since(seq0)) == 1 and "AttributeError" in errors_since(seq0)[0]["message"] and errors_since(seq0)[0]["robot"] == "fake-1", errors_since(seq0))
+check("and on stderr with its traceback, once", "Traceback" in err.getvalue() and err.getvalue().count("Traceback") == 1, err.getvalue()[:300])
+broken.exc = OSError("link down")
+seq1 = last_seq()
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    run_for(mc, clock, 3.0)
+check("an OSError is link loss: nothing on stderr, no error event", err.getvalue() == "" and not errors_since(seq1), err.getvalue()[:200])
+rt.gate.handle = real_handle
+run_for(mc, clock, 3.0)
+check("the robot answers again: online", rt.online())
+broken.exc = AttributeError("again")
+rt.gate.handle = broken
+seq2 = last_seq()
+with contextlib.redirect_stderr(io.StringIO()):
+    run_for(mc, clock, 3.0)
+check("once it has cleared, the same error type is said again", len(errors_since(seq2)) == 1, errors_since(seq2))
+mc.close()
+
+# the robot's own thread: a bug in the tick is said once, and the loop lives on
+mc, clock = boot()
+rt = mc.robots["fake-1"]
+calls = []
+
+
+def bad_tick():
+    calls.append(1)
+    raise KeyError("bug")
+
+
+rt.gate.tick = bad_tick
+seq0 = last_seq()
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    mc.start()
+    deadline = time.time() + 5
+    while len(calls) < 4 and time.time() < deadline:
+        time.sleep(0.05)
+    mc.close()
+check("the loop kept ticking after a bug", len(calls) >= 4, len(calls))
+check("a bug in the tick is one error event and one traceback, not one per tick",
+      len(errors_since(seq0)) == 1 and "KeyError" in errors_since(seq0)[0]["message"] and err.getvalue().count("Traceback") == 1, (errors_since(seq0), err.getvalue()[:200]))
+
 finish("test_core")

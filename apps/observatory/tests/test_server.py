@@ -163,6 +163,17 @@ with tempfile.TemporaryDirectory() as tmp:
         logging.getLogger("observatory").removeHandler(handler)
     check("an internal error is a 500 JSON with an id, the same id is in the log, no traceback to the client",
           code == 500 and body["id"] and body["id"] in logbuf.getvalue() and "Traceback" not in json.dumps(body) and "ZeroDivision" in logbuf.getvalue(), body)
+    logbuf = io.StringIO()
+    handler = logging.StreamHandler(logbuf)
+    logging.getLogger("observatory").addHandler(handler)
+    query.state = lambda *a, **k: 1 / 0
+    try:
+        api(f"/runs/{K}/state?t=36&token=s3cr3t-value")
+    finally:
+        query.state = real
+        logging.getLogger("observatory").removeHandler(handler)
+    check("an internal error's log line does not carry a ?token= value, and keeps the rest of the path",
+          "s3cr3t-value" not in logbuf.getvalue() and "token=" in logbuf.getvalue() and "t=36" in logbuf.getvalue(), logbuf.getvalue()[:300])
     check("the service still answers after all of that", api("/health")[0] == 200)
 
     # ---- gzip, ETag, caching ------------------------------------------------------------------------------------------

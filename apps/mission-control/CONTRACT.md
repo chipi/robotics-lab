@@ -565,8 +565,10 @@ What differs is that the robot is far away and can go away:
   `duck-real` file on a machine whose installation runs the duck as `sim` does not load: the
   error says to remove the variant from the installation or the robot file.
 - **A real run is refused unless the robot file allows it.** `adapter.allow_real_runs` (a
-  boolean, default `false`; any adapter may carry it, and it is the profile's variant `real`
-  that makes a run real) is the key a person writes after the first-run safety review
+  boolean, default `false`; any adapter may carry it). A robot is real when its profile's variant
+  is `real`, or, when its file has no `robot` pointer (it holds the robot itself, as the NXT's
+  does), when its adapter is not `fake` (operator, 2026-11-26). The key is what a person writes
+  after the first-run safety review
   (`docs/wip/REAL-DUCK-SAFETY-REVIEW.md`). Without it a goal run is `refused` with the reason,
   whatever its `target` (a `sim` target does not make it a simulator run), a drive is
   `409 real_runs_not_allowed` and so is a calibration (it walks with no wall or cliff check).
@@ -611,7 +613,7 @@ the field went.
 | --- | --- |
 | `id`, `label`, `kind` | ours. `id` is lower case, digits and dashes (no `manufacturer` or `serialNumber` until a VDA robot is added); `kind` keys `robots/<kind>/` |
 | `robot`, `variant` | a pointer (phase 5 step 1): the robot's registered name (`robotics_lab.robots`). The profile's environment is not the file's: it is the installation's `robots.<robot>.variant`, else `sim` for the `duck-sim` adapter (it runs on a host with a truth; Mission Control does not read the host file) and `real` for any other adapter. A file that names a `variant` other than that is refused, saying which; one that names the same is accepted. `kind`, `factsheet`, `control`, `capabilities`, `guardrails` and `rates` are then the profile's, from the version this machine runs (the installation's `robots.<robot>.profile`, else the robot's own file), and the file may not repeat them; `label` defaults to the profile's |
-| `adapter {type, call_timeout_s?, allow_real_runs?, ...}` | ours: `fake`, `duck-sim`, `duck-real`, `nxt-web`, and each one's options; `allow_real_runs` is a boolean (default false) for a robot whose variant is `real` |
+| `adapter {type, call_timeout_s?, allow_real_runs?, ...}` | ours: `fake`, `duck-sim`, `duck-real`, `nxt-web`, and each one's options; `allow_real_runs` is a boolean (default false) for a real robot: one whose variant is `real`, or, with no `robot` pointer (the file holds the robot itself, as the NXT's does), any adapter but `fake` |
 | `factsheet.typeSpecification` | VDA: `seriesName`, `seriesDescription`, `mobileRobotKinematics` (`DIFFERENTIAL`, `OMNIDIRECTIONAL`, `THREE_WHEEL`, and **`LEGGED`, which is ours** and not in VDA), `localizationTypes` (VDA's list), `navigationTypes` (open) |
 | `factsheet.physicalParameters` | VDA: `maximumSpeed` [m/s], `maximumAngularSpeed` [rad/s], `maximumAcceleration`, `maximumDeceleration`, `width`, `length`, each a number above 0. Left out when not measured |
 | `factsheet.protocolFeatures.mobileRobotActions[]` | VDA: `actionType`, `actionScopes` (`INSTANT`, `NODE`, `EDGE`), `blockingTypes` (`NONE`, `SOFT`, `HARD`), `pauseAllowed`, `cancelAllowed`; **`irreversible` is ours** (RFC-0003 §2.3) |

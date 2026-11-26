@@ -75,6 +75,7 @@ check("nxt-web --fake is up", wait(lambda: _try(lambda: nxt("GET", "/api/status"
 
 FILE = json.loads((ROOT / "apps" / "mission-control" / "robots.nxt" / "nxt-1.json").read_text())
 FILE["adapter"]["url"] = NXT
+FILE["adapter"]["allow_real_runs"] = True        # a file that holds the NXT itself is a real robot: a hand drive asks for the key (nxt-web here is --fake)
 mc = MissionControl([RobotConfig(FILE)], state_dir=tmp / "state")
 srv = serve(mc, "127.0.0.1", 0)
 BASE = f"http://127.0.0.1:{srv.server_address[1]}/api/v1"

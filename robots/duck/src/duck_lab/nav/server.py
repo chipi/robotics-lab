@@ -542,7 +542,7 @@ class NavServer:
 
     def call(self, method: str, p: dict):
         if method not in self.METHODS:
-            raise KeyError(method)
+            raise UnknownMethod(method)
         if method == "hello":
             return contract.hello(NAME, VERSION, GOAL_KINDS, bool(self.sockets.get("camera")))
         if method.startswith("calibration."):
@@ -654,6 +654,10 @@ class NavServer:
             return {"ok": True, "procedure": procedure, "params": params}
 
 
+class UnknownMethod(KeyError):
+    """The one KeyError that means "no such method"; any other KeyError in a handler is a bug and an internal error."""
+
+
 class Handler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         for line in self.rfile:
@@ -661,7 +665,7 @@ class Handler(socketserver.StreamRequestHandler):
                 req = json.loads(line)
                 result = self.server.nav.call(req["method"], req.get("params") or {})
                 reply = {"jsonrpc": "2.0", "id": req.get("id"), "result": result}
-            except KeyError as exc:
+            except UnknownMethod as exc:
                 reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": f"no method {exc}"}}
             except Exception as exc:                                # noqa: BLE001
                 reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": f"{type(exc).__name__}: {exc}"}}

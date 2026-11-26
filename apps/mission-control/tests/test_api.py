@@ -61,6 +61,64 @@ except urllib.error.HTTPError as exc:
 st, b = call("GET", "/robots/nope")
 check("an unknown robot is a 404 with its id", st == 404 and b["error"]["code"] == "not_found" and b["error"]["id"] == "nope", b)
 
+# --- a bad Content-Length is a 400, a stalled client is dropped, a stream is not; a token never reaches the log (review 4.a, 6.a) -----
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import socket  # noqa: E402
+
+PORT = server.server_address[1]
+
+
+def bare(request: bytes, wait_s: float = 3.0):
+    """What the server answers (status line) to these bytes, or the word closed / open when it answers nothing."""
+    with socket.create_connection(("127.0.0.1", PORT), timeout=wait_s) as s:
+        s.sendall(request)
+        try:
+            data = s.recv(4096)
+        except TimeoutError:
+            return "open"
+        return data.split(b"\r\n")[0].decode() if data else "closed"
+
+
+for bad in (b"abc", b"-5", b"1e3"):
+    got = bare(b"POST /api/v1/goals HTTP/1.1\r\nHost: x\r\nContent-Length: " + bad + b"\r\n\r\n")
+    check(f"Content-Length {bad!r} is a 400, not a 500", "400" in got, got)
+
+from mission_control import api  # noqa: E402
+
+check("the handler has a request timeout, as the Observatory's does (30 s)", api.Handler.timeout == 30.0, api.Handler.timeout)
+api.Handler.timeout = 0.5                      # per connection: a test cannot wait 30 s
+try:
+    got = bare(b"POST /api/v1/goals HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\n{\"a\"", wait_s=4.0)
+    check("a client that sends half a body and stops is dropped, not waited for", got != "open", got)
+    with socket.create_connection(("127.0.0.1", PORT), timeout=2.0) as s:
+        s.sendall(b"GET /api/v1/events HTTP/1.1\r\nHost: x\r\n\r\n")
+        head = b""
+        while b": connected" not in head:
+            head += s.recv(4096)
+        try:
+            more = s.recv(4096)                # silent for longer than the request timeout: the stream is alive, not cut
+        except TimeoutError:
+            more = None
+    check("the event stream outlives the request timeout (its keepalive comes every 15 s)", b"200" in head and more is None, (head[:60], more))
+finally:
+    api.Handler.timeout = 30.0
+
+real_brief = mc.robot_brief
+
+
+def boom(rt):
+    raise RuntimeError("boom")
+
+
+mc.robot_brief = boom
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    st, b = call("GET", "/robots?token=s3cr3t-value&x=1")
+mc.robot_brief = real_brief
+check("an unexpected error is a 500 and is logged", st == 500 and "RuntimeError" in err.getvalue(), (st, err.getvalue()))
+check("the logged path does not carry the token's value, and keeps the rest", "s3cr3t-value" not in err.getvalue() and "token=" in err.getvalue() and "x=1" in err.getvalue(), err.getvalue())
+
 # --- robots -------------------------------------------------------------------------------------------
 st, b = call("GET", "/robots")
 check("GET /robots: id, label, kind, online, lock, last-seen age", st == 200 and [r["id"] for r in b["robots"]] == ["fake-1", "blind"]

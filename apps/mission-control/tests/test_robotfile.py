@@ -53,6 +53,11 @@ check("must fail: allow_real_runs is true or false: a string 'false' is not a no
 check("the fake robot has no registered profile, so it never runs a real robot: no refusal, allowed or not",
       RobotConfig(robot_file()).real_run_refusal() is None and not RobotConfig(robot_file()).runs_real)
 nxt = load_robot_files(CONTROL / "robots.nxt")[0]
+check("the NXT's file holds the robot itself (no registered profile) and its adapter is not the fake: it is real, and asks for the key (1.2)",
+      nxt.robot is None and nxt.runs_real and "allow_real_runs" in (nxt.real_run_refusal() or ""), nxt.real_run_refusal())
+nxt_raw = json.loads((CONTROL / "robots.nxt" / "nxt-1.json").read_text())
+nxt_raw["adapter"]["allow_real_runs"] = True
+check("the NXT's file with the key written is let through", RobotConfig(nxt_raw).real_run_refusal() is None)
 check("the NXT: speeds are not measured, so the factsheet has none; its fire action says it cannot be undone",
       "physicalParameters" not in nxt.factsheet and nxt.factsheet["protocolFeatures"]["mobileRobotActions"][0]["irreversible"] is True)
 check("the control block is read: deadman, lease and takeover", nxt.control == {"deadman_s": 0.6, "lease_s": 20.0, "takeover": []} and nxt.lease_s == 20.0 and nxt.takeover == [])

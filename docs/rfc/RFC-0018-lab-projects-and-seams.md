@@ -269,7 +269,7 @@ package of the lab; apps never import apps; robots never import apps.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | runfile, robotgate, worldmodel | self | - | - | - | - | - | - |
 | observatory | yes | - | - | self | - | - | - |
-| mission_control | tests | yes | tests | tests (Chromium shots) | self | - | exception, tests |
+| mission_control | tests | yes | tests | tests (Chromium shots) | self | - | tests |
 | nxt_lab | yes | - | - | tests (Chromium shots) | - | self | - |
 | duck_lab | yes | yes | yes | - | - | - | self |
 
@@ -279,10 +279,10 @@ never a robot's package); and the duck's navigator (`duck_lab.nav`, the payload,
 is a unit of its own that may import neither `labrunner` nor `simhost`, while the duck's tools may.
 The table in force is `scripts/check_boundaries.py`'s.
 
-The one exception, by module: `mission_control.duck` (Mission Control's duck adapter) imports
-`duck_lab.nav.client` and `duck_lab.nav.run.load_scale`; RFC-0020's plugins did not retire it
-(still in force 2026-11-22; phase 5 step 1 does). A test or probe of a project may also use what
-the table lists as "tests".
+The one exception, by module, was `mission_control.duck` (Mission Control's duck adapter),
+which imported `duck_lab.nav.client` and `duck_lab.nav.run.load_scale`. It is retired: phase 5
+step 1 (RFC-0023) cut it, and `EXCEPTIONS` in `scripts/check_boundaries.py` is empty
+(2026-11-26). A test or probe of a project may also use what the table lists as "tests".
 
 Where it differs from §5 to §8, and why:
 

@@ -57,6 +57,13 @@ from observatory import query, robots
 from runfile.catalog import Catalog
 
 log = logging.getLogger("observatory")
+
+
+def redact_token(path: str) -> str:
+    """A path for a log line, with the value of any `token` query parameter hidden (a `?token=` is a credential)."""
+    return re.sub(r"(?i)([?&;]token=)[^&#\s]*", r"\1***", path)
+
+
 WEB = Path(__file__).resolve().parents[2] / "web"
 LIB = Path(__file__).resolve().parents[4] / "libs" / "web"       # the web library both apps serve (RFC-0024): tokens, three.js, the body
 HEARTBEAT_S = 15.0
@@ -313,7 +320,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._error(400, "the URL is not valid UTF-8")
         except Exception:
             eid = uuid.uuid4().hex[:10]
-            log.exception("request %s failed (error id %s)", self.path, eid)
+            log.exception("request %s failed (error id %s)", redact_token(self.path), eid)
             try:
                 self._error(500, f"internal error (id {eid})", id=eid)
             except OSError:

@@ -24,7 +24,14 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; c
                  ".svg": "image/svg+xml", ".woff2": "font/woff2"}
 MAX_BODY = 1_000_000
 KEEPALIVE_S = 15.0
+REQUEST_TIMEOUT_S = 30.0      # a client that stalls mid-request is dropped (the Observatory's bound)
+STREAM_TIMEOUT_S = 60.0       # the event stream's own: its keepalive comes every KEEPALIVE_S, so only a client that stops reading hits it
 SSE_BATCH = 200
+
+
+def redact_token(path: str) -> str:
+    """A path for a log line, with the value of any `token` query parameter hidden (a `?token=` is a credential)."""
+    return re.sub(r"(?i)([?&;]token=)[^&#\s]*", r"\1***", path)
 
 
 def _number(body: dict, key: str, default=None, *, required: bool = False) -> float:
@@ -481,6 +488,7 @@ def serve_events(h, c: Ctx) -> None:
     h.send_header("Content-Type", "text/event-stream")
     h.send_header("Cache-Control", "no-cache")
     h.end_headers()
+    h.connection.settimeout(STREAM_TIMEOUT_S)      # not the request timeout: a quiet stream is alive; a client that stops reading is dropped
     last_state: dict = {}
     idle = 0.0
     seq = since
@@ -518,6 +526,7 @@ def serve_events(h, c: Ctx) -> None:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "mission-control/0.1"
+    timeout = REQUEST_TIMEOUT_S
 
     def log_message(self, fmt, *args):
         pass
@@ -569,7 +578,12 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.mc.tokens.verify(token) if token else None
 
     def _body(self):
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0:
+            raise ApiError(400, "bad_length", "Content-Length is a count of bytes")
         if length > MAX_BODY:
             raise ApiError(413, "too_large", f"a body is at most {MAX_BODY} bytes")
         if length == 0:
@@ -619,10 +633,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send(status, payload)
         except ApiError as exc:
             self._send(exc.status, exc.to_json())
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
             return
         except Exception as exc:
-            print(f"mission-control: {method} {self.path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            print(f"mission-control: {method} {redact_token(self.path)}: {type(exc).__name__}: {exc}", file=sys.stderr)
             try:
                 self._send(500, {"ok": False, "error": {"code": "internal", "message": f"{type(exc).__name__}: {exc}"}})
             except OSError:
