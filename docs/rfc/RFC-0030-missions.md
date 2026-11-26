@@ -758,12 +758,15 @@ the operator's.
      auto mode (section 6) additionally needs its budgets set in the file.
    - **Reviewer:** A, agree; an LLM auto mission also needs a per-mission cost ceiling in
      `planner.json` and refuses to start without one (6.5).
+   - **Decided (the operator, 2026-11-26): A, with the reviewer's cost ceiling.**
 4. **The spike's measures and stopping rule.** The scope is decided (6.7); what ends it is not.
    - A: stop at the measures of 6.7 and write the note; the operator decides on step 3.
    - B: also stop if the LLM planner's cost per mission passes a figure the operator names.
    - **Recommendation: B.** Name the figure before the first LLM run.
    - **Reviewer:** B, plus a date or session cap on the spike itself; if the rules planner alone
      meets the coverage target, the LLM is measured as a delta.
+   - **Decided (the operator, 2026-11-26): B,** with a cap of $1 of LLM cost per mission and
+     two working sessions for the spike; the reviewer's delta rule applies.
 5. **The default approval mode of an auto mission.**
    - A: confirm each step.
    - B: confirm when the plan changes.
@@ -773,6 +776,9 @@ the operator's.
      simulator.**
    - **Reviewer:** A by default; C only on the simulator, enforced in code (6.5, L1); B requires
      the scenario set's record to be a stored artefact.
+   - **Decided (the operator, 2026-11-26): the recommendation with the reviewer's terms:** A by
+     default and always on the real robot; B once a stored record exists; C on the simulator only,
+     enforced in code.
 6. **Does the auto loop run in Mission Control's process first (section 6.6)?**
    - A: yes, a runner thread; its own process when a trigger fires.
    - B: its own process from the start, as an API client.
@@ -780,6 +786,8 @@ the operator's.
      planner and reviewer functions make B a transport change later.
    - **Reviewer:** A, with the thread rules (6.6, M1) and the latch (6.5, C1) in Mission
      Control, not in the thread.
+   - **Decided (the operator, 2026-11-26): A,** with the reviewer's thread rules and the latch in
+     Mission Control.
 7. **How do this RFC and RFC-0005 relate (new in revision 2; section 13)?** A proposal, not a
    decision.
    - A: this RFC stands on its own for now; RFC-0005's loop is revisited when flotilla has a

@@ -21,8 +21,11 @@ window; a new Isaac Lab stack on the DGX is the homelab's call.
   (`tof8x8.py:286`). Not enough on its own: the cliff check reads any invalid floor zone as "no
   floor", so the impairment's own status (13) is skipped there, and only when the profile has the
   impairment block (the simulator's). **Done in the simulator, off by default** (R2, 2026-11-26).
-  Open, a safety call for the operator: should the real sensor's own failed zones also count as
-  unknown rather than as a drop?
+  **Decided by the operator (2026-11-26):** the real sensor's failed floor zones keep counting as a
+  drop (a real edge also gives no valid return, so "unknown" could walk the duck off it). R8
+  records the real sensor over our floors and a real edge; if false stops are frequent, a drop then
+  needs failed zones that persist or cluster (2 adjacent, or 2 frames), tuned from that record.
+  Never ignored.
 - Licences: their code BSD-3-Clause; the robot meshes CC BY-NC-SA 4.0.
 
 From the [R6 plan](RESEARCH-R6-PLAN.md), 2026-11-26 (nothing run; sizes and GPU hours estimated):

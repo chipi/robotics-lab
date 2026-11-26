@@ -22,7 +22,10 @@ refused; R6 tokens are the operator's (RFC-0014 §3.9); R7 a profile is the robo
 the operator writes one; R8 no opting a goal out of its rehearsal (sim-first). A rule written here
 that RFC-0014 does not state in so many words (R6 to R8, and the reasons given for the profile,
 calibration, goal-edit, plan and stream rows) is this
-step's decision and is open to the operator's change.
+step's decision and is open to the operator's change. **R6, R7 and R8 were confirmed by the operator
+on 2026-11-26** as written: tokens stay the operator's, a profile is written only by the operator,
+and no
+goal opts out of its rehearsal.
 
 ## Mission Control
 
