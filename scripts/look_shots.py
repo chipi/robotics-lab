@@ -6,7 +6,7 @@ plan, anomalies and decisions, depth frames) and its own Mission Control (the fa
 Observatory's /control/ as in production), on free ports. Nothing on 8060/8070 is touched. Then it takes each view in dark and light,
 at 1440x900 and 390x844, named <app>-<view>-<theme>-<width>.png.
 
-    cd apps/observatory && uv run --frozen python ../../scripts/look_shots.py --out DIR [--html] [--only TEXT]
+    cd apps/observatory && uv run --frozen python ../../scripts/look_shots.py --out DIR [--html] [--only TEXT[,TEXT...]]
     cd apps/observatory && uv run --frozen python ../../scripts/look_shots.py --compare BEFORE AFTER --out DIR
 
 Runs in the Observatory's environment (Playwright and Chromium as the page tests use them); installs nothing.
@@ -275,7 +275,7 @@ def take_all(out: Path, only: str | None, skip_light_wide_flat: bool, html_index
                     for width in widths:
                         for theme in THEMES:
                             name = f"{app}-{view}-{theme}-{width}.png"
-                            if only and only not in name:
+                            if only and not any(o in name for o in only.split(",")):
                                 continue
                             if skip_light_wide_flat and theme == "light" and width == 1440 and view not in ("3d", "map", "eye", "chase", "watch", "body", "explore"):
                                 skipped.append(f"{name}: dropped by --slim")
@@ -343,7 +343,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--html", action="store_true", help="also write index.html in --out")
-    ap.add_argument("--only", help="take only the shots whose name contains this text")
+    ap.add_argument("--only", help="take only the shots whose name contains this text (a comma-separated list: any of them)")
     ap.add_argument("--slim", action="store_true", help="drop the 1440 light shots of the flat (non-3D) views, to keep the folder small")
     ap.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"), type=Path)
     a = ap.parse_args()

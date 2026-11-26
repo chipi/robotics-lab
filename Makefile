@@ -539,6 +539,13 @@ docs-lint-fix: ## Apply markdownlint's own fixes; long lines are left to fix by 
 docs-validate: docs-lint docs-build ## Markdown lint plus the strict build
 	@echo "docs validate OK"
 
+SCREENSHOT_SHOTS ?= observatory-runs-dark-1440,observatory-3d-dark-1440,control-robot-dark-1440
+
+.PHONY: screenshots
+screenshots: observatory-sync ## Retake the README's and docs' screenshots (docs/assets/screenshots) from a fixture run and the fake robot in headless Chromium; no simulator, no robot; the duck's body needs its meshes (make robots)
+	@cd $(OBSERVATORY_DIR) && uv run --frozen python ../../scripts/look_shots.py --out ../../docs/assets/screenshots --only $(SCREENSHOT_SHOTS)
+	@rm -f docs/assets/screenshots/shots.json && ls -l docs/assets/screenshots && echo "screenshots PASS"
+
 .PHONY: docs-clean
 docs-clean: ## Remove built site
 	rm -rf site/
