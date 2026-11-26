@@ -75,7 +75,8 @@ install both. That is why the run format is the first seam to cut.
 
 Other seams found:
 
-- The Observatory knows each robot's log. `adapters/duck.py` and `adapters/nxt.py` turn a robot's own
+- The Observatory knows each robot's log. `adapters/duck.py` and `adapters/nxt.py` turn a robot's
+  own
   records into run records. It is the Observatory that knows the duck's event names, not the duck
   that knows the Observatory's. The adapters are the run format's other half and should live
   with the run format or with each robot (open question 7).
@@ -183,8 +184,10 @@ Four contracts hold it together. Nothing else may cross a project line.
 3. **Cut the smaller knots.** Move `OVERHEAD_M` out of `nav/cliff` so the world model stands
    alone; settle which `miniview` command wins (§3).
 4. **Split a piece into its own repository when it has a second user or a different release
-   pace.** NXT and the Observatory first. Mission Control from birth: it starts as its own
-   repository, not as a folder.
+   pace.** NXT and the Observatory first. Mission Control was planned "its own repository from
+   birth"; it was built as a folder (`apps/mission-control`) and nothing broke: the boundary check
+   held the seam (amended 2026-11-26, the advisor's review of RFC-0024). The triggers, per piece,
+   are in §6.1.
 5. **During the move the monorepo keeps working.** The lab repository holds the projects as Git
    dependencies or submodules at pinned versions (question 6), so its `make ci` stays whole. A piece
    moves with its history (`git subtree split` or `git filter-repo`, not checked which). The folder
@@ -192,6 +195,25 @@ Four contracts hold it together. Nothing else may cross a project line.
 
 **Waits:** publishing to PyPI; a shared design-token or style package; moving the challenge course
 to eval-harness; anything that needs the gate built first (RFC-0017 is proposed).
+
+### 6.1 Split triggers (2026-11-26)
+
+From the [review of RFC-0024](../wip/RFC-0024-REVIEW-2026-11-26.md) at main 54defc1. Nothing splits
+now; each piece leaves when its trigger fires, and not before.
+
+| What | Trigger |
+| --- | --- |
+| `libs/runfile` as a published package | A second repository imports it (robotics-evals reading ticks or scans) |
+| The ROS 2 connector | First its own folder, image and CI job here; leaves only if the ROS distro drives its release cadence or a second ROS robot appears |
+| The Observatory | A second user of its API, or a release pace unlike Mission Control's |
+| `libs/web` | Never alone; moves with whichever app leaves |
+| Mission planning as an app | RFC-0030 §5's five triggers |
+| `apps/nxt-web` | Not planned; MVP 2 step 6 couples it more |
+| Flotilla | Deferred; an HTTP contract, no bearing on repository structure |
+
+The satellites that did leave (chipi/microduck-nav, robotics-evals) left for licence, privacy and
+dependency weight, and meet the lab by file contract (a golden fixture, `result.json` by path);
+they import nothing of the lab's, so §5.1's trigger for the run format has not fired.
 
 ## 7. Alternatives considered
 
@@ -215,7 +237,8 @@ parked; the answers are recorded for when it is picked up.
 
 1. **Repository names and the Observatory's rename.** RFC-0014 says miniview becomes the
    Observatory; the package is still `miniview`. **Answered:** rename the package at the moment
-   the run-format library is cut (step 2), when its imports change anyway, so there is one rename and
+   the run-format library is cut (step 2), when its imports change anyway, so there is one rename
+   and
    not two.
 2. **Name of the run-format library.** **Answered:** a plain name such as `runfile`, not tied to
    a viewer name.
@@ -241,7 +264,8 @@ parked; the answers are recorded for when it is picked up.
   imports named in §3, the Makefile's per-project targets, the `nav2/Dockerfile` header, and the
   existence of ADR-0007 and ADR-0019 here. ADR-0018 and RFC-0015/0016 exist only in the
   `explore` worktree.
-- **Not checked:** `robots/` internals beyond the folder names; the `viewer` modules that would go to
+- **Not checked:** `robots/` internals beyond the folder names; the `viewer` modules that would go
+  to
   the run format; whether the run file carries a version a reader checks; the `miniview` command
   collision; the history-preserving move tools; any CI workflow files in detail.
 
@@ -276,11 +300,13 @@ package of the lab; apps never import apps; robots never import apps.
 
 **Since then (2026-11-21):** two libraries joined, `libs/simhost` (RFC-0021, imports no other
 unit) and `libs/runner` (`labrunner`, RFC-0022: imports runfile, robotgate, worldmodel and simhost,
-never a robot's package); and the duck's navigator (`duck_lab.nav`, the payload, the plugins, the profile)
+never a robot's package); and the duck's navigator (`duck_lab.nav`, the payload, the plugins, the
+profile)
 is a unit of its own that may import neither `labrunner` nor `simhost`, while the duck's tools may.
 The table in force is `scripts/check_boundaries.py`'s.
 
-**Since then (2026-11-26):** `libs/missions` (`missions`, RFC-0030 row 1) joined: it imports no other
+**Since then (2026-11-26):** `libs/missions` (`missions`, RFC-0030 row 1) joined: it imports no
+other
 unit, and only `mission_control` imports it, through one module (`planning.py`). The arrow
 `mission_control -> missions` is in the picture of section 5.2; no robot, gate or runner can be
 reached from it.
@@ -306,7 +332,8 @@ Where it differs from §5 to §8, and why:
 - **No split into repositories** and no uv workspace: each project keeps its own `pyproject.toml`
   and `uv.lock`, the libraries are path sources.
 - **The rename.** The command is `observatory` (`miniview` still runs it, one release), the make
-  targets `observatory-*` and `test-observatory*` (`viewer-up`, `viewer-down`, `test-viewer` kept one
+  targets `observatory-*` and `test-observatory*` (`viewer-up`, `viewer-down`, `test-viewer` kept
+  one
   release), the variables `OBSERVATORY_*` (`MINIVIEW_*` read as a fallback). Kept so old runs and
   fixtures read byte for byte: the MCAP topics `/miniview/*`, schema names and profile, the signals
   proto, the index folder `state/miniview`, `window.miniview` and the pages' storage keys, the
