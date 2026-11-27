@@ -65,10 +65,23 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
 - **Later checkpoints stop walking.** M2a's last checkpoint (`model_1499`) applied forward speed 0
   in all 33 validation runs; M2b's `model_300` and `model_399` barely moved. Training's own
   collision curve looked fine for M2b to the end, so "safe" in training partly meant "stands
-  still" in the navigator. Not diagnosed inside the models. A plausible cause to check first:
-  Pollen's walker does not walk below about 0.2 m/s (R6, and R7's notes), and the requested
-  turn (about 0.42 rad/s) is under the profile's `stand_turn.min_rad_s` 1.1, so a policy that
-  shaves speed lands in a dead zone. Unverified.
+  still" in the navigator.
+- **Diagnosed (2026-11-27, `/work/microduck-nav-runs/r5/standstill-diagnosis.md`): two deployment
+  defects of ours, not the training.**
+  1. *The depth frame is out of distribution.* Training's impairment drops floor returns beyond
+     about 0.556 m (microduck-nav `impairments.py:39,108-112`) and its scenes rarely show walls
+     beyond 2 m; the navigator's frame has floor returns at 0.8-1.2 m and walls at 2.5-3.1 m.
+     `model_1499`'s raw output was exactly (-1, 0, 0) on 150 of 150 traced ticks; with those
+     returns removed from the recorded frames, all five checkpoints tested drive forward. R4's
+     parity fixture checked the observation code on constructed states, not the impairment, so it
+     missed this.
+  2. *Pivots are clipped.* `learned.py` clips yaw to 0.75 rad/s, under the profile's
+     `stand_turn.min_rad_s` 1.1, so a pivot request never turns the duck (pose yaw 0.02 to -0.19
+     rad over a whole run; rules turns 2.83 rad on the same item). This is most of the selected
+     checkpoints' stand-stills, independent of the model.
+  R5's recorded result stands as run; it measured the models behind these two defects. The fair
+  test is **R5b**: fix both, pre-register, redo selection on `avoidance_val`, then v2 and v1.
+  R7 trains under the same impairment, so the deployment fix applies to it too.
 - Stand-stills also in the selected checkpoints: applied vx 0 for a whole run in 10 of 70 M2a and
   7 of 70 M2b test runs. Two "reached" calls 0.25-0.27 m from the goal were judged failures.
 - The comparison is fair on v2: rules and learned ran on navigator code with no change between
@@ -83,10 +96,10 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
 M1, M2a, M2b and R5 are done; the R7 pool is regenerated at a clean commit and `docs/R7.md`
 follows the pre-registration (microduck-nav 4248b0e).
 
-1. **Diagnose the stand-still** before spending GPU on R7: replay a late checkpoint on CPU
-   (`microduck_nav.replay`) and in the navigator, and read requested against applied speed. If R7
-   inherits the dead zone, change the task (a floor on the residual's forward speed, or a reward
-   for progress that the walker can deliver) first.
+1. **Fix the two deployment defects in `learned.py`** (red tests first): apply training's floor
+   rule to the policy's depth input (the same function and constants as microduck-nav's
+   impairment, with a parity test against it) and let a pivot request through the yaw clip. Then
+   **R5b**, pre-registered as a dated section before any run.
 2. **eval-harness 0.8.2**: pin it in robotics-evals, check `evh --version` and `make validate`;
    new datasets use `--fields-from-item` and `--exclude manifest.json`.
 3. **R7a + R7b on the DGX**: requested from the homelab (microduck-nav 4248b0e, the pool's gz
