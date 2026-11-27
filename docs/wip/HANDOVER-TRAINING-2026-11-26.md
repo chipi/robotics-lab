@@ -91,6 +91,17 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
   `/tmp`'s quota refused writes for 3 minutes; 16 M2b validation runs were re-run on the same
   seeds (recorded in the pre-registration).
 
+## The goal (the operator, 2026-11-27)
+
+"Get M2b to at least where NVIDIA is, and then we can go to R7; we need to be on top of the game."
+Measured: **M2b (deploy-matched) at least M2a's level** (NVIDIA's recipe on our duck; NVIDIA's own
+published numbers are from another robot and scenes, not comparable) on `avoidance_v2`, selection on
+`avoidance_val`: success at least M2a's, collisions no more than M2a's, no whole-run stand-stills.
+Then R7, whose bar is the rules arm (23/40, 0 collisions). Order: R5b's numbers first; then, if M2b
+is
+still short, one GPU run **M2c** = M2b's task with room walls in its scenes (the far-wall gap) and
+trained longer (M2b had 400 updates to M2a's 1500, reward still rising), scored the same way.
+
 ## Next, in order
 
 M1, M2a, M2b and R5 are done; the R7 pool is regenerated at a clean commit and `docs/R7.md`
