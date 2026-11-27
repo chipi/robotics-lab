@@ -148,7 +148,8 @@ Beside this repository:
 - **The learning arc, now, before MVP 2.** The duck's learned local controller: a first training
   run (M1) passed, two longer ones (M2a, M2b) are trained, and our rules are the baseline on the
   frozen sets (30 of 30 on `avoidance_v1`, 23 of 40 on the harder `avoidance_v2`, no collisions).
-  Next are the learned checkpoints against that baseline, then our own training variants
+  The first learned controllers do not beat that baseline yet (20 and 9 of 40 on `avoidance_v2`).
+  Next: why later checkpoints stand still, then our own training variants
   ([the learning arc's handover](docs/wip/HANDOVER-TRAINING-2026-11-26.md),
   [RFC-0031](docs/rfc/RFC-0031-learning-in-the-lab.md)). The real duck arrives later.
 - **MVP 2: next, not started.** A TurtleBot3 Burger on ROS 2 Jazzy and Gazebo Harmonic. A one-day
