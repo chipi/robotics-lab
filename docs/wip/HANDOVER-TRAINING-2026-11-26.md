@@ -34,6 +34,8 @@ MVP 2 (the operator's decision).
 | M2b | `Mjlab-Nav-Deploy-MicroDuck` (10 Hz policy, no sidestep), 4096 x 400, 18:15Z to 20:43Z, commit 8399be8 | **Done**, exit 0, checkpoint_report PASS, 9 checkpoints (every 50) in `m2b/2026-11-26_18-15-16/`, each with a sidecar. Collisions per iteration 0.93 (0-99) to 0.107 (200-299, lowest) then 0.163; progress 0.49 to 0.59; goal arrivals doubled. Unlike M2a it got safer. Candidates (pre-registered, robotics-evals a48ff3c): `model_200`, `model_300`, `model_399`. The DGX released to prod after it |
 | R5 rules arm | `rules@1` on `avoidance_v1` (30 items) | **30 of 30**, 0 collisions, min clearance 0.094 m, mean 43 s; imported as `rules_v1` (robotics-evals f3d68a7) |
 | R5 rules arm, v2 | `rules@1` on `avoidance_v2` (40 items, challenges 24-28 x seeds 1-8, robotics-lab e97edbe) | **23 of 40** (57.5 %), 0 collisions: narrow_doorway 3/8, dense_boxes 2/8, chair_cluster 8/8, slalom 8/8, box_behind_door 2/8. Two families at 8/8 cannot show a gain (four pilot seeds overstated them; not changed after seeing test seeds). Imported (robotics-evals a111bba) |
+| R5 validation | Candidates on `avoidance_val` (33 items) | M2a: `model_100` 22/33 0 coll., `model_200` 22/33 1 coll., `model_1499` **0/33 (never moved)**. M2b: `model_200` 22/33 2 coll., `model_300` 0/33, `model_399` 0/33. Selected M2a `model_100`, M2b `model_200` (robotics-evals 8337114, db3b3e4) |
+| **R5 result** | Selected checkpoints on v2 and v1, Holm across the two arms (d64a775, 69f8c17) | **Neither learned arm beats the rules.** v2: rules 23/40, M2a 20/40 (not significant, p 0.50), M2b 9/40 (**worse**, Holm p 0.025). Each learned arm had 1 collision on v2 (the same item, `dense_boxes-s2`, 1 mm inside the footprint), so both fail the collision limit. v1 safety (30/30, 0 collisions): M2a 26/30, M2b 21/30 with 1 collision; both fail |
 
 The DGX: the operator gave it to us for the whole series ("it stays yours until you're done with
 M1 and M2"); the homelab session runs every swap and copies folders to `/work/microduck-nav-runs/`.
@@ -58,47 +60,46 @@ Prod must be back by 23:20Z; the nightly 23:45Z to 03:00Z stays clear.
 - RFC-0031 (learning in the lab) accepted, all eight answers as recommended: option A, a read-only
   training-run page first as an MVP 2 side lane; the trainer adapter after MVP 2.
 
-## In flight when written
+## What R5 found (read before R7)
 
-- R5 M2a arm: an agent runs the three candidates on `avoidance_val` (33 items), writes the
-  selection into the pre-registration, then the selected checkpoint on v2 and v1, imports `m2a`
-  and runs `comparison-show`. Then the same for M2b (candidates 200, 300, 399), and Holm across both
-  arms.
-- CI on main was red from 54defc1 to 3a22670 (`test_settings_page` waited for exactly four
-  Modules rows; the local-controller slot made five). Fixed in 26097d2.
+- **Later checkpoints stop walking.** M2a's last checkpoint (`model_1499`) applied forward speed 0
+  in all 33 validation runs; M2b's `model_300` and `model_399` barely moved. Training's own
+  collision curve looked fine for M2b to the end, so "safe" in training partly meant "stands
+  still" in the navigator. Not diagnosed inside the models. A plausible cause to check first:
+  Pollen's walker does not walk below about 0.2 m/s (R6, and R7's notes), and the requested
+  turn (about 0.42 rad/s) is under the profile's `stand_turn.min_rad_s` 1.1, so a policy that
+  shaves speed lands in a dead zone. Unverified.
+- Stand-stills also in the selected checkpoints: applied vx 0 for a whole run in 10 of 70 M2a and
+  7 of 70 M2b test runs. Two "reached" calls 0.25-0.27 m from the goal were judged failures.
+- The comparison is fair on v2: rules and learned ran on navigator code with no change between
+  e97edbe and 26097d2. On v1 the rules ran at 54defc1; the changes since touch only the learned
+  path and new challenges.
+- Evidence: `/work/microduck-nav-runs/r5/{m2a,m2b}/{validation,test}/`. One infrastructure fault:
+  `/tmp`'s quota refused writes for 3 minutes; 16 M2b validation runs were re-run on the same
+  seeds (recorded in the pre-registration).
 
 ## Next, in order
 
-1. **M2a lands** (`/work/microduck-nav-runs/m2a/`): curves with
-   `.claude/skills/dgx-training-run/scripts/checkpoint_report.py`; the CPU replay
-   (`uv run python -m microduck_nav.replay <model.pt>` in microduck-nav); write a sidecar
-   `<model>.onnx.json` for each checkpoint (M2a predates ONNX metadata):
-   `{"task": "Mjlab-Nav-MicroDuck", "policy_step_s": 0.02, "lateral_limit": 0.12, "obs_layout":
-   "nav-1343-v1"}`.
-2. **M2b lands** (`m2b/`): the same; its sidecar has `policy_step_s` 0.1 and `lateral_limit` 0.0.
-   Then tell the homelab M1 and M2 are done, so the DGX goes back to prod.
-3. **Checkpoint selection** on `avoidance_val` per the pre-registration (each arm's checkpoints,
-   highest success, then fewest collisions, then latest).
-4. **R5's learned arms**: the selected M2a and M2b checkpoints through the navigator
-   (`lab-challenge ... --local-controller learned --model PATH`) on v2 and v1, from a clean
-   worktree (`make duck-sync` first), scored with `challenge-batch`'s `batch_scores.py`, imported,
-   then `evh comparison-show` against `rules_v1`. In our navigator the guards are always on, so
-   these arms are already "learned under the guard".
-5. **eval-harness 0.8.2**: pin it in robotics-evals, check `evh --version` and `make validate`;
+M1, M2a, M2b and R5 are done; the R7 pool is regenerated at a clean commit and `docs/R7.md`
+follows the pre-registration (microduck-nav 4248b0e).
+
+1. **Diagnose the stand-still** before spending GPU on R7: replay a late checkpoint on CPU
+   (`microduck_nav.replay`) and in the navigator, and read requested against applied speed. If R7
+   inherits the dead zone, change the task (a floor on the residual's forward speed, or a reward
+   for progress that the walker can deliver) first.
+2. **eval-harness 0.8.2**: pin it in robotics-evals, check `evh --version` and `make validate`;
    new datasets use `--fields-from-item` and `--exclude manifest.json`.
-6. **Tomorrow's GPU window, R7a + R7b**: regenerate the pool at a clean robotics-lab commit with
-   `--exclude-dataset` for v1, v2 and val; then `docs/R7.md`'s command (4096 x 400,
-   `Mjlab-Nav-Ours-MicroDuck`). Fix `docs/R7.md`'s evaluation plan first: it still says v1; it
-   must follow the pre-registration (v2 primary, v1 safety, val for selection).
-7. **R7c**: mine the R5 rules and learned failures on v2 into training scenarios (`lab-scenarios
+3. **R7a + R7b on the DGX**: requested from the homelab (microduck-nav 4248b0e, the pool's gz
+   sha256 `0b23ce53...`); the homelab asks the operator for the window's go.
+4. **R7c**: mine the R5 rules and learned failures on v2 into training scenarios (`lab-scenarios
    mine`, excluding v1, v2 and val).
-8. **R7d** (Pollen's apartment as a static scene, about 1-2 weeks) and **R7e** (teacher and
+5. **R7d** (Pollen's apartment as a static scene, about 1-2 weeks) and **R7e** (teacher and
    student), after R7a/b.
-9. **The MVP 1 close-out** remains: the README and docs pass, the name (stays `robotics-lab` for
-   now, the operator 2026-11-26), the RFC-0024 review's recommendation 5 (done: RFC-0018 §6.1).
-   Steps
-   6 (NXT at the brick) and 7 (staging) wait for hardware and the X3 window.
-10. **E5, after the close-out** (the operator, 2026-11-26): the blog post (M2a vs rules vs M2b vs
+6. **The MVP 1 close-out**: done except steps 6 (NXT at the brick) and 7 (staging), which wait for
+   hardware and the X3 window. Done 2026-11-26: the README and docs pass with screenshots, user
+   guides for every app (`docs/guides/`), the MIT licence, the GitHub description and topics, the
+   RFC-0024 review's recommendation 5 (RFC-0018 §6.1). The name stays `robotics-lab` for now.
+7. **E5, after the close-out** (the operator, 2026-11-26): the blog post (M2a vs rules vs M2b vs
     R7 on our duck) and public Hugging Face datasets (`avoidance_v1`, `v2` as
     `robotics-avoidance-v1/-v2`).
 
