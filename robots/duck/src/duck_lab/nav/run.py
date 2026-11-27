@@ -1087,7 +1087,10 @@ class Navigator:
 
     def _local_record(self, follower: Twist, local: Twist) -> dict:
         """What a tick records of a controller that is not rules@1 (its command, and the follower's as `requested`)."""
-        return {} if self.controller.ident == plugins.RULES else {"requested": follower, "local": local}
+        if self.controller.ident == plugins.RULES:
+            return {}
+        decision = getattr(self.controller, "decision", None)       # the learned controller says what it did: "pivot", "model", "idle", "brake"
+        return {"requested": follower, "local": local, **({"decision": decision} if decision else {})}
 
     def go_to(self, goal: tuple, timeout_s: float = 90.0) -> dict:
         try:

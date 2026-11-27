@@ -32,9 +32,10 @@ from duck_lab.nav.run import Navigator
 from duck_lab.nav.runlog import JOINTS
 from duck_lab.nav.side_drops import SuspectMemory
 from duck_lab.plugins import interfaces
-from duck_lab.plugins.learned import DEFAULT, MODEL_STEP_S, NAV_JOINTS, Learned, ResidualCommand, axial_factors, brake_action, observation
+from duck_lab.plugins.learned import (DEFAULT, FLOOR_VALIDITY_M, MODEL_STEP_S, NAV_JOINTS, Learned, ResidualCommand, axial_factors, brake_action,
+                                      far_floor, observation)
 from duck_lab.plugins.rules import Rules
-from duck_lab.plugins.tof8x8 import Tof8x8
+from duck_lab.plugins.tof8x8 import Tof8x8, rotate
 from duck_lab.profile import load
 from runfile import build
 from runfile.profile import validate_profile
@@ -292,7 +293,8 @@ def frame(mm=1000, status=5, seq=0):
 
 
 def body_state(gyro=(0.1, 0.2, 0.3), quat=(1.0, 0.0, 0.0, 0.0), vel=0.0):
-    return {"imu": {"quat": list(quat), "gyro": list(gyro)}, "joints": [0.01 * i for i in range(len(JOINTS))], "velocities": [vel] * len(JOINTS)}
+    return {"imu": {"quat": list(quat), "gyro": list(gyro)}, "joints": [0.01 * i for i in range(len(JOINTS))], "velocities": [vel] * len(JOINTS),
+            "odom": {"position": [0.0, 0.0, 0.2]}, "frames": {"tof": {"pos": [0.08, 0.0, 0.11], "quat": [1.0, 0.0, 0.0, 0.0]}}}
 
 
 valid = set(SIM.sensors.tof8x8.valid_status)
@@ -573,6 +575,107 @@ finally:
     for k, v in real.items():
         setattr(nav_run, k, v)
     Tof8x8.open = real_open
+
+# ---- R5b defect 1: the policy's depth is training's, not the navigator's (the diagnosis, docs/wip/HANDOVER-TRAINING-2026-11-26.md) ----------------
+class Spy:
+    """Stands in for the ONNX session: notes each input it is run on and answers zero residuals."""
+    def __init__(self):
+        self.inputs = []
+
+    def run(self, names, feed):
+        self.inputs.append(next(iter(feed.values()))[0].copy())
+        return [np.zeros((1, 3), dtype=np.float32)]
+
+
+def level_body(pitch=0.25, z=0.2):
+    """A duck standing level, its sensor pitched down `pitch` rad, so some beams meet the floor near and some far."""
+    b = body_state()
+    b["odom"] = {"position": [0.0, 0.0, z]}
+    b["frames"] = {"tof": {"pos": [0.08, 0.0, 0.11], "quat": [math.cos(pitch / 2), 0.0, math.sin(pitch / 2), 0.0]}}
+    return b
+
+
+def floor_scene(tof, body, obstacle_zones=()):
+    """A radial frame: every beam that meets the floor within 4 m reads the floor, the others read a wall at 3 m; `obstacle_zones` read half
+    the floor range (a thing standing on it). Returns the frame and, per zone, the optical-axis depth and whether the return is the floor."""
+    height, q = tof.sensor_pose(body)
+    mm, depth, floor = [], [], []
+    for i, beam in enumerate(tof.beams):
+        dz = rotate(q, beam)[2]
+        r_floor = -height / dz if dz < -1e-3 else None
+        if r_floor is not None and r_floor <= 4.0:
+            r = r_floor * (0.5 if i in obstacle_zones else 1.0)
+            floor.append(i not in obstacle_zones)
+        else:
+            r = 3.0 if height + 3.0 * dz > 0.3 else 0.0       # a wall well above the floor line, or no return (a wall's foot reads as floor at this range)
+            floor.append(False)
+        mm.append(r * 1000.0)
+        depth.append(r * beam[0])
+    return {"rows": 8, "cols": 8, "distance_mm": mm, "status": [5] * 64, "t_ns": 0, "seq": 0}, np.array(depth), np.array(floor)
+
+
+FLOOR_GOLDEN = json.loads((Path(__file__).parent / "fixtures" / "floor_dropout_parity.json").read_text())
+wrong = [(k, z) for k, fr in enumerate(FLOOR_GOLDEN["frames"])
+         for z, dropped in enumerate(far_floor(np.array(fr["depth_m"]), np.array(fr["floor"])))
+         if bool(dropped) != (fr["floor"][z] and fr["drop_probability"][z] >= 0.5)]
+check(f"parity with microduck-nav's own floor-validity impairment: {len(FLOOR_GOLDEN['frames'])} random frames of 64 zones (golden values from its zone_dropout_probability, "
+      "the zone dropped where its probability is at least one half), none differs", not wrong and FLOOR_GOLDEN["midpoint_m"] == FLOOR_VALIDITY_M, wrong[:3])
+check("... and the golden frames include zones just either side of the midpoint, so the boundary is tested",
+      any(abs(d - 0.556) < 0.002 for fr in FLOOR_GOLDEN["frames"] for d, f in zip(fr["depth_m"], fr["floor"]) if f))
+check("a constructed frame: floor beyond 0.556 m is dropped, floor nearer, an obstacle at the same range and a wall are not",
+      far_floor(np.array([0.3, 0.55, 0.557, 1.2, 1.2, 3.0]), np.array([True, True, True, True, False, False])).tolist() == [False, False, True, True, False, False])
+
+TOF_SIM = Tof8x8(SIM)
+BODY = level_body()
+FRAME, DEPTH, ISFLOOR = floor_scene(TOF_SIM, BODY, obstacle_zones=(27, 28, 36, 44))
+FAR_FLOOR = ISFLOOR & (DEPTH >= 0.556 + 1e-3)
+NEAR_FLOOR = ISFLOOR & (DEPTH <= 0.556 - 1e-3)
+check("the constructed scene has floor returns near and far, obstacles (one of them past 0.556 m) and a wall", (DEPTH[[27, 28, 36, 44]] > 0.6).any() and FAR_FLOOR.sum() >= 8 and NEAR_FLOOR.sum() >= 8 and (~ISFLOOR & (DEPTH > 0)).sum() >= 8,
+      (int(FAR_FLOOR.sum()), int(NEAR_FLOOR.sum()), int((~ISFLOOR).sum())))
+ln = Learned(SIM, RANDOM, model_rate=50)
+ln.session = spy = Spy()
+ln.command(Twist(0.3, 0.0), [(FRAME, 0.0)], BODY, Twist())
+seen = spy.inputs[-1] if spy.inputs else np.zeros(1343)
+now_depth, now_flag = seen[53 + 9 * 128:53 + 9 * 128 + 64], seen[53 + 9 * 128 + 64:53 + 10 * 128]
+check("the policy's input: floor returns beyond 0.556 m are what training makes of them, depth 0 and flag 0 (impairments.py:108-112)",
+      spy.inputs and (now_depth[FAR_FLOOR] == 0).all() and (now_flag[FAR_FLOOR] == 0).all(), (ln.last_error, now_depth[FAR_FLOOR][:4]))
+check("... a floor return nearer than it, an obstacle at any range and a wall are untouched",
+      spy.inputs and np.allclose(now_depth[~FAR_FLOOR], DEPTH[~FAR_FLOOR], atol=1e-5) and (now_flag[~FAR_FLOOR] == (DEPTH[~FAR_FLOOR] > 0)).all(),
+      (ln.last_error, [(i, round(DEPTH[i], 3), bool(ISFLOOR[i]), round(float(now_depth[i]), 3)) for i in range(64) if not FAR_FLOOR[i] and abs(now_depth[i] - DEPTH[i]) > 1e-5]))
+
+# ---- R5b defect 2: a pure pivot is not clipped under the walker's turn floor -------------------------------------------------------------
+PIVOT_MIN = float(SIM.locomotion.get("stand_turn.min_rad_s"))
+check("the profile's stand-turn floor is read (1.1 rad/s) and is above the residual's yaw limit", PIVOT_MIN == 1.1 > 0.75, PIVOT_MIN)
+for yaw in (1.2, -1.2, PIVOT_MIN, -PIVOT_MIN, 2.0):
+    ln = Learned(SIM, PUSH, model_rate=50)
+    ln.session = spy = Spy()
+    out = ln.command(Twist(0.0, yaw), [(FRAME, 0.0)], BODY, Twist())
+    check(f"a pivot request (vx 0, yaw {yaw}) reaches the walker unchanged and the model is not asked", out == Twist(0.0, yaw) and not spy.inputs, (out, len(spy.inputs)))
+ln = Learned(SIM, PUSH, model_rate=50)
+ln.session = spy = Spy()
+ln.command(Twist(0.0, 1.2), [(FRAME, 0.0)], BODY, Twist())
+out = ln.command(Twist(0.0, 1.2), [(FRAME, 0.0)], BODY, Twist(0.0, 1.2))
+check("... on the next tick too (no slew from standing holds it back)", out == Twist(0.0, 1.2), out)
+for req in (Twist(0.0, 1.0), Twist(0.0, 0.8), Twist(0.1, 1.2), Twist(0.3, 0.0), Twist(0.3, 1.5)):
+    ln = Learned(SIM, PUSH, model_rate=50)
+    ln.session = spy = Spy()
+    out = ln.command(req, [(FRAME, 0.0)], BODY, Twist())
+    check(f"not a pivot ({req.vx}, {req.vyaw}): the model is asked and its limits apply (yaw within 0.75)", len(spy.inputs) == 1 and abs(out.vyaw) <= 0.75 + 1e-9, (out, len(spy.inputs)))
+ln = Learned(SIM, PUSH, model_rate=50)
+ln.session = Spy()
+ln.command(Twist(0.0, 1.2), [(FRAME, 0.0)], BODY, Twist())
+check("the decision is recorded: a pass-through pivot says so", getattr(ln, "decision", None) == "pivot", getattr(ln, "decision", None))
+ln.command(Twist(0.3, 0.0), [(FRAME, 0.0)], BODY, Twist())
+check("... and a model tick says that", getattr(ln, "decision", None) == "model", getattr(ln, "decision", None))
+ln.command(Twist(0.0, 0.0), [(FRAME, 0.0)], BODY, Twist())
+check("... and no request says it did nothing", getattr(ln, "decision", None) == "idle", getattr(ln, "decision", None))
+ln.command(Twist(float("nan"), 0.0), [(FRAME, 0.0)], BODY, Twist())
+check("... and a brake says so", getattr(ln, "decision", None) == "brake", getattr(ln, "decision", None))
+pnav = navigator(Learned(SIM, PUSH, model_rate=50))
+pnav.controller.session = Spy()
+lc = pnav.controller.command(Twist(0.0, 1.2), [(FRAME, 0.0)], BODY, Twist())
+check("the tick's record carries the decision beside requested and local", pnav._local_record(Twist(0.0, 1.2), lc) ==
+      {"requested": Twist(0.0, 1.2), "local": lc, "decision": "pivot"}, pnav._local_record(Twist(0.0, 1.2), lc))
 
 # ---- the build identity ---------------------------------------------------------------------------------------------------------------
 check("the build's ctrl part: rules@1 with no override, learned@<sha8> with one",

@@ -12,6 +12,11 @@ The observation is checked slot by slot against what `microduck-nav` trains on (
 constructed states, against the vectors its own observation functions build (tests/fixtures/obs_parity.json, in test_local_controller.py).
 What cannot match is listed there: the model is queried every navigator tick (0.1 s), not every 0.02 s control step, and the duck's
 command has no lateral part.
+
+Two deployment differences from training, both on purpose (docs/wip/HANDOVER-TRAINING-2026-11-26.md, "What R5 found"): the policy's depth
+drops the floor returns training's sensor impairment drops (`far_floor`; the navigator's own planner, guards and map keep the full frame),
+and a pure pivot request (vx 0, yaw at or over the profile's stand_turn.min_rad_s) passes to the walker as rules@1 would send it, the
+model not asked, since the residual's yaw limit is under the walker's turn floor. A tick says which it did (`decision`).
 """
 
 import hashlib
@@ -35,6 +40,10 @@ RATES = {50: (0.02, 0.12), 10: (0.1, 0.0)}   # --model-rate: Hz -> (policy step 
 OBS_LAYOUT = "nav-1343-v1"                 # microduck-nav's nav_export.OBS_LAYOUT: the slot order observation() builds
 LIMITS, SLEW, MAX_AGE_S, LATERAL_RATIO = (0.35, 0.12, 0.75), (1.0, 1.0, 3.0), 0.25, 0.35
 BRAKE = (-1.0, 0.0, 0.0)
+# Training drops a floor return with probability sigmoid((depth - midpoint) / width) and never one at or under 0.55 m (microduck-nav
+# impairments.py:17,39,108-112); the midpoint is 0.556 m plus a per-episode offset of 0 to 0.13 m (impairments.py:54-59). The policy never saw a
+# floor return past the midpoint, so the deployed input drops them where the probability reaches one half (depth at or past 0.556 m, offset 0).
+FLOOR_VALIDITY_M = 0.556
 
 NAV_JOINTS = tuple(n for n in JOINTS if n != "mouth")
 DEFAULT_POSE = {"left_hip_yaw": 0.0, "left_hip_roll": -0.0873, "left_hip_pitch": -0.4579, "left_knee": -0.0049, "left_ankle": 0.4530,
@@ -140,24 +149,53 @@ def axial_factors(tof) -> np.ndarray:
     return np.array([b[0] for b in tof.beams])
 
 
-def _tick(frame: dict, valid: set, axial: np.ndarray) -> np.ndarray:
+def far_floor(depth: np.ndarray, floor: np.ndarray) -> np.ndarray:
+    """Which zones training's floor-validity impairment drops: a floor return (`floor`) at or past FLOOR_VALIDITY_M of optical-axis depth.
+    A return that is not the floor, however far, is never dropped by it (impairments.py:113, `torch.where(floor_hit, floor_dropout, p)`)."""
+    return np.asarray(floor, dtype=bool) & (np.asarray(depth, dtype=float) >= FLOOR_VALIDITY_M)
+
+
+def floor_zones(tof, frame: dict, body: dict) -> np.ndarray:
+    """Which zones of `frame` read the floor, by the navigator's own test (Tof8x8.depth_points: the return's height above the floor under the
+    sensor's pose in `body` is under floor_margin_m + floor_margin_per_m x range, and not below the floor by extra_m). Training knows it
+    exactly (the ray's hit at world z 0, impairments.py:99-101); the navigator can only estimate it, and a thing under that margin high reads as floor."""
+    try:
+        height, q = tof.sensor_pose(body)
+    except (KeyError, TypeError, IndexError):
+        raise ValueError("body: the sensor's pose is missing (odom position and the tof frame), so the floor returns cannot be told from the rest") from None
+    mm = _numbers(frame["distance_mm"], ZONES, "frame distance_mm")
+    out = np.zeros(ZONES, dtype=bool)
+    for i, beam in enumerate(tof.beams):
+        if mm[i] <= 0:
+            continue
+        r = tof.along_beam(mm[i], beam)
+        d = rotate(q, beam)
+        h = math.hypot(r * d[0], r * d[1])
+        out[i] = -tof.extra_m <= height + r * d[2] < tof.floor_margin_m + tof.floor_margin_per_m * h
+    return out
+
+
+def _tick(frame: dict, valid: set, axial: np.ndarray, floor=None) -> np.ndarray:
     """One frame as the model reads it: 64 depths along the optical axis in metres, then 64 valid flags; an invalid return is 0 (a
-    missing return is not free space, so its flag says so)."""
+    missing return is not free space, so its flag says so). `floor` (frame -> 64 bools, see floor_zones) turns on training's floor-validity
+    impairment: the floor returns it drops are invalid, as in training."""
     mm = _numbers(frame["distance_mm"], ZONES, "frame distance_mm")
     status = np.asarray(frame["status"]).reshape(-1)
     if status.shape != (ZONES,):
         raise ValueError(f"frame status: {ZONES} numbers expected, got {status.shape[0]}")
     metres = (mm / 1000.0 * axial).astype(np.float32).astype(float)       # training judges its bounds in float32: 4.0 m must stay 4.0 m
     ok = np.isin(status, list(valid)) & (metres >= MIN_RANGE_M) & (metres <= MAX_RANGE_M)
+    if floor is not None:
+        ok &= ~far_floor(metres, floor(frame))
     return np.concatenate((np.where(ok, metres, 0.0), ok.astype(float)))
 
 
 def observation(requested, ranges: list, body: dict, applied, valid: set, step_s: float, previous_action, joint_velocity,
-                axial=None) -> np.ndarray:
+                axial=None, floor=None) -> np.ndarray:
     """microduck-nav's 1343 inputs: gyro 3, projected gravity 3, joint positions less the default 14, joint velocities 14 (the caller's,
     one tick late), previous action 3, requested velocity 3, zeros 10 (head and body pose commands), applied command 3, ten steps of
     64 depths and 64 flags oldest first, ten frame ages. `step_s` spaces the ten steps: the model's control step, not the navigator's
-    tick. `axial` (64 factors, see axial_factors) turns a sensor's readings into optical-axis depths; None for one that reads so. Raises
+    tick. `axial` (64 factors, see axial_factors) turns a sensor's readings into optical-axis depths; None for one that reads so. `floor` (frame -> 64 bools) drops the floor returns past training's validity range (_tick); None keeps every return. Raises
     ValueError for an input that is not finite or not as long as it must be."""
     axial = np.ones(ZONES) if axial is None else axial
     imu = body["imu"]
@@ -181,7 +219,7 @@ def observation(requested, ranges: list, body: dict, applied, valid: set, step_s
         fresh = [(a, f) for f, a in ranges if a >= offset - 1e-9]
         if fresh:
             age, frame = min(fresh, key=lambda c: c[0])
-            obs[53 + slot * 128:53 + (slot + 1) * 128] = _tick(frame, valid, axial)
+            obs[53 + slot * 128:53 + (slot + 1) * 128] = _tick(frame, valid, axial, floor)
             obs[1333 + slot] = age - offset
         else:
             obs[1333 + slot] = EMPTY_AGE_S
@@ -218,12 +256,16 @@ class Learned:
 
     def bind(self, profile) -> None:
         self.valid = set(profile.sensors.tof8x8.valid_status)
-        self.axial = axial_factors(Tof8x8(profile))
+        self.tof = Tof8x8(profile)
+        self.axial = axial_factors(self.tof)
+        turn = profile.locomotion.get("stand_turn.min_rad_s")       # a turn on the spot under it never starts the walker (profile.json)
+        self.pivot_min = float(turn) if turn else None
 
     def reset(self) -> None:
         self.residual.reset()
         self.previous_action = np.zeros(ACTION_DIM)
         self.joint_velocity = np.zeros(len(NAV_JOINTS))
+        self.decision = "idle"      # what the last tick did: "pivot" (the request passed through), "model", "idle" (nothing to ask the model) or "brake"
 
     def describe(self) -> dict:
         return {"name": self.name, "version": self.version, "ident": self.ident,
@@ -260,6 +302,7 @@ class Learned:
         not a number."""
         req, app = self._vectors(requested, applied)
         self.previous_action = brake_action()
+        self.decision = "brake"
         if not (np.isfinite(req).all() and np.isfinite(app).all()):
             self.residual.reset()
             return Twist(0.0, 0.0)
@@ -271,6 +314,14 @@ class Learned:
         req, app = self._vectors(requested, applied)
         if not (np.isfinite(req).all() and np.isfinite(app).all()):
             return self._brake(requested, applied)
+        if self.pivot_min and abs(req[0]) < 1e-9 and abs(req[2]) >= self.pivot_min:
+            # The residual's yaw limit (0.75) is under the walker's turn floor, so a model pivot never starts the duck; training's clip is on
+            # the residual and its sum (microduck-nav residual_action.py), the rules controller passes the follower's pivot through, so this does.
+            self.decision = "pivot"
+            self.previous_action = np.zeros(ACTION_DIM)
+            self._remember_velocity(body, strict=False)
+            self.residual.previous = np.array([0.0, 0.0, req[2]])
+            return Twist(0.0, float(req[2]))
         self.residual.previous = app
         ages = [float(a) for _, a in ranges]
         if not np.isfinite(ages).all():
@@ -278,15 +329,18 @@ class Learned:
         have = bool(ranges) and body is not None
         age = min(ages, default=0.0)
         if not have or age > MAX_AGE_S or not req.any():
+            self.decision = "idle"
             self.previous_action = np.zeros(ACTION_DIM)
             self._remember_velocity(body, strict=False)
             cmd = self.residual.process(req, np.zeros(ACTION_DIM), have, age)
             return Twist(float(cmd[0]), float(cmd[2]))
-        obs = observation(requested, ranges, body, applied, self.valid, self.spec["policy_step_s"], self.previous_action, self.joint_velocity, self.axial)
+        obs = observation(requested, ranges, body, applied, self.valid, self.spec["policy_step_s"], self.previous_action, self.joint_velocity, self.axial,
+                          floor=lambda frame: floor_zones(self.tof, frame, body))
         self._remember_velocity(body)
         out = self.session.run(None, {self.input.name: obs[None, :]})[0].reshape(-1)
         if out.shape != (ACTION_DIM,) or not np.isfinite(out).all():
             return self._brake(requested, applied)
         self.previous_action = np.clip(out.astype(float), -1.0, 1.0)
+        self.decision = "model"
         cmd = self.residual.process(req, out, True, age)
         return Twist(float(cmd[0]), float(cmd[2]))
