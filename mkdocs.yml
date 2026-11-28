@@ -114,6 +114,7 @@ nav:
     - RFC-0025 — From MVP 1 to MVP 2: rfc/RFC-0025-mvp1-to-mvp2.md
     - RFC-0030 — Missions, planning as a module: rfc/RFC-0030-missions.md
     - RFC-0031 — Learning in the lab: rfc/RFC-0031-learning-in-the-lab.md
+    - RFC-0032 — Robot abilities: rfc/RFC-0032-robot-abilities.md
   - Product (PRD):
     - Overview: prd/README.md
     - PRD-001 — The Observatory (was miniview): prd/PRD-001-miniview.md
