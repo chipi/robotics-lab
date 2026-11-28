@@ -14,6 +14,10 @@ A run is a folder with a result.json (lab-challenge writes it) and its ticks.jso
   min_clearance    result.json min_clearance_m
   time_s           the simulator's seconds (clock.sim_s), else the last tick's t
   stops            reflex_stop + cliff_stop events in ticks.jsonl
+  stand_still      1 when the pose never got 0.10 m from where it started (the R5 stand-still), else 0
+  pivot_fail       1 when the requested command was a pure turn (vx under 0.05, vyaw not 0) for 30 ticks in a row and the pose
+                   turned under 0.2 rad over them (R5's pivot stall: yaw clipped under the walker's turn floor), else 0
+                   Both need pose ticks; a run without them has neither. Import both with --metric-kind <name>=descriptive.
   _run, _ticks_sha256, _build   metadata (a key starting with `_`): the run's path, the log's hash, the build identity
 
 Checks, each printed: the number of items (--min-items, default 10), a scene run twice, runs not in the dataset, dataset items with no run,
@@ -33,6 +37,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 SEED_TAIL = re.compile(r"-s\d+$")
+STAND_M = 0.10
+PIVOT_VX, PIVOT_TICKS, PIVOT_TURNED_RAD = 0.05, 30, 0.2
 
 
 def sha256(path: Path) -> str:
@@ -48,8 +54,13 @@ def scene_to_item(dataset: Path) -> dict:
     return {it["fields"]["scene"]: it["item_id"] for it in d["items"] if "scene" in (it.get("fields") or {})}
 
 
+def wrap(a: float) -> float:
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
 def ticks_facts(path: Path) -> tuple:
-    stops, last_t = 0, None
+    stops, last_t, start, reach = 0, None, None, 0.0
+    pivot_ticks, pivot_yaw, prev_yaw, pivot_fail = 0, 0.0, None, 0
     try:
         with path.open() as f:
             for line in f:
@@ -59,11 +70,26 @@ def ticks_facts(path: Path) -> tuple:
                     continue
                 if r.get("event") in ("reflex_stop", "cliff_stop"):
                     stops += 1
-                if "pose" in r and r.get("t") is not None:
-                    last_t = r["t"]
+                if "pose" not in r or r.get("t") is None:
+                    continue
+                last_t = r["t"]
+                x, y, yaw = r["pose"][:3]
+                start = start or (x, y)
+                reach = max(reach, math.hypot(x - start[0], y - start[1]))
+                req = r.get("requested") or {}
+                if abs(req.get("vx") or 0) < PIVOT_VX and abs(req.get("vyaw") or 0) > 0:
+                    pivot_yaw += abs(wrap(yaw - prev_yaw)) if pivot_ticks else 0.0
+                    pivot_ticks += 1
+                    if pivot_ticks >= PIVOT_TICKS and pivot_yaw < PIVOT_TURNED_RAD:
+                        pivot_fail = 1
+                else:
+                    pivot_ticks, pivot_yaw = 0, 0.0
+                prev_yaw = yaw
     except OSError:
-        return None, None
-    return stops, last_t
+        return None, None, None, None
+    if start is None:
+        return stops, last_t, None, None
+    return stops, last_t, int(reach < STAND_M), pivot_fail
 
 
 def first_failure(failed: list, word: str) -> bool:
@@ -105,7 +131,7 @@ def main() -> int:
             no_verdict.append((scene, r.get("no_verdict")))
             continue
         ticks = p.parent / "ticks.jsonl"
-        stops, last_t = ticks_facts(ticks)
+        stops, last_t, stand_still, pivot_fail = ticks_facts(ticks)
         clock = r.get("clock") or {}
         failed = r.get("failed") or []
         row = {"item_id": item, "success": 1 if r["pass"] else 0, "collisions": 1 if first_failure(failed, "contact") else 0,
@@ -117,6 +143,8 @@ def main() -> int:
             row["time_s"] = round(t, 3)
         if stops is not None:
             row["stops"] = stops
+        if stand_still is not None:
+            row["stand_still"], row["pivot_fail"] = stand_still, pivot_fail
         row["_run"] = str(p.parent)
         if ticks.exists():
             row["_ticks_sha256"] = sha256(ticks)
@@ -170,12 +198,14 @@ def main() -> int:
 
     ok = not problems
     summary = {"scenarios": n, "wins": sum(r["success"] for r in rows), "collisions": sum(r["collisions"] for r in rows),
-               "falls": sum(r["falls"] for r in rows), "frozen_dataset": bool(mapping is not None), "build_ref": build_ref,
+               "falls": sum(r["falls"] for r in rows), "stand_still": sum(r.get("stand_still", 0) for r in rows),
+               "pivot_fail": sum(r.get("pivot_fail", 0) for r in rows), "frozen_dataset": bool(mapping is not None), "build_ref": build_ref,
                "problems": problems, "notes": notes, "out": str(a.out) if a.out and rows else None}
     if a.json:
         print(json.dumps({**summary, "verdict": "PASS" if ok else "FAIL"}, indent=1))
     else:
-        print(f"{n} scenarios from {len(results)} result.json; success {summary['wins']}/{n}, collisions {summary['collisions']}, falls {summary['falls']}")
+        print(f"{n} scenarios from {len(results)} result.json; success {summary['wins']}/{n}, collisions {summary['collisions']}, falls {summary['falls']}, "
+              f"stand-stills {summary['stand_still']}, pivot stalls {summary['pivot_fail']}")
         for x in notes:
             print("NOTE  " + x)
         for x in problems:
@@ -185,7 +215,7 @@ def main() -> int:
         if build_ref:
             print(f"--build-ref {build_ref}")
             print(f"evh import-run --dataset-id <id> --system-id {a.arm} --scores {a.out or '<scores.jsonl>'} --primary-metric success "
-                  f"--build-ref '{build_ref}' --source '<the lab-challenge command line>' --scorer-id batch_scores@<lab commit> --by agent:<name>")
+                  f"--metric-kind stand_still=descriptive --metric-kind pivot_fail=descriptive --build-ref '{build_ref}' --source '<the lab-challenge command line>' --scorer-id batch_scores@<lab commit> --by agent:<name>")
         print("BATCH-SCORES " + ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

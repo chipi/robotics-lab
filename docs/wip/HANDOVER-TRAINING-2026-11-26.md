@@ -142,9 +142,12 @@ closed by the operator's decision, nothing promoted); v2's collisions limit set 
    the same rule, written to the pre-registration before any run, then round r4 the same way.
 3. **Decide the next experiment** from r3 and r4 against the goal: is M2b's line at M2a's level?
    If yes, R7; if not, the next single change.
-4. **Failure metrics in the scorer** (`stand_still`, `pivot_fail` as per-item descriptive metrics
-   in `challenge-batch`'s `batch_scores.py`) so the harness shows them from the next imports; the
-   harness cannot add them to runs already imported (reported, gap 2).
+4. **Failure metrics in the scorer: done 2026-11-28.** `batch_scores.py` writes `stand_still`
+   (never 0.10 m from the start) and `pivot_fail` (a pure-turn request held 30 ticks that turned
+   under 0.2 rad) per item; import them with `--metric-kind <name>=descriptive`. They apply from
+   M2d's import (r4) on; r3 keeps the scorer it started with, and runs already imported cannot
+   get them (gap 2). On R5's folders: rules v2 1 and 0; M2a test 11 and 14, M2b test 14 and 16;
+   after the fix (R5b) M2a 1 and 0, M2b 6 and 0.
 5. **R7a + R7b**: parked until the goal is met; the request is ready (microduck-nav 4248b0e, the
    pool's gz sha256 `0b23ce53...`).
 6. **R7c**: mine the R5 rules and learned failures on v2 into training scenarios (`lab-scenarios

@@ -25,7 +25,7 @@ Starting a batch is a simulator job: do `sim-run` first (lock, patch, scratch in
    dirty tree records `-dirty` in its build, and eval-harness refuses it later.
 3. **Score each arm.** `scripts/batch_scores.py <arm folder> --dataset <dataset json> --arm <name> --out <arm>.scores.jsonl`.
 4. **Import** (writes into robotics-evals; only when the operator asked for this evaluation):
-   `EVH_FOR=person:<operator> evh import-run --dataset-id D --system-id ARM --scores F --primary-metric success --build-ref '<id>' --source '<command line>' --scorer-id batch_scores@<commit> --by agent:<name>`.
+   `EVH_FOR=person:<operator> evh import-run --dataset-id D --system-id ARM --scores F --primary-metric success --metric-kind stand_still=descriptive --metric-kind pivot_fail=descriptive --build-ref '<id>' --source '<command line>' --scorer-id batch_scores@<commit> --by agent:<name>`.
    `--build-ref` is the id the script prints: the runs' `build.id` without the trailing `-s<sensor seed>`. A run with no build is not imported.
 5. **Compare.** `evh comparison-show --runs rules,learned --baseline rules --metric success` (add `--cluster scene` for several seeds of one scene).
 
