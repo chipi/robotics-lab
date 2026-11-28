@@ -44,6 +44,8 @@ class FakeRobotd:
         self.calls: list = []
         self.conns: list = []
         self.extra: dict = {}               # merged into every streamed state
+        self.hellos: list = []              # the params of every hello, kept out of `calls`: the gate's own, not a client's
+        self.hello_api = 61                 # robotd's api_version in the hello reply; None: a v59 robotd, which refuses a named hello
         self._lock = threading.Lock()
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(path))
@@ -82,6 +84,14 @@ class FakeRobotd:
 
         for line in sock.makefile("r"):
             req = json.loads(line)
+            if req["method"] == "hello":
+                with self._lock:
+                    self.hellos.append(req.get("params"))
+                if self.hello_api is None:
+                    send({"jsonrpc": "2.0", "id": req["id"], "error": {"code": -32602, "message": "unknown field `client`"}})
+                else:
+                    send({"jsonrpc": "2.0", "id": req["id"], "result": {"api_version": self.hello_api, "daemon_version": "0.61.0"}})
+                continue
             with self._lock:
                 self.calls.append((n, req["method"], req.get("params")))
             m, p = req["method"], req.get("params") or {}
@@ -388,6 +398,63 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a stopped gate's threads have ended, so nothing writes its log afterwards",
           not [t.name for t in p3.threads() if t.is_alive()], [t.name for t in p3.threads() if t.is_alive()])
     robotd3.close()
+
+    # the gate names itself to robotd (protocol v60): move.source then says who moved the robot, and an absent autonomous means false
+    def events_of(path):
+        return [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+
+    robotd4 = FakeRobotd(tmp / "robotd4.sock")
+    p4log = tmp / "gate4.jsonl"
+    p4 = Proxy(tmp / "gate4.sock", tmp / "robotd4.sock", log=p4log, own_sources={"extra-name"})
+    check("the proxy says hello {client} upstream right after connecting, under its default name",
+          robotd4.hellos == [{"client": "robotics-lab-gate"}] and robotd4.methods() == [], robotd4.hellos)
+    check("... the name joins own_sources next to --own-source, and a v61 robotd turns on omits_false_autonomous",
+          p4.gate.own_sources == {"robotics-lab-gate", "extra-name"} and p4.gate.omits_false_autonomous is True, p4.gate.own_sources)
+    hello4 = [e for e in events_of(p4log) if e["event"] == "upstream_hello"]
+    check("... one gate-log entry says what the hello returned", len(hello4) == 1 and hello4[0]["api_version"] == 61
+          and hello4[0]["daemon_version"] == "0.61.0" and hello4[0]["client"] == "robotics-lab-gate", hello4)
+    p4.start()
+    robotd4.extra = {"move": {"applied": [0.0, 0.0, 0.0], "source": "robotics-lab-gate"}}
+    watcher4 = Client(tmp / "gate4.sock", hello="viewer")
+    watcher4.call("robot.subscribe", {"hz": 20})
+    time.sleep(0.5)
+    check("a Pollen-shaped frame (no autonomous, applied an array, our source) is watched and raises nothing",
+          "someone_else_drives" not in [e["event"] for e in events_of(p4log)]
+          and not any("autonomous" in e.get("fields", ()) or "move.applied" in e.get("fields", ()) for e in events_of(p4log) if e["event"] == "not_watched"),
+          events_of(p4log))
+    robotd4.extra = {"move": {"applied": [0.3, 0.0, 0.0], "source": "robotics-lab-gate"}}
+    check("... and an applied array with motion and no lease is someone else",
+          wait_for(lambda: any(e["event"] == "someone_else_drives" and e["signal"] == "motion_without_lease" for e in events_of(p4log))),
+          events_of(p4log))
+    watcher4.close()
+    p4.stop()
+    robotd4.close()
+
+    robotd5 = FakeRobotd(tmp / "robotd5.sock")
+    p5 = Proxy(tmp / "gate5.sock", tmp / "robotd5.sock", client_name="lab-gate-2")
+    check("a --client-name changes the name sent and trusted", robotd5.hellos == [{"client": "lab-gate-2"}] and p5.gate.own_sources == {"lab-gate-2"}, robotd5.hellos)
+    p5.stop()
+    robotd5.close()
+
+    robotd6 = FakeRobotd(tmp / "robotd6.sock")
+    robotd6.hello_api = 59
+    p6 = Proxy(tmp / "gate6.sock", tmp / "robotd6.sock")
+    check("a robotd that answers with api_version below 60 leaves omits_false_autonomous off", p6.gate.omits_false_autonomous is False)
+    p6.stop()
+    robotd6.close()
+
+    robotd7 = FakeRobotd(tmp / "robotd7.sock")
+    robotd7.hello_api = None
+    p7log = tmp / "gate7.jsonl"
+    p7 = Proxy(tmp / "gate7.sock", tmp / "robotd7.sock", log=p7log, own_sources={"extra-name"})
+    refused7 = [e for e in events_of(p7log) if e["event"] == "upstream_hello_refused"]
+    check("a robotd that refuses the named hello (v59: INVALID_PARAMS) is logged once and the proxy goes on without the name",
+          len(refused7) == 1 and refused7[0]["client"] == "robotics-lab-gate" and "unknown field" in refused7[0]["error"]
+          and p7.gate.own_sources == {"extra-name"} and p7.gate.omits_false_autonomous is False and p7.upstream.alive, events_of(p7log))
+    p7.start()
+    check("... and still relays", Client(tmp / "gate7.sock").call("robot.state", {"tag": "v59"})["result"]["tag"] == "v59")
+    p7.stop()
+    robotd7.close()
 
 print()
 print("GATE PROXY", "FAIL " + ", ".join(failures) if failures else "PASS")

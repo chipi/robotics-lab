@@ -418,6 +418,56 @@ feed(g, drive_state(source="anyone"))
 check("without a named own source, move.source is not judged and is reported as not watched",
       g.who()["holder"] == "mission-control" and any(e["event"] == "not_watched" and "move.source" in e["fields"] for e in log), log)
 
+# --- Pollen's wire shapes (duck-ipc-proto at 094d4bb4): `move.applied` is [vx, vy, vyaw]; `autonomous` is left out when false; the
+# open methods are reads -------------------------------------------------------------------------------------------------------
+def pollen_state(applied=(0.0, 0.0, 0.0), source=None, **top):
+    move = {"applied": list(applied)}
+    if source is not None:
+        move["source"] = source
+    return {"move": move, **top}
+
+
+g, robot, clock, log, got, cid = watched(**OURS)
+feed(g, pollen_state(applied=[0.3, 0.0, 0.0], source="gate-proxy"))
+check("an applied array with motion and no lease raises motion_without_lease",
+      len(raised(log)) == 1 and raised(log)[0].get("signal") == "motion_without_lease" and robot.stopped(), log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+feed(g, pollen_state(applied=[0.0, 0.0, 0.0005], source="gate-proxy"))
+check("an applied array at rest raises nothing and is watched (not in not_watched)",
+      not raised(log) and not any("move.applied" in e.get("fields", ()) for e in log if e["event"] == "not_watched"), log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+feed(g, pollen_state(applied=(0.0, 0.0, 0.4), source="gate-proxy"))
+check("an applied array while the holder drives raises nothing", not raised(log) and g.who()["holder"] == "mission-control", log)
+
+g, robot, clock, log, got, cid = watched(omits_false_autonomous=True, **OURS)
+g.handle(cid, "gate.acquire")
+feed(g, pollen_state(source="gate-proxy"))
+check("with omits_false_autonomous, an absent autonomous is false: watched, raises nothing",
+      not raised(log) and not any("autonomous" in e.get("fields", ()) for e in log if e["event"] == "not_watched"), log)
+feed(g, pollen_state(source="gate-proxy", autonomous=True))
+check("... and autonomous true raises",
+      len(raised(log)) == 1 and raised(log)[0]["signal"] == "autonomous" and robot.stopped() and g.who()["holder"] is None, log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+feed(g, pollen_state(source="gate-proxy"))
+check("without the option an absent autonomous is not watched, as before",
+      any(e["event"] == "not_watched" and "autonomous" in e["fields"] for e in log), log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+g.handle(cid, "gate.acquire")
+feed(g, pollen_state(source="gate-proxy"))
+check("a move.source equal to an own source raises nothing", not raised(log), log)
+feed(g, pollen_state(source="pollen-pad"))
+check("another move.source raises", len(raised(log)) == 1 and raised(log)[0].get("source") == "pollen-pad", log)
+
+g, robot, clock, log, got, cid = watched(**OURS)
+check("the read-only Pollen methods pass without a lease",
+      all(refusal(g, cid, m) is None for m in ("robot.modelApi", "robot.policies", "robot.skills", "robot.vetbook", "pad.status")),
+      [refusal(g, cid, m) for m in ("robot.modelApi", "pad.status")])
+
 print()
 print("FAIL: " + ", ".join(failures) if failures else "all passed")
 raise SystemExit(1 if failures else 0)

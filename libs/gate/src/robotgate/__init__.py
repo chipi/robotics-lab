@@ -24,7 +24,8 @@ LEASE_SECONDS = 20.0  # RFC-0017 §3.3: 10 to 30 s, not the deadman's 0.5 s
 
 # Reading and the deadman-free methods pass without a lease. Anything else, an unknown method
 # included, needs the lease: no lease, no motion.
-OPEN_METHODS = frozenset({"robot.state", "robot.subscribe", "robot.health", "tof.frame"})
+OPEN_METHODS = frozenset({"robot.state", "robot.subscribe", "robot.health", "tof.frame",
+                          "robot.modelApi", "robot.policies", "robot.skills", "robot.vetbook", "pad.status"})  # Pollen's reads
 STOP_METHOD = "robot.stop"
 ZERO_MOVE = {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}
 MOTION_GRACE_S = 1.0  # the robot still coasting after the gate's own stop is not someone else
@@ -103,11 +104,13 @@ class _Conn:
 class Gate:
     """`robot` is a callable robot(method, params) -> result that reaches the robot's own
     interface. `notify` callbacks given to `open` run under the gate's lock: they must not block
-    and must not call back into the gate."""
+    and must not call back into the gate. `omits_false_autonomous`: the robot leaves `autonomous` out of a state frame when it is
+    false (Pollen's robotd from protocol v60), so an absent one means false and is watched; off, absent means not reported."""
 
     def __init__(self, robot, *, clock=time.monotonic, wall=time.time, lease_s: float = LEASE_SECONDS,
-                 takeover_names=(), log=None, own_sources=()):
+                 takeover_names=(), log=None, own_sources=(), omits_false_autonomous: bool = False):
         self._robot = robot
+        self.omits_false_autonomous = omits_false_autonomous
         self.own_sources = frozenset(own_sources)
         self._stopped_at = None
         self._other_drives = False
@@ -272,18 +275,21 @@ class Gate:
     def observe_state(self, state) -> None:
         """One `robot.state` from the robot's stream. Signs that something other than the holder drives: `autonomous` set (the
         duck's own autod), `move.source` not one of `own_sources` (the name robotd shows for our upstream connection), motion in
-        `move.applied` with no lease held. Inferred, not read from a real robotd: the field names `move.source` and `move.applied`
-        beyond RFC-0002's `autonomous` and `move.source`. A field the robot does not fill is reported once as not watched and
+        `move.applied` with no lease held. `move.applied` is read as the object `{vx, vy, vyaw}` or as Pollen's array
+        `[vx, vy, vyaw]` (`MoveState.applied`, duck-ipc-proto at the simulator's pin). A field the robot does not fill is reported once as not watched and
         raises nothing. A sign stops the robot and ends the lease; it raises once per episode, until a frame shows none."""
         if not isinstance(state, dict):
             return
         with self._lock:
             move = state.get("move") if isinstance(state.get("move"), dict) else {}
             autonomous, source, applied = state.get("autonomous"), move.get("source"), move.get("applied")
-            moving = isinstance(applied, dict) and any(isinstance(v, (int, float)) and abs(v) > MOTION_EPS for v in applied.values())
+            if autonomous is None and self.omits_false_autonomous:
+                autonomous = False
+            speeds = applied.values() if isinstance(applied, dict) else applied if isinstance(applied, (list, tuple)) else ()
+            moving = any(isinstance(v, (int, float)) and abs(v) > MOTION_EPS for v in speeds)
             missing = [name for name, ok in (("autonomous", isinstance(autonomous, bool)),
                                              ("move.source", isinstance(source, str) and bool(self.own_sources)),
-                                             ("move.applied", isinstance(applied, dict))) if not ok]
+                                             ("move.applied", isinstance(applied, (dict, list, tuple)))) if not ok]
             new = [m for m in missing if m not in self._unwatched]
             if new:
                 self._unwatched.update(new)
