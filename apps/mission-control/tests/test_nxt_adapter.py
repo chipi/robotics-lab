@@ -143,6 +143,17 @@ try:
     check("the running program is named beside the flags", robot()["status"]["program"] == "robotd.rxe", robot()["status"])
     check("the battery is a percent: 7800 mV is 75 % of the assumed 6.0-8.4 V", robot()["status"]["battery_pct"] == 75, robot()["status"]["battery_pct"])
     check("GET /robots/{id} carries the server's battery rule: the state, and the two numbers of its hysteresis", robot()["battery"] == {"pct": 75, "low": False, "low_pct": 20, "clear_pct": 25}, robot().get("battery"))
+    # RFC-0032 phase 1: the brick's facts from what nxt-web already says (its status and diagnostics), and `fire` from the robot file, effector and irreversible
+    fx = call("GET", "/robots/nxt-1/facts")
+    f = fx[1].get("facts", {})
+    check("facts: the brick's name, firmware, link and battery, and the program on it", fx[0] == 200 and f["identity"]["model"] == "NXT" and f["identity"]["name"] == "fake"
+          and f["software"] == [{"name": "nxt-firmware", "running": "simulated", "installed": None}] and f["interface"]["link"] == "fake" and f["interface"]["via"] == "nxt-web"
+          and f["battery"] == {"mv": 7800, "pct": 75} and f["behaviours"][0]["artefact"]["name"] == "robotd.rxe" and f["absent"] == [] and f["read_at"] > 0, fx)
+    ax = call("GET", "/robots/nxt-1/actions")
+    fire = [a for a in ax[1].get("actions", []) if a["actionType"] == "fire"]
+    check("actions: fire, named by the robot file, an effector, irreversible, blocking HARD, no run route", ax[0] == 200 and len(fire) == 1
+          and (fire[0]["kind"], fire[0]["irreversible"], fire[0]["source"], fire[0]["blockingTypes"]) == ("effector", True, "file", ["HARD"])
+          and call("POST", "/robots/nxt-1/actions/fire", {})[0] == 404, ax)
     check("capabilities.sensors names the ultrasonic (a range, port 4) and the colour sensor (port 3)",
           [(s["id"], s["kind"], s["port"]) for s in r["capabilities"]["sensors"]] == [("ultrasonic", "range", "4"), ("colour", "colour", "3")], r["capabilities"]["sensors"])
     check("the state carries the ultrasonic in metres and the colour's name, under the ids capabilities.sensors gives",

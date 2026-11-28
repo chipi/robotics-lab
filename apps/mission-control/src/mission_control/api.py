@@ -150,6 +150,20 @@ def robot_map(c: Ctx):
     return {"ok": True, "map": rt.adapter.map()}
 
 
+@route("GET", "/robots/{id}/facts")
+def robot_facts(c: Ctx):
+    """What the robot is and runs (RFC-0032 section 3.1), as last read; `refresh=1` reads it again. Read only, no lease. `404 no_facts` for a robot
+    whose adapter reads none, `503 facts_unavailable` when the read fails."""
+    return {"ok": True, "facts": c.mc.robot(c.args["id"]).facts(refresh=c.q("refresh") in ("1", "true"))}
+
+
+@route("GET", "/robots/{id}/actions")
+def robot_actions(c: Ctx):
+    """The action catalogue (RFC-0032 section 3.3): what the robot reports merged with its robot file. Read only: nothing here runs an action.
+    `404 no_actions` for a robot that reports none and whose file names none."""
+    return {"ok": True, **c.mc.robot(c.args["id"]).actions(refresh=c.q("refresh") in ("1", "true"))}
+
+
 @route("GET", "/robots/{id}/sighting")
 def robot_sighting(c: Ctx):
     rt = c.mc.robot(c.args["id"])

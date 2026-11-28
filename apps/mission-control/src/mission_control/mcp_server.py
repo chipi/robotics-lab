@@ -53,6 +53,7 @@ _ID = r"[^/]+"
 # (method, path) of every call this server may make. Nothing else is called, whatever a tool asks.
 ALLOWED = [(m, re.compile("^" + p + "$")) for m, p in [
     ("GET", "/health"), ("GET", "/robots"), ("GET", f"/robots/{_ID}"), ("GET", f"/robots/{_ID}/map"), ("GET", f"/robots/{_ID}/sighting"),
+    ("GET", f"/robots/{_ID}/facts"), ("GET", f"/robots/{_ID}/actions"),
     ("GET", f"/robots/{_ID}/description"), ("GET", f"/robots/{_ID}/profile"), ("GET", f"/robots/{_ID}/profile/export"),
     ("GET", f"/robots/{_ID}/profile/diff"), ("PUT", f"/robots/{_ID}/profile/current"),
     ("GET", f"/robots/{_ID}/calibration"), ("POST", f"/robots/{_ID}/calibration"), ("POST", f"/robots/{_ID}/calibration/cancel"),
@@ -146,6 +147,18 @@ def build_server(base_url: str | None = None, client: str | None = None, allow_r
     def get_sighting(robot_id: str) -> dict:
         """The robot's latest camera record: what it recognised, ahead and left of it, if it has a recogniser."""
         return api.call("GET", f"/robots/{q(robot_id)}/sighting")
+
+    @mcp.tool()
+    def get_robot_facts(robot_id: str, refresh: bool = False) -> dict:
+        """What the robot is and runs: identity, software and interface versions, the network behind each behaviour slot, and what the robot
+        does not say (`absent`, with the reason). `read_at` is when it was read; `refresh` reads it again. Read only; a robot that reads none is 404."""
+        return api.call("GET", f"/robots/{q(robot_id)}/facts", query={"refresh": "1"} if refresh else None)
+
+    @mcp.tool()
+    def get_robot_actions(robot_id: str, refresh: bool = False) -> dict:
+        """What the robot can be asked to do: each action's name (VDA's `actionType`), `kind` (motion, expression, effector), `irreversible`,
+        `duration_s` and where it was named (`source`: robot or file). A catalogue only: no tool runs an action. A robot with none is 404."""
+        return api.call("GET", f"/robots/{q(robot_id)}/actions", query={"refresh": "1"} if refresh else None)
 
     @mcp.tool()
     def get_robot_description(robot_id: str) -> dict:

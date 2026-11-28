@@ -208,6 +208,60 @@ check("STOP-all still goes: the offline robot's STOP is accepted but not confirm
 mc.robots["blind"].adapter.robot.set_offline(False)
 ticks(1.0)
 
+# --- RFC-0032 phase 1: facts, actions and who drives, read only ---------------------------------------
+st, b = call("GET", "/robots/fake-1/facts")
+check("GET /robots/{id}/facts: what the robot is and runs, with when it was read",
+      st == 200 and b["facts"]["identity"]["model"] == "fake" and b["facts"]["software"][0]["running"] == "1.0.0" and b["facts"]["interface"] == {"model_api": 1}
+      and b["facts"]["read_at"] > 0, b)
+at0 = b["facts"]["read_at"]
+ticks(10.0)
+check("without refresh it is the older reading", call("GET", "/robots/fake-1/facts")[1]["facts"]["read_at"] == at0)
+check("refresh=1 reads again, with no lease and no session", call("GET", "/robots/fake-1/facts?refresh=1")[1]["facts"]["read_at"] > at0)
+st, b = call("GET", "/robots/fake-1/actions")
+check("GET /robots/{id}/actions: the catalogue, each action in one shape (VDA's names, ours beside them)",
+      st == 200 and b["robot"] == "fake-1" and b["error"] is None and [a["actionType"] for a in b["actions"]] == ["wave"]
+      and {"actionType", "kind", "blockingTypes", "irreversible", "duration_s", "params", "source"} <= set(b["actions"][0])
+      and b["actions"][0]["kind"] == "motion" and b["actions"][0]["irreversible"] is False and b["actions"][0]["source"] == "robot", b)
+check("there is no route that runs one: POST /robots/{id}/actions/wave is a 404 and nothing moved",
+      call("POST", "/robots/fake-1/actions/wave", {})[0] == 404 and call("POST", "/robots/fake-1/actions", {})[0] in (404, 405))
+mc.robots["fake-1"].adapter.robot.calls.clear()
+call("GET", "/robots/fake-1/facts?refresh=1")
+call("GET", "/robots/fake-1/actions?refresh=1")
+check("reading takes no lease and sends the robot nothing", not mc.robots["fake-1"].adapter.robot.calls and call("GET", "/robots/fake-1")[1]["robot"]["lock"]["holder"] is None)
+
+
+class Bare:
+    """An adapter of a robot that has neither facts nor actions."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name in ("facts", "actions"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+mc.robots["blind"].adapter = Bare(mc.robots["blind"].adapter)
+st, b = call("GET", "/robots/blind/facts")
+st2, b2 = call("GET", "/robots/blind/actions")
+check("a robot that has neither: 404 no_facts and no_actions, each with the reason", st == 404 and b["error"]["code"] == "no_facts" and "reads none" in b["error"]["message"]
+      and st2 == 404 and b2["error"]["code"] == "no_actions" and "names none" in b2["error"]["message"], (b, b2))
+check("an unknown robot is the usual 404", call("GET", "/robots/nope/facts")[1]["error"]["code"] == "not_found" and call("GET", "/robots/nope/actions")[0] == 404)
+mc.robots["fake-1"].adapter.facts = lambda: (_ for _ in ()).throw(ConnectionError("robotd does not answer"))
+st, b = call("GET", "/robots/fake-1/facts?refresh=1")
+check("a failed read is a 503 facts_unavailable naming why and when the older facts were read", st == 503 and b["error"]["code"] == "facts_unavailable"
+      and "robotd does not answer" in b["error"]["message"] and b["error"]["read_at"] is not None, b)
+del mc.robots["fake-1"].adapter.facts
+mc.robots["fake-1"].adapter.robot.control = {"source": "pad", "autonomous": True}
+ticks(1.0)
+d = call("GET", "/robots/fake-1")[1]["robot"]["driven_by"]
+check("driven_by is in the robot's view: the source, not ours, autonomy on, and the gate's notice",
+      d["source"] == "pad" and d["ours"] is False and d["autonomous"] is True and d["notice"]["signal"] == "autonomous", d)
+check("... and in the list, for the robot's card", [r["driven_by"] for r in call("GET", "/robots")[1]["robots"] if r["id"] == "fake-1"][0]["ours"] is False)
+mc.robots["fake-1"].adapter.robot.control = None
+ticks(1.0)
+
 # --- goals and runs ---------------------------------------------------------------------------------
 st, b = call("POST", "/goals", {"name": "to the door", "folder": "tests", "kind": "point", "params": {"x": 1.0, "y": 0.0}})
 gid = b["goal"]["id"]

@@ -3252,6 +3252,23 @@
     },
     "decisions": [],
     "expect": "reach",
+    "facts": {
+     "identity": {
+      "model": "fake",
+      "serial": "fake-0001"
+     },
+     "interface": {
+      "model_api": 1
+     },
+     "read_at": 1000.3000000000001,
+     "software": [
+      {
+       "installed": "1.0.0",
+       "name": "fake-robot",
+       "running": "1.0.0"
+      }
+     ]
+    },
     "goal": {
      "done_when": {
       "within_m": 0.25,
@@ -3353,6 +3370,23 @@
     },
     "decisions": [],
     "expect": "reach",
+    "facts": {
+     "identity": {
+      "model": "fake",
+      "serial": "fake-0001"
+     },
+     "interface": {
+      "model_api": 1
+     },
+     "read_at": 1000.5000000000001,
+     "software": [
+      {
+       "installed": "1.0.0",
+       "name": "fake-robot",
+       "running": "1.0.0"
+      }
+     ]
+    },
     "goal": {
      "done_when": {
       "within_m": 0.25,
@@ -3433,6 +3467,23 @@
     },
     "decisions": [],
     "expect": "reach",
+    "facts": {
+     "identity": {
+      "model": "fake",
+      "serial": "fake-0001"
+     },
+     "interface": {
+      "model_api": 1
+     },
+     "read_at": 1000.4000000000001,
+     "software": [
+      {
+       "installed": "1.0.0",
+       "name": "fake-robot",
+       "running": "1.0.0"
+      }
+     ]
+    },
     "goal": {
      "done_when": {
       "within_m": 0.25,

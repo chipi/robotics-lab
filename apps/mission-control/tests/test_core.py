@@ -611,6 +611,172 @@ release.set()
 mc5.close()
 check("the threads end on close", all(not t.is_alive() for t in mc5._threads))
 
+# --- RFC-0032 phase 1: facts, the action catalogue, who drives, and the facts in the run record (all read only) -------------------------------
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import sqlite3  # noqa: E402
+
+from common import FAKE_FILE  # noqa: E402
+from mission_control.fake import FakeAdapter  # noqa: E402
+from mission_control.robots import RobotRuntime  # noqa: E402
+from mission_control.store import SCHEMA_VERSION, Store  # noqa: E402
+
+mc, clock = boot()
+rt = mc.robot("fake-1")
+f = rt.facts()
+check("facts are read when the robot comes online: the fake's fixed identity, software and interface, with the wall clock's read_at",
+      f["identity"] == {"model": "fake", "serial": "fake-0001"} and f["software"][0]["name"] == "fake-robot" and f["interface"] == {"model_api": 1}
+      and 1000.0 <= f["read_at"] <= clock(), f)
+at0 = f["read_at"]
+check("without a refresh the read is not repeated", rt.facts()["read_at"] == at0)
+clock.advance(30)
+at1 = rt.facts(refresh=True)["read_at"]
+check("a refresh reads again: a newer read_at, the clock now", at1 == clock() and at1 >= at0 + 30, (at0, at1))
+
+
+class Bare:
+    """An adapter of a robot that has neither facts nor actions: the fake with those two left out."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name in ("facts", "actions"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+cfg = RobotConfig(robot_file("bare"))
+bare = RobotRuntime(cfg, Bare(FakeAdapter(cfg, clock)), clock=clock, wall=clock, bus=mc.bus)
+check("a robot that has neither: facts and actions are a 404 with a reason, and its poll is untouched",
+      refusal(bare.facts).status == 404 and refusal(bare.facts).code == "no_facts" and refusal(bare.actions).code == "no_actions"
+      and bare.has_facts is False and bare.has_actions is False and bare.poll(force=True) is None and bare.online())
+real_facts = rt.adapter.facts
+
+
+def broken():
+    raise ConnectionError("robotd does not answer")
+
+
+rt.adapter.facts = broken
+e = refusal(rt.facts, True)
+check("a failed read is a 503 with the reason, the older facts are kept, and a link failure is not said as a bug",
+      e.status == 503 and e.code == "facts_unavailable" and "robotd does not answer" in str(e) and rt.facts_read["read_at"] == at1
+      and rt.facts_error is not None and "facts" not in rt.said, (e, rt.said))
+err = io.StringIO()
+rt.adapter.facts = lambda: {}["bug"]
+with contextlib.redirect_stderr(err):
+    e = refusal(rt.facts, True)
+    refusal(rt.facts, True)
+check("a failed read from an adapter's bug is said as unexpected() says it: once on stderr with its traceback, and an error event; the poll never crashes",
+      e.status == 503 and err.getvalue().count("Traceback") == 1 and "unexpected KeyError" in err.getvalue()
+      and any(x["kind"] == "error" and "facts: KeyError" in x["message"] for x in kinds(mc, "error")), err.getvalue()[:200])
+rt.adapter.facts = real_facts
+run_for(mc, clock, 1.0)
+check("... and the poll went on and facts read again on request", mc.get_robot("fake-1")["online"] and rt.facts(refresh=True)["identity"]["model"] == "fake" and rt.facts_error is None)
+rt.adapter.facts = lambda: (_ for _ in ()).throw(OSError("down"))
+rt._was_online = False
+run_for(mc, clock, 0.5)
+check("the poll that sees the robot come online reads its facts; a read that fails there stops nothing and is kept as the reason",
+      rt.online() and rt.facts_error and "down" in rt.facts_error and rt.facts_read is not None)
+rt.adapter.facts = real_facts
+rt._was_online = False
+run_for(mc, clock, 0.5)
+check("and a read that works there replaces the older facts", rt.facts_error is None and rt.facts_read["read_at"] > at1, rt.facts_read["read_at"])
+
+# the catalogue: the robot's report merged with the robot file (capabilities.skills, factsheet mobileRobotActions)
+caps = {**FAKE_FILE["capabilities"], "skills": ["greet", {"name": "grab", "irreversible": True, "kind": "effector"}]}
+sheet = {**FAKE_FILE["factsheet"], "protocolFeatures": {"mobileRobotActions": [
+    {"actionType": "wave", "irreversible": True, "cancelAllowed": True}, {"actionType": "fire", "actionScopes": ["INSTANT"], "blockingTypes": ["HARD"], "irreversible": True}]}}
+mc2, clock2 = boot(robot_file("filed", capabilities=caps, factsheet=sheet))
+cat = {a["actionType"]: a for a in mc2.robot("filed").actions()["actions"]}
+check("actions: the robot's own report is named by the robot; the file's are named by the file; one both name is the robot's",
+      cat["wave"]["source"] == "robot" and cat["greet"]["source"] == "file" and cat["grab"]["source"] == "file" and cat["fire"]["source"] == "file", cat)
+check("actions: the robot's fields win (kind motion, 2 s, HARD), and the file fills what the robot cannot tell (cancelAllowed, irreversible)",
+      (cat["wave"]["kind"], cat["wave"]["duration_s"], cat["wave"]["blockingTypes"], cat["wave"]["cancelAllowed"], cat["wave"]["irreversible"]) == ("motion", 2.0, ["HARD"], True, True), cat["wave"])
+check("actions: every action has the same fields; irreversible is marked; a file-only action's kind is unknown unless the file or the adapter says",
+      cat["grab"]["irreversible"] is True and cat["grab"]["kind"] == "effector" and cat["greet"]["kind"] is None and cat["greet"]["irreversible"] is False
+      and cat["fire"]["blockingTypes"] == ["HARD"] and len({frozenset(a) for a in cat.values()}) == 1, [sorted(a) for a in cat.values()])
+plain = mc.robot("fake-1").actions()
+check("the plain fake has one action, wave: motion, 2 s, not irreversible, with when it was read", [a["actionType"] for a in plain["actions"]] == ["wave"]
+      and plain["actions"][0]["irreversible"] is False and plain["read_at"] is not None and plain["error"] is None)
+rt.adapter.actions = lambda: (_ for _ in ()).throw(ConnectionError("no answer"))
+broken_cat = rt.actions(refresh=True)
+check("a report that fails leaves the file's part and says why", broken_cat["error"] and "no answer" in broken_cat["error"] and isinstance(broken_cat["actions"], list), broken_cat)
+mc2.close()
+
+# who drives: from the latest state, display only; the gate's own stop is not touched here
+mc, clock = boot()
+check("a robot that reports neither source nor autonomy has nothing in driven_by", mc.get_robot("fake-1")["driven_by"] is None and mc.list_robots()[0]["driven_by"] is None)
+fake(mc).control = {"source": "mission-control", "autonomous": False}
+run_for(mc, clock, 1.0)
+d = mc.get_robot("fake-1")["driven_by"]
+check("driven by the gate's own name: ours, not autonomous, no notice", d == {"source": "mission-control", "ours": True, "autonomous": False, "notice": None}, d)
+fake(mc).control = {"source": "pad", "autonomous": False}
+run_for(mc, clock, 1.0)
+d = mc.get_robot("fake-1")["driven_by"]
+check("driven by a pad: not ours, and the gate's someone_else_drives notice with when, the list shows it too",
+      d["source"] == "pad" and d["ours"] is False and d["notice"]["signal"] == "move.source" and d["notice"]["at"] >= 1000.0
+      and mc.list_robots()[0]["driven_by"]["ours"] is False, d)
+check("... and the state event carries it for the page", [e for e in kinds(mc, "state")][-1]["driven_by"]["ours"] is False)
+a_lock = mc.robot("fake-1").acquire("script")
+fake(mc).control = {"source": "script", "autonomous": False}
+run_for(mc, clock, 1.0)
+check("the lease holder's own name is ours", mc.get_robot("fake-1")["driven_by"]["ours"] is True, mc.get_robot("fake-1")["driven_by"])
+fake(mc).control = {"source": "mission-control", "autonomous": True}
+run_for(mc, clock, 1.0)
+d = mc.get_robot("fake-1")["driven_by"]
+check("its own autonomy on is reported, even for our name", d["autonomous"] is True and d["ours"] is True, d)
+fake(mc).control = None
+run_for(mc, clock, 1.0)
+d = mc.get_robot("fake-1")["driven_by"]
+check("when the robot says nothing more, source and autonomy are gone and the latest notice is still there", d["source"] is None and d["autonomous"] is None and d["notice"] is not None, d)
+mc.close()
+
+# the run record: the facts as read when the run started
+with tempfile.TemporaryDirectory() as tmp:
+    mc, clock = boot(state_dir=tmp)
+    rt = mc.robot("fake-1")
+    rt.adapter.facts = lambda: {**real_facts(), "software": [{"name": "fake-robot", "running": "2.0.0", "installed": "2.0.0"}]}
+    clock.advance(5)
+    run_for(mc, clock, 0.2)
+    run = start(mc, POINT)
+    check("a goal run records the robot's facts as read when it started (read again then, not the older read)",
+          run["facts"]["software"][0]["running"] == "2.0.0" and run["facts"]["read_at"] == clock() and run["facts"]["identity"]["model"] == "fake", run["facts"])
+    check("... and the run's build identity and the other fields of the record are as they were",
+          set(run) >= {"id", "goal", "robot", "target", "state", "run_key", "conditions", "guardrails", "facts"} and "build" not in run)
+    rt.adapter.facts = broken
+    finish_run(mc, clock, run["id"])
+    mc.close()
+    mc2 = make_mc(Clock(), state_dir=tmp)
+    check("the facts are in the store: the run still says what the robot ran after a restart", mc2.get_run(run["id"])["facts"]["software"][0]["running"] == "2.0.0")
+    mc2.close()
+mc, clock = boot()
+mc.robot("fake-1").adapter.facts = broken
+run = start(mc, POINT)
+check("a facts read that fails at the run's start does not stop the run, and the older facts are what it records",
+      run["state"] == "running" and run["facts"]["identity"]["model"] == "fake" and run["facts"]["read_at"] < clock(), run["facts"])
+mc.close()
+mc, clock = boot(robot_file("bare-1"))
+mc.robots["bare-1"].adapter = Bare(mc.robots["bare-1"].adapter)
+run = start(mc, POINT, rid="bare-1")
+check("a robot with no facts: the run's facts are null", run["facts"] is None and run["state"] == "running", run)
+mc.close()
+
+# the store: a store of the schema before this one gains the column
+with tempfile.TemporaryDirectory() as tmp:
+    path = Path(tmp) / "old.sqlite"
+    Store(path).close()
+    db = sqlite3.connect(path)
+    db.execute("ALTER TABLE goal_runs DROP COLUMN facts")
+    db.execute("PRAGMA user_version = 4")
+    db.commit()
+    db.close()
+    s = Store(path)
+    check("a store of the version before is brought up: the facts column is there and the version is current",
+          s.one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION == 5 and "facts" in [c["name"] for c in s.all("PRAGMA table_info(goal_runs)")])
+    s.close()
+
 # --- persistence: the library, the runs, the sites and the gate's log survive a restart -----------------
 with tempfile.TemporaryDirectory() as tmp:
     mc, clock = boot(state_dir=tmp)

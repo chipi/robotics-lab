@@ -21,6 +21,7 @@ function h(tag, attrs, ...kids) {
 const S = {
   robots: [], robot: null, sites: [], site: null, objects: [], areas: [], map: null, goals: [], runs: [], run: null,
   mode: "point", draft: [], target: null, ready: false, es: null, lastConn: null, token: null, open: {},
+  ab: {},     // per robot id: what it is and runs, and what it can be asked to do (RFC-0032): {facts, factsError, actions, actionsError, busy}
 };
 
 // The shared kit (libs/web) loads after the page works and on its own: a module that fails to load leaves the static page, STOP and STOP ALL included,
@@ -261,6 +262,19 @@ function holderText(r) {
   return [l.holder, since && "since " + since, "lease " + l.lease_id, left != null && `expires in ${left} s`].filter(Boolean).join(" · ");
 }
 
+// Who drives the robot, from the server's `driven_by` (RFC-0032 section 3.2: the latest state's move.source and autonomous, and the gate's
+// someone_else_drives notice). Red when the source is not ours or the robot's own autonomy is on, and the word says so too. The stop is the
+// gate's: this only shows it. A robot that reports neither shows nothing.
+function drivenBad(r) { const d = r.driven_by; return !!d && (d.ours === false || d.autonomous === true); }
+function drivenEl(r) {
+  const d = r.driven_by;
+  if (!d || (d.source == null && !d.autonomous && !d.notice)) return null;      // a robot that names nobody and is not autonomous has nothing to say
+  const who = d.source == null ? "not named" : d.ours ? d.source + " (ours)" : d.source + " (not ours)";
+  return h("span", { class: "drivenby", "data-robot": r.id, "data-ours": String(d.ours), "data-bad": String(drivenBad(r)) }, "driven by ",
+    h("b", { class: drivenBad(r) ? "bad" : "" }, who + (d.autonomous ? ", autonomous" : "")),
+    d.notice ? h("span", { class: "faint" }, " · " + (d.notice.signal || "someone else drives") + ", " + ago(d.notice.at)) : null);
+}
+
 function renderRobots() {
   const box = $("robot-list");
   box.replaceChildren(...S.robots.map((r) => {
@@ -272,6 +286,7 @@ function renderRobots() {
       h("div", { class: "kv" + (fr === "fresh" ? "" : " ui-stale"), "data-fresh": fr },
         h("span", {}, "", h("b", { class: "online" }, r.online ? "online" : "offline")),
         h("span", {}, "lock ", h("b", { class: "lock" }, lockText(r))),
+        drivenEl(r),
         h("span", {}, "mode ", h("b", { class: dim }, st.mode || "-")),
         h("span", {}, "battery ", h("b", { class: dim }, st.battery_pct != null ? st.battery_pct + "%" : "-")),
         h("span", {}, "pose ", h("b", { class: "mono " + dim }, p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)}` : "-")),
@@ -289,7 +304,7 @@ function renderRobots() {
 }
 
 // --- the robot's page (RFC-0023 D3): #robot/<id>[/<tab>]; Overview and Parts are built from what GET /robots/{id} gives and the alarm feed ----
-const TABS = ["overview", "body", "modules", "settings", "calibration"];
+const TABS = ["overview", "body", "modules", "settings", "calibration", "actions"];
 function route() {
   const m = /^#robot\/([^/]+)(?:\/([a-z]+))?$/.exec(location.hash);
   return m ? { id: decodeURIComponent(m[1]), tab: TABS.includes(m[2]) ? m[2] : "overview" } : null;
@@ -342,6 +357,7 @@ function paintFacts(r) {
     h("span", {}, "battery ", h("b", { class: dim }, st.battery_pct != null ? st.battery_pct + "%" : "-")),
     ...Object.entries(st.sensors || {}).map(([k, v]) => h("span", { "data-sensor": k }, k + " ", h("b", { class: dim }, sensorText(v)))),
     h("span", {}, "held by ", h("b", { id: "rp-holder" }, held === "free" ? "nobody" : held)),
+    drivenEl(r),
     pr ? h("span", {}, "runs ", h("b", {}, pr.variant), " variant") : null,
     h("span", {}, "settings ", h("b", {}, !pr ? "none" : pr.version != null ? "version " + pr.version : "the robot's own file")),
     ageEl(r));
@@ -364,7 +380,7 @@ function renderRobotPage() {
   setKids($("rp-title"), r ? [r.label, " ", h("span", { class: "faint mono" }, r.id)] : S.ready ? `No robot "${id}"` : "Loading");
   if (!r) {
     chip.hidden = true; chip.removeAttribute("data-status");
-    for (const k of ["facts", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "readiness-body", "readiness-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body"]) setKids($("rp-" + k));
+    for (const k of ["facts", "alarms-body", "alarms-sum", "parts-body", "parts-sum", "body-sum", "readiness-body", "readiness-sum", "joints-body", "joints-sum", "modules-body", "settings-body", "calibration-body", "robotfacts-body", "actions-body"]) setKids($("rp-" + k));
     stForget();
     closeBody();
     return;
@@ -396,7 +412,82 @@ function renderRobotPage() {
   paintReadiness(r, now);
   paintProfile(r);
   paintBody(r);
+  paintAbilities(r);
 }
+
+// What the robot is and runs, and what it can be asked to do (RFC-0032, read only). Asked of the server once per robot (and again on Refresh or when the
+// robot comes online); a 404 says the robot gives none, which hides the Facts card or the Actions tab, so a page shows only what a robot has.
+async function readAbility(id, what, refresh) {
+  try {
+    const j = await api("GET", `/robots/${id}/${what}${refresh ? "?refresh=1" : ""}`);
+    return { value: what === "facts" ? j.facts : j };
+  } catch (e) {
+    return e.code === "no_" + what ? { none: true } : { error: e.message };
+  }
+}
+
+async function loadAbilities(id, refresh) {
+  const ab = S.ab[id] ||= {};
+  if (ab.busy) return;
+  ab.busy = true;
+  try {
+    const reads = (S.robots.find((x) => x.id === id) || {}).reads || {};       // the robot's own word for what it answers: no request for what it has none of
+    const [f, a] = await Promise.all(["facts", "actions"].map((what) => (reads[what] ? readAbility(id, what, refresh) : { none: true })));
+    for (const [r, key] of [[f, "facts"], [a, "actions"]]) {
+      if (r.none) { ab[key] = null; ab[key + "Error"] = null; }
+      else if (r.error) ab[key + "Error"] = r.error;        // the older reading, if any, stays beside the reason
+      else { ab[key] = r.value; ab[key + "Error"] = null; }
+    }
+  } finally { ab.busy = false; ab.loaded = true; }
+  renderRobotPage();
+}
+
+const factRows = (f) => {
+  const kv = (o) => Object.entries(o || {}).filter(([, v]) => v != null && typeof v !== "object").map(([k, v]) => `${k} ${v}`).join(" · ");
+  const art = (a) => (a ? [a.origin, a.kind, a.path || a.name].filter(Boolean).join(" ") : "empty");
+  return [
+    ["identity", "Identity", kv(f.identity)],
+    ["software", "Software", (f.software || []).map((s) => `${s.name} ${s.running ?? "?"}${s.installed && s.installed !== s.running ? " (installed " + s.installed + ")" : ""}`).join(" · ")],
+    ["interface", "Interface", kv(f.interface)],
+    ["battery", "Battery", kv(f.battery)],
+    ["update", "Update", kv(f.update)],
+    ["behaviours", "Behaviours", (f.behaviours || []).map((b) => `${b.slot}: ${art(b.artefact)}${b.error ? " (" + b.error + ")" : ""}`).join(" · ")],
+  ].filter((r) => r[2]);
+};
+
+function paintAbilities(r) {
+  const ab = S.ab[r.id] || {}, f = ab.facts, a = ab.actions;
+  if (!S.ab[r.id]) guard(() => loadAbilities(r.id, false))();
+  $("tab-actions").hidden = !(a || ab.actionsError);
+  $("rp-robotfacts").hidden = !(f || ab.factsError);
+  setKids($("rp-robotfacts-sum"), f ? "read " + ago(f.read_at) : "");
+  setKids($("rp-robotfacts-body"),
+    ab.factsError ? h("div", { class: "bad", "data-facts-error": "" }, "The facts could not be read: " + ab.factsError) : null,
+    f ? h("div", { class: "twrap" }, h("table", { class: "t wrapv" }, h("tbody", {}, factRows(f).map(([key, label, text]) =>
+      h("tr", { "data-fact": key }, h("td", { class: "k" }, label), h("td", { class: "v" }, text)))))) : null,
+    f && (f.absent || []).length ? h("div", { class: "hint", "data-fact-absent": "" }, "Not given: " + f.absent.map((x) => `${x.method || x.part} (${x.reason})`).join("; ")) : null);
+  setKids($("rp-actions-body"), actionsCard(ab));
+}
+
+function actionsCard(ab) {
+  const a = ab.actions, list = a ? a.actions : [];
+  const head = h("div", { class: "shead static" }, "Actions", h("span", { class: "sp" }), h("span", { class: "sum" }, a ? plural(list.length, "action") : ""));
+  const body = !a && !ab.actionsError ? h("div", { class: "empty" }, ab.loaded ? "This robot reports no actions." : "Loading")
+    : h("div", {},
+      ab.actionsError ? h("div", { class: "bad" }, "The actions could not be read: " + ab.actionsError) : null,
+      a && a.error ? h("div", { class: "bad" }, "The robot's own report could not be read, the robot file's part is shown: " + a.error) : null,
+      list.length ? h("div", { class: "twrap" }, h("table", { class: "t wrapv", "data-actions": "" },
+        h("thead", {}, h("tr", {}, ["Action", "Kind", "Irreversible", "Duration", "Blocking", "Source"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, list.map((x) => h("tr", { "data-action": x.actionType, "data-irreversible": String(x.irreversible) },
+          h("td", { class: "k" }, x.actionType), h("td", {}, x.kind || "-"),
+          h("td", {}, x.irreversible ? h("b", { class: "bad" }, "irreversible") : "no"),
+          h("td", {}, x.duration_s != null ? x.duration_s + " s" : "-"), h("td", {}, (x.blockingTypes || []).join(", ") || "-"),
+          h("td", {}, h("span", { class: "tag" }, x.source))))))) : h("div", { class: "empty" }, "No actions listed."));
+  return h("section", { class: "card", "aria-label": "Actions" }, head, body,
+    h("div", { class: "prov", "data-actions-note": "" }, "A read-only catalogue: running actions comes in phase 2."));
+}
+
+$("rp-robotfacts-refresh").addEventListener("click", guard(async () => { if (routeId()) await loadAbilities(routeId(), true); }));
 
 // The body (RFC-0024 step 2): libs/web's component in bodyview.js, loaded only when the Body tab of a robot with a description is open.
 // Posed from the robot's live joint angles, each joint coloured by the worst alarm in the last minute that names it. The joint table and the
@@ -478,12 +569,13 @@ setInterval(() => { if (routeId()) renderRobotPage(); }, 5000);
 
 for (const b of document.querySelectorAll(".tabs .tab")) b.addEventListener("click", () => goTab(b.dataset.tab));
 $("robot-page").querySelector(".tabs").addEventListener("keydown", (ev) => {
-  const i = TABS.indexOf(document.activeElement && document.activeElement.dataset.tab);
-  const to = { ArrowRight: (i + 1) % TABS.length, ArrowLeft: (i + TABS.length - 1) % TABS.length, Home: 0, End: TABS.length - 1 }[ev.key];
+  const shown = TABS.filter((t) => !$("tab-" + t).hidden);        // a tab the robot has nothing for (Actions) is not in the order
+  const i = shown.indexOf(document.activeElement && document.activeElement.dataset.tab);
+  const to = { ArrowRight: (i + 1) % shown.length, ArrowLeft: (i + shown.length - 1) % shown.length, Home: 0, End: shown.length - 1 }[ev.key];
   if (i < 0 || to === undefined) return;
   ev.preventDefault();
-  $("tab-" + TABS[to]).focus();
-  goTab(TABS[to]);
+  $("tab-" + shown[to]).focus();
+  goTab(shown[to]);
 });
 
 // The robot page's panels and layouts (layout.js, with libs/web/layout/store.js): loaded the first time a robot page opens, never by the overview.
@@ -1159,6 +1251,7 @@ function onEvent(e) {
     case "state":
       if (r) {
         r.state_at = Date.now();
+        r.driven_by = e.driven_by;
         r.status = { pose: e.pose, velocity: e.velocity, mode: e.mode, battery_pct: e.battery_pct, link: e.link, flags: e.flags, joints: e.joints, sensors: e.sensors, program: e.program };
         later("robots-render", async () => renderRobots(), 150); requestDraw();
         if (routeId() === r.id) { paintBody(r); later("robot-facts", () => paintFacts(S.robots.find((x) => x.id === r.id) || r), 150); }
@@ -1167,7 +1260,11 @@ function onEvent(e) {
     case "map":
       if (e.robot === S.robot) { S.map = e.map; requestDraw(); }
       break;
-    case "robot-online": case "robot-offline": case "lock": case "stop": case "stop-all":
+    case "robot-online":
+      delete S.ab[e.robot];        // the server read the facts when the robot came online: ask again
+      later("robots", loadRobots, 150);
+      break;
+    case "robot-offline": case "lock": case "stop": case "stop-all":
       later("robots", loadRobots, 150);
       break;
     case "goal-run":

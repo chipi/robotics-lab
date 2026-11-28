@@ -34,6 +34,8 @@ goal opts out of its rehearsal.
 | GET | `/health` | whether it answers, how many robots | `get_health` | added |
 | GET | `/robots` | the robots, online, lock holder | `list_robots` | covered |
 | GET | `/robots/{id}` | one robot: capabilities, status, alarms, profile brief | `get_robot` | covered |
+| GET | `/robots/{id}/facts` | what the robot is and runs (RFC-0032 §3.1); `refresh=1` re-reads | `get_robot_facts` | covered |
+| GET | `/robots/{id}/actions` | the action catalogue, read only (RFC-0032 §3.3) | `get_robot_actions` | covered |
 | POST | `/robots/{id}/drive` | drive under the lease | `drive` | covered |
 | POST | `/robots/{id}/lock` | take the lock | `acquire_lock` | covered |
 | POST | `/robots/{id}/lock/renew` | keep the lease | `renew_lock` | covered |

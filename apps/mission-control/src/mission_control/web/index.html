@@ -177,6 +177,7 @@
     <button id="tab-modules" class="tab" role="tab" type="button" data-tab="modules" aria-controls="rp-modules" aria-selected="false" tabindex="-1">Modules</button>
     <button id="tab-settings" class="tab" role="tab" type="button" data-tab="settings" aria-controls="rp-settings" aria-selected="false" tabindex="-1">Settings<span id="tab-settings-badge" class="badge n" hidden></span></button>
     <button id="tab-calibration" class="tab" role="tab" type="button" data-tab="calibration" aria-controls="rp-calibration" aria-selected="false" tabindex="-1">Calibration</button>
+    <button id="tab-actions" class="tab" role="tab" type="button" data-tab="actions" aria-controls="rp-actions" aria-selected="false" tabindex="-1" hidden>Actions</button>
   </div>
   <div class="content">
     <section id="rp-overview" class="grid2" role="tabpanel" aria-labelledby="tab-overview">
@@ -191,6 +192,10 @@
       <section id="rp-parts" class="card" data-panel="parts" aria-label="Parts">
         <button id="rp-parts-head" class="shead" type="button" data-collapse="parts" aria-expanded="true" aria-controls="rp-parts-body"><svg class="ico chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Parts<span class="sp"></span><span id="rp-parts-sum" class="sum"></span></button>
         <div id="rp-parts-body"></div>
+      </section>
+      <section id="rp-robotfacts" class="card" aria-label="Facts" hidden>
+        <div class="shead static">Facts<span class="sp"></span><span id="rp-robotfacts-sum" class="sum"></span><button id="rp-robotfacts-refresh" class="btn sm" type="button">Refresh</button></div>
+        <div id="rp-robotfacts-body" class="cbody"></div>
       </section>
       <section id="rp-body-card" class="card" data-panel="body" aria-label="Body">
         <button id="rp-body-head" class="shead" type="button" data-goto-tab="body"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>Body<span class="sp"></span><span class="sum">open the Body tab</span></button>
@@ -220,6 +225,9 @@
     </section>
     <section id="rp-calibration" role="tabpanel" aria-labelledby="tab-calibration" hidden>
       <div id="rp-calibration-body"></div>
+    </section>
+    <section id="rp-actions" role="tabpanel" aria-labelledby="tab-actions" hidden>
+      <div id="rp-actions-body"></div>
     </section>
   </div>
 </main>

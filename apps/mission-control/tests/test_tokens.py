@@ -250,7 +250,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("a store of version 2 is brought to this one: goal runs gain client, the tokens and anomalies tables exist, the old run is kept",
           "client" in {r["name"] for r in s.all("PRAGMA table_info(goal_runs)")} and s.one("SELECT COUNT(*) AS n FROM tokens")["n"] == 0
           and s.one("SELECT COUNT(*) AS n FROM anomalies")["n"] == 0
-          and s.one("SELECT COUNT(*) AS n FROM goal_runs")["n"] == 1 and s.one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION == 4)
+          and s.one("SELECT COUNT(*) AS n FROM goal_runs")["n"] == 1 and s.one("PRAGMA user_version")["user_version"] == SCHEMA_VERSION == 5)
     s.close()
 
 finish("test_tokens")

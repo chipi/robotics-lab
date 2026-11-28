@@ -307,9 +307,10 @@ check("the robot's own connection to the gate was made when the gate came (the n
       wait_for(lambda: mc.robots["duck-real-go"].gate._wires.get(mc.robots["duck-real-go"].gate._own) is not None
                and mc.robots["duck-real-go"].gate._wires[mc.robots["duck-real-go"].gate._own].alive))
 check("the map is the navigator API's, in the site frame", call("GET", "/robots/duck-real-go/map")[1]["map"]["data"] == [-1, 0])
-check("the checks asked read-only questions of each daemon and nothing else",
+check("the checks asked read-only questions of each daemon and nothing else (robotd: the health, the stream, and the facts: its model API and policies)",
       {m for m, _ in tofd.calls} == {"tof.stream"} and {m for m, _ in mapd.calls} == {"map.status"}
-      and {m for m, _ in robotd.calls} <= {"robot.health", "robot.subscribe"}, ({m for m, _ in robotd.calls}, tofd.calls[:1], mapd.calls[:1]))
+      and {m for m, _ in robotd.calls} <= {"hello", "robot.health", "robot.subscribe", "robot.modelApi", "robot.policies", "robot.skills"},
+      ({m for m, _ in robotd.calls}, tofd.calls[:1], mapd.calls[:1]))
 check("nothing has moved the robot: no robot.move reached robotd", not [c for c in robotd.calls if c[0] in ("robot.move", "robot.stop")])
 
 # --- a real run is refused unless the robot file allows it ---------------------------------------------------------------------------------------

@@ -42,6 +42,15 @@ def wait_for(cond, timeout=10.0, every=0.05):
     return None
 
 
+# robotd's replies as duck-ipc-proto gives their shapes (ModelApiResult, PoliciesResult, SkillsResult at microduck 094d4bb4)
+POLLEN = {
+    "robot.modelApi": {"model_api": 2},
+    "robot.policies": {"mode": "walk", "enabled": True, "skills": ["bow"], "homed": True,
+                       "slots": [{"slot": "walk", "path": "/opt/policies/walk.onnx", "origin": "official", "overridden": False, "error": None},
+                                 {"slot": "stand", "path": None, "origin": None, "overridden": False, "error": None}]},
+    "robot.skills": {"skills": [{"name": "bow", "path": "/opt/policies/bow.onnx", "duration": 3.5, "overridden": False}], "built_in": ["sit_toggle"]},
+}
+
 class StubRobotd:
     """robotd as far as the gate and the adapter need it: robot.move, robot.stop, robot.health, and a state stream."""
 
@@ -50,6 +59,8 @@ class StubRobotd:
         self.x = self.yaw = 0.0
         self.vx = self.vyaw = 0.0
         self.stop_error = False              # robot.stop answers with an error (the zero move still works)
+        self.move_source = None             # what the state says moved it last (move.source)
+        self.facts_down = False              # robot.modelApi, robot.policies and robot.skills answer with an error (an older robotd)
         self.server = socket.socket(socket.AF_UNIX)
         self.server.bind(str(path))
         self.server.listen(8)
@@ -71,7 +82,7 @@ class StubRobotd:
             threading.Thread(target=self._serve, args=(sock,), daemon=True).start()
 
     def _state(self):
-        return {"odom": {"position": [self.x, 0.0, 0.117], "yaw": self.yaw}, "move": {"applied": [self.vx, 0.0, self.vyaw]},
+        return {"odom": {"position": [self.x, 0.0, 0.117], "yaw": self.yaw}, "move": {"applied": [self.vx, 0.0, self.vyaw], **({"source": self.move_source} if self.move_source else {})},
                 "safety": {"fallen": False, "picked_up": False, "limp": False}, "policy": "walk",
                 "joints": [round(0.01 * k, 2) for k in range(15)]}
 
@@ -104,6 +115,8 @@ class StubRobotd:
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"ok": True}})
             elif m == "robot.health":
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"battery": {"percent": 63.0, "volts": 7.4}}})
+            elif m in ("robot.modelApi", "robot.policies", "robot.skills") and not self.facts_down:
+                send({"jsonrpc": "2.0", "id": req["id"], "result": POLLEN[m]})
             elif m == "robot.subscribe":
                 send({"jsonrpc": "2.0", "id": req["id"], "result": {"policy": "walk"}})
                 threading.Thread(target=stream, daemon=True).start()
@@ -244,6 +257,39 @@ joint_names = json.loads((Path(__file__).resolve().parents[3] / "robots" / "duck
 check("must fail: its joint angles are in its state by the profile's joint names, in robotd's order (the body page poses from them)",
       st.get("joints") == {n: round(0.01 * k, 2) for k, n in enumerate(joint_names)} and len(st["joints"]) == 15, st.get("joints"))
 check("the lock is the gate's own: free", robot()["lock"]["holder"] is None)
+
+# RFC-0032 phase 1: facts, the action catalogue and who drives, read through the gate's connection (robotd's replies in the shapes of duck-ipc-proto)
+f = call("GET", "/robots/duck-sim/facts")["facts"]
+check("facts: the model API and the slot each policy fills, in our shapes, read when the robot came online",
+      f["interface"]["model_api"] == 2 and "gate_protocol" in f["interface"] and isinstance(f["read_at"], float)
+      and f["behaviours"] == [{"slot": "walk", "artefact": {"kind": "onnx", "origin": "official", "path": "/opt/policies/walk.onnx"}, "overridden": False, "error": None},
+                              {"slot": "stand", "artefact": None, "overridden": False, "error": None}], f)
+check("facts: robotd's raw replies are kept under raw, nothing lost", f["raw"]["robot.policies"]["skills"] == ["bow"] and f["raw"]["robot.modelApi"] == {"model_api": 2}, f["raw"])
+check("facts: what another daemon serves is absent with that reason, not invented (update.status: updaterd; system.info: configd; robotd's version)",
+      {a["method"]: a["service"] for a in f["absent"]} == {"update.status": "updaterd", "system.info": "configd", "hello": "robotd"}
+      and f["software"] == [] and "update" not in f and all(a["reason"] for a in f["absent"]), f["absent"])
+asked = {m_ for m_, _ in robotd.calls}
+check("facts: robotd was asked only reads for them: robot.modelApi and robot.policies, no write", {"robot.modelApi", "robot.policies"} <= asked
+      and not asked & {"robot.loadPolicy", "robot.setSkill", "robot.removeSkill", "robot.do", "robot.reloadPolicies"}, asked)
+acts = call("GET", "/robots/duck-sim/actions")
+check("actions: robot.skills as motions with their length, built-ins too, all named by the robot; nothing irreversible",
+      {x["actionType"]: (x["kind"], x["duration_s"], x["source"], x["irreversible"]) for x in acts["actions"]}
+      == {"bow": ("motion", 3.5, "robot", False), "sit_toggle": ("motion", None, "robot", False)}
+      and [x for x in acts["actions"] if x["actionType"] == "bow"][0]["backed_by"] == {"kind": "onnx", "path": "/opt/policies/bow.onnx"}, acts)
+robotd.facts_down = True
+r = call("GET", "/robots/duck-sim/facts?refresh=1")
+check("a refresh that robotd answers with errors is 503 facts_unavailable with the reasons", r["error"]["code"] == "facts_unavailable" and "no such method" in r["error"]["message"], r)
+check("... and the older facts stay: a read without refresh still gives them, with their read_at", call("GET", "/robots/duck-sim/facts")["facts"]["read_at"] == f["read_at"])
+check("... and the robot is still online, its poll untouched", robot()["online"] is True)
+robotd.facts_down = False
+f2 = call("GET", "/robots/duck-sim/facts?refresh=1")["facts"]
+check("a refresh when robotd answers reads again: a newer read_at", f2["read_at"] > f["read_at"] and f2["interface"]["model_api"] == 2, f2["read_at"])
+check("no one drives it by what its state says: no source, autonomy off", robot()["driven_by"] is None or (robot()["driven_by"]["source"] is None and robot()["driven_by"]["autonomous"] is False), robot()["driven_by"])
+robotd.move_source = "robotics-lab-gate"
+check("control source: the gate's own name to robotd is ours", wait_for(lambda: (robot()["driven_by"] or {}).get("ours") is True), robot()["driven_by"])
+# (a source that is not ours, or autonomy on, makes the gate stop the robot and raise an anomaly: that path is tested on the fake robot and in the gate)
+robotd.move_source = None
+check("... and clear again when robotd names nobody", wait_for(lambda: (robot()["driven_by"] or {}).get("source") is None and robot()["driven_by"]["autonomous"] is False), robot()["driven_by"])
 m = call("GET", "/robots/duck-sim/map")["map"]
 check("the map is the navigator API's (mapd's grid), in the site frame: unknown -1, free 0, occupied 100", m["data"] == [-1, 0, 100, 0, -1, 100] and m["width"] == 3 and m["frame"] == "site", m)
 check("must fail: its resolution and origin are the navigator's, in true metres: Mission Control scales nothing",

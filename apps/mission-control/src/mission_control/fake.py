@@ -39,6 +39,8 @@ STUCK_EPS = 0.02
 REACH_WAYPOINT_M = 0.15
 FACE_TOL_RAD = math.radians(10.0)
 
+FAKE_VERSION = "1.0.0"
+
 
 def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
@@ -63,6 +65,7 @@ class FakeRobot:
         self.hang = None  # a threading.Event: calls wait for it, to model a robot that stops answering
         self.flags = {"contact": False, "fall": False, "near_drop": False}
         self.joints = None  # {name: radians}: what the fake reports as its joint angles (a test sets them); None reports none
+        self.control = None  # {"source": name, "autonomous": bool}: who the fake says moved it last (a test sets it); None reports neither, as a robot that does not say
         self.wheels_locked = False  # the robot is told to move and does not: the navigator must notice
         self.explored: set = set()
         self.seen: set = set()
@@ -109,6 +112,7 @@ class FakeRobot:
             "link": "fake",
             "flags": dict(self.flags),
             **({"joints": dict(self.joints)} if self.joints is not None else {}),
+            **({"move": {"source": self.control["source"]}, "autonomous": bool(self.control.get("autonomous"))} if self.control else {}),
         }
 
     def _advance(self) -> None:
@@ -757,3 +761,13 @@ class FakeAdapter:
 
     def sighting(self) -> dict:
         return self.robot.sighting()
+
+    # --- RFC-0032: what the fake is and runs, and what it can be asked to do (fixed, so a test has something to read) ---
+
+    def facts(self) -> dict:
+        return {"identity": {"model": "fake", "serial": "fake-0001"},
+                "software": [{"name": "fake-robot", "running": FAKE_VERSION, "installed": FAKE_VERSION}],
+                "interface": {"model_api": 1}}
+
+    def actions(self) -> list:
+        return [{"actionType": "wave", "kind": "motion", "blockingTypes": ["HARD"], "irreversible": False, "duration_s": 2.0}]

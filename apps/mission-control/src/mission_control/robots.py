@@ -282,7 +282,11 @@ class RobotAdapter(Protocol):
     are called only for the capability the robot file declares, or on a request, so the refusal is the answer.
 
     Beside these, an adapter may give `make_gate(link)` (see GatedAdapter), `make_watcher()` (its own alarms: the NXT's) and
-    `watch_url(run_key)` (the Observatory's page for a goal run): the runtime and the core look for each with hasattr/getattr."""
+    `watch_url(run_key)` (the Observatory's page for a goal run): the runtime and the core look for each with hasattr/getattr.
+    RFC-0032 adds two the same way, both read-only and optional: `facts() -> dict` (what the robot is and runs: `identity`, `software`,
+    `interface`, `update`, `behaviours`, `absent`, `raw`; a part the robot does not give is left out, never made up) and `actions() -> list`
+    (what the robot reports it can be asked to do, one dict per action, `actionType` first). `action_kinds` (a dict) says the `kind` of an
+    action only the robot file lists, and `own_sources` the names the robot shows for our own connection."""
 
     call: Callable[..., Any]
 
@@ -301,6 +305,60 @@ class GatedAdapter(RobotAdapter, Protocol):
     The runtime uses the gate it makes in place of its own, with its lease, takeover list and log."""
 
     def make_gate(self, link: Any) -> Any: ...
+
+
+def normalise_action(entry: dict, source: str) -> dict:
+    """One action in the shape of RFC-0032 section 3.3: VDA's `actionType`, `blockingTypes` (and `actionScopes`, `pauseAllowed`, `cancelAllowed`),
+    ours `kind`, `irreversible`, `duration_s`, `params`, `backed_by`, and where it was named (`source`: robot or file). A field nobody gave is
+    None, so the shape is the same for every robot."""
+    return {"actionType": entry["actionType"], "kind": entry.get("kind"), "blockingTypes": entry.get("blockingTypes"),
+            "actionScopes": entry.get("actionScopes"), "pauseAllowed": entry.get("pauseAllowed"), "cancelAllowed": entry.get("cancelAllowed"),
+            "irreversible": bool(entry.get("irreversible", False)), "duration_s": entry.get("duration_s"),
+            "params": entry.get("params") or {}, "backed_by": entry.get("backed_by"), "source": source,
+            **({"raw": entry["raw"]} if "raw" in entry else {})}
+
+
+def filed_actions(cfg, kinds: dict) -> list:
+    """What the robot file names: the factsheet's `protocolFeatures.mobileRobotActions` and `capabilities.skills` (a name, or a dict with
+    `actionType` or `name`). `kinds` is the adapter's word for the kind of a name only the file lists: the factsheet has no field for it."""
+    out: dict = {}
+    for a in (cfg.factsheet.get("protocolFeatures") or {}).get("mobileRobotActions") or []:
+        out[a["actionType"]] = dict(a)
+    for sk in cfg.capabilities.get("skills") or []:
+        entry = {"actionType": sk} if isinstance(sk, str) else {**sk, "actionType": sk.get("actionType") or sk.get("name")}
+        if entry["actionType"]:
+            out.setdefault(entry["actionType"], {}).update(entry)
+    for name, entry in out.items():
+        entry.setdefault("kind", kinds.get(name))
+    return list(out.values())
+
+
+def merge_actions(reported: list, filed: list) -> list:
+    """The catalogue: the robot's report merged with the robot file, by name. What the robot reports wins (measured, not declared, RFC-0032
+    section 2.5); the file fills what the robot cannot tell (`irreversible`, VDA's fields). An action both name is `robot`'s."""
+    out: dict = {}
+    for a in filed:
+        out[a["actionType"]] = normalise_action(a, "file")
+    for a in reported:
+        have = out.get(a["actionType"], {})
+        given = {k: v for k, v in a.items() if v is not None and v != {}}
+        out[a["actionType"]] = normalise_action({**{k: v for k, v in have.items() if v is not None}, **given,
+                                                 "irreversible": bool(have.get("irreversible") or a.get("irreversible"))}, "robot")
+    return list(out.values())
+
+
+def control_source(state, own: set) -> dict | None:
+    """Who moved the robot last and whether its own autonomy is on, from one state (RFC-0032 section 3.2): `move.source` and `autonomous`, as
+    the gate reads them (libs/gate, Gate.observe_state). `ours` is whether the source is a name of ours (the gate's, the lease holder's), None
+    when the robot names none. None for a robot that reports neither. Display only: the stop is the gate's."""
+    if not isinstance(state, dict):
+        return None
+    move = state.get("move") if isinstance(state.get("move"), dict) else {}
+    source = move.get("source") if isinstance(move.get("source"), str) else None
+    autonomous = state.get("autonomous") if isinstance(state.get("autonomous"), bool) else None
+    if source is None and autonomous is None:
+        return None
+    return {"source": source, "ours": None if source is None else source in own, "autonomous": autonomous}
 
 
 class RobotRuntime:
@@ -336,12 +394,18 @@ class RobotRuntime:
         self._was_online = None
         self.said: dict = {}          # where -> the exception type already said, until that read works again
         self.active = None  # the goal run on this robot now (a core.ActiveRun)
+        self._facts_lock = threading.Lock()
+        self.facts_read: dict | None = None     # the latest facts the robot gave, with `read_at` (wall clock); kept when a later read fails
+        self.facts_error: str | None = None     # why the latest read failed, None when it worked
+        self._actions_read: tuple | None = None     # (read_at, the robot's own report) of the latest `actions()`
+        self.someone_else: dict | None = None   # the gate's latest someone_else_drives notice, with `at`
         self.calibration, self.calibration_n = None, 0      # the latest calibration run (calibration.py) and how many there have been
 
     def _notified(self, method: str, params: dict) -> None:
         """The gate says something else drives (RFC-0017 §3.8): an alarm on the bus, as the robot's own alarms are, so the page lists it."""
         if method == "someone_else_drives":
             signal = params.get("signal")
+            self.someone_else = {**params, "at": self.wall()}
             self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly={
                 "anomaly": "someone_else_drives", "severity": "critical", "source": "gate", "t": self.wall(),
                 "summary": f"something other than the lease holder drives the robot ({signal}); the robot was stopped and the lease ended",
@@ -377,7 +441,7 @@ class RobotRuntime:
             try:
                 self.status = answered = self.gate.handle(self._conn, "robot.state")
                 self.status_at = now
-                self.bus.emit("state", robot=self.cfg.id, **self.status)
+                self.bus.emit("state", robot=self.cfg.id, driven_by=self.driven_by(self._holder), **self.status)
                 if not getattr(self.gate, "remote", False):     # a remote gate (duck-gate) watches its own stream
                     self.gate.observe_state(self.status)
                 self.said.pop("state", None)
@@ -406,6 +470,8 @@ class RobotRuntime:
         online = self.online()
         if online != self._was_online:
             self._was_online = online
+            if online and self.has_facts:
+                self.read_facts(quiet=True)
             self.bus.emit("robot-online" if online else "robot-offline", robot=self.cfg.id,
                           error=None if online else self.link.last_error)
         if self.watcher is not None and (answered is not None or not online):
@@ -414,6 +480,74 @@ class RobotRuntime:
         if self._runs_battery and answered is not None:
             for anomaly in self.battery_rule.update(answered, self.wall()):
                 self.bus.emit("anomaly", robot=self.cfg.id, goal_run=None, watch=None, anomaly=anomaly)
+
+    # --- what the robot is and runs, what it can be asked to do, who drives it (RFC-0032, read only) ---------------------------
+
+    @property
+    def has_facts(self) -> bool:
+        return hasattr(self.adapter, "facts")
+
+    @property
+    def has_actions(self) -> bool:
+        return hasattr(self.adapter, "actions") or bool(self._filed())
+
+    def read_facts(self, quiet: bool = False) -> dict | None:
+        """Ask the robot what it is and runs (the adapter's `facts()`) and keep it with `read_at`. A failed read keeps the older facts, is said
+        as `unexpected()` says a failed read, and raises 503 unless `quiet` (the poll and a run's start: a read that fails stops neither)."""
+        if not self.has_facts:
+            raise ApiError(404, "no_facts", f"{self.cfg.id} gives no facts: its adapter reads none")
+        with self._facts_lock:
+            try:
+                facts = {"read_at": self.wall(), **self.adapter.facts()}
+            except Exception as exc:
+                self.facts_error = f"{type(exc).__name__}: {exc}"
+                self.unexpected("facts", exc)
+                if quiet:
+                    return self.facts_read
+                raise ApiError(503, "facts_unavailable", f"{self.cfg.id}: the facts could not be read ({self.facts_error})",
+                               robot=self.cfg.id, read_at=(self.facts_read or {}).get("read_at")) from None
+            self.facts_read, self.facts_error = facts, None
+            self.said.pop("facts", None)
+            return facts
+
+    def facts(self, refresh: bool = False) -> dict:
+        """The facts as last read; read now when none is held or `refresh`."""
+        if not self.has_facts:
+            raise ApiError(404, "no_facts", f"{self.cfg.id} gives no facts: its adapter reads none")
+        return self.read_facts() if refresh or self.facts_read is None else self.facts_read
+
+    def _filed(self) -> list:
+        return filed_actions(self.cfg, getattr(self.adapter, "action_kinds", {}))
+
+    def actions(self, refresh: bool = False) -> dict:
+        """The catalogue (RFC-0032 section 3.3): what the robot reports merged with the robot file. A robot whose adapter reports none and whose
+        file names none has no catalogue: 404. A report that fails leaves the file's part and says why in `error`."""
+        if not self.has_actions:
+            raise ApiError(404, "no_actions", f"{self.cfg.id} has no actions: its adapter reports none and its robot file names none")
+        error = None
+        if hasattr(self.adapter, "actions") and (refresh or self._actions_read is None):
+            try:
+                self._actions_read = (self.wall(), list(self.adapter.actions()))
+                self.said.pop("actions", None)
+            except Exception as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                self.unexpected("actions", exc)
+        at, reported = self._actions_read or (None, [])
+        return {"robot": self.cfg.id, "read_at": at, "error": error, "actions": merge_actions(reported, self._filed())}
+
+    def driven_by(self, holder=False) -> dict | None:
+        """Who drives the robot: the latest state's `move.source` and `autonomous` (control_source) and the gate's latest `someone_else_drives`
+        notice. `holder` is the lease holder's name when the caller has it (else asked of the gate); the holder's own name is ours. Display
+        only: stopping is the gate's."""
+        if holder is False:
+            holder = self._holder if getattr(self.gate, "remote", False) else self.gate.who().get("holder")
+        own = {self.OWN_SOURCE, *getattr(self.gate, "own_sources", ()), *getattr(self.adapter, "own_sources", ())}
+        if holder:
+            own.add(holder)
+        seen = control_source(self.status, own)
+        if seen is None and self.someone_else is None:
+            return None
+        return {**(seen or {"source": None, "ours": None, "autonomous": None}), "notice": self.someone_else}
 
     # --- the lock: sessions over the gate ---------------------------------------------------------
 

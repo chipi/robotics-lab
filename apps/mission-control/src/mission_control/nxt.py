@@ -355,6 +355,27 @@ class NxtAdapter:
                 "sensors": self._sensors(st),
                 "flags": {"deadman_stop": bool(stops.get("deadman_stop")), "obstacle_stop": bool(stops.get("obstacle_stop"))}}
 
+    # --- RFC-0032: what the brick is and runs, from what nxt-web already says; the file names the one action (`fire`), here only its kind ---
+
+    action_kinds = {"fire": "effector"}
+
+    def facts(self) -> dict:
+        st = self._status()
+        out = {"identity": {"model": "NXT", "name": st.get("name")},
+               "software": [], "interface": {"link": st.get("link"), "link_detail": st.get("link_detail"), "fake": bool(st.get("fake")), "via": "nxt-web"},
+               "battery": {"mv": st.get("battery_mv"), "pct": self.battery_pct(st.get("battery_mv"))},
+               "behaviours": [{"slot": "program", "artefact": {"kind": "rxe", "origin": "local", "name": st["program"]}}] if st.get("program") else [],
+               "absent": []}
+        try:       # the firmware is in nxt-web's diagnostics, not its status
+            with urllib.request.urlopen(urllib.request.Request(self.url + "/api/diagnostics"), timeout=CALL_TIMEOUT_S) as resp:
+                firmware = json.loads(resp.read()).get("firmware")
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            firmware = None
+            out["absent"].append({"part": "software", "reason": f"nxt-web's diagnostics did not answer: {getattr(exc, 'reason', exc)}"})
+        if firmware:
+            out["software"].append({"name": "nxt-firmware", "running": firmware, "installed": None})
+        return out
+
     def health(self) -> dict:
         st = self._status()
         return {"ok": True, "battery_mv": st.get("battery_mv"), "battery_pct": self.battery_pct(st.get("battery_mv")), "link": st.get("link")}

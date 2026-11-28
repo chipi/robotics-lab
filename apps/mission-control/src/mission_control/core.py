@@ -128,8 +128,9 @@ class MissionControl:
 
     def robot_brief(self, rt: RobotRuntime) -> dict:
         online = rt.online()
+        lock = rt.gate.who()
         return {"id": rt.cfg.id, "label": rt.cfg.label, "kind": rt.cfg.kind, "online": online,
-                "lock": rt.gate.who(), "last_seen_age_s": self._age(rt),
+                "lock": lock, "last_seen_age_s": self._age(rt), "driven_by": rt.driven_by(lock.get("holder")),
                 **({} if online else {"offline_reason": rt.link.last_error})}      # a robot that never answered says why, not only that
 
     @staticmethod
@@ -147,7 +148,8 @@ class MissionControl:
                 "capabilities": rt.cfg.capabilities, "status": rt.status,
                 "guardrails": rt.cfg.guardrails, "rates": rt.cfg.rates, "site": self.sites.robot_site(rt.cfg.id),
                 "goal_run": rt.active.id if rt.active else None, "profile": self._profile_brief(rt.cfg),
-                "alarms": self.alarms.view(rt.cfg.id), "battery": rt.battery_rule.view(rt.status)}
+                "alarms": self.alarms.view(rt.cfg.id), "battery": rt.battery_rule.view(rt.status),
+                "reads": {"facts": rt.has_facts, "actions": rt.has_actions}}      # what GET facts and GET actions answer for it (RFC-0032): a client asks only for these
 
     def list_robots(self) -> list:
         return [self.robot_brief(rt) for rt in self.robots.values()]
@@ -469,11 +471,12 @@ class MissionControl:
         rehearsal = self._rehearsal(rt, goal, site_id, target)
         if rehearsal is not None:
             conditions["rehearsal"] = rehearsal
+        facts = rt.read_facts(quiet=True) if rt.has_facts else None      # what the robot ran, as read now: a read that fails stores the older one, with its read_at
         now = self.wall()
         run_id = self.store.execute(
-            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id, client)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id, client))
+            "INSERT INTO goal_runs (goal_id, goal, robot, site_id, target, state, guardrails, conditions, created_at, parent_id, client, facts)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (goal_id, dumps(goal), rt.cfg.id, site_id, target, "queued", dumps(merged), dumps(conditions), now, parent_id, client, dumps(facts) if facts else None))
         self.bus.emit("goal-run", robot=rt.cfg.id, goal_run=run_id, state="queued", client=client)
         reason = reason or goals.capability_refusal(caps, goal, merged, has_site=site_id is not None)
         reason = reason or rt.cfg.real_run_refusal()        # before the rehearsal's: a robot not allowed to run for real is not asked whether it rehearsed
@@ -652,7 +655,7 @@ class MissionControl:
             "conditions": loads(row["conditions"]), "run_key": row["run_key"], "watch": self._watch(row),
             "expect": expected, "as_expected": None if row["as_expected"] is None else bool(row["as_expected"]),
             "created_at": row["created_at"], "started_at": row["started_at"], "ended_at": row["ended_at"],
-            "parent_id": row["parent_id"], "share": row["share"], "client": row["client"],
+            "parent_id": row["parent_id"], "share": row["share"], "client": row["client"], "facts": loads(row["facts"]),
             "no_verdict": self._no_verdict(row["id"]) if row["ended_at"] is not None and row["as_expected"] is None else None,
         }
         if row["share"]:

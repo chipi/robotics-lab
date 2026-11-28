@@ -7,7 +7,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # version -> what takes a store of that version to the next.
 MIGRATIONS = {
@@ -21,6 +21,8 @@ MIGRATIONS = {
     # to 4: a goal run's anomalies, as its navigator raised them (RFC-0019's record; phase 5 item 3 step 3)
     3: "CREATE TABLE anomalies (run_id INTEGER NOT NULL REFERENCES goal_runs(id), n INTEGER NOT NULL, at REAL NOT NULL,"
        " data TEXT NOT NULL, PRIMARY KEY (run_id, n));",
+    # to 5: the robot's facts as read when the run started (RFC-0032 section 3.1), so a run says what the robot ran
+    4: "ALTER TABLE goal_runs ADD COLUMN facts TEXT;",
 }
 
 SCHEMA = """
@@ -47,7 +49,7 @@ CREATE TABLE goal_runs (
   robot TEXT NOT NULL, site_id TEXT, target TEXT NOT NULL, state TEXT NOT NULL, reason TEXT,
   progress TEXT, result TEXT, broken TEXT, guardrails TEXT NOT NULL, conditions TEXT NOT NULL,
   run_key TEXT, as_expected INTEGER, created_at REAL NOT NULL, started_at REAL, ended_at REAL,
-  parent_id INTEGER, share TEXT, client TEXT);
+  parent_id INTEGER, share TEXT, client TEXT, facts TEXT);
 CREATE TABLE tokens (
   id INTEGER PRIMARY KEY AUTOINCREMENT, client TEXT NOT NULL, hash TEXT NOT NULL UNIQUE,
   created_at REAL NOT NULL, revoked_at REAL);

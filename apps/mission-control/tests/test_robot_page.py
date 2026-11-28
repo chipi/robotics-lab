@@ -1,6 +1,6 @@
 """Mission Control's robot page (RFC-0023 D3, phase 5 item 4a unit A1) in headless Chromium, as test_page.py does it: the real server,
 the page driven by what a person does and checked against the API. A pointer robot to the duck's profile behind the fake adapter
-(its Parts come from the profile) beside the fake robot that holds itself (no profile). Five tabs in the address, collapsible cards, the Readiness card and the header verdict that follows it,
+(its Parts come from the profile) beside the fake robot that holds itself (no profile). Six tabs in the address (the sixth, Actions, for a robot that has a catalogue), collapsible cards, the Readiness card and the header verdict that follows it,
 Calibration. Phone width, desktop, dark and light.
 
 Runs in the viewer's environment (see test_page.py): make test-control-page"""
@@ -9,9 +9,11 @@ import atexit
 from contextlib import contextmanager
 import json
 import os
+import re
 import shutil
 import tempfile
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -40,7 +42,27 @@ BASE = f"http://127.0.0.1:{srv.server_address[1]}"
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 mc.start()
 duck = mc.robots["duck-1"].adapter.robot
-TABS = ["Overview", "Body", "Modules", "Settings", "Calibration"]
+TABS = ["Overview", "Body", "Modules", "Settings", "Calibration", "Actions"]
+
+
+class Bare:
+    """An adapter of a robot that reads no facts and names no actions (the fake with those two left out): the page offers it neither."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name in ("facts", "actions"):
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+mc.robots["fake-1"].adapter = Bare(mc.robots["fake-1"].adapter)
+
+
+def get(path):
+    with urllib.request.urlopen(BASE + "/api/v1" + path, timeout=10) as r:
+        return json.loads(r.read())
 
 
 def send(method, path, body):
@@ -95,11 +117,11 @@ with sync_playwright() as p:
         wait(page, "!document.getElementById('robot-page').hidden")
         check("must fail: it opens the robot's page and hides the overview's panels", page.locator("#robot-page").is_visible()
               and page.locator("main.page").is_hidden() and page.url.endswith("#robot/duck-1"))
-        check("must fail: five tabs, in order, in a tablist; Overview is the selected one and its panel the only one shown",
+        check("must fail: six tabs, in order, in a tablist; Overview is the selected one and its panel the only one shown",
               page.locator("[role=tablist]").count() == 1
               and [t.split("\n")[0].strip() for t in page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.textContent)")] == TABS
-              and page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.getAttribute('aria-selected'))") == ["true", "false", "false", "false", "false"]
-              and page.eval_on_selector_all("[role=tabpanel]", "(els) => els.map((e) => e.hidden)") == [False, True, True, True, True])
+              and page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.getAttribute('aria-selected'))") == ["true", "false", "false", "false", "false", "false"]
+              and page.eval_on_selector_all("[role=tabpanel]", "(els) => els.map((e) => e.hidden)") == [False, True, True, True, True, True])
         check("each tab is a real button that names its panel", page.eval_on_selector_all("[role=tab]", "(els) => els.every((e) => e.tagName === 'BUTTON' && document.getElementById(e.getAttribute('aria-controls'))?.getAttribute('aria-labelledby') === e.id)"))
         check("must fail: the page names the robot and goes back", "Microduck" in page.locator("#rp-title").inner_text() and page.locator("#rp-back").count() == 1)
         check("STOP is still the robot's: it names the robot whose page is open", page.locator("#stop-robot").inner_text() == "STOP duck-1")
@@ -114,8 +136,8 @@ with sync_playwright() as p:
         for w in (390, 320):
             page.set_viewport_size({"width": w, "height": 800})
             whole = page.evaluate(TABS_WHOLE)
-            check(f"at {w} px every tab is on screen with its whole label (Overview, Body, Modules, Settings, Calibration: none clipped, none behind a scroll)",
-                  len(whole) == 5 and all(t["ok"] for t in whole), whole)
+            check(f"at {w} px every tab is on screen with its whole label (Overview, Body, Modules, Settings, Calibration, Actions: none clipped, none behind a scroll)",
+                  len(whole) == 6 and all(t["ok"] for t in whole), whole)
         page.set_viewport_size({"width": 390, "height": 800})
 
     # --- tabs: the selected one is in the address, so reload and back keep it ------------------------------------------
@@ -125,7 +147,7 @@ with sync_playwright() as p:
         check("must fail: a tab click selects it, shows its panel only and writes it in the address", page.url.endswith("#robot/duck-1/settings")
               and page.locator("#tab-settings").get_attribute("aria-selected") == "true" and page.locator("#tab-overview").get_attribute("aria-selected") == "false"
               and page.locator("#rp-overview").is_hidden() and page.locator("#rp-settings").is_visible(), page.url)
-        check("only the selected tab is in the tab order", page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.tabIndex)") == [-1, -1, -1, 0, -1])
+        check("only the selected tab is in the tab order", page.eval_on_selector_all("[role=tab]", "(els) => els.map((e) => e.tabIndex)") == [-1, -1, -1, 0, -1, -1])
         page.reload()
         wait(page, "window.__mc && window.__mc.ready && !document.getElementById('rp-settings').hidden")
         check("must fail: a reload keeps the tab", page.locator("#tab-settings").get_attribute("aria-selected") == "true" and page.url.endswith("#robot/duck-1/settings"))
@@ -138,8 +160,8 @@ with sync_playwright() as p:
         check("must fail: the arrow keys move between the tabs, and the focus goes with the selection", page.locator("#tab-body").get_attribute("aria-selected") == "true"
               and page.evaluate("document.activeElement.id") == "tab-body" and page.url.endswith("#robot/duck-1/body"), page.url)
         page.keyboard.press("End")
-        wait(page, "!document.getElementById('rp-calibration').hidden")
-        check("End goes to the last tab, Home to the first", page.locator("#tab-calibration").get_attribute("aria-selected") == "true")
+        wait(page, "!document.getElementById('rp-actions').hidden")
+        check("End goes to the last tab, Home to the first", page.locator("#tab-actions").get_attribute("aria-selected") == "true")
         page.keyboard.press("Home")
         wait(page, "!document.getElementById('rp-overview').hidden")
         page.evaluate("location.hash = '#robot/duck-1/nonsense'")
@@ -340,6 +362,84 @@ with sync_playwright() as p:
         page.set_viewport_size({"width": 390, "height": 800})
         check("and at 390 px again, the sections are one column", page.evaluate(
             "() => { const a = document.getElementById('rp-readiness-head').closest('.card').getBoundingClientRect(), b = document.getElementById('rp-parts').getBoundingClientRect(); return b.top >= a.bottom - 1; }"))
+
+    # --- RFC-0032 phase 1: Facts and "Driven by" on the Overview, the read-only Actions tab; a robot with none shows none --------------------
+    with soft("facts, driven by and the Actions tab"):
+        boot(page, BASE + "/?visit=3#robot/duck-1", "window.__mc && window.__mc.ready && !document.getElementById('rp-robotfacts').hidden")
+        page.set_viewport_size({"width": 1440, "height": 960})
+        card = page.locator("#rp-robotfacts")
+        check("the Facts card is on the Overview: identity, software and the interface from the robot, and 'read N s ago'",
+              card.is_visible() and "fake-0001" in page.locator("#rp-robotfacts [data-fact=identity]").inner_text()
+              and "fake-robot 1.0.0" in page.locator("#rp-robotfacts [data-fact=software]").inner_text()
+              and "model_api 1" in page.locator("#rp-robotfacts [data-fact=interface]").inner_text()
+              and re.fullmatch(r"read \d+ s ago", page.locator("#rp-robotfacts-sum").inner_text()), page.locator("#rp-robotfacts").inner_text())
+        page.screenshot(path=str(SHOTS / "rp-facts-desktop-dark.png"))
+        at0 = get("/robots/duck-1/facts")["facts"]["read_at"]
+        time.sleep(1.6)
+        wait(page, "!document.getElementById('rp-robotfacts-sum').textContent.startsWith('read 0 s')")
+        page.locator("#rp-robotfacts-refresh").click()
+        wait(page, "document.getElementById('rp-robotfacts-sum').textContent === 'read 0 s ago'")
+        check("Refresh reads the robot again: the server's read_at is newer, and the card says 'read 0 s ago'", get("/robots/duck-1/facts")["facts"]["read_at"] > at0)
+        check("the card has a Refresh button of the page's kind, in the card's head", page.locator("#rp-robotfacts-refresh").inner_text() == "Refresh"
+              and page.evaluate("document.getElementById('rp-robotfacts-refresh').closest('.shead') !== null"))
+
+        page.click("#tab-actions")
+        wait(page, "!document.getElementById('rp-actions').hidden")
+        row = page.locator("#rp-actions [data-action=wave]")
+        check("the Actions tab lists the catalogue: the action, its kind, whether it is irreversible, its length, and where it was named",
+              page.url.endswith("#robot/duck-1/actions") and page.locator("#tab-actions").get_attribute("aria-selected") == "true"
+              and [c.strip() for c in row.locator("td").all_inner_texts()] == ["wave", "motion", "no", "2 s", "HARD", "robot"], row.inner_text())
+        check("it is read only, and says that running actions comes in phase 2: no button runs anything",
+              "running actions comes in phase 2" in page.locator("[data-actions-note]").inner_text() and page.locator("#rp-actions button").count() == 0)
+        page.screenshot(path=str(SHOTS / "rp-actions-desktop-dark.png"))
+        page.emulate_media(color_scheme="light")
+        page.screenshot(path=str(SHOTS / "rp-actions-desktop-light.png"))
+        check("light theme: the table and the note are readable (text is not the background)", page.evaluate(
+            "() => { const t = document.querySelector('#rp-actions td.k'), c = getComputedStyle(t).color, b = getComputedStyle(document.body).backgroundColor; return c !== b; }"))
+        page.set_viewport_size({"width": 390, "height": 800})
+        check("no sideways scrolling on the Actions tab at 390 px", no_scroll())
+        page.screenshot(path=str(SHOTS / "rp-actions-phone-light.png"))
+        page.emulate_media(color_scheme="dark")
+        page.focus("#tab-overview")
+        page.keyboard.press("End")
+        wait(page, "!document.getElementById('rp-actions').hidden")
+        check("End reaches the Actions tab, the last, and Home the first", page.locator("#tab-actions").get_attribute("aria-selected") == "true")
+        page.keyboard.press("Home")
+        wait(page, "!document.getElementById('rp-overview').hidden")
+
+        # a robot whose adapter reads neither: no card, no tab, and the keys skip it
+        page.evaluate("location.hash = '#robot/fake-1'")
+        wait(page, "document.getElementById('rp-picker').value === 'fake-1' && document.getElementById('rp-robotfacts').hidden === true")
+        check("fake-1 reads no facts and names no actions: no Facts card, no Actions tab", page.locator("#rp-robotfacts").is_hidden() and page.locator("#tab-actions").is_hidden())
+        page.focus("#tab-overview")
+        page.keyboard.press("End")
+        wait(page, "!document.getElementById('rp-calibration').hidden")
+        check("the arrow keys skip the tab it does not have: End is Calibration", page.locator("#tab-calibration").get_attribute("aria-selected") == "true")
+        page.evaluate("location.hash = '#robot/duck-1'")
+        wait(page, "document.getElementById('rp-picker').value === 'duck-1'")
+        page.set_viewport_size({"width": 1440, "height": 960})
+
+        # who drives: red when it is not ours, on the robot's card too (this raises the gate's own alarm, so it runs last)
+        check("a robot nobody is named for shows no 'driven by'", page.locator(".drivenby").count() == 0)
+        duck.control = {"source": "mission-control", "autonomous": False}
+        wait(page, "document.querySelectorAll('#rp-facts .drivenby[data-ours=true]').length === 1")
+        check("driven by the gate's own name: 'ours', not red", "mission-control (ours)" in page.locator("#rp-facts .drivenby").inner_text()
+              and page.locator("#rp-facts .drivenby").get_attribute("data-bad") == "false" and "bad" not in (page.locator("#rp-facts .drivenby b").get_attribute("class") or ""))
+        duck.control = {"source": "pad", "autonomous": False}
+        wait(page, "document.querySelectorAll('#rp-facts .drivenby[data-bad=true]').length === 1")
+        wait(page, "document.querySelector('#rp-facts .drivenby')?.textContent.includes('move.source') && document.querySelectorAll('#robot-list .drivenby[data-bad=true]').length === 1")      # the notice comes with the state after the first one
+        check("driven by a pad: 'not ours', in the error colour and with the word, on the robot's page and on its card, with the gate's notice",
+              "pad (not ours)" in page.locator("#rp-facts .drivenby").inner_text() and "move.source" in page.locator("#rp-facts .drivenby").inner_text()
+              and page.evaluate("() => { const b = document.querySelector('#rp-facts .drivenby b'); return b.classList.contains('bad') && getComputedStyle(b).color !== getComputedStyle(document.body).color; }")
+              and page.locator("#robot-list .drivenby[data-robot=duck-1][data-bad=true]").count() == 1,
+              page.locator("#rp-facts .drivenby").inner_text())
+        page.screenshot(path=str(SHOTS / "rp-driven-by-desktop-dark.png"))
+        duck.control = {"source": "mission-control", "autonomous": True}
+        wait(page, "document.querySelector('#rp-facts .drivenby b')?.textContent.includes('autonomous')")
+        check("the robot's own autonomy on is red too, even under our name", page.locator("#rp-facts .drivenby").get_attribute("data-bad") == "true")
+        duck.control = None
+        wait(page, "document.querySelector('#rp-facts .drivenby b')?.textContent === 'not named'")
+        check("when the robot names nobody again, 'not named' stays beside the gate's notice, no longer red", page.locator("#rp-facts .drivenby").get_attribute("data-bad") == "false")
 
     check("no script error and no console error in the whole session", errors == [], errors)
     browser.close()

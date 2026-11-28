@@ -119,6 +119,15 @@ async def main():
         check("get_robot_map", not err and j["map"]["kind"] == "occupancy_grid")
         err, j = await tool(c, "get_sighting", robot_id="fake-1")
         check("get_sighting", not err and "hfov_deg" in j["sighting"])
+        err, j = await tool(c, "get_robot_facts", robot_id="fake-1")
+        check("get_robot_facts (RFC-0032): what the robot is and runs, with when it was read", not err and j["facts"]["identity"]["model"] == "fake" and j["facts"]["read_at"] > 0, j)
+        err, j2 = await tool(c, "get_robot_facts", robot_id="fake-1", refresh=True)
+        check("... and refresh reads it again", not err and j2["facts"]["read_at"] >= j["facts"]["read_at"], j2)
+        err, j = await tool(c, "get_robot_actions", robot_id="fake-1")
+        check("get_robot_actions: the catalogue, read only", not err and [a["actionType"] for a in j["actions"]] == ["wave"] and j["actions"][0]["irreversible"] is False, j)
+        err, j = await tool(c, "get_robot_actions", robot_id="nope")
+        check("... an unknown robot is the API's not_found", err and "not_found" in j, j)
+        check("no tool runs an action: the catalogue is all an agent gets in phase 1", not any(re.search(r"run_action|do_action|perform|invoke|execute|action_run", n) for n in names), sorted(names))
         err, j = await tool(c, "get_robot", robot_id="nope")
         check("an API error comes back as an error with its code and message, for the agent to read", err and "not_found" in j and "no robot nope" in j, j)
         err, j = await tool(c, "get_robot", robot_id="fake-1/fire")
@@ -385,13 +394,14 @@ for method, path in (("POST", "/robots/fake-1/fire"), ("POST", "/robots/fake-1/l
                      ("DELETE", "/sites/home"), ("PUT", "/sites/home/guardrails"), ("PUT", "/robots/fake-1/site"), ("POST", "/plan"), ("GET", "/robots/fake-1/skills/fire"),
                      ("POST", "/robots/a/b/stop"), ("GET", "/events"), ("POST", "/robots/fake-1/profile"), ("POST", "/robots/fake-1/profile/import"),
                      ("POST", "/robots/fake-1/calibration/reference"), ("DELETE", "/robots/fake-1/calibration"), ("PUT", "/goals/1"), ("DELETE", "/goals/1"),
-                     ("GET", "/tokens"), ("POST", "/tokens"), ("DELETE", "/tokens/1"), ("GET", "/robots/fake-1/meshes/a.stl"), ("GET", "/robots/fake-1/profile/x")):
+                     ("GET", "/tokens"), ("POST", "/tokens"), ("DELETE", "/tokens/1"), ("GET", "/robots/fake-1/meshes/a.stl"), ("GET", "/robots/fake-1/profile/x"),
+                     ("POST", "/robots/fake-1/actions/wave"), ("POST", "/robots/fake-1/actions"), ("POST", "/robots/fake-1/facts")):
     try:
         api.call(method, path, {})
         check(f"the guard refuses {method} {path}", False)
     except Refused as exc:
         check(f"the guard refuses {method} {path}", "refused" in str(exc))
-check("every allowed route is one a tool uses: 39 routes, none a write on areas, sites, imports, takeovers, fire, tokens or a profile save", len(ALLOWED) == 39
+check("every allowed route is one a tool uses: 41 routes, none a write on areas, sites, imports, takeovers, fire, tokens or a profile save", len(ALLOWED) == 41
       and not any(("area" in rx.pattern and m != "GET") or "takeover" in rx.pattern or "fire" in rx.pattern or "import" in rx.pattern or "tokens" in rx.pattern for m, rx in ALLOWED) and not any(m == "POST" and re.search(r"profile$|profile/import|reference", rx.pattern) for m, rx in ALLOWED), len(ALLOWED))
 
 srv.shutdown()

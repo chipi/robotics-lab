@@ -29,6 +29,7 @@ from runfile.navcontract import ContractError, ENDS, check_calibration_state, ch
 from .errors import ApiError
 
 GATE_NAME = "mission-control"
+GATE_UPSTREAM_NAME = "robotics-lab-gate"     # what the gate calls itself to robotd (labrunner.gate CLIENT_NAME): robotd shows it as `move.source` when the gate moves the robot
 STATE_STALE_S = 2.0
 HEALTH_EVERY_S = 10.0
 CALL_TIMEOUT_S = 5.0
@@ -54,6 +55,7 @@ class _Wire:
 
     def __init__(self, path: Path, client: str, notify=None):
         self.client, self.notify = client, notify
+        self.hello: dict = {}
         self.sock = socket.socket(socket.AF_UNIX)
         self.sock.settimeout(CALL_TIMEOUT_S)
         self.sock.connect(str(path))
@@ -65,7 +67,8 @@ class _Wire:
         self.alive = True
         threading.Thread(target=self._read, daemon=True).start()
         try:
-            check_protocol(self.call("hello", {"client": client}))
+            self.hello = self.call("hello", {"client": client})        # the gate's own answer (its protocol), kept for the facts
+            check_protocol(self.hello)
         except ProtocolError:
             self.alive = False
             self.sock.close()
@@ -173,12 +176,14 @@ class RemoteGate:
         self._next = 0
         self._lock = threading.Lock()
         self._probe = None
+        self._own = None            # the first connection opened: Mission Control's own (RobotRuntime opens it first), the one its reads go on
 
     def open(self, client: str, notify=None) -> int:
         wire = _Wire(self.path, client, notify)
         with self._lock:
             self._next += 1
             self._wires[self._next] = wire
+            self._own = self._next if self._own is None else self._own
             return self._next
 
     def close(self, cid: int) -> None:
@@ -208,6 +213,17 @@ class RemoteGate:
 
     def health(self) -> dict:
         return self.link.via(lambda m, p: self._probe_wire().call(m, p), "robot.health", {})
+
+    def read(self, method: str, params: dict | None = None):
+        """A read-only call of robotd's on Mission Control's own connection (the first opened): the facts and the
+        skill list (RFC-0032). The gate lets a read through with no lease."""
+        if self._own is None:
+            raise ConnectionError("Mission Control has no connection to the gate yet")
+        return self.handle(self._own, method, params)
+
+    def hello(self) -> dict:
+        wire = self._wires.get(self._own)
+        return dict(getattr(wire, "hello", None) or {})
 
     def tick(self) -> None:
         pass
@@ -382,6 +398,8 @@ class DuckAdapter:
         self._stream_at = 0.0
         self._health = (0.0, None)
         self._gate = None
+        # the names robotd shows as `move.source` for what is ours: the gate's own, and the robot file's `own_sources` if it names more
+        self.own_sources = (GATE_UPSTREAM_NAME, *options.get("own_sources", ()))
 
     # Where an adapter reads its addresses beyond the robot file's block: the installation's entry for the robot, and a default per address.
     # The real duck's adapter overrides both: the installation's entry is the simulator's unless it says it is the real one.
@@ -466,7 +484,9 @@ class DuckAdapter:
                "velocity": {"vx": round(applied[0], 4), "vyaw": round(applied[2], 4)},
                "mode": "moving" if abs(applied[0]) > 1e-3 or abs(applied[2]) > 1e-3 else "idle",
                "link": "duck-gate", "policy": s.get("policy"),
-               "flags": {"fall": bool(safety.get("fallen")), "picked_up": bool(safety.get("picked_up")), "limp": bool(safety.get("limp"))}}
+               "flags": {"fall": bool(safety.get("fallen")), "picked_up": bool(safety.get("picked_up")), "limp": bool(safety.get("limp"))},
+               # who moved it last and whether its own autonomy is on, as robotd names them (RFC-0032 section 3.2): robotd leaves `autonomous` out when false
+               **({"move": {"source": s["move"]["source"]}} if isinstance((s.get("move") or {}).get("source"), str) else {}), "autonomous": bool(s.get("autonomous"))}
         out["battery_pct"] = self._battery()
         names, angles = list(self.profile.joints.names), s.get("joints") or []
         if len(angles) == len(names):                       # robotd's JOINT_NAMES order, the profile's `joints.names`; none reported: no key
@@ -509,3 +529,55 @@ class DuckAdapter:
 
     def sighting(self) -> dict:
         raise ApiError(404, "no_sighting", "the camera runs with a goal: its sightings are in the goal run's Observatory run")
+
+    # --- RFC-0032: what the robot is and runs, and what it can be asked to do (read-only calls of robotd's, through the gate) ---
+
+    ABSENT = (("update.status", "updaterd", "the update state"), ("system.info", "configd", "the robot's name and serial"))
+
+    def _read(self, method: str, absent: list):
+        """One read of robotd's through the gate. The gate or robotd refusing it (no such method, not allowed) is that part absent, with the
+        reason; a link that does not answer raises, so the whole read fails the way any read of the robot does."""
+        if self._gate is None:
+            raise ConnectionError("no connection to the gate yet")
+        try:
+            return self._gate.read(method)
+        except (GateError, RuntimeError) as exc:
+            absent.append({"method": method, "service": "robotd", "reason": str(exc)})
+            return None
+
+    def facts(self) -> dict:
+        """The facts (RFC-0032 section 3.1) from `robot.modelApi` (the model API: interface) and `robot.policies` (what fills each slot:
+        behaviours), the raw reply of each kept under `raw`. Not reachable through the robotd socket the gate fronts, so absent with that
+        reason: `update.status` (updaterd's), `system.info` (configd's: name, serial), and robotd's own version (its `hello`, which the gate
+        answers itself; the version reaches the gate's log only)."""
+        absent: list = []
+        api = self._read("robot.modelApi", absent)
+        policies = self._read("robot.policies", absent)
+        if api is None and policies is None:
+            raise GateError("facts_unavailable", "robotd gave neither robot.modelApi nor robot.policies: " + "; ".join(a["reason"] for a in absent))
+        absent += [{"method": m, "service": svc, "reason": f"{svc} serves {m} ({what}), not robotd: Mission Control's link is the robotd socket behind the gate"}
+                   for m, svc, what in self.ABSENT]
+        absent.append({"method": "hello", "service": "robotd", "reason": "the gate answers hello itself; robotd's daemon_version is in the gate's log only"})
+        hello = self._gate.hello() if self._gate is not None else {}
+        series = (self.cfg.factsheet.get("typeSpecification") or {}).get("seriesName")
+        slots = [{"slot": s.get("slot"), "artefact": None if not s.get("path") else {"kind": "onnx", "origin": s.get("origin"), "path": s["path"]},
+                  "overridden": bool(s.get("overridden")), "error": s.get("error")} for s in (policies or {}).get("slots", [])]
+        return {"identity": {"model": series} if series else {},
+                "software": [],
+                "interface": {**({"model_api": api["model_api"]} if isinstance(api, dict) and "model_api" in api else {}),
+                              **({"gate_protocol": hello["protocol"]} if "protocol" in hello else {})},
+                "behaviours": slots,
+                "absent": absent,
+                "raw": {"robot.modelApi": api, "robot.policies": policies, "hello": hello}}
+
+    def actions(self) -> list:
+        """`robot.skills` as actions: a table skill is a `motion` (a network the robot runs for `duration`), a built-in one (`ground_pick`,
+        `sit_toggle`: robotd drives them itself) the same without a length. Pollen's emotions and sounds are not in this reply."""
+        absent: list = []
+        reply = self._read("robot.skills", absent)
+        if reply is None:
+            raise GateError("actions_unavailable", f"robot.skills: {absent[0]['reason']}")
+        out = [{"actionType": s["name"], "kind": "motion", "duration_s": s.get("duration"),
+                "backed_by": {"kind": "onnx", "path": s["path"]} if s.get("path") else None, "raw": s} for s in reply.get("skills", [])]
+        out += [{"actionType": n, "kind": "motion", "raw": {"name": n, "built_in": True}} for n in reply.get("built_in", [])]
+        return out
