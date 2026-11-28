@@ -1,6 +1,7 @@
 # RFC-0032: Robot abilities, a generic model for what a robot can do and who drives it
 
-**Status:** Proposed, 2026-11-28. Nothing here is built.
+**Status:** Accepted (the operator, 2026-11-28: all six questions of section 8 as recommended).
+Nothing here is built.
 **Date:** 2026-11-28
 **Builds on:** [RFC-0002](RFC-0002-robot-brain.md) §3.6 (someone else drives: stop and report),
 [RFC-0003](RFC-0003-robot-interface.md) §2.1 (`robot.do {skill}`),
@@ -222,7 +223,7 @@ Phase 1's control-source rule is the one safety item: it lands before any real d
   missions (RFC-0030) need both as steps.
 - **Leave it to `robotctl` over ssh.** Free, but nothing is logged, leased or visible.
 
-## 8. Questions for the operator
+## 8. Questions for the operator (answered 2026-11-28: all as recommended)
 
 1. **Q1, the order:** phases 1 to 5 as above, phase 1 first because it carries the safety rule?
    Recommended: yes.

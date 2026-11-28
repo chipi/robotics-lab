@@ -85,6 +85,7 @@ Same conventions as the operator's other projects (flotilla, eval-harness).
   resource](RFC-0031-learning-in-the-lab.md) (Accepted, 2026-11-26: option A, all eight questions as
   recommended, after the advisor's review; nothing built yet)
 - [RFC-0032 — Robot abilities: a generic model for what a robot can do and who drives
-  it](RFC-0032-robot-abilities.md) (Proposed, 2026-11-28; nothing built)
+  it](RFC-0032-robot-abilities.md) (Accepted, 2026-11-28: all six questions as recommended;
+  nothing built)
 
 The map of how the pieces fit, from these RFCs: [How the platform fits together](../architecture.md).
