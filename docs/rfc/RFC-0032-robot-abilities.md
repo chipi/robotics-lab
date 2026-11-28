@@ -27,7 +27,7 @@ gaps are weaknesses of what we offer now, not only missing features:
 
 | # | Gap or opportunity | Why it matters |
 | --- | --- | --- |
-| 1 | **Our STOP and lease do not cover the whole robot.** A pad, an NFC tag or Pollen's app can drive the duck; the robot keeps the last writer | Mission Control shows "held by us" while someone else drives. RFC-0002 §3.6 asked for the check; it is not built |
+| 1 | **Our STOP and lease do not cover the whole robot.** A pad, an NFC tag or Pollen's app can drive the duck; the robot keeps the last writer | Mission Control shows "held by us" while someone else drives. The gate's check exists but reads none of robotd's three fields (section 3.2, correction) |
 | 2 | **We do not know what the robot runs.** No version, update state, loaded network | A run record cannot say which walker it ran on; a result is not reproducible |
 | 3 | **Skills are an empty concept.** Both robots' `skills` are `[]`; the NXT's `fire` bypasses Mission Control through nxt-web's own lock | The one irreversible action we have is outside the control centre's lease and log |
 | 4 | **The simulator's fidelity is not recorded.** Our walk is 0.13 m/s asked 0.3; Pollen's docs disagree on whether the body uses BAM | Every sim number in the learning arc carries an unknown |
@@ -84,9 +84,19 @@ Every state frame is checked for who moved the robot last and whether its own au
 {"source": "robot-brain-412", "ours": true, "autonomous": false, "pad": "connected"}
 ```
 
-- **The rule** (RFC-0002 §3.6, now built): during a goal run, `ours: false` or `autonomous: true`
-  stops the goal with the end `interrupted`, reason `driven_by <source>`, and an alarm. Resuming
-  needs the operator. Outside a run the page shows "driven by pad" on the robot's card.
+- **The rule** (RFC-0002 §3.6): during a goal run, `ours: false` or `autonomous: true` stops the
+  goal with the end `interrupted`, reason `driven_by <source>`, and an alarm. Resuming needs the
+  operator. Outside a run the page shows "driven by pad" on the robot's card.
+- **Correction (2026-11-28, phase 1's first finding).** The rule is already built:
+  `Gate.observe_state` (`libs/gate/src/robotgate/__init__.py:272-315`, PHASE5-NEXT-PLAN B4,
+  2026-11-23) stops the robot, ends the lease and raises `someone_else_drives`. This RFC and the
+  gap analysis said it was not; I did not read the gate before writing them. What is true: it
+  never fires against Pollen's robotd. At the simulator's pin (microduck 094d4bb4,
+  `duck-ipc-proto/src/lib.rs`) `autonomous` is left out of the frame when false, `move.applied`
+  is an array `[vx, vy, vyaw]` where the gate expects an object, and `move.source` is filled only
+  for a client that named itself in `hello` (protocol v60), which our gate's upstream connection
+  does not do, and no `--own-source` is passed. So every simulator run logged `not_watched` for
+  all three. Phase 1 fixes the reading of the three fields and names the gate to robotd.
 - **A pad is a control source like any other.** Phase 1 only sees it (gap analysis §2 option A).
   A pad that drives *through* Mission Control (option B, the browser's Gamepad API on our lease;
   or D, a pad client of the gate) is a later, separate choice.

@@ -444,6 +444,9 @@ profile.
    `robot.policies`, `robot.skills`, `robot.vetbook`; show them on the Overview tab.
 2. Watch `move.source`, `autonomous` and `pad.status` in state frames and stop and report, as
    RFC-0002 section 3.6 already requires (`RFC-0002-robot-brain.md:178-183`).
+   **Correction, 2026-11-28:** the watch exists (`Gate.observe_state`,
+   `libs/gate/src/robotgate/__init__.py:272-315`) but reads none of robotd's three fields;
+   see RFC-0032 section 3.2.
 3. Fill `capabilities.skills` for the duck from `robot.skills`, and route `robot.do` through the
    gate with a lease, so a skill (and an NXT fire) is one concept.
 4. Decide the gamepad option (section 2); start with A.
